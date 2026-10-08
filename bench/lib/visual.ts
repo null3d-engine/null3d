@@ -6,6 +6,7 @@
 // measures.
 
 import { S5_DEFAULT_COUNT } from '../scenes/s5';
+import { S6_FULL_COUNT } from '../scenes/s6';
 import {
 	createS4,
 	PARITY_CANVAS,
@@ -24,6 +25,7 @@ export const SCENE_COUNTS: Readonly<Record<BenchScene, number>> = {
 	s3: S3_DEFAULT_COUNT,
 	s4: createS4().count,
 	s5: S5_DEFAULT_COUNT,
+	s6: S6_FULL_COUNT,
 };
 
 /** The path of a benchmark scene's null3D sketch module from the server's root, at `count` objects. */

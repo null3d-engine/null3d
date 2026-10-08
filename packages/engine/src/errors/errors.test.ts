@@ -6,7 +6,7 @@ import { type CoreErrors, coreFailure } from './core-failure';
 import { EngineError, isErrorCode, setErrorFixes } from './engine-error';
 import { ERROR_FIXES, type ErrorCode } from './fixes';
 
-const DOCS = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
+const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 /** Where a thread keeps its table of fixes: on its global object, under a registered symbol. */
 const FIXES_KEY = Symbol.for('null3d.errorFixes');

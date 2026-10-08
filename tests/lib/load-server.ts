@@ -50,11 +50,21 @@ function viteBuild(root: string, args: readonly string[], env: Record<string, st
 }
 
 /**
+ * The test pages that the startup build holds besides the engine test page, each built on its own
+ * so the engine test page stays as the startup benchmark loads it: the texture cache page, which
+ * times loads of KTX2 files.
+ */
+const STARTUP_EXTRA_PAGES = ['texture-cache'];
+
+/**
  * Builds the engine test page for production with relative addresses, into its own folder, so a
- * build for the other tests never replaces the files that a startup run serves.
+ * build for the other tests never replaces the files that a startup run serves. The other startup
+ * pages add their files to it.
  */
 export function buildStartupPages(): void {
-	viteBuild(REPO_ROOT, ['--base', './', '--outDir', STARTUP_PAGES_DIR]);
+	const args = ['--base', './', '--outDir', STARTUP_PAGES_DIR];
+	viteBuild(REPO_ROOT, args);
+	for (const page of STARTUP_EXTRA_PAGES) viteBuild(REPO_ROOT, args, { NULL3D_BUILD_PAGE: page });
 }
 
 /**

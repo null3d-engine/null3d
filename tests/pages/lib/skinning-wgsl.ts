@@ -2,17 +2,27 @@
 // shaders that skin read each character's joint matrices from a float texture, one row of texels
 // per character, and blend four of them per vertex, as the WebGL2 programs do. The compute shader
 // skins the same way from the same texture, as the engine's skinning pass does, once per frame,
-// into a buffer of skinned vertices that the plain vertex shaders draw. The page's matrices come in WebGL's clip space, so each vertex shader moves depth
+// into a buffer of skinned vertices that the plain vertex shaders draw. Each skinned vertex holds
+// what the engine's skinning pass writes for a character like the crowd scene's Knight: its
+// position as floats, its normal in 8 bits a component or as floats, and its texture coordinates,
+// which the pass copies. The page's matrices come in WebGL's clip space, so each vertex shader moves depth
 // from -1 to 1 into WebGPU's 0 to 1. This module uses no browser API.
 import { MAX_CASCADES, SKINNING } from './skinning';
 
 /** Threads per workgroup of the compute pass. */
 export const SKIN_WORKGROUP = 64;
 
-/** 32-bit words per vertex of the rest mesh: position (3), normal (3), joints (4 × 8 bits), weights (4). */
-export const REST_WORDS = 11;
-/** 32-bit words per skinned vertex: position (3), normal (3). */
-export const SKINNED_WORDS = 6;
+/**
+ * 32-bit words per vertex of the rest mesh: position (3), normal (3), joints (4 × 8 bits), weights
+ * (4), texture coordinates (2 × 16 bits).
+ */
+export const REST_WORDS = 12;
+
+/**
+ * 32-bit words per skinned vertex: position (3), normal (1 in 8 bits a component, 3 as floats),
+ * texture coordinates (1). The engine writes the same 20 or 28 bytes for the Knight.
+ */
+export const skinnedWords = (narrow: boolean) => (narrow ? 5 : 7);
 
 /** Each pass's matrix from the world into clip space. */
 const PASS = `
@@ -36,6 +46,7 @@ struct SkinIn {
 	@location(2) jointIds: vec4u,
 	@location(3) weights: vec4f,
 	@location(4) character: u32,
+	@location(5) uv: vec2f,
 }
 
 struct Skinned { position: vec3f, normal: vec3f }
@@ -65,6 +76,7 @@ const PLAIN = `
 struct PlainIn {
 	@location(0) position: vec3f,
 	@location(1) normal: vec3f,
+	@location(2) uv: vec2f,
 }
 `;
 
@@ -73,6 +85,7 @@ struct Shaded {
 	@builtin(position) position: vec4f,
 	@location(0) world: vec3f,
 	@location(1) normal: vec3f,
+	@location(2) uv: vec2f,
 }
 `;
 
@@ -121,7 +134,8 @@ fn litMain(in: Shaded) -> @location(0) vec4f {
 	let shade = max(dot(n, lit.toLight), 0.0) * shadow(in.world, n);
 	let halfway = normalize(lit.toLight + normalize(lit.eye - in.world));
 	let shine = pow(max(dot(n, halfway), 0.0), 32.0) * shade;
-	let c = lit.albedo * (0.25 + 0.75 * shade) + vec3f(0.2 * shine);
+	// The texture coordinates count as a texture read would, with no visible change.
+	let c = lit.albedo * (0.25 + 0.75 * shade) + vec3f(0.2 * shine + 1e-5 * in.uv.x);
 	return vec4f(pow(c, vec3f(1.0 / 2.2)), 1.0);
 }
 `;
@@ -138,7 +152,7 @@ fn main(v: SkinIn) -> @builtin(position) vec4f {
 @vertex
 fn main(v: SkinIn) -> Shaded {
 	let s = skin(v);
-	return Shaded(clip(s.position), s.position, s.normal);
+	return Shaded(clip(s.position), s.position, s.normal, v.uv);
 }
 `,
 	plainDepth: `${PASS}${PLAIN}
@@ -150,20 +164,21 @@ fn main(v: PlainIn) -> @builtin(position) vec4f {
 	plainShaded: `${PASS}${PLAIN}${SHADED_OUT}${LIT}
 @vertex
 fn main(v: PlainIn) -> Shaded {
-	return Shaded(clip(v.position), v.position, v.normal);
+	return Shaded(clip(v.position), v.position, v.normal, v.uv);
 }
 `,
 	/**
 	 * One thread per vertex of each character to skin. The characters' list gives each slot's
 	 * character, and slot s holds its vertices from s times the vertex count, so one index buffer
-	 * covers every slot, as with transform feedback.
+	 * covers every slot, as with transform feedback. `narrow` writes the normal in 8 bits a
+	 * component, as the engine's skinning pass does.
 	 */
-	skinOnce: `
+	skinOnce: (narrow: boolean) => `
 struct Params { vertexCount: u32, total: u32 }
 @group(0) @binding(0) var<storage, read> rest: array<f32>;
 @group(0) @binding(1) var joints: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> characters: array<u32>;
-@group(0) @binding(3) var<storage, read_write> skinned: array<f32>;
+@group(0) @binding(3) var<storage, read_write> skinned: array<u32>;
 @group(0) @binding(4) var<uniform> params: Params;
 
 @compute @workgroup_size(${SKIN_WORKGROUP})
@@ -190,13 +205,19 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 	let p = vec4f(rest[r], rest[r + 1u], rest[r + 2u], 1.0);
 	let n = vec3f(rest[r + 3u], rest[r + 4u], rest[r + 5u]);
 	let normal = normalize(vec3f(dot(row0.xyz, n), dot(row1.xyz, n), dot(row2.xyz, n)));
-	let o = at * ${SKINNED_WORDS}u;
-	skinned[o] = dot(row0, p);
-	skinned[o + 1u] = dot(row1, p);
-	skinned[o + 2u] = dot(row2, p);
-	skinned[o + 3u] = normal.x;
-	skinned[o + 4u] = normal.y;
-	skinned[o + 5u] = normal.z;
+	let o = at * ${skinnedWords(narrow)}u;
+	skinned[o] = bitcast<u32>(dot(row0, p));
+	skinned[o + 1u] = bitcast<u32>(dot(row1, p));
+	skinned[o + 2u] = bitcast<u32>(dot(row2, p));
+${
+	narrow
+		? `	skinned[o + 3u] = pack4x8snorm(vec4f(normal, 0.0));
+	skinned[o + 4u] = bitcast<u32>(rest[r + 11u]);`
+		: `	skinned[o + 3u] = bitcast<u32>(normal.x);
+	skinned[o + 4u] = bitcast<u32>(normal.y);
+	skinned[o + 5u] = bitcast<u32>(normal.z);
+	skinned[o + 6u] = bitcast<u32>(rest[r + 11u]);`
+}
 }
 `,
 } as const;

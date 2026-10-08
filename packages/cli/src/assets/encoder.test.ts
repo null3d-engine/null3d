@@ -1,7 +1,7 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { ktx2Header, transcodeLevel } from '../../../../tests/lib/basis-transcoder.ts';
 import { encodePng } from '../png.js';
 import { ENCODER_FILES, encodeTexture, texturePixels } from './encoder.js';
 import {
@@ -26,18 +26,6 @@ const OFFICIAL_BUILD = {
 	wasm: '48d4e39ccaa1e290a17d00c13b353a728227bb439108d5e6c944fe6ab80552db',
 };
 
-const TRANSCODER = join(import.meta.dir, '../../../engine/vendor/basis');
-
-/** The engine's transcoder, which the engine ships as an ES module. */
-async function loadTranscoder() {
-	const { default: start } = await import(join(TRANSCODER, 'basis_transcoder.mjs'));
-	const basis = await start({
-		wasmBinary: readFileSync(join(TRANSCODER, 'basis_transcoder.wasm')),
-	});
-	basis.initializeBasis();
-	return basis;
-}
-
 /** A picture of 64 x 64 texels: soft color bands, with a dark ring. */
 function picture(width = 64, height = 64) {
 	const data = new Uint8Array(width * height * 4);
@@ -50,34 +38,6 @@ function picture(width = 64, height = 64) {
 			);
 		}
 	return { width, height, data };
-}
-
-/** The KTX2 file's header fields that the engine reads. */
-function header(ktx2: Uint8Array) {
-	const view = new DataView(ktx2.buffer, ktx2.byteOffset, ktx2.byteLength);
-	return {
-		vkFormat: view.getUint32(12, true),
-		width: view.getUint32(20, true),
-		height: view.getUint32(24, true),
-		levels: view.getUint32(40, true),
-		supercompression: view.getUint32(44, true),
-	};
-}
-
-/** The top level of a KTX2 file, transcoded to RGBA8 with the engine's transcoder. */
-async function topLevel(ktx2: Uint8Array) {
-	const basis = await loadTranscoder();
-	const file = new basis.KTX2File(ktx2);
-	try {
-		expect(file.startTranscoding()).toBeTruthy();
-		const format = basis.transcoder_texture_format.cTFRGBA32.value;
-		const out = new Uint8Array(file.getImageTranscodedSizeInBytes(0, 0, 0, format));
-		expect(file.transcodeImage(out, 0, 0, 0, format, 0, -1, -1)).toBeTruthy();
-		return { srgb: file.isSRGB(), out };
-	} finally {
-		file.close();
-		file.delete();
-	}
 }
 
 /** The mean difference of the color channels of two RGBA8 images, from 0 to 255. */
@@ -104,14 +64,14 @@ describe('the encoder', () => {
 			codec: 'etc1s',
 			maxSide: 2048,
 		});
-		expect(header(texture.ktx2)).toEqual({
+		expect(ktx2Header(texture.ktx2)).toEqual({
 			vkFormat: 0,
 			width: 64,
 			height: 64,
 			levels: 7,
 			supercompression: 1,
 		});
-		const { srgb, out } = await topLevel(texture.ktx2);
+		const { srgb, out } = await transcodeLevel(texture.ktx2);
 		expect(srgb).toBe(true);
 		// ETC1S at its default quality strays by about 6 of 255 on this picture's gradients.
 		expect(meanError(out, source.data)).toBeLessThan(8);
@@ -127,8 +87,8 @@ describe('the encoder', () => {
 			codec: 'uastc',
 			maxSide: 2048,
 		});
-		expect(header(texture.ktx2)).toMatchObject({ vkFormat: 0, levels: 7, supercompression: 2 });
-		const { srgb, out } = await topLevel(texture.ktx2);
+		expect(ktx2Header(texture.ktx2)).toMatchObject({ vkFormat: 0, levels: 7, supercompression: 2 });
+		const { srgb, out } = await transcodeLevel(texture.ktx2);
 		expect(srgb).toBe(false);
 		// The encoder renormalizes each texel as a normal, so compare it with the renormalized picture.
 		const normal = Uint8Array.from(source.data);
@@ -153,7 +113,7 @@ describe('the encoder', () => {
 		const { pixels, sourceWidth } = texturePixels(job);
 		expect([pixels.width, pixels.height, sourceWidth]).toEqual([64, 16, 100]);
 		const texture = await encodeTexture(job);
-		expect(header(texture.ktx2)).toMatchObject({ width: 64, height: 16, levels: 7 });
+		expect(ktx2Header(texture.ktx2)).toMatchObject({ width: 64, height: 16, levels: 7 });
 		expect(texture.alpha).toBe(true);
 	});
 });

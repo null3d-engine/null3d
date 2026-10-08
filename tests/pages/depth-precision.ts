@@ -13,6 +13,9 @@ run('depth-precision', async () => {
 		canvas,
 		sketch: new URL('./sketches/depth-precision-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
+		// The depth prepass lets the surface drawn last win each tie of equal depth, so it would hide
+		// the fighting that this page counts.
+		depthPrepass: false,
 	});
 	const frame = await engine.captureFrame();
 	await engine.destroy();

@@ -96,7 +96,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			step('engine created');
 			// The sketch downloads while the renderer starts. The renderer starts before the setup,
 			// so a warm-up in the setup has a renderer to build its pipelines.
-			const sketch = awaitLater(loadSketch(message.sketchUrl));
+			const sketch = awaitLater(loadSketch(message.sketchUrl, { step }));
 			/** The GPU path that this worker draws with, in low-latency mode. */
 			let tier: Tier | undefined;
 			if (message.renderer && drawModule) {

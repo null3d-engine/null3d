@@ -23,6 +23,7 @@ import {
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { CORE_FILES } from '../../packages/vite-plugin/src/index.ts';
+import { generateDocs, writeGeneratedDocs } from './docs.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
 import { SOURCE_CONDITION } from './source-condition.ts';
@@ -354,8 +355,8 @@ function compile(root: string, dir: string, build: PackageBuild): void {
 /**
  * Makes everything that a package's tarball holds besides the files git keeps and the WebAssembly
  * builds: the license copies, the built JavaScript and declarations, and the engine's shader
- * modules and docs. Each package's `prepack` script runs this, so `bun pm pack` and `npm pack`
- * both pack a complete package.
+ * modules and docs with their generated pages and sections. Each package's `prepack` script runs
+ * this, so `bun pm pack` and `npm pack` both pack a complete package.
  */
 export function buildPackage(root: string, name: string): void {
 	const build = packageBuild(name);
@@ -367,6 +368,9 @@ export function buildPackage(root: string, name: string): void {
 			compile(root, join(root, 'packages', needed), packageBuild(needed));
 	}
 	if (build.docs) {
+		// Git keeps no generated docs, so the pack writes them first, after the shader modules that
+		// the engine's API reference reads.
+		writeGeneratedDocs(root, generateDocs(root));
 		rmSync(join(dir, 'docs'), { recursive: true, force: true });
 		cpSync(join(root, 'docs'), join(dir, 'docs'), { recursive: true });
 	}

@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use null3d_gpu::caps::{BUDGET, Limit};
+
 use super::{PassId, Quoted, RenderGraph, ResourceId, Source, Target};
 
 /// Why a pass's targets cannot share one render pass, for [`GraphError::TargetMismatch`].
@@ -24,6 +26,10 @@ pub enum Mismatch {
     /// A resolve pass reads no target, or one that it cannot resolve into the canvas, or it
     /// writes something other than the canvas.
     Resolve,
+    /// The pass draws into more color targets than every device allows in one render pass.
+    Colors,
+    /// The pass's color targets take more bytes per sample than every device allows.
+    ColorBytes,
 }
 
 /// Why a render graph did not compile.
@@ -300,6 +306,22 @@ impl RenderGraph {
                             shape.layers
                         )
                     }
+                    Mismatch::Colors => format!(
+                        "E{code}: the pass {} draws into {} as its color target number {}, and \
+                         one render pass holds at most {} on every device. Split the pass in two.",
+                        pass(drawer),
+                        resource(target),
+                        BUDGET[Limit::ColorAttachments as usize] + 1,
+                        BUDGET[Limit::ColorAttachments as usize]
+                    ),
+                    Mismatch::ColorBytes => format!(
+                        "E{code}: the pass {} draws into {}, which takes its color targets past \
+                         {} bytes per sample, the most every device allows in one render pass. \
+                         Split the pass in two, or use smaller formats.",
+                        pass(drawer),
+                        resource(target),
+                        BUDGET[Limit::ColorAttachmentBytesPerSample as usize]
+                    ),
                     Mismatch::NoTarget | Mismatch::Resolve => {
                         format!("E{code}: the pass {} draws into no target.", pass(drawer))
                     }

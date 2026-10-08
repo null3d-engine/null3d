@@ -36,7 +36,7 @@ const engine = await createEngine({
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
-  depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets leave it off
+  depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
@@ -44,6 +44,7 @@ const engine = await createEngine({
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
+  expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
@@ -69,6 +70,7 @@ const frame = await engine.captureFrame();        // the next frame's { width, h
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
+await engine.destroy({ release: true }); // (0.2) also frees the memory that the page keeps about 30 s for the next engine
 
 const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 const unbind = engine.labels.bind('hp-12', element);   // (0.2) element follows the sketch's label 'hp-12'
@@ -227,7 +229,7 @@ scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   // range is required
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
-scene.createHemisphereLight({ skyColor, groundColor, intensity });
+scene.createHemisphereLight({ skyColor, groundColor, intensity });  // stored, but does not light surfaces yet
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 
@@ -246,7 +248,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela, the others in lux. The same colors and intensities give the same light as in three.js. For real units, give point and spot lights `intensityUnit: 'lumen'` (0.2), and set the camera with `post.set({ ev100: 15 })` (0.2) for a sunny day (`concepts/lighting`).
-- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights light surfaces in 0.2.
+- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights do not light surfaces yet: use an ambient light for fill.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. The map stores 16-bit depth, so in far cascades a smaller `bias` acts as 1.5 depth steps, about 2 cm 200 m out. Unlit materials show no shadows. Both GPU paths draw them. Instance batches do not cast or receive them yet (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light moves, or a caster in its view moves, changes its layers or changes its pose. So still scenes cost nothing per frame, and at most 12 tiles draw again in a frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
@@ -284,7 +286,9 @@ const paint = materials.standard({
   ior: 1.5, specularIntensity: 1, specularColor: '#ffffff',  // (0.2) non-metal reflection, as three.js's physical material
   opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
-  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
+  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'hash' (0.2) draws the share the alpha sets; 'blend' shows through
+  alphaToCoverage: true,                       // (0.2) with 'mask': MSAA smooths the cut edges
+  forceSinglePass: false,                      // (0.2) with 'blend' and doubleSided: one draw for both faces
   blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
@@ -316,11 +320,12 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `alphaMode: 'blend'` is three.js's `transparent: true`, and `blending` picks `'normal'`, `'additive'` or `'multiply'`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- (0.2) `alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA, for foliage and fences. `false` gives three.js's hard `alphaTest` edges. Without MSAA it is a plain mask. The `'hash'` alpha mode draws a share of the surface that its alpha sets, in a pattern fixed to the mesh. Fades and crossing see-through surfaces then need no sort. A double-sided `'blend'` material draws its back faces, then its front faces, so a glass ball shows its far side. On flat surfaces, `forceSinglePass: true` saves that second draw.
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
 - `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` comes in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
@@ -347,6 +352,7 @@ textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array
 textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
 tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
 tex.width; tex.height; tex.bytes;   // size and GPU memory
+tex.droppedLevels;         // (0.2) largest mip levels the memory budget dropped, 0 to 3; width and height stay
 tex.destroy();
 textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the largest width or height
 ```
@@ -354,9 +360,10 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
-- Later: `textures.fromPass` (0.2). Cube maps come from `assets.loadCubemap` (0.2), section 11.
+- `textures.fromPass(pass)` (0.2) gives the texture of a scene pass from `render.addPass` (section 16).
+- Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
-Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. A texture from a KTX2 file takes no `update`.
+Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
 
 On WebGL2 the maps of one standard material share six textures on the GPU. Maps of one size, format and sampling count once, but each KTX2 map counts on its own. Past six, the material draws without its specular maps, then its light map (`api/textures`). Pack occlusion, roughness and metalness into one map, as glTF does.
 
@@ -370,7 +377,7 @@ const bitmap = await assets.loadImageBitmap('/ui/logo.png', { colorSpace, flipY,
 // relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 const upload = await assets.loadGltf(userFile, { rewriteUrl: (a) => (a.origin === location.origin ? a : null) }); // (0.2) check the addresses a user's model names
-ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material }
+ship.find('Turret');       // (0.2) a node: { name, position, rotation, scale, mesh, material, occluder }
 ship.bounds;               // (0.2) { center, radius, min, max } of the whole model
 ship.materials;            // (0.2) the file's materials; set() changes every copy
 ship.clips;                // (0.2) clip names, which a copy's animator plays
@@ -477,7 +484,7 @@ post.set({
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });
 post.set({ toneMapping: curveWgsl });   // (0.2) WGSL with fn toneCurve(color: vec3f) -> vec3f in place of a built-in curve
-const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; one pass each, at most 8
+const fx = post.addEffect({ wgsl, uniforms: { size: 4 }, order: 0 });  // (0.2) WGSL with fn effect(input: EffectInput) -> vec4f; per-pixel effects join into one pass, at most 8
 post.setEffectUniform(fx, 'size', 8);   // (0.2) allocates nothing
 post.removeEffect(fx);                  // (0.2)
 ```
@@ -485,18 +492,22 @@ post.removeEffect(fx);                  // (0.2)
 ## 16. Render graph (0.2) (`api/render`)
 
 ```ts
-render.addPass({
-  name: 'Minimap',
-  kind: 'scene',                     // 'scene' | 'fullscreen' | 'compute' (compute: WebGPU only)
-  camera: topCamera, layers: MAP_LAYER,
-  writes: 'minimapColor', size: [256, 256],   // or 'screen', 'screen/2', 'screen/4'
-  before: 'Post',
+const map = render.addPass({
+  kind: 'scene',                     // a camera draws the scene into a texture
+  camera: topCamera,
+  writes: 'minimap',                 // the texture's name; other passes list it in reads
+  size: [256, 256],                  // pixels
+  layers: MAP_LAYER,                 // optional: the camera's layers by default
+  clearColor: '#103050',             // optional: the scene's background color by default
 });
-// sample 'minimapColor' as a texture: textures.fromPass('minimapColor')
-render.setPassEnabled('Minimap', false);
-render.removePass('Minimap');
-render.dumpGraph();   // Graphviz DOT text of the compiled graph, for debugging
+const screen = materials.unlit({ map: textures.fromPass(map) });
+render.setPassEnabled(map, false);   // keeps its last image; allocates nothing
+render.removePass(map);              // destroys its textures
+render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
 ```
+
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights, no ambient occlusion and no sky for now.
+- Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 
@@ -520,6 +531,8 @@ quality.governor.farCascadeInterval;    // the shadow settings drawn now, which 
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set
 quality.settings.shadowCascades;        // cascades of lights that name none; fixed at the start, with shadowMapSize
 quality.settings.morphTargets;          // (0.2) most morph weights per object on WebGL2, the largest; fixed at the start
+quality.set({ textureMemoryMiB: 512 }); // (0.2) texture GPU memory budget; past it, textures from files drop mip levels
+quality.textureMemory;                  // (0.2) { bytes, budgetBytes, droppedLevels, droppedTextures }; onChange runs on drops
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });

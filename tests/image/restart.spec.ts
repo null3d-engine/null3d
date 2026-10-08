@@ -84,15 +84,16 @@ async function expectReleased(page: Page, memories: number, workers = 0): Promis
 	expect(held, `what keeps them alive:\n\n${chains.join('\n\n')}`).toEqual(expected);
 }
 
-// A page starts the engine again after it stops it, and after a collection it reaches none of a
-// stopped engine's memory, except the single-threaded build's core, which the page keeps for the
-// next engine. Each stop destroys every GPU object that the engine made, with its device or its
-// WebGL2 context, on whichever thread drew: a browser frees what a stopped worker still holds only
-// when it collects the worker's objects. The count of GPU objects is exact, so a few starts show an
-// object that any start leaves behind.
+// A page starts the engine again after it stops it, and after a collection it reaches one memory:
+// the single-threaded build's core, which the page keeps for the next engine, or the threaded
+// build's shared memory, which the page keeps for the next engine (D-98). So the threaded starts
+// make only one shared memory between them. Each stop destroys every GPU object that the engine
+// made, with its device or its WebGL2 context, on whichever thread drew: a browser frees what a
+// stopped worker still holds only when it collects the worker's objects. The count of GPU objects
+// is exact, so a few starts show an object that any start leaves behind.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine starts again after it stops, and lets go of its memory and its GPU objects, ${mode.name} on ${gpu}`, async ({
+		test(`the engine starts again after it stops, reuses its memory, and lets go of its GPU objects, ${mode.name} on ${gpu}`, async ({
 			page,
 		}) => {
 			await watchGpuObjects(page);
@@ -103,15 +104,31 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
-			await expectReleased(page, mode.build === 'single' ? 1 : 0);
+			expect(result.kinds.engine?.memoriesMade).toBe(mode.build === 'single' ? 0 : 1);
+			await expectReleased(page, 1);
 		});
 	}
 }
 
+// An engine stopped with destroy({ release: true }) leaves no memory for the next engine, so after
+// a collection the page reaches none.
+for (const mode of THREADED_MODES) {
+	test(`a stop that releases the memory leaves none, ${mode.name}`, async ({ page }) => {
+		await page.goto(
+			`shared-memory.html?room=off&cycles=${CYCLES}&release=on&gpu=webgl2&${mode.query}`,
+		);
+		const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.kinds.engine?.error).toBeUndefined();
+		expect(result.kinds.engine?.memoriesMade).toBe(CYCLES);
+		await expectReleased(page, 0);
+	});
+}
+
 // A stopped engine whose canvas stays in the page leaves its drawing worker with the canvas, for the
-// next engine. The page then reaches that worker, one for each kept canvas, but none of the stopped
-// engines' memories: a parked worker whose handlers still reached its engine kept that engine's
-// shared memory for as long as the canvas stayed.
+// next engine. The page then reaches that worker, one for each kept canvas, and only the one memory
+// that the page keeps for the next engine: a parked worker whose handlers still reached its engine
+// kept that engine's shared memory for as long as the canvas stayed.
 for (const mode of THREADED_MODES.filter(({ renderThread }) => renderThread !== 'main')) {
 	test(`a stopped engine whose canvas stays lets go of its memory, ${mode.name}`, async ({
 		page,
@@ -123,7 +140,7 @@ for (const mode of THREADED_MODES.filter(({ renderThread }) => renderThread !== 
 		expect(result.error).toBeUndefined();
 		expect(result.kinds['canvas-kept']?.error).toBeUndefined();
 		expect(result.kinds['canvas-kept']?.cycles).toBe(CYCLES);
-		await expectReleased(page, 0, CYCLES);
+		await expectReleased(page, 1, CYCLES);
 	});
 }
 
@@ -136,10 +153,12 @@ const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype
 };`;
 
 // When the thread that draws fails while the engine starts, the start fails with that error instead
-// of waiting for frames that never come. The engine has stopped by then, so after a collection the
-// page reaches none of its memory and none of its workers.
+// of waiting for frames that never come. The engine has stopped by then, and each thread answered
+// the stop. So after a collection the page reaches only the one memory that it keeps for the next
+// engine: the single-threaded build's core or the threaded build's shared memory. It reaches none of
+// the engine's workers.
 for (const mode of ENGINE_MODES) {
-	test(`a start whose drawing fails rejects, and lets go of its memory, ${mode.name}`, async ({
+	test(`a start whose drawing fails rejects, and leaves only the memory for the next engine, ${mode.name}`, async ({
 		page,
 	}) => {
 		await prefixEngineScripts(page, TEXTURES_FAIL);
@@ -148,7 +167,7 @@ for (const mode of ENGINE_MODES) {
 		await restoreEngineScripts(page);
 		const engine = result.kinds.engine;
 		expect(engine?.error).toMatch(/^E140[45]: .*Unable to create texture/);
-		await expectReleased(page, mode.build === 'single' ? 1 : 0);
+		await expectReleased(page, 1);
 	});
 }
 

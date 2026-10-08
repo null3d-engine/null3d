@@ -25,6 +25,7 @@ import type { DepthMode } from '../../page/switches';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
+import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
 import {
 	forEachFallbackAttribute,
@@ -351,6 +352,10 @@ export class WebGL2Backend {
 	private readonly parallel: KHR_parallel_shader_compile | null;
 	/** Programs that may still be compiling in the background. */
 	private readonly compiling: Program[] = [];
+	/** The builds of joined effects' shaders, which never stop the engine when they fail. */
+	readonly joins: JoinedBuilds;
+	/** True once a list has replayed, after which no frame waits for a joined shader's compile. */
+	private replayed = false;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
@@ -450,6 +455,7 @@ export class WebGL2Backend {
 	private depthFunc: number;
 	private colorMask = true;
 	private blend = 0;
+	private alphaToCoverage = false;
 	private offsetFactor = 0;
 	private offsetUnits = 0;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
@@ -501,6 +507,7 @@ export class WebGL2Backend {
 		this.copyTemplate = mipmapTemplate(shaders, 'copy');
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
+		this.joins = new JoinedBuilds(this.images.shaders);
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
@@ -584,7 +591,9 @@ export class WebGL2Backend {
 		if (this.parked.size > 0) this.unpark();
 		const compiling = this.compiling;
 		for (let k = compiling.length - 1; k >= 0; k--) {
-			if (this.compiled(compiling[k] as Program)) {
+			const program = compiling[k] as Program;
+			if (this.compiled(program)) {
+				if (program.joined) this.joinCompiled(program);
 				compiling[k] = compiling[compiling.length - 1] as Program;
 				compiling.pop();
 			}
@@ -649,13 +658,15 @@ export class WebGL2Backend {
 	/**
 	 * True when a render pipeline template can create a program of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use.
+	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
+	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		let defined = this.templates[template];
 		if (!defined) {
 			const shader = this.images.shaders.get(template);
-			if (!shader) return false;
+			if (!shader || !joinedReady(shader, this.images.shaders, this.moreShaders, 'glsl'))
+				return false;
 			defined = customTemplate(shader);
 			this.templates[template] = defined;
 		}
@@ -734,6 +745,7 @@ export class WebGL2Backend {
 			depthFunc: this.depthFuncOf(flags),
 			colorWrite: (flags & G.STATE_NO_COLOR_WRITE) === 0,
 			blend: flags & G.STATE_BLEND,
+			alphaToCoverage: (flags & G.STATE_ALPHA_TO_COVERAGE) !== 0,
 			offsetUnits: sign * ((words[a + 8] as number) | 0),
 			offsetFactor: sign * floatOfBits(words[a + 9] as number),
 			vertexFormat: words[a + 7] as number,
@@ -953,6 +965,7 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+		this.replayed = true;
 	}
 
 	/**
@@ -1036,12 +1049,41 @@ export class WebGL2Backend {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
 			program = createProgram(this.gl, glsl, permutation);
 			this.programs.set(key, program);
-			if (background && this.parallel) {
+			const joined = this.joins.joined(template)
+				? { template, start: performance.now(), failed: false }
+				: undefined;
+			if (joined) program.joined = joined;
+			if ((background || joined) && this.parallel) {
 				program.background = true;
 				this.compiling.push(program);
+			} else if (joined && this.replayed) {
+				// Without background compiles, the first draw would wait for the compile, so the
+				// effects stay one pass each after the first frame, which waits for every program.
+				joined.failed = true;
+				this.joins.keptApart(template);
 			}
 		}
 		return program;
+	}
+
+	/**
+	 * Notes a joined shader's program whose background compile finished: its time, or its failure
+	 * to link, which sends its effects back to a pass each.
+	 */
+	private joinCompiled(program: Program): void {
+		const joined = program.joined;
+		if (!joined || joined.failed) return;
+		if (this.gl.getProgramParameter(program.program, this.gl.LINK_STATUS) !== true)
+			this.joinFailed(program, this.gl.getProgramInfoLog(program.program) ?? 'its link failed');
+		else this.joins.built(joined.template, performance.now() - joined.start);
+	}
+
+	/** Marks a joined shader's program as failed, so its draws draw nothing, and reports it. */
+	private joinFailed(program: Program, reason: string): void {
+		const joined = program.joined;
+		if (!joined || joined.failed) return;
+		joined.failed = true;
+		this.joins.failed(joined.template, reason);
 	}
 
 	/** Makes the staging buffer hold at least `bytes`. */
@@ -1546,6 +1588,7 @@ export class WebGL2Backend {
 		this.setCullFace(0);
 		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
+		this.setAlphaToCoverage(false);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
 		code.run(
@@ -1593,6 +1636,7 @@ export class WebGL2Backend {
 		this.setCullFace(0);
 		this.setColorMask(true);
 		if (this.blend) this.setBlend(0);
+		this.setAlphaToCoverage(false);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, source.texture);
 		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
 		this.unitsChanged = true;
@@ -2083,9 +2127,17 @@ export class WebGL2Backend {
 
 	private setPipeline(p: Pipeline): void {
 		const program = p.program;
-		this.skipDraws = !this.compiled(program);
+		this.skipDraws = program.joined?.failed === true || !this.compiled(program);
 		if (this.skipDraws) return;
-		this.useProgram(program);
+		if (program.joined) {
+			try {
+				this.useProgram(program);
+			} catch (error) {
+				this.joinFailed(program, error instanceof Error ? error.message : String(error));
+				this.skipDraws = true;
+				return;
+			}
+		} else this.useProgram(program);
 		if (this.current?.program !== program && program.textureUnits.length > 0)
 			this.unitsChanged = true;
 		this.current = p;
@@ -2102,6 +2154,7 @@ export class WebGL2Backend {
 		this.setColorMask(p.colorWrite);
 		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
 		if (p.blend !== this.blend) this.setBlend(p.blend);
+		this.setAlphaToCoverage(p.alphaToCoverage);
 	}
 
 	/** GL's depth function that passes nearer surfaces in the backend's depth mode. */
@@ -2145,6 +2198,14 @@ export class WebGL2Backend {
 			else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		}
 		this.blend = mode;
+	}
+
+	/** Turns GL's alpha to coverage on or off, which only multisampled targets heed. */
+	private setAlphaToCoverage(on: boolean): void {
+		if (on === this.alphaToCoverage) return;
+		if (on) this.gl.enable(this.gl.SAMPLE_ALPHA_TO_COVERAGE);
+		else this.gl.disable(this.gl.SAMPLE_ALPHA_TO_COVERAGE);
+		this.alphaToCoverage = on;
 	}
 
 	/** Sets GL's polygon offset, switched on only while it moves depth. */

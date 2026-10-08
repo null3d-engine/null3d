@@ -13,7 +13,9 @@ enable draw_index;
 // lights. Code that reads the material's options belongs in `defaultSurface`, and code that
 // lights, shadows, fogs or blends the surface belongs in `shade`, so custom materials get all of
 // it. The ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's
-// cutoff, and a material that blends writes premultiplied color. The RECEIVE_SHADOWS builds dim the
+// cutoff, the ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds
+// test it against the alpha hash (null3d::cutout). A material that blends writes premultiplied
+// color. The RECEIVE_SHADOWS builds dim the
 // sun's light where the main directional light's shadows fall. The SKIN builds skin each vertex by
 // its joints (null3d::mesh), before the instance's world matrix places it, and the MORPH builds
 // of WebGL2 add its morph targets' deltas before that.
@@ -72,12 +74,26 @@ enable draw_index;
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
+#ifdef ALPHA_COVERAGE
+#import null3d::cutout::{alpha_coverage}
+#endif
+#ifdef ALPHA_HASH
+#import null3d::cutout::{alpha_hash_threshold}
+#endif
+#ifdef SAMPLE_MASK
+#import null3d::cutout::{MaskedFragment, masked_fragment}
+#endif
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
 
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
+
+#ifdef ALPHA_HASH
+/// The pixel's position in the mesh's own space, where the alpha hash finds its pattern.
+var<private> hash_place: vec3f;
+#endif
 
 #ifdef CUSTOM_UNIFORMS
 /// The custom material's uniforms, which each stage reads once.
@@ -237,6 +253,10 @@ struct VertexOut {
 #ifdef VERTEX_TANGENT
     @location(5) tangent: vec3f,
     @location(6) bitangent: vec3f,
+#endif
+#ifdef ALPHA_HASH
+    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    @location(7) mesh_place: vec3f,
 #endif
 #ifdef CUSTOM
     /// The object's origin, relative to the camera.
@@ -476,6 +496,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.tangent = tangent;
     out.bitangent = normalize(cross(out.normal, tangent) * v.tangent.w);
 #endif
+#ifdef ALPHA_HASH
+    out.mesh_place = mesh_position(v.position);
+#endif
 #ifdef CUSTOM
     out.origin = origin;
 #endif
@@ -572,18 +595,38 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     );
     let outgoing = reflected + s.emissive * engine_frame.output.exposure;
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
-#ifdef ALPHA_MASK
+#ifdef ALPHA_HASH
+    if s.alpha < alpha_hash_threshold(hash_place) {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    let coverage = alpha_coverage(s.alpha, fwidth(s.alpha), material_row.emissive.w);
+    if coverage <= 0.0 {
+        discard;
+    }
+#else ifdef ALPHA_MASK
     if s.alpha < material_row.emissive.w {
         discard;
     }
 #endif
     let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+#ifdef ALPHA_COVERAGE
+    return vec4f(finished.rgb, coverage);
+#else
     return fragment_color(material_row, finished.rgb, s.alpha);
+#endif
 }
 
 @fragment
+#ifdef SAMPLE_MASK
+fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
+#else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+#endif
     material_row = material_of(in.material);
+#ifdef ALPHA_HASH
+    hash_place = in.mesh_place;
+#endif
 #ifdef CUSTOM
     fill_builtins(in.origin);
 #endif
@@ -631,5 +674,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     let s = defaultSurface(input);
 #endif
+#ifdef SAMPLE_MASK
+    return masked_fragment(shade(s, input, in.clip));
+#else
     return shade(s, input, in.clip);
+#endif
 }

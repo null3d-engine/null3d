@@ -3,6 +3,7 @@
 	"private": true,
 	"type": "module",
 	"devDependencies": {
+		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@webgpu/types": "0.1.74"
 	}

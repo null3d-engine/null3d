@@ -110,6 +110,7 @@ import {
 } from './lib/report';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import { S5_DEFAULT_COUNT } from './scenes/s5';
+import { S6_FULL_COUNT } from './scenes/s6';
 import {
 	createS4,
 	MEASURE_SECONDS,
@@ -135,13 +136,16 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s4: [createS4().count],
 	// S5's counts are characters.
 	s5: [1, 10, 50, 100, 250, S5_DEFAULT_COUNT, 2 * S5_DEFAULT_COUNT],
+	// S6's counts are the objects nearest the route's start, up to the whole city.
+	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
 };
 /**
  * The scenes that a comparison of two builds runs unless `--scenes` names others: every scene but
- * S5. S5 joins the benchmark job in CI once that job pins a preset for it; `--scenes s5` compares
- * it now. Each build of the pages still holds S5's pages, so the job needs the sample content.
+ * S5 and S6. They join the benchmark job in CI once that job pins a preset for them; `--scenes s5`
+ * or `--scenes s6` compares them now. Each build of the pages still holds their pages, so the job
+ * needs the sample content.
  */
-const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5');
+const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5' && scene !== 's6');
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',

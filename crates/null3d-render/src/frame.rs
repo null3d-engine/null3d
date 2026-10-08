@@ -11,6 +11,7 @@
 use std::collections::TryReserveError;
 use std::ops::Range;
 
+use null3d_core::alloc::reserve_keeping;
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
@@ -26,17 +27,17 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
-use crate::background::Background;
+use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
-use crate::effects::{Effect, MAX_EFFECTS};
+use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
-use crate::graph::{GraphError, RenderScale, Size};
+use crate::graph::{GraphError, RenderScale};
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
@@ -51,7 +52,8 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::textures::TextureStore;
-use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
+use crate::textures::budget::NeedView;
+use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
@@ -318,6 +320,14 @@ pub trait FrameBuilder {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
+    /// Declares the render graph's passes for the views as they are now, and compiles the graph
+    /// outside a frame, so a new pass fails at once when it does not fit. The next frame makes the
+    /// plan's textures.
+    fn check_graph(&mut self) -> Result<(), GraphError>;
+    /// The render graph as Graphviz DOT text, compiled first.
+    fn graph_dot(&mut self) -> String;
+    /// A render graph error's message, with the passes and resources by name.
+    fn graph_message(&self, error: GraphError) -> String;
 }
 
 /// The engine memory address of bytes, as the replay loop reads it: an offset into WebAssembly
@@ -416,21 +426,24 @@ pub(crate) fn indices_as_bytes(indices: &[u16]) -> &[u8] {
 #[derive(Default)]
 pub(crate) struct UploadArena {
     bytes: Vec<u8>,
+    /// Bytes that a reserve ahead of a frame replaced, kept until the next reset: the list of the
+    /// frame that last used the arena may still point into them.
+    kept: Vec<Vec<u8>>,
 }
 
 impl UploadArena {
     /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
     /// the arena has been replayed, so its copies may move.
     pub(crate) fn reset(&mut self, total: usize) {
+        self.kept.clear();
         self.bytes.clear();
         self.bytes.reserve_exact(total);
     }
 
     /// Makes room for `total` bytes ahead of the frame that needs them, or fails when memory
-    /// cannot grow.
+    /// cannot grow. The bytes that the arena holds stay where they are until the next reset.
     pub(crate) fn try_reserve(&mut self, total: usize) -> Result<(), TryReserveError> {
-        self.bytes
-            .try_reserve(total.saturating_sub(self.bytes.len()))
+        reserve_keeping(&mut self.bytes, total, &mut self.kept)
     }
 
     /// Copies bytes into the arena, padded to four bytes, and returns their address and padded
@@ -619,6 +632,8 @@ pub struct SceneSettings {
     background: Option<Background>,
     /// The views, the camera's first.
     views: Vec<View>,
+    /// The names that each view gives the render graph, by view.
+    view_names: Vec<ViewNames>,
     lighting: Lighting,
     /// Which shadow cascades draw in each frame, and what the shadow map's layers hold.
     shadow_schedule: CascadeSchedule,
@@ -649,6 +664,8 @@ pub struct SceneSettings {
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
     effects: Vec<Effect>,
+    /// How the sketch joins its effects into groups and folds them into the final pass.
+    effect_joins: EffectJoins,
     /// The first template of the sketch's custom tone curve, while it sets one.
     tone_curve: Option<u32>,
     /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
@@ -685,6 +702,7 @@ impl SceneSettings {
             used_materials: Vec::new(),
             background: None,
             views: vec![View::default()],
+            view_names: vec![ViewNames::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
@@ -709,6 +727,7 @@ impl SceneSettings {
             environment: None,
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
+            effect_joins: EffectJoins::default(),
             tone_curve: None,
             clock: [0.0; 4],
             render_scaling: false,
@@ -828,6 +847,32 @@ impl SceneSettings {
         }
     }
 
+    /// How the sketch joins its effects.
+    pub(crate) fn effect_joins(&self) -> &EffectJoins {
+        &self.effect_joins
+    }
+
+    /// Makes the `length` effects from place `place` on draw as one group with the joined shader
+    /// of template `template`, from the next recorded frame on, once its pipeline is built. A
+    /// template of 0 ends the group that starts there. Places past [`MAX_EFFECTS`] change nothing.
+    pub fn set_effect_group(&mut self, place: usize, length: usize, template: u32) {
+        if let Some(group) = self.effect_joins.groups.get_mut(place) {
+            *group = if template == 0 {
+                (0, 0)
+            } else {
+                (length.min(MAX_EFFECTS) as u8, template)
+            };
+        }
+    }
+
+    /// Folds the effects from place `first` on into the final pass, with the final pass's fold
+    /// build of template `template`, from the next recorded frame on, while nothing reads the image
+    /// between them and the pass. A template of 0 folds none.
+    pub fn set_effect_fold(&mut self, first: usize, template: u32) {
+        self.effect_joins.fold =
+            (template != 0 && first < MAX_EFFECTS).then_some((first as u8, template));
+    }
+
     /// The first template of the custom tone curve, while the sketch sets one and no debug view
     /// draws.
     pub(crate) fn tone_curve(&self) -> Option<u32> {
@@ -839,6 +884,20 @@ impl SceneSettings {
     /// recorded frame on.
     pub fn set_tone_curve(&mut self, template: Option<u32>) {
         self.tone_curve = template;
+    }
+
+    /// True when a custom effect, a group of joined effects, the fold into the final pass or the
+    /// custom tone curve draws with pipelines of `template`.
+    fn post_uses_template(&self, template: u32) -> bool {
+        let joins = &self.effect_joins;
+        self.effects
+            .iter()
+            .any(|effect| effect.template == template)
+            || joins.groups.iter().any(|&(_, group)| group == template)
+            || joins.fold.is_some_and(|(_, fold)| fold == template)
+            || self
+                .tone_curve
+                .is_some_and(|curve| (curve..curve + 2).contains(&template))
     }
 
     /// The sketch time and the seconds since the frame before.
@@ -1058,15 +1117,23 @@ impl SceneSettings {
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
     /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
-    /// that changed into `table`. Returns true when a map's bind group was made again, which
-    /// render bundles that bind it must see.
+    /// that changed into `table`. While the textures near their memory budget, it also reads part
+    /// of the scene for the budget's estimate of what each texture needs. Returns true when a map's
+    /// bind group was made again, which render bundles that bind it must see.
     pub(crate) fn record_materials(
         &mut self,
+        input: &FrameInput<'_>,
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
-        frame: u32,
     ) -> Result<bool, RecordError> {
+        let frame = input.frame;
+        if self.textures.needs_estimate()
+            && let Some(view) = self.need_view(input)
+        {
+            self.textures
+                .estimate_needs(input.scene, input.batches, &self.materials, &view);
+        }
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
@@ -1096,6 +1163,34 @@ impl SceneSettings {
             )?;
         }
         Ok(remade)
+    }
+
+    /// What the texture budget's estimate of need reads of the camera's view, or `None` when the
+    /// view has no camera.
+    fn need_view(&self, input: &FrameInput<'_>) -> Option<NeedView> {
+        let (_, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+        let parity = input.parity();
+        let view = self.view_frame(
+            ViewId::CAMERA,
+            input.scene,
+            parity,
+            input.canvas,
+            input.render_scale,
+        )?;
+        Some(NeedView {
+            camera: view.camera,
+            frustum: view.frustum,
+            lens,
+            height: input.canvas.1 as f32,
+            frame: input.frame,
+            parity,
+            // Only a 2D background takes a layer that the budget may drop; cube textures keep
+            // their levels.
+            background: match self.background.map(|b| b.source) {
+                Some(BackgroundSource::Texture(texture)) => texture,
+                _ => Handle::NONE,
+            },
+        })
     }
 
     /// The bind group of the maps that a material draws with through `pipeline`, as
@@ -1156,8 +1251,12 @@ impl SceneSettings {
             }
             self.materials
                 .release_unused(|id| used.get(id as usize).copied().unwrap_or(false));
-            let materials = &self.materials;
-            pipelines.release(|template| materials.custom_template_unused(template));
+            let (materials, post) = (&self.materials, &*self);
+            // Effects, their joined shaders and the tone curve take templates of the same range
+            // as custom materials, so a template that they use stays.
+            pipelines.release(|template| {
+                materials.custom_template_unused(template) && !post.post_uses_template(template)
+            });
         }
         self.map_groups.resize(count as usize, 0);
         for id in 0..count {
@@ -1205,19 +1304,136 @@ impl SceneSettings {
         }
     }
 
-    /// Adds a view that draws the scene into color and depth targets of its own, or returns
-    /// `None` when the builder already draws [`MAX_VIEWS`] views.
+    /// Adds a view that draws the scene into a target of its own, with the engine's names, or
+    /// returns `None` when the builder already draws [`MAX_VIEWS`] views.
     pub fn add_view(&mut self, view: View) -> Option<ViewId> {
-        if self.views.len() >= MAX_VIEWS {
-            return None;
+        self.add_named_view(view, ViewNames::default())
+    }
+
+    /// Adds a view that draws the scene into a target of its own, with `names` in the render
+    /// graph, in the place of the first removed view or after the last. Returns `None` when the
+    /// builder already draws [`MAX_VIEWS`] views.
+    pub fn add_named_view(&mut self, view: View, names: ViewNames) -> Option<ViewId> {
+        let place = match self.views.iter().skip(1).position(View::is_removed) {
+            Some(place) => place + 1,
+            None if self.views.len() < MAX_VIEWS => {
+                self.views.push(View::removed());
+                self.view_names.push(ViewNames::default());
+                self.views.len() - 1
+            }
+            None => return None,
+        };
+        self.views[place] = view;
+        self.view_names[place] = names;
+        self.link_view_reads();
+        Some(ViewId::from_index(place))
+    }
+
+    /// Removes a view other than the camera's. Its place draws nothing until the next view added
+    /// takes it, so the places of the other views stay.
+    pub fn remove_view(&mut self, view: ViewId) {
+        if view == ViewId::CAMERA || view.index() >= self.views.len() {
+            return;
         }
-        self.views.push(view);
-        Some(ViewId::from_index(self.views.len() - 1))
+        self.views[view.index()] = View::removed();
+        self.view_names[view.index()] = ViewNames::default();
+        self.link_view_reads();
+    }
+
+    /// Finds the views whose targets each view reads, by the names of their targets. A name that
+    /// no view's target has reaches the render graph, which fails to compile on it.
+    fn link_view_reads(&mut self) {
+        for index in 0..self.views.len() {
+            let reads = self.view_names[index]
+                .reads
+                .iter()
+                .filter_map(|name| {
+                    self.view_names
+                        .iter()
+                        .zip(&self.views)
+                        .position(|(other, view)| !view.is_removed() && other.target == *name)
+                })
+                .fold(0, |mask, place| mask | (1 << place));
+            self.views[index].target_mut().reads = reads;
+        }
+    }
+
+    /// Sets the camera object and the lens that a view draws from.
+    pub fn set_view_camera(&mut self, view: ViewId, camera: Handle, lens: impl Into<Lens>) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_camera(camera, lens.into());
+        }
+    }
+
+    /// Switches a view other than the camera's on or off. A view switched off keeps the last
+    /// image it drew.
+    pub fn set_view_enabled(&mut self, view: ViewId, enabled: bool) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.target_mut().enabled = enabled;
+        }
+    }
+
+    /// Marks each view's target shown while a live texture shows it, so the camera's passes read
+    /// it. A builder calls it before it syncs its graph with the views.
+    pub(crate) fn mark_shown_views(&mut self) {
+        let shown = self.textures.shown_views();
+        for (index, view) in self.views.iter_mut().enumerate().skip(1) {
+            view.target_mut().shown = shown & (1 << index) != 0;
+        }
+    }
+
+    /// Gives the textures that show views' targets the GPU id of each target, by `target_of`, once
+    /// the frame's graph made its textures. With `remade`, the graph made its textures again.
+    pub(crate) fn set_view_targets(
+        &mut self,
+        target_of: impl Fn(ViewId) -> Option<u32>,
+        remade: bool,
+    ) {
+        for index in 1..self.views.len() {
+            let view = ViewId::from_index(index);
+            self.textures
+                .set_pass_target(index as u32, target_of(view), remade);
+        }
+    }
+
+    /// True when a view may draw in the next frame: the camera's view, and any other view that is
+    /// switched on while a texture shows its target or another view reads it. The render graph
+    /// culls the rest, so a builder need not cull them.
+    pub fn view_draws(&self, view: ViewId) -> bool {
+        if view == ViewId::CAMERA {
+            return true;
+        }
+        let Some(drawn) = self.views.get(view.index()) else {
+            return false;
+        };
+        let bit = 1 << view.index();
+        let read = self
+            .views
+            .iter()
+            .any(|other| !other.is_removed() && other.target().reads & bit != 0);
+        !drawn.is_removed()
+            && drawn.target().enabled
+            && (self.textures.shown_views() & bit != 0 || read)
+    }
+
+    /// The views whose targets each view may not show, as a mask of view places, by view: for a
+    /// view other than the camera's, every view whose target it does not read, itself included.
+    /// The camera's view may show every target.
+    pub fn hidden_targets(&self, view: ViewId) -> u32 {
+        match self.views.get(view.index()) {
+            Some(other) if view != ViewId::CAMERA && view.is_camera() => !other.target().reads,
+            _ => 0,
+        }
     }
 
     /// The views, the camera's first.
     pub fn views(&self) -> &[View] {
         &self.views
+    }
+
+    /// The names that each view gives the render graph, by view.
+    pub fn view_names(&self) -> &[ViewNames] {
+        &self.view_names
     }
 
     /// The directional light: the direction its light travels, and its exposed color: its linear
@@ -1351,23 +1567,41 @@ impl SceneSettings {
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
-    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps,
-    /// moved toward the light by part of a texel, or both faces of a double-sided material, where
-    /// they stay. The material's depth bias moves what the camera sees, so the caster draws
-    /// without it.
-    pub fn caster_of(&self, pipeline: DrawKey) -> DrawKey {
-        let (faces, permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
+    /// `pipeline`, and the bind group of the map that it reads, or 0 for none: only its back faces,
+    /// as three.js draws them with its filtered shadow maps, moved toward the light by part of a
+    /// texel, or both faces of a double-sided material, where they stay. The material's depth bias
+    /// moves what the camera sees, so the caster draws without it. A masked material of the
+    /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
+    /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
+    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape.
+    pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
+        let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
         } else {
             (state_flags::CULL_FRONT, permutation::CASTER_OFFSET)
         };
-        DrawKey {
-            template: template::SHADOW_DEPTH,
+        let mut template = template::SHADOW_DEPTH;
+        let mut group = 0;
+        let masked = pipeline.permutation & permutation::ALPHA_MASK != 0;
+        if masked && cuts_shadows(pipeline.template) {
+            permutation |= permutation::ALPHA_MASK
+                | (pipeline.permutation & (permutation::VERTEX_COLOR | permutation::ALPHA_HASH));
+            template = template::SHADOW_CUTOUT;
+            let map = self.materials.map(material - 1, MapSlot::BaseColor);
+            let mapped = pipeline.vertex_format & vertex::UV0 != 0 && self.textures.is_live(map);
+            if let Some(id) = self.textures.group_id(map).filter(|_| mapped) {
+                template = template::SHADOW_CUTOUT_MAP;
+                group = id;
+            }
+        }
+        let key = DrawKey {
+            template,
             permutation,
             vertex_format: pipeline.vertex_format,
             state: faces,
             bias: DepthBias::NONE,
-        }
+        };
+        (key, group)
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
@@ -1399,6 +1633,22 @@ impl SceneSettings {
         self.lighting.fog = fog;
     }
 
+    /// The color that a view's target clears to: its own color for a view other than the
+    /// camera's that has one, else the camera's.
+    pub(crate) fn clear_color_of(&self, view: ViewId) -> [f32; 4] {
+        match self.views.get(view.index()).and_then(|v| v.target().clear) {
+            Some([r, g, b, a]) if view != ViewId::CAMERA => {
+                let [r, g, b, _] = self.canvas.scene_color.clear_color(
+                    Some([r, g, b]),
+                    false,
+                    self.drawn_output(),
+                );
+                [r * a, g * a, b * a, a]
+            }
+            _ => self.clear_color(),
+        }
+    }
+
     /// The color that clears the color targets, as the scene's render passes hold it: black in a
     /// debug view.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
@@ -1421,8 +1671,8 @@ impl SceneSettings {
     /// standard material with a live map draws with the maps template, whose normal map takes its
     /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
-    /// draws with the shader variant that discards fragments, and a double-sided material culls no
-    /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
+    /// draws with the shader variant that discards fragments, with alpha to coverage where the
+    /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
@@ -1448,7 +1698,10 @@ impl SceneSettings {
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
-        let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
+        let masked = base_color && feature::masks(features);
+        let own_way = masked && tests_alpha_its_way(shading);
+        let hashed = own_way && has(feature::ALPHA_HASH);
+        let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
@@ -1456,12 +1709,14 @@ impl SceneSettings {
         let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(base_color && masked, permutation::ALPHA_MASK)
+                | bit(masked, permutation::ALPHA_MASK)
+                | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | bit(covers, state_flags::ALPHA_TO_COVERAGE)
                 | blend_state(features),
             bias: self.materials.depth_bias(id),
         });
@@ -1470,9 +1725,11 @@ impl SceneSettings {
 
     /// A view's values for a frame on a canvas of `canvas` device pixels that the scene draws at
     /// render scale `scale`, or `None` when the view has no camera to draw from. The projection
-    /// takes the canvas's shape, and the target size is the render size, which fragment positions
-    /// count in. Shaders work in positions relative to the camera, so the constants put a
-    /// perspective camera at the origin, and an orthographic camera at infinity behind its view.
+    /// takes the shape of the view's target, and the target size is the size the view draws at,
+    /// which fragment positions count in: the render size for the camera's view. A view with a
+    /// target of its own counts a texel as a pixel. Shaders work in positions relative to the
+    /// camera, so the constants put a perspective camera at the origin, and an orthographic camera
+    /// at infinity behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -1481,12 +1738,17 @@ impl SceneSettings {
         canvas: (u32, u32),
         scale: RenderScale,
     ) -> Option<ViewFrame> {
-        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view_id = view;
         let view = self.views.get(view.index())?;
+        let own_target = view_id != ViewId::CAMERA;
+        let (width, height) = view.draw_size(canvas, scale);
+        let (pixels, pixel_ratio) = match view.target().size {
+            Some(size) if own_target => (size, 1.0),
+            _ => (canvas, self.pixel_ratio),
+        };
+        let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;
         let camera = view.transform(scene, parity, aspect)?;
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
-        let (width, height) = Size::Full.viewport(canvas, scale);
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();
         let uniform = FrameUniform {
@@ -1503,8 +1765,8 @@ impl SceneSettings {
             camera_range: [
                 camera.depth.near,
                 camera.depth.far,
-                2.0 * self.pixel_ratio / canvas.0.max(1) as f32,
-                2.0 * self.pixel_ratio / canvas.1.max(1) as f32,
+                2.0 * pixel_ratio / pixels.0.max(1) as f32,
+                2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
             occlusion: match self.ao() {
                 Some(ao) if view_id == ViewId::CAMERA => {
@@ -1723,6 +1985,28 @@ impl MeshBuffers {
     pub(crate) fn forget(&mut self) {
         self.pages.clear();
     }
+}
+
+/// True for the templates whose masked casters cut holes in their shadows: the engine's mesh
+/// templates, whose alpha the cutout templates compute alike.
+const fn cuts_shadows(template: u32) -> bool {
+    matches!(
+        template,
+        template::INSTANCED_LIT
+            | template::INSTANCED_STANDARD_MAPS
+            | template::INSTANCED_UNLIT
+            | template::INSTANCED_UNLIT_MAP
+    )
+}
+
+/// True for the shadings whose masked builds test alpha by alpha to coverage's fade or by the
+/// alpha hash: the engine's mesh and sprite templates. Custom materials have no such builds, and
+/// test their alpha against the cutoff.
+pub const fn tests_alpha_its_way(shading: Shading) -> bool {
+    !matches!(
+        shading,
+        Shading::Custom(_) | Shading::TexCoords | Shading::Line | Shading::LineLit
+    )
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly

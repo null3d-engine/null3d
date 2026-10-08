@@ -1,6 +1,6 @@
 // Checks and syncs the agent skills. Run from the repository root:
-//   bun tools/skills.ts check   validate every skill and its generated copy; exit code 1 on any problem
-//   bun tools/skills.ts sync    rewrite .claude/skills from skills/
+//   bun tools/skills.ts check   validate every skill; exit code 1 on any problem
+//   bun tools/skills.ts sync    rewrite .claude/skills from skills/, which git does not keep
 import { checkSkills, syncSkills } from './lib/skills';
 
 const root = process.cwd();

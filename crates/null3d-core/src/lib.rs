@@ -32,7 +32,8 @@
 //! | `testing` | With the `testing` feature: a global allocator that counts allocations, for tests |
 //!
 //! Frame code allocates nothing: every buffer a frame uses is allocated at creation with a fixed
-//! capacity. Arrays that TypeScript views are allocated once and never move.
+//! capacity. Arrays that TypeScript views move only when the scene grows between frame steps
+//! ([`scene::SceneStorage::try_grow`]), and TypeScript then makes its views again.
 #![feature(portable_simd)]
 #![cfg_attr(
     all(target_arch = "wasm32", target_feature = "atomics"),

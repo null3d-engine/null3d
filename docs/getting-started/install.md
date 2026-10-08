@@ -51,6 +51,7 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 - Builds the engine's workers as ES modules, so that they share the shader files. Without the plugin, Vite builds each worker as one classic script that holds every shader file. Each worker is then about 34 MB, and the page downloads them all at its start. The plugin warns if another setting builds workers in another format.
 - Writes the notices of the third-party code that the engine ships beside the page in each production build. [Hosting](hosting.md#publish-the-third-party-notices) says what to do with them.
+- Writes the list of the build's files, `null3d-files.json`, beside the page in each production build. A game's service worker caches the files of that list for offline play, as [Hosting](hosting.md#offline-play) shows.
 - Keeps each file of the engine a file of its own: the workers' scripts, the WebAssembly and the shader files. Vite would otherwise turn a small file into a `data:` address, which a strict Content-Security-Policy blocks. Your own small files keep Vite's setting.
 
 null3D requires Vite with this plugin. Other bundlers are not supported or tested. The engine loads its workers, its WebAssembly and its other files in the standard form, `new URL('<file>', import.meta.url)`, which other bundlers read too.

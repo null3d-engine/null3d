@@ -25,3 +25,12 @@ export const SAMPLE_ENVIRONMENTS_URL = '/sample-environments/';
 export function sampleEnvironment(hdrUrl: string): string {
 	return `${SAMPLE_ENVIRONMENTS_URL}${hdrUrl.slice(SAMPLES_URL.length)}`;
 }
+
+/**
+ * The URL prefix under which the dev server and the preview server serve the KTX2 files of the
+ * sample images, which the asset tool encodes (tools/lib/sample-textures.ts).
+ */
+export const SAMPLE_TEXTURES_URL = '/sample-textures/';
+
+/** The address of the list of the city scene's textures, as addresses of their KTX2 files. */
+export const SAMPLE_TEXTURES_LIST = `${SAMPLE_TEXTURES_URL}city.json`;

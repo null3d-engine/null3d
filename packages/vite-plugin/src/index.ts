@@ -32,6 +32,14 @@ import {
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
+import {
+	FILES_LIST,
+	listedFiles,
+	offlineFiles,
+	type WorkerFile,
+	workerFilesPlugin,
+} from './offline.ts';
+import { null3dPackages } from './package-files.ts';
 import type { CompiledWgsl } from './shader-types.ts';
 import {
 	compileLiteral,
@@ -42,6 +50,7 @@ import {
 } from './wgsl.ts';
 
 export type { AssetOptions } from './assets.ts';
+export { FILES_LIST, type OfflineFiles } from './offline.ts';
 export type * from './shader-types.ts';
 
 /** Headers that make a page cross-origin isolated, which shared memory and worker threads need. */
@@ -225,37 +234,10 @@ export function thirdPartyNotices(root: string): string | null {
 /** Vite's setting that decides which assets become data: addresses. */
 type InlineLimit = number | ((file: string, content: Buffer) => boolean | undefined);
 
-/**
- * A test for files of the null3D packages: a file belongs to one when the nearest package.json
- * above it names a published package of the @null3d scope. This holds for an installed package
- * and for a package's source in a copy of the repository, where the project may not install it.
- * Each folder's answer is kept for later files.
- */
+/** A test for files of the published null3D packages, installed or in a copy of the repository. */
 function null3dPackageFiles(): (file: string) => boolean {
-	const folders = new Map<string, boolean>();
-	const inPackage = (folder: string): boolean => {
-		let known = folders.get(folder);
-		if (known === undefined) {
-			const manifest = join(folder, 'package.json');
-			const parent = dirname(folder);
-			known = existsSync(manifest)
-				? isNull3dPackage(manifest)
-				: parent !== folder && inPackage(parent);
-			folders.set(folder, known);
-		}
-		return known;
-	};
-	return (file) => inPackage(dirname(file));
-}
-
-/** True when the package.json at `manifest` names a published package of the @null3d scope. */
-function isNull3dPackage(manifest: string): boolean {
-	try {
-		const { name, private: unpublished } = JSON.parse(readFileSync(manifest, 'utf8'));
-		return typeof name === 'string' && name.startsWith('@null3d/') && unpublished !== true;
-	} catch {
-		return false;
-	}
+	const packageOf = null3dPackages();
+	return (file) => packageOf(file) !== undefined;
 }
 
 /**
@@ -356,6 +338,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let assetsDir = 'assets';
 	/** The third-party notices that a client build writes beside the page; null in other builds. */
 	let notices: string | null = null;
+	/** What each worker build's files hold, by file name, for the list of files for offline play. */
+	const workerFiles = new Map<string, WorkerFile>();
+	const packageOf = null3dPackages();
 	/** The optimized files that this build has written, so each texture goes in once. */
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
@@ -393,7 +378,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
-				worker: { format: 'es' },
+				worker: { format: 'es', plugins: () => [workerFilesPlugin(workerFiles)] },
 				build: {
 					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
 				},
@@ -613,8 +598,20 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			if (updates.length > 0) sendUpdates(environment, updates);
 			return otherModules(modules, file);
 		},
-		generateBundle() {
-			if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
+		// After Vite's own plugins, which add the worker builds' files and the pages to the bundle.
+		generateBundle: {
+			order: 'post',
+			handler(_options, bundle) {
+				if (buildingPages) {
+					const files = offlineFiles(listedFiles(bundle, workerFiles, packageOf, root));
+					this.emitFile({
+						type: 'asset',
+						fileName: FILES_LIST,
+						source: `${JSON.stringify(files, null, '\t')}\n`,
+					});
+				}
+				if (notices) this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: notices });
+			},
 		},
 		configureServer(server) {
 			server.middlewares.use(isolationMiddleware);

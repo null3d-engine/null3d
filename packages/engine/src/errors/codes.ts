@@ -33,7 +33,7 @@ const DOCS = {
 		title: 'Too many objects',
 		cause:
 			'The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds.',
-		example: 'E1102: createMesh() failed: the scene already holds 16383 objects.',
+		example: 'E1102: createMesh() failed: the scene already holds 1048575 objects.',
 		since: '0.1',
 	},
 	E1103: {
@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -193,6 +193,14 @@ const DOCS = {
 			"ui.trackLabel() or ui.untrackLabel() got an id that is not a string with at least one character. Or the sketch tracked more labels at once than createEngine's maxLabels option allows: 4,096 by default.",
 		example:
 			'E1219: trackLabel() could not track "hp-4097": the engine already tracks 4096 labels.',
+		since: '0.2',
+	},
+	E1220: {
+		title: 'Invalid render pass',
+		cause:
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, or a texture name or pass name that another pass has. Or the sketch added more scene passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled() or render.removePass() got something that is not a render pass.',
+		example:
+			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
 		since: '0.2',
 	},
 	E1301: {
@@ -306,7 +314,7 @@ const DOCS = {
 	E1410: {
 		title: 'Sketch module not loaded',
 		cause:
-			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
+			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. The engine imports a module that does not load once more after a short wait, and the console notes that second import. The error comes only when the second import fails too, and it gives the reason of the first. A module whose code threw is not downloaded again, since it would throw again.',
 		example:
 			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
 		since: '0.1',
@@ -423,7 +431,7 @@ const DOCS = {
 	E1502: {
 		title: 'Pass input missing',
 		cause:
-			'A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws.',
+			"A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks the sketch's passes when render.addPass() or render.removePass() changes them, and every pass before the frame draws.",
 		example:
 			'E1502: the pass "Final" reads "sceneColor", but no pass that runs this frame writes it.',
 		since: '0.1',
@@ -431,21 +439,21 @@ const DOCS = {
 	E1503: {
 		title: 'Target created twice',
 		cause:
-			'Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size.',
+			"Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. A sketch's pass whose texture has the name of a target of the engine's own passes does this. Each target has one creator, which sets its format and size.",
 		example: 'E1503: both "Opaque" and "Sky" create "sceneColor".',
 		since: '0.1',
 	},
 	E1504: {
 		title: 'Render pass cycle',
 		cause:
-			'Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads.',
+			"Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads. A sketch's pass that reads its own texture makes such a loop.",
 		example: 'E1504: the passes form a cycle: "Tint" runs after "Glow", and "Glow" after "Tint".',
 		since: '0.1',
 	},
 	E1505: {
 		title: 'Pass targets do not match',
 		cause:
-			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
+			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. It can draw into more than four color targets, or into color targets of more than 32 bytes per sample, which some devices cannot hold. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},

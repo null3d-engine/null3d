@@ -560,9 +560,24 @@ describe('prefab.find and bounds', () => {
 		expect(link?.position).toEqual([0, 1, 0]);
 		expect(link?.mesh?.radius).toBe(0.5);
 		expect(prefab.find('nothing')).toBeUndefined();
+		expect(link?.occluder).toBe(false);
 		expect(prefab.bounds.center).toEqual([0, 1, 0]);
 		expect(prefab.bounds.radius).toBeCloseTo(Math.hypot(0.5, 1, 0.5));
 	});
+});
+
+test("find says whether the asset tool gave a node's mesh a blocker", () => {
+	const { core } = fakeCore();
+	const wall = node({
+		name: 'wall',
+		parent: 0,
+		flags: C.FLAG_VISIBLE | C.FLAG_OCCLUDER,
+		mesh: new MeshGeometry(8, 1, core),
+		material: new Material(5, core, 'materials.standard.set'),
+	});
+	const prefab = chainPrefab(core, 1, [wall]);
+	expect(prefab.find('wall')?.occluder).toBe(true);
+	expect(prefab.find('link 0')?.occluder).toBe(false);
 });
 
 describe('animated prefabs', () => {

@@ -55,6 +55,7 @@ import {
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
+import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
 	choosePreset,
 	type DeviceHints,
@@ -117,6 +118,12 @@ import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
+	type ObjectGrowthCheck,
+	type ObjectGrowthResult,
+	objectGrowthPlan,
+	objectGrowthProblems,
+} from './object-growth.ts';
+import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
 	PRESET_CHANGE,
@@ -137,6 +144,13 @@ import {
 import { type SkinPassResult, skinPassNote, skinPassProblems } from './skin-pass-checks.ts';
 import { type StatsResult, statsProblems } from './stats-checks.ts';
 import { progressName, REST_AFTER_TAB_END_SECONDS } from './tab-end.ts';
+import {
+	type TextureCacheCheck,
+	type TextureCacheResult,
+	textureCacheNeeds,
+	textureCachePlan,
+	textureCacheProblems,
+} from './texture-cache.ts';
 import {
 	saveVisualResult,
 	VISUAL_LIMITS,
@@ -232,7 +246,11 @@ export type Check =
 	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
 	| { kind: 'recovery'; tier: Tier; run: ImageRun }
 	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
-	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean };
+	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
+	/** A load of the texture cache page with the city's textures, with the cache off or on. */
+	| TextureCacheCheck
+	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
+	| ObjectGrowthCheck;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -927,6 +945,8 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 							`scale=${scale}`,
 							`effect=${effect}`,
 							...(on ? ['prepass=on'] : []),
+							// One pass for each effect, so a quarter of the difference is one pass.
+							...(effect === 'effects' ? ['join=off'] : []),
 						],
 						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 					},
@@ -935,6 +955,39 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 		),
 	);
 	return [...pages, ...twin];
+}
+
+/**
+ * What joining custom effects saves on each GPU path (D-71): the effect cost page with 4 effects
+ * that each read their own pixel, which join and fold into the final pass, and the same with
+ * ?join=off, which keeps each in a pass of its own, at render scales of 1 and 0.5. Each page's
+ * difference from its own frames without effects is the effects' cost, so a pair's two differences
+ * give what joining saves. WebGL2 has no GPU timer on most phones, so a heavy pair there draws 8
+ * effects at the display's whole pixel ratio, which makes the GPU the limit, and compares frame
+ * intervals. Each joined page also reports how long each joined shader took to build.
+ */
+export function effectsJoinedPlan(): PlanItem<Check>[] {
+	const page = (id: string, tier: Tier, scale: number, switches: string[]) =>
+		pageItem(
+			id,
+			'effect-cost',
+			{ kind: 'effect', effect: 'effects', tier, scale },
+			{
+				switches: [`gpu=${tier}`, `scale=${scale}`, 'effect=effects', ...switches],
+				timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+			},
+		);
+	const pairs = TIERS.flatMap((tier) =>
+		EFFECT_SCALES.flatMap((scale) => [
+			page(`effects-joined-${tier}-${scale * 100}`, tier, scale, []),
+			page(`effects-separate-${tier}-${scale * 100}`, tier, scale, ['join=off']),
+		]),
+	);
+	return [
+		...pairs,
+		page('effects-joined-webgl2-heavy', 'webgl2', 1, ['heavy']),
+		page('effects-separate-webgl2-heavy', 'webgl2', 1, ['heavy', 'join=off']),
+	];
 }
 
 /** The bases of bloom's chain that the bloom size plan times, in texels on the short side. */
@@ -1424,6 +1477,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	effects: () => effectPlan('effects'),
+	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,
@@ -1435,6 +1489,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	soak: soakPlan,
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
+	'texture-cache': textureCachePlan,
+	'object-growth': objectGrowthPlan,
 };
 
 /**
@@ -1483,6 +1539,8 @@ export function itemsNeeded(check: Check): string[] {
 			return check.load === 'warm' && !check.first
 				? [startupItemId(check.mode, 'warm', 'first')]
 				: [];
+		case 'texture-cache':
+			return textureCacheNeeds(check);
 		default:
 			return [];
 	}
@@ -1692,7 +1750,21 @@ interface RestartRound {
 	/** The room when it came back, or when the page stopped waiting for it. */
 	roomLater?: number;
 	roomWaitMs?: number;
+	/** The shared memories that the starts made, and those that the browser refused. */
+	memoriesMade?: number;
+	memoriesRefused?: number;
+	/** Each start's stop: how long it took, and the job workers that started and that stopped. */
+	starts?: { stopMs: number; jobs: number; jobsStopped: number }[];
 }
+
+/**
+ * The stops of a round after which the engine kept no memory for the next start: a stop that
+ * waited out its timeout, or whose job workers did not all report that they stopped.
+ */
+const uncleanStops = (round: RestartRound) =>
+	(round.starts ?? []).filter(
+		({ stopMs, jobs, jobsStopped }) => stopMs >= STOP_TIMEOUT_MS || jobsStopped < jobs,
+	).length;
 
 /** What the restart page reports about the engine's starts and stops. */
 export interface RestartResult {
@@ -1763,6 +1835,20 @@ export function restartProblems(
 		`${words.cycle} ${round.cycles + 1} of ${result.cycles}${which} failed: ${round.error}${lastSteps(round.trail)}`;
 	const problems: string[] = [];
 	if (engine.error) problems.push(failed(engine, ''));
+	// Each start on the page after the first takes the memory that the page kept from the stop
+	// before, unless that stop was not clean (D-98). Engines in frames keep theirs in the frame's
+	// page, which goes with the frame.
+	const made = engine.memoriesMade ?? 0;
+	const unclean = uncleanStops(engine);
+	if (
+		threaded &&
+		!engine.error &&
+		(start === 'engine' || start === 'canvas-kept') &&
+		made > 1 + unclean
+	)
+		problems.push(
+			`the ${engine.cycles} ${words.cycles} made ${made} shared memories, after ${unclean} stops that were not clean: each start after a clean stop should take the memory that the page kept`,
+		);
 	if (!roomLost(result.room, engine)) return problems;
 	const lostText = `it had room for ${result.room} shared memories before ${engine.cycles} ${words.cycles}, and for ${engine.roomLater} after`;
 	// The workers that stay with kept canvases may hold memory until a start needs it, which the
@@ -2006,6 +2092,8 @@ export function judge(
 			return parityProblems(check, result, context);
 		case 'startup':
 			return startupProblems(result as StartupResult, check.mode);
+		case 'texture-cache':
+			return textureCacheProblems(check, result as ItemResult & TextureCacheResult);
 		case 'overload': {
 			const { overloaded, steps } = result as ItemResult & OverloadResult;
 			if (!overloaded)
@@ -2090,6 +2178,8 @@ export function judge(
 		}
 		case 'governor':
 			return governorProblems(result as ItemResult & GovernorResult);
+		case 'object-growth':
+			return objectGrowthProblems(result as ItemResult & ObjectGrowthResult);
 	}
 }
 

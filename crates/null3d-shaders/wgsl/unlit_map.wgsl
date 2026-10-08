@@ -8,13 +8,23 @@ enable draw_index;
 // gives its layer. A map whose image is not on the GPU yet has no layer, and the material draws as
 // without it. The VERTEX_COLOR builds
 // multiply the color by the mesh's vertex colors too. The ALPHA_MASK builds draw nothing where the
-// alpha of the color, the map and the vertex colors falls below the material's cutoff. A material
-// that blends writes premultiplied color.
+// alpha of the color, the map and the vertex colors falls below the material's cutoff. The
+// ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds test it
+// against the alpha hash (null3d::cutout). A material that blends writes premultiplied color.
 // null3d::mesh finds each instance on both GPU paths.
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
+#ifdef ALPHA_COVERAGE
+#import null3d::cutout::{alpha_coverage}
+#endif
+#ifdef ALPHA_HASH
+#import null3d::cutout::{alpha_hash_threshold}
+#endif
+#ifdef SAMPLE_MASK
+#import null3d::cutout::{MaskedFragment, masked_fragment}
+#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -64,6 +74,10 @@ struct VertexOut {
 #endif
     /// The position relative to the camera.
     @location(3) relative: vec3f,
+#ifdef ALPHA_HASH
+    /// The position in the mesh's own space, where the alpha hash finds its pattern.
+    @location(4) mesh_place: vec3f,
+#endif
 }
 
 @vertex
@@ -97,6 +111,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.vertex_color = v.vertex_color;
 #endif
 #endif
+#ifdef ALPHA_HASH
+    out.mesh_place = mesh_position(v.position);
+#endif
     return out;
 }
 
@@ -105,7 +122,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// linear map as it is. The texture is sampled whether the map is ready or not, as sampling needs
 /// the same control flow in every invocation, and a map that is not ready reads as white.
 @fragment
+#ifdef SAMPLE_MASK
+fn fs(in: VertexOut) -> MaskedFragment {
+#else
 fn fs(in: VertexOut) -> @location(0) vec4f {
+#endif
     let m = material_of(in.material);
     let second = (u32(m.strengths.z) & SECOND_UV) != 0u;
     let raw = vec3f(select(in.uv.xy, in.uv.zw, second), 1.0);
@@ -118,11 +139,26 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     base *= in.vertex_color.rgb;
     alpha *= in.vertex_color.a;
 #endif
-#ifdef ALPHA_MASK
+#ifdef ALPHA_HASH
+    if alpha < alpha_hash_threshold(in.mesh_place) {
+        discard;
+    }
+#else ifdef ALPHA_COVERAGE
+    alpha = alpha_coverage(alpha, fwidth(alpha), m.emissive.w);
+    if alpha <= 0.0 {
+        discard;
+    }
+#else ifdef ALPHA_MASK
     if alpha < m.emissive.w {
         discard;
     }
 #endif
     let finished = finish_exposed(fogged(exposed(base), in.relative, m), in.clip.xy);
+#ifdef SAMPLE_MASK
+    return masked_fragment(vec4f(finished.rgb, alpha));
+#else ifdef ALPHA_COVERAGE
+    return vec4f(finished.rgb, alpha);
+#else
     return fragment_color(m, finished.rgb, alpha);
+#endif
 }

@@ -1,16 +1,16 @@
 // The record of tested devices. Each device and browser has a folder in `.dev/tested-devices/`:
 // its README holds the facts and the known issues, and each other file holds one run. A run is a
-// new file, so pull requests that record runs do not edit the same lines. The page
-// `.dev/tested-devices.md` holds a table of the facts and the known issues, made from the folders,
-// and `bun run devices:record` prints every run's plans and results as well.
+// new file, so pull requests that record runs do not edit the same lines. The docs generator makes
+// a page of tables of the facts and the known issues from the folders, which git does not keep, and
+// `bun run devices:record` prints every run's plans and results as well.
 import { posix } from 'node:path';
 import { labelledParagraph } from './decisions';
 import { readIfExists, walkFiles } from './files';
 
 export const RECORD_DIR = '.dev/tested-devices';
 export const RECORD_PAGE = '.dev/tested-devices.md';
-/** The name of the generated part of the page, between its markers. */
-export const RECORD_TABLE = 'tested-devices';
+/** The generated page of tables, beside the written page, so the tables' links read the same. */
+export const RECORD_TABLES_PAGE = '.dev/tested-device-tables.md';
 
 /** The facts of a device and browser, in the order of the README's list and the table's columns. */
 export const FACTS = ['Device', 'OS', 'Browser', 'GPU', 'GPU paths', 'Where'] as const;
@@ -283,7 +283,7 @@ const factCells = (row: DeviceRow) =>
 const issueCell = (row: DeviceRow) =>
 	onPage(row.issues.join(' '), posix.join(row.folder, 'README.md'));
 
-/** The page's generated part: a table of each group's devices, with links to their runs. */
+/** A table of each group's devices, with links to their runs. */
 export function recordTables(rows: readonly DeviceRow[]): string {
 	const byGroup = Map.groupBy(rows, groupOf);
 	return GROUPS.filter((group) => byGroup.has(group))
@@ -295,9 +295,19 @@ export function recordTables(rows: readonly DeviceRow[]): string {
 					`[Runs](${posix.relative(posix.dirname(RECORD_PAGE), row.folder)}/)`,
 				]),
 			);
-			return `### ${group}\n\n${tableHead([...FACTS, 'Known issues', 'Runs'])}\n${lines.join('\n')}`;
+			return `## ${group}\n\n${tableHead([...FACTS, 'Known issues', 'Runs'])}\n${lines.join('\n')}`;
 		})
 		.join('\n\n');
+}
+
+/** The generated page of the record's tables. */
+export function recordTablesPage(rows: readonly DeviceRow[]): string {
+	return `# Tested device tables
+
+The docs generator writes these tables from the README of each folder in [\`tested-devices/\`](tested-devices/). Each row links to its folder of runs. [Tested devices](tested-devices.md) says how to record a run.
+
+${recordTables(rows)}
+`;
 }
 
 /** The full record as one table, as on the page before the split: each row's plans and results joined. */

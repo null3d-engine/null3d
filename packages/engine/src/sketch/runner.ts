@@ -8,7 +8,8 @@
 // records and publishes a frame of the scene as it stands, with none of the sketch's code, so the
 // thread that draws builds its pipelines. In hold mode it seeds this thread's math.random and routes
 // Math.random to it, steps the sketch to the held time in fixed steps after the setup, and publishes
-// the last frame alone. Hold mode reads no input, so the held frame never depends on it. In
+// the last frame alone. Hold mode reads no input and no display preference, so the held frame never
+// depends on them: the sketch sees no request for reduced motion and hears of no change. In
 // development builds, the frame's debug drawing reaches the core just before the frame records;
 // release builds give the sketch calls that do nothing. Each core step of the frame can grow the
 // engine's memory, so the views of it are made again after each step that sketch code or a
@@ -39,6 +40,7 @@ import { Assets } from '../scene/assets';
 import { FrameCameras } from '../scene/frame-cameras';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
+import { Render } from '../scene/render';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { ShaderPreloads } from '../scene/shader-preloads';
@@ -74,7 +76,6 @@ import { type LabelSlotSender, Ui } from './ui';
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
 /** Fixed sizes of the engine core. */
-export const SCENE_CAPACITY = 16_383;
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
 
@@ -211,6 +212,8 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** The sketch's textures, whose memory budget each frame looks at. */
+	private readonly textures: Textures;
 	/**
 	 * The frame-budget governor, which moves the render scale and the shadow settings during play.
 	 * In hold mode it takes no step, and the settings apply as set.
@@ -222,6 +225,7 @@ export class SketchRunner {
 	private stepChanges = 0;
 	/** The sketch's post-processing settings, which say whether bloom is on. */
 	private readonly post: Post;
+	private readonly render: Render;
 	/** True while the sketch has bloom on, as the governor knows it. */
 	private bloomOn = false;
 	/** The base of bloom's chain that the `bloomSize` setting gives. */
@@ -268,7 +272,7 @@ export class SketchRunner {
 		const { slots } = sketch.control;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
-			SCENE_CAPACITY,
+			device.expectedObjects,
 			MAX_BATCHES,
 			COMMAND_CAPACITY,
 			device.storageBindingBytes,
@@ -280,7 +284,7 @@ export class SketchRunner {
 			device.transparent,
 			device.cellCulling,
 			device.depthPrepass,
-			device.vertexSkinning,
+			device.skinning,
 			device.indexInstances,
 			device.largeWorld,
 			device.gpuOcclusion,
@@ -307,7 +311,7 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory);
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(
@@ -318,6 +322,8 @@ export class SketchRunner {
 			() => this.quality.own('uploadBytesPerFrame'),
 			(id) => imagesArrived(slots, id),
 			device.webgl2,
+			device.textureCache,
+			() => this.quality.own('textureMemoryMiB'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -362,7 +368,9 @@ export class SketchRunner {
 					return governor.aoScale / FULL_SCALE;
 				},
 			},
+			textures.memory,
 		);
+		this.textures = textures;
 		this.applyFrameSettings(this.quality.settings);
 		this.readViewport();
 		const host: DebugHost = {
@@ -373,6 +381,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
+				textureMemory: textures.memory,
 			},
 		};
 		const templates = new ShaderTemplates(sketch.sendShader);
@@ -394,7 +403,11 @@ export class SketchRunner {
 			device.occlusionTargets,
 			materials.shaders,
 			templates,
+			device.joinEffects,
 		);
+		this.render = new Render(this.core, scene, materials.shaders, textures.maxSize);
+		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
+		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
 			controlLabels(slots.buffer),
 			scene,
@@ -414,11 +427,12 @@ export class SketchRunner {
 			assets: new Assets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
 			input: this.input,
 			post: this.post,
+			render: this.render,
 			ui: this.ui,
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
-					return Atomics.load(slots, Slot.ReducedMotion) !== 0;
+					return holdSeconds === undefined && Atomics.load(slots, Slot.ReducedMotion) !== 0;
 				},
 				onChange: (handler) => {
 					this.preferenceHandlers.add(handler);
@@ -698,7 +712,8 @@ export class SketchRunner {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
 		const custom = this.post.takeNewPipelines();
-		return ao || bloom || custom;
+		const passes = this.render.takeNewPipelines();
+		return ao || bloom || custom || passes;
 	}
 
 	/**
@@ -872,11 +887,11 @@ export class SketchRunner {
 			if (this.holdSeconds === undefined) {
 				this.input.beginFrame(frame, (frame - time.frame) | 0);
 				this.context.scene.dispatchPointerEvents(this.reportError);
-			}
-			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
-			if (reducedMotion !== this.reducedMotion) {
-				this.reducedMotion = reducedMotion;
-				this.notify(this.preferenceHandlers, undefined);
+				const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
+				if (reducedMotion !== this.reducedMotion) {
+					this.reducedMotion = reducedMotion;
+					this.notify(this.preferenceHandlers, undefined);
+				}
 			}
 			const change = this.quality.takeChange();
 			if (change !== 0) {
@@ -946,7 +961,12 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
+		// The texture memory budget dropped levels or asks for some again: the loads again start
+		// now, and the quality change handlers hear of it in the next frame.
+		if (this.textures.pollBudget()) this.quality.governed();
 		const built = Atomics.load(slots, Slot.PipelinesBuilt);
+		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
+		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
 		if (glue.cullFrame(frame, width, height, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);

@@ -276,6 +276,33 @@ fn two_view_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     CountingAllocator::disarm()
 }
 
+/// Records warm-up frames of a world whose second view a texture shows, switching the view on
+/// and off, then more such frames, and returns what those allocated.
+fn view_switch_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let side = world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    let switch = |world: &mut World<B>, last: u32| {
+        while world.frame < last {
+            world.frame += 1;
+            let on = !world.frame.is_multiple_of(3);
+            world.renderer.settings_mut().set_view_enabled(side, on);
+            world.record(false);
+        }
+    };
+    switch(&mut world, 12);
+    CountingAllocator::arm();
+    switch(&mut world, 100);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn switching_a_scene_pass_on_and_off_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(view_switch_allocations(World::new()), 0, "WebGPU");
+    assert_eq!(view_switch_allocations(webgl2_world(true)), 0, "WebGL2");
+}
+
 #[test]
 fn recording_frames_of_two_views_allocates_nothing() {
     let _only = CountingAllocator::exclusive();

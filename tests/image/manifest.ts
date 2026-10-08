@@ -177,6 +177,12 @@ const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
  * no HDR target runs no effects: the page's switch that turns HDR off stands in for one, and must
  * draw the scene without them. At half the render scale the effects draw into the corners of the
  * same targets.
+ *
+ * The effects join (D-71): the fog reads only its own pixel, so it joins the color split's pass,
+ * and the group folds into the final pass, or draws as a group where bloom reads it. Each `-separate`
+ * test turns joining off with ?join=off and must draw its joined twin's image. With the fog first,
+ * the split reads the pixels beside each pixel of the fog's output, so it must not join the fog:
+ * `effects-fog-first` draws separate passes, and `effects-fog-first-joined` must draw its image.
  */
 function effectsTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -192,6 +198,22 @@ function effectsTests(): ImageTest[] {
 		test('effects-curve', '?curve'),
 		test('effects-bloom-curve', '?effects&bloom&curve'),
 		test('effects-scale-50', '?scale=0.5&effects'),
+		...(
+			[
+				['effects', '?effects'],
+				['effects-bloom-curve', '?effects&bloom&curve'],
+				['effects-scale-50', '?scale=0.5&effects'],
+			] as const
+		).map(
+			([name, query]): ImageTest => ({
+				...test(`${name}-separate`, query),
+				switches: ['join=off'],
+				reference: name,
+			}),
+		),
+		// The separate passes make this reference, and the joined effects must draw it.
+		{ ...test('effects-fog-first', '?effects&fogfirst'), switches: ['join=off'] },
+		{ ...test('effects-fog-first-joined', '?effects&fogfirst'), reference: 'effects-fog-first' },
 		{
 			...test('effects-8-bit', '?effects&curve'),
 			tiers: ['webgpu', 'webgl2'],
@@ -258,7 +280,9 @@ const AO_SKETCH = 'tests/pages/sketches/ao-sketch.ts';
  * every tier. The parity test compares the two with three.js's GTAOPass. The sun's test shows that
  * the occlusion darkens only the ambient light, beside the sun's shadows. Ambient occlusion at half
  * the render scale draws into the corners of the same targets, and a quarter-size scale into a
- * smaller corner.
+ * smaller corner. A custom effect that returns each pixel as it reads it must leave the occlusion's
+ * image as it was. Compatibility mode starts on the 8-bit path with MSAA, and the effect moves it to
+ * HDR color with FXAA, which smooths edges differently, so that test leaves it out.
  */
 function aoTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -275,6 +299,11 @@ function aoTests(): ImageTest[] {
 		test('ao-scale-50', '?scale=0.5&ao=wide'),
 		test('ao-quarter', '?ao=wide&aoscale=0.25'),
 		test('ao-custom', '?ao=wide&custom'),
+		{
+			...test('ao-identity-effect', '?ao=wide&identity'),
+			tiers: ['webgpu', 'webgl2'],
+			reference: 'ao-wide',
+		},
 	];
 }
 
@@ -411,6 +440,27 @@ function outlineTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the scene pass tests: a minimap that a screen in the scene shows. */
+export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
+
+/**
+ * A scene pass draws the scene from an orthographic camera high above it into a texture, and a
+ * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
+ * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
+ * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes.
+ * Compatibility mode draws the 8-bit path with MSAA, where the copy turns the pass's display color
+ * back to linear. The scene pass spec checks the boxes' colors in the screen's corners.
+ */
+function minimapTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${MINIMAP_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -503,6 +553,29 @@ const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
  * Firefox draw the full crowd. .dev/decisions/D-88-software-gpu-loads.md gives the figures.
  */
 const S5_SWIFTSHADER_COUNT = 100;
+
+/**
+ * S6's objects on SwiftShader: the ones nearest the camera's start, which fill the held view's
+ * street. The whole city's 3.85 million triangles would take the software GPU minutes per frame.
+ */
+const S6_SWIFTSHADER_COUNT = 4_000;
+
+/**
+ * The seconds that S6's held frame may take. The first load on a machine builds and optimizes the
+ * city's model files, about two minutes on the owner's Mac, while the page waits for its import.
+ */
+const S6_TIMEOUT_SECONDS = 600;
+
+/**
+ * S6's thread modes: the first alone. Copies of one mesh meet in many places of the city, and a
+ * pixel where two meet can hold both at the same depth. On WebGPU the culling shader keeps the
+ * copies of a mesh in an order that changes from frame to frame, so either copy can win such a
+ * pixel. The streets' tiles stand a step apart for that, yet held frames in two thread modes still
+ * differed in up to 3 pixels on the Mac, by one step of color. WebGL2, which culls in a fixed
+ * order, never differed. A second mode would fail at random. The reference's tolerance covers
+ * those pixels, and the other benchmark scenes check that every mode draws the same image.
+ */
+const S6_MODES = ['pipelined'] as const;
 
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
@@ -762,6 +835,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 		expect: { withinBudget: true, memoryCounted: true },
 	},
+	// Two 512 x 512 textures and a small one past a texture memory budget of 1 MiB in a live engine.
+	// The large ones drop their largest mip level, so each quarter draws one flat color where the
+	// full texture holds a checker. Then the levels load again from the file once room returns, and
+	// a compressed texture from a KTX2 file drops a level by loading the file again.
+	{
+		name: 'texture-budget',
+		page: 'tests/pages/texture-budget.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: {
+			withinBudget: true,
+			largestDropped: true,
+			smallKept: true,
+			restored: true,
+			mostDropped: true,
+			compressedDropped: true,
+		},
+	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
 	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
@@ -821,6 +912,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
+	...minimapTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1051,6 +1143,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with tangents and a normal map of grooves, which light alike only when every
+	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
+	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
+	...(['', '-full'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-normal-map${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?normalmap',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=full'],
+						reference: 'skinning-normal-map',
+					}
+				: { sameOnEveryTier: true }),
+		}),
+	),
 	// The same characters from a quantized mesh, whose joints, weights and normals both paths
 	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
@@ -1088,6 +1198,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 			tiers: ['webgpu', 'compat'],
 			switches: ['skinning=vertex'],
+			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
+	// The same scenes from the skinning pass with neither of its savings: normals as 32-bit floats,
+	// and every character skinned in every frame. The default pass writes 8-bit normals, which must
+	// draw the same images.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `skinning-${variant}-full` : 'skinning-full',
+			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			switches: ['skinning=full'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
@@ -1403,6 +1527,52 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [MASK_IMAGE.width, MASK_IMAGE.height],
 	},
+	// The same cards with alpha to coverage, whose cut edges MSAA smooths as it smooths their outer
+	// edges: in the pipeline where the scene color has alpha, and in the shader's own sample mask on
+	// WebGPU's rg11b10ufloat. The parity test compares it with three.js's alphaToCoverage.
+	{
+		name: 'alpha-coverage',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=coverage',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Alpha to coverage without MSAA, as the Low preset draws: a plain alpha test.
+	{
+		name: 'alpha-coverage-no-msaa',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=coverage',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+		switches: ['antialias=none'],
+	},
+	// The cards under a sun that casts shadows, with two more cards cut by their base color map's
+	// alpha: each card cuts the holes of its mask into its shadow, at its cutoff. The parity test
+	// compares it with three.js's alphaTest shadows.
+	{
+		name: 'alpha-mask-shadows',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?shadows',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// The same with alpha to coverage, whose shadows cut at the cutoff too, and with the alpha hash,
+	// whose shadows take the hash's pattern in the light's pixels. three.js casts a hashed
+	// surface's whole shape, so the hash has no twin.
+	...(['coverage', 'hash'] as const).map(
+		(mode): ImageTest => ({
+			name: `alpha-${mode}-shadows`,
+			sketch: `tests/pages/sketches/alpha-mask-sketch.ts?mode=${mode}&shadows`,
+			hold: 0,
+			size: [MASK_IMAGE.width, MASK_IMAGE.height],
+		}),
+	),
+	// The same cards with the alpha hash: each ring draws the share of its points that its alpha
+	// sets, in a pattern that stays on each card. The parity test compares it with three.js's
+	// alphaHash.
+	{
+		name: 'alpha-hash',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts?mode=hash',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
 	// Wide lines: widths in pixels and in world units, round joins, colors at each point, dashes, a
 	// loop and a blended line, over a floor and in front of a wall. The parity test compares it with
 	// three.js's Line2 and LineSegments2 with a LineMaterial.
@@ -1481,6 +1651,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
 	},
+	// Double-sided see-through solids: each draws its back faces before its front faces, and an
+	// open tube draws both in one draw with forceSinglePass. The parity test compares it with
+	// three.js's DoubleSide materials.
+	{
+		name: 'transparency-solids',
+		sketch: 'tests/pages/sketches/transparency-solids-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
 	// The same scene with custom materials on the lit planes and the sphere, whose surface function
 	// keeps the standard look: they blend as the standard material does, so the references are
 	// copies of the transparency test's.
@@ -1534,21 +1713,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			name: `demo-${demo.name}`,
 			sketch: `examples/${demo.name}/sketch.ts`,
 			hold: demo.hold,
+			...(demo.largeWorld && { switches: ['largeWorld'] }),
+			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
 	// their frame, so other devices may differ in fewer of their pixels. S5 draws a smaller crowd on
-	// SwiftShader.
+	// SwiftShader, and S6 the part of the city nearest its camera, in one thread mode.
 	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
 			page: `bench/pages/null3d/${scene}.html`,
 			size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
 			hold: HOLD_TIME,
-			modes: ['pipelined', 'low latency'],
-			timeoutSeconds: 90,
+			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
+			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
 			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),
@@ -1584,14 +1766,15 @@ function copyWithSwitch(name: string, suffix: string, extra: string): ImageTest 
 }
 
 /**
- * The scenes that the depth prepass draws again on every tier, which must match their images
- * without it: shadows, masked cards that stay out of the prepass, decals whose depth bias the
- * prepass keeps, see-through objects that draw after it, an orthographic camera whose near plane
- * cuts a slab, S2, and skinned characters with shadows. The depth debug view replaces every
- * material, and a background texture and the sky draw after the prepass, behind its depth, in its
- * render pass. Custom materials draw their prepass depth with their own vertex shader, a vertex
- * offset that samples a texture among them. The shadows test's ground, which the near plane cuts,
- * caught WebGL2's prepass when it drew with a program of its own (D-43).
+ * The scenes that draw again with the depth prepass switched the other way from their GPU path's
+ * presets, which must match their images: with it on the WebGPU tiers, and without it on WebGL2,
+ * whose presets draw it. The scenes are shadows, masked cards that stay out of the prepass, decals
+ * whose depth bias the prepass keeps, see-through objects that draw after it, an orthographic
+ * camera whose near plane cuts a slab, S2, and skinned characters with shadows. The depth debug
+ * view replaces every material, and a background texture and the sky draw after the prepass,
+ * behind its depth, in its render pass. Custom materials draw their prepass depth with their own
+ * vertex shader, a vertex offset that samples a texture among them. The shadows test's ground,
+ * which the near plane cuts, caught WebGL2's prepass when it drew with a program of its own (D-43).
  */
 const PREPASS_SCENES = [
 	'shadows',
@@ -1628,13 +1811,19 @@ function withGpuOcclusion(name: string): ImageTest {
 	};
 }
 
-/** A prepass scene's test again with ?prepass=on, in its first thread mode. */
-function withPrepass(name: string): ImageTest {
-	const test = copyWithSwitch(name, 'prepass', 'prepass=on');
-	return {
-		...test,
-		...(test.modes && { modes: test.modes.slice(0, 1) }),
-	};
+/**
+ * A prepass scene's test again in its first thread mode: with ?prepass=on on the WebGPU tiers, and
+ * with ?prepass=off on WebGL2.
+ */
+function prepassCopies(name: string): ImageTest[] {
+	const on = copyWithSwitch(name, 'prepass', 'prepass=on');
+	const off = copyWithSwitch(name, 'no-prepass', 'prepass=off');
+	const modes = on.modes && { modes: on.modes.slice(0, 1) };
+	const tiers = tiersOf(on);
+	return [
+		{ ...on, ...modes, tiers: tiers.filter((tier) => tier !== 'webgl2') },
+		{ ...off, ...modes, tiers: tiers.filter((tier) => tier === 'webgl2') },
+	].filter((test) => test.tiers.length > 0);
 }
 
 /**
@@ -1692,7 +1881,7 @@ function withIndexInstances(name: string): ImageTest {
 
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	...FEATURE_TESTS,
-	...PREPASS_SCENES.map(withPrepass),
+	...PREPASS_SCENES.flatMap(prepassCopies),
 	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
 	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
 	...INDEX_INSTANCE_TESTS.map(withIndexInstances),

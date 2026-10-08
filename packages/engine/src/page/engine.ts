@@ -13,11 +13,14 @@ import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
+	deviceKind,
 	memoryPreset,
 	type PresetRequest,
+	textureMemoryCap,
 	withinTier,
 } from '../quality/chooser';
 import {
+	capTextureMemory,
 	checkedSettings,
 	checkSettings,
 	presetOption,
@@ -76,10 +79,12 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
+import { lostIsolationWarning, pageIsolation } from './isolation-check';
 import { type EngineLabels, labelCapacity, PageLabels } from './labels';
 import { coreDevice, maxCanvasSize, maxInstances } from './limits';
-import { loadCore, memoryMaximumMiB } from './loader';
+import { expectedObjectCount, loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
+import { keepMemory, type MemoryKey, releaseMemories } from './memory-pool';
 import {
 	type CanvasHold,
 	canvasHold,
@@ -92,7 +97,7 @@ import {
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import { STOP_TIMEOUT_MS, stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -182,9 +187,9 @@ export interface EngineOptions {
 	 * True to draw the depth of the opaque objects before the engine shades them, so each pixel is
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
-	 * it, the quality preset decides. The prepass stays fixed while the engine runs, and the
-	 * `?prepass=on` or `?prepass=off` switch wins over this option.
-	 * Another value fails with E1213.
+	 * it, the quality preset decides: every preset draws the prepass on WebGL2, and none on WebGPU.
+	 * The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off`
+	 * switch wins over this option. Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
 	/**
@@ -212,6 +217,14 @@ export interface EngineOptions {
 	 * Another value fails with E1213.
 	 */
 	softwareOcclusion?: boolean;
+	/**
+	 * The GPU memory in MiB that textures may take, a whole number from 64 to 16,384. Past it, the
+	 * engine drops the largest mip levels of textures from files, and loads them again once room
+	 * returns. Without it, the quality preset sets it: 256, 512, 1,024 or 2,048 from Low to Ultra,
+	 * and at most 1,008 on phones and tablets. A sketch can change it during play with
+	 * `quality.set`. Another value fails with E1213.
+	 */
+	textureMemoryMiB?: number;
 	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
@@ -252,6 +265,16 @@ export interface EngineOptions {
 	 */
 	maxLabels?: number;
 	/**
+	 * The number of objects that the scene will hold at most, when the sketch knows it: a whole
+	 * number from 1 to 1,048,575. Another value fails with E1213. The scene then starts with room
+	 * for that many, so it never grows during play. Without it, the scene starts with room for
+	 * 1,023 objects. A scene grows on its own when it needs more: it doubles its room at the start
+	 * of a frame once it is three quarters full. A create call that finds it full doubles it at once.
+	 * Each growth copies the scene's tables, about 263 bytes per object, in one short pause. Set
+	 * this option for a scene that creates many objects during play, so they never wait for one.
+	 */
+	expectedObjects?: number;
+	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
 	 * GPU has finished the first frame. Before `core`, `memory-wait` comes when the browser has
@@ -285,10 +308,12 @@ export interface EngineOptions {
 	 * `'skinning'` with the first skinned mesh, `'morph'` with the first morphed mesh,
 	 * `'bloom'` and `'ao'` when `post.set` turns them on, `'sprites'` and `'lines'` with the first
 	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
-	 * sky, and `'occlusion'` with the first object that `setOccluder(true)` marks while GPU
-	 * occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there `'morph'` loads
-	 * the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed features
-	 * download beside the engine's own
+	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
+	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
+	 * until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
+	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
@@ -431,6 +456,9 @@ function fallbackText(report: CapabilityReport): string {
 /** True once an engine on the page has warned that the page draws instead of a worker. */
 let warnedFallback = false;
 
+/** True once an engine on the page has warned that a service worker's page lost its isolation. */
+let warnedIsolation = false;
+
 /**
  * A running engine, as `createEngine` returns it.
  *
@@ -522,11 +550,19 @@ export interface Engine {
 	 * the engine's GPU textures and buffers and its GPU device, so the GPU's memory comes back at
 	 * once. It also leaves the canvas blank, at its size, because Safari keeps the GPU memory of a
 	 * canvas's last frame until the canvas shows another. The promise resolves once every worker has
-	 * stopped, when the browser can free the engine's memory. Wait for it before you start another
-	 * engine on the same page: an iPad has room for only a few engines' memory. A new engine can
-	 * start on the same canvas, with the same thread options; `createEngine` waits for this stop.
+	 * stopped. Wait for it before you start another engine on the same page: an iPad has room for
+	 * only a few engines' memory. A new engine can start on the same canvas, with the same thread
+	 * options; `createEngine` waits for this stop.
+	 *
+	 * The page keeps the memory that the engine's threads shared for about 30 seconds, and the next
+	 * engine with the same memory maximum takes it. A page that destroys and creates the engine
+	 * again, as React's strict mode, a route change or a hot reload does, then asks the browser for
+	 * no new memory. Safari can refuse new memory for some seconds after a page drops some. The page
+	 * keeps at most 2 memories, and the RAM that they hold stays taken until a new engine takes one
+	 * or their time ends. `{ release: true }` lets the browser free them at once: use it when the
+	 * page will not start the engine again soon.
 	 */
-	destroy(): Promise<void>;
+	destroy(options?: { release?: boolean }): Promise<void>;
 }
 
 /** The global where the `?bench` switch publishes the running engine. */
@@ -537,8 +573,6 @@ const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
-/** How long stopping the engine waits for its job workers and the worker that draws to stop. */
-const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -925,6 +959,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
 	const place = placement(options, switches);
+	if (DEV && !warnedIsolation) {
+		const warning = lostIsolationWarning(pageIsolation());
+		if (warning) {
+			warnedIsolation = true;
+			console.warn(warning);
+		}
+	}
 	const canvas = canvasHold(options.canvas);
 	// This engine's hold on the canvas, and on the page's copy of the core when its sketch runs on
 	// the page. Each serves one engine at a time.
@@ -1053,6 +1094,7 @@ async function startEngine(
 		gpuOcclusion: switches.occlusion ?? options.gpuOcclusion,
 		morphTargets: options.morphTargets,
 		softwareOcclusion: switches.occlusion ?? options.softwareOcclusion,
+		textureMemoryMiB: options.textureMemoryMiB,
 	};
 	checkSettings('createEngine()', pageSettings);
 	const presetRequest: PresetRequest = {
@@ -1153,9 +1195,12 @@ async function startEngine(
 		? jobWorkerCount(switches.jobs, navigator.hardwareConcurrency ?? 1)
 		: 0;
 	const control = createControlBuffer(threaded, labelCapacity(options.maxLabels));
+	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const views = controlViews(control);
 	const { slots } = views;
+	if (switches.replayDelay !== undefined)
+		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,
@@ -1227,6 +1272,9 @@ async function startEngine(
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
 	let coreMemory: WebAssembly.Memory | undefined;
+	let memoryKey: MemoryKey | undefined;
+	/** True while the page's own core starts in the shared memory. */
+	let pageCoreStarting = false;
 	let canvasWatch: CanvasWatch | undefined;
 	let input: ReturnType<typeof captureInput> | undefined;
 	let stopPreferences: (() => void) | undefined;
@@ -1331,8 +1379,25 @@ async function startEngine(
 			clearJobTasks(jobTaskHost);
 			localCore?.releaseInstance?.();
 			release();
+			keepCoreMemory();
 		})();
 		return stopping;
+	};
+	/**
+	 * Keeps the threaded core's memory for the page's next engine once no thread of this engine can
+	 * run in it: every thread that got the core answered the stop, and the page's own core is not
+	 * still starting. A memory that no thread got yet, from a start that ended first, is kept too.
+	 */
+	const keepCoreMemory = () => {
+		if (!coreMemory) {
+			void coreLoad.then(
+				(core) => core.memory && core.memoryKey && keepMemory(core.memory, core.memoryKey),
+				() => undefined,
+			);
+			return;
+		}
+		const left = [...jobsWithCore, ...withCore].every((worker) => worker.cleanStop);
+		if (memoryKey && left && !pageCoreStarting) keepMemory(coreMemory, memoryKey);
 	};
 	/**
 	 * Leaves the canvas to the next engine. A worker that holds it and answered the stop, or never
@@ -1405,15 +1470,21 @@ async function startEngine(
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
 		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes, and does not run with the depth
-		// prepass, which only the page turns on.
+		// prepass, which only the page turns on outside WebGL2.
 		const tierSettings =
 			tier === 'webgl2' || pageSettings.depthPrepass
 				? { ...pageSettings, gpuOcclusion: false }
 				: pageSettings;
+		const textureCapMiB = textureMemoryCap(deviceKind(presetRequest.hints));
 		const quality: QualityStart = {
 			preset,
-			settings: checkedSettings(chosen, preset, tierSettings),
+			settings: capTextureMemory(
+				checkedSettings(chosen, preset, tierSettings, tier),
+				tierSettings,
+				textureCapMiB,
+			),
 			options: tierSettings,
+			textureCapMiB,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
 		};
@@ -1451,6 +1522,7 @@ async function startEngine(
 			transparent: options.transparent === true,
 			depthPrepass: quality.settings.depthPrepass,
 			largeWorld: options.largeWorld === true,
+			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
 		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
@@ -1462,6 +1534,7 @@ async function startEngine(
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;
+		memoryKey = core.memoryKey;
 		onProgress('core');
 		let wasmMemory = core.memory;
 		const capabilities: EngineCapabilities = {
@@ -1607,6 +1680,12 @@ async function startEngine(
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
 			const coreStart = startCore(build, core.module, core.memory);
+			pageCoreStarting = true;
+			void coreStart
+				.catch(() => undefined)
+				.then(() => {
+					pageCoreStarting = false;
+				});
 			const started = await abortable(coreStart, start.signal).catch((error: unknown) => {
 				// A start that ends while the page's core starts lets go of that core once it has
 				// started, or the core would keep the engine's memory.
@@ -1880,8 +1959,9 @@ async function startEngine(
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
 			},
-			destroy() {
-				return stop();
+			async destroy(destroyOptions) {
+				await stop();
+				if (destroyOptions?.release) releaseMemories();
 			},
 		};
 		if (hold === undefined) {

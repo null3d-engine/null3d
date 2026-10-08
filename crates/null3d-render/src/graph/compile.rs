@@ -5,7 +5,8 @@
 
 use std::ops::Range;
 
-use null3d_gpu::drawlist::texture_usage;
+use null3d_gpu::caps::{BUDGET, Limit};
+use null3d_gpu::drawlist::{format, texture_usage};
 
 use super::{
     Access, GraphError, Mismatch, Mode, PassDecl, PassId, PassKind, ResourceDecl, ResourceId, Size,
@@ -328,12 +329,12 @@ impl<'a> Decls<'a> {
         self.passes[pass].kind == PassKind::Resolve
     }
 
-    /// The passes that are switched on, with their indices, in the order of declaration.
+    /// The passes that run, switched on and not culled, with their indices, in the order of declaration.
     fn running(&self) -> impl Iterator<Item = (usize, &'a PassDecl)> + 'a {
         self.passes
             .iter()
             .enumerate()
-            .filter(|(_, pass)| pass.enabled)
+            .filter(|(_, pass)| pass.runs())
     }
 
     /// Every use by a pass that is switched on, with the pass's index, in the order of
@@ -465,10 +466,23 @@ impl Compiler {
         Ok(())
     }
 
-    /// Checks that every resource a running pass uses exists, and that the targets of each pass
-    /// that draws fit one render pass. Lists what each pass that draws attaches, reads and
-    /// writes, for the steps it may share.
+    /// Checks that every resource a declared pass uses exists, also in a pass that is switched off
+    /// or culled, so the declaration that names a missing resource fails, not a later change that
+    /// makes its pass run. Checks that the targets of each running pass that draws fit one render
+    /// pass. Lists what each pass that draws attaches, reads and writes, for the steps it may share.
     fn check_passes(&mut self, graph: Decls<'_>) -> Result<(), GraphError> {
+        for index in 0..graph.passes.len() {
+            let missing = graph
+                .uses(index)
+                .iter()
+                .find(|access| self.resources[access.resource as usize].kind == Kind::Unknown);
+            if let Some(access) = missing {
+                return Err(GraphError::MissingInput {
+                    pass: PassId(index as u16),
+                    resource: ResourceId(access.resource),
+                });
+            }
+        }
         for (index, pass) in graph.running() {
             let id = PassId(index as u16);
             let targets = self.targets.len() as u32;
@@ -484,9 +498,6 @@ impl Compiler {
                     resource: Some(resource),
                     reason,
                 };
-                if state.kind == Kind::Unknown {
-                    return Err(GraphError::MissingInput { pass: id, resource });
-                }
                 // Compute passes share a compute pass with any other, so only passes that draw
                 // need their reads and writes listed. A resolve pass lists its own below.
                 if !pass.kind.draws() || pass.kind == PassKind::Resolve {
@@ -535,6 +546,7 @@ impl Compiler {
                     reason: Mismatch::NoTarget,
                 });
             }
+            self.check_color_budget(id, targets as usize)?;
             self.passes[index] = PassState {
                 samples,
                 targets: (targets, self.targets.len() as u32),
@@ -542,6 +554,33 @@ impl Compiler {
                 stores: (stores, self.stores.len() as u32),
                 ..PassState::default()
             };
+        }
+        Ok(())
+    }
+
+    /// Checks that the color targets of a pass, its attachments from `first` on, fit the portable
+    /// budget of every device: at most 4 color attachments, of at most 32 bytes per sample in all.
+    /// A render pass holds the targets of one of its passes, so a pass that fits always shares a
+    /// render pass that fits.
+    fn check_color_budget(&self, pass: PassId, first: usize) -> Result<(), GraphError> {
+        let mut count = 0;
+        let mut bytes = 0;
+        for target in self.targets[first..].iter().filter(|t| !t.depth) {
+            let format = self.resources[target.resource as usize].target.format;
+            count += 1;
+            bytes = align_up(bytes, color_alignment(format)) + color_bytes(format);
+            let reason = if count > BUDGET[Limit::ColorAttachments as usize] {
+                Mismatch::Colors
+            } else if bytes > BUDGET[Limit::ColorAttachmentBytesPerSample as usize] {
+                Mismatch::ColorBytes
+            } else {
+                continue;
+            };
+            return Err(GraphError::TargetMismatch {
+                pass,
+                resource: Some(ResourceId(target.resource)),
+                reason,
+            });
         }
         Ok(())
     }
@@ -832,7 +871,7 @@ impl Compiler {
     /// passed, and the passes since then form a cycle.
     fn find_cycle(&mut self, graph: Decls<'_>) -> GraphError {
         let passes = &self.passes;
-        let left = |index: usize| graph.passes[index].enabled && !passes[index].scheduled;
+        let left = |index: usize| graph.passes[index].runs() && !passes[index].scheduled;
         let mut at = (0..graph.passes.len()).find(|&index| left(index));
         self.cycle.clear();
         while let Some(pass) = at {
@@ -1037,11 +1076,16 @@ impl Compiler {
                 };
                 // Every attached texture was placed, and the canvas places itself.
                 debug_assert!(placement.texture.is_some(), "an attachment has no texture");
+                // A kept multisampled target that resolves into a texture for its readers needs
+                // only that texture later, unless a pass draws into part of it and keeps the rest.
+                let keeps = kept
+                    && !(matches!(resolve, Some(Surface::Texture(_)))
+                        && !drawn_in_part(graph, resource));
                 self.plan.attachments[place] = Attachment {
                     texture: placement.texture.unwrap_or(Surface::Canvas),
                     resolve,
                     load,
-                    store: if kept || later {
+                    store: if keeps || later {
                         StoreOp::Store
                     } else {
                         StoreOp::Discard
@@ -1102,6 +1146,14 @@ fn sort_short<T: Copy, K: Ord>(items: &mut [T], key: impl Fn(&T) -> K) {
     }
 }
 
+/// True when a declared pass draws into part of the target, so it keeps the rest.
+fn drawn_in_part(graph: Decls<'_>, resource: u16) -> bool {
+    graph
+        .accesses
+        .iter()
+        .any(|a| a.resource == resource && a.mode == Mode::WritePart)
+}
+
 /// True when one of `passes` is a resolve pass that reads the target, which then resolves into the
 /// canvas.
 fn resolved_in(graph: Decls<'_>, passes: &[PassId], resource: u16) -> bool {
@@ -1112,6 +1164,31 @@ fn resolved_in(graph: Decls<'_>, passes: &[PassId], resource: u16) -> bool {
                 .iter()
                 .any(|a| a.resource == resource && !a.mode.writes())
     })
+}
+
+/// The bytes that one sample of a color attachment of `format` costs, as WebGPU counts them toward
+/// `maxColorAttachmentBytesPerSample`.
+const fn color_bytes(code: u32) -> u32 {
+    match code {
+        format::R32_FLOAT | format::R32_UINT => 4,
+        format::RGBA32_FLOAT | format::RGBA32_UINT => 16,
+        _ => 8,
+    }
+}
+
+/// The alignment of a color attachment of `format` in that count: the size of one of its
+/// components.
+const fn color_alignment(code: u32) -> u32 {
+    match code {
+        format::RGBA16_FLOAT => 2,
+        format::R32_FLOAT | format::R32_UINT | format::RGBA32_FLOAT | format::RGBA32_UINT => 4,
+        _ => 1,
+    }
+}
+
+/// Rounds `value` up to a multiple of `alignment`.
+const fn align_up(value: u32, alignment: u32) -> u32 {
+    value.div_ceil(alignment) * alignment
 }
 
 /// The usage flags of a target that passes draw into, sample, or write as storage. Passes sample a
@@ -1130,12 +1207,16 @@ fn usage_of(target: Target, drawn: bool, sampled: bool, storage: bool) -> u32 {
     usage
 }
 
-/// The usage of a kept target, from every declared pass whether it runs or not, so switching
-/// passes on and off never changes its texture. Also says whether a pass samples it. A resolve
-/// pass attaches the target it reads.
+/// The usage of a kept target, from every declared pass whether it is switched on or not, so
+/// switching passes on and off never changes its texture. Culled passes do not count, so a kept
+/// target that only culled passes use takes no texture. Also says whether a pass samples it. A
+/// resolve pass attaches the target it reads.
 fn kept_usage(graph: Decls<'_>, resource: u16, target: Target) -> (u32, bool) {
     let (mut drawn, mut sampled, mut storage) = (false, false, false);
     for (index, pass) in graph.passes.iter().enumerate() {
+        if pass.culled {
+            continue;
+        }
         for access in graph.uses(index).iter().filter(|a| a.resource == resource) {
             match (access.mode.writes(), pass.kind) {
                 (false, PassKind::Resolve) => drawn = true,

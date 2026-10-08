@@ -18,6 +18,7 @@ use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::prelude::*;
 
+use crate::alloc::reserve_keeping;
 use crate::cells::CELL_SHIFT;
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
@@ -749,6 +750,9 @@ pub struct BucketedCull {
     /// Per [`BY_ROW`] run, one count per bucket; then the next write position per bucket.
     histograms: Vec<u32>,
     cursors: Vec<u32>,
+    /// Index lists that a growth replaced, kept until the next cull: the list of the frame that
+    /// last culled into this output may still upload from them.
+    kept: Vec<Vec<u32>>,
     buckets: usize,
     len: usize,
     hidden: usize,
@@ -772,6 +776,7 @@ impl BucketedCull {
             Ok(())
         }
         let (rows, runs, buckets) = (rows as usize, runs as usize, buckets as usize);
+        reserve_keeping(&mut self.indices, rows, &mut self.kept)?;
         grow(&mut self.indices, rows)?;
         grow(&mut self.scratch, rows)?;
         grow(&mut self.bucket_starts, buckets + 1)?;
@@ -873,6 +878,8 @@ pub fn cull_into_buckets<'a>(
         runs.len()
     );
     out.buckets = bucket_count;
+    // The list that last read this output has been replayed, so the index lists it kept may go.
+    out.kept.clear();
     // Each run's part of the scratch list, and for a looked-up run the start of its histogram,
     // which it keeps in its position slot until the second pass.
     let mut rows = 0;

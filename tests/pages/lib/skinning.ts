@@ -500,6 +500,11 @@ export interface SkinningResult {
 	drawn: number[];
 	/** Characters that the path that skins once skins: those that some pass draws. */
 	skinned: number;
+	/**
+	 * Bytes of each vertex that the path that skins once writes, where the page says. Results from
+	 * before 6 October 2026 lack it: the WebGPU page wrote 24 then.
+	 */
+	skinnedBytes?: number;
 	image: ImageComparison;
 	/** The timings of the page's two paths, as `skinningPaths` names them. */
 	paths: Partial<Record<SkinningPath, PathTiming>>;

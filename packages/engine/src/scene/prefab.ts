@@ -4,6 +4,7 @@
 // animates with. The glTF loader, which loads on first use, is the only code that constructs one,
 // so the scene imports this module for its types alone, and calls the prefab's methods.
 
+import { FLAG_OCCLUDER } from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import { type AnimationRig, animateObject, destroyRig, morphObject, skinObject } from './animation';
 import type { CoreMemory } from './memory';
@@ -122,6 +123,11 @@ export interface PrefabNode {
 	readonly mesh: MeshGeometry | undefined;
 	/** The node's material. */
 	readonly material: Material | undefined;
+	/**
+	 * True when the asset tool gave the node's mesh a blocker, so its copies block the view. Pass
+	 * it as `createMesh`'s `occluder` option to keep the tool's choice for a mesh made from the node.
+	 */
+	readonly occluder: boolean;
 }
 
 /**
@@ -251,6 +257,7 @@ export class Prefab {
 				scale: [t[7] as number, t[8] as number, t[9] as number],
 				mesh: node.mesh,
 				material: node.material,
+				occluder: (node.flags & FLAG_OCCLUDER) !== 0,
 			};
 		}
 		return undefined;

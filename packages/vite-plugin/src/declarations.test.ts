@@ -102,7 +102,9 @@ describe('the declarations of effects and tone curves', () => {
 				{ name: 'tint', type: 'vec3f', offset: 4 },
 			],
 			depth: false,
+			joins: true,
 			variants: {},
+			pieces: { group: {}, fold: {} },
 		};
 		expect(wgslDeclaration('/project/src/glow.wgsl', effect)).toBe(`${HEADER}\
 import type { CompiledEffect } from '@null3d/vite-plugin';
@@ -120,7 +122,11 @@ export default shader;
 	});
 
 	it('gives a tone curve its own type', () => {
-		const curve: CompiledToneCurve = { kind: 'toneCurve', variants: {} };
+		const curve: CompiledToneCurve = {
+			kind: 'toneCurve',
+			variants: {},
+			pieces: { group: {}, fold: {} },
+		};
 		expect(wgslDeclaration('glow.wgsl', curve)).toContain(
 			"import type { CompiledToneCurve } from '@null3d/vite-plugin';\n\ndeclare const shader: CompiledToneCurve;",
 		);

@@ -8,6 +8,7 @@
 // test keeps the two lists equal. A sketch changes only the settings that change during play.
 
 import { EngineError } from '../errors/engine-error';
+import type { Tier } from '../shared/tier';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -49,6 +50,8 @@ export type SettingValues =
 export interface Setting {
 	/** The value on each preset, from Low to Ultra. */
 	presets: readonly [unknown, unknown, unknown, unknown];
+	/** The value on each preset on WebGL2, from Low to Ultra, where WebGL2 differs. */
+	webgl2?: readonly [unknown, unknown, unknown, unknown];
 	changes: SettingChange;
 	values: SettingValues;
 }
@@ -81,6 +84,15 @@ export const QUALITY_SETTINGS = {
 		presets: [2, 4, 8, 16],
 		changes: 'live',
 		values: { min: 1, max: 16, whole: true },
+	},
+	// The GPU memory that textures may take. Past it, the engine drops the largest mip levels of
+	// the textures that it can load again, and loads them again once room returns (D-69). Low and
+	// Medium stay under half the GPU texture memory at which a tablet's tab died (D-12), and
+	// phones and tablets cap the heavier presets at that half (chooser.ts).
+	textureMemoryMiB: {
+		presets: [256, 512, 1024, 2048],
+		changes: 'live',
+		values: { min: 64, max: 16384, whole: true },
 	},
 	// The texel bytes that one frame may upload, so a scene that loads many textures spreads them
 	// over frames.
@@ -200,10 +212,12 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 	},
 	// The depth prepass trades a second pass over the opaque objects' vertices for shading each
-	// pixel once. It stays off on every preset: it made S2's GPU time per frame 45% longer on the
-	// Mac (Benchmarks, "The depth prepass").
+	// pixel once. WebGL2 draws it on every preset: on Apple GPUs, WebGL2 shades hidden pixels that
+	// the prepass's early depth rejection skips. The other paths leave it off: there the GPU removes
+	// hidden surfaces itself, and the second pass only adds time (D-43).
 	depthPrepass: {
 		presets: [false, false, false, false],
+		webgl2: [true, true, true, true],
 		changes: 'start',
 		values: 'flag',
 	},
@@ -238,9 +252,10 @@ export const QUALITY_SETTINGS = {
 /** The name of a setting that the engine applies. */
 export type QualitySettingName = keyof typeof QUALITY_SETTINGS;
 
-/** A setting's value type, from its values on the presets. */
+/** A setting's value type, from its values on the presets, WebGL2's own among them. */
 export type SettingValue<K extends QualitySettingName> =
-	(typeof QUALITY_SETTINGS)[K]['presets'][number];
+	| (typeof QUALITY_SETTINGS)[K]['presets'][number]
+	| ((typeof QUALITY_SETTINGS)[K] extends { webgl2: readonly (infer V)[] } ? V : never);
 
 /**
  * The quality settings that a sketch reads and changes through `ctx.quality`. Each starts at the
@@ -275,6 +290,14 @@ export interface QualitySettings {
 	 * higher samples at this value. It takes a whole number from 1 to 16, and changes during play.
 	 */
 	maxAnisotropy: number;
+	/**
+	 * The GPU memory in MiB that textures may take: 256, 512, 1,024 or 2,048 from Low to Ultra, and
+	 * at most 1,008 on phones and tablets unless the page's `textureMemoryMiB` option gives a value.
+	 * When the textures take more, the engine drops the largest mip levels of the textures that it
+	 * can load again from their files, and loads those levels again once room returns. It takes a
+	 * whole number from 64 to 16,384, and changes during play.
+	 */
+	textureMemoryMiB: number;
 	/**
 	 * The texel bytes that one frame may upload, so that loading many textures does not make one
 	 * frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole
@@ -376,8 +399,9 @@ export interface QualitySettings {
 	pointLightShadows: boolean;
 	/**
 	 * True when the engine draws the depth of the opaque objects before it shades them, so it
-	 * shades each pixel once, for its nearest surface. The setting is fixed when the engine starts:
-	 * the page's `depthPrepass` option of `createEngine` sets it, and `set` does not take it.
+	 * shades each pixel once, for its nearest surface. Every preset turns it on for WebGL2 and off
+	 * for WebGPU. The setting is fixed when the engine starts: the page's `depthPrepass` option of
+	 * `createEngine` sets it, and `set` does not take it.
 	 */
 	depthPrepass: boolean;
 	/**
@@ -434,26 +458,44 @@ export function lowered(preset: QualityPreset, steps: number): QualityPreset {
 	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
 }
 
-/** A setting's value on a preset. */
+/** A setting's value on a preset, on the GPU path `tier`, or on WebGPU without it. */
 export function presetValue<K extends QualitySettingName>(
 	name: K,
 	preset: QualityPreset,
+	tier?: Tier,
 ): SettingValue<K> {
-	return QUALITY_SETTINGS[name].presets[presetIndex(preset)] as SettingValue<K>;
+	const setting: Setting = QUALITY_SETTINGS[name];
+	const values = (tier === 'webgl2' && setting.webgl2) || setting.presets;
+	return values[presetIndex(preset)] as SettingValue<K>;
 }
 
 /**
- * The settings that a sketch starts with on `preset`: the preset's values, and the values in
- * `options` where the page's options give them.
+ * The settings that a sketch starts with on `preset` and the GPU path `tier`: the preset's values,
+ * and the values in `options` where the page's options give them.
  */
 export function presetSettings(
 	preset: QualityPreset,
 	options: Partial<QualitySettings> = {},
+	tier?: Tier,
 ): QualitySettings {
 	const settings: Record<string, unknown> = {};
 	for (const name of SKETCH_SETTINGS)
-		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset);
+		settings[name] = (options as Record<string, unknown>)[name] ?? presetValue(name, preset, tier);
 	return settings as unknown as QualitySettings;
+}
+
+/**
+ * `settings` with their texture memory at most `capMiB`, the cap of the device's kind, unless
+ * `options` give the texture memory: a page's own value stays as it is.
+ */
+export function capTextureMemory(
+	settings: QualitySettings,
+	options: Partial<QualitySettings>,
+	capMiB: number,
+): QualitySettings {
+	if (options.textureMemoryMiB === undefined)
+		settings.textureMemoryMiB = Math.min(settings.textureMemoryMiB, capMiB);
+	return settings;
 }
 
 /** The settings in `settings` that a sketch reads but cannot change during play. */
@@ -474,9 +516,10 @@ export function checkedSettings(
 	from: QualityPreset,
 	to: QualityPreset,
 	options: Partial<QualitySettings> = {},
+	tier?: Tier,
 ): QualitySettings {
-	const start = presetSettings(from, options);
-	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) });
+	const start = presetSettings(from, options, tier);
+	return to === from ? start : presetSettings(to, { ...options, ...startValues(start) }, tier);
 }
 
 /** "a, b or c", for the choices in an error message. */

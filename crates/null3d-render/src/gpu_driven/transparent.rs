@@ -173,8 +173,9 @@ impl Transparent {
 
     /// Records a view's transparent pass inside the render pass that the render graph began: each
     /// run of sorted rows that share a bucket, with one instanced draw per part of the bucket's
-    /// mesh, from its slice of the view's sorted instances. A skinned object's bucket draws its
+    /// mesh for each of the bucket's passes, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
+    /// It leaves out the objects whose maps show a target that the view does not read.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -194,11 +195,16 @@ impl Transparent {
         let (mut vertices, mut indices) = (None, None);
         let mut groups = DrawGroups::default();
         let storage = settings.meshes();
+        // A view leaves out the objects whose maps show a target that it does not read.
+        let hidden_targets = settings.hidden_targets(view);
+        let textures = settings.textures();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
-            if pipeline != Some(bucket.pipeline) {
-                list.push(Op::SetPipeline, &[bucket.pipeline])?;
-                pipeline = Some(bucket.pipeline);
+            if hidden_targets != 0
+                && bucket.textures != 0
+                && textures.group_pass_views(bucket.textures) & hidden_targets != 0
+            {
+                continue;
             }
             let skinned = bucket.skinned_slot();
             let skins = skinned.is_some_and(|slot| skinning.skins_in_vertex_shader(slot));
@@ -216,37 +222,43 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            for (k, part) in storage.parts(mesh).iter().enumerate() {
-                let (page_vertices, page_indices) = meshes.ids(part.page);
-                // A skinned part draws its region of skinned vertices with its page's indices.
-                let region = regions.and_then(|regions| regions.get(k));
-                let source = region.map_or((page_vertices, 0), SkinnedPart::vertices);
-                if vertices != Some(source) {
-                    list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
-                    vertices = Some(source);
+            for pass in bucket.passes() {
+                if pipeline != Some(pass) {
+                    list.push(Op::SetPipeline, &[pass])?;
+                    pipeline = Some(pass);
                 }
-                if indices != Some(page_indices) {
+                for (k, part) in storage.parts(mesh).iter().enumerate() {
+                    let (page_vertices, page_indices) = meshes.ids(part.page);
+                    // A skinned part draws its region of skinned vertices with its page's indices.
+                    let region = regions.and_then(|regions| regions.get(k));
+                    let source = region.map_or((page_vertices, 0), SkinnedPart::vertices);
+                    if vertices != Some(source) {
+                        list.push(Op::SetVertexBuffer, &[0, source.0, source.1, 0])?;
+                        vertices = Some(source);
+                    }
+                    if indices != Some(page_indices) {
+                        list.push(
+                            Op::SetIndexBuffer,
+                            &[page_indices, index_format::UINT16, 0, 0],
+                        )?;
+                        indices = Some(page_indices);
+                    }
+                    let base_vertex = if region.is_some() {
+                        0
+                    } else {
+                        part.base_vertex
+                    };
                     list.push(
-                        Op::SetIndexBuffer,
-                        &[page_indices, index_format::UINT16, 0, 0],
+                        Op::DrawIndexed,
+                        &[
+                            part.index_count,
+                            draw.count,
+                            part.first_index,
+                            base_vertex,
+                            0,
+                        ],
                     )?;
-                    indices = Some(page_indices);
                 }
-                let base_vertex = if region.is_some() {
-                    0
-                } else {
-                    part.base_vertex
-                };
-                list.push(
-                    Op::DrawIndexed,
-                    &[
-                        part.index_count,
-                        draw.count,
-                        part.first_index,
-                        base_vertex,
-                        0,
-                    ],
-                )?;
             }
         }
         Ok(())

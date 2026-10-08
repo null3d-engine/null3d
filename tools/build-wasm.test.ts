@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { addReleaseInstance, lockedVersion, parseOptions, releaseTarget } from './build-wasm';
+import {
+	addReleaseInstance,
+	checkHeapStart,
+	lockedVersion,
+	parseOptions,
+	releaseTarget,
+} from './build-wasm';
 
 describe('parseOptions', () => {
 	it('reads the size check, its base, the base build, the names build, the pages build, an earlier build and the base alone', () => {
@@ -108,5 +114,22 @@ describe('addReleaseInstance', () => {
 		expect(() => addReleaseInstance(glue.replace('wasmInstance, ', ''))).toThrow(
 			'update addReleaseInstance',
 		);
+	});
+});
+
+describe('checkHeapStart', () => {
+	/** A module's first bytes up to an import section with a shared memory of `initial` pages. */
+	const withMemory = (initial: number) => {
+		const entry = [1, 0x61, 1, 0x6d, 2, 3, initial, 0x80, 0x80, 0x04];
+		return new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 2, entry.length + 1, 1, ...entry]);
+	};
+
+	it('passes when wasm-bindgen added one page', () => {
+		expect(() => checkHeapStart(withMemory(17), withMemory(18))).not.toThrow();
+	});
+
+	it('fails on any other count, which would move the heap onto its pages', () => {
+		expect(() => checkHeapStart(withMemory(17), withMemory(17))).toThrow('BINDGEN_PAGES');
+		expect(() => checkHeapStart(withMemory(17), withMemory(19))).toThrow('19 pages');
 	});
 });

@@ -8,7 +8,7 @@ import { ERROR_FIXES, type ErrorCode } from '../../packages/engine/src/errors/fi
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-const DOCS = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
+const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 interface Raised {
 	code: string;
@@ -66,7 +66,7 @@ for (const mode of ENGINE_MODES) {
 		const suffix = `. ${ERROR_FIXES.E1410} See ${DOCS}E1410.md`;
 		const { message } = notLoaded;
 		expect(message.startsWith(prefix) && message.endsWith(suffix), message).toBe(true);
-		expect(result.inSketch).toEqual([
+		expect(result.inSketch.slice(0, 5)).toEqual([
 			BAD_COLOR,
 			engineError('E1108', 'setActiveCount() got 11, above the limit of 10.'),
 			engineError(
@@ -76,6 +76,12 @@ for (const mode of ENGINE_MODES) {
 			engineError('E1206', 'geometry.fromArrays() got NaN at uvs[4].'),
 			engineError('E1108', 'the sketch asked for row 11 of 10.'),
 		]);
+		// The core's render graph words the error, and it names the pass and the texture.
+		const graph = result.inSketch[5] as Raised;
+		expect(graph).toMatchObject({ code: 'E1502', name: 'EngineError', engineError: true });
+		expect(graph.message).toContain('"broken"');
+		expect(graph.message).toContain('"nothing"');
+		expect(graph.message).toContain(`${ERROR_FIXES.E1502} See ${DOCS}E1502.md`);
 		// Every build refuses query input that is not finite in 32 bits, which the core's trees
 		// could not stand on, and the engine answers the queries after them.
 		const F32 = 'pass a number from -3.4e38 to 3.4e38, the range of 32-bit floats.';

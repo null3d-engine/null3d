@@ -8,7 +8,7 @@ summary: "Custom effects and tone curves in WGSL; declaring passes; reading and 
 
 # Custom passes and render targets
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Custom effects and custom tone curves are built. Custom passes with `render.addPass`, render targets and `textures.fromPass` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ flowchart LR
     final --> canvas["Canvas"]
 ```
 
-A custom effect is a full-screen pass of your own WGSL. It reads the scene's color, and its depth if it asks for it, and writes a new color for each pixel. Effects run after the scene passes, on linear HDR color, before bloom and the tone curve. A custom tone curve takes the place of the built-in curves in the final pass.
+A custom effect is a full-screen pass of your own WGSL. It reads the scene's color, and its depth if it asks for it, and writes a new color for each pixel. Effects run after the scene passes, on linear HDR color, before bloom and the tone curve. A custom tone curve takes the place of the built-in curves in the final pass. A scene pass draws the scene from another camera into a texture, which materials show: see [Render to a texture](#render-to-a-texture).
 
 ## Custom effects
 
@@ -141,8 +141,13 @@ post.addEffect({ wgsl: split, uniforms: { shift: 3 } });
 
 ### Cost
 
-- Each effect is a full-screen pass of its own. It reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame.
-- Join effects that read only their own pixel into one WGSL function where you can. One function with two steps costs one pass.
+- A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame.
+- The engine joins effects to save passes. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself.
+- An effect that calls `effectPixel` or `effectColor` reads other pixels of the color before it. So it starts a pass of its own. The effects after it can join it. Depth reads do not stop an effect from joining.
+- The last pass of effects folds into the final pass when nothing reads the image between them. That needs bloom and FXAA off, and a render scale of 1. One effect that reads only its own pixel then costs no pass of its own.
+- A joined pass needs a shader that the engine makes from the effects' WGSL. It builds in the background after the effects' own shaders. Until it is built, each effect draws a pass of its own, so no frame waits for it.
+- Some browsers cannot compile WebGL2 shaders in the background, such as Chrome on the Android phones tested. On WebGL2 they join only the effects that are there before the first frame. Effects added or reordered later draw a pass each there. A joined shader would hold up a frame while it compiles. Add your effects before the first frame to get the joined passes on those devices. Development builds tell you once in the console when this happens.
+- Between joined effects the color keeps 32-bit precision instead of the 16 bits of a target. So the image can differ from separate passes in the last bits.
 - The effects share two targets, whatever their number. They follow the render scale, so a new scale makes no new target.
 - A depth read costs one texture read per call. The scene's render pass then keeps its depth in memory.
 - Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does.
@@ -175,6 +180,70 @@ post.set({ toneMapping: 'aces' });
 - A curve needs HDR color, as effects do. On a device with no HDR target, the built-in curve stays.
 - The final pass builds again with the curve, so the first frame with a new curve waits for its pipeline.
 
+## Render to a texture
+
+A scene pass draws the scene from a camera of your own into a texture, as three.js's `WebGLRenderTarget` with `renderer.setRenderTarget` does. `textures.fromPass` gives the texture to any material or sprite.
+
+```mermaid
+flowchart LR
+    camera["Map camera"] --> pass["Scene pass 'minimap'"]
+    pass --> texture[("texture 'minimap'")]
+    texture --> screen["A screen's material"]
+    screen --> main["The camera's passes"]
+    main --> canvas["Canvas"]
+```
+
+```ts
+const mapCamera = scene.createOrthographicCamera({ height: 40, near: 1, far: 100, position: [0, 50, 0] });
+mapCamera.setRotationEuler(-Math.PI / 2, 0, 0);
+
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const screen = materials.unlit({ map: textures.fromPass(map) });
+scene.createMesh({ mesh: geometry.plane({ width: 2, height: 2 }), material: screen, position: [0, 1, -4] });
+```
+
+The pass is a declaration. No sketch code runs while it draws, and the render graph orders it before the passes that show its texture. [Render graph API](../api/render.md) lists every option. The [security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) shows a camera's view on a monitor this way, with a camera that turns every frame.
+
+### Layers and what a pass shows
+
+- A pass draws the objects on its camera's layers, or on the layers of its `layers` option. Put the player's own model on a layer that a security camera does not draw, for example.
+- A pass never draws an object whose material shows its own texture. A minimap's screen, inside the map camera's view, does not appear in the minimap.
+- An object that shows another pass's texture draws in a pass only when that pass names the texture in `reads`. The pass then runs after the other one.
+
+```ts
+const hall = render.addPass({ kind: 'scene', camera: hallCamera, writes: 'hall', size: [512, 288] });
+// The guard room's camera sees the monitor that shows the hall.
+const guard = render.addPass({
+  kind: 'scene',
+  camera: guardCamera,
+  writes: 'guardRoom',
+  size: [512, 288],
+  reads: ['hall'],
+});
+```
+
+A pass reads only the textures of passes added before it, so passes cannot read each other in a loop. A pass that names its own texture in `reads` throws E1504.
+
+### Drawing less often
+
+A pass that need not change every frame can draw every few frames. Its texture keeps the last image while the pass is off:
+
+```ts
+let frame = 0;
+return {
+  onUpdate() {
+    frame++;
+    render.setPassEnabled(map, frame % 4 === 0);
+  },
+};
+```
+
+### What a scene pass draws
+
+A scene pass draws with the scene's materials, the sun, the sun's shadows where the camera's shadow cascades reach, the ambient light, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+
+The texture holds linear color after the exposure, so a material that shows it gives the camera the light that the pass saw. On devices that draw 8-bit color, each material tone maps its own color. In compatibility mode with MSAA, the texture holds that color turned back to linear, so the tone curve applies twice and the image looks a little lighter in the middle tones. On WebGL2 devices without float targets, the texture holds display color, which looks brighter and flatter.
+
 ## Errors
 
 | Code | Cause |
@@ -183,11 +252,17 @@ post.set({ toneMapping: 'aces' });
 | E1216 | A uniform that the WGSL does not declare, or a value of the wrong kind. |
 | E1213 | A ninth effect. |
 | E1203 | An `order` that is not a number. |
-| E1101 | `setEffectUniform` on an effect that `removeEffect` removed. |
+| E1101 | `setEffectUniform` on an effect that `removeEffect` removed, or a call on a render pass that `render.removePass` removed. |
+| E1220 | Options that `render.addPass` does not take, or a texture name that another pass writes. |
+| E1502 | A name in `reads` that no pass writes. |
+| E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
+| E1504 | A pass that reads its own texture. |
 
 ## Related pages
 
 - [Post-processing API](../api/post.md): `post.addEffect`, `post.setEffectUniform`, `post.removeEffect` and `post.set`.
+- [Render graph API](../api/render.md): `render.addPass`, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph`.
+- [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass whose texture a monitor shows.
 - [The post-processing chain](../concepts/post-processing.md): where effects run, and the built-in effects.
 - [Custom shaders](custom-shaders.md): the WGSL build, uniforms and the shader library.
 - [Porting post-processing](../porting/threejs-postprocessing.md): three.js's `ShaderPass` and effect passes.

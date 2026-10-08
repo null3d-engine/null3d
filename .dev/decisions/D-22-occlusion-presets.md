@@ -1,8 +1,8 @@
 # D-22: Occlusion culling per preset on each path
 
-Status: WebGPU rows decided from the Mac's timings, 2026-10-04, and confirmed by the iPad's and the S25's timings, 2026-10-07; the WebGL2 rows (T-36, M2-I3) pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
+Status: WebGPU rows decided from the Mac's timings, 2026-10-04, confirmed by the iPad's and the S25's timings, 2026-10-07, and by the Mac's G1 run, 2026-10-08. The WebGL2 rows (T-36, M2-I3) are pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
-Summary: GPU occlusion culling is off on every preset for now. On a quiet Mac it took 37% off a room scene whose walls hide 94% of its objects, but with another program drawing on the GPU it cost 19% to 40% more, and desktops turn it on only if a loaded run loses no more than 5%. A scene that marks no occluder pays nothing for it. On the owner's iPad and the cloud Galaxy S25, the same room cost 4% and 30% more GPU time with it.
+Summary: GPU occlusion culling is off on every preset for now. In a room scene whose walls hide 94% of its objects, a quiet Mac saved 37% on 4 October, but only 7% on 8 October. With another program drawing on the GPU, it cost 19% to 66% more. Desktops turn it on only if it saves 10% quiet and loses no more than 5% under load. A scene that marks no occluder pays nothing for it. On the owner's iPad and the cloud Galaxy S25, the same room cost 4% and 30% more GPU time with it.
 
 ## Question
 
@@ -78,3 +78,16 @@ The rules decided in [D-53](D-53-technique-defaults.md) on 4 October 2026:
 
 - Desktops: High and Ultra turn GPU occlusion culling on only if a second run on a quiet Mac saves time, and a run with another program loading the GPU loses no more than 5%. Today's loaded runs lose 19 to 40%, so it stays off for now.
 - Android: it stays off until prototype G1 passes on the GPUs whose drivers Bevy and Unity block for GPU culling. These are Adreno 730 and older, Mali drivers before r48, and the PowerVR GPUs of the Pixel 10 and 11.
+
+## Addendum, 2026-10-08: the Mac's G1 run
+
+Prototype G1 ran the room scene on the quiet Mac again, in Chrome 155 with exact GPU timestamps. [D-40](D-40-gpu-occlusion.md#addendum-2026-10-08-prototype-g1-on-the-mac) gives the method and the pass times.
+
+| Run | Culling off | Culling on | Change |
+| --- | --- | --- | --- |
+| Quiet (3 runs of 3 rounds) | 2.31 ms | 2.14 ms | 7% less |
+| With a second Chrome loading the GPU (3 runs) | 2.53 ms | 3.83 ms | 38% to 66% more |
+
+All six views matched culling off in every pixel. A first pyramid level at a quarter of the render size cost 3% more quiet, so it is not an option.
+
+G1's rule for a device class is a 10% saving quiet and no more than 5% lost under load. The Mac fails both, so the desktop rows stay off on every preset, High and Ultra included. The `gpuOcclusion` option and the `?occlusion=on` switch remain for a scene that measures a gain of its own. The Android rows still wait for G1's image check on the GPUs that Bevy and Unity block.

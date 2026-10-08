@@ -84,7 +84,9 @@ export interface EnginePart {
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
  * The built-in environments' numbers load in the thread that runs the sketch with the first one,
- * and the texture generators that make their maps on the GPU load in the thread that draws.
+ * and the texture generators that make their maps on the GPU load in the thread that draws. The
+ * code that joins custom effects into fewer passes loads in the thread that draws with the first
+ * effects that join.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
@@ -100,6 +102,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 		module: 'gpu/environment-steps.ts',
 		loadedBy: 'page-renderer.js',
 	},
+	{ name: 'page-effect-joiner.js', module: 'gpu/effect-joiner.ts', loadedBy: 'page-renderer.js' },
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
@@ -139,6 +142,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-environment-generator.js',
 		module: 'gpu/environment-steps.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
+	{
+		name: 'sketch-worker-effect-joiner.js',
+		module: 'gpu/effect-joiner.ts',
 		loadedBy: 'sketch-worker-renderer.js',
 	},
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
@@ -185,6 +193,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'render-worker-environment-generator.js',
 		module: 'gpu/environment-steps.ts',
+		loadedBy: 'render-worker.js',
+	},
+	{
+		name: 'render-worker-effect-joiner.js',
+		module: 'gpu/effect-joiner.ts',
 		loadedBy: 'render-worker.js',
 	},
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },

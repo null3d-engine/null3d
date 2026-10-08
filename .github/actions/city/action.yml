@@ -1,0 +1,67 @@
+name: S6's city files
+description: >-
+  Gives a job the model files of S6, the city, which bench/lib/city-files.ts builds from the sample
+  content's layout and optimizes into the null3D plugin's cache, as .dev/sample-content.md says.
+  The city job builds them once per run, with "build", and hands them to the jobs that load S6 as
+  two artifacts, which those jobs take with "download". A build takes about 6 minutes on GitHub's
+  Linux machines, too long for every shard of a job (D-106). The Actions cache keeps the built files,
+  keyed on the pinned sample content, the module that builds the files and the asset tool, so the
+  city job builds them again only when one of those changes. The cache saves only when the
+  workflow's SAVE_CACHES is true. Run "build" after the samples action and after the asset tool is
+  built.
+
+inputs:
+  mode:
+    description: '"build" builds the files and uploads them; "download" takes the uploaded files.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@v4
+      if: inputs.mode == 'build'
+      id: restore
+      with:
+        path: |
+          ~/.cache/null3d/samples/city
+          node_modules/.cache/null3d-assets
+        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
+    - name: Build and optimize the city's files
+      if: inputs.mode == 'build'
+      shell: bash
+      run: bun bench/lib/city-files.ts
+    - uses: actions/cache/save@v4
+      if: inputs.mode == 'build' && env.SAVE_CACHES == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/.cache/null3d/samples/city
+          node_modules/.cache/null3d-assets
+        key: null3d-city-${{ hashFiles('tools/samples/lock.json', 'bench/lib/city-files.ts', 'packages/cli/package.json', 'packages/cli/src/**', 'crates/null3d-assets-wasm/**', 'packages/vite-plugin/src/assets.ts') }}
+    # The built files and the optimized ones lie under different roots, so each takes an artifact.
+    # Their images are already compressed, so the artifacts skip compression.
+    - uses: actions/upload-artifact@v4
+      if: inputs.mode == 'build'
+      with:
+        name: city-files
+        path: ~/.cache/null3d/samples/city
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+    - uses: actions/upload-artifact@v4
+      if: inputs.mode == 'build'
+      with:
+        name: city-optimized
+        path: node_modules/.cache/null3d-assets
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 1
+    - uses: actions/download-artifact@v4
+      if: inputs.mode == 'download'
+      with:
+        name: city-files
+        path: ~/.cache/null3d/samples/city
+    - uses: actions/download-artifact@v4
+      if: inputs.mode == 'download'
+      with:
+        name: city-optimized
+        path: node_modules/.cache/null3d-assets

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { decode } from 'fast-png';
 import { featureImagePath } from '../../tests/image/manifest.ts';
 import {
+	ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT,
+	ALPHA_HASH_MAX_DIFFERENT_PERCENT,
 	BENCH_SCENES,
 	BLOOM_STRONG_MAX_DIFFERENT_PERCENT,
 	compareFrames,
@@ -262,8 +264,13 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give alpha to coverage, the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
+		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
+		expect(featureScene('alpha-coverage')?.limit).toBe(ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT);
+		// null3D's integer hash draws its own pattern, so the hash scene is a sanity comparison.
+		expect(featureScene('alpha-hash')?.limit).toBe(ALPHA_HASH_MAX_DIFFERENT_PERCENT);
 		// The strong bloom is a sanity comparison; the soft one keeps three.js's rule.
 		expect(featureScene('bloom-strong')?.limit).toBe(BLOOM_STRONG_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('bloom-soft')?.limit).toBeUndefined();
@@ -274,6 +281,9 @@ describe('feature scenes', () => {
 		expect(featureScene('lut-cube')?.limit).toBeUndefined();
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
+			'alpha-coverage',
+			'alpha-hash',
+			'alpha-mask-shadows',
 			'points',
 			'gltf-instancing',
 			'gltf-ktx2',
@@ -437,6 +447,12 @@ describe('the pages', () => {
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
 			'null3d-webgpu-index',
+			'null3d-webgpu-one-pass',
+			'null3d-webgl2-one-pass',
+			'null3d-webgpu-two-pass',
+			'null3d-webgl2-two-pass',
+			'null3d-webgpu-hash',
+			'null3d-webgl2-hash',
 			'null3d-webgpu-depth32',
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
@@ -450,6 +466,10 @@ describe('the pages', () => {
 			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
+			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-full',
+			'null3d-webgpu-skin-skip',
+			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -554,6 +574,12 @@ describe('the pages', () => {
 			'null3d-webgpu-prepass',
 			'null3d-webgl2-prepass',
 			'null3d-webgpu-index',
+			'null3d-webgpu-one-pass',
+			'null3d-webgl2-one-pass',
+			'null3d-webgpu-two-pass',
+			'null3d-webgl2-two-pass',
+			'null3d-webgpu-hash',
+			'null3d-webgl2-hash',
 			'null3d-webgpu-depth32',
 			'null3d-webgl2-depth32',
 			'null3d-webgpu-blend-off',
@@ -567,6 +593,10 @@ describe('the pages', () => {
 			'null3d-webgpu-box',
 			'null3d-webgpu-sky-room-first',
 			'null3d-webgpu-sky-texture-first',
+			'null3d-webgpu-skin-vertex',
+			'null3d-webgpu-skin-full',
+			'null3d-webgpu-skin-skip',
+			'null3d-webgpu-skin-narrow',
 			'null3d-webgl2-timed',
 			'null3d-webgl2-synced',
 		]);
@@ -592,6 +622,16 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgpu',
 			'webgpu',
 			'webgpu',
 			'webgpu',
@@ -733,7 +773,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
-			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, standard-grid,',
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3, s4, s5, s6, standard-grid,',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

@@ -276,9 +276,9 @@ export async function compileWgsl(
 		const result = await compiler.effect({ path, source });
 		// Effects and tone curves build for both GPU paths.
 		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
-		const { function: kind, uniforms, depth, variants } = result.effect;
-		if (kind === 'toneCurve') return { ok: true, shader: { kind, variants } };
-		return { ok: true, shader: { kind, uniforms, depth, variants } };
+		const { function: kind, uniforms, depth, joins, variants, pieces } = result.effect;
+		if (kind === 'toneCurve') return { ok: true, shader: { kind, variants, pieces } };
+		return { ok: true, shader: { kind, uniforms, depth, joins, variants, pieces } };
 	}
 	const material = noEntryPoints && declaresFunction(source, MATERIAL_FUNCTIONS);
 	if (material || isMeshShader(source)) {

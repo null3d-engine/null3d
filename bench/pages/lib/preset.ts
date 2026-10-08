@@ -21,6 +21,8 @@ export interface TwinSettings {
 	maxAnisotropy: number;
 	shadowCascades: number;
 	shadowMapSize: number;
+	/** The share of the canvas's width and height that ambient occlusion draws at, or 0 for none. */
+	aoScale: number;
 }
 
 /**
@@ -45,5 +47,6 @@ export function twinSettings(preset: QualityPreset): TwinSettings {
 		maxAnisotropy: value('maxAnisotropy'),
 		shadowCascades: value('shadowCascades'),
 		shadowMapSize: value('shadowMapSize'),
+		aoScale: value('aoScale'),
 	};
 }

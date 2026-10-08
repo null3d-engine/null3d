@@ -1,9 +1,10 @@
-// When the page asks, raises five engine errors and catches each. It posts each error's code,
+// When the page asks, raises six engine errors and catches each. It posts each error's code,
 // message and name to the page, and whether the sketch sees it as an EngineError. The scene API
 // rejects the color itself. The engine core rejects the active count past the batch's capacity,
 // and two meshes from arrays: one with an index past its vertices, and one with a texture
-// coordinate that is not a number. The sketch makes the last error with the EngineError class that
-// it imports. In a production build, the sketch's bundle holds its own copy of the engine's error
+// coordinate that is not a number. The sketch makes the fifth error with the EngineError class that
+// it imports. The core's render graph rejects the last: a scene pass that reads a texture no pass
+// writes. In a production build, the sketch's bundle holds its own copy of the engine's error
 // code, apart from the copy in the engine's worker code.
 // When the page asks for queries, the sketch makes raycasts and overlap queries whose input is not
 // finite in 32 bits, which must throw in every build. Then two rays must still find the box ahead
@@ -26,7 +27,7 @@ function raised(call: () => void): ErrorFields {
 	}
 }
 
-export default defineSketch(({ scene, materials, geometry, page }) => {
+export default defineSketch(({ scene, materials, geometry, page, render }) => {
 	const material = materials.unlit({ color: '#ffffff' });
 	const batch = scene.createInstances(geometry.box(), ROWS, { material });
 	scene.createMesh({ mesh: geometry.box(), material, position: [0, 3, -10] });
@@ -67,6 +68,16 @@ export default defineSketch(({ scene, materials, geometry, page }) => {
 			raised(() => {
 				throw new EngineError('E1108', `the sketch asked for row ${ROWS + 1} of ${ROWS}.`);
 			}),
+			raised(() =>
+				render.addPass({
+					kind: 'scene',
+					name: 'broken',
+					camera: scene.createPerspectiveCamera(),
+					writes: 'broken-map',
+					size: [64, 64],
+					reads: ['nothing'],
+				}),
+			),
 		]);
 	});
 	return {};

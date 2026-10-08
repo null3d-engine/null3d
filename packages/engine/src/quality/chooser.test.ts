@@ -7,9 +7,11 @@ import {
 	type DeviceHints,
 	deviceKind,
 	hintedPreset,
+	MOBILE_TEXTURE_MEMORY_MIB,
 	memoryPreset,
 	type PresetRequest,
 	TABLET_MIN_EDGE,
+	textureMemoryCap,
 	withinTier,
 } from './chooser';
 import type { QualityPreset } from './presets';
@@ -195,5 +197,14 @@ describe('withinTier', () => {
 		expect(withinTier('ultra', 'webgl2')).toBe('medium');
 		expect(withinTier('high', 'webgpu-compat')).toBe('medium');
 		expect(withinTier('low', 'webgl2')).toBe('low');
+	});
+});
+
+describe('textureMemoryCap', () => {
+	it('caps phones and tablets at half the texture memory at which a tablet closed the tab', () => {
+		expect(MOBILE_TEXTURE_MEMORY_MIB).toBe(2016 / 2);
+		expect(textureMemoryCap('phone')).toBe(1008);
+		expect(textureMemoryCap('tablet')).toBe(1008);
+		expect(textureMemoryCap('desktop')).toBe(Number.POSITIVE_INFINITY);
 	});
 });

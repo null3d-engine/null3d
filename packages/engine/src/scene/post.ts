@@ -371,15 +371,18 @@ export class Post {
 		/** Asks for bloom's and ambient occlusion's shader files when they turn on. */
 		private readonly shaders = new ShaderPreloads(),
 		templates = new ShaderTemplates(),
+		/** False when each custom effect draws in a pass of its own, as ?join=off asks. */
+		joinEffects = true,
 	) {
-		this.effects = new EffectChain(core, templates);
+		this.effects = new EffectChain(core, templates, joinEffects);
 	}
 
 	/**
 	 * Adds a custom effect, which runs from the next frame on, and returns it. An effect is a
 	 * full-screen pass of WGSL that declares `fn effect(input: EffectInput) -> vec4f`. It reads the
 	 * scene's HDR color after the exposure, before bloom and the tone mapping, and returns the new
-	 * color. Effects run from the lowest `order` to the highest, each in a pass of its own. At most
+	 * color. Effects run from the lowest `order` to the highest. The engine joins an effect that reads
+	 * only its own pixel into the pass of the effect before it, so effects take few passes. At most
 	 * 8 run at once. An effect needs HDR color, as bloom does; on a device without an HDR target it
 	 * stays off, and development builds warn once. Throws E1215 for WGSL that the null3D Vite plugin
 	 * did not compile as an effect, E1216 for a uniform that the WGSL does not declare or a value of
@@ -562,6 +565,14 @@ export class Post {
 	 */
 	get needsHdr(): boolean {
 		return this.bloom || this.toneCurve !== undefined || this.effects.any;
+	}
+
+	/**
+	 * @internal Draws the effects of the joined shader of template `template` one pass each from now
+	 * on, after the thread that draws found that its pipeline failed to build.
+	 */
+	dropJoin(template: number): void {
+		this.effects.dropJoin(template);
 	}
 
 	/**

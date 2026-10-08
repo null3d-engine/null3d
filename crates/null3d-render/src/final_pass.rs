@@ -11,8 +11,11 @@
 //! [`crate::outline`]). Then it grades the canvas color with a color grading table while the sketch
 //! sets one (see [`crate::grading`]), and it dithers last. A custom tone curve takes the place of
 //! the built-in curves: the pass then draws with the curve's templates, the curve's builds of the
-//! pass. Each frame builder owns one, with GPU object ids from its own ranges, and its pipelines
-//! come from the builder's pipeline cache like every other.
+//! pass. Custom effects can fold into the pass (see [`crate::effects`]): it then draws with the
+//! fold's template, a build of the pass that runs the effects on each texel it reads, before the
+//! vignette, and binds the effects' uniform buffer and the scene's depth too. Each frame builder
+//! owns one, with GPU object ids from its own ranges, and its pipelines come from the builder's
+//! pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
@@ -34,6 +37,9 @@ const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
 /// The binding of the outline mask in the final pass's group. The table's sampler reads it.
 const OUTLINE_BINDING: u32 = 11;
+/// The bindings of the effects' uniform buffer and of the scene's depth in the fold's group.
+const EFFECTS_BINDING: u32 = 4;
+const EFFECT_DEPTH_BINDING: u32 = 5;
 
 /// The final pass's settings, as `final.wgsl`'s `Settings` block lays them out.
 #[repr(C)]
@@ -116,6 +122,15 @@ pub(crate) struct OutlineInputs {
     pub(crate) outline: Outline,
 }
 
+/// What the final pass's fold build reads of the effects that fold into it: their uniform buffer,
+/// and the scene's depth or a blank texture, which is multisampled when `multisampled` says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct FoldInputs {
+    pub(crate) buffer: u32,
+    pub(crate) depth: u32,
+    pub(crate) multisampled: bool,
+}
+
 /// What the final pass's bloom build reads: bloom's uniform buffer and sampler, and the texture of
 /// the chain's base level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,12 +166,27 @@ pub(crate) struct FinalPass {
     /// The first template of the custom tone curve that the pass draws with, or `None` for the
     /// pass's own curves.
     tone_curve: Option<u32>,
+    /// The fold build's pipeline, with its template and depth read, once a frame asked for it.
+    fold_pipeline: Option<(u32, bool, u32)>,
+    /// True while the frame's pass draws with the fold build.
+    folds: bool,
     created: bool,
     /// The settings the buffer holds, or `None` before the first upload.
     uploaded: Option<FinalUniform>,
-    /// The scene color texture that the bind group reads, with bloom's inputs for the bloom
-    /// build, the color grading table and the outline mask, or `None` before the group exists.
-    bound: Option<(u32, Option<BloomInputs>, u32, u32)>,
+    /// What the bind group reads, or `None` before the group exists.
+    bound: Option<Bound>,
+}
+
+/// What the final pass's bind group reads: the scene color texture, bloom's inputs for the bloom
+/// build, the color grading table, the outline mask, and the inputs of the effects that fold into
+/// the pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Bound {
+    scene_color: u32,
+    bloom: Option<BloomInputs>,
+    lut: u32,
+    mask: u32,
+    fold: Option<FoldInputs>,
 }
 
 impl FinalPass {
@@ -173,6 +203,8 @@ impl FinalPass {
             pipeline: None,
             bloom_pipeline: None,
             tone_curve: None,
+            fold_pipeline: None,
+            folds: false,
             created: false,
             uploaded: None,
             bound: None,
@@ -201,6 +233,37 @@ impl FinalPass {
         }
     }
 
+    /// True for the FXAA build of the pass, which reads the pixels around each pixel.
+    pub(crate) fn fxaa(&self) -> bool {
+        self.fxaa
+    }
+
+    /// Asks `pipelines` for the pipeline of the fold build whose template is `template`, which
+    /// reads a multisampled depth when `multisampled` says, and returns its id.
+    pub(crate) fn request_fold(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        template: u32,
+        multisampled: bool,
+    ) -> u32 {
+        match self.fold_pipeline {
+            Some((t, ms, id)) if t == template && ms == multisampled => id,
+            _ => {
+                let key = PipelineKey {
+                    permutation: if multisampled {
+                        permutation::DEPTH_MULTISAMPLED
+                    } else {
+                        0
+                    },
+                    ..pipeline(false, false, Some(template))
+                };
+                let id = pipelines.id(key);
+                self.fold_pipeline = Some((template, multisampled, id));
+                id
+            }
+        }
+    }
+
     /// Bytes the pass may copy into a frame's arena: its settings.
     pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
 
@@ -224,9 +287,9 @@ impl FinalPass {
     /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
     /// `tone_mapping`, the scene's size in pixels, `render_size`, `grading` and `outline` when they
     /// changed, and binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom
-    /// build, the color grading table and the outline mask, when they are new. The frame's list made
-    /// the plan's textures again when `textures_made`, which leaves an older bind group reading a
-    /// texture that is gone.
+    /// build, the color grading table, the outline mask and the inputs of the effects that `fold`
+    /// into the pass, when they are new. The frame's list made the plan's textures again when
+    /// `textures_made`, which leaves an older bind group reading a texture that is gone.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
@@ -238,9 +301,11 @@ impl FinalPass {
         bloom: Option<BloomInputs>,
         grading: Grading,
         outline: Option<OutlineInputs>,
+        fold: Option<FoldInputs>,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
+        self.folds = fold.is_some();
         if !self.created {
             Self::create_objects(list, ids)?;
             self.created = true;
@@ -283,7 +348,13 @@ impl FinalPass {
             list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
             self.uploaded = Some(settings);
         }
-        let inputs = (scene_color, bloom, lut, mask);
+        let inputs = Bound {
+            scene_color,
+            bloom,
+            lut,
+            mask,
+            fold,
+        };
         if textures_made || self.bound != Some(inputs) {
             let mut words = [0u32; 3 + 5 * 12];
             let mut len = 3;
@@ -302,14 +373,36 @@ impl FinalPass {
                 0,
             );
             entry(OUTLINE_BINDING, resource_kind::TEXTURE, mask, 0, 0);
-            let layout = match bloom {
-                None => bind_layout::FINAL,
-                Some(bloom) => {
+            let layout = match (bloom, fold) {
+                (Some(bloom), _) => {
                     entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
                     entry(3, resource_kind::TEXTURE, bloom.base, 0, 0);
                     entry(8, resource_kind::SAMPLER, bloom.sampler, 0, 0);
                     bind_layout::FINAL_BLOOM
                 }
+                (None, Some(fold)) => {
+                    let bytes = crate::effects::BUFFER_BYTES as u32;
+                    entry(
+                        EFFECTS_BINDING,
+                        resource_kind::BUFFER,
+                        fold.buffer,
+                        0,
+                        bytes,
+                    );
+                    entry(
+                        EFFECT_DEPTH_BINDING,
+                        resource_kind::TEXTURE,
+                        fold.depth,
+                        0,
+                        0,
+                    );
+                    if fold.multisampled {
+                        bind_layout::FINAL_EFFECTS_DEPTH_MS
+                    } else {
+                        bind_layout::FINAL_EFFECTS
+                    }
+                }
+                (None, None) => bind_layout::FINAL,
             };
             words[0] = ids.group;
             words[1] = layout;
@@ -380,10 +473,12 @@ impl FinalPass {
     }
 
     /// Records the pass inside the render pass that the render graph began into the canvas, in its
-    /// bloom build with `bloom`.
+    /// bloom build with `bloom`, and in its fold build while effects fold into it.
     pub(crate) fn record(&self, list: &mut DrawList, bloom: bool) -> Result<(), RecordError> {
         let pipeline = if bloom {
             self.bloom_pipeline
+        } else if self.folds {
+            self.fold_pipeline.map(|(_, _, id)| id)
         } else {
             self.pipeline
         }
@@ -437,6 +532,7 @@ mod tests {
             5,
             None,
             grading,
+            None,
             None,
             true,
         )

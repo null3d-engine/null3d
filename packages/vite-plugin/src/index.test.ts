@@ -2,11 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import type { ResolvedConfig, Rollup, UserConfig } from 'vite';
+import type { Plugin, ResolvedConfig, Rollup, UserConfig } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import null3d, {
 	CORE_FILES,
 	earlyCoreTag,
+	FILES_LIST,
 	inlineLimit,
 	missingCoreFiles,
 	NOTICES_FILE,
@@ -136,23 +137,35 @@ function noticesProject(packages: Record<string, string | null>): string {
 	return fixture(files);
 }
 
-/** The plugin's hooks after Vite resolves a config for the given command and worker format. */
-function resolvedPlugin(root: string, command: 'build' | 'serve', format: 'es' | 'iife' = 'es') {
+type GenerateBundle = { handler: (this: object, o: object, b: Rollup.OutputBundle) => void };
+
+/**
+ * The plugin's hooks after Vite resolves a config for the given command and worker format, and the
+ * files that it adds to `bundle`, as a build's last step.
+ */
+function resolvedPlugin(
+	root: string,
+	command: 'build' | 'serve',
+	format: 'es' | 'iife' = 'es',
+	bundle: Rollup.OutputBundle = {},
+	plugin = null3d(),
+) {
 	const warnings: string[] = [];
-	const plugin = null3d();
 	const config = {
 		command,
 		root,
 		base: '/',
-		build: { assetsDir: 'assets', ssr: false },
+		build: { assetsDir: 'assets', ssr: false, lib: false },
 		worker: { format },
 		logger: { warn: (message: string) => warnings.push(message) },
 	} as unknown as ResolvedConfig;
 	(plugin.configResolved as (c: ResolvedConfig) => void)(config);
 	const emitted: object[] = [];
-	(plugin.generateBundle as (this: object) => void).call({
-		emitFile: (file: object) => emitted.push(file),
-	});
+	(plugin.generateBundle as GenerateBundle).handler.call(
+		{ emitFile: (file: object) => emitted.push(file) },
+		{},
+		bundle,
+	);
 	return { warnings, emitted };
 }
 
@@ -169,9 +182,11 @@ describe('the third-party notices', () => {
 
 	it('writes the notices beside the page in a production build only', () => {
 		const root = noticesProject({ '@null3d/engine': 'engine notices' });
-		expect(resolvedPlugin(root, 'build').emitted).toEqual([
-			{ type: 'asset', fileName: NOTICES_FILE, source: 'engine notices\n' },
-		]);
+		expect(resolvedPlugin(root, 'build').emitted).toContainEqual({
+			type: 'asset',
+			fileName: NOTICES_FILE,
+			source: 'engine notices\n',
+		});
 		expect(resolvedPlugin(root, 'serve').emitted).toEqual([]);
 	});
 
@@ -190,6 +205,68 @@ describe('the third-party notices', () => {
 			expect(notices).toContain(readFileSync(file, 'utf8').trim());
 		const { version } = JSON.parse(readFileSync(join(meshopt, 'package.json'), 'utf8'));
 		expect(notices).toContain(`meshoptimizer ${version}`);
+	});
+});
+
+describe('the list of files for offline play', () => {
+	it("writes the build's files beside the page, with what the worker builds hold", () => {
+		const root = fixture({
+			'package.json': '{}',
+			'node_modules/@null3d/engine/package.json': '{"name":"@null3d/engine"}',
+		});
+		const plugin = null3d();
+		const config = (plugin.config as (c: object, e: object) => UserConfig)(
+			{ root },
+			{ mode: 'production', command: 'build' },
+		);
+		const [workerFiles] = (config.worker as { plugins: () => Plugin[] }).plugins();
+		const ktx2 = `${root}/node_modules/@null3d/engine/lib/scene/ktx2.js`;
+		((workerFiles as Plugin).generateBundle as (o: object, b: object) => void)(
+			{},
+			{
+				'assets/ktx2-b.js': {
+					type: 'chunk',
+					fileName: 'assets/ktx2-b.js',
+					moduleIds: [ktx2],
+					imports: [],
+					dynamicImports: [],
+				},
+			},
+		);
+		const bundle = {
+			'index.html': {
+				type: 'asset',
+				fileName: 'index.html',
+				source: '"/assets/main-a.js"',
+				originalFileNames: ['index.html'],
+			},
+			'assets/main-a.js': {
+				type: 'chunk',
+				fileName: 'assets/main-a.js',
+				isEntry: true,
+				code: '',
+				moduleIds: [],
+				imports: [],
+				dynamicImports: [],
+			},
+			'assets/ktx2-b.js': {
+				type: 'asset',
+				fileName: 'assets/ktx2-b.js',
+				source: '',
+				originalFileNames: [],
+			},
+		} as unknown as Rollup.OutputBundle;
+		const [list] = resolvedPlugin(root, 'build', 'es', bundle, plugin).emitted as {
+			fileName: string;
+			source: string;
+		}[];
+		expect(list?.fileName).toBe(FILES_LIST);
+		const { start, features } = JSON.parse(list?.source ?? '');
+		expect({ start, features }).toEqual({
+			start: ['assets/main-a.js', 'index.html'],
+			features: { ktx2: ['assets/ktx2-b.js'] },
+		});
+		expect(resolvedPlugin(root, 'serve').emitted).toEqual([]);
 	});
 });
 

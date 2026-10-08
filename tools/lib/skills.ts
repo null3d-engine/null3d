@@ -1,5 +1,6 @@
 // Checks and syncs the agent skills. skills/<name>/ is the source; .claude/skills/<name>/ is a
 // generated copy without evals/, because Claude Code loads project skills only from .claude/skills.
+// Git keeps no copy, and the install step and the git hooks write it (tools/lib/generated.ts).
 import {
 	existsSync,
 	mkdirSync,
@@ -10,7 +11,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { DOC_AREAS, MAPPING_SOURCE, pagePath } from './docs';
+import { DOC_AREAS, pagePath } from './docs';
 import {
 	mentionsBuildProcess,
 	mentionsOtherPackageManager,
@@ -37,7 +38,6 @@ const MAX_COMPATIBILITY = 500;
 const MAX_BODY_LINES = 500;
 /** About 5,000 tokens: the budget for a skill body. */
 const BODY_WORD_BUDGET = 3800;
-const MAPPING_COPY = 'skills/null3d-port-threejs/references/threejs-mapping.json';
 
 export function skillNames(root: string): string[] {
 	const dir = join(root, SKILLS_DIR);
@@ -61,21 +61,6 @@ export function expectedSkillCopies(root: string): Map<string, string> {
 		}
 	}
 	return out;
-}
-
-/** Differences between .claude/skills and its expected content: missing, changed and extra files. */
-export function skillCopyProblems(root: string): string[] {
-	const expected = expectedSkillCopies(root);
-	const problems: string[] = [];
-	for (const [path, content] of expected) {
-		const actual = readIfExists(root, path);
-		if (actual === null) problems.push(`${path} is missing: run bun run skills`);
-		else if (actual !== content) problems.push(`${path} is out of date: run bun run skills`);
-	}
-	for (const path of walkFiles(root, SKILL_COPY_DIR)) {
-		if (!expected.has(path)) problems.push(`${path} has no source in skills/: run bun run skills`);
-	}
-	return problems;
 }
 
 /** Rewrites .claude/skills to match skills/. Returns the paths written or removed. */
@@ -235,7 +220,7 @@ export interface SkillsReport {
 	problems: string[];
 }
 
-/** Every problem with the skills: their files, the docs pages they name, and the generated copies. */
+/** Every problem with the skills: their files and the docs pages they name. */
 export function checkSkills(root: string): SkillsReport {
 	const names = skillNames(root);
 	const docRefs = new Map<string, Set<string>>();
@@ -246,17 +231,5 @@ export function checkSkills(root: string): SkillsReport {
 			problems.push(`docs page "${id}" does not exist (named in ${[...where].join(', ')})`);
 		}
 	}
-
-	const source = readIfExists(root, MAPPING_SOURCE);
-	const copy = readIfExists(root, MAPPING_COPY);
-	if (
-		source !== null &&
-		copy !== null &&
-		JSON.stringify(JSON.parse(source)) !== JSON.stringify(JSON.parse(copy))
-	) {
-		problems.push(`${MAPPING_COPY} differs from ${MAPPING_SOURCE}: run bun run docs`);
-	}
-
-	problems.push(...skillCopyProblems(root));
 	return { skills: names.length, docPagesReferenced: docRefs.size, problems };
 }

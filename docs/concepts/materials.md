@@ -52,9 +52,10 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | The kind: standard, unlit or custom | The shader |
 | Texture maps | A shader variant that samples maps, and another for a normal map on a mesh with tangents |
 | `vertexColors` | A shader variant that reads the mesh's colors, on meshes that have them |
-| `alphaMode: 'mask'` | A shader variant that drops the fragments whose alpha is below the cutoff |
+| `alphaMode: 'mask'` or `'hash'` | A shader variant that drops the fragments whose alpha fails its test |
+| `alphaToCoverage` | The pipeline's state: MSAA turns the masked alpha into coverage |
 | `alphaMode: 'blend'`, `blending` | The pipeline's blend state, and the transparent pass |
-| `doubleSided` | The pipeline's state: it culls no faces |
+| `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
 
@@ -70,7 +71,11 @@ const cloth = materials.standard({ color: '#8098d0', doubleSided: true });
 
 A material's `alphaMode` says what its alpha does. The default, `opaque`, ignores it. The `mask` mode draws nothing where the alpha is below the material's `alphaCutoff`, as three.js's `alphaTest` does. A masked surface is opaque where it draws, so it hides what lies behind it, and its objects draw in any order.
 
-The shader that drops fragments costs more than one that never does: a GPU cannot always test depth before it runs such a shader. So only masked materials draw with that variant. The cutoff is a value, and `set({ alphaCutoff })` changes it at no cost.
+The `hash` mode draws each point opaque or not at all, as three.js's `alphaHash` does. A hash of the point's place on the mesh sets a threshold, and the point draws where its alpha reaches it. The alpha then sets the share of the surface that draws, and hashed objects need no sort.
+
+The shader that drops fragments costs more than one that never does: a GPU cannot always test depth before it runs such a shader. Tile GPUs, as in phones and Apple's chips, also lose part of their hidden-surface removal. So only masked and hashed materials draw with that variant. The cutoff is a value, and `set({ alphaCutoff })` changes it at no cost.
+
+`alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA. The masked alpha fades over about one pixel above the cutoff, and MSAA covers that share of each edge pixel's samples. Where the target's format has an alpha channel, the GPU turns the alpha into coverage. WebGPU's HDR scene color has none, so there the shader writes the covered samples itself. Those shader builds load the first time a material needs them. Without MSAA, alpha to coverage is a plain mask.
 
 The `blend` mode blends the surface over what lies behind it, as three.js's `transparent: true` does. Its `blending` chooses how: `normal`, `additive` or `multiply`. [Materials](../api/materials.md#alpha-modes) shows each mode.
 
@@ -90,7 +95,7 @@ Sorting by object has these limits:
 
 - Surfaces that cross each other have no right order. One object draws before the other, so where the second lies behind the first, it shows wrong. Split such meshes, or give them `depthWrite: false` so they never hide each other.
 - A large object, such as a long glass wall, has one center. A small object can have a center that is farther away than the wall's while it stands in front of the wall. Split large blended meshes, or set their order with `setRenderOrder`.
-- The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided.
+- The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces, as three.js draws it. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
 
 Blended objects cost more than opaque ones. The job workers cull and sort them in every frame, and on WebGPU the engine also writes each visible one's data for the GPU. Neighbors that differ in mesh or material need draw calls of their own. The GPU shades every blended layer of a pixel, so large overlapping surfaces cost GPU time. Keep blended objects to what needs them, and use the `mask` mode for cut-out shapes.
 

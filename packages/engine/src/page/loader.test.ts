@@ -7,6 +7,7 @@ import {
 	createSharedMemory,
 	DEFAULT_MAXIMUM_MIB,
 	EARLY_CORE_SLOT,
+	expectedObjectCount,
 	loadCore,
 	MAX_MAXIMUM_MIB,
 	MEMORY_RETRY_MS,
@@ -64,6 +65,23 @@ describe('memoryMaximumMiB', () => {
 		expect(() => memoryMaximumMiB(8_192, 1_024)).toThrow(
 			'E1409: the memory.maximumMiB option 8192',
 		);
+	});
+});
+
+describe("createEngine's expectedObjects option", () => {
+	it('gives 0 without the option, and a whole number up to the most objects a scene holds', () => {
+		expect(expectedObjectCount(undefined)).toBe(0);
+		expect(expectedObjectCount(1)).toBe(1);
+		expect(expectedObjectCount(22_000)).toBe(22_000);
+		expect(expectedObjectCount(1_048_575)).toBe(1_048_575);
+	});
+
+	it('refuses other values with E1213', () => {
+		for (const value of [0, -5, 2.5, Number.NaN, 1_048_576]) {
+			expect(() => expectedObjectCount(value)).toThrow(
+				`E1213: createEngine() got ${value} for expectedObjects, which is not a whole number from 1 to 1,048,575.`,
+			);
+		}
 	});
 });
 

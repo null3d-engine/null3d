@@ -6,7 +6,7 @@ use null3d_core::animation::{
     MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
 };
 use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
-use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, SLOT_BITS};
+use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, MAX_SLOTS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::lines::LineMode;
@@ -21,6 +21,7 @@ use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
 use null3d_render::output::{Antialias, ToneMapping};
+use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 use null3d_render::{debug_view, fog};
 
@@ -235,6 +236,20 @@ pub mod texture_stat {
     pub const UPLOAD_BUDGET: u32 = 7;
     /// The largest anisotropy that samplers use.
     pub const MAX_ANISOTROPY: u32 = 8;
+    /// The GPU bytes that the textures may take, or 0 for no budget.
+    pub const MEMORY_BUDGET: u32 = 9;
+    /// The largest mip levels of one texture that the memory budget dropped.
+    pub const DROPPED_LEVELS: u32 = 10;
+    /// The mip levels that the memory budget dropped from every texture.
+    pub const DROPPED_TOTAL: u32 = 11;
+    /// The textures that the memory budget dropped levels from.
+    pub const DROPPED_TEXTURES: u32 = 12;
+    /// A number that changes with each drop, each load again asked for and each swap.
+    pub const BUDGET_EPOCH: u32 = 13;
+    /// The dropped levels that one texture's load again asks for.
+    pub const RELOAD_LEVEL: u32 = 14;
+    /// The hidden texture that takes the texels of one texture's load again.
+    pub const RELOAD_TEXTURE: u32 = 15;
 }
 
 /// The parts of the number that `shadowCasters` returns.
@@ -251,6 +266,8 @@ pub mod camera_target {
     pub const VIEW: u32 = 0;
     /// The camera that fits the main directional light's cascades, for the debug API.
     pub const SHADOWS: u32 = 1;
+    /// The camera of a scene pass's view: this number plus the view's place, from 1.
+    pub const PASS_VIEWS: u32 = 2;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -262,6 +279,8 @@ pub mod texture_option {
     /// Any value makes the next recorded frame upload every image that arrived, whatever its
     /// budget, as a held frame must.
     pub const UPLOAD_ALL: u32 = 2;
+    /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
+    pub const MEMORY_BUDGET_KIB: u32 = 3;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -698,6 +717,8 @@ pub fn typescript() -> String {
                 ),
                 ("WEBGL2_MAX_SOURCES", 1 << MAX_SOURCE_BITS),
                 ("MSAA_SAMPLES", Antialias::Msaa.samples()),
+                ("START_OBJECTS", crate::START_OBJECTS),
+                ("MAX_OBJECTS", MAX_SLOTS),
             ],
         ),
         (
@@ -719,6 +740,17 @@ pub fn typescript() -> String {
                 ("NONE", Antialias::None.code()),
                 ("FXAA", Antialias::Fxaa.code()),
                 ("MSAA", Antialias::Msaa.code()),
+            ],
+        ),
+        // WebGPU's skinning modes, which ?skinning= picks to measure them (decision record D-20).
+        (
+            "SKINNING",
+            &[
+                ("LEAN", SkinningMode::LEAN.code()),
+                ("VERTEX", SkinningMode::VERTEX.code()),
+                ("FULL", SkinningMode::FULL.code()),
+                ("SKIP_ONLY", SkinningMode::SKIP_ONLY.code()),
+                ("NARROW_ONLY", SkinningMode::NARROW_ONLY.code()),
             ],
         ),
         (
@@ -761,6 +793,9 @@ pub fn typescript() -> String {
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
                 ("NO_FOG", feature::NO_FOG),
+                ("ALPHA_TO_COVERAGE", feature::ALPHA_TO_COVERAGE),
+                ("ALPHA_HASH", feature::ALPHA_HASH),
+                ("SINGLE_PASS", feature::SINGLE_PASS),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -829,6 +864,11 @@ pub fn typescript() -> String {
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
                 ("DEPTH", effect_flag::DEPTH),
             ],
+        ),
+        // The most scene passes that draw at once: every view but the camera's.
+        (
+            "SCENE_PASS",
+            &[("MAX", null3d_render::view::MAX_VIEWS as u32 - 1)],
         ),
         (
             "POST_VALUE",
@@ -912,6 +952,13 @@ pub fn typescript() -> String {
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
                 ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
+                ("MEMORY_BUDGET", texture_stat::MEMORY_BUDGET),
+                ("DROPPED_LEVELS", texture_stat::DROPPED_LEVELS),
+                ("DROPPED_TOTAL", texture_stat::DROPPED_TOTAL),
+                ("DROPPED_TEXTURES", texture_stat::DROPPED_TEXTURES),
+                ("BUDGET_EPOCH", texture_stat::BUDGET_EPOCH),
+                ("RELOAD_LEVEL", texture_stat::RELOAD_LEVEL),
+                ("RELOAD_TEXTURE", texture_stat::RELOAD_TEXTURE),
             ],
         ),
         (
@@ -919,6 +966,7 @@ pub fn typescript() -> String {
             &[
                 ("VIEW", camera_target::VIEW),
                 ("SHADOWS", camera_target::SHADOWS),
+                ("PASS_VIEWS", camera_target::PASS_VIEWS),
             ],
         ),
         (
@@ -962,6 +1010,7 @@ pub fn typescript() -> String {
                 ("UPLOAD_BUDGET", texture_option::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
+                ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],

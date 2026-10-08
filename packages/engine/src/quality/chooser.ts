@@ -38,6 +38,18 @@ export type DeviceKind = 'phone' | 'tablet' | 'desktop';
  */
 export const TABLET_MIN_EDGE = 600;
 
+/**
+ * The most GPU memory in MiB that textures take on phones and tablets, whatever preset runs: half
+ * the GPU texture memory at which a tablet's tab died (D-12). A page's own `textureMemoryMiB`
+ * option still gives its value.
+ */
+export const MOBILE_TEXTURE_MEMORY_MIB = 1008;
+
+/** The cap on the texture memory of each kind of device, in MiB. */
+export function textureMemoryCap(kind: DeviceKind): number {
+	return kind === 'desktop' ? Number.POSITIVE_INFINITY : MOBILE_TEXTURE_MEMORY_MIB;
+}
+
 /** A memory reading under this many GB lowers the preset by one. */
 export const LOW_MEMORY_GB = 4;
 

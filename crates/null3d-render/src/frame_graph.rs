@@ -121,20 +121,21 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
-use crate::effects::{self, Effect, EffectIds, EffectPass, MAX_EFFECTS, Sources};
-use crate::final_pass::{BloomInputs, FinalIds, FinalPass, OutlineInputs};
+use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
+use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
-    CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, RenderScale,
-    ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
+    CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
+    RenderScale, ResourceId, Size, Step, StepKind, StoreOp, Surface, Target,
 };
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
-use crate::view::{View, ViewId};
+use crate::view::{View, ViewId, ViewNames};
+use crate::view_copy::{ViewCopies, ViewCopyIds};
 
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
@@ -148,6 +149,8 @@ pub(crate) struct GraphIds {
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
+    /// The copies of views' images into their targets, which only WebGPU makes.
+    pub(crate) view_copy: Option<ViewCopyIds>,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -324,8 +327,12 @@ pub(crate) enum Role {
     OutlineMask,
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
-    /// A custom effect, by its place in the chain. The graph records it itself.
+    /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
+    /// passes. The graph records it itself.
     Effect(u8),
+    /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
+    /// records it itself.
+    ViewCopy(ViewId),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -391,8 +398,27 @@ pub(crate) struct FrameGraph {
     occlusion: bool,
     /// Each view's occluders' pass, and the depth that its depth pyramid reads, by view, with
     /// occlusion culling.
-    occluder_passes: Vec<PassId>,
-    pyramid_depths: Vec<ResourceId>,
+    occluder_passes: Vec<(u16, PassId)>,
+    pyramid_depths: Vec<Option<ResourceId>>,
+    /// Every pass of each view, with the view's place: its culling pass, depth prepass, opaque
+    /// pass and transparent pass.
+    view_passes: Vec<(u16, PassId)>,
+    /// True for each view that is switched on, by view.
+    view_on: Vec<bool>,
+    /// The target of each view other than the camera's, by view: `None` for the camera's.
+    view_colors: Vec<Option<ResourceId>>,
+    /// The image that each view other than the camera's draws, and the pass that copies it into
+    /// the view's target, by view, where the graph copies them: on WebGPU.
+    view_images: Vec<Option<(ResourceId, PassId)>>,
+    /// The copies of the views' images, on WebGPU.
+    view_copies: Option<ViewCopies>,
+    /// True once the copies' pipeline is built, so they draw.
+    view_copy_built: bool,
+    /// True when the graph compiled outside a frame, so the next frame makes the plan's textures.
+    compiled_early: bool,
+    /// The views and their names that the declarations cover.
+    declared_views: Vec<View>,
+    declared_names: Vec<ViewNames>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -444,9 +470,17 @@ pub(crate) struct FrameGraph {
     effect_count: usize,
     /// A bit for each effect that reads the scene's depth, by its place.
     effect_depths: u32,
-    /// The textures that each effect reads, found once for each compile of the graph, which the
-    /// count says.
-    effect_textures: Option<(u32, [Sources; MAX_EFFECTS])>,
+    /// How the sketch joins its effects into groups and folds them into the final pass.
+    effect_joins: EffectJoins,
+    /// The effects' passes, as the graph declares them: each a lone effect, or a group whose
+    /// pipeline is built. The first `unit_count` hold units.
+    effect_units: [Unit; MAX_EFFECTS],
+    unit_count: usize,
+    /// The place of the first effect that folds into the final pass, while effects fold.
+    folded: Option<usize>,
+    /// The color that each unit reads and the scene depth's texture, or 0 while no effect reads
+    /// depth, found once for each compile of the graph, which the count says.
+    effect_textures: Option<(u32, [u32; MAX_EFFECTS], u32)>,
     /// The sketch time and the seconds since the frame before, which effects read.
     effect_clock: [f32; 2],
     /// The inverse of the camera's projection, which effects that read depth use, or `None`
@@ -527,6 +561,15 @@ impl FrameGraph {
             occlusion: false,
             occluder_passes: Vec::new(),
             pyramid_depths: Vec::new(),
+            view_passes: Vec::new(),
+            view_on: Vec::new(),
+            view_colors: Vec::new(),
+            view_images: Vec::new(),
+            view_copies: ids.view_copy.filter(|_| gpu_culling).map(ViewCopies::new),
+            view_copy_built: false,
+            compiled_early: false,
+            declared_views: Vec::new(),
+            declared_names: Vec::new(),
             samples: antialias.samples(),
             gpu_culling,
             scene_color,
@@ -555,6 +598,10 @@ impl FrameGraph {
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
+            effect_joins: EffectJoins::default(),
+            effect_units: [Unit::default(); MAX_EFFECTS],
+            unit_count: 0,
+            folded: None,
             effect_textures: None,
             effect_clock: [0.0; 2],
             inverse_projection: None,
@@ -605,6 +652,8 @@ impl FrameGraph {
             .then(|| EffectPass::new(self.effect_ids, self.gpu_culling && self.samples > 1));
         self.effect_count = 0;
         self.effect_depths = 0;
+        self.unit_count = 0;
+        self.folded = None;
         self.effect_textures = None;
         // The depth step reads the depth's samples, which the new mode may change.
         self.ao_pass = None;
@@ -730,6 +779,24 @@ impl FrameGraph {
     /// The render graph.
     pub(crate) fn graph(&self) -> &RenderGraph {
         &self.graph
+    }
+
+    /// Declares the passes for `views` and their `names` where they changed, and compiles the
+    /// graph outside a frame, so a sketch learns at once whether its passes fit together. The next
+    /// frame makes the plan's textures.
+    pub(crate) fn check(&mut self, views: &[View], names: &[ViewNames]) -> Result<(), GraphError> {
+        self.sync_views(views, names);
+        let compiled = self.graph.compile()?;
+        self.compiled_early |= compiled;
+        Ok(())
+    }
+
+    /// The graph as Graphviz DOT text, compiled first (see [`RenderGraph::dot`]).
+    pub(crate) fn dot(&mut self) -> String {
+        let compiles = self.graph.compiles();
+        let text = self.graph.dot();
+        self.compiled_early |= self.graph.compiles() != compiles;
+        text
     }
 
     /// What the outline mask's pipelines and bundles draw into: the mask's format, the depth format
@@ -860,14 +927,16 @@ impl FrameGraph {
         }
     }
 
-    /// Sets the custom effects that run, in order, from the next frame on, with the sketch time and
-    /// the seconds since the frame before, and the camera's projection and its inverse. Effects run
-    /// only on the HDR path, at most [`MAX_EFFECTS`] of them. The passes are declared again only
-    /// when the number of effects or their depth reads change; new templates or uniforms change
-    /// only what the frames draw.
+    /// Sets the custom effects that run, in order, from the next frame on, joined by `joins`, with
+    /// the sketch time and the seconds since the frame before, and the camera's projection and its
+    /// inverse. Effects run only on the HDR path, at most [`MAX_EFFECTS`] of them. The passes are
+    /// declared again when the number of effects, their depth reads or their joins change, each
+    /// effect then alone until [`FrameGraph::request_pipelines`] finds its group's pipeline built;
+    /// new templates or uniforms change only what the frames draw.
     pub(crate) fn set_effects(
         &mut self,
         effects: &[Effect],
+        joins: &EffectJoins,
         clock: [f32; 2],
         projection: Option<(Mat4, Mat4)>,
     ) {
@@ -882,11 +951,12 @@ impl FrameGraph {
             .fold(0, |bits, (index, effect)| {
                 bits | (u32::from(effect.depth) << index)
             });
-        if count != self.effect_count || depths != self.effect_depths {
+        if count != self.effect_count || depths != self.effect_depths || *joins != self.effect_joins
+        {
             self.effect_count = count;
             self.effect_depths = depths;
-            self.effect_textures = None;
-            self.declared = false;
+            self.effect_joins = *joins;
+            self.plan_effects(|_| false, None);
         }
         self.effects[..count].copy_from_slice(&effects[..count]);
         self.effect_clock = clock;
@@ -899,13 +969,49 @@ impl FrameGraph {
         self.final_pass.set_tone_curve(template);
     }
 
-    /// The resource that holds the scene's color after the custom effects: the last effect's
-    /// target, or the scene color without effects. Bloom and the final pass read it.
+    /// The resource that holds the scene's color after the custom effects' passes: the last unit's
+    /// target, or the scene color without one. Bloom and the final pass read it, and the effects
+    /// that fold into the final pass.
     fn color_output(&self) -> &'static str {
-        match self.effect_count {
+        match self.unit_count {
             0 => SCENE_COLOR,
             count => EFFECT_TARGETS[count - 1],
         }
+    }
+
+    /// Plans the effects' passes: the units of the effects before `fold`, with each group whose
+    /// pipeline `built` says is built as one. When the plan changes, the passes are declared again.
+    fn plan_effects(&mut self, built: impl Fn(usize) -> bool, fold: Option<usize>) {
+        let mut units = [Unit::default(); MAX_EFFECTS];
+        let count = effects::plan_units(
+            self.effect_count,
+            &self.effect_joins,
+            built,
+            fold,
+            &mut units,
+        );
+        if count != self.unit_count || units != self.effect_units || fold != self.folded {
+            self.effect_units = units;
+            self.unit_count = count;
+            self.folded = fold;
+            self.effect_textures = None;
+            self.declared = false;
+        }
+    }
+
+    /// True when the effects from `first` on can fold into the final pass now: no bloom or FXAA
+    /// reads the image between them, and the final pass reads one texel for each pixel.
+    fn may_fold(&self) -> bool {
+        !self.bloom_wanted()
+            && !self.final_pass.fxaa()
+            && Size::Full.viewport(self.canvas, self.scale) == self.canvas
+    }
+
+    /// True when an effect from place `first` on reads the scene's depth.
+    fn folded_depth(&self, first: usize) -> bool {
+        self.effects[first..self.effect_count]
+            .iter()
+            .any(|effect| effect.depth)
     }
 
     /// Makes bloom's steps for the chain's base size on the HDR path. Its GPU objects keep their
@@ -930,11 +1036,39 @@ impl FrameGraph {
         self.bloom.is_some() && self.bloom_pass.is_some()
     }
 
-    /// Declares the passes again when the number of views changed, and gives each view's opaque
-    /// pass and depth prepass the view's layers, which change without a new plan.
-    pub(crate) fn sync_views(&mut self, views: &[View]) {
-        if views.len() != self.views || !self.declared {
-            self.declare(views);
+    /// Declares the passes again when the views or their names changed in a way that changes the
+    /// passes: a view added or removed, a new target size, a texture that starts or stops showing
+    /// a target, or new reads. A view switched on or off switches its passes, and new layers go to
+    /// each view's opaque pass, depth prepass and occluders' pass, which change no plan.
+    pub(crate) fn sync_views(&mut self, views: &[View], names: &[ViewNames]) {
+        let declares = |view: &View| {
+            let target = view.target();
+            (view.is_removed(), target.size, target.shown, target.reads)
+        };
+        let same = self.declared
+            && views.len() == self.declared_views.len()
+            && names == self.declared_names.as_slice()
+            && views
+                .iter()
+                .zip(&self.declared_views)
+                .all(|(view, declared)| declares(view) == declares(declared));
+        if !same {
+            self.declared_views.clear();
+            self.declared_views.extend_from_slice(views);
+            self.declared_names.clear();
+            self.declared_names.extend_from_slice(names);
+            self.declare(views, names);
+        }
+        self.declared_views.copy_from_slice(views);
+        if views
+            .iter()
+            .zip(&self.view_on)
+            .any(|(view, &on)| view.target().enabled != on)
+        {
+            self.view_on.clear();
+            self.view_on
+                .extend(views.iter().map(|view| view.target().enabled));
+            self.enable_views();
         }
         for (&pass, view) in self.opaque.iter().zip(views) {
             self.graph.set_layers(pass, view.layers());
@@ -942,8 +1076,9 @@ impl FrameGraph {
         for (&pass, view) in self.prepasses.iter().zip(views) {
             self.graph.set_layers(pass, view.layers());
         }
-        for (&pass, view) in self.occluder_passes.iter().zip(views) {
-            self.graph.set_layers(pass, view.layers());
+        for &(index, pass) in &self.occluder_passes {
+            self.graph
+                .set_layers(pass, views[usize::from(index)].layers());
         }
     }
 
@@ -959,9 +1094,61 @@ impl FrameGraph {
     /// graph compiles again only when that changes.
     pub(crate) fn set_transparent(&mut self, on: bool) {
         self.transparent_on = on;
-        for &pass in &self.transparent {
+        self.enable_views();
+    }
+
+    /// Switches each view's passes on or off with the view, and its transparent pass only while
+    /// some object blends too.
+    fn enable_views(&mut self) {
+        for &(index, pass) in &self.view_passes {
+            let on = self
+                .view_on
+                .get(usize::from(index))
+                .copied()
+                .unwrap_or(true);
             self.graph.set_enabled(pass, on);
         }
+        for (index, &pass) in self.transparent.iter().enumerate() {
+            let on = self.view_on.get(index).copied().unwrap_or(true);
+            self.graph.set_enabled(pass, on && self.transparent_on);
+        }
+    }
+
+    /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
+    /// for a view that draws at the render size. A view with a target size of its own culls once.
+    fn view_occludes(&self, view: &View, index: usize) -> bool {
+        self.occlusion() && (index == ViewId::CAMERA.index() || view.target().size.is_none())
+    }
+
+    /// The draw list's id of the texture that materials sample a view's target from, or `None`
+    /// for the camera's view, or a target that the plan gives no texture. Valid once the frame's
+    /// [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn view_target(&self, view: ViewId) -> Option<u32> {
+        if self.view_copies.is_some() && !self.view_copy_built {
+            // The target holds no image until the copies draw.
+            return None;
+        }
+        let target = (*self.view_colors.get(view.index())?)?;
+        let surface = self.graph.plan()?.sampled_texture_of(target)?;
+        Some(self.texture_id(surface))
+    }
+
+    /// True when the view culls in two phases against its depth pyramid.
+    pub(crate) fn occludes(&self, view: ViewId) -> bool {
+        self.pyramid_depths
+            .get(view.index())
+            .is_some_and(Option::is_some)
+    }
+
+    /// The view whose objects a render pass draws, the camera's for a pass of no view.
+    fn view_of(&self, passes: &[PassId]) -> ViewId {
+        passes
+            .iter()
+            .find_map(|&pass| match self.roles[pass.index()] {
+                Role::Opaque(view) | Role::Prepass(view) | Role::Transparent(view) => Some(view),
+                _ => None,
+            })
+            .unwrap_or(ViewId::CAMERA)
     }
 
     /// True when the skinning pass runs: with skinned meshes, where the GPU culls.
@@ -978,13 +1165,14 @@ impl FrameGraph {
     /// cascade's and each shadow tile's culling and shadow passes, each view's depth prepass with
     /// the prepass and its opaque pass, the debug lines pass, which is off, each view's
     /// transparent pass, then the resolve pass and the final pass, of which one runs.
-    fn declare(&mut self, views: &[View]) {
+    fn declare(&mut self, views: &[View], names: &[ViewNames]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
         self.prepasses.clear();
         self.occluder_passes.clear();
         self.pyramid_depths.clear();
+        self.view_passes.clear();
         self.transparent.clear();
         self.shadow_passes.clear();
         self.bloom_passes.clear();
@@ -1010,6 +1198,28 @@ impl FrameGraph {
             };
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
+        let named: Vec<ViewPassNames> = views
+            .iter()
+            .zip(names)
+            .enumerate()
+            .map(|(index, (view, names))| ViewPassNames::of(index, view, names))
+            .collect();
+        // Where a pass copies each view's image into its target, the target has one sample.
+        let copies = self.view_copies.is_some();
+        let kept = if copies {
+            Target::color(self.view_target_format()).array()
+        } else {
+            color.array()
+        };
+        self.view_colors.clear();
+        self.view_colors.push(None);
+        self.view_images.clear();
+        self.view_images.push(None);
+        for (index, view) in views.iter().enumerate().skip(1) {
+            let size = view_size(view);
+            let target = self.graph.keep(named[index].color.clone(), kept, size);
+            self.view_colors.push(Some(target));
+        }
         if self.gpu_culling {
             self.graph.import_buffer(LIGHTS);
             let clusters = Pass::new("LightClusters", PassKind::Compute)
@@ -1017,11 +1227,13 @@ impl FrameGraph {
                 .creates_buffer(LIGHT_GRID);
             self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
-            for index in 0..views.len() {
-                let pass = Pass::new(view_name(index, "Culling", "Culling"), PassKind::Compute)
+            for (index, names) in named.iter().enumerate() {
+                let pass = Pass::new(names.culling.clone(), PassKind::Compute)
                     .reads(OBJECTS)
-                    .creates_buffer(view_name(index, "visible", "visible"));
-                self.add(pass, Role::Cull(ViewId::from_index(index)));
+                    .creates_buffer(names.visible.clone());
+                let pass = optional_beyond_camera(pass, index);
+                let pass = self.add(pass, Role::Cull(ViewId::from_index(index)));
+                self.view_passes.push((index as u16, pass));
             }
             if self.skinning {
                 let skin = Pass::new("Skinning", PassKind::Compute).creates_buffer(SKINNED);
@@ -1035,43 +1247,56 @@ impl FrameGraph {
             self.declare_tiles(tiles);
         }
         for (index, view) in views.iter().enumerate() {
-            let depth_name = view_name(index, SCENE_DEPTH, "depth");
-            let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
-                .layers(view.layers())
-                .creates(view_name(index, SCENE_COLOR, "color"), color);
+            let id = ViewId::from_index(index);
+            let names = &named[index];
+            let size = view_size(view);
+            let camera = id == ViewId::CAMERA;
+            let mut pass = Pass::new(names.opaque.clone(), PassKind::Scene)
+                .size(size)
+                .layers(view.layers());
+            pass = if camera {
+                pass.creates(SCENE_COLOR, color)
+            } else if copies {
+                pass.creates(names.image.clone(), color)
+            } else {
+                pass.writes(names.color.clone())
+            };
             if prepass {
-                let mut prepass = Pass::new(
-                    view_name(index, "DepthPrepass", "DepthPrepass"),
-                    PassKind::Scene,
-                )
-                .layers(view.layers())
-                .creates(depth_name.clone(), depth);
+                let mut prepass = Pass::new(names.prepass.clone(), PassKind::Scene)
+                    .size(size)
+                    .layers(view.layers())
+                    .creates(names.depth.clone(), depth);
                 if self.gpu_culling {
-                    prepass = prepass.reads(view_name(index, "visible", "visible"));
+                    prepass = prepass.reads(names.visible.clone());
                 }
                 if self.skins() {
                     prepass = prepass.reads(SKINNED);
                 }
-                let occludes = index == ViewId::CAMERA.index() && self.ao_draws();
+                let occludes = camera && self.ao_draws();
                 if occludes {
                     prepass = prepass.creates(PREPASS_COLOR, color);
                 }
-                let prepass = self.add(prepass, Role::Prepass(ViewId::from_index(index)));
+                prepass = reads_targets(prepass, views, &named, index);
+                let prepass = optional_beyond_camera(prepass, index);
+                let prepass = self.add(prepass, Role::Prepass(id));
                 self.prepasses.push(prepass);
+                self.view_passes.push((index as u16, prepass));
                 if occludes {
                     self.declare_ao();
                     pass = pass.reads(AO_TARGETS[ao::STEPS - 1]);
                 }
-                pass = pass.writes(depth_name);
+                pass = pass.writes(names.depth.clone());
             } else {
-                pass = pass.creates(depth_name, depth);
+                pass = pass.creates(names.depth.clone(), depth);
             }
-            if self.occlusion() {
+            if self.view_occludes(view, index) {
                 self.declare_occluders(view, index);
+            } else {
+                self.pyramid_depths.push(None);
             }
             if self.gpu_culling {
-                pass = pass.reads(view_name(index, "visible", "visible"));
-                if index == ViewId::CAMERA.index() {
+                pass = pass.reads(names.visible.clone());
+                if camera {
                     pass = pass.reads(LIGHT_GRID);
                 }
             }
@@ -1081,8 +1306,11 @@ impl FrameGraph {
             if self.shadow_map {
                 pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
             }
-            let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
+            pass = reads_targets(pass, views, &named, index);
+            let pass = optional_beyond_camera(pass, index);
+            let pass = self.add(pass, Role::Opaque(id));
             self.opaque.push(pass);
+            self.view_passes.push((index as u16, pass));
         }
         let lines = Pass::new("DebugLines", PassKind::Scene)
             .writes(SCENE_COLOR)
@@ -1090,27 +1318,56 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
-        for index in 0..views.len() {
-            let pass = Pass::new(
-                view_name(index, "Transparent", "Transparent"),
-                PassKind::Scene,
-            )
-            .writes(view_name(index, SCENE_COLOR, "color"))
-            .writes(view_name(index, SCENE_DEPTH, "depth"));
+        for (index, view) in views.iter().enumerate() {
+            let names = &named[index];
+            let drawn = if copies && index != ViewId::CAMERA.index() {
+                &names.image
+            } else {
+                &names.color
+            };
+            let pass = Pass::new(names.transparent.clone(), PassKind::Scene)
+                .size(view_size(view))
+                .writes(drawn.clone())
+                .writes(names.depth.clone());
+            let pass = reads_targets(pass, views, &named, index);
+            let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
-            self.graph.set_enabled(pass, self.transparent_on);
             self.transparent.push(pass);
         }
+        if copies {
+            for (index, view) in views.iter().enumerate().skip(1) {
+                let names = &named[index];
+                let pass = Pass::new(names.copy.clone(), PassKind::Fullscreen)
+                    .optional()
+                    .size(view_size(view))
+                    .reads(names.image.clone())
+                    .writes(names.color.clone());
+                let pass = self.add(pass, Role::ViewCopy(ViewId::from_index(index)));
+                self.view_passes.push((index as u16, pass));
+                let image = self
+                    .graph
+                    .find_resource(&names.image)
+                    .expect("the view's opaque pass creates its image");
+                self.view_images.push(Some((image, pass)));
+            }
+        }
+        self.view_on.clear();
+        self.view_on
+            .extend(views.iter().map(|view| view.target().enabled));
+        self.enable_views();
         self.declare_outline(color.samples);
         self.declare_effects();
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let resolve = self.add(resolve, Role::Resolve);
-        let final_pass = Pass::new("Final", PassKind::Fullscreen)
+        let mut final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
             .reads(self.color_output())
             .writes(CANVAS);
+        if self.folded.is_some_and(|first| self.folded_depth(first)) {
+            final_pass = final_pass.reads(SCENE_DEPTH);
+        }
         let final_outline = with_outline(final_pass.clone()).named("FinalOutline");
         let final_pass = self.add(final_pass, Role::Final);
         let final_outline = self.add(final_outline, Role::Final);
@@ -1147,7 +1404,7 @@ impl FrameGraph {
             pass = pass.reads(SKINNED);
         }
         let pass = self.add(pass, Role::Occluders(id));
-        self.occluder_passes.push(pass);
+        self.occluder_passes.push((index as u16, pass));
         let build = Pass::new(
             view_name(index, "DepthPyramid", "DepthPyramid"),
             PassKind::Compute,
@@ -1167,14 +1424,14 @@ impl FrameGraph {
             .graph
             .find_resource(&occluders)
             .expect("the occluders' pass creates its depth");
-        self.pyramid_depths.push(occluders);
+        self.pyramid_depths.push(Some(occluders));
     }
 
     /// The draw list's id of the occluders' depth of a view that culls in two phases, which its
     /// depth pyramid reads. Valid once the frame's [`FrameGraph::prepare`] made the plan's
     /// textures.
     pub(crate) fn depth_texture(&self, view: ViewId) -> Option<u32> {
-        let depth = *self.pyramid_depths.get(view.index())?;
+        let depth = (*self.pyramid_depths.get(view.index())?)?;
         let surface = self.graph.plan()?.sampled_texture_of(depth)?;
         Some(self.texture_id(surface))
     }
@@ -1207,16 +1464,20 @@ impl FrameGraph {
         self.outline_passes.push(pass);
     }
 
-    /// Declares the custom effects' passes: each reads the color that the pass before it left, and
-    /// the scene's depth as every pass leaves it when it reads depth, and creates a target of its
-    /// own.
+    /// Declares the custom effects' passes, one for each unit: each reads the color that the pass
+    /// before it left, and the scene's depth as every pass leaves it when one of its effects reads
+    /// depth, and creates a target of its own.
     fn declare_effects(&mut self) {
         let mut input = SCENE_COLOR;
-        for index in 0..self.effect_count {
+        for index in 0..self.unit_count {
+            let unit = self.effect_units[index];
             let mut pass = Pass::new(EFFECT_PASSES[index], PassKind::Fullscreen)
                 .reads(input)
                 .creates(EFFECT_TARGETS[index], Target::color(effects::FORMAT));
-            if self.effects[index].depth {
+            if self.effects[unit.places()]
+                .iter()
+                .any(|effect| effect.depth)
+            {
                 pass = pass.reads(SCENE_DEPTH);
             }
             self.add(pass, Role::Effect(index as u8));
@@ -1354,7 +1615,8 @@ impl FrameGraph {
         } else {
             RenderScale::FULL
         };
-        let compiled = self.graph.compile().map_err(RecordError::Graph)?;
+        let compiled = self.graph.compile().map_err(RecordError::Graph)?
+            | std::mem::take(&mut self.compiled_early);
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         let resized = canvas != self.canvas;
         if resized {
@@ -1381,8 +1643,14 @@ impl FrameGraph {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
         if let Some(pass) = self.effect_pass.as_mut() {
-            pass.request_pipelines(pipelines, &self.effects[..self.effect_count]);
+            pass.request_pipelines(
+                pipelines,
+                &self.effects[..self.effect_count],
+                &self.effect_joins,
+                pipelines_built,
+            );
         }
+        self.request_effect_joins(pipelines, pipelines_built);
         let built = match (wanted, final_bloom, self.bloom_pass.as_mut()) {
             (true, Some(final_bloom), Some(bloom)) => {
                 let (down, up) = bloom.request_pipelines(pipelines);
@@ -1411,6 +1679,54 @@ impl FrameGraph {
                 self.enable_outputs();
             }
         }
+        let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
+        let views = self.view_colors.len() > 1;
+        self.view_copy_built = match self.view_copies.as_mut() {
+            Some(copies) if views => {
+                let id = copies.request_pipeline(pipelines, format, permutation);
+                pipelines.built(id, pipelines_built)
+            }
+            _ => false,
+        };
+    }
+
+    /// The format of the targets that the copies fill on WebGPU: the scene color's, or on the
+    /// 8-bit path an sRGB texture, which the copy fills with the display color decoded, so that
+    /// materials which sample a view's texture read linear color on both paths.
+    fn view_target_format(&self) -> u32 {
+        if self.scene_color.is_hdr() {
+            self.scene_color.format()
+        } else {
+            format::RGBA8_UNORM_SRGB
+        }
+    }
+
+    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects, once
+    /// the folded effects draw alone, as a group waits (see [`EffectPass::request_pipelines`]), and
+    /// plans the effects' passes with each group and the fold whose pipeline is built.
+    fn request_effect_joins(&mut self, pipelines: &mut PipelineCache, pipelines_built: u32) {
+        let count = self.effect_count;
+        let alone = |first: usize, pipelines: &PipelineCache| {
+            self.effect_pass
+                .as_ref()
+                .is_some_and(|pass| pass.alone_built(first..count, pipelines, pipelines_built))
+        };
+        let fold = match self.effect_joins.fold_of(count) {
+            Some((first, template)) if alone(first, pipelines) => {
+                let multisampled = self.gpu_culling && self.samples > 1 && self.folded_depth(first);
+                let id = self
+                    .final_pass
+                    .request_fold(pipelines, template, multisampled);
+                (self.may_fold() && pipelines.built(id, pipelines_built)).then_some(first)
+            }
+            _ => None,
+        };
+        let pass = self.effect_pass.as_ref();
+        let built: [bool; MAX_EFFECTS] = std::array::from_fn(|place| {
+            pass.and_then(|pass| pass.group_pipeline(place))
+                .is_some_and(|id| place < count && pipelines.built(id, pipelines_built))
+        });
+        self.plan_effects(|place| built[place], fold);
     }
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
@@ -1427,6 +1743,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_effects(list, arena)?;
+        self.bind_view_copies(list)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -1462,6 +1779,19 @@ impl FrameGraph {
             }),
             _ => None,
         };
+        let fold = match self.folded {
+            Some(first) => Some(FoldInputs {
+                buffer: self.effect_ids.buffer,
+                depth: if self.folded_depth(first) {
+                    self.sampled_id(SCENE_DEPTH)
+                        .expect("an effect that reads depth reads the scene depth")
+                } else {
+                    self.effect_ids.blank_depth
+                },
+                multisampled: self.gpu_culling && self.samples > 1 && self.folded_depth(first),
+            }),
+            None => None,
+        };
         self.final_pass.prepare(
             list,
             arena,
@@ -1471,6 +1801,7 @@ impl FrameGraph {
             bloom,
             grading,
             outline,
+            fold,
             self.textures_made,
         )
     }
@@ -1516,7 +1847,9 @@ impl FrameGraph {
         if count == 0 {
             return Ok(());
         }
-        let sources = self.effect_textures();
+        let (colors, depth) = self.effect_textures();
+        let units = self.effect_units;
+        let unit_count = self.unit_count;
         let frame = (self.canvas, self.scale);
         let (clock, inverse, made) = (
             self.effect_clock,
@@ -1531,7 +1864,7 @@ impl FrameGraph {
             list,
             arena,
             &self.effects[..count],
-            &sources[..count],
+            (&units[..unit_count], &colors[..unit_count], depth),
             frame,
             clock,
             inverse,
@@ -1539,13 +1872,14 @@ impl FrameGraph {
         )
     }
 
-    /// The textures that each effect reads, found by name once for each compile of the graph.
-    fn effect_textures(&mut self) -> [Sources; MAX_EFFECTS] {
+    /// The color that each unit reads, and the scene depth's texture, or 0 while no effect reads
+    /// depth, found by name once for each compile of the graph.
+    fn effect_textures(&mut self) -> ([u32; MAX_EFFECTS], u32) {
         let compiles = self.graph.compiles();
-        if let Some((at, sources)) = self.effect_textures
+        if let Some((at, colors, depth)) = self.effect_textures
             && at == compiles
         {
-            return sources;
+            return (colors, depth);
         }
         let depth = if self.effect_depths != 0 {
             self.sampled_id(SCENE_DEPTH)
@@ -1553,22 +1887,19 @@ impl FrameGraph {
         } else {
             0
         };
-        let mut sources = [Sources::default(); MAX_EFFECTS];
-        for (index, slot) in sources.iter_mut().enumerate().take(self.effect_count) {
+        let mut colors = [0; MAX_EFFECTS];
+        for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
             let input = if index == 0 {
                 SCENE_COLOR
             } else {
                 EFFECT_TARGETS[index - 1]
             };
-            *slot = Sources {
-                color: self
-                    .sampled_id(input)
-                    .expect("each effect reads a planned texture"),
-                depth,
-            };
+            *color = self
+                .sampled_id(input)
+                .expect("each effect reads a planned texture");
         }
-        self.effect_textures = Some((compiles, sources));
-        sources
+        self.effect_textures = Some((compiles, colors, depth));
+        (colors, depth)
     }
 
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
@@ -1679,7 +2010,7 @@ impl FrameGraph {
     pub(crate) fn record(
         &self,
         list: &mut DrawList,
-        clear: [f32; 4],
+        clear: impl Fn(ViewId) -> [f32; 4],
         skips: impl Fn(Role) -> bool,
         mut record: impl FnMut(&mut DrawList, Role) -> Result<(), RecordError>,
     ) -> Result<(), RecordError> {
@@ -1713,7 +2044,11 @@ impl FrameGraph {
                     let masks = passes
                         .iter()
                         .any(|&pass| self.roles[pass.index()] == Role::OutlineMask);
-                    let clear = if masks { [0.0; 4] } else { clear };
+                    let clear = if masks {
+                        [0.0; 4]
+                    } else {
+                        clear(self.view_of(passes))
+                    };
                     self.begin_render_pass(list, plan, step, clear)?;
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
@@ -1738,7 +2073,12 @@ impl FrameGraph {
                                 .effect_pass
                                 .as_ref()
                                 .expect("effects run only on the HDR path")
-                                .record(list, usize::from(index))?,
+                                .record(list, self.effect_units[usize::from(index)])?,
+                            Role::ViewCopy(view) => {
+                                if let Some(copies) = self.view_copies.as_ref() {
+                                    copies.record(list, view.index())?;
+                                }
+                            }
                             role => record(list, role)?,
                         }
                     }
@@ -1885,6 +2225,33 @@ impl FrameGraph {
         Some(self.texture_id(surface))
     }
 
+    /// Binds the copy of each view whose copy runs to the texture of the view's image.
+    fn bind_view_copies(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if self.view_copies.is_none() {
+            return Ok(());
+        }
+        let made = self.textures_made;
+        for place in 1..self.view_images.len() {
+            let Some((image, copy)) = self.view_images[place] else {
+                continue;
+            };
+            let Some(plan) = self.graph.plan() else {
+                return Ok(());
+            };
+            if plan.step_of(copy).is_none() {
+                continue;
+            }
+            let Some(surface) = plan.sampled_texture_of(image) else {
+                continue;
+            };
+            let texture = self.texture_id(surface);
+            if let Some(copies) = self.view_copies.as_mut() {
+                copies.prepare(list, place, texture, made)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Forgets the canvas size, the textures and views the draw lists made and the final pass's
     /// objects, so the next frame makes them all again, after the thread that draws replaced the
     /// GPU.
@@ -1903,12 +2270,129 @@ impl FrameGraph {
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
         }
+        if let Some(copies) = self.view_copies.as_mut() {
+            copies.reset_gpu();
+        }
     }
 }
 
 /// The same declaration of a final pass, which reads the outline mask too.
 fn with_outline(pass: Pass) -> Pass {
     pass.reads(OUTLINE_MASK)
+}
+
+/// The names of a view's passes and resources in the graph. The camera's view takes the scene's
+/// names. A view with names of its own names its passes after its pass, and its depth after its
+/// target. Any other view takes the engine's names, which end in its place.
+struct ViewPassNames {
+    culling: Cow<'static, str>,
+    visible: Cow<'static, str>,
+    prepass: Cow<'static, str>,
+    opaque: Cow<'static, str>,
+    transparent: Cow<'static, str>,
+    color: Cow<'static, str>,
+    depth: Cow<'static, str>,
+    /// The image that the view draws where a pass copies it into the view's target, and that pass.
+    image: Cow<'static, str>,
+    copy: Cow<'static, str>,
+    /// The targets of other views that the view reads.
+    reads: Vec<Cow<'static, str>>,
+}
+
+impl ViewPassNames {
+    fn of(index: usize, view: &View, names: &ViewNames) -> Self {
+        let reads = names.reads.iter().map(|name| name.clone().into()).collect();
+        if index == ViewId::CAMERA.index() {
+            return Self {
+                culling: "Culling".into(),
+                visible: "visible".into(),
+                prepass: "DepthPrepass".into(),
+                opaque: "Opaque".into(),
+                transparent: "Transparent".into(),
+                color: SCENE_COLOR.into(),
+                depth: SCENE_DEPTH.into(),
+                image: SCENE_COLOR.into(),
+                copy: "Copy".into(),
+                reads,
+            };
+        }
+        if view.is_removed() || names.pass.is_empty() {
+            return Self {
+                culling: numbered("Culling", index),
+                visible: numbered("visible", index),
+                prepass: numbered("DepthPrepass", index),
+                opaque: numbered("Opaque", index),
+                transparent: numbered("Transparent", index),
+                color: numbered("color", index),
+                depth: numbered("depth", index),
+                image: numbered("image", index),
+                copy: numbered("Copy", index),
+                reads,
+            };
+        }
+        let pass = names.pass.as_str();
+        let color = if names.target.is_empty() {
+            joined(pass, "Color")
+        } else {
+            names.target.clone().into()
+        };
+        Self {
+            culling: joined(pass, "Culling"),
+            visible: joined(pass, "Visible"),
+            prepass: joined(pass, "DepthPrepass"),
+            opaque: pass.to_owned().into(),
+            transparent: joined(pass, "Transparent"),
+            depth: joined(&color, "Depth"),
+            image: joined(&color, "Image"),
+            copy: joined(pass, "Copy"),
+            color,
+            reads,
+        }
+    }
+}
+
+/// `name` followed by `end`, without the text formatting code.
+fn joined(name: &str, end: &str) -> Cow<'static, str> {
+    let mut text = String::with_capacity(name.len() + end.len());
+    text.push_str(name);
+    text.push_str(end);
+    Cow::Owned(text)
+}
+
+/// The size that a view draws at: its target's size in texels, or the render size.
+fn view_size(view: &View) -> Size {
+    match view.target().size {
+        Some((width, height)) => Size::Fixed { width, height },
+        None => Size::Full,
+    }
+}
+
+/// The pass, optional when it belongs to a view other than the camera's, so it runs only while a
+/// running pass reads what the view draws.
+fn optional_beyond_camera(pass: Pass, index: usize) -> Pass {
+    if index == ViewId::CAMERA.index() {
+        pass
+    } else {
+        pass.optional()
+    }
+}
+
+/// The pass of view `index`, reading the targets of other views that its objects may show: for
+/// the camera's view, the target of every view that a texture shows, and for any other view, the
+/// targets that it names.
+fn reads_targets(mut pass: Pass, views: &[View], named: &[ViewPassNames], index: usize) -> Pass {
+    if index == ViewId::CAMERA.index() {
+        for (other, view) in views.iter().enumerate().skip(1) {
+            if !view.is_removed() && view.target().shown {
+                pass = pass.reads(named[other].color.clone());
+            }
+        }
+    } else {
+        for name in &named[index].reads {
+            pass = pass.reads(name.clone());
+        }
+    }
+    pass
 }
 
 /// Records the creation of a plan's texture under `id`, with its shape and the size it takes,
@@ -1944,6 +2428,24 @@ fn create_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::ViewTarget;
+
+    /// A view other than the camera's whose target a texture shows, so the camera's passes read
+    /// it and it runs.
+    fn shown() -> View {
+        View::default().with_target(ViewTarget {
+            shown: true,
+            ..ViewTarget::default()
+        })
+    }
+
+    impl FrameGraph {
+        /// Syncs views that take the engine's names.
+        fn sync(&mut self, views: &[View]) {
+            let names = vec![ViewNames::default(); views.len()];
+            self.sync_views(views, &names);
+        }
+    }
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
@@ -1978,6 +2480,7 @@ mod tests {
             first_group: 30,
             blank_depth: 902,
         },
+        view_copy: Some(ViewCopyIds { first_group: 40 }),
     };
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
@@ -1999,7 +2502,7 @@ mod tests {
     #[test]
     fn each_view_adds_its_passes_and_the_8_bit_path_resolves_into_the_canvas() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default(), View::default()]);
+        frames.sync(&[View::default(), shown()]);
         let graph = frames.graph();
         let names = [
             "LightClusters",
@@ -2010,6 +2513,7 @@ mod tests {
             "DebugLines",
             "Transparent",
             "Transparent1",
+            "Copy1",
             "OutlineCulling",
             "OutlineMask",
             "Resolve",
@@ -2031,6 +2535,7 @@ mod tests {
                 Role::DebugLines,
                 Role::Transparent(ViewId::CAMERA),
                 Role::Transparent(ViewId::from_index(1)),
+                Role::ViewCopy(ViewId::from_index(1)),
                 Role::Cull(ViewId::OUTLINE),
                 Role::OutlineMask,
                 Role::Resolve,
@@ -2039,8 +2544,10 @@ mod tests {
             ]
         );
         for (place, name) in names.into_iter().enumerate() {
-            let on = matches!(name, "LightClusters" | "Culling" | "Culling1" | "Resolve")
-                || name.starts_with("Opaque");
+            let on = matches!(
+                name,
+                "LightClusters" | "Culling" | "Culling1" | "Resolve" | "Copy1"
+            ) || name.starts_with("Opaque");
             let pass = graph.find_pass(name).unwrap();
             assert_eq!(
                 (pass.index(), graph.is_enabled(pass)),
@@ -2058,7 +2565,7 @@ mod tests {
 
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         assert_eq!(frames.graph().pass_count(), 7);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
     }
@@ -2067,7 +2574,7 @@ mod tests {
     fn hdr_color_runs_the_final_pass_instead_of_the_resolve_pass() {
         for hdr in [format::RGBA16_FLOAT, format::RG11B10_UFLOAT] {
             let mut frames = frame_graph(hdr, Antialias::Msaa, false, false);
-            frames.sync_views(&[View::default()]);
+            frames.sync(&[View::default()]);
             let graph = &mut frames.graph;
             assert!(graph.compile().unwrap());
             assert!(graph.is_enabled(graph.find_pass("Final").unwrap()));
@@ -2096,7 +2603,7 @@ mod tests {
         for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
             for antialias in [Antialias::Fxaa, Antialias::None] {
                 let mut frames = frame_graph(scene_color, antialias, true, false);
-                frames.sync_views(&[View::default()]);
+                frames.sync(&[View::default()]);
                 assert_eq!(frames.scene_targets().samples, 1);
                 let graph = &mut frames.graph;
                 assert!(graph.compile().unwrap());
@@ -2130,7 +2637,7 @@ mod tests {
         use null3d_gpu::drawlist::texture_usage::TRANSIENT_ATTACHMENT;
         for transient in [false, true] {
             let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, transient);
-            frames.sync_views(&[View::default()]);
+            frames.sync(&[View::default()]);
             let graph = &mut frames.graph;
             graph.compile().unwrap();
             // The multisampled color and the depth live within the scene's render pass. The
@@ -2176,7 +2683,7 @@ mod tests {
     #[test]
     fn debug_lines_join_the_camera_render_pass_only_in_frames_with_lines() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default(), View::default()]);
+        frames.sync(&[View::default(), shown()]);
         let mut list = DrawList::with_capacity(256);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
@@ -2186,8 +2693,9 @@ mod tests {
             without,
             [
                 vec!["LightClusters", "Culling", "Culling1"],
+                vec!["Opaque1"],
+                vec!["Copy1"],
                 vec!["Opaque", "Resolve"],
-                vec!["Opaque1"]
             ]
         );
 
@@ -2196,7 +2704,7 @@ mod tests {
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
         assert_eq!(
-            steps(&frames)[1],
+            steps(&frames)[3],
             ["Opaque", "DebugLines", "Resolve"],
             "the lines draw over the camera's opaque objects, before the color resolves"
         );
@@ -2214,7 +2722,7 @@ mod tests {
     fn each_view_depth_prepass_draws_first_in_its_render_pass_and_creates_its_depth() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.set_depth_prepass(true);
-        frames.sync_views(&[View::default(), View::default()]);
+        frames.sync(&[View::default(), shown()]);
         assert_eq!(
             frames.roles[..7],
             [
@@ -2236,28 +2744,29 @@ mod tests {
             with,
             [
                 vec!["LightClusters", "Culling", "Culling1"],
+                vec!["DepthPrepass1", "Opaque1"],
+                vec!["Copy1"],
                 vec!["DepthPrepass", "Opaque", "Resolve"],
-                vec!["DepthPrepass1", "Opaque1"]
             ]
         );
-        // The prepass begins the render pass, which clears the color and the depth.
+        // The prepass begins each view's render pass, which clears the color and the depth.
         list.clear();
         frames
-            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
             .unwrap();
         let passes = operands(&list, Op::BeginRenderPass);
         let both = pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH;
-        assert!(passes[..2].iter().all(|pass| pass[8] & both == both));
+        assert!([0, 2].iter().all(|&at| passes[at][8] & both == both));
         // The prepass makes no texture of its own.
         let textures = frames.graph().plan().unwrap().textures().len();
         let mut without = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
-        without.sync_views(&[View::default(), View::default()]);
+        without.sync(&[View::default(), shown()]);
         without
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
         assert_eq!(without.graph().plan().unwrap().textures().len(), textures);
         // Views keep their prepass when they change.
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
@@ -2278,7 +2787,7 @@ mod tests {
     /// which records nothing of its own.
     fn layered(layers: u32) -> FrameGraph {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let size = Size::Fixed {
             width: 256,
             height: 256,
@@ -2313,7 +2822,7 @@ mod tests {
         let views = [[129, 1, 0, 0], [130, 1, 0, 1], [131, 1, 0, 2]];
         assert_eq!(operands(&list, Op::CreateTextureView), views);
         frames
-            .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
             .unwrap();
         let depth_only = pass_flags::CLEAR_DEPTH | pass_flags::STORE_DEPTH;
         let passes = operands(&list, Op::BeginRenderPass);
@@ -2340,7 +2849,7 @@ mod tests {
     #[test]
     fn multisampled_targets_are_made_again_when_the_pass_to_the_canvas_changes() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let mut list = DrawList::with_capacity(512);
         let multisampled = |list: &DrawList| {
             let created = operands(list, Op::CreateTexture);
@@ -2414,7 +2923,7 @@ mod tests {
     #[test]
     fn transparent_passes_draw_last_in_each_view_render_pass_while_something_blends() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default(), View::default()]);
+        frames.sync(&[View::default(), shown()]);
         let mut list = DrawList::with_capacity(256);
         frames.set_debug_lines(true);
         frames.set_transparent(true);
@@ -2425,26 +2934,27 @@ mod tests {
             steps(&frames),
             [
                 vec!["LightClusters", "Culling", "Culling1"],
+                vec!["Opaque1", "Transparent1"],
+                vec!["Copy1"],
                 vec!["Opaque", "DebugLines", "Transparent", "Resolve"],
-                vec!["Opaque1", "Transparent1"]
             ],
             "blended objects draw over the opaque ones and the lines, before the color resolves"
         );
         // Views declared later take the passes' state.
-        frames.sync_views(&[View::default(); 3]);
+        frames.sync(&[View::default(), shown(), shown()]);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
-        assert_eq!(steps(&frames)[3], ["Opaque2", "Transparent2"]);
+        assert!(steps(&frames).contains(&vec!["Opaque2".to_owned(), "Transparent2".to_owned()]));
         frames.set_transparent(false);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
             .unwrap();
-        assert_eq!(steps(&frames)[3], ["Opaque2"]);
+        assert!(steps(&frames).contains(&vec!["Opaque2".to_owned()]));
 
         // On the HDR path the final pass reads the scene color after the blended objects.
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames.set_transparent(true);
         frames
             .prepare(&mut list, (64, 64), RenderScale::FULL)
@@ -2459,7 +2969,7 @@ mod tests {
     fn bloom_runs_its_chain_between_the_scene_and_the_final_pass_only_while_it_is_on() {
         let canvas = (1920, 1080);
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let mut list = DrawList::with_capacity(8192);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
@@ -2534,7 +3044,7 @@ mod tests {
         let record = |frames: &FrameGraph, list: &mut DrawList| {
             list.clear();
             frames
-                .record(list, [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
                 .unwrap();
             (
                 operands(list, Op::BeginRenderPass).len(),
@@ -2574,7 +3084,7 @@ mod tests {
                 halvings: 0,
             },
         );
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames.request_pipelines(&mut PipelineCache::default(), 0);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
@@ -2585,7 +3095,7 @@ mod tests {
 
         // Off again, the steps and their targets are gone.
         frames.set_bloom(None, chain);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
@@ -2596,7 +3106,7 @@ mod tests {
     fn effects_run_in_order_between_the_scene_and_bloom_and_share_two_targets() {
         let canvas = (1280, 720);
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let mut list = DrawList::with_capacity(8192);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
@@ -2609,9 +3119,9 @@ mod tests {
             values: [0.0; effects::EFFECT_FLOATS],
         };
         let chain = [effect(64, false), effect(65, true), effect(66, false)];
-        frames.set_effects(&chain, [0.0; 2], None);
+        frames.set_effects(&chain, &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let mut pipelines = PipelineCache::default();
         // Bloom draws once a frame drew with its pipelines built.
         frames.request_pipelines(&mut pipelines, 0);
@@ -2661,14 +3171,119 @@ mod tests {
         );
 
         // Fewer effects declare the chain again; none leave the plan as it was.
-        frames.set_effects(&[], [0.0; 2], None);
+        frames.set_effects(&[], &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(None, ChainFrame::default());
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
         assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
+    }
+
+    #[test]
+    fn effects_join_once_their_group_is_built_and_fold_into_the_final_pass() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let effect = |template, depth| Effect {
+            template,
+            depth,
+            values: [0.0; effects::EFFECT_FLOATS],
+        };
+        let chain = [effect(64, false), effect(65, false), effect(66, true)];
+        let mut joins = EffectJoins::default();
+        joins.groups[1] = (2, 90);
+        let mut pipelines = PipelineCache::default();
+        // Frames after the first: a pipeline draws once a frame drew with it built.
+        let frame = |frames: &mut FrameGraph,
+                     pipelines: &mut PipelineCache,
+                     joins: &EffectJoins,
+                     built: u32,
+                     list: &mut DrawList| {
+            frames.set_effects(&chain, joins, [0.0; 2], None);
+            frames.request_pipelines(pipelines, built);
+            pipelines.create_new(list, built + 1).unwrap();
+            frames.sync(&[View::default()]);
+            frames.prepare(list, canvas, RenderScale::FULL).unwrap();
+            steps(frames).into_iter().flatten().collect::<Vec<String>>()
+        };
+        let effect_passes = |names: &[String]| {
+            names
+                .iter()
+                .filter(|name| name.starts_with("Effect"))
+                .count()
+        };
+        // The effects draw alone while they build, and while their group's pipeline builds after
+        // them, and then as one.
+        let names = frame(&mut frames, &mut pipelines, &joins, 5, &mut list);
+        assert_eq!(effect_passes(&names), 3);
+        assert!(pipelines.keys().iter().all(|key| key.template != 90));
+        let names = frame(&mut frames, &mut pipelines, &joins, 6, &mut list);
+        assert_eq!(effect_passes(&names), 3);
+        let names = frame(&mut frames, &mut pipelines, &joins, 7, &mut list);
+        assert_eq!(effect_passes(&names), 2);
+        let group = pipelines
+            .keys()
+            .iter()
+            .find(|key| key.template == 90)
+            .expect("the group asked for its pipeline");
+        assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let bound: Vec<Vec<u32>> = operands(&list, Op::CreateBindGroup)
+            .into_iter()
+            .filter(|group| group[0] == 30 + MAX_EFFECTS as u32 + 1)
+            .collect();
+        assert_eq!(bound.len(), 1, "the group binds once");
+        assert_eq!(bound[0][3 + 4], effects::BUFFER_BYTES as u32);
+
+        // Folded, the group's effects leave their passes, and the final pass reads the first
+        // effect's target with its fold build, once that build's pipeline is built.
+        joins.fold = Some((1, 91));
+        let names = frame(&mut frames, &mut pipelines, &joins, 8, &mut list);
+        assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
+        let names = frame(&mut frames, &mut pipelines, &joins, 9, &mut list);
+        assert_eq!(effect_passes(&names), 1);
+        let fold = pipelines
+            .keys()
+            .iter()
+            .position(|key| key.template == 91)
+            .expect("the final pass asked for its fold build") as u32
+            + 1;
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .map(|group| group[1])
+            .collect();
+        assert!(layouts.contains(&bind_layout::FINAL_EFFECTS_DEPTH_MS));
+        list.clear();
+        frames
+            .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+            .unwrap();
+        assert!(
+            operands(&list, Op::SetPipeline)
+                .iter()
+                .any(|set| set[0] == fold)
+        );
+
+        // Bloom reads the effects' image, so nothing folds while it is on.
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        let names = frame(&mut frames, &mut pipelines, &joins, 10, &mut list);
+        assert_eq!(effect_passes(&names), 2);
     }
 
     #[test]
@@ -2679,15 +3294,15 @@ mod tests {
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        frames.set_effects(&[effect], [0.0; 2], None);
-        frames.sync_views(&[View::default()]);
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.sync(&[View::default()]);
         assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
     }
 
     #[test]
     fn bloom_draws_after_the_first_frame_only_once_its_pipelines_are_built() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         let mut pipelines = PipelineCache::default();
         let mut list = DrawList::with_capacity(4096);
         frames.request_pipelines(&mut pipelines, 0);
@@ -2724,7 +3339,7 @@ mod tests {
     fn outlines_run_their_mask_with_the_scene_depth_only_while_something_is_outlined() {
         for (scene_color, gpu_culling) in [(format::RGBA16_FLOAT, true), (format::CANVAS, false)] {
             let mut frames = frame_graph(scene_color, Antialias::Msaa, gpu_culling, true);
-            frames.sync_views(&[View::default()]);
+            frames.sync(&[View::default()]);
             let mut list = DrawList::with_capacity(4096);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
@@ -2771,7 +3386,12 @@ mod tests {
             list.clear();
             let background = [0.25f32, 0.5, 0.75, 1.0].map(f32::to_bits);
             frames
-                .record(&mut list, [0.25, 0.5, 0.75, 1.0], |_| false, |_, _| Ok(()))
+                .record(
+                    &mut list,
+                    |_| [0.25, 0.5, 0.75, 1.0],
+                    |_| false,
+                    |_, _| Ok(()),
+                )
                 .unwrap();
             let passes = operands(&list, Op::BeginRenderPass);
             let cleared_to_zero: Vec<_> =
@@ -2830,7 +3450,7 @@ mod tests {
             (format::RGBA16_FLOAT, Antialias::Fxaa, false),
         ] {
             let mut frames = frame_graph(format, antialias, gpu_culling, true);
-            frames.sync_views(&[View::default(), View::default()]);
+            frames.sync(&[View::default(), shown()]);
             let mut list = DrawList::with_capacity(4096);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
@@ -2844,7 +3464,7 @@ mod tests {
                 "ambient occlusion needs the prepass's depth"
             );
             frames.request_pipelines(&mut PipelineCache::default(), 0);
-            frames.sync_views(&[View::default(), View::default()]);
+            frames.sync(&[View::default(), shown()]);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -2880,8 +3500,12 @@ mod tests {
             let depth = attachments.iter().find(|a| a.depth).unwrap();
             assert_eq!(depth.load, LoadOp::Load);
             // Three targets of half the size, and the camera's depth readable, which no longer
-            // shares a texture with the side view's depth, whose usage differs.
-            assert_eq!(plan.textures().len(), without + 4);
+            // shares a texture with the side view's depth, whose usage differs. With one sample
+            // of HDR color, the prepass's stand-in color takes a texture of its own too: the
+            // scene color, which it would share, is sampled, and the side view's color is kept.
+            let stand_in =
+                usize::from(format == format::RGBA16_FLOAT && antialias == Antialias::Fxaa);
+            assert_eq!(plan.textures().len(), without + 4 + stand_in);
             let texture = |name: &str| plan.texture_of(frames.graph().find_resource(name).unwrap());
             let depth = texture(SCENE_DEPTH).unwrap();
             let Surface::Texture(index) = depth else {
@@ -2915,7 +3539,7 @@ mod tests {
             assert!(list.is_empty(), "a new scale makes no texture");
             list.clear();
             frames
-                .record(&mut list, [0.0; 4], |_| false, |_, _| Ok(()))
+                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
                 .unwrap();
             let viewports = operands(&list, Op::SetViewport);
             assert!(viewports.iter().any(|v| v[2..4] == [80, 45]));
@@ -2923,7 +3547,7 @@ mod tests {
             // Off again, the steps and their targets are gone, and the prepass with them.
             frames.set_ao(None, 0.5);
             assert!(!frames.depth_prepass());
-            frames.sync_views(&[View::default(), View::default()]);
+            frames.sync(&[View::default(), shown()]);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -2936,7 +3560,7 @@ mod tests {
     #[test]
     fn the_8_bit_path_draws_no_bloom() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
-        frames.sync_views(&[View::default()]);
+        frames.sync(&[View::default()]);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         assert!(!frames.bloom_draws());
         let mut list = DrawList::with_capacity(1024);

@@ -2,7 +2,13 @@
 //! camera and lens give each frame, a layer mask, which selects the objects it draws, and a
 //! target, which the pass that draws it declares in the render graph. Its lens is perspective or
 //! orthographic. The first view is the camera's, and it draws the scene color and depth that reach
-//! the canvas. Each further view draws color and depth targets of its own.
+//! the canvas. Each further view draws into a color target of its own (see [`ViewTarget`]), which
+//! the render graph keeps from frame to frame, and which materials can show. A further view runs
+//! only while some running pass reads its target: the camera's passes read the target of each
+//! view that a texture shows, and a view reads the targets that it lists.
+//!
+//! A view never draws an object whose material shows the target of a view that it does not read,
+//! its own included, since a pass cannot sample a texture that it draws into.
 //!
 //! Each frame builder culls every view on its own. On WebGPU a view has its own culling dispatch,
 //! compacted instances, indirect draws and bundle. On WebGL2 the job workers list each view's
@@ -21,6 +27,7 @@ use null3d_core::layers::DEFAULT_LAYERS;
 
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame_data::FrameUniform;
+use crate::graph::{RenderScale, Size};
 use crate::shadow_tiles::MAX_TILES;
 use crate::shadows::MAX_CASCADES;
 
@@ -54,6 +61,11 @@ impl ViewId {
 
     pub(crate) const fn from_index(index: usize) -> Self {
         Self(index as u16)
+    }
+
+    /// The view of a camera at `place` in the list of views, from 0 for the camera's view.
+    pub const fn from_place(place: usize) -> Self {
+        Self(if place < MAX_VIEWS { place } else { 0 } as u16)
     }
 
     /// The view of a shadow cascade, from 0 for the nearest, after every view of a camera.
@@ -92,12 +104,56 @@ impl ViewId {
     }
 }
 
-/// What a view draws from: a camera object with its lens, and the layers of the objects it
-/// draws (see [`null3d_core::layers`]).
+/// The target of a view other than the camera's, and how it draws.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewTarget {
+    /// Its width and height in texels, or `None` for the canvas's size.
+    pub size: Option<(u32, u32)>,
+    /// The color it clears to before the view draws, as exposed linear color with alpha, or
+    /// `None` for the color that the camera's target clears to.
+    pub clear: Option<[f32; 4]>,
+    /// False while the view is switched off: its target keeps the last image it drew.
+    pub enabled: bool,
+    /// True while a texture shows the target, so the camera's passes read it.
+    pub shown: bool,
+    /// The views whose targets this view reads, as a mask of view places: the objects it draws
+    /// may show them.
+    pub reads: u32,
+}
+
+impl Default for ViewTarget {
+    /// A target of the canvas's size that clears as the camera's does, switched on, that no
+    /// texture shows yet.
+    fn default() -> Self {
+        Self {
+            size: None,
+            clear: None,
+            enabled: true,
+            shown: false,
+            reads: 0,
+        }
+    }
+}
+
+/// The names that a view other than the camera's gives the render graph: its pass, its target,
+/// and the targets of other views that it reads. A view without names takes the engine's own,
+/// which end in its place in the list of views.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ViewNames {
+    pub pass: String,
+    pub target: String,
+    pub reads: Vec<String>,
+}
+
+/// What a view draws from: a camera object with its lens, the layers of the objects it draws
+/// (see [`null3d_core::layers`]), and the target it draws into, for a view other than the
+/// camera's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     camera: Option<(Handle, Lens)>,
     layers: u32,
+    target: ViewTarget,
+    removed: bool,
 }
 
 impl Default for View {
@@ -106,6 +162,8 @@ impl Default for View {
         Self {
             camera: None,
             layers: DEFAULT_LAYERS,
+            target: ViewTarget::default(),
+            removed: false,
         }
     }
 }
@@ -116,6 +174,37 @@ impl View {
         Self {
             camera: Some((camera, lens.into())),
             layers,
+            target: ViewTarget::default(),
+            removed: false,
+        }
+    }
+
+    /// The same view, drawing into `target`.
+    pub fn with_target(self, target: ViewTarget) -> Self {
+        Self { target, ..self }
+    }
+
+    /// The view's target, which only views other than the camera's draw into.
+    pub fn target(&self) -> &ViewTarget {
+        &self.target
+    }
+
+    pub(crate) fn target_mut(&mut self) -> &mut ViewTarget {
+        &mut self.target
+    }
+
+    /// True for the place of a view that was removed, which the next view added takes. It draws
+    /// nothing.
+    pub fn is_removed(&self) -> bool {
+        self.removed
+    }
+
+    /// The size the view draws at in texels, for a canvas of `canvas` pixels at render scale
+    /// `scale`: its target's own size, or the render size.
+    pub fn draw_size(&self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
+        match self.target.size {
+            Some(size) => size,
+            None => Size::Full.viewport(canvas, scale),
         }
     }
 
@@ -135,6 +224,15 @@ impl View {
 
     pub(crate) fn set_layers(&mut self, mask: u32) {
         self.layers = mask;
+    }
+
+    /// The place of a removed view, which draws nothing until a new view takes it.
+    pub(crate) fn removed() -> Self {
+        Self {
+            camera: None,
+            removed: true,
+            ..Self::default()
+        }
     }
 
     /// Where the view's camera stands and how it sees, for a target of `aspect`. `None` when the

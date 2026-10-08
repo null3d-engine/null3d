@@ -420,9 +420,17 @@ impl Compiler {
                 // They have no MORPH builds, which would double their WebGL2 builds again: on
                 // WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
                 // instances from the culling shader's copies on every path, so they have no
-                // INSTANCE_INDEX builds (decision record D-23).
+                // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
+                // coverage or the alpha hash either: they test their alpha against the cutoff.
                 let skins = !variant.targets.contains(&Target::Wgsl);
-                let left_out = ["HALF", "MORPH", "INSTANCE_INDEX"];
+                let left_out = [
+                    "HALF",
+                    "MORPH",
+                    "INSTANCE_INDEX",
+                    "SAMPLE_MASK",
+                    "ALPHA_COVERAGE",
+                    "ALPHA_HASH",
+                ];
                 let permutations = variant
                     .permutations
                     .iter()

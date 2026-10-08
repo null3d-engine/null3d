@@ -3,16 +3,14 @@ import { join } from 'node:path';
 import { ERRORS } from '../../packages/engine/src/errors/codes.ts';
 import type { ApiReference, ApiSymbol } from './api-docs';
 import {
-	API_END,
-	API_START,
 	checkDocs,
 	frontMatterProblems,
 	generateDocs,
 	PAGES,
 	pageList,
 	placeholderPage,
+	referenceLinkProblems,
 	referenceProblems,
-	tableMarkers,
 } from './docs';
 import { fixture } from './fixture';
 import { parseFrontMatter, renderFrontMatter, yamlString } from './frontmatter';
@@ -30,7 +28,7 @@ const INDEX = `${renderFrontMatter([
 	['status', 'experimental'],
 	['since', '0.1'],
 	['summary', 'The docs.'],
-])}\n# Docs\n\n<!-- null3d:page-list:start -->\n<!-- null3d:page-list:end -->\n`;
+])}\n# Docs\n\nSee [All pages](pages.md).\n`;
 const NO_API: ApiReference = { symbols: [], problems: [] };
 const SET_THING: ApiSymbol = {
 	name: 'setThing',
@@ -129,13 +127,13 @@ describe('pageList', () => {
 		expect(list.indexOf('concepts/architecture.md')).toBeLessThan(
 			list.indexOf('concepts/handles.md'),
 		);
-		expect(list).toContain('### Concepts');
+		expect(list).toContain('## Concepts');
 		expect(list).toContain('a \\| b');
 	});
 });
 
 describe('generateDocs', () => {
-	it('rewrites placeholders, keeps written pages, and fills the index page list', () => {
+	it('rewrites placeholders, keeps written pages, and lists every page', () => {
 		const written = `${renderFrontMatter([
 			['id', 'concepts/handles'],
 			['title', 'Handles'],
@@ -151,74 +149,64 @@ describe('generateDocs', () => {
 		});
 		const out = generateDocs(root, NO_API);
 		expect(out.has('docs/concepts/handles.md')).toBe(false);
+		expect(out.has('docs/index.md')).toBe(false);
 		expect(out.get('docs/concepts/architecture.md')).toContain('This page will cover:');
-		expect(out.get('docs/index.md')).toContain('[Handles](concepts/handles.md)');
+		const pages = out.get('docs/pages.md') ?? '';
+		expect(pages).toContain('status: generated');
+		expect(pages).toContain('[Handles](concepts/handles.md)');
+		expect(pages).toContain('## Concepts');
+		expect(pages).not.toContain('(index.md) |');
 		expect(out.get('docs/porting/threejs-mapping.md')).toContain('status: generated');
 	});
 
-	it('fails when the index page has no page-list markers', () => {
-		const root = fixture({
-			'docs/index.md': '# Docs\n',
-			'docs/data/threejs-mapping.json': MAPPING,
-		});
-		expect(() => generateDocs(root, NO_API)).toThrow('page-list');
-	});
-
-	it("puts each export on its page's reference: a placeholder gains a section, a written page fills its markers", () => {
+	it("puts each export on its page's reference: a placeholder gains a section, a written page gets a reference page", () => {
 		const root = fixture({
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
 			'docs/api/scene.md': '<!-- null3d:placeholder -->\nold text',
-			'docs/api/objects.md': writtenObjects(`${API_START}\nSTALE REFERENCE\n${API_END}`),
+			'docs/api/objects.md': writtenObjects('[The API reference](reference/objects.md).'),
 		});
 		const out = generateDocs(root, { symbols: [SET_THING, THING], problems: [] });
 		const scene = out.get('docs/api/scene.md') ?? '';
 		expect(scene).toContain('No release has these APIs yet');
 		expect(scene).toContain('## API reference\n\n### `setThing`');
-		expect(scene).toContain('### `setThing`');
-		const objects = out.get('docs/api/objects.md') ?? '';
-		expect(objects).toContain(`${API_START}\n\n### `);
-		expect(objects).toContain('### `Thing`');
-		expect(objects).not.toContain('STALE REFERENCE');
-		expect(objects).toContain('More text.');
+		expect(out.has('docs/api/objects.md')).toBe(false);
+		const reference = out.get('docs/api/reference/objects.md') ?? '';
+		expect(reference).toContain('id: api/reference/objects');
+		expect(reference).toContain('status: generated');
+		expect(reference).toContain('# Objects and transforms: API reference');
+		expect(reference).toContain('## `Thing`');
+		expect(reference).toContain('[Objects and transforms](../objects.md)');
 		expect(out.get('docs/api/lights.md')).toContain('No release has this feature yet');
-	});
-
-	it('fails when a written page with exports has no reference markers', () => {
-		const root = fixture({
-			'docs/index.md': INDEX,
-			'docs/data/threejs-mapping.json': MAPPING,
-			'docs/api/objects.md': writtenObjects('No markers.'),
-		});
-		expect(() => generateDocs(root, { symbols: [THING], problems: [] })).toThrow('API reference');
+		expect(out.get('docs/pages.md')).not.toContain('api/reference/');
 	});
 });
 
-describe('the quality presets page', () => {
-	const presetsPage = (body: string) =>
-		`${renderFrontMatter([
-			['id', 'concepts/quality-presets'],
-			['title', 'Quality presets'],
-			['status', 'experimental'],
-			['since', '0.1'],
-			['summary', 'Written.'],
-		])}\n# Quality presets\n\n${body}\n`;
-	const markers = (name: string, inner = '') => tableMarkers(name).join(`\n${inner}\n`);
-
-	it("fills each of its tables from the engine's constants", () => {
+describe('referenceLinkProblems', () => {
+	it('fails when a written API page does not link to its reference page', () => {
 		const root = fixture({
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
-			'docs/concepts/quality-presets.md': presetsPage(
-				[
-					markers('preset-devices'),
-					markers('preset-ceilings'),
-					markers('preset-settings', 'STALE TABLE'),
-					markers('preset-check'),
-				].join('\n\nText between the tables.\n\n'),
-			),
+			'docs/api/objects.md': writtenObjects('Written.'),
 		});
-		const page = generateDocs(root, NO_API).get('docs/concepts/quality-presets.md') ?? '';
+		const generated = generateDocs(root, { symbols: [THING], problems: [] });
+		const page = (body: string) => new Map([['docs/api/objects.md', writtenObjects(body)]]);
+		expect(referenceLinkProblems(page('No link.'), generated)).toEqual([
+			'docs/api/objects.md must link to its API reference, (reference/objects.md)',
+		]);
+		expect(referenceLinkProblems(page('[It](reference/objects.md).'), generated)).toEqual([]);
+	});
+});
+
+describe('the quality preset tables', () => {
+	it("are a generated page of tables from the engine's constants", () => {
+		const root = fixture({
+			'docs/index.md': INDEX,
+			'docs/data/threejs-mapping.json': MAPPING,
+		});
+		const page = generateDocs(root, NO_API).get('docs/concepts/quality-preset-tables.md') ?? '';
+		expect(page).toContain('status: generated');
+		expect(page).toContain('## Starting preset of each device');
 		expect(page).toContain('| Phone | coarse | under 600 CSS pixels | Low |');
 		expect(page).toContain('| Desktop or laptop | fine | any | High |');
 		expect(page).toContain('A memory reading under 4 GB lowers the starting preset by one.');
@@ -236,17 +224,6 @@ describe('the quality presets page', () => {
 			"| Target frame rate | The display's refresh rate, at most 60 frames per second |",
 		);
 		expect(page).toContain('| Measurement of each preset | 500 ms |');
-		expect(page).not.toContain('STALE TABLE');
-		expect(page).toContain('Text between the tables.');
-	});
-
-	it('fails when the page lacks the markers of one of its tables', () => {
-		const root = fixture({
-			'docs/index.md': INDEX,
-			'docs/data/threejs-mapping.json': MAPPING,
-			'docs/concepts/quality-presets.md': presetsPage(markers('preset-devices')),
-		});
-		expect(() => generateDocs(root, NO_API)).toThrow('preset-ceilings');
 	});
 });
 

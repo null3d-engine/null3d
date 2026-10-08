@@ -1,8 +1,10 @@
 name: Release Publish
 
 # Runs when a release pull request (branch release/<version>, opened by release.yml) merges. It
-# tags the merge commit with the plain version, publishes a GitHub Release whose notes are that
-# version's CHANGELOG.md section, then publishes every package that is not private to npm.
+# tags the plain version on a commit that adds every generated file to the merge commit, publishes
+# a GitHub Release whose notes are that version's CHANGELOG.md section, then publishes every package
+# that is not private to npm. Main keeps no generated file (D-105), and the tagged commit holds them
+# for what reads the release from git: the Claude Code plugin, `skills add` and the docs on GitHub.
 
 on:
   pull_request:
@@ -21,7 +23,8 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The shader modules build on a machine with no Rust cache.
+    timeout-minutes: 30
     if: >-
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'release/')
@@ -40,7 +43,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - run: bun install --frozen-lockfile
+      # The engine page's API reference names the shader features, which the shader modules hold.
+      - run: bun run shaders
 
       - name: Tag the release and publish the GitHub Release
         id: tag
@@ -55,6 +62,10 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # The tagged commit's parent is the merge commit on main, so the next release's changelog
+          # still starts after it.
+          bun tools/generate.ts --stage
+          git commit -m "chore(release): ${version} with its generated files"
           git tag -a "$version" -m "Release ${version}"
           git push origin "refs/tags/${version}"
           bun run release --notes "$version" > "$RUNNER_TEMP/notes.md"
@@ -62,7 +73,8 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       # claude.ai and the Claude desktop app take a skill as a zip file with the skill's folder at
-      # its root and exactly one SKILL.md. The generated copies hold no evals.
+      # its root and exactly one SKILL.md. The generated copies, which the step above wrote, hold no
+      # evals.
       - name: Attach each skill to the release as a zip file
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

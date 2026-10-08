@@ -6,6 +6,7 @@ import {
 	comparisonLines,
 	jobsTable,
 	lineChartSvg,
+	loadTable,
 	median,
 	niceStep,
 	ownShareOfThree,
@@ -376,6 +377,35 @@ describe('traces', () => {
 		expect(benchReport([row]).slice(-2)).toEqual(['', traceTable([row])]);
 		expect(
 			summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [result(2, true)]).trace,
+		).toBeUndefined();
+	});
+
+	test("takes the median of each load figure over a streamed scene's runs, and adds a table", () => {
+		const loaded = (firstFrameMs: number, wholeMs: number, bytes: number): BenchResult => ({
+			...result(2, true),
+			scene: 's6',
+			load: {
+				firstFrameMs,
+				wholeMs,
+				sketch: { kit: firstFrameMs / 1000, towers: wholeMs / 1000, whole: 1, objects: 9, bytes },
+			},
+		});
+		const runs = [loaded(1100, 1500, 42e6), loaded(1300, 1900, 42e6), loaded(1200, 1600, 43e6)];
+		const row = summaryRow({ scene: 's6', kind: 'null3d-webgpu' }, runs);
+		expect(row.load).toEqual({
+			runs: 3,
+			firstFrameMs: 1200,
+			wholeMs: 1600,
+			kitSeconds: 1.2,
+			towersSeconds: 1.6,
+			bytes: 42e6,
+		});
+		expect(loadTable([row]).split('\n')[2]).toBe(
+			'| s6 | null3d-webgpu | 3 | 1200 | 1600 | 1.20 | 1.60 | 42.0 |',
+		);
+		expect(benchReport([row]).slice(-2)).toEqual(['', loadTable([row])]);
+		expect(
+			summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [result(2, true)]).load,
 		).toBeUndefined();
 	});
 });

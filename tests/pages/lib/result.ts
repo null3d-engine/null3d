@@ -22,19 +22,29 @@ export function progress(step: string): void {
 	trail.push(`${Math.round(performance.now())} ms ${step}`);
 }
 
+/**
+ * The shared memories that the page's thread made, the engine's included, those refused, and the
+ * last one made, which the page does not keep alive.
+ */
+export const sharedMemories: { made: number; refused: number; last?: WeakRef<WebAssembly.Memory> } =
+	{ made: 0, refused: 0 };
+
 // The trail notes the first shared memory that the browser refuses the page, the engine's included.
 // The browser's own constructor still makes each memory, so every memory keeps the browser's
 // prototype, which the memory counts of the tests look for.
-let memoryRefused = false;
 WebAssembly.Memory = new Proxy(WebAssembly.Memory, {
 	construct(BrowserMemory, args: [WebAssembly.MemoryDescriptor]) {
+		const shared = args[0]?.shared === true;
 		try {
-			return Reflect.construct(BrowserMemory, args);
-		} catch (error) {
-			if (args[0]?.shared && !memoryRefused) {
-				memoryRefused = true;
-				progress(`${MEMORY_REFUSED}: ${(error as Error).message}`);
+			const memory = Reflect.construct(BrowserMemory, args);
+			if (shared) {
+				sharedMemories.made++;
+				sharedMemories.last = new WeakRef(memory);
 			}
+			return memory;
+		} catch (error) {
+			if (shared && sharedMemories.refused++ === 0)
+				progress(`${MEMORY_REFUSED}: ${(error as Error).message}`);
 			throw error;
 		}
 	},

@@ -1,14 +1,19 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait, ?shaders=fresh,
-// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Ten more set
-// what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory=
-// for the shared memory's maximum, ?queue= for the frames that may wait on the GPU, ?cells=off for
-// culling without grid cells, ?prepass=on or off for the depth prepass, ?occlusion=on or off for
-// occlusion culling, ?skinning=vertex for skinning in the vertex shader of each pass on WebGPU,
-// ?instances=index for vertex shaders that read instance data by index on core WebGPU, and
-// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth. ?hold
-// starts hold mode for image tests, ?preset= fixes the quality preset, ?bench publishes the
-// running engine for benchmark tools, and ?gl-timing times each WebGL call for benchmark pages.
+// ?check=fresh, ?wake=message, ?hdr=off, ?scene-format=, ?half= and ?compression=. Twelve more
+// set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
+// ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
+// ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
+// ?occlusion=on or off for occlusion culling, ?skinning= for how WebGPU skins (vertex for the
+// vertex shader of each pass, or full, skip or narrow for the skinning pass with fewer of its
+// savings), ?instances=index for vertex shaders that read instance data by index on core WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
+// ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
+// in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
+// each frame's list, for a test of memory that the sketch thread frees while the list may still
+// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
+// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
+// benchmark pages.
 
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -57,6 +62,15 @@ const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 
 /** The bits per texel of the shadow cascades' depth. */
 export type ShadowDepthBits = 16 | 32;
+
+/**
+ * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `lean`, the
+ * default, skins in the skinning pass, which skips characters whose pose held still and writes
+ * normals and tangents in 8 bits. `full` skins every drawn character every frame with 32-bit
+ * directions, `skip` only skips held poses, and `narrow` only writes 8-bit directions. `vertex`
+ * skins in the vertex shader of each pass that draws a character, as WebGL2 does.
+ */
+export type SkinningSwitch = 'lean' | 'vertex' | 'full' | 'skip' | 'narrow';
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -136,6 +150,11 @@ export interface Switches {
 	 */
 	cells: boolean;
 	/**
+	 * False when ?join=off keeps each custom effect in a pass of its own, with none joined into a
+	 * group or folded into the final pass, for pages that measure what joining saves.
+	 */
+	join: boolean;
+	/**
 	 * True when ?prepass=on turns the depth prepass on, false when ?prepass=off turns it off, and
 	 * undefined to leave it to the page's option and the quality preset.
 	 */
@@ -146,12 +165,8 @@ export interface Switches {
 	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
-	/**
-	 * True when ?skinning=vertex makes WebGPU skin skinned meshes in the vertex shader of each pass
-	 * that draws them, as WebGL2 does, instead of once per frame in a compute pass, to measure the
-	 * two against each other.
-	 */
-	vertexSkinning: boolean;
+	/** How ?skinning= makes WebGPU skin, `lean` without the switch. */
+	skinning: SkinningSwitch;
 	/**
 	 * True when ?instances=index makes the vertex shaders on core WebGPU read each culled instance
 	 * by index from storage buffers, instead of a copy of its matrix that the culling shader
@@ -163,6 +178,11 @@ export interface Switches {
 	 * floats, to measure them against the 16-bit depth that the engine stores otherwise.
 	 */
 	shadowDepthBits: ShadowDepthBits;
+	/**
+	 * False when ?texture-cache=off makes KTX2 files transcode on every load, with no cache of
+	 * transcoded textures, to time the cache against it.
+	 */
+	textureCache: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -202,8 +222,15 @@ export interface Switches {
 	 * undefined to time none.
 	 */
 	glTiming: GlTimingMode | undefined;
+	/**
+	 * The milliseconds that ?replay-delay= makes the thread that draws wait before it replays each
+	 * frame's list, or undefined for no wait. The sketch thread then steps the next frame first.
+	 */
+	replayDelay: number | undefined;
 }
 
+/** The longest wait that ?replay-delay= gives, in ms: longer would stall the frames for good. */
+const MAX_REPLAY_DELAY_MS = 1000;
 /** The most job workers the engine core runs. */
 const MAX_JOB_WORKERS = 255;
 /** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
@@ -273,11 +300,14 @@ export function parseSwitches(search: string): Switches {
 		sceneFormat: oneOf(params.get('scene-format'), SCENE_FORMATS),
 		half: onOff(params.get('half')),
 		cells: params.get('cells') !== 'off',
+		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
-		vertexSkinning: params.get('skinning') === 'vertex',
+		skinning:
+			oneOf(params.get('skinning'), ['vertex', 'full', 'skip', 'narrow'] as const) ?? 'lean',
 		indexInstances: params.get('instances') === 'index',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
+		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
@@ -290,5 +320,6 @@ export function parseSwitches(search: string): Switches {
 			: params.get('gl-timing') === 'sync'
 				? 'sync'
 				: 'calls',
+		replayDelay: whole(params.get('replay-delay'), MAX_REPLAY_DELAY_MS),
 	};
 }

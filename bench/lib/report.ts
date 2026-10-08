@@ -1,6 +1,6 @@
 // Benchmark results: the comparison of null3d with three.js's faster renderer, the table of a sweep
 // of job worker counts, the phone scene's traces of each second, the WebGL call times of the -timed
-// pages, and a line chart as SVG. The median and spread of repeated runs of one page
+// pages, the loads of scenes that stream in, and a line chart as SVG. The median and spread of repeated runs of one page
 // come from the benchmark protocol in the command-line tool's package, which its bench command
 // shares. Everything here is pure, so the benchmark command and the runner's results share it.
 //
@@ -10,6 +10,7 @@
 // the sketch's loop, so its own work is its frame time less the scene code, which the scene-code page
 // times alone.
 import {
+	median,
 	ms,
 	type RunSummary,
 	summarizeRuns,
@@ -38,6 +39,19 @@ export interface BenchResult extends TimedRun {
 	trace?: TraceSecond[];
 	/** The -timed pages: the time of each WebGL call on the thread that draws. */
 	glTiming?: GlTiming;
+	/** Scenes that stream in: how long the load took and what it downloaded. */
+	load?: SceneLoad;
+}
+
+/**
+ * A streamed scene's load: milliseconds from the page's start to its first frame and to the whole
+ * scene, and the stages that the scene's thread saw, in seconds from its own start, with the bytes
+ * of content it downloaded.
+ */
+export interface SceneLoad {
+	firstFrameMs: number;
+	wholeMs: number;
+	sketch: { kit: number; towers: number; whole: number; objects: number; bytes: number };
 }
 
 /** null3d's value of a measure against three.js's lowest value of it over its renderers. */
@@ -147,6 +161,33 @@ export interface SummaryRow {
 	visual?: VisualFigures;
 	/** The -timed pages: every run's WebGL call times, summed up. */
 	glTiming?: GlTiming;
+	/** Scenes that stream in: the median of each load figure over the runs. */
+	load?: LoadSummary;
+}
+
+/** The medians of a page's load figures over its runs, with the count of runs that loaded. */
+export interface LoadSummary {
+	runs: number;
+	firstFrameMs: number;
+	wholeMs: number;
+	kitSeconds: number;
+	towersSeconds: number;
+	bytes: number;
+}
+
+/** The medians of the runs' load figures, or undefined when no run streamed its scene in. */
+export function summarizeLoads(results: readonly BenchResult[]): LoadSummary | undefined {
+	const loads = results.flatMap((result) => (result.load ? [result.load] : []));
+	if (loads.length === 0) return undefined;
+	const of = (pick: (load: SceneLoad) => number) => median(loads.map(pick));
+	return {
+		runs: loads.length,
+		firstFrameMs: of((load) => load.firstFrameMs),
+		wholeMs: of((load) => load.wholeMs),
+		kitSeconds: of((load) => load.sketch.kit),
+		towersSeconds: of((load) => load.sketch.towers),
+		bytes: of((load) => load.sketch.bytes),
+	};
 }
 
 /**
@@ -180,11 +221,12 @@ function visualText(value: number | undefined, limit: number | undefined): strin
  * traces' seconds when the page records traces.
  */
 export function summaryRow(
-	row: Omit<SummaryRow, 'summary' | 'trace' | 'glTiming'>,
+	row: Omit<SummaryRow, 'summary' | 'trace' | 'glTiming' | 'load'>,
 	results: readonly BenchResult[],
 ): SummaryRow {
 	const traced = results.filter((result) => result.trace);
 	const glTiming = sumGlTiming(results.map((result) => result.glTiming));
+	const load = summarizeLoads(results);
 	const refreshHz = results.find((result) => result.stats?.refreshHz)?.stats?.refreshHz ?? null;
 	return {
 		...row,
@@ -196,7 +238,27 @@ export function summaryRow(
 			),
 		}),
 		...(glTiming && { glTiming }),
+		...(load && { load }),
 	};
+}
+
+/**
+ * The loads of the pages whose scenes stream in, as a Markdown table: the medians of the time to
+ * the first frame and to the whole scene from the page's start, the seconds at which each model
+ * file arrived on the scene's thread, and the content downloaded.
+ */
+export function loadTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		'| Scene | Page | Runs | First frame, ms | Whole scene, ms | Kit file in, s | Tower file in, s | Content, MB |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+	];
+	for (const { scene, kind, load } of rows) {
+		if (!load) continue;
+		lines.push(
+			`| ${scene} | ${kind} | ${load.runs} | ${load.firstFrameMs.toFixed(0)} | ${load.wholeMs.toFixed(0)} | ${load.kitSeconds.toFixed(2)} | ${load.towersSeconds.toFixed(2)} | ${(load.bytes / 1e6).toFixed(1)} |`,
+		);
+	}
+	return lines.join('\n');
 }
 
 /**
@@ -338,13 +400,15 @@ export function jobsTable(rows: readonly SummaryRow[]): string {
 
 /**
  * A benchmark run's report as Markdown lines: the summary table and the comparisons with three.js,
- * or the table of a sweep of job worker counts.
+ * then the tables of traces, WebGL call times and loads where pages have them, or the table of a
+ * sweep of job worker counts.
  */
 export function benchReport(rows: readonly SummaryRow[]): string[] {
 	if (rows.some((row) => row.jobs !== undefined)) return [jobsTable(rows)];
 	const traces = rows.some((row) => row.trace) ? ['', traceTable(rows)] : [];
 	const calls = rows.some((row) => row.glTiming) ? ['', glTimingTable(rows)] : [];
-	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces, ...calls];
+	const loads = rows.some((row) => row.load) ? ['', loadTable(rows)] : [];
+	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces, ...calls, ...loads];
 }
 
 /** three.js's pages, and the name of each renderer. */
@@ -373,6 +437,10 @@ const NULL3D_PAGES = [
 	['null3d-webgl2-depth32', 'WebGL2 with 32-bit shadow cascades', 'threejs-webgl'],
 	['null3d-webgpu-blend-off', 'WebGPU without the cascade band', 'threejs-webgpu'],
 	['null3d-webgl2-blend-off', 'WebGL2 without the cascade band', 'threejs-webgl'],
+	['null3d-webgpu-skin-vertex', 'WebGPU skinning in the vertex shader', 'threejs-webgpu'],
+	['null3d-webgpu-skin-full', 'WebGPU skinning without its savings', 'threejs-webgpu'],
+	['null3d-webgpu-skin-skip', 'WebGPU skinning with the pose skip only', 'threejs-webgpu'],
+	['null3d-webgpu-skin-narrow', 'WebGPU skinning with 8-bit normals only', 'threejs-webgpu'],
 ] as const;
 
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;

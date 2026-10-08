@@ -540,7 +540,8 @@ impl Opaque {
     /// Records a view's pass inside the render pass that the render graph began, with `shading`:
     /// every draw whose bucket has visible instances, where the index list of bucket `b` starts at
     /// `starts[b]`, from its mesh page's buffers in `meshes`, and the ring slots that
-    /// [`Opaque::upload`] took.
+    /// [`Opaque::upload`] took. It leaves out each draw whose maps' group `hidden` names: a group
+    /// that binds a target that the view draws into, or one that it does not read.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
@@ -551,10 +552,19 @@ impl Opaque {
         layout: &Layout,
         meshes: &MeshBuffers,
         shading: Shading,
+        hidden: &dyn Fn(u32) -> bool,
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
-        let visible = visible_in(draws, starts);
+        let counted = visible_in(draws, starts);
+        let visible = |d: usize| {
+            let textures = draws[d].textures;
+            if textures != 0 && hidden(textures) {
+                0
+            } else {
+                counted(d)
+            }
+        };
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;

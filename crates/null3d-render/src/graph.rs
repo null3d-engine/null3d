@@ -35,9 +35,20 @@
 //! Compiling fails with an engine error code ([`GraphError`]) when a pass uses a resource that no
 //! pass creates or reads one that no running pass writes (1502), when two passes create one
 //! resource (1503), when the passes form a cycle (1504), and when one pass's targets cannot share
-//! a render pass or a resolve pass cannot resolve its target into the canvas (1505). A pass that
+//! a render pass or a resolve pass cannot resolve its target into the canvas (1505). A pass's color
+//! targets must also fit the portable budget of every device: at most 4, of at most 32 bytes per
+//! sample in all (1505). A pass that
 //! is switched off counts as absent, but its declaration stays: a frame target whose creator is
 //! off still exists, and the first running pass that writes it clears it.
+//!
+//! # Culling
+//!
+//! A pass declared [`Pass::optional`] runs only while it feeds another running pass: one that uses
+//! a resource it writes, and that is not culled itself. A pass that draws into the canvas always
+//! feeds. Culling starts from the passes that are not optional and works back through what they
+//! use, so an optional pass whose output nothing reads costs nothing, and neither do the optional
+//! passes that only feed it. A culled pass counts as switched off, and a kept target that only
+//! culled passes use takes no texture.
 //!
 //! # Render passes
 //!
@@ -362,8 +373,10 @@ impl Target {
     }
 
     /// True when shaders read the target as an array, and passes draw into a view of one layer.
+    /// No shader reads a multisampled target of one layer, which passes read through its resolved
+    /// texture, so only that texture is an array.
     pub const fn is_array(self) -> bool {
-        self.array || self.layers > 1
+        (self.array && self.samples == 1) || self.layers > 1
     }
 
     /// True for a multisampled color target, which passes that sample it read through a resolve.
@@ -424,6 +437,7 @@ pub struct Pass {
     kind: PassKind,
     size: Size,
     layers: u32,
+    optional: bool,
     uses: Vec<Use>,
 }
 
@@ -436,6 +450,7 @@ impl Pass {
             kind,
             size: Size::Full,
             layers: ALL_LAYERS,
+            optional: false,
             uses: Vec::new(),
         }
     }
@@ -456,6 +471,13 @@ impl Pass {
     /// bit with this one.
     pub fn layers(mut self, mask: u32) -> Self {
         self.layers = mask;
+        self
+    }
+
+    /// Makes the pass optional: it runs only while a running pass that it does not cull uses
+    /// something it writes. See "Culling" in the module documentation.
+    pub fn optional(mut self) -> Self {
+        self.optional = true;
         self
     }
 
@@ -516,8 +538,19 @@ pub(crate) struct PassDecl {
     pub(crate) size: Size,
     pub(crate) layers: u32,
     pub(crate) enabled: bool,
+    pub(crate) optional: bool,
+    /// True when the last compile culled the pass: it is optional, and no running pass uses what it
+    /// writes.
+    pub(crate) culled: bool,
     /// The pass's uses: a range of the graph's access list.
     pub(crate) accesses: (u32, u32),
+}
+
+impl PassDecl {
+    /// True when the pass runs: it is switched on, and the last compile did not cull it.
+    pub(crate) const fn runs(&self) -> bool {
+        self.enabled && !self.culled
+    }
 }
 
 /// One use of one resource by one pass, with the resource interned.
@@ -653,6 +686,8 @@ impl RenderGraph {
             size: pass.size,
             layers: pass.layers,
             enabled: true,
+            optional: pass.optional,
+            culled: false,
             accesses: (start as u32, self.accesses.len() as u32),
         });
         self.changed = true;
@@ -671,6 +706,56 @@ impl RenderGraph {
     /// True when the pass is switched on.
     pub fn is_enabled(&self, pass: PassId) -> bool {
         self.passes[pass.index()].enabled
+    }
+
+    /// True when the last compile culled the pass: it is optional, and no running pass used what
+    /// it writes.
+    pub fn is_culled(&self, pass: PassId) -> bool {
+        self.passes[pass.index()].culled
+    }
+
+    /// Culls the optional passes that feed no running pass: a pass stays when a running pass that
+    /// is not culled uses a resource that it writes, or when it draws into the canvas. Passes that
+    /// are not optional always stay, so culling starts from them and works back through what they
+    /// use until nothing changes. An optional pass that is switched off is culled too when it
+    /// feeds nothing, so the kept targets that it alone draws take no texture.
+    fn cull(&mut self) {
+        for pass in &mut self.passes {
+            pass.culled = pass.optional;
+        }
+        loop {
+            let mut kept = false;
+            for index in 0..self.passes.len() {
+                if self.passes[index].culled && self.feeds_a_running_pass(index) {
+                    self.passes[index].culled = false;
+                    kept = true;
+                }
+            }
+            if !kept {
+                break;
+            }
+        }
+    }
+
+    /// True when the pass draws into the canvas, or writes a resource that another running pass
+    /// that is not culled uses.
+    fn feeds_a_running_pass(&self, pass: usize) -> bool {
+        self.accesses_of(pass)
+            .iter()
+            .filter(|written| written.mode.writes())
+            .any(|written| {
+                written.resource == 0
+                    || (0..self.passes.len()).any(|other| {
+                        let decl = &self.passes[other];
+                        other != pass
+                            && decl.enabled
+                            && !decl.culled
+                            && self
+                                .accesses_of(other)
+                                .iter()
+                                .any(|used| used.resource == written.resource)
+                    })
+            })
     }
 
     /// Sets the layers of the objects the pass draws. The plan does not depend on them, so the
@@ -696,6 +781,7 @@ impl RenderGraph {
         }
         self.changed = false;
         self.compiles = self.compiles.wrapping_add(1);
+        self.cull();
         self.status = self.compiler.run(
             &self.passes,
             &self.accesses,

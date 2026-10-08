@@ -27,6 +27,7 @@ import { fixedTrace } from '../lib/trace';
 /** The three.js classes that the scenes use. The `three` and `three/webgpu` builds both export them. */
 export type Three = Pick<
 	typeof ThreeModule,
+	| 'ACESFilmicToneMapping'
 	| 'AmbientLight'
 	| 'AnimationClip'
 	| 'AnimationMixer'
@@ -48,21 +49,23 @@ export type Three = Pick<
 	| 'Float32BufferAttribute'
 	| 'Fog'
 	| 'FogExp2'
+	| 'Group'
 	| 'HemisphereLight'
 	| 'InstancedMesh'
 	| 'InterpolateDiscrete'
 	| 'Line'
+	| 'LinearFilter'
+	| 'LinearMipmapLinearFilter'
 	| 'LineBasicMaterial'
 	| 'LineDashedMaterial'
 	| 'LineLoop'
 	| 'LineSegments'
-	| 'LinearFilter'
-	| 'LinearMipmapLinearFilter'
 	| 'Matrix4'
 	| 'Mesh'
 	| 'MeshBasicMaterial'
 	| 'MeshStandardMaterial'
 	| 'NoColorSpace'
+	| 'Object3D'
 	| 'OrthographicCamera'
 	| 'PerspectiveCamera'
 	| 'PlaneGeometry'
@@ -71,6 +74,7 @@ export type Three = Pick<
 	| 'PointsMaterial'
 	| 'Quaternion'
 	| 'QuaternionKeyframeTrack'
+	| 'Raycaster'
 	| 'RepeatWrapping'
 	| 'RingGeometry'
 	| 'Scene'
@@ -84,6 +88,7 @@ export type Three = Pick<
 	| 'TextureLoader'
 	| 'TorusGeometry'
 	| 'Uint16BufferAttribute'
+	| 'Vector2'
 	| 'Vector3'
 >;
 
@@ -120,10 +125,20 @@ export interface SceneSetup {
 	afterCamera?(): void;
 	/** Runs after the camera's aspect changes, as when the hold frame takes the parity size. */
 	onAspect?(): void;
+	/**
+	 * Draws the frame in place of `renderer.render`, as a scene with post-processing or labels does.
+	 * It must allocate nothing. It draws into the render target that is bound, or into the canvas.
+	 */
+	render?(): void;
 	/** With `fillWindow`: the highest pixel ratio to draw at. The default is no cap. */
 	maxPixelRatio?: number;
 	/** Figures that the page's report adds, such as the settings the scene chose. */
 	report?: Record<string, unknown>;
+	/**
+	 * For a scene that streams in: resolves when the scene is whole, with figures for the report's
+	 * load. Frames draw until then, and a timed run warms up only after it, as a held frame waits.
+	 */
+	whole?: Promise<Record<string, unknown>>;
 }
 
 /** What a scene's build gets besides the classes of three.js and the scene. */
@@ -177,6 +192,12 @@ export interface ThreeEngine {
 	 * the canvas shows it, and it has as many samples as the canvas.
 	 */
 	readFrame(width: number, height: number, draw: () => void): Promise<Uint8Array>;
+	/**
+	 * Calls `draw` with the canvas bound, at `width` by `height`, then reads the canvas as RGBA8
+	 * pixels, top row first, before the browser shows it. For a frame whose last pass draws into the
+	 * canvas whatever target is bound, as EffectComposer's does.
+	 */
+	readCanvas(width: number, height: number, draw: () => void): Promise<Uint8Array>;
 	/** Throws when a shader of the frames drawn so far failed to build, so the scene drew nothing. */
 	checkShaders(): void;
 }
@@ -216,6 +237,15 @@ async function startWebGL(): Promise<ThreeEngine> {
 			target.dispose();
 			return packRows(bottomFirst, width, height, width * 4, true);
 		},
+		async readCanvas(width, height, draw) {
+			renderer.setRenderTarget(null);
+			draw();
+			// The drawing buffer keeps the frame until the browser shows it, after this task.
+			const gl = renderer.getContext();
+			const bottomFirst = new Uint8Array(width * height * 4);
+			gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, bottomFirst);
+			return packRows(bottomFirst, width, height, width * 4, true);
+		},
 	};
 }
 
@@ -240,24 +270,27 @@ async function startWebGPU({ clusteredLighting }: ThreePageOptions): Promise<Thr
 		const { ClusteredLighting } = await import('three/addons/lighting/ClusteredLighting.js');
 		renderer.lighting = new ClusteredLighting();
 	}
+	const readFrame = async (width: number, height: number, draw: () => void) => {
+		const target = new three.RenderTarget(width, height, {
+			samples: MSAA_SAMPLES,
+			colorSpace: three.SRGBColorSpace,
+		});
+		renderer.setRenderTarget(target);
+		draw();
+		renderer.setRenderTarget(null);
+		const data = await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);
+		target.dispose();
+		const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+		return packRows(bytes, width, height, rowStrideOf(bytes.length, width, height), false);
+	};
 	return {
 		three,
 		renderer,
 		// WebGPU reports a shader that fails as a console error, which the page tests catch.
 		checkShaders() {},
-		async readFrame(width, height, draw) {
-			const target = new three.RenderTarget(width, height, {
-				samples: MSAA_SAMPLES,
-				colorSpace: three.SRGBColorSpace,
-			});
-			renderer.setRenderTarget(target);
-			draw();
-			renderer.setRenderTarget(null);
-			const data = await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);
-			target.dispose();
-			const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-			return packRows(bytes, width, height, rowStrideOf(bytes.length, width, height), false);
-		},
+		readFrame,
+		// WebGPURenderer's post-processing draws into the bound target.
+		readCanvas: readFrame,
 	};
 }
 
@@ -319,7 +352,7 @@ export function runThreePage(
 	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		const rendererName = readChoice(params, 'renderer', RENDERERS);
-		const { three, renderer, readFrame, checkShaders } = await startThree(
+		const { three, renderer, readFrame, readCanvas, checkShaders } = await startThree(
 			rendererName,
 			pageOptions,
 		);
@@ -380,7 +413,8 @@ export function runThreePage(
 			const start = performance.now();
 			pose(t);
 			const updated = performance.now();
-			renderer.render(scene, camera);
+			if (setup.render) setup.render();
+			else renderer.render(scene, camera);
 			return updated - start;
 		};
 		const report = {
@@ -405,7 +439,10 @@ export function runThreePage(
 			// Clustered lighting sizes its grid of clusters by the canvas, even when a target is bound,
 			// so the canvas takes the size of the frame.
 			renderer.setSize(width, height);
-			const pixels = await readFrame(width, height, () => frame(hold));
+			await setup.whole;
+			const pixels = await (setup.render ? readCanvas : readFrame)(width, height, () =>
+				frame(hold),
+			);
 			checkShaders();
 			return { ...report, width, height, pixels: toBase64(pixels) };
 		}
@@ -416,11 +453,19 @@ export function runThreePage(
 		}
 		pose(0);
 		await renderer.compileAsync(scene, camera);
-		renderer.render(scene, camera);
+		if (setup.render) setup.render();
+		else renderer.render(scene, camera);
 		checkShaders();
+		const firstFrameMs = performance.now();
 		if (options.demo) {
 			renderer.setAnimationLoop((ms) => frame(ms / 1000));
 			return report;
+		}
+		if (setup.whole) {
+			renderer.setAnimationLoop((ms) => frame(ms / 1000));
+			const figures = await setup.whole;
+			renderer.setAnimationLoop(null);
+			Object.assign(report, { load: { firstFrameMs, wholeMs: performance.now(), ...figures } });
 		}
 		const timings = await measureFrames(
 			frame,

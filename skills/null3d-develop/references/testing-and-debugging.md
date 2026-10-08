@@ -100,6 +100,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?shaders=fresh` | Make the browser compile every shader again, as on a first visit, to time a cold warm-up |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the preset check's stored result (`concepts/quality-presets`) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
+| `?texture-cache=off` | Transcode every KTX2 file on every load, as on a first visit, instead of taking its texels from the cache of transcoded textures (`api/assets`) |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |
 | `?hdr=off` | Take the 8-bit color path, where the scene shaders tone map themselves, as devices without float color targets do (`concepts/backends`) |
 | `?scene-format=rg11b10`, `?scene-format=rgba16f` | Draw the HDR scene color in the packed small float format (4 bytes a pixel) or in 16-bit floats (8 bytes), where the device can; to compare memory, speed and banding (`concepts/backends`) |
@@ -109,6 +110,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
 | `?skinning=vertex` | On WebGPU, skin in the vertex shader of each pass instead of once per frame in a compute pass, to compare GPU time (`api/animation`) |
+| `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
@@ -170,6 +172,8 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| Offline, the engine runs single-threaded, or a development build warns that a service worker controls a page that is not isolated | The service worker answers the page without its COOP and COEP headers | Cache the page's own response with `cache.addAll`, which keeps the headers, or copy them into the response the worker makes | `getting-started/hosting` |
+| Offline, the start or a feature's first use fails to download a file | The service worker caches no copy of that feature's files | Cache the `start` group and each feature that the game uses from `null3d-files.json` | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | E1422 or E1423 at the start, with the build's files on a CDN | The policy lacks `blob:` or the CDN in `worker-src`, or the CDN in `connect-src`, or the CDN sends no CORS header | Add the policy items and `Access-Control-Allow-Origin` on every build file; `Cross-Origin-Resource-Policy` alone does not serve | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
@@ -193,7 +197,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
 | `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate (0.2) | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
-| `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
+| `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 
 ## 9. Before you ship
@@ -211,6 +215,7 @@ Startup:
 
 - The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
+- A game that plays offline caches the files of `null3d-files.json` in its own service worker: the `start` group and each feature that it uses or lists in `preload`. A reload with the network off starts with `crossOriginIsolated` true (`getting-started/hosting`, "Offline play").
 - A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
 - `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts.
 

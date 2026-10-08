@@ -21,9 +21,10 @@ permissions:
 
 # A new push to a pull request cancels the run of its older push, so CI's machines test only the
 # newest code. Runs on main and in the merge queue each have a group of their own.
+# A newer push to a pull request, or a newer merge to main, cancels the older run still in progress (D-99).
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
   BUN_VERSION: "1.3.14"
@@ -55,10 +56,11 @@ jobs:
         with:
           name: page-wasm
 
-      - name: Generated files are committed
+      # Git keeps no generated file (D-105). The install step wrote them before the shader modules
+      # arrived, so this writes them again, and fails when a generator wrote a file that git keeps.
+      - name: The generators change no file that git keeps
         run: |
-          bun run docs
-          bun tools/skills.ts sync
+          bun tools/generate.ts
           git status --porcelain
           test -z "$(git status --porcelain)"
 
@@ -114,7 +116,8 @@ jobs:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -334,16 +337,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 7, id: 1, tests: --grep-invert @alone --shard=1/7 }
-          - { part: shard 2 of 7, id: 2, tests: --grep-invert @alone --shard=2/7 }
-          - { part: shard 3 of 7, id: 3, tests: --grep-invert @alone --shard=3/7 }
-          - { part: shard 4 of 7, id: 4, tests: --grep-invert @alone --shard=4/7 }
-          - { part: shard 5 of 7, id: 5, tests: --grep-invert @alone --shard=5/7 }
-          - { part: shard 6 of 7, id: 6, tests: --grep-invert @alone --shard=6/7 }
-          - { part: shard 7 of 7, id: 7, tests: --grep-invert @alone --shard=7/7 }
+          - { part: shard 1 of 7, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/7 }
+          - { part: shard 2 of 7, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/7 }
+          - { part: shard 3 of 7, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/7 }
+          - { part: shard 4 of 7, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/7 }
+          - { part: shard 5 of 7, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/7 }
+          - { part: shard 6 of 7, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/7 }
+          - { part: shard 7 of 7, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/7 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
+      # S6's image tests, which load the city's files: the browser-city job runs them.
+      CITY_TESTS: '\bs6 on '
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -359,7 +364,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "255:366:168:131:136:132:170"
+          PWTEST_SHARD_WEIGHTS: "223:375:176:246:108:120:267"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -367,6 +372,64 @@ jobs:
         if: failure()
         with:
           name: browser-test-results-${{ matrix.id }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  city:
+    # S6's city files, built once per run and handed to the jobs that load S6 as artifacts. A build
+    # without the cache takes about 6 minutes here, which every shard of a job could not spare
+    # (D-106). With the cache, which a pull request reads from main, it takes seconds.
+    name: city files
+    needs: build
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/samples
+      - uses: ./.github/actions/city
+        with:
+          mode: build
+
+  browser-city:
+    # S6's image tests, the browser tests that load the city's files, which the browser job's shards
+    # leave out, so that only this job waits for the city job.
+    name: browser (the city)
+    needs: [build, city]
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      - uses: ./.github/actions/samples
+      - uses: ./.github/actions/city
+        with:
+          mode: download
+      - name: S6's image tests on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser --grep '\bs6 on '
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-city
           path: test-results/
           if-no-files-found: ignore
 
@@ -380,7 +443,8 @@ jobs:
     # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
-    needs: build
+    # Every build of the pages holds S6's, so both shards need the city's files.
+    needs: [build, city]
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -406,6 +470,10 @@ jobs:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
       - uses: ./.github/actions/samples
+      # S6 loads the city's files, which the city job built.
+      - uses: ./.github/actions/city
+        with:
+          mode: download
       - name: The benchmark pages on SwiftShader
         run: bun run test:bench ${{ matrix.select }} "$BENCH_SHARD_1"
       - uses: actions/upload-artifact@v4
@@ -426,7 +494,7 @@ jobs:
     # add it to the list, and raise the count in the name and the command.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
-    needs: build
+    needs: [build, city]
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
@@ -451,6 +519,10 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/samples
+      # S6 loads the city's files, which the city job built.
+      - uses: ./.github/actions/city
+        with:
+          mode: download
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
         run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
@@ -462,11 +534,42 @@ jobs:
             test-results/images/
           if-no-files-found: ignore
 
+  generated-branch:
+    # After a full run on main passes, the "generated" branch gets main's commit with every
+    # generated file added, since main keeps none (D-105). Links that must work on GitHub point
+    # there, such as the docs link in each engine error message. Only this job writes to the
+    # repository, and main's rules cover only main. Each push replaces the branch's one commit.
+    needs: ci-passed
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: ./.github/actions/bun-install
+      # The engine's API reference names the shader features, which the shader modules hold.
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - name: Push main's commit and its generated files to the generated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          bun tools/generate.ts --stage
+          git commit -q -m "chore: generated files of ${GITHUB_SHA}"
+          git push --force origin HEAD:refs/heads/generated
+
   ci-passed:
     # The one check of this workflow that main's rules require, so that the jobs above can split into
     # shards and change their names with no change to the rules. It runs after every other job, also
     # after a failure or a cancel, and fails unless each job passed. On a draft pull request the
-    # browser, benchmark page and real-browser jobs are skipped by their own condition. In every
+    # browser, city, benchmark page and real-browser jobs are skipped by their own condition. In every
     # other run, every job must pass.
     if: always()
     needs:
@@ -478,7 +581,9 @@ jobs:
       - wasm-checks
       - shader-compiler
       - packages
+      - city
       - browser
+      - browser-city
       - bench
       - real-browsers
     runs-on: ubuntu-latest

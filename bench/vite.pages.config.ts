@@ -8,9 +8,11 @@ import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
+import { sampleEnvironmentsServer } from '../tools/lib/sample-environments.ts';
 import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
+import { cityServer } from './lib/city-files.ts';
 
 const root = resolve(process.env.NULL3D_BENCH_ROOT || join(import.meta.dirname, '..'));
 // The pages import the shader modules, which git does not keep. Another copy's build (`bun run
@@ -26,8 +28,14 @@ export default defineConfig({
 	root,
 	// Relative addresses, so the build works under any address prefix, such as a load route's.
 	base: './',
-	// The crowd scene imports its model from the sample content, which the null3D plugin optimizes.
-	plugins: [null3d({ urlSwitches: true }), samplesServer(root)],
+	// The crowd scene imports its model from the sample content, and the city its two model files,
+	// which the null3D plugin optimizes. The city lights itself with a sample environment.
+	plugins: [
+		null3d({ urlSwitches: true }),
+		samplesServer(root),
+		cityServer(root),
+		sampleEnvironmentsServer(root),
+	],
 	// The pages take the packages' source, not the files that their pack step builds.
 	resolve: sourceResolve,
 	logLevel: 'warn',

@@ -25,6 +25,11 @@ export interface AssetOptions {
 	maxTextureSize?: number;
 	/** `size` encodes color and data maps in ETC1S, the default; `high` in UASTC. */
 	textureQuality?: 'size' | 'high';
+	/**
+	 * Add the detail of each material's normal map to the roughness levels of its metal-rough map,
+	 * which then takes UASTC, so distant bumpy surfaces do not flicker. The default is true.
+	 */
+	roughnessBake?: boolean;
 	/** Compress the model's buffers with meshopt, which the engine decodes on load. Default: true. */
 	meshopt?: boolean;
 	/**

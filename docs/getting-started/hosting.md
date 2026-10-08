@@ -3,7 +3,7 @@ id: getting-started/hosting
 title: Hosting and cross-origin isolation
 status: experimental
 since: "0.1"
-summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; the single-threaded fallback."
+summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
@@ -183,6 +183,84 @@ Vite names the files in `assets/` with a hash of their content, so a file under 
 ```
 
 That is the `_headers` form for Netlify and Cloudflare Pages. In nginx, add `add_header Cache-Control "public, max-age=31536000, immutable" always;` inside a `location /assets/` block.
+
+## Offline play
+
+A game can play with no network after its first visit. Its own service worker caches the page and the build's files, and answers the page's requests from that cache. null3D ships no service worker. A production build with the null3D Vite plugin writes a list of the build's files for one, `null3d-files.json`, beside the page:
+
+```json
+{
+  "version": "3f9c2a7d41e0b865",
+  "start": ["index.html", "assets/index-B1x9Qd2e.js", "assets/null3d_bg-gnm1VqEU.wasm"],
+  "features": {
+    "skinning": ["assets/shaders-skinning-wgsl-Ck2dJx81.js"],
+    "ktx2": ["assets/basis_transcoder-D165VYSC.wasm"]
+  }
+}
+```
+
+- `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds and each GPU path's shaders.
+- `features` holds the files that each feature downloads on its first use, by the feature's name. A page that does not use a feature never downloads its files, so a game caches only the features that it uses.
+- `version` changes whenever a file of the build changes. Each address is relative to the list.
+
+| Feature | Files | The game uses it when it calls |
+| --- | --- | --- |
+| `ao`, `background`, `bloom`, `lines`, `morph`, `occlusion`, `skinning`, `sky`, `sprites` | The feature's shaders, and the code of sprites and lines | The calls that `createEngine`'s `preload` lists for the same name ([Engine](../api/engine.md)) |
+| `gltf` | The glTF loader, its worker and the meshopt decoder | `assets.loadGltf` |
+| `ktx2` | The KTX2 loader and the Basis Universal transcoder | `assets.loadTexture` or `assets.loadGltf` with a KTX2 texture |
+| `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
+| `lut` | The readers of color grading tables | `assets.loadLut` |
+
+Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
+
+This service worker caches the page, the start's files and the features that the game names:
+
+```js
+// public/sw.js
+const FEATURES = ['skinning', 'gltf', 'ktx2'];
+const PREFIX = 'game-';
+
+self.addEventListener('install', (event) => event.waitUntil(update()));
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode === 'navigate') event.waitUntil(update().catch(() => {}));
+  event.respondWith(
+    caches.match(event.request, { ignoreSearch: true }).then((hit) => hit ?? fetch(event.request)),
+  );
+});
+
+/** Caches the build that the server holds now, once, and deletes the caches of older builds. */
+async function update() {
+  const list = await (await fetch('null3d-files.json', { cache: 'no-store' })).json();
+  const name = PREFIX + list.version;
+  const cache = await caches.open(name);
+  if (await cache.match('./')) return;
+  const features = FEATURES.flatMap((feature) => list.features[feature]);
+  await cache.addAll(['./', ...list.start, ...features]);
+  for (const old of await caches.keys())
+    if (old.startsWith(PREFIX) && old !== name) await caches.delete(old);
+}
+```
+
+The page registers it in production builds only, so the dev server's pages stay out of the cache:
+
+```ts
+if (import.meta.env.PROD) void navigator.serviceWorker?.register('./sw.js');
+```
+
+Put the game's own files that the build does not hold, such as its models in `public/`, in the list that `cache.addAll` takes. On each visit with a network, the worker checks the list. When the build changed, it caches the new build in one step and deletes the old caches. The new build then runs from the next visit.
+
+### Keep the page isolated
+
+The cache keeps each response with its headers, so the cached page keeps the two isolation headers and the engine starts threaded offline. A service worker that makes a new response for the page, instead of one from `fetch` or the cache, must copy those headers. Without them the page loses its isolation, and the engine starts its single-threaded build with no error. A development build of the engine warns in the console when a service worker controls a page that is not isolated. To check a production build, reload the page offline and read `crossOriginIsolated` in the console.
+
+### The preload list and the cache
+
+The cache decides where the files come from, and `preload` decides when they load. Cache each feature that the game lists in `preload`, or an offline start fails while it waits for that feature's shaders. A feature that the game caches but does not preload loads from the cache on its first use, with no network. A feature that the game neither caches nor preloads needs the network on its first use.
+
+### Keep the engine's caches
+
+The engine keeps the textures that it transcodes from KTX2 files in Cache Storage, in caches whose names start with `null3d-`. The worker above deletes only its own caches, which start with `game-`. A service worker that deletes every other cache makes the engine transcode those textures again.
 
 ## During development
 

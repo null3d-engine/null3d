@@ -10,13 +10,16 @@ mod common;
 use std::collections::HashMap;
 
 use common::World;
-use common::blended::{BOX, GRID, PLANE, add_scene};
+use common::blended::{BOX, GRID, PLANE, add_blended, add_scene, blended_pair};
+use common::{base_format, base_sphere, grid};
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{Op, state_flags};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::frame::FrameBuilder;
+use null3d_render::geometry::box_geometry;
+use null3d_render::materials::feature;
 
 /// The pipelines' state flags, by pipeline id, which the lists create.
 #[derive(Default)]
@@ -206,4 +209,136 @@ fn multi_draw_joins_the_sorted_draws_of_one_pipeline_in_one_call() {
         })
         .count();
     assert_eq!(calls, 5);
+}
+
+/// Each draw of the camera's transparent pass, outside bundles: its index count, its instances,
+/// and the faces that its pipeline culls.
+fn blended_faces(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
+    let faces = state_flags::CULL_NONE | state_flags::CULL_FRONT;
+    let mut states = HashMap::new();
+    let (mut pass, mut in_bundle, mut state) = (0, false, 0);
+    let mut draws = Vec::new();
+    for (op, o) in commands {
+        match op {
+            Op::CreateRenderPipeline => {
+                states.insert(o[0], o[6]);
+            }
+            Op::BeginRenderPass => pass += 1,
+            Op::BeginBundle => in_bundle = true,
+            Op::EndBundle => in_bundle = false,
+            Op::SetPipeline if !in_bundle => state = states[&o[0]],
+            Op::DrawIndexed if !in_bundle && state & state_flags::BLEND != 0 && pass == 1 => {
+                draws.push((o[0], o[1], state & faces));
+            }
+            _ => {}
+        }
+    }
+    draws
+}
+
+/// A double-sided box that blends draws its back faces, then its front faces, as three.js draws
+/// it. With `forceSinglePass` a sphere draws once with both faces, and a batch of double-sided
+/// grids draws each run's back faces before its front faces.
+fn check_faces<B: FrameBuilder>(mut world: World<B>, name: &str) {
+    let both = feature::DOUBLE_SIDED;
+    let box_mesh = base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap());
+    let sphere_mesh = base_sphere(0.5, [8, 6]);
+    let sphere = sphere_mesh.indices.len() as u32;
+    let (mesh, material) = blended_pair(&mut world, &box_mesh, both);
+    add_blended(&mut world, mesh, material, -5.0);
+    let (mesh, material) = blended_pair(&mut world, &sphere_mesh, both | feature::SINGLE_PASS);
+    add_blended(&mut world, mesh, material, 0.0);
+    let (mesh, material) = blended_pair(&mut world, &grid(2, 2), both);
+    let batch = world
+        .batches
+        .create(2, false, false, mesh, material, 1.5)
+        .unwrap();
+    let rows = world.batches.get_mut(batch).unwrap();
+    rows.positions_mut()
+        .copy_from_slice(&[0.0, 0.0, 2.0, 0.0, 0.0, 3.0]);
+    rows.set_active_count(2).unwrap();
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let (back, front, none) = (state_flags::CULL_FRONT, 0, state_flags::CULL_NONE);
+    let draws = blended_faces(&world.commands());
+    let expected = [
+        (BOX, 1, back),
+        (BOX, 1, front),
+        (sphere, 1, none),
+        (GRID, 2, back),
+        (GRID, 2, front),
+    ];
+    assert_eq!(draws, expected, "{name}");
+}
+
+#[test]
+fn double_sided_blended_meshes_draw_back_faces_first_on_webgpu() {
+    check_faces(World::new(), "WebGPU");
+}
+
+#[test]
+fn double_sided_blended_meshes_draw_back_faces_first_on_webgl2() {
+    let config = CpuCulledConfig {
+        multi_draw: false,
+        ..CpuCulledConfig::default()
+    };
+    check_faces(World::build(CpuCulledRenderer::new(config)), "WebGL2");
+}
+
+/// The records offset that each draw of the camera's transparent pass binds, outside bundles.
+fn blended_records(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    let mut states = HashMap::new();
+    let (mut pass, mut in_bundle, mut state, mut records) = (0, false, 0, 0);
+    let mut offsets = Vec::new();
+    for (op, o) in commands {
+        match op {
+            Op::CreateRenderPipeline => {
+                states.insert(o[0], o[6]);
+            }
+            Op::BeginRenderPass => pass += 1,
+            Op::BeginBundle => in_bundle = true,
+            Op::EndBundle => in_bundle = false,
+            Op::SetPipeline if !in_bundle => state = states[&o[0]],
+            Op::SetBindGroup if !in_bundle && o[0] == 1 && o[2] == 1 => records = o[3],
+            Op::DrawIndexed if !in_bundle && state & state_flags::BLEND != 0 && pass == 1 => {
+                offsets.push(records);
+            }
+            _ => {}
+        }
+    }
+    offsets
+}
+
+/// On WebGL2 a run's front faces draw from the records of its back faces, so each run writes one
+/// aligned block of records, not two.
+#[test]
+fn a_runs_front_faces_reuse_the_records_of_its_back_faces_on_webgl2() {
+    let config = CpuCulledConfig {
+        multi_draw: false,
+        ..CpuCulledConfig::default()
+    };
+    let mut world = World::build(CpuCulledRenderer::new(config));
+    let box_mesh = base_format(box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap());
+    // Two materials, so the boxes sort into two runs.
+    for z in [-5.0, 0.0] {
+        let (mesh, material) = blended_pair(&mut world, &box_mesh, feature::DOUBLE_SIDED);
+        add_blended(&mut world, mesh, material, z);
+    }
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let offsets = blended_records(&world.commands());
+    assert_eq!(offsets.len(), 4, "two runs, each in two draws");
+    assert_eq!(
+        offsets[0], offsets[1],
+        "the far box's two draws share their records"
+    );
+    assert_eq!(
+        offsets[2], offsets[3],
+        "the near box's two draws share their records"
+    );
+    assert_ne!(offsets[1], offsets[2], "each run has records of its own");
 }

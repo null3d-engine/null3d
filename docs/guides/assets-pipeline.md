@@ -55,6 +55,7 @@ scene.instantiate(ship);
 | `--simplify-error <share>` | The most that `--simplify` may move a mesh's surface, as a share of the mesh's size | 0.01 |
 | `--max-texture-size <pixels>` | The largest side of a texture: a power of two up to 2048 | 2048 |
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
+| `--no-roughness-bake` | Leaves the roughness levels of metal-rough maps as plain averages, with no detail from the normal maps | [The roughness bake](#the-roughness-bake) |
 | `--compression <none\|meshopt>` | `none` leaves the file's buffers uncompressed | `meshopt` |
 | `--no-blockers` | Gives no mesh a blocker for software occlusion culling | Blockers for meshes that enclose space |
 | `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
@@ -128,13 +129,40 @@ The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis
 | --- | --- | --- |
 | Base color and emissive maps | ETC1S, or UASTC with `--texture-quality high` | sRGB |
 | Normal maps | UASTC always, since ETC1S blurs their detail | Linear |
-| Metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
+| Metal-rough maps of materials with normal maps | UASTC, with [the roughness bake](#the-roughness-bake) | Linear |
+| Other metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
 
-Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory.
+Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory. The command cannot resize a KTX2 image that the model already had. When such an image is not whole blocks, the report names it and counts it as uncompressed. Give the command its PNG or JPEG source instead.
 
 Textures are at most 2048 x 2048. The encoder is a 32-bit WebAssembly build, which refuses 4096 x 4096 images.
 
 In 40 sets of photographed materials at 1024 x 1024, each ETC1S color map took about 110 KB to download. Each UASTC normal map took about 670 KB. On the GPU, ETC1S takes an eighth of the memory of RGBA8 where the device has ETC2, and UASTC takes a quarter.
+
+### The roughness bake
+
+A normal map adds small bumps to a surface. Far away, many bumps fall in one pixel. The GPU then reads a lower mip level of the normal map, which averages the bumps into one flat normal. The surface looks smooth and sharp, and its highlights flicker as the camera moves. A real surface of tiny bumps looks rougher from far away.
+
+So when a material has both a normal map and a metal-rough map, the command makes the metal-rough map's mip levels itself. In each level below the full size, it measures how far the normal map's normals under each texel spread. It adds that spread to the texel's roughness, the green channel. A smooth texel becomes at most 0.4 rough, and a rough texel gains less. Occlusion and metalness keep their plain averages. The full size stays as you made it, because up close the GPU reads the normal map's own bumps.
+
+```mermaid
+flowchart LR
+    normal["Normal map:<br/>bumps under<br/>each texel"] --> spread["How far the<br/>normals spread"]
+    spread --> levels["Roughness of each<br/>mip level below<br/>the full size"]
+    metal["Metal-rough map"] --> levels
+    levels --> file["One UASTC<br/>KTX2 file"]
+```
+
+The added roughness takes the material's normal scale and roughness factor into account. A bumpier normal map adds more. A metal-rough map that two materials read with different normal maps, or one with a normal map and one without, gets one file for each.
+
+A baked map is always UASTC. ETC1S stores all mip levels with one shared set of colors, so the command cannot write its own levels in ETC1S. UASTC also keeps the three channels of a metal-rough map apart, which ETC1S blurs together. The command shrinks the UASTC data for Zstandard, at a cost of about one step of 255 in roughness. The file is still larger: BoomBox's 2048 x 2048 metal-rough map takes 1.65 MB, against 269 KB in ETC1S.
+
+The bake skips a material, and the report says why, when:
+
+- its normal map and metal-rough map read different texture coordinates, or different texture transforms;
+- its roughness factor is 0, since no texture value can change its roughness;
+- one of the two maps is a KTX2 image that the model already had.
+
+`--no-roughness-bake` turns the bake off.
 
 ## Levels of detail
 
@@ -170,6 +198,9 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `merged copies` | The meshes, materials, textures and vertex data that merged into an equal copy |
 | Textures | Each group of textures that share a size, a format and a color space |
 | `texture memory` | The textures' GPU memory with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format |
+| `roughness levels baked` | The metal-rough maps that took the roughness bake |
+| `no roughness bake` | Each material with a normal map and a metal-rough map that got no bake, with the reason |
+| Textures not in whole blocks | Each KTX2 image of the model whose sides are not whole blocks of 4 texels, which the engine loads uncompressed |
 | `blockers` | The meshes that got blockers, and their triangles |
 | `no blocker` | Each mesh that could block but got no blocker, with the reason |
 | `stored trees` | The mesh parts whose trees the file stores, and their bytes before compression |
@@ -193,7 +224,7 @@ The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your 
 bun add -d @null3d/cli
 ```
 
-The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
+The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `roughnessBake` (false for `--no-roughness-bake`), `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
 
 ```ts
 // vite.config.ts

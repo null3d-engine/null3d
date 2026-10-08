@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -55,17 +55,7 @@ export default defineSketch(({ quality }) => {
 
 The engine starts from the kind of device. A coarse main pointer, as on a touch screen, marks a phone or a tablet, and the screen's smaller edge tells them apart. That edge stays the same when the device turns and when the browser's address bar hides.
 
-<!-- null3d:preset-devices:start -->
-
-| Device | Main pointer | Smaller screen edge | Starting preset |
-| --- | --- | --- | --- |
-| Phone | coarse | under 600 CSS pixels | Low |
-| Tablet | coarse | 600 CSS pixels or more | Medium |
-| Desktop or laptop | fine | any | High |
-
-A memory reading under 4 GB lowers the starting preset by one.
-
-<!-- null3d:preset-devices:end -->
+The [starting preset of each device](quality-preset-tables.md#starting-preset-of-each-device) gives the preset for each kind of device. It also gives the memory reading that lowers the starting preset by one.
 
 Only Chromium browsers report the device's memory, and they report at most 8 GB. So memory can lower a preset, but it never raises one. The engine picks Ultra only when a page asks for it.
 
@@ -73,15 +63,7 @@ A tablet slows down as it heats up, and then Medium and High can take longer tha
 
 The GPU path then caps the preset, because WebGL2 and WebGPU's compatibility mode lack features that the heavier presets use. For example, compatibility mode cannot draw multisampled float targets.
 
-<!-- null3d:preset-ceilings:start -->
-
-| GPU path | Highest preset |
-| --- | --- |
-| WebGPU | Ultra |
-| WebGPU's compatibility mode | Medium |
-| WebGL2 | Medium |
-
-<!-- null3d:preset-ceilings:end -->
+The [highest preset of each GPU path](quality-preset-tables.md#highest-preset-of-each-gpu-path) gives each cap.
 
 A page can name a preset instead, such as a preset that a player picked in a menu. The GPU path still caps it:
 
@@ -111,16 +93,7 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset.
 5. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers then hear of the new preset at the start of the first frame of play.
 
-<!-- null3d:preset-check:start -->
-
-| Rule | Value |
-| --- | --- |
-| Target frame rate | The display's refresh rate, at most 60 frames per second |
-| A preset holds its target | At 90% of the target or more |
-| Frames drawn before each measurement | 250 ms, and up to 2000 ms more while textures upload |
-| Measurement of each preset | 500 ms |
-
-<!-- null3d:preset-check:end -->
+The [rules of the preset check](quality-preset-tables.md#rules-of-the-preset-check) give its target frame rate, the share of the target that passes, and its times.
 
 The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
 
@@ -160,38 +133,7 @@ A change of preset can change pipelines and render targets, and building them ta
 
 Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads. "Planned" settings belong to features that are not built yet.
 
-<!-- null3d:preset-settings:start -->
-
-| Setting | Low | Medium | High | Ultra | Changes | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |
-| Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | built |
-| Highest render scale (`maxRenderScale`) | 1 | 1 | 1 | 1 | during play | built |
-| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
-| Shadow cascades (`shadowCascades`) | 2 | 3 | 3 | 4 | at the start | built |
-| Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | built |
-| Shadow filter (`shadowFilter`) | 3 x 3 texels | 5 x 5 texels | 5 x 5 texels | 5 x 5 texels | during play | built |
-| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |
-| Far cascades follow moving casters (`followMovingCasters`) | yes | yes | yes | yes | during play | built |
-| Blend between shadow cascades (`shadowCascadeBlend`) | 10% of each cascade | 10% of each cascade | 10% of each cascade | 10% of each cascade | during play | built |
-| Spot and point light shadow tiles (`shadowTiles`) | 4 | 8 | 16 | 24 | at the start | built |
-| Shadow tile size in texels (`shadowTileSize`) | 512 | 512 | 1024 | 1024 | at the start | built |
-| Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | built |
-| Bloom's largest level in texels on the short side (`bloomSize`) | 128 | 512 | 512 | 512 | during play | built |
-| Ambient occlusion (`aoScale`) | off | off | half resolution | half resolution | during play | built |
-| Frame-budget governor (`governor`) | on | on | on | on | during play | built |
-| Depth prepass (`depthPrepass`) | no | no | no | no | at the start | built |
-| GPU occlusion culling (WebGPU) (`gpuOcclusion`) | no | no | no | no | at the start | built |
-| Morph targets per object on WebGL2 (`morphTargets`) | 8 | 16 | 32 | 64 | at the start | built |
-| Software occlusion culling (WebGL2) (`softwareOcclusion`) | no | yes | yes | yes | during play | built |
-| Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
-| Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
-| Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |
-| Lights per cluster (`maxLightsPerCluster`) | 32 | 64 | 64 | 128 | at the start | planned |
-| Texture memory budget (`textureMemoryMiB`) | 256 MiB | 512 MiB | 1024 MiB | 2048 MiB | at the start | planned |
-| Engine memory maximum (`memoryMaximumMiB`) | 1024 MiB | 1024 MiB | 1024 MiB | 1024 MiB | before loading | built |
-
-<!-- null3d:preset-settings:end -->
+The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) give each setting's value on each preset, when it changes, and whether it is built.
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
@@ -208,6 +150,28 @@ The shadow map takes its memory once the directional light casts shadows, and th
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
+### Texture memory
+
+The texture memory budget caps the GPU memory of the scene's textures. A phone or a tablet closes a tab that uses too much memory, with no warning, so the budget keeps textures well below that point. Each preset's budget stays under half the lowest point that the engine's tab memory test measured on the devices that the preset serves. Phones and tablets take at most 1,008 MiB on any preset: half the 2,016 MiB at which an iPad Pro's tab closed. The page's `textureMemoryMiB` option replaces the preset's budget and the cap, and `quality.set({ textureMemoryMiB })` changes it during play.
+
+```mermaid
+flowchart LR
+    over["Textures pass the budget by 5%"] --> pack["Free layers of texture arrays go first"]
+    pack --> drop["Drop the largest mip level of the next texture in order"]
+    drop -- "still over the budget, less 5%" --> drop
+    room["Textures 5% under the budget"] --> back["Load a dropped level again from its file"]
+```
+
+When the textures pass the budget, the engine drops the largest mip level of one texture at a time. It stops once they fit 5% under the budget. The texture keeps its size, and the GPU samples its next level where it needed the largest. It drops levels from textures in this order:
+
+1. A texture that holds more detail than any object on screen needs. The engine estimates the need from each object's size on screen.
+2. The texture that the camera has not seen for the longest time.
+3. The largest texture.
+
+A texture loses at most 3 levels, so a texture of 1024 x 1024 texels keeps at least 128 x 128. A texture under 64 KiB keeps all its levels, because dropping them would save little. Only a texture that the engine can load again from its file drops levels: a texture from `assets.loadTexture` or from a glTF model. A texture that the sketch makes from an image or from data keeps its levels and counts toward the budget. So do environment maps, the built-in room's among them.
+
+When room returns, 5% under the budget, the engine loads the dropped levels again from the texture's file. The browser's cache usually holds the file. The texture draws with the levels it has until the new ones are on the GPU. The band of 5% on either side keeps the engine from dropping and loading the same levels in turn. The sketch reads the memory and the dropped levels in `quality.textureMemory`: [Quality API](../api/quality.md#texture-memory).
+
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
@@ -216,14 +180,19 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. Every preset leaves the prepass off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). Turn it on with the `depthPrepass` option of `createEngine`, and compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion turns it on while it draws, because it reads the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+
+WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 
 Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly. So both passes must compute each vertex's depth to the last bit. On WebGPU, the prepass uses a shader that computes positions only. Custom materials and sprites place their vertices in their own way, so there they draw with their own vertex shader. On WebGL2, every object draws with the vertex shader of its own material. A fragment shader that writes nothing completes each such program. On WebGL2, two separate shader programs can compute slightly different depths for one triangle, and a surface would then vanish from the frame.
 
-One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. Give such surfaces a depth bias, or move one a little, so one is nearer.
+One case differs: two opaque surfaces at exactly the same depth. Without the prepass, the surface drawn first shows. With it, both pass the test for equal depth, so the surface drawn last shows. The engine chooses its own draw order, so an exact tie has no defined winner. The winner may also differ between GPU paths, as WebGL2 draws the prepass by default and WebGPU does not. Give overlapping surfaces, such as decals and ground markings, a depth bias, or move one a little, so one is nearer.
 
 ```ts
+// Draw the prepass on every GPU path.
 const engine = await createEngine({ canvas, sketch, depthPrepass: true });
+// Draw no prepass, on WebGL2 too.
+const plain = await createEngine({ canvas, sketch, depthPrepass: false });
 ```
 
 ### GPU occlusion culling

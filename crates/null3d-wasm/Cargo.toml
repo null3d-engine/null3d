@@ -16,5 +16,9 @@ null3d-gpu = { path = "../null3d-gpu" }
 null3d-render = { path = "../null3d-render" }
 wasm-bindgen.workspace = true
 
+# The threaded build's heap (src/heap.rs), the allocator that the standard library uses on this target.
+[target.'cfg(all(target_arch = "wasm32", target_feature = "atomics"))'.dependencies]
+dlmalloc = "=0.2.14"
+
 [lints]
 workspace = true

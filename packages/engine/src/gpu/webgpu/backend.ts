@@ -8,6 +8,7 @@ import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
+import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
 import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
@@ -108,6 +109,8 @@ export class WebGPUBackend {
 	private readonly samplers: (GPUSampler | undefined)[] = [];
 	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
 	private readonly images: ImageTable;
+	/** The builds of joined effects' shaders, which never stop the engine when they fail. */
+	readonly joins: JoinedBuilds;
 	private readonly ownsImages: boolean;
 	/** The sampler that mip levels read the level before them with. */
 	private mipSampler: GPUSampler | undefined;
@@ -207,6 +210,7 @@ export class WebGPUBackend {
 		this.indirect = new IndirectArguments(device);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
+		this.joins = new JoinedBuilds(this.images.shaders);
 		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
 	}
 
@@ -588,12 +592,14 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use.
+	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
+	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		if (!this.pipelines.has(template)) {
 			const shader = this.images.shaders.get(template);
-			if (!shader) return false;
+			if (!shader || !joinedReady(shader, this.images.shaders, this.moreShaders, 'wgsl'))
+				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
@@ -619,6 +625,14 @@ export class WebGPUBackend {
 		for (const [name, builds] of Object.entries(module))
 			for (const build of Object.values(builds))
 				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+	}
+
+	/**
+	 * Makes the skinning pass write normals and tangents as 32-bit floats, as the core's skinned
+	 * vertices hold them in the skinning modes that measure 8-bit ones against floats.
+	 */
+	skinWithFloatDirections(): void {
+		this.pipelines.floatSkinnedDirections = true;
 	}
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
@@ -693,17 +707,29 @@ export class WebGPUBackend {
 			return;
 		}
 		const descriptor = this.renderDescriptor(words, a);
-		if (DEV && this.images.shaders.has(words[a + 1] as number))
+		// A joined shader always builds in the background, so a frame never waits for it and its
+		// failure only sends its effects back to a pass each.
+		const template = words[a + 1] as number;
+		const joined = this.joins.joined(template);
+		if (DEV && !joined && this.images.shaders.has(template))
 			this.customOperands.set(id, words.slice(a, a + RENDER_PIPELINE_OPERANDS));
-		if (!background) {
+		if (!background && !joined) {
 			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
 			return;
 		}
 		this.renderPipelines[id] = null;
 		this.builds++;
+		const start = performance.now();
 		device.createRenderPipelineAsync(descriptor).then(
-			(pipeline) => this.built(this.renderPipelines, id, pipeline),
-			(error: unknown) => this.failed(error),
+			(pipeline) => {
+				if (joined) this.joins.built(template, performance.now() - start);
+				this.built(this.renderPipelines, id, pipeline);
+			},
+			(error: unknown) => {
+				if (!joined) return this.failed(error);
+				this.builds--;
+				this.joins.failed(template, error);
+			},
 		);
 	}
 

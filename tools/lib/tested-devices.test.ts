@@ -107,11 +107,11 @@ describe('readRecord', () => {
 describe('the tables and the full record', () => {
 	it('gives each place its table, with the links moved to the page and a link to the runs', () => {
 		const tables = recordTables(readRecord(record()).rows);
-		expect(tables).toContain("### The owner's devices\n\n| Device | OS | Browser |");
+		expect(tables).toContain("## The owner's devices\n\n| Device | OS | Browser |");
 		expect(tables).toContain(
 			"| iPad Pro 11-inch, 834 x 1194 at 2x, 8 cores | | Safari 26.6.2, with a Mac user agent | Apple GPU | WebGPU, compatibility mode, WebGL2 | The owner's tablet, over the local network | The tab closed at 2016 MiB ([D-12](decisions/D-12-memory-budgets.md)). | [Runs](tested-devices/ipad-pro-11-inch-safari/) |",
 		);
-		expect(tables).toContain('### Device clouds');
+		expect(tables).toContain('## Device clouds');
 		expect(tables).not.toContain("CI's machines");
 	});
 

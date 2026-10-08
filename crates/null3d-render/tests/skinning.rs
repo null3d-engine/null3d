@@ -21,7 +21,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::outline::Outline;
-use null3d_render::skinning::{JOINTS_PER_ROW, TEXELS_PER_JOINT, skinned_format};
+use null3d_render::skinning::{JOINTS_PER_ROW, SkinningMode, TEXELS_PER_JOINT, skinned_format};
 use null3d_render::view::ViewId;
 
 /// The common world with a skinned column at `position`, which casts shadows. Returns the world
@@ -92,7 +92,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
     let uploads = operands(&first, Op::WriteTexture);
     assert!(uploads.iter().any(|w| w[0] == joints[0] && w[6] == 1));
     // The skinned vertices: one region of the column's vertices, in its skinned format.
-    let skinned_bytes = RINGS * AROUND * vertex::stride(skinned_format(column().format));
+    let skinned_bytes = RINGS * AROUND * vertex::stride(skinned_format(column().format, true));
     let buffers = operands(&first, Op::CreateBuffer);
     let pool = buffers
         .iter()
@@ -111,7 +111,7 @@ fn a_skinned_object_skins_once_in_a_compute_pass_and_draws_its_skinned_vertices(
         .iter()
         .any(|v| v[0] == 0 && v[1] == pool[0]);
     assert!(draws_pool);
-    let plain = skinned_format(column().format);
+    let plain = skinned_format(column().format, true);
     assert!(
         operands(&first, Op::CreateRenderPipeline)
             .iter()
@@ -192,6 +192,125 @@ fn the_skinning_pass_skins_formats_with_a_tangent_with_a_build_of_their_own() {
 }
 
 #[test]
+fn a_character_that_holds_its_pose_costs_no_skinning_work() {
+    let (mut world, column) = skinned([0.0, 0.0, 0.0]);
+    let mut mock = MockBackend::default();
+    let first = world.step(&mut mock, true);
+    let skin = operands(&first, Op::CreateComputePipeline)
+        .iter()
+        .find(|p| p[1] == template::SKIN)
+        .unwrap()[0];
+    let joints = operands(&first, Op::CreateTexture)
+        .into_iter()
+        .find(|t| t[1] == JOINTS_PER_ROW * TEXELS_PER_JOINT)
+        .unwrap()[0];
+    let groups = [(RINGS * AROUND).div_ceil(64)];
+    assert_eq!(skin_dispatches(&first, skin), groups);
+    assert_eq!(world.renderer.skinned_vertices(), RINGS * AROUND);
+
+    // Its clip stops: the pose holds, so neither the pass nor the joint texture does any work.
+    world.animation_step = 0.0;
+    for _ in 0..2 {
+        let still = world.step(&mut mock, false);
+        assert_eq!(skin_dispatches(&still, skin), Vec::<u32>::new());
+        assert_eq!(world.renderer.skinned_vertices(), 0);
+        assert!(
+            operands(&still, Op::WriteTexture)
+                .iter()
+                .all(|w| w[0] != joints)
+        );
+    }
+    // It moves across the world in its pose: its regions hold vertices in the skeleton's space, so
+    // nothing skins.
+    world.scene.set_position(column, [1.0, 0.0, 0.0]).unwrap();
+    let moved = world.step(&mut mock, false);
+    assert_eq!(skin_dispatches(&moved, skin), Vec::<u32>::new());
+
+    // A new layout leaves the regions with no pose to keep, so the still column skins once.
+    world.add_twin(column, [-2.0, 0.0, 0.0]);
+    let relaid = world.step(&mut mock, true);
+    assert_eq!(world.renderer.skinned_vertices(), 2 * RINGS * AROUND);
+    assert!(!skin_dispatches(&relaid, skin).is_empty());
+    world.step(&mut mock, false);
+    assert_eq!(world.renderer.skinned_vertices(), 0);
+
+    // The clip plays again: the column skins every frame, and its twin, which plays no clip,
+    // keeps its rest pose at no cost.
+    world.animation_step = 1.0 / 60.0;
+    let playing = world.step(&mut mock, false);
+    assert_eq!(world.renderer.skinned_vertices(), RINGS * AROUND);
+    assert!(
+        operands(&playing, Op::WriteTexture)
+            .iter()
+            .any(|w| w[0] == joints)
+    );
+}
+
+#[test]
+fn without_the_pose_skip_a_still_character_skins_every_frame() {
+    for skinning in [SkinningMode::FULL, SkinningMode::NARROW_ONLY] {
+        let mut world = World::with_config(RendererConfig {
+            skinning,
+            ..RendererConfig::default()
+        });
+        world.pipelines_built = 0;
+        world.add_skinned([0.0, 0.0, 0.0]);
+        let mut mock = MockBackend::default();
+        world.step(&mut mock, true);
+        world.animation_step = 0.0;
+        world.step(&mut mock, false);
+        assert_eq!(
+            world.renderer.skinned_vertices(),
+            RINGS * AROUND,
+            "{skinning:?}"
+        );
+    }
+}
+
+#[test]
+fn a_still_character_added_during_play_keeps_its_pose_once_its_pipelines_are_built() {
+    // Frames have drawn, so a skinned object added now waits for its pipelines, and its regions
+    // keep no pose until they are built: a dispatch whose pipeline still builds writes nothing.
+    let mut world = World::new();
+    world.add_skinned([0.0, 0.0, 0.0]);
+    world.animation_step = 0.0;
+    let mut mock = MockBackend::default();
+    let mut skinned = Vec::new();
+    for frame in 0..4 {
+        world.step(&mut mock, frame == 0);
+        skinned.push(world.renderer.skinned_vertices());
+    }
+    // The first frame asks for the pipelines, the second draws the column and skins it again
+    // with them built, and from then on it holds its pose.
+    assert_eq!(skinned, [RINGS * AROUND, RINGS * AROUND, 0, 0]);
+}
+
+#[test]
+fn the_skinned_layout_takes_eight_bit_directions_unless_the_mode_asks_for_floats() {
+    for (skinning, stride) in [(SkinningMode::LEAN, 24), (SkinningMode::FULL, 32)] {
+        let mut world = World::with_config(RendererConfig {
+            skinning,
+            ..RendererConfig::default()
+        });
+        world.pipelines_built = 0;
+        world.add_skinned([0.0, 0.0, 0.0]);
+        let mut mock = MockBackend::default();
+        let first = world.step(&mut mock, true);
+        let format = skinned_format(column().format, skinning.narrow_directions);
+        assert_eq!(vertex::stride(format), stride);
+        assert_eq!(
+            world.renderer.skinned_bytes(),
+            u64::from(RINGS * AROUND * stride)
+        );
+        assert!(
+            operands(&first, Op::CreateRenderPipeline)
+                .iter()
+                .any(|p| p[1] == template::INSTANCED_LIT && p[7] == format)
+        );
+    }
+}
+
+#[test]
 fn a_skinned_object_that_no_view_draws_is_not_skinned() {
     // Behind the camera, which looks down -z from z = 20, and with no shadows.
     let (mut world, object) = skinned([0.0, 0.0, 40.0]);
@@ -242,7 +361,7 @@ fn a_skinned_caster_that_only_a_cascade_sees_is_skinned_for_its_shadow() {
 #[test]
 fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
     let config = RendererConfig {
-        vertex_skinning: true,
+        skinning: SkinningMode::VERTEX,
         ..RendererConfig::default()
     };
     let mut world = World::with_config(config);
@@ -281,7 +400,7 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
 #[test]
 fn with_vertex_skinning_and_index_instances_a_skinned_mesh_reads_the_culling_shaders_copies() {
     let config = RendererConfig {
-        vertex_skinning: true,
+        skinning: SkinningMode::VERTEX,
         index_instances: true,
         ..RendererConfig::default()
     };
@@ -308,7 +427,11 @@ fn with_vertex_skinning_and_index_instances_a_skinned_mesh_reads_the_culling_sha
 fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning() {
     for vertex_skinning in [false, true] {
         let mut world = World::with_config(RendererConfig {
-            vertex_skinning,
+            skinning: if vertex_skinning {
+                SkinningMode::VERTEX
+            } else {
+                SkinningMode::LEAN
+            },
             ..RendererConfig::default()
         });
         // No frame has drawn yet, so the first frame waits for every pipeline and draws the skinned
@@ -342,7 +465,7 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
             } else {
                 // The skinned vertices' plain format, which the skinning pass writes.
                 assert_eq!(mask[2] & permutation::SKIN, 0);
-                assert_eq!(mask[7], skinned_format(column().format));
+                assert_eq!(mask[7], skinned_format(column().format, true));
             }
         }
         if vertex_skinning {
@@ -366,7 +489,11 @@ fn an_outlined_skinned_object_draws_its_mask_in_its_pose_both_ways_of_skinning()
 fn an_outlined_skinned_object_added_during_play_asks_for_both_mask_pipelines_while_it_waits() {
     for vertex_skinning in [false, true] {
         let mut world = World::with_config(RendererConfig {
-            vertex_skinning,
+            skinning: if vertex_skinning {
+                SkinningMode::VERTEX
+            } else {
+                SkinningMode::LEAN
+            },
             ..RendererConfig::default()
         });
         let object = world.add_skinned([0.0, 0.0, 0.0]);

@@ -43,6 +43,16 @@ const ENGINE_BUILD = {
  * each format that the engine asks for, every mip level in turn, by SHA-256.
  */
 const OFFICIAL_OUTPUT: Record<string, string> = {
+	'budget-checker-etc1s.ktx2/cTFASTC_4x4_RGBA':
+		'aaf835abc1d6dca0035e2f09e22f6a3f57a44d4847fc3d9f3e3f0de03b57938a',
+	'budget-checker-etc1s.ktx2/cTFBC7_RGBA':
+		'7fa8ad28dc88d3e81e053b317bc651086d8dabbea184a6f76bae0242c71c6309',
+	'budget-checker-etc1s.ktx2/cTFETC1_RGB':
+		'dd6ce1dfc0f9eab4076597161d9f13fe1336f3634b515dd0d226ba17f0cbf4f7',
+	'budget-checker-etc1s.ktx2/cTFETC2_RGBA':
+		'a62f4ee5f22a241f5a970aa3604a6330a98d7593c4018bd1abd5891dea4677bd',
+	'budget-checker-etc1s.ktx2/cTFRGBA32':
+		'e4e3c06d43add27e61cc9410c52dcc9807a2928ee36ddac53dca6a215882ddd3',
 	'quarters-etc1s.ktx2/cTFASTC_4x4_RGBA':
 		'fbeb66dd5d9d269870472622c85a96c8af43840f8f41c35bbb53a4ec2de2b53c',
 	'quarters-etc1s.ktx2/cTFBC7_RGBA':

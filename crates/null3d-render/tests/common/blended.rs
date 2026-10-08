@@ -25,7 +25,11 @@ pub struct Blended {
 }
 
 /// Adds a mesh and a blended unlit material of `blend` bits, and returns their engine ids.
-fn blended_pair<B: FrameBuilder>(world: &mut World<B>, mesh: &Geometry, blend: u32) -> (u32, u32) {
+pub fn blended_pair<B: FrameBuilder>(
+    world: &mut World<B>,
+    mesh: &Geometry,
+    blend: u32,
+) -> (u32, u32) {
     let settings = world.renderer.settings_mut();
     let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
     let material = settings
@@ -37,7 +41,12 @@ fn blended_pair<B: FrameBuilder>(world: &mut World<B>, mesh: &Geometry, blend: u
 }
 
 /// Adds a blended object at `z` on the camera's axis.
-fn add_blended<B: FrameBuilder>(world: &mut World<B>, mesh: u32, material: u32, z: f32) -> Handle {
+pub fn add_blended<B: FrameBuilder>(
+    world: &mut World<B>,
+    mesh: u32,
+    material: u32,
+    z: f32,
+) -> Handle {
     let object = world.scene.reserve().unwrap();
     world.scene.set_position(object, [0.0, 0.0, z]).unwrap();
     world.scene.set_local_radius(object, 1.0).unwrap();

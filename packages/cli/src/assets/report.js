@@ -1,9 +1,10 @@
 // The budget report of an optimized model: what it draws, what it downloads and what its textures
 // take in GPU memory on each family of devices.
 import { counted } from '../text.js';
+import { BLOCK } from './images.js';
 
 /** @import { Document, Mesh, Node } from '@gltf-transform/core' */
-/** @import { TextureRecord } from './textures.js' */
+/** @import { BakeSkip, TextureRecord } from './textures.js' */
 /** @import { SpatialReport } from './spatial.js' */
 /** @import { DedupReport } from './dedup.js' */
 /** @import { MeshLevels } from './levels.js' */
@@ -33,10 +34,15 @@ import { counted } from '../text.js';
  * @property {SpatialReport} spatial Blockers and stored trees.
  * @property {{ min: number[], max: number[] }} bounds The scene's box in its own space.
  * @property {TextureRecord[]} textures
+ * @property {BakeSkip[]} unbaked Materials with a normal map and a metal-rough map whose roughness
+ *   levels did not take the bake, and why.
+ * @property {string[]} partialBlocks Textures that the model had as KTX2 files whose sides are
+ *   not whole blocks of 4 texels, which the engine loads uncompressed.
  * @property {TextureGroup[]} textureGroups
  * @property {{ etc2: number, bc7: number, rgba8: number }} textureMemory The textures' GPU
  *   memory in bytes with every mip level: where the GPU takes ETC2 and ASTC, as phones, tablets
  *   and Macs do; where it takes only BC7, as most Windows PCs do; and with no compressed format.
+ *   A texture whose sides are not whole blocks counts as uncompressed in each.
  * @property {number} textureMs The CPU time that the texture encodes took.
  * @property {number} ms The time the whole model took.
  */
@@ -58,17 +64,28 @@ export function mipBytes(width, height, blockBytes) {
 }
 
 /**
+ * True when a texture's sides are whole blocks, which the engine needs to keep it compressed.
+ *
+ * @param {Pick<TextureRecord, 'width' | 'height'>} texture
+ */
+export const wholeBlocks = ({ width, height }) => width % BLOCK === 0 && height % BLOCK === 0;
+
+/**
  * The GPU memory of textures on each family of devices. The engine transcodes ETC1S data to ETC2,
  * at 8 bytes a block without alpha, where the GPU has it, and UASTC data to ASTC or BC7, at 16.
+ * It loads a texture whose sides are not whole blocks uncompressed.
  *
  * @param {readonly TextureRecord[]} textures
  */
 export function textureMemory(textures) {
 	const memory = { etc2: 0, bc7: 0, rgba8: 0 };
-	for (const { width, height, codec, alpha } of textures) {
-		memory.etc2 += mipBytes(width, height, codec === 'etc1s' && !alpha ? 8 : 16);
-		memory.bc7 += mipBytes(width, height, 16);
-		memory.rgba8 += mipBytes(width, height, 0);
+	for (const texture of textures) {
+		const { width, height, codec, alpha } = texture;
+		const blocks = wholeBlocks(texture);
+		const rgba8 = mipBytes(width, height, 0);
+		memory.etc2 += blocks ? mipBytes(width, height, codec === 'etc1s' && !alpha ? 8 : 16) : rgba8;
+		memory.bc7 += blocks ? mipBytes(width, height, 16) : rgba8;
+		memory.rgba8 += rgba8;
 	}
 	return memory;
 }
@@ -323,12 +340,12 @@ function levelTriangles(levels) {
  * The report's figures for a model, from its document after every step.
  *
  * @param {Document} doc
- * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], files: Map<string, Uint8Array>, levels: MeshLevels[], merged: DedupReport, spatial: SpatialReport, ms: number }} facts
+ * @param {{ name: string, inputBytes: number, modelBytes: number, textures: TextureRecord[], unbaked: BakeSkip[], files: Map<string, Uint8Array>, levels: MeshLevels[], merged: DedupReport, spatial: SpatialReport, ms: number }} facts
  * @returns {ModelReport}
  */
 export function modelReport(
 	doc,
-	{ name, inputBytes, modelBytes, textures, files, levels, merged, spatial, ms },
+	{ name, inputBytes, modelBytes, textures, unbaked, files, levels, merged, spatial, ms },
 ) {
 	const root = doc.getRoot();
 	const positions = new Set(
@@ -351,6 +368,8 @@ export function modelReport(
 		merged,
 		spatial,
 		textures,
+		unbaked,
+		partialBlocks: textures.filter((t) => !wholeBlocks(t)).map((t) => t.name),
 		textureGroups: textureGroups(textures),
 		textureMemory: textureMemory(textures),
 		textureMs: textures.reduce((sum, t) => sum + t.ms, 0),
@@ -406,6 +425,31 @@ function spatialLines({ blockers, blockerTriangles, ownBlockers, noBlocker, tree
 }
 
 /**
+ * The report's lines for the roughness bake and for textures that load uncompressed.
+ *
+ * @param {ModelReport} report
+ * @returns {string[]}
+ */
+function textureNotes({ textures, unbaked, partialBlocks }) {
+	const lines = [];
+	const baked = textures.filter((t) => t.baked).length;
+	if (baked > 0)
+		lines.push(`  roughness levels baked from normal maps: ${counted(baked, 'texture')}`);
+	if (unbaked.length > 0) {
+		lines.push(`  no roughness bake for ${counted(unbaked.length, 'material')}:`);
+		for (const { material, reason } of unbaked.slice(0, LISTED_REASONS))
+			lines.push(`    ${material || 'a material with no name'}: ${reason}`);
+		if (unbaked.length > LISTED_REASONS)
+			lines.push(`    and ${unbaked.length - LISTED_REASONS} more`);
+	}
+	for (const name of partialBlocks)
+		lines.push(
+			`  ${name || 'a texture with no name'}: its KTX2 file's sides are not whole blocks of 4 texels, so the engine loads it uncompressed. Give the tool its PNG or JPEG source instead`,
+		);
+	return lines;
+}
+
+/**
  * A model's report as lines for the terminal.
  *
  * @param {ModelReport} report
@@ -440,5 +484,6 @@ export function reportLines(report) {
 			`  texture memory: ${shownBytes(m.etc2)} with ETC2 and ASTC, ${shownBytes(m.bc7)} with BC7 only, ${shownBytes(m.rgba8)} uncompressed`,
 		);
 	}
+	lines.push(...textureNotes(report));
 	return lines;
 }

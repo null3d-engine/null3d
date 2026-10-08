@@ -2,7 +2,7 @@
 
 - Device: Pixel 11, 412 x 924 at 2.625x, 7 cores, 8 GB
 - OS: Android 17
-- Browser: Chrome 151.0.7922.173 (TestingBot); Chrome 149.0.7827.160 (BrowserStack)
+- Browser: Chrome 151.0.7922.173 (TestingBot); Chrome 152.0.7977.54 (BrowserStack)
 - GPU: Imagination PowerVR C-Series CXTP-48-1536 (ANGLE on Vulkan 1.4.317, driver 1.662.3024; WebGPU adapter: img-tec)
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: TestingBot's and BrowserStack's device clouds

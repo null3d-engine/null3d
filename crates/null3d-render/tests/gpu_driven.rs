@@ -41,7 +41,8 @@ struct ViewCommands {
     indirect: Vec<u32>,
 }
 
-/// Each view's commands in a frame that culls and draws every view, in the order they run.
+/// Each view's commands in a frame that culls and draws every view, in the order they cull. A
+/// view's bundle is the one that draws from the compacted instances that its culling writes.
 fn views_of(commands: &[(Op, Vec<u32>)]) -> Vec<ViewCommands> {
     let groups: HashMap<u32, [u32; 7]> = commands
         .iter()
@@ -76,9 +77,13 @@ fn views_of(commands: &[(Op, Vec<u32>)]) -> Vec<ViewCommands> {
     assert_eq!(dispatched.len(), executed.len(), "one dispatch per bundle");
     dispatched
         .into_iter()
-        .zip(executed)
-        .map(|(culling, (pass, bundle))| {
-            let (instances, indirect) = bundles.remove(&bundle).unwrap();
+        .map(|culling| {
+            let (pass, bundle) = executed
+                .iter()
+                .find(|(_, bundle)| bundles[bundle].0.first() == Some(&culling[4]))
+                .cloned()
+                .expect("a bundle draws what the view culls");
+            let (instances, indirect) = bundles[&bundle].clone();
             ViewCommands {
                 culling,
                 pass,
@@ -123,15 +128,16 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
         assert_eq!(view.instances, [view.culling[4]; 3]);
         assert_eq!(view.indirect, [view.culling[5]; 3]);
     }
-    // The camera's render pass resolves into the canvas. The side view's draws into targets of
-    // its own, which share the camera's textures, as the two render passes do not overlap. The
-    // textures: the color and depth targets, the shadow map and the shadow atlas, one texel each
-    // while no light casts shadows, the table of specular terms, the materials' custom values,
-    // the environment's blank cube, the blank texture that stands in for ambient occlusion, and
-    // the views' cell offsets.
+    // The camera's render pass resolves into the canvas. The side view's draws into an image of
+    // its own, which resolves for the copy into its target. The textures: the color and depth
+    // targets, the side view's image and target, the shadow map and the shadow atlas, one texel
+    // each while no light casts shadows, the table of specular terms, the materials' custom
+    // values, the environment's blank cube, the blank texture that stands in for ambient
+    // occlusion, the views' cell offsets, and the white texel that the side view's texture shows
+    // until it draws.
     assert_eq!(camera.pass[1], 0);
-    assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 9);
+    assert_ne!(other.pass[1], NO_TARGET);
+    assert_eq!(count(&commands, Op::CreateTexture), 12);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -205,8 +211,9 @@ fn the_frame_runs_the_passes_of_the_render_graph_and_compiles_it_only_when_they_
         steps(&world),
         [
             vec!["LightClusters", "Culling", "Culling1"],
+            vec!["Opaque1"],
+            vec!["Copy1"],
             vec!["Opaque", "Resolve"],
-            vec!["Opaque1"]
         ]
     );
     assert_eq!(world.renderer.render_graph().compiles(), 2);

@@ -15,6 +15,7 @@ import {
 	type QualitySettings,
 	SKETCH_SETTINGS,
 } from '../../packages/engine/src/quality/presets.ts';
+import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 
 /**
  * Spheres of the GPU-bound page's scene that no GPU of the tests draws at 60 frames per second:
@@ -76,7 +77,7 @@ export const PRESET_CHANGE_SWITCHES = [`preset=${PRESET_CHANGE.from}`, `to=${PRE
 
 /** What the preset change page reports. */
 export interface PresetChangeResult {
-	tier: string;
+	tier: Tier;
 	/** The preset that the engine ran after its first frame, before the change. */
 	started: QualityPreset;
 	mode: { preset: QualityPreset };
@@ -112,9 +113,9 @@ export function presetChangeProblems(
 		problems.push(`the engine runs ${result.mode.preset}, not ${to}`);
 	// The settings fixed when the engine starts keep the start preset's values.
 	const start: Record<string, unknown> = { maxPixelRatio: 1 };
-	const first = presetSettings(from) as unknown as Record<string, unknown>;
+	const first = presetSettings(from, {}, result.tier) as unknown as Record<string, unknown>;
 	for (const name of SKETCH_SETTINGS) if (!LIVE_SETTINGS.includes(name)) start[name] = first[name];
-	const settings = presetSettings(to, start as Partial<QualitySettings>);
+	const settings = presetSettings(to, start as Partial<QualitySettings>, result.tier);
 	for (const [name, value] of Object.entries(settings)) {
 		// JSON gives Infinity as null.
 		const reported = result.sketch?.settings[name] ?? Number.POSITIVE_INFINITY;

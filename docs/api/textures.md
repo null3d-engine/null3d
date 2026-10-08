@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` ships in 0.2. Cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -128,6 +128,21 @@ A texture with `depth` above 1 holds that many layers, up to 256, one after anot
 
 Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true, as in three.js's `DataTexture`.
 
+## Textures of render passes
+
+`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map, as three.js's render target textures are.
+
+```ts
+const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
+const screen = materials.unlit({ map: textures.fromPass(map) });
+```
+
+- The texture has the pass's size. It holds linear color after the exposure, so its `colorSpace` is `'linear'`. Its `format` is `'rgba16float'` where the device draws high dynamic range color, and `'rgba8unorm'` elsewhere.
+- The image stands upright on a plane, with v = 0 at its bottom row.
+- It samples as no texture until the pass first draws, and keeps the last image while the pass is switched off.
+- `texture.update` throws E1208: the pass alone gives its texels. `render.removePass` destroys the textures of the pass.
+- A pass runs only while a texture shows it. [Render graph API](render.md) covers passes.
+
 ## Updating and destroying
 
 `texture.update(source)` gives a texture new texels, which upload in their turn:
@@ -145,7 +160,7 @@ A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU mem
 
 Textures of one size, one format and one number of mip levels share a 2D texture array on the GPU. Each texture takes one layer of the array. Materials whose maps are in one array share one bind group when they sample their maps the same way. The GPU then switches textures less often between draws.
 
-An array holds at most 256 layers, the most that an iPad allows. It starts with room for a few textures, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. When a size has more than 256 textures, a second array holds the rest. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
+An array holds at most 256 layers, the most that an iPad allows, and at most 128 MiB. It starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When a size has more textures than an array holds, another array holds the rest. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
@@ -179,7 +194,9 @@ Color maps, such as the base color of a surface, store sRGB colors. The GPU turn
 
 ## GPU memory
 
-A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. An `rgb9e5ufloat` texel takes 4 bytes. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers, so a half-full array costs as much as a full one.
+A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. An `rgb9e5ufloat` texel takes 4 bytes. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers. The count in `textures.memoryBytes` holds them too. It also holds an array's old GPU texture after the array grows or shrinks, until the next frame frees it.
+
+The quality preset's texture memory budget, `textureMemoryMiB`, caps the GPU memory of every texture. Past it, the engine drops the largest mip levels of textures from files, and loads them again when room returns. Each texture's `droppedLevels` gives the levels that it lost, from 0 to 3. Its `width` and `height` keep its own size, and its `bytes` give the memory that it takes now. [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order of the drops.
 
 ## Both GPU paths
 
@@ -187,123 +204,8 @@ WebGPU and WebGL2 store, upload and sample textures the same way, and make the s
 
 ## When the browser takes the GPU away
 
-The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture whose texels it released draws without its map until the texture gets an update. A texture from a KTX2 file takes no update, so load the file again for a new texture.
+The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. Any other texture whose texels the engine released draws without its map until the texture gets an update.
 
 ## API reference
 
-<!-- null3d:api:start -->
-
-### `CompressedTextureFormat`
-
-```ts
-type CompressedTextureFormat =
-	| 'astc-4x4-unorm'
-	| 'bc6h-rgb-ufloat'
-	| 'bc7-rgba-unorm'
-	| 'etc2-rgb8unorm'
-	| 'etc2-rgba8unorm';
-```
-
-A compressed format, which stores blocks of 4 x 4 texels in a quarter or an eighth of the GPU memory of `rgba8unorm`. A texture from a KTX2 file takes the one that the device supports: `astc-4x4-unorm`, `bc7-rgba-unorm`, `etc2-rgb8unorm` without alpha or `etc2-rgba8unorm` with it. A KTX2 file of high dynamic range data becomes `bc6h-rgb-ufloat`, which holds three half floats per texel and no alpha, where the device has BC formats. The names are WebGPU's, and a texture's `colorSpace` says whether sampling decodes sRGB.
-
-### `Texture`
-
-Class `Texture`.
-
-A texture: an image or data on the GPU, which materials sample. Its texels upload in the frames after the call that makes it, a band of rows per frame. A material draws with its color alone until they are on the GPU.
-
-| Member | Description |
-| --- | --- |
-| `readonly depth: number` | Layers: 1, or more for a texture from data with a depth. |
-| `readonly format: TextureFormat \| CompressedTextureFormat \| EnvironmentFormat` | How the texture stores its texels on the GPU. A texture from a KTX2 file has the compressed format that the device supports, or `rgba8unorm` where it supports none. |
-| `readonly colorSpace: TextureColorSpace` | Whether sampling turns the texels from sRGB into linear values, or reads them as they are. |
-| `readonly uvSet: 0 \| 1` | The set of texture coordinates that materials read the texture at. |
-| `readonly width: number` | Texels in each row. An update with an image of another size changes it. |
-| `readonly height: number` | Rows in each layer. An update with an image of another size changes it. |
-| `readonly bytes: number` | The GPU bytes of the texture: its layers, with every mip level. |
-| `update(source: ImageBitmap \| TextureDataArray): void` | Gives the texture new texels, which upload in their turn. An image may have another size, and the texture then takes that size; the image moves to the thread that draws, so this thread can use it no more. Data must fit the texture's size and format. Until the new texels are on the GPU, materials draw with their colors alone. A texture from a KTX2 file takes no updates, and throws E1208: load the file again. |
-| `destroy(): void` | Frees the texture's GPU memory. Materials that map it draw with their colors alone. Calls on the texture after this throw E1101. |
-
-### `TextureColorSpace`
-
-```ts
-type TextureColorSpace = 'srgb' | 'linear';
-```
-
-`srgb` for colors, which sampling turns into linear values, or `linear` for data such as normals, roughness and metalness, which sampling reads as they are.
-
-### `TextureData`
-
-Interface `TextureData`, which extends `TextureOptions`.
-
-A texture's size and texels for `textures.fromData`, with its options.
-
-| Member | Description |
-| --- | --- |
-| `width: number` | Texels in each row, from 1 up to `textures.maxSize`. |
-| `height: number` | Rows in each layer, from 1 up to `textures.maxSize`. |
-| `depth?: number` | Layers, from 1 to 256. The default is 1. |
-| `format?: TextureFormat` | The default is `rgba8unorm`. |
-| `data: TextureDataArray` | Four numbers per texel, in rows from the first to the last, layer after layer. The first row is at v = 0, the bottom of a plane. |
-
-### `TextureDataArray`
-
-```ts
-type TextureDataArray = Uint8Array | Uint8ClampedArray | Uint16Array | Float32Array;
-```
-
-Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or 32-bit floats, which the engine turns into half floats. A 32-bit float outside the half float range of -65,504 to 65,504 takes the nearer end of it, because an infinite texel would draw black.
-
-### `TextureFilter`
-
-```ts
-type TextureFilter = 'linear' | 'nearest';
-```
-
-How texels are read between their centers and between mip levels: blended (`linear`), or the nearest one (`nearest`), which keeps pixel art sharp.
-
-### `TextureFormat`
-
-```ts
-type TextureFormat = 'rgba8unorm' | 'rgba16float';
-```
-
-How a texture stores its texels on the GPU: `rgba8unorm`, four 8-bit channels, or `rgba16float`, four 16-bit floats for values outside 0 to 1.
-
-### `TextureOptions`
-
-Interface `TextureOptions`.
-
-How a texture stores and samples its texels. Every call that makes a texture takes them.
-
-| Member | Description |
-| --- | --- |
-| `colorSpace?: TextureColorSpace` | `srgb` for color maps, such as a base color, and `linear` for data maps, such as normal, roughness, metalness and occlusion maps. The default is `srgb` for images and `linear` for data. |
-| `wrap?: TextureWrap \| readonly [TextureWrap, TextureWrap]` | Along u, then v, or one value for both. The default is `clamp`, as in three.js. |
-| `filter?: TextureFilter` | The filter of magnified and minified texels and between mip levels. The default is `linear`. |
-| `mipmaps?: boolean` | True to make mip levels on the GPU after each upload, so the texture does not shimmer where it covers few pixels. The default is true for images and false for data. `rgba16float` textures have no mip levels. |
-| `anisotropy?: number` | Samples along the direction of steepest change, a whole number from 1 to 16, which keeps a texture sharp on a surface seen at a slant. The quality preset caps it, and a `nearest` filter turns it off. The default is 1, which is off. |
-| `uvSet?: 0 \| 1` | The set of texture coordinates that materials read the texture at: 0 for the first, 1 for the second, as three.js's `texture.channel`. The default is 0. |
-
-### `Textures`
-
-Class `Textures`.
-
-Makes textures from decoded images and from data, and reads what the GPU holds. A sketch finds it as `ctx.textures`. `ctx.assets.loadTexture` loads and decodes image files into textures.
-
-| Member | Description |
-| --- | --- |
-| `fromImageBitmap(image: ImageBitmap, options: TextureOptions = {}): Texture` | A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane. Decode images with `imageOrientation: 'flipY'`, as `assets.loadImageBitmap` does by default, so that they stand upright as three.js shows them. The image moves to the thread that draws, so this thread can use it no more. Throws E1208 for an image without pixels, one larger than `maxSize`, and options the engine does not know. |
-| `fromData(texture: TextureData): Texture` | A texture from data: four numbers per texel, in rows from the bottom up, layer after layer. A texture of several layers is a texture array of its own. Throws E1208 when the data does not fit the size and format, and for options the engine does not know. |
-| `readonly memoryBytes: number` | The GPU bytes that every texture holds, with the free layers of their texture arrays. It counts what the GPU holds already, so it grows as uploads finish. |
-| `readonly maxSize: number` | The widest and tallest texture this device takes: 4096 texels, or less on a WebGL2 device that allows less. |
-
-### `TextureWrap`
-
-```ts
-type TextureWrap = 'clamp' | 'repeat' | 'mirror';
-```
-
-What texture coordinates outside 0 to 1 read. `clamp` reads the texel at the edge, `repeat` repeats the texture, and `mirror` repeats it with every other copy mirrored.
-
-<!-- null3d:api:end -->
+[The API reference](reference/textures.md) lists every export of this page with its type and description. The engine's doc comments make it.

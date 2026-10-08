@@ -10,7 +10,7 @@ import { docsFiles, guideFiles, readIfExists } from './files';
 export const ROOT_LINKED_FILES = ['README.md', 'AGENTS.md'];
 
 const SELF_REPO_RE =
-	/^https:\/\/github\.com\/null3d-engine\/null3d\/(?:blob|raw|tree)\/main\/([^#?]+)/;
+	/^https:\/\/github\.com\/null3d-engine\/null3d\/(?:blob|raw|tree)\/(?:main|generated)\/([^#?]+)/;
 /** Hosts that appear in docs as examples, never as real destinations. */
 const SKIP_HOSTS = new Set(['localhost', '127.0.0.1', 'example.com']);
 /** The only statuses that prove a link wrong; anything else could be the network. */

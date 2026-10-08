@@ -994,6 +994,17 @@ impl MockBackend {
                     op,
                     "a render pipeline sets known state flags",
                 )?;
+                check(
+                    o[6] & state_flags::ALPHA_TO_COVERAGE == 0
+                        || (o[5] > 1 && format::covers_by_alpha(o[3])),
+                    op,
+                    "alpha to coverage needs more than one sample and a color format with alpha",
+                )?;
+                check(
+                    permutation::buildable(o[2]),
+                    op,
+                    "a render pipeline's permutation word holds every bit that its bits need, and no pair kept apart",
+                )?;
                 self.render_pipelines.insert(
                     o[0],
                     Formats {
@@ -1438,6 +1449,56 @@ mod tests {
             Err(MockError::Invalid {
                 op: Op::CreateRenderPipeline,
                 rule: "a render pipeline sets known state flags"
+            })
+        );
+
+        // WebGPU turns alpha to coverage on only for multisampled targets with alpha.
+        let covers = state_flags::ALPHA_TO_COVERAGE;
+        let a2c = "alpha to coverage needs more than one sample and a color format with alpha";
+        for (color, samples, rule) in [
+            (format::CANVAS, 4, None),
+            (format::RGBA16_FLOAT, 4, None),
+            (format::CANVAS, 1, Some(a2c)),
+            (format::RG11B10_UFLOAT, 4, Some(a2c)),
+        ] {
+            let mut list = DrawList::with_capacity(64);
+            list.push(
+                Op::CreateRenderPipeline,
+                &[1, 1, 0, color, format::NONE, samples, covers, 0, 0, 0],
+            )
+            .unwrap();
+            let expected = rule.map_or(Ok(()), |rule| {
+                Err(MockError::Invalid {
+                    op: Op::CreateRenderPipeline,
+                    rule,
+                })
+            });
+            let mut backend = MockBackend::default();
+            assert_eq!(backend.replay(list.words()), expected, "{color} {samples}");
+        }
+        let mut lonely = DrawList::with_capacity(64);
+        lonely
+            .push(
+                Op::CreateRenderPipeline,
+                &[
+                    1,
+                    1,
+                    permutation::ALPHA_COVERAGE,
+                    format::CANVAS,
+                    format::NONE,
+                    4,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            MockBackend::default().replay(lonely.words()),
+            Err(MockError::Invalid {
+                op: Op::CreateRenderPipeline,
+                rule: "a render pipeline's permutation word holds every bit that its bits need, and no pair kept apart"
             })
         );
     }

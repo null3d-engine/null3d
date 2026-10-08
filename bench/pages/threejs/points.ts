@@ -60,6 +60,8 @@ run('hold', async () => {
 			map: cloud.map ? disc : null,
 			transparent: cloud.alphaMode === 'blend',
 			alphaTest: cloud.alphaMode === 'mask' ? 0.5 : 0,
+			// null3D's masks fade their cut edges into MSAA coverage by default (D-82).
+			alphaToCoverage: cloud.alphaMode === 'mask',
 			opacity: cloud.opacity,
 		});
 		scene.add(new three.Points(geometry, material));

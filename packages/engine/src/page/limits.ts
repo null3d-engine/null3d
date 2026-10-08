@@ -19,10 +19,25 @@ import {
 } from '../generated/gpu';
 import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import type { CompressionFamily, DepthMode, ShadowDepthBits, Switches } from './switches';
+import type {
+	CompressionFamily,
+	DepthMode,
+	ShadowDepthBits,
+	SkinningSwitch,
+	Switches,
+} from './switches';
 
 /** The anti-aliasing mode, as the quality settings name it. */
 export type AntialiasMode = QualitySettings['antialias'];
+
+/** The core's code of each skinning mode that ?skinning= picks. */
+const SKINNING_CODES: Record<SkinningSwitch, number> = {
+	lean: C.SKINNING_LEAN,
+	vertex: C.SKINNING_VERTEX,
+	full: C.SKINNING_FULL,
+	skip: C.SKINNING_SKIP_ONLY,
+	narrow: C.SKINNING_NARROW_ONLY,
+};
 
 /** Each anti-aliasing mode's code in the core. */
 const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
@@ -113,15 +128,17 @@ export interface CoreDevice {
 	shaderBits: number;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
+	/** False when each custom effect draws in a pass of its own, with none joined or folded. */
+	joinEffects: boolean;
 	/**
 	 * True when each camera view draws its opaque objects' depth before it shades them.
 	 */
 	depthPrepass: boolean;
 	/**
-	 * True when WebGPU skins skinned meshes in the vertex shader of each pass, false when it skins
-	 * each once per frame in a compute pass.
+	 * The core's code of WebGPU's skinning mode: the skinning pass, with or without its savings, or
+	 * the vertex shader of each pass.
 	 */
-	vertexSkinning: boolean;
+	skinning: number;
 	/** The bits per texel of the shadow cascades' depth: 16, or 32 for floats. */
 	shadowDepthBits: ShadowDepthBits;
 	/**
@@ -136,11 +153,18 @@ export interface CoreDevice {
 	 * their precision at any distance from the origin.
 	 */
 	largeWorld: boolean;
+	/** The objects that the scene starts with room for, or 0 for the core's default. */
+	expectedObjects: number;
 	/**
 	 * True when each camera view culls in two phases against a depth pyramid of what it drew.
 	 * Only the WebGPU path culls this way.
 	 */
 	gpuOcclusion: boolean;
+	/**
+	 * True when KTX2 files keep their transcoded texels in the browser's Cache Storage, so later
+	 * loads of the same file skip the transcoder.
+	 */
+	textureCache: boolean;
 }
 
 /**
@@ -189,9 +213,11 @@ export type DeviceOptions = Pick<
 	| 'freshShaders'
 	| 'compression'
 	| 'cells'
-	| 'vertexSkinning'
+	| 'join'
+	| 'skinning'
 	| 'indexInstances'
 	| 'shadowDepthBits'
+	| 'textureCache'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -201,6 +227,8 @@ export type DeviceOptions = Pick<
 	depthPrepass: boolean;
 	/** True for positions that keep their precision at any distance from the origin. */
 	largeWorld: boolean;
+	/** The objects that the scene starts with room for, or 0 for the core's default. */
+	expectedObjects: number;
 	/** True to cull each camera view in two phases against a depth pyramid. */
 	gpuOcclusion: boolean;
 };
@@ -341,6 +369,7 @@ export function halfPrecision(
  * the 8-bit path, so tests reach every route. `freshShaders` makes the browser compile every
  * shader again, as on a first visit. `compression` limits the compressed texture families,
  * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
+ * `textureCache` off makes KTX2 files transcode on every load, to time the cache against it.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const sceneColor = sceneColorFormat(tier, report, options);
@@ -357,11 +386,14 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		occlusionTargets: tier !== 'webgl2' || webgl2DrawsOcclusion(report.webgl2),
 		transparent: options.transparent,
 		cellCulling: options.cells,
+		joinEffects: options.join,
 		depthPrepass: options.depthPrepass,
-		vertexSkinning: options.vertexSkinning,
+		skinning: SKINNING_CODES[options.skinning],
 		shadowDepthBits: options.shadowDepthBits,
 		largeWorld: options.largeWorld,
+		expectedObjects: options.expectedObjects,
 		gpuOcclusion: options.gpuOcclusion,
+		textureCache: options.textureCache,
 	};
 	if (tier !== 'webgl2') {
 		return {
