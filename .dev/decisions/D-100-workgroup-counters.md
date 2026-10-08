@@ -134,7 +134,7 @@ Rejected by the owner on 8 October 2026 at about 11:00, with option A below. No 
 
 ## Consequences
 
-- `crates/null3d-shaders/wgsl/cull.wgsl` keeps main's form: each visible instance adds 1 to each draw of its bucket. The forms that G2 tested stay on the branch `perf/m2-i5-workgroup-counters` (compare-exchange at 2ed8971bc, 3 turns at 09d01f01e), and the 2-turn and 1-turn forms at 6625191a5 and 66d2d3a5e.
+- `crates/null3d-shaders/wgsl/cull.wgsl` keeps main's form: each visible instance adds 1 to each draw of its bucket. The forms that G2 tested stay on the branch `perf/m2-i5-workgroup-counters` (compare-exchange at 2ed8971bc, 3 turns at 09d01f01e), The 2-turn and 1-turn forms, 6625191a5 and 66d2d3a5e, were never pushed. Each is that branch's cdc56b038 with the number of claim turns in `cull.wgsl` set to 2 or 1, and no other change.
 - No shader file grows, and no image changes.
 - `crates/null3d-shaders/src/features.rs`: the shader build fails on `atomicCompareExchangeWeak` in the engine's shaders, and warns on it in users' shaders. The Vite plugin prints the warning. `docs/shaders/wgsl-rules.md` and the null3d-develop skill's shader rules state it. [Browser faults](../implementation-notes.md#browser-faults) and [Driver bugs](../driver-bugs.md) hold the fault.
 - `bench/lib/archive.ts`: each archived run keeps its median GPU time per pass, so a record holds the culling pass's figures that this record cites.
