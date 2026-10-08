@@ -42,6 +42,12 @@ export interface Null3dPageOptions {
 	 * scene is whole, with figures for the report. A timed run warms up only after it resolves.
 	 */
 	started?: (engine: Engine) => Promise<Record<string, unknown>>;
+	/**
+	 * A measurement of the page's own, such as S6's occlusion turns, which runs in place of the
+	 * timed run once the scene is whole, and resolves with its figures for the report. Undefined,
+	 * or a call that returns undefined, keeps the timed run.
+	 */
+	measure?: (engine: Engine, log: QualityLog | undefined) => Promise<object> | undefined;
 }
 
 /**
@@ -181,10 +187,12 @@ export function runNull3dPage(
 				const { width, height, pixels } = await engine.captureFrame();
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
-			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
 			// The warm-up counts from the first frame. A start that takes the stored result of an
 			// earlier preset check resolves before its first frame, and a first visit only after it.
 			await firstFrameOrFailure(engine);
+			const own = pageOptions.measure?.(engine, log);
+			if (own) return { ...report, ...(await own), userAgent: navigator.userAgent };
+			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
 			const timed = await timedRun({
 				engine,
 				warmupSeconds: options.seconds ?? WARMUP_SECONDS,

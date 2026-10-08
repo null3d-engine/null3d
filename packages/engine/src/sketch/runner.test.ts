@@ -174,8 +174,8 @@ const MEDIUM: QualityStart = {
  * `quality` replaces the page's quality start. With `drawing`, a stand-in for the thread that
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
- * cells. `control` gives the page's control block, which the test can write. The log also shows the
- * settings that the page got.
+ * cells. `control` gives the page's control block, which the test can write. `fps` is the frame
+ * rate that ?fps= holds. The log also shows the settings that the page got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -188,6 +188,7 @@ async function start(
 		shared = false,
 		cellsRefused,
 		control = controlViews(createControlBuffer(shared)),
+		fps,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -196,6 +197,7 @@ async function start(
 		shared?: boolean;
 		cellsRefused?: () => number;
 		control?: ReturnType<typeof controlViews>;
+		fps?: number;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -243,6 +245,7 @@ async function start(
 				expectedObjects: 0,
 				gpuOcclusion: false,
 				textureCache: true,
+				occlusionBuffer: 0,
 			},
 			capabilities: CAPABILITIES,
 			quality,
@@ -254,6 +257,7 @@ async function start(
 			sendShader: () => {},
 			sendPreload: () => {},
 			pageUrl: 'http://localhost/',
+			fps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
 			sendLabelSlot: () => {},
@@ -858,7 +862,7 @@ describe('SketchRunner and quality presets', () => {
 		const { context, updates, log, stopDrawing } = await start(
 			(_, log) => ({ onUpdate: () => log.push('update') }),
 			undefined,
-			{ quality: { ...MEDIUM, check: {} }, drawing: { presentedMs: 16, completedMs: 16.5 } },
+			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 16.5 } },
 		);
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
@@ -872,7 +876,7 @@ describe('SketchRunner and quality presets', () => {
 
 	it('lowers the preset when the GPU finishes too few frames, down to Low', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: {} },
+			quality: { ...MEDIUM, check: true },
 			drawing: { presentedMs: 16, completedMs: 40 },
 		});
 		stopDrawing();
@@ -895,7 +899,7 @@ describe('SketchRunner and quality presets', () => {
 				return {};
 			},
 			undefined,
-			{ quality: { ...MEDIUM, check: {} }, drawing: { presentedMs: 16, completedMs: 40 } },
+			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
 		);
 		stopDrawing();
 		expect(context.quality.preset).toBe('low');
@@ -913,7 +917,8 @@ describe('SketchRunner and quality presets', () => {
 
 	it('asks for no more than the frame rate that ?fps= holds', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: { fps: 30 } },
+			quality: { ...MEDIUM, check: true },
+			fps: 30,
 			drawing: { presentedMs: 1000 / 30, completedMs: 1000 / 30 },
 		});
 		stopDrawing();

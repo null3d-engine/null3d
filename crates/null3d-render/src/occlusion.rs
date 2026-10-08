@@ -71,6 +71,12 @@ impl Occluders {
         }
     }
 
+    /// Sets the pixels that the buffer holds about from the next frame on, or 0 for the core's
+    /// default.
+    pub fn set_buffer_pixels(&mut self, pixels: u32) {
+        self.buffer.set_pixels(pixels);
+    }
+
     /// The buffer that the last frame's blockers drew into.
     pub fn buffer(&self) -> &OcclusionBuffer {
         &self.buffer

@@ -74,6 +74,7 @@ import {
 	governorProblems,
 } from '../pages/lib/governor.ts';
 import { type JitterResult, jitterProblems } from '../pages/lib/jitter.ts';
+import { type OcclusionTurnsResult, occlusionTurnsProblems } from '../pages/lib/occlusion.ts';
 import {
 	framesInFlight,
 	type OverloadResult,
@@ -115,7 +116,7 @@ import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
-import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import { BENCH_BUILD, type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
 	type ObjectGrowthCheck,
@@ -123,6 +124,7 @@ import {
 	objectGrowthPlan,
 	objectGrowthProblems,
 } from './object-growth.ts';
+import { type OcclusionS6Check, occlusionS6Plan, saveOcclusionS6Images } from './occlusion-s6.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -248,7 +250,9 @@ export type Check =
 	/** A load of the texture cache page with the city's textures, with the cache off or on. */
 	| TextureCacheCheck
 	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
-	| ObjectGrowthCheck;
+	| ObjectGrowthCheck
+	/** S6's occlusion turns at one preset and one occlusion buffer size, for T-36. */
+	| OcclusionS6Check;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -363,12 +367,6 @@ export interface BenchSwitches {
 	/** True makes a null3D page capture a PNG file of its frame after the measured seconds. */
 	capture?: boolean;
 }
-
-/**
- * The benchmark pages' production build, which timed runs load under one address prefix of the
- * runner's own, so they measure the engine as a developer ships it: without development checks.
- */
-const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 
 /**
  * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
@@ -1450,6 +1448,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'environment-load': environmentLoadPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
+	'occlusion-s6': occlusionS6Plan,
 	jitter: jitterPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
@@ -2106,6 +2105,15 @@ export function judge(
 				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
 				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
+		}
+		case 'occlusion-s6': {
+			const turns = result as ItemResult & OcclusionTurnsResult;
+			if (context)
+				saveOcclusionS6Images(
+					join(context.imageDir, 'frames', `occlusion-s6-${check.preset}-${check.buffer}`),
+					turns,
+				);
+			return occlusionTurnsProblems(turns);
 		}
 		case 'jitter': {
 			const jitter = result as unknown as JitterResult;
