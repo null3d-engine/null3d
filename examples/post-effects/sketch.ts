@@ -4,9 +4,8 @@
 // custom effect splits red from blue toward the edges, as a cheap lens does. Every 3 seconds the
 // color grading table changes: none, then a warm table, then a cool one, each from a .cube file.
 import { defineSketch } from '@null3d/engine';
+import { sampleUrl } from '../lib/samples';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** Seconds that each color grading table shows. */
 const STEP = 3;
 

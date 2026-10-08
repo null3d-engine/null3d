@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+	copyNamedSamples,
 	LOCK_PATH,
 	MANIFEST_PATH,
 	manifestProblems,
@@ -224,6 +225,36 @@ describe('optimizedSampleFile', () => {
 			if (before === undefined) delete process.env.NULL3D_SAMPLES_DIR;
 			else process.env.NULL3D_SAMPLES_DIR = before;
 			rmSync(cache, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('copyNamedSamples', () => {
+	it('copies each file that the demos name from the cache, and says when one is missing', () => {
+		const cache = scratch();
+		const out = scratch();
+		const before = process.env.NULL3D_SAMPLES_DIR;
+		process.env.NULL3D_SAMPLES_DIR = cache;
+		try {
+			const named = namedSamples(repoRoot, ['examples']).map((sample) => sample.path);
+			expect(named.length).toBeGreaterThan(0);
+			expect(() => copyNamedSamples(repoRoot, out)).toThrow('run bun run samples:fetch');
+			for (const path of named) {
+				const full = join(cache, readLock(repoRoot).commit, path ?? '');
+				mkdirSync(join(full, '..'), { recursive: true });
+				writeFileSync(full, path ?? '');
+			}
+			const copied = copyNamedSamples(repoRoot, out);
+			expect(copied.sort()).toEqual([...new Set(named)].sort() as string[]);
+			for (const path of copied) {
+				expect(existsSync(join(out, path))).toBe(true);
+				expect(readFileSync(join(out, path), 'utf8')).toBe(path);
+			}
+		} finally {
+			if (before === undefined) delete process.env.NULL3D_SAMPLES_DIR;
+			else process.env.NULL3D_SAMPLES_DIR = before;
+			rmSync(cache, { recursive: true, force: true });
+			rmSync(out, { recursive: true, force: true });
 		}
 	});
 });
