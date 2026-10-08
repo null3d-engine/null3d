@@ -25,7 +25,7 @@ bun add -d vite @null3d/vite-plugin
 | --- | --- |
 | `@null3d/engine` | The API as JavaScript with TypeScript declarations, the worker entry points, both WebAssembly builds and these docs |
 | `@null3d/vite-plugin` | The build and dev server setup that null3D needs, and the shader compiler |
-| `@null3d/controls` | Orbit and map camera controls, for sketches that use them |
+| `@null3d/controls` | Orbit, map, fly and first-person camera controls, for sketches that use them |
 
 Add the controls when a sketch uses them:
 
