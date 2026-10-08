@@ -86,13 +86,13 @@ The engine kept the full render scale and every setting on both devices. On the 
 
 ### Quality presets
 
-The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. A warm tablet can run Medium below 60 frames per second, so name Low on tablets where a steady rate matters most ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. The preset sets the pixel ratio cap and the anti-aliasing mode. It also sets the shadow settings, the texture filtering cap and the texture upload budget.
+The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. A warm tablet can run Medium below 60 frames per second, so name Low on tablets where a steady rate matters most ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target. The preset sets the pixel ratio cap and the anti-aliasing mode. It also sets the shadow settings, the texture filtering cap, the texture upload budget and the texture memory budget. It sets the size of bloom and of ambient occlusion. On WebGL2 it sets the depth prepass, occlusion culling and the most morph targets per object.
 
 The pixel ratio cap often decides GPU time on a phone, because the GPU shades each device pixel. Low caps the ratio at 1.5, which fills a quarter of the pixels of a phone screen at ratio 3.
 
 Measure at the presets that your users get. `engine.mode.preset` names the preset that runs, and the `?preset=low` switch fixes one for a test.
 
-During play, the frame-budget governor lowers the render scale, then the live shadow settings, when frames take too long ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
+When frames take too long during play, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). It hides some of a slow scene's cost. To measure the scene's own cost, turn it off with `quality.set({ governor: false })`, so every run draws the same frames.
 
 ## Write per-frame code that allocates nothing
 
@@ -121,21 +121,26 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setLayers` | No rebuild: each view tests the new mask from the next frame |
 | `setOccluder` | No rebuild: the camera's blockers change from the next frame |
 | `setRenderOrder` | Nothing |
-| `material.set` | The material's row of 128 bytes, and a custom material's row of uniforms. Changes to several materials in one frame upload every row from the first to the last |
+| `material.set` | The material's row of 144 bytes, and a custom material's row of uniforms. Changes to several materials in one frame upload every row from the first to the last |
 | Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `setCastShadows` and `setReceiveShadows`, on meshes and on lights | A rebuild |
 | `setOutlined`, and `post.set` with `outline` turned on or off | A rebuild |
+| `setMorphWeight` | The object's weights. On WebGPU, the skinning pass morphs the mesh again |
+| `post.set` that turns bloom or ambient occlusion on or off, and `post.addEffect` or `post.removeEffect` | New passes. The last image stays on screen while their pipelines build |
+| `render.addPass`, `render.removePass` | New passes, and the pass's texture |
+| `render.setPassEnabled`, `post.setEffectUniform`, `scene.setBackground` and `scene.setEnvironment` | Nothing: they change values that the GPU reads. The first background of each kind builds one pipeline |
 | `texture.update()` with an image of another size, and `texture.destroy()` | A rebuild |
 
 These habits keep play free of rebuilds:
 
 - Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
+- The scene's object tables start with room for 1,023 objects, and double when the scene is three quarters full. A growth copies the tables. From 16,383 to 32,767 objects, it took 1 ms in Chrome on a MacBook Pro. It took 2.4 to 5.3 ms on a Galaxy S25 and a Pixel 9. For a large scene, give `createEngine` the `expectedObjects` option, so the tables start at their size ([Engine](../api/engine.md#options)).
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
 - Give bounds of your own with `setBounds` to few objects, and set them once: each call rebuilds the draw tables. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
-- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). The scene's 16,384 object slots count toward it too, so batches hold at most the limit less 16,384 rows. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
+- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). The places in the scene's object tables count toward it too, so batches hold at most the limit less those places. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
 ## How the engine batches, builds pipelines and times frames
@@ -147,7 +152,7 @@ Performance advice written for other engines often assumes things that do not ho
 | What makes the GPU build a pipeline? | The material's kind, standard, unlit or custom, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. Each custom material's WGSL is a shader of its own. The mesh's vertex format, and the pass's color format, depth format and sample count. Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. Shadow passes and the depth prepass build depth-only pipelines of their own. |
 | When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines, and so does the first frame after `quality.setPreset`. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built. `measure` counts builds in `pipelines`, and the draws that a building pipeline kept from drawing in `skippedDraws`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
-| Which passes walk the scene? | On WebGPU, a culling pass on the GPU tests each object and row against the view. The opaque pass then replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the opaque pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). Shadows add a pass for each cascade and shadow tile that draws in the frame, and its culling. The depth prepass, when on, walks the opaque objects once more. Blended objects draw in the transparent pass. Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. [Architecture](../concepts/architecture.md#the-passes-of-a-frame) lists every pass. |
+| Which passes walk the scene? | On WebGPU, a culling pass on the GPU tests each object and row against the view. The opaque pass then replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the opaque pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). Shadows add a pass for each cascade and shadow tile that draws in the frame, and its culling. Each scene pass culls and draws the scene once more, from its own camera. The depth prepass, when on, walks the opaque objects once more, and ambient occlusion turns it on. Outlines draw the outlined meshes twice into a mask. GPU occlusion culling adds a depth draw of the occluders and a second culling pass. Blended objects draw in the transparent pass. Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. [Architecture](../concepts/architecture.md#the-passes-of-a-frame) lists every pass. |
 | Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | How many frames can wait on the GPU? | Two. While two frames are unfinished, the thread that draws takes no new frame, and the sketch worker waits for it. Without that limit, browsers let from 4 to more than 80 frames queue when the GPU falls behind, and each adds a frame of input lag. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
@@ -192,7 +197,22 @@ For a large crowd, use models with fewer vertices, and fewer shadow cascades on 
 
 Blended objects draw after the opaque ones, farthest first, and a run of neighbors that share a mesh and a material draws together. Many blended objects therefore cost many draws. A double-sided blended material draws twice, back faces first, as three.js draws it, so its near side always covers its far side. Solid double-sided materials draw once.
 
-The second draw costs about as much as the first. In the S2 benchmark with every box blended and double-sided, the transparent pass took 1.88 ms of GPU time on a Mac with one draw per box, and 4.09 ms with two. For flat surfaces, such as leaves and panes of glass, whose two faces never overlap on screen, set `forceSinglePass: true`. It saves the second draw: [Double-sided blended surfaces](../api/materials.md#double-sided-blended-surfaces). Masked and hashed materials need no sort and no second draw.
+The second draw costs about as much as the first. In the S2 benchmark with every box blended and double-sided, the transparent pass took 1.88 ms of GPU time on a Mac with one draw per box, and 4.09 ms with two. For flat surfaces, such as leaves and panes of glass, whose two faces never overlap on screen, set `forceSinglePass: true`. It saves the second draw: [Double-sided blended surfaces](../api/materials.md#double-sided-blended-surfaces). Masked and hashed materials need no sort and no second draw, and neither do materials with alpha to coverage.
+
+## Textures and memory
+
+Textures take most of a scene's GPU memory. Each preset gives textures a memory budget. When the scene's textures pass it, the engine drops the largest mip levels of the largest textures. It loads them again when room comes back. `quality.textureMemory` reports the bytes in use, the budget and the levels dropped ([Quality presets](../concepts/quality-presets.md#texture-memory)).
+
+- Load large textures from KTX2 files. The GPU keeps them compressed, at a quarter or an eighth of the memory of plain RGBA. `bunx @null3d/cli assets optimize` encodes them ([The asset pipeline](assets-pipeline.md)).
+- The engine keeps each transcoded KTX2 texture in the browser's Cache Storage, so a repeat visit skips the transcoder. On an iPad Pro, a repeat visit to the S6 benchmark's city, with its 120 textures, was ready 50% sooner. On phones in a device cloud it was ready about 6% sooner, because other start work takes most of their time.
+- Destroy the textures that the scene no longer shows.
+
+## Picking, labels, sprites and lines
+
+- Pointer events on objects cast one ray for each event, only while some object has a handler. A raycast tests only the triangles near the ray, through a tree over each mesh. The job workers build a mesh's tree on its first query. For large meshes, `assets optimize` stores the trees in the file, so their first query waits for no build ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). The call `scene.raycastBatch` casts many rays at once on the job workers ([Raycasting](../api/raycast.md)).
+- Labels move their HTML elements only when they move by half a CSS pixel or more. The page reads every label before it writes any style. So the page runs no layout between them ([Labels](../api/ui.md)).
+- A sprite, point or line batch is one draw, whatever its size. Each sprite, point or segment costs about what an instance row costs, so the rules of [Moving objects cost uploads](#moving-objects-cost-uploads) apply to them too.
+- On WebGL2, the vertex shader of each pass morphs a morphed mesh again, and each object keeps only its largest weights: 8 on Low. On WebGPU, the skinning pass morphs each mesh once per frame.
 
 ## Large worlds
 
@@ -228,9 +248,26 @@ Each shadow cascade that draws in a frame costs a pass over its casters, and its
 
 The governor lowers the far cascades' rate and the shadow filter when frames run long, after the render scale ([The frame-budget governor](../concepts/quality-presets.md#the-frame-budget-governor)).
 
-## Blockers on WebGL2
+## Post effects and scene passes
+
+Each post effect adds full-screen work, which grows with the pixels drawn:
+
+- Bloom draws a chain of small passes. In the engine's effect cost test, it added about 0.8 ms of GPU time per frame at 1920 x 1080 on a MacBook Pro. A smaller base, as on Low, costs less, and saves the most on phones ([The post-processing chain](../concepts/post-processing.md#cost)).
+- Ambient occlusion adds the depth prepass and three passes at half size. In the engine's ambient occlusion scene on a MacBook Pro, it added 2.42 ms per frame, where three.js's `GTAOPass` added about 5.3 ms. Low and Medium leave it off.
+- Each custom effect that reads other pixels costs a full-screen pass. The engine joins the effects that read only their own pixel, and can fold the last into the final pass ([Custom passes](custom-passes.md#cost)).
+- A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and switch the pass off with `render.setPassEnabled` in frames that need no new image. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
+
+## Occlusion culling
+
+Objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, so the GPU skips those. Each GPU path does this work in its own place, so each costs something different.
+
+### Blockers on WebGL2
 
 On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+
+### Occlusion culling on the GPU
+
+On WebGPU, occlusion culling runs on the GPU, in two phases for each camera. It adds a depth draw of the occluders, a depth pyramid and a second culling pass. It pays only where the hidden objects cost more GPU time than these passes. In a test room whose walls hide 94% of its spheres, it saved 7% of the GPU time on a desktop GPU. On an iPad and an Android phone, it cost more than it saved. So every preset leaves it off, and the `gpuOcclusion` option of `createEngine` turns it on. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` before you keep it ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
 
 ## The depth prepass
 

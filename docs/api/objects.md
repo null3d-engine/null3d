@@ -119,7 +119,7 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 
 ## Animation
 
-An object that a model with animations created has an animator, and `animator()` returns it. The animator plays, fades and layers the model's clips, and calls your handlers for their events. On an object without animation clips, `animator()` throws E1218. Destroying the object stops its clips. The engine cannot load animated models yet. [Animation](animation.md) describes the animator.
+An object that a model with animations created has an animator, and `animator()` returns it. The animator plays, fades and layers the model's clips, and calls your handlers for their events. On an object without animation clips, `animator()` throws E1218. Destroying the object stops its clips. [Animation](animation.md) describes the animator.
 
 ## Pointer events
 

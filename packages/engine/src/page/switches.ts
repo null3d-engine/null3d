@@ -4,7 +4,8 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?occlusion=on or off for occlusion culling, ?skinning= for how WebGPU skins (vertex for the
+// ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
+// culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (vertex for the
 // vertex shader of each pass, or full, skip or narrow for the skinning pass with fewer of its
 // savings), ?instances=index for vertex shaders that read instance data by index on core WebGPU,
 // ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
@@ -165,6 +166,13 @@ export interface Switches {
 	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
+	/**
+	 * The pixels that ?occlusion-buffer= asks software occlusion culling's buffer to hold, as a
+	 * size such as 384x216: the buffer takes about that many pixels in the drawn target's shape.
+	 * Undefined for the core's default of 256 x 144. Device runs measure the sizes against each
+	 * other.
+	 */
+	occlusionBuffer: number | undefined;
 	/** How ?skinning= makes WebGPU skin, `lean` without the switch. */
 	skinning: SkinningSwitch;
 	/**
@@ -272,6 +280,16 @@ function whole(value: string | null, max = Number.MAX_SAFE_INTEGER): number | un
 	return n !== undefined && Number.isInteger(n) && n <= max ? n : undefined;
 }
 
+/** The largest buffer that ?occlusion-buffer= asks for, in pixels: 1024 x 1024. */
+const MAX_OCCLUSION_BUFFER_PIXELS = 1024 * 1024;
+
+/** The pixels of a size such as `384x216`, or undefined for a missing or unusable value. */
+function pixelsOf(value: string | null): number | undefined {
+	const [width, height, ...rest] = value?.split('x') ?? [];
+	const pixels = rest.length === 0 ? (whole(width ?? null) ?? 0) * (whole(height ?? null) ?? 0) : 0;
+	return pixels > 0 && pixels <= MAX_OCCLUSION_BUFFER_PIXELS ? pixels : undefined;
+}
+
 /** `value` when it lies from `min` to `max`, else undefined. */
 function within(value: number | undefined, min: number, max: number): number | undefined {
 	return value !== undefined && value >= min && value <= max ? value : undefined;
@@ -303,6 +321,7 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
+		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:
 			oneOf(params.get('skinning'), ['vertex', 'full', 'skip', 'narrow'] as const) ?? 'lean',
 		indexInstances: params.get('instances') === 'index',

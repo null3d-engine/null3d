@@ -221,7 +221,9 @@ const pane = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'bl
 | `'additive'` | Adds the surface's light to what lies behind, times the alpha | Glows, fire, sparks, lasers |
 | `'multiply'` | Tints what lies behind by the surface's color, as far as the alpha says | Stains, shadows painted on, tinted film |
 
-The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. The results match three.js's own blending, and textures loaded with `premultipliedAlpha: true` blend correctly too.
+The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. Textures loaded with `premultipliedAlpha: true` blend correctly too.
+
+The engine blends in linear color, before the tone mapping, as three.js's `WebGPURenderer` does. three.js's `WebGLRenderer` tone maps each surface and encodes it as sRGB first, and then blends it on the canvas. So a see-through surface over a different color looks a little lighter in null3D than in a `WebGLRenderer` port, and an additive glow a little weaker. The [8-bit path](../concepts/color-management.md#the-8-bit-path) of some devices tone maps and encodes each surface first too, so there the engine blends as `WebGLRenderer` does.
 
 ```ts
 // sketch.ts: a pane of glass and a glow that never hides what it crosses.

@@ -183,9 +183,9 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 
 - Batch rows neither cast nor receive shadows in this version. Use separate objects from `scene.createMesh` for copies that need shadows.
 - An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
-- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The scene's 16,384 object slots always count toward it too, used or not. So the batches of a scene hold at most the limit less 16,384 rows. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
+- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The places in the scene's object tables count toward it too, used or not. They start at 1,024 and double as the scene grows. So the batches of a scene hold at most the limit less those places. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
 - Each row takes about 210 bytes of engine memory, or about 260 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
-- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576, which leaves 1,032,192 rows for batches. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
+- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
 
 ## Per-row colors
