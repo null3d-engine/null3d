@@ -2,7 +2,7 @@
 
 - Device: Galaxy S25 (SM-S931B), 360 x 780 at 3x, 8 cores
 - OS: Android 15
-- Browser: Chrome 149.0.7827.160
+- Browser: Chrome 152.0.7977.54
 - GPU: Qualcomm Adreno 830, through Qualcomm's GL driver with no ANGLE in the WebGL2 renderer (WebGPU adapter: qualcomm adreno-8xx)
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: BrowserStack Live; BrowserStack Automate

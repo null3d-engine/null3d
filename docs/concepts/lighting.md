@@ -271,3 +271,4 @@ The sky lights nothing. For light that matches it, add a directional light along
 - [Materials](../api/materials.md): the standard material, which lights shade.
 - [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
 - [Assets](../api/assets.md#environments): the calls that load environments and cube maps.
+- [The environment light demo](https://github.com/null3d-engine/null3d/tree/main/examples/environment): rough and smooth spheres in an HDR file's light, an EXR file's light and the built-in room.

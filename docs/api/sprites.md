@@ -20,7 +20,7 @@ flowchart LR
 
 A sprite is a flat picture that always faces the camera, such as a particle, a marker, a tree far away or a health bar. null3D draws sprites in batches. Each sprite is a row in the batch's typed arrays, with its own position, size, rotation, color and frame of a texture atlas. Sketch code writes the rows straight into engine memory, with no call per sprite, as it does for [instance batches](../concepts/instances.md).
 
-A batch is one draw for the GPU, whatever its size. The engine culls the sprites and sorts blended sprites back to front, as it does for instance rows. This work runs on the job workers or on the GPU.
+A batch is one draw for the GPU, whatever its size. The engine culls the sprites and sorts blended sprites back to front, as it does for instance rows. This work runs on the job workers or on the GPU. The [sprites and lines demo](https://github.com/null3d-engine/null3d/tree/main/examples/sprites-lines) draws a fountain of 2,000 sparks in one batch.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

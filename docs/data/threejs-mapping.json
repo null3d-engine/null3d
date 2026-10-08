@@ -583,7 +583,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored, and lights surfaces from 0.2. Until then, an ambient light gives the fill.",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored, but it does not light surfaces yet. Use an ambient light for the fill.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },

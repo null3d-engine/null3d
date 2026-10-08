@@ -56,9 +56,10 @@ export interface Null3dPageOptions {
  * frame, `effects` adds two custom effects to S1, whose uniforms change every frame,
  * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
- * makes it draw before S1's objects, `extraBox` adds a small box to S1, and `sides` draws S2's
- * boxes see-through and double-sided: `two` draws each one's back faces, then its front faces, and
- * `one` draws both in one draw, and `alpha=hash` draws S2's boxes with the alpha hash.
+ * makes it draw before S1's objects, `extraBox` adds a small box to S1, `sides` draws S2's boxes
+ * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
+ * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
+ * share of S5's knights stand still in one pose, as waiting characters do.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -80,6 +81,7 @@ const SKETCH_SWITCHES = [
 	'sky',
 	'backgroundFirst',
 	'extraBox',
+	'still',
 ] as const;
 
 /**

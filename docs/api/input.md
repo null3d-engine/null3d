@@ -104,7 +104,7 @@ A canvas that takes touch gestures needs `touch-action: none` in its CSS. Withou
 
 ## Pointer events on objects
 
-`object.on(type, handler)` calls `handler` for each pointer event of `type` on an object, and `object.off(type, handler)` removes it. Instance batches take the same calls, and the event's `instance` names the row. So do [sprite](sprites.md), [point](points.md) and [line](lines.md) batches, whose `instance` names the sprite, the point or the line's segment. The engine finds the object under the pointer itself, so the sketch needs no raycast of its own.
+`object.on(type, handler)` calls `handler` for each pointer event of `type` on an object, and `object.off(type, handler)` removes it. Instance batches take the same calls, and the event's `instance` names the row. So do [sprite](sprites.md), [point](points.md) and [line](lines.md) batches, whose `instance` names the sprite, the point or the line's segment. The engine finds the object under the pointer itself, so the sketch needs no raycast of its own. The [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) lights up the shape under the pointer, and outlines the shape that a click selects.
 
 ```ts
 export default defineSketch(({ scene, geometry, materials, page }) => {

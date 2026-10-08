@@ -152,6 +152,7 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
+use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -423,9 +424,9 @@ pub struct RendererConfig {
     /// True to draw each camera view's opaque objects' depth in a depth prepass, before the opaque
     /// pass shades them.
     pub depth_prepass: bool,
-    /// True to skin skinned meshes in the vertex shader of each pass that draws them, false to
-    /// skin each once per frame in the skinning pass.
-    pub vertex_skinning: bool,
+    /// Where to skin skinned meshes: once per frame in the skinning pass, with its savings, or in
+    /// the vertex shader of each pass that draws them.
+    pub skinning: SkinningMode,
     /// True when the vertex shaders of the culled buckets read each instance by index from
     /// storage buffers, where their templates can, instead of a copy that the culling shader
     /// writes. A test switch asks for it on core WebGPU (decision record D-23).
@@ -449,7 +450,7 @@ impl Default for RendererConfig {
             cell_culling: true,
             light_limits: LightLimits::default(),
             depth_prepass: false,
-            vertex_skinning: false,
+            skinning: SkinningMode::LEAN,
             index_instances: false,
             gpu_occlusion: false,
             cascade_depth: CascadeDepth::default(),
@@ -610,7 +611,7 @@ impl GpuDrivenRenderer {
             }),
             lights: CameraLights::on_gpu(config.light_limits),
             light_clusters: LightClusters::default(),
-            skinning: Skinning::new(config.vertex_skinning),
+            skinning: Skinning::new(config.skinning),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             tiles: ShadowTiles::new(),
@@ -651,6 +652,16 @@ impl GpuDrivenRenderer {
     /// The tiles of the point and spot lights' shadow atlas in the last recorded frame.
     pub fn shadow_tiles(&self) -> &ShadowTiles {
         &self.tiles
+    }
+
+    /// The vertices that the skinning pass skins and morphs in the last recorded frame.
+    pub fn skinned_vertices(&self) -> u32 {
+        self.skinning.skinned_vertices()
+    }
+
+    /// Bytes that the skinned and morphed objects' regions take in the skinned vertex buffers.
+    pub fn skinned_bytes(&self) -> u64 {
+        self.skinning.skinned_bytes()
     }
 
     /// The sources that a view's culling pass tests in the last recorded frame, in the order its
@@ -920,7 +931,11 @@ impl GpuDrivenRenderer {
                     .graph
                     .depth_texture(view)
                     .expect("a view that culls in two phases samples its depth");
-                if self.pyramids.prepare(list, view, input.canvas, depth)? {
+                let remade = self.graph.textures_made();
+                if self
+                    .pyramids
+                    .prepare(list, view, input.canvas, depth, remade)?
+                {
                     pyramids_made |= 1 << index;
                 }
             }

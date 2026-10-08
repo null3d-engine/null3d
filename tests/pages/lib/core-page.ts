@@ -100,7 +100,7 @@ export async function startCorePage(
 			false,
 			true,
 			false,
-			false,
+			0,
 			false,
 			false,
 			false,

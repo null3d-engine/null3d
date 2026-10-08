@@ -162,9 +162,10 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
  * hash, for those that end in -depth32, shadow cascades in 32-bit float depth, for those that end
  * in -blend-off, S4's shadow cascades with no band between them, for those with -sky, a background
  * behind S1 (the benchmarks guide lists them), for those that end in -first, a background drawn
- * before the objects, for those that end in -box, a small box that writes depth, for those that
- * end in -timed, the time of each WebGL call, and for those that end in -synced, that time with a
- * wait for the browser's GPU process after each call, and the GPU interface it draws with.
+ * before the objects, for those that end in -box, a small box that writes depth, for those with
+ * -skin-, a way of skinning that ?skinning= picks, for those that end in -timed, the time of each
+ * WebGL call, and for those that end in -synced, that time with a wait for the browser's GPU
+ * process after each call, and the GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -234,6 +235,26 @@ const PAGES = {
 	'null3d-webgpu-sky-texture-first': {
 		folder: 'null3d',
 		switches: 'gpu=webgpu&sky=texture&backgroundFirst',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-skin-vertex': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&skinning=vertex',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-skin-full': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&skinning=full',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-skin-skip': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&skinning=skip',
+		api: 'webgpu',
+	},
+	'null3d-webgpu-skin-narrow': {
+		folder: 'null3d',
+		switches: 'gpu=webgpu&skinning=narrow',
 		api: 'webgpu',
 	},
 	'null3d-webgl2-timed': { folder: 'null3d', switches: 'gpu=webgl2&gl-timing', api: 'webgl2' },

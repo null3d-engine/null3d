@@ -116,7 +116,7 @@ export interface SketchPreferences {
 	 * True when the user asks for less motion: the `prefers-reduced-motion` setting. Bring motion
 	 * that only decorates to rest, such as an idle spin, camera sway or drifting particles. Keep
 	 * motion the user controls, and motion that carries meaning, and prefer cuts to long camera
-	 * flights.
+	 * flights. In hold mode it is always false, so a held frame is the same on every machine.
 	 */
 	readonly reducedMotion: boolean;
 	/**

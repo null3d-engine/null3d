@@ -71,7 +71,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "update" time | Heavy sketch code | Loop over typed arrays; move work to `onFixedUpdate` at a lower rate; spread AI over frames |
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
-| High "animation" (0.2) | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs |
+| High "animation" (0.2) | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs; on WebGPU, pause characters that wait with `setTimeScale(0)`, since a still pose costs no skinning work (`guides/performance`) |
 | High "culling" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks; LODs |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |

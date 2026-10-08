@@ -43,7 +43,7 @@ export default defineSketch(async ({ assets, page }) => {
 
 ## glTF models
 
-`loadGltf` loads a glTF 2.0 model. It reads a `.glb` file, or a `.gltf` file with the buffers and images it names. It returns a `Prefab`, a template of the file's objects. The prefab makes each mesh, material and texture of the file once, and every copy of the model shares them. Then [`scene.instantiate`](scene.md#models-and-copies) creates a copy of its objects, or `scene.createInstances` draws many copies with instance batches.
+`loadGltf` loads a glTF 2.0 model. It reads a `.glb` file, or a `.gltf` file with the buffers and images it names. It returns a `Prefab`, a template of the file's objects. The prefab makes each mesh, material and texture of the file once, and every copy of the model shares them. Then [`scene.instantiate`](scene.md#models-and-copies) creates a copy of its objects, or `scene.createInstances` draws many copies with instance batches. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) loads one and lights it with the built-in room.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

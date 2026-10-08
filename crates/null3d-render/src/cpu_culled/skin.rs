@@ -98,6 +98,7 @@ impl Skins {
     ) -> Result<(), TryReserveError> {
         let rows = scene.capacity() as usize + 1;
         self.morph.rebuild(scene, morphs, meshes);
+        self.joints.upload_again();
         self.firsts.clear();
         self.firsts.try_reserve(rows)?;
         self.bases.clear();

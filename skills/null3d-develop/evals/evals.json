@@ -5,7 +5,7 @@
     {
       "id": 1,
       "prompt": "Set up a null3d scene for a turntable product viewer: the sneaker model is at /models/sneaker.glb. I want soft studio lighting, an orbit camera that can't go below the floor, and a soft shadow on the floor. It has to run well on phones.",
-      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch sets up a directional light with an ambient fill light, orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. The answer says that glTF loading, environments, the shadow catcher and hemisphere lighting come in 0.2, uses a placeholder until then, and gives asset advice with versions.",
+      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch sets up a directional light with an ambient fill light, orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. The answer says that glTF loading, environments, and the shadow catcher come in 0.2, that hemisphere lights do not light surfaces yet, uses a placeholder until then, and gives asset advice with versions.",
       "files": [],
       "expectations": [
         "page.ts calls createEngine with the canvas and the sketch module, and sketch.ts uses defineSketch",
