@@ -109,12 +109,34 @@ const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
 	's6 on null3d-webgl2-low',
 ];
 /**
- * Declares a page's test, or a skipped one on SwiftShader when SwiftShader draws the page too
- * slowly. A skip declared this way sets up no browser context, which a busy software GPU can hold
- * past the test's time limit.
+ * A test whose page opens in a browser of its own, which is killed when the test ends. A closed
+ * page of S4, S5 or S6 can leave SwiftShader busy for minutes, and the browser that drew it sets
+ * up no new context until SwiftShader is done. Killing the browser ends that work, so the next test
+ * starts at once.
  */
-const testUnlessTooSlow = (page: string) =>
-	SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(page) ? test.skip : test;
+const testInOwnBrowser = test.extend({
+	context: async ({ playwright, launchOptions, baseURL }, use) => {
+		const server = await playwright.chromium.launchServer(launchOptions);
+		try {
+			const browser = await playwright.chromium.connect(server.wsEndpoint());
+			await use(await browser.newContext({ baseURL }));
+		} finally {
+			await server.kill();
+		}
+	},
+});
+/** The test of a scene's pages: the phone scenes' pages each run in a browser of their own. */
+const sceneTest = (scene: (typeof SCENES)[number]) =>
+	isPhoneScene(scene) ? testInOwnBrowser : test;
+/**
+ * Declares a page's test, or a skipped one on SwiftShader when SwiftShader draws the page too
+ * slowly. A skip declared this way sets up no browser, which a busy software GPU can hold past the
+ * test's time limit.
+ */
+const testUnlessTooSlow = (scene: (typeof SCENES)[number], kind: PageKind) =>
+	SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(`${scene} on ${kind}`)
+		? sceneTest(scene).skip
+		: sceneTest(scene);
 /**
  * The warm-up and measured seconds of a page's short benchmark run. null3D counts a frame only when
  * the sketch stepped it and the renderer drew it inside the measured time, and the renderer draws a
@@ -294,7 +316,7 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 			continue;
 		}
 		if (!isNull3dPage(kind))
-			testUnlessTooSlow(`${scene} on ${kind}`)(
+			testUnlessTooSlow(scene, kind)(
 				`${scene} on ${kind} renders a hold frame that is not blank`,
 				async ({ page }) => {
 					const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
@@ -331,7 +353,7 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 				},
 			);
 
-		testUnlessTooSlow(`${scene} on ${kind}`)(
+		testUnlessTooSlow(scene, kind)(
 			`${scene} on ${kind} runs a short benchmark`,
 			async ({ page }) => {
 				if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
@@ -396,24 +418,30 @@ const S4_LOW_DRAW_CALLS = 63;
 const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
 
 function s4LowPassesTest(): void {
-	test('s4 on null3d-webgpu at Low draws both cascades in every frame and no other pass', async ({
-		page,
-	}) => {
-		await page.setViewportSize(PHONE_VIEWPORT);
-		const result = await runShortBenchmark(page, 's4', 'null3d-webgpu', 'preset=low&governor=off');
-		expect(result.frames).toBeGreaterThan(0);
-		const { drawCalls, gpuPassMs } = result.stats;
-		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
-		expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
-		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
-		if (gpuPassMs) {
-			const passes = gpuPassMs
-				.map((part) => part.name)
-				.filter((name) => name !== 'copies' && name !== 'between passes');
-			expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
-			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
-		}
-	});
+	testInOwnBrowser(
+		's4 on null3d-webgpu at Low draws both cascades in every frame and no other pass',
+		async ({ page }) => {
+			await page.setViewportSize(PHONE_VIEWPORT);
+			const result = await runShortBenchmark(
+				page,
+				's4',
+				'null3d-webgpu',
+				'preset=low&governor=off',
+			);
+			expect(result.frames).toBeGreaterThan(0);
+			const { drawCalls, gpuPassMs } = result.stats;
+			expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
+			expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
+			// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
+			if (gpuPassMs) {
+				const passes = gpuPassMs
+					.map((part) => part.name)
+					.filter((name) => name !== 'copies' && name !== 'between passes');
+				expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
+				expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
+			}
+		},
+	);
 }
 
 for (const scene of SCENES) {
