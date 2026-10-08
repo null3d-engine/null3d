@@ -141,7 +141,7 @@ Two runs each. The differences are within the Mac's run-to-run spread.
 
 - Draco adds its entry to the glTF loader's table of decoders, as planned above. The glTF worker asks for it beside a file's buffers, and the loader compiles `draco_decoder_gltf.wasm` with `compileOnce` and sends it.
 - The worker imports Draco's script (`scene/gltf-draco.ts`) on first use, and instantiates the module through the script's `instantiateWasm` hook. Pages without Draco files download neither.
-- A decoder that failed, or whose memory grew past 64 MiB, gives way to a fresh instance from the same module. [D-110](D-110-draco-decoding.md) gives the build's choices and figures.
+- A decoder that failed, or whose memory grew past 64 MiB, gives way to a fresh instance from the same module. [D-112](D-112-draco-decoding.md) gives the build's choices and figures.
 
 ### Options rejected while building
 

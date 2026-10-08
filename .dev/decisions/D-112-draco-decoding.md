@@ -1,4 +1,4 @@
-# D-110: Draco decoding
+# D-112: Draco decoding
 
 Status: decided. The owner decided on 2026-10-04 that the engine reads Draco files, with the decoder loaded on first use ([D-54](D-54-addon-modules.md#draco), [D-14](D-14-js-budget.md#recorded-exceptions)). This record holds how M2-A6 built it. Date: 2026-10-08. Task: M2-A6.
 

@@ -116,7 +116,7 @@ A KTX2 texture whose sides are not whole 4 x 4 blocks still loads as RGBA8, at 4
 
 M2-A6 (Draco) and M2-A7 (WebP, AVIF and UASTC HDR) take their limits from `FILE_LIMITS`:
 
-- Draco runs in the glTF worker, where the file is parsed, with its module from M2-R18's loader ([D-54](D-54-addon-modules.md#built)). Each decoded attribute and index array takes its bytes from the file's `FileBudget` before the decoder copies it out, as meshopt views do, and each array stays within `itemBytes`. The decoded counts must equal the accessors' counts, which the parser checks against the limits first. M2-A6 built this ([D-110](D-110-draco-decoding.md)).
+- Draco runs in the glTF worker, where the file is parsed, with its module from M2-R18's loader ([D-54](D-54-addon-modules.md#built)). Each decoded attribute and index array takes its bytes from the file's `FileBudget` before the decoder copies it out, as meshopt views do, and each array stays within `itemBytes`. The decoded counts must equal the accessors' counts, which the parser checks against the limits first. M2-A6 built this ([D-112](D-112-draco-decoding.md)).
 - WebP and AVIF images in a glTF file read their width and height from the image header with `imageSize`, as PNG and JPEG images do. Each side must stay within `textureSide`, and each decode counts 4 bytes per pixel against the file's image budget. M2-A7 built this ([D-72](D-72-image-formats.md)).
 - UASTC HDR textures pass `ktx2TooLarge` with their own format's bytes: 16 per block of BC6H, and 4 per texel of `rgb9e5ufloat`. M2-A7 built this too.
 
