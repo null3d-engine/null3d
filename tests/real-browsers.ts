@@ -30,6 +30,7 @@
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan object-growth --cloud bsgalaxys25-chrome
 //   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
 //   bun tests/real-browsers.ts --plan smoke --cloud bsiphone17-safari,bspixel10-chrome --parallel 2
 // Options:
@@ -59,7 +60,9 @@
 //                       count of S1's objects or S5's characters at which three.js holds 30
 //                       frames per second, or texture-cache, which times first and repeat visits
 //                       that load the city scene's 120 KTX2 textures, with the cache of
-//                       transcoded textures off and on
+//                       transcoded textures off and on, or object-growth, which times the create
+//                       calls that grow the scene's object tables, and the engine memory of a
+//                       small scene, on each GPU path
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -69,7 +72,8 @@
 //                       thread mode in the startup plan, 5 by default, rounds of the tab
 //                       memory plan, 1 by default, loads of each scene with fresh shaders in
 //                       the warm-up time plan, 2 by default, or runs of the texture cache plan's
-//                       four loads, 5 by default
+//                       four loads, 5 by default, or loads of the object growth page on each GPU
+//                       path, 3 by default
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
@@ -174,6 +178,7 @@ import { GPU_PATH_NAMES, type GpuPath, skippedPath, skippedPathsText } from './l
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
+import { objectGrowthSummary } from './lib/object-growth.ts';
 import {
 	animationSummary,
 	benchSummary,
@@ -1483,6 +1488,7 @@ async function runPlan(
 			warmUpTimeSummary,
 			governorSummary,
 			textureCacheSummary,
+			objectGrowthSummary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		// The frames that the bench plan's pages captured, which people look at after each run.

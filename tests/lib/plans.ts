@@ -118,6 +118,12 @@ import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
+	type ObjectGrowthCheck,
+	type ObjectGrowthResult,
+	objectGrowthPlan,
+	objectGrowthProblems,
+} from './object-growth.ts';
+import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
 	PRESET_CHANGE,
@@ -240,7 +246,9 @@ export type Check =
 	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
 	| { kind: 'warm-up-time'; tier: Tier; scene: string; fresh: boolean }
 	/** A load of the texture cache page with the city's textures, with the cache off or on. */
-	| TextureCacheCheck;
+	| TextureCacheCheck
+	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
+	| ObjectGrowthCheck;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -1449,6 +1457,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'warm-up-time': warmUpTimePlan,
 	governor: governorPlan,
 	'texture-cache': textureCachePlan,
+	'object-growth': objectGrowthPlan,
 };
 
 /**
@@ -2132,6 +2141,8 @@ export function judge(
 		}
 		case 'governor':
 			return governorProblems(result as ItemResult & GovernorResult);
+		case 'object-growth':
+			return objectGrowthProblems(result as ItemResult & ObjectGrowthResult);
 	}
 }
 
