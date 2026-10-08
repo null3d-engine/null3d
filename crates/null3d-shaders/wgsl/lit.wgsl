@@ -176,10 +176,12 @@ fn transformed_uv(uv: vec2f, uv_u: vec4f, uv_v: vec4f) -> MapUv {
     return MapUv(at, dpdx(at), dpdy(at));
 }
 
-/// The texel of the map of `slot`, whose layer as the row holds it is `layer`, at `at`.
-fn map_texel(slot: u32, layer: f32, at: MapUv) -> vec4f {
-    let l = map_layer(layer);
 #ifdef WEBGL2
+/// The texel of a map whose layer, as the row holds it, is `layer`, at `at`. The layer also names
+/// the shared unit that holds the map. GLSL ES 3.00 picks a sampler only with a constant, so a
+/// switch picks the unit at run time.
+fn map_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
     switch map_unit(layer) {
         case 0u: { return textureSampleGrad(unit_0_map, unit_0_sampler, at.uv, l, at.dx, at.dy); }
         case 1u: { return textureSampleGrad(unit_1_map, unit_1_sampler, at.uv, l, at.dx, at.dy); }
@@ -188,23 +190,54 @@ fn map_texel(slot: u32, layer: f32, at: MapUv) -> vec4f {
         case 4u: { return textureSampleGrad(unit_4_map, unit_4_sampler, at.uv, l, at.dx, at.dy); }
         default: { return textureSampleGrad(unit_5_map, unit_5_sampler, at.uv, l, at.dx, at.dy); }
     }
-#else
-    switch slot {
-        case 0u: { return textureSampleGrad(base_color_map, base_color_sampler, at.uv, l, at.dx, at.dy); }
-        case 1u: { return textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, l, at.dx, at.dy); }
-        case 2u: { return textureSampleGrad(normal_map, normal_sampler, at.uv, l, at.dx, at.dy); }
-        case 3u: { return textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, l, at.dx, at.dy); }
-        case 4u: { return textureSampleGrad(emissive_map, emissive_sampler, at.uv, l, at.dx, at.dy); }
-        case 5u: { return textureSampleGrad(light_map, light_sampler, at.uv, l, at.dx, at.dy); }
-        case 6u: {
-            return textureSampleGrad(specular_intensity_map, specular_intensity_sampler, at.uv, l, at.dx, at.dy);
-        }
-        default: {
-            return textureSampleGrad(specular_color_map, specular_color_sampler, at.uv, l, at.dx, at.dy);
-        }
-    }
-#endif
 }
+
+// Each map reads through the shared unit that its layer names.
+fn base_color_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn metal_rough_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn normal_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn occlusion_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn emissive_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn light_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn specular_intensity_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+fn specular_color_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+#else
+// Each map samples its own texture directly. A switch on the map's slot, though the slot is a
+// constant at each call, made every textured draw many times slower in Chrome on Apple GPUs with a
+// multisampled target (decision record D-89).
+fn base_color_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(base_color_map, base_color_sampler, at.uv, l, at.dx, at.dy);
+}
+fn metal_rough_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(metal_rough_map, metal_rough_sampler, at.uv, l, at.dx, at.dy);
+}
+fn normal_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(normal_map, normal_sampler, at.uv, l, at.dx, at.dy);
+}
+fn occlusion_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(occlusion_map, occlusion_sampler, at.uv, l, at.dx, at.dy);
+}
+fn emissive_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(emissive_map, emissive_sampler, at.uv, l, at.dx, at.dy);
+}
+fn light_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(light_map, light_sampler, at.uv, l, at.dx, at.dy);
+}
+fn specular_intensity_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(specular_intensity_map, specular_intensity_sampler, at.uv, l, at.dx, at.dy);
+}
+fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
+    let l = map_layer(layer);
+    return textureSampleGrad(specular_color_map, specular_color_sampler, at.uv, l, at.dx, at.dy);
+}
+#endif
 #endif
 
 /// The vertex attributes that the template reads.
@@ -347,37 +380,37 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
     if map_ready(m.maps.x) {
-        let texel = straight_texel(m, map_texel(0u, m.maps.x, map_uv(flags, 0u, first, second)));
+        let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, first, second)));
         s.baseColor *= texel.rgb;
         s.alpha *= texel.a;
     }
     if map_ready(m.maps.y) {
-        let texel = map_texel(1u, m.maps.y, map_uv(flags, 1u, first, second));
+        let texel = metal_rough_texel(m.maps.y, map_uv(flags, 1u, first, second));
         s.roughness *= texel.g;
         s.metalness *= texel.b;
     }
     if map_ready(m.maps.w) {
-        let texel = map_texel(3u, m.maps.w, map_uv(flags, 3u, first, second));
+        let texel = occlusion_texel(m.maps.w, map_uv(flags, 3u, first, second));
         s.occlusion = (texel.r - 1.0) * m.strengths.x + 1.0;
     }
     if map_ready(m.more_maps.x) {
-        s.emissive *= map_texel(4u, m.more_maps.x, map_uv(flags, 4u, first, second)).rgb;
+        s.emissive *= emissive_texel(m.more_maps.x, map_uv(flags, 4u, first, second)).rgb;
     }
     if map_ready(m.more_maps.y) {
-        let texel = map_texel(5u, m.more_maps.y, map_uv(flags, 5u, first, second));
+        let texel = light_texel(m.more_maps.y, map_uv(flags, 5u, first, second));
         s.irradiance = texel.rgb * m.strengths.y;
     }
     specular_texel = vec4f(1.0);
     if map_ready(m.more_maps.z) {
-        specular_texel.a = map_texel(6u, m.more_maps.z, map_uv(flags, 6u, first, second)).a;
+        specular_texel.a = specular_intensity_texel(m.more_maps.z, map_uv(flags, 6u, first, second)).a;
     }
     if map_ready(m.more_maps.w) {
-        let texel = map_texel(7u, m.more_maps.w, map_uv(flags, 7u, first, second));
+        let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
         specular_texel = vec4f(texel.rgb, specular_texel.a);
     }
     if map_ready(m.maps.z) {
         let at = map_uv(flags, 2u, first, second);
-        let texel = map_texel(2u, m.maps.z, at);
+        let texel = normal_texel(m.maps.z, at);
         let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);
         let normal = input.normal;
         let facing = select(-1.0, 1.0, input.frontFacing);
