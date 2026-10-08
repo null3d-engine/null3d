@@ -3,7 +3,9 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+	AT_REST_MARGIN_PIXELS,
 	differingPixels,
+	hiddenAtRest,
 	median,
 	medianFigures,
 	type OcclusionFigures,
@@ -11,8 +13,6 @@ import {
 	type OcclusionTurnsResult,
 	occlusionTurnsProblems,
 	occlusionVerdict,
-	POP_MARGIN_PIXELS,
-	popped,
 	roundSides,
 	roundStart,
 	stopShares,
@@ -100,10 +100,12 @@ describe('the occlusion turns', () => {
 		expect(stopShares(4)).toEqual([0.125, 0.375, 0.625, 0.875]);
 	});
 
-	it("count a stop as popped only past the device's noise and the margin", () => {
-		expect(popped({ share: 0, noise: 0, differing: POP_MARGIN_PIXELS })).toBe(false);
-		expect(popped({ share: 0, noise: 0, differing: POP_MARGIN_PIXELS + 1 })).toBe(true);
-		expect(popped({ share: 0, noise: 40, differing: 40 + POP_MARGIN_PIXELS })).toBe(false);
+	it("count a stop as wrongly hidden at rest only past the device's noise and the margin", () => {
+		expect(hiddenAtRest({ share: 0, noise: 0, differing: AT_REST_MARGIN_PIXELS })).toBe(false);
+		expect(hiddenAtRest({ share: 0, noise: 0, differing: AT_REST_MARGIN_PIXELS + 1 })).toBe(true);
+		expect(hiddenAtRest({ share: 0, noise: 40, differing: 40 + AT_REST_MARGIN_PIXELS })).toBe(
+			false,
+		);
 	});
 
 	it('weigh the added culling time against the render and GPU time it saves', () => {
@@ -113,7 +115,7 @@ describe('the occlusion turns', () => {
 		expect(verdict.savedRenderMs).toBeCloseTo(0.8);
 		expect(verdict.savedGpuMs).toBeCloseTo(3);
 		expect(verdict.savedIntervalMs).toBeCloseTo(0.1);
-		expect(verdict.poppedStops).toBe(0);
+		expect(verdict.hiddenStops).toBe(0);
 		expect(verdict.pays).toBe(true);
 	});
 
@@ -124,9 +126,12 @@ describe('the occlusion turns', () => {
 		expect(noTimer.savedGpuMs).toBeNull();
 		expect(noTimer.pays).toBe(false);
 		expect(occlusionVerdict(result({ stops: stops(4, 50) })).pays).toBe(false);
+		expect(occlusionVerdict(result()).lateInMotion).toBeNull();
+		expect(occlusionVerdict(result({ lateInMotion: 0 })).pays).toBe(true);
+		expect(occlusionVerdict(result({ lateInMotion: 2 })).pays).toBe(false);
 	});
 
-	it('find failures, unmeasured sides, nothing hidden, no stops and popped stops', () => {
+	it('find failures, unmeasured sides, nothing hidden, no stops, and popping of both kinds', () => {
 		expect(occlusionTurnsProblems(result())).toEqual([]);
 		expect(
 			occlusionTurnsProblems(
@@ -141,12 +146,15 @@ describe('the occlusion turns', () => {
 			'the engine failed with E1109',
 			'the page measured no frame with culling off',
 			'occlusion culling hid nothing in the city',
-			'the popping check compared no stop',
+			'the check at rest compared no stop',
 		]);
 		expect(
 			occlusionTurnsProblems(result({ stops: [{ share: 0.125, noise: 2, differing: 30 }] })),
 		).toEqual([
-			'stop 0 at 12.5% of the route: culling on differs from culling off in 30 pixels, past the 2 that two frames with culling off differ',
+			'wrongly hidden at rest: stop 0 at 12.5% of the route differs from culling off in 30 pixels, past the 2 that two frames with culling off differ',
+		]);
+		expect(occlusionTurnsProblems(result({ lateInMotion: 3 }))).toEqual([
+			'late in motion: 3 objects showed late',
 		]);
 	});
 });
@@ -196,23 +204,23 @@ describe('the occlusion-s6 plan', () => {
 		const check = items[0]!.check;
 		expect(judge(check, result(), NONE_MISSING)).toEqual([]);
 		expect(judge(check, result({ stops: [] }), NONE_MISSING)).toEqual([
-			'the popping check compared no stop',
+			'the check at rest compared no stop',
 		]);
 		const noWebGl2 = { ok: false, error: 'no WebGL2 context' };
 		expect(judge(check, noWebGl2, { ...NONE_MISSING, webgl2: true })).toBe('skip');
 	});
 
-	it("saves a popped stop's frames, and nothing for a load without popping", () => {
+	it("saves a wrongly hidden stop's frames, and nothing for a load without one", () => {
 		const folder = mkdtempSync(join(tmpdir(), 'occlusion-s6-'));
 		try {
 			saveOcclusionS6Images(join(folder, 'none'), result());
 			expect(existsSync(join(folder, 'none'))).toBe(false);
 			const png = Buffer.from('png').toString('base64');
 			saveOcclusionS6Images(
-				join(folder, 'popped'),
+				join(folder, 'hidden'),
 				result({ images: { 'stop-2-off': png, 'stop-2-on': png } }),
 			);
-			expect(readdirSync(join(folder, 'popped')).sort()).toEqual([
+			expect(readdirSync(join(folder, 'hidden')).sort()).toEqual([
 				'stop-2-off.png',
 				'stop-2-on.png',
 			]);
@@ -223,7 +231,7 @@ describe('the occlusion-s6 plan', () => {
 
 	it('tables each load, marks popping, and lists the loads with problems', () => {
 		const results = new Map<string, ItemResult>([
-			['occlusion-s6-low-256x144', result({ preset: 'low' })],
+			['occlusion-s6-low-256x144', result({ preset: 'low', lateInMotion: 0 })],
 			[
 				'occlusion-s6-low-384x216',
 				result({
@@ -240,18 +248,18 @@ describe('the occlusion-s6 plan', () => {
 		const table = occlusionS6Summary(items, (id) => results.get(id));
 		const lines = table?.split('\n') ?? [];
 		expect(lines[2]).toBe(
-			'| Preset | Buffer | Hidden | Added | Saved, render | Saved, GPU | Interval, off / on | Popped | Pays |',
+			'| Preset | Buffer | Hidden | Added | Saved, render | Saved, GPU | Interval, off / on | Wrongly hidden at rest | Late in motion | Pays |',
 		);
 		expect(lines[4]).toBe(
-			'| low | 256x144 | 75.0% | +0.700 | 0.800 | 3.000 | 16.700 / 16.600 | 0 of 4 (noise 0) | yes |',
+			'| low | 256x144 | 75.0% | +0.700 | 0.800 | 3.000 | 16.700 / 16.600 | 0 of 4 (noise 0) | 0 | yes |',
 		);
 		expect(lines[5]).toBe(
-			'| low | 384x216 | 75.0% | +0.700 | 0.800 | - | 16.700 / 16.600 | 1 of 1 (noise 3) | no |',
+			'| low | 384x216 | 75.0% | +0.700 | 0.800 | - | 16.700 / 16.600 | 1 of 1 (noise 3) | - | no |',
 		);
 		expect(lines).toHaveLength(13);
 		expect(lines.slice(7)).toEqual([
 			'Loads with problems:',
-			'occlusion-s6-low-384x216: stop 0 at 50.0% of the route: culling on differs from culling off in 90 pixels, past the 3 that two frames with culling off differ',
+			'occlusion-s6-low-384x216: wrongly hidden at rest: stop 0 at 50.0% of the route differs from culling off in 90 pixels, past the 3 that two frames with culling off differ',
 			'occlusion-s6-medium-256x144: the engine failed with E1109',
 			'occlusion-s6-medium-384x216: the page stopped',
 			'occlusion-s6-high-256x144: no result',

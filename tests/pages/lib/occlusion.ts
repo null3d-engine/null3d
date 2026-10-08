@@ -1,9 +1,10 @@
 // What the occlusion pages share: the figures of a measurement with occlusion culling off or on,
 // the medians of their rounds, the count of pixels where two frames differ, and S6's occlusion
-// turns (T-36): the order of each round's two sides, the stops along the route where the page
-// compares frames, and the rule that says which stops show popping. The device runner judges and
-// tables the turns' results with the same rules (tests/lib/occlusion-s6.ts). Nothing here needs
-// the engine or a browser.
+// turns (T-36): the order of each round's two sides, and the two popping figures. Wrongly hidden
+// at rest compares frames with culling off and on at stops along the route, with the camera still.
+// Late in motion counts the objects that show frames late while the camera flies, from the visual
+// check's popping figure. The device runner judges and tables the turns' results with the same
+// rules (tests/lib/occlusion-s6.ts). Nothing here needs the engine or a browser.
 /** The middle of some numbers, nulls left out, or null without any. */
 export function median(values: readonly (number | null)[]): number | null {
 	const sorted = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
@@ -81,7 +82,7 @@ export const roundSides = (round: number): readonly OcclusionSide[] =>
  */
 export const roundStart = (round: number, rounds: number): number => round / rounds;
 
-/** The shares of the route where the popping check stops, evenly spread, none at the start. */
+/** The shares of the route where the check at rest stops, evenly spread, none at the start. */
 export const stopShares = (count: number): number[] =>
 	Array.from({ length: count }, (_, k) => (k + 0.5) / count);
 
@@ -90,13 +91,22 @@ export const stopShares = (count: number): number[] =>
  * with it off differ at the same stop. A small prop far down a street covers about this many, so a
  * missing object shows above it.
  */
-export const POP_MARGIN_PIXELS = 8;
-
-/** Stops that may show popping before the check fails: none, as the culling keeps no history. */
-export const POP_LIMIT = 0;
+export const AT_REST_MARGIN_PIXELS = 8;
 
 /**
- * One stop of the popping check: its share of the route, the pixels where two captures with
+ * Stops where culling may hide what shows before the check fails: none. The culling hides only
+ * what lies wholly behind blockers, so one such stop is a fault.
+ */
+export const AT_REST_LIMIT = 0;
+
+/**
+ * Objects that may show late in motion before the check fails: none. The culling uses the frame's
+ * own camera and keeps no history, so no object can show a frame late.
+ */
+export const LATE_IN_MOTION_LIMIT = 0;
+
+/**
+ * One stop of the check at rest: its share of the route, the pixels where two captures with
  * culling off differ, which is the device's noise, and the pixels where the capture with culling
  * on differs from the first capture with it off.
  */
@@ -107,8 +117,8 @@ export interface OcclusionStop {
 }
 
 /** True when culling hid something at a stop that shows with culling off. */
-export const popped = ({ noise, differing }: OcclusionStop): boolean =>
-	differing > noise + POP_MARGIN_PIXELS;
+export const hiddenAtRest = ({ noise, differing }: OcclusionStop): boolean =>
+	differing > noise + AT_REST_MARGIN_PIXELS;
 
 /** What S6's page reports from its occlusion turns. */
 export interface OcclusionTurnsResult {
@@ -126,9 +136,17 @@ export interface OcclusionTurnsResult {
 	/** Each side's figures: the medians of its rounds. */
 	off: OcclusionFigures;
 	on: OcclusionFigures;
-	/** The popping check's stops along the route. */
+	/** The stops of the check at rest along the route. */
 	stops: OcclusionStop[];
-	/** PNG files in base64 of the stops that popped, as `stop-<k>-off` and `stop-<k>-on`. */
+	/**
+	 * The objects that showed frames late while the camera flew the route, from the visual check's
+	 * popping figure on the same flight with culling off and on. Absent until the page runs it.
+	 */
+	lateInMotion?: number | null;
+	/**
+	 * PNG files in base64 of the stops where culling hid what shows, as `stop-<k>-off` and
+	 * `stop-<k>-on`.
+	 */
 	images?: Record<string, string>;
 	failures: string[];
 }
@@ -139,9 +157,10 @@ export interface OcclusionTurnsResult {
  * the sketch thread's added culling step, which includes the calling thread's share of the
  * blockers' drawing. The saved times are the render worker's and the GPU's, the GPU's null where
  * the device has no GPU timer, and the frame interval's. Culling pays where the render worker and
- * the GPU save more than the culling adds, and no stop pops.
+ * the GPU save more than the culling adds, and nothing pops: no stop hides what shows at rest, and
+ * no object shows late in motion where the page measured it.
  */
-export function occlusionVerdict({ off, on, stops }: OcclusionTurnsResult) {
+export function occlusionVerdict({ off, on, stops, lateInMotion = null }: OcclusionTurnsResult) {
 	const less = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
 	const visible = on.visibleEntries ?? 0;
 	const hidden = on.occludedEntries ?? 0;
@@ -149,43 +168,53 @@ export function occlusionVerdict({ off, on, stops }: OcclusionTurnsResult) {
 	const savedRenderMs = less(off.renderMs, on.renderMs);
 	const savedGpuMs = less(off.gpuMs, on.gpuMs);
 	const savedMs = (savedRenderMs ?? 0) + (savedGpuMs ?? 0);
-	const poppedStops = stops.filter(popped).length;
+	const hiddenStops = stops.filter(hiddenAtRest).length;
 	return {
 		hiddenShare: visible + hidden > 0 ? hidden / (visible + hidden) : 0,
 		addedCpuMs,
 		savedRenderMs,
 		savedGpuMs,
 		savedIntervalMs: less(off.intervalMs, on.intervalMs),
-		poppedStops,
-		pays: savedMs > addedCpuMs && poppedStops <= POP_LIMIT,
+		hiddenStops,
+		lateInMotion,
+		pays:
+			savedMs > addedCpuMs &&
+			hiddenStops <= AT_REST_LIMIT &&
+			(lateInMotion === null || lateInMotion <= LATE_IN_MOTION_LIMIT),
 	};
 }
 
 /**
  * What is wrong with a turns result as a measurement: a failure, a side that measured no frame,
- * culling that hid nothing in the city, or a popping check that compared no stop.
+ * culling that hid nothing in the city, or a check at rest that compared no stop.
  */
 export function occlusionMeasurementProblems(result: OcclusionTurnsResult): string[] {
 	const problems = (result.failures ?? []).map((code) => `the engine failed with ${code}`);
 	for (const side of ['off', 'on'] as const)
 		if (!result[side]?.intervalMs) problems.push(`the page measured no frame with culling ${side}`);
 	if (!result.on?.occludedEntries) problems.push('occlusion culling hid nothing in the city');
-	if (!result.stops?.length) problems.push('the popping check compared no stop');
+	if (!result.stops?.length) problems.push('the check at rest compared no stop');
 	return problems;
 }
 
-/** The stops of a turns result where culling hid what shows. */
+/**
+ * The popping of a turns result: each stop where culling hid what shows at rest, and the objects
+ * that showed late in motion past the limit.
+ */
 export function poppingProblems(result: OcclusionTurnsResult): string[] {
-	return (result.stops ?? []).flatMap((stop, k) =>
-		popped(stop)
+	const problems = (result.stops ?? []).flatMap((stop, k) =>
+		hiddenAtRest(stop)
 			? [
-					`stop ${k} at ${(100 * stop.share).toFixed(1)}% of the route: culling on differs from culling off in ${stop.differing} pixels, past the ${stop.noise} that two frames with culling off differ`,
+					`wrongly hidden at rest: stop ${k} at ${(100 * stop.share).toFixed(1)}% of the route differs from culling off in ${stop.differing} pixels, past the ${stop.noise} that two frames with culling off differ`,
 				]
 			: [],
 	);
+	const late = result.lateInMotion ?? 0;
+	if (late > LATE_IN_MOTION_LIMIT) problems.push(`late in motion: ${late} objects showed late`);
+	return problems;
 }
 
-/** Everything wrong with a turns result: its measurement's problems, then its popped stops. */
+/** Everything wrong with a turns result: its measurement's problems, then its popping. */
 export const occlusionTurnsProblems = (result: OcclusionTurnsResult): string[] => [
 	...occlusionMeasurementProblems(result),
 	...poppingProblems(result),

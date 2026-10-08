@@ -10,7 +10,7 @@ On which presets does each path cull occluded objects: GPU occlusion culling on 
 
 ## Rule
 
-A preset turns a method on only where it saves more frame time than it costs on that preset's devices, with popping under M2-I3's threshold. GPU occlusion culling shows no object late (D-40), so on WebGPU the rule reduces to its GPU time per frame.
+A preset turns a method on only where it saves more frame time than it costs on that preset's devices, with popping within M2-I3's limits. Popping means both objects wrongly hidden at rest and objects late in motion ([below](#software-occlusion-culling-on-webgl2)). GPU occlusion culling shows no object late (D-40), so on WebGPU the rule reduces to its GPU time per frame.
 
 ## Data
 
@@ -64,9 +64,12 @@ The figures are pending. T-36 runs on the S24+ or the cloud Galaxy S24, which ha
 - The culling's cost is the job workers' added time plus the culling step's added time. The step includes the calling thread's share of the blockers' drawing. Its saving is the render worker's time plus the GPU's. It pays where the saving is larger than the cost, which is gate item 3's rule.
 - The buffer comes in two sizes, the core's 256 x 144 and the first round's 384 x 216. The `?occlusion-buffer=` switch sets the size. Its rows are bands of 16, so the larger size is 384 x 224 at 16:9.
 
-Popping. The culling uses the frame's own camera and matrices, and keeps nothing from earlier frames ([D-41](D-41-software-occlusion.md#same-frame-no-readback)). So an object that showed late would show as an object missing from a frame. After the timed rounds, the page holds the camera at 24 stops spread along the route. At each stop it reads the frame back twice with the culling off, then once with it on. The two frames with the culling off differ only by the device's own noise. A stop pops when the frame with the culling on differs from the first one by more than that noise plus 8 pixels. A small prop far down a street covers about that many. M2-I3's threshold is no popped stop in any load. The culling keeps no history and hides only what lies wholly behind blockers, so it should never pop. One popped stop is a fault, not a rate to allow. The page sends the frames of the first two popped stops, and the runner saves them beside the run's results.
+Popping. The gate's popping check means two figures, and both must stay within M2-I3's limits:
 
-The preset rows follow from the table that the runner prints for each device. It has one row per preset and buffer size. Each row gives the hidden share, the added and saved times, the frame interval with the culling off and on, and the popped stops.
+- Wrongly hidden at rest: objects that the culling hides while they show, with the camera still. This plan measures it. After the timed rounds, the page holds the camera at 24 stops spread along the route. At each stop it reads the frame back twice with the culling off, then once with it on. The two frames with the culling off differ only by the device's own noise. A stop counts when the frame with the culling on differs from the first one by more than that noise plus 8 pixels. A small prop far down a street covers about that many. The limit is no such stop in any load. The culling hides only what lies wholly behind blockers, so one such stop is a fault, not a rate to allow. The page sends the frames of the first two such stops, and the runner saves them beside the run's results.
+- Late in motion: objects that show one or more frames late while the camera flies. The visual check's popping figure measures it (M2-L6). It draws the same camera flight with the culling on and off and counts the objects that show up late. The plan reports it beside the first figure once that figure lands, and its table shows a dash until then. The limit is no late object. The culling uses the frame's own camera and matrices and keeps nothing from earlier frames ([D-41](D-41-software-occlusion.md#same-frame-no-readback)), so no object can show late.
+
+The preset rows follow from the table that the runner prints for each device. It has one row per preset and buffer size. Each row gives the hidden share, the added and saved times, the frame interval with the culling off and on, and both popping figures.
 
 ## Decision
 

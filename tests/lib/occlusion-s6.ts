@@ -1,15 +1,16 @@
 // The occlusion-s6 plan, T-36: S6's occlusion turns on WebGL2 at each preset that a phone or a
 // tablet may run, with the software occlusion buffer at its default size and at the larger size
 // of the first round of measurements. Each load times the culling off and on over the same
-// stretches of the route, and checks for popping at stops along it (tests/pages/lib/occlusion.ts).
+// stretches of the route, and checks that it hides nothing that shows at stops along it, at rest
+// (tests/pages/lib/occlusion.ts).
 // D-22 records the results, and the preset rows rest on them.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	AT_REST_MARGIN_PIXELS,
 	type OcclusionTurnsResult,
 	occlusionMeasurementProblems,
 	occlusionVerdict,
-	POP_MARGIN_PIXELS,
 	poppingProblems,
 } from '../pages/lib/occlusion.ts';
 import { BENCH_BUILD, loadPath } from './load-routes.ts';
@@ -35,11 +36,11 @@ export const OCCLUSION_S6_BUFFERS = ['256x144', '384x216'] as const;
 export const OCCLUSION_S6_SECONDS = 10;
 /** Rounds of the two sides in each load. */
 const ROUNDS = 4;
-/** Stops of the popping check along the route. */
+/** Stops of the check at rest along the route. */
 const STOPS = 24;
 /**
  * How long a load may take: the city's start and stream on a phone, about a minute, then the
- * rounds with their settling, and the popping check's captures, about a second each on a phone.
+ * rounds with their settling, and the check at rest's captures, about a second each on a phone.
  */
 const timeoutSeconds = (seconds: number) => 180 + 2 * ROUNDS * (seconds + 2) + 3 * STOPS * 2;
 
@@ -76,8 +77,8 @@ export function occlusionS6Plan({
 }
 
 /**
- * Writes a load's popped stops' frames into `folder` as `<name>.png`, so people can see what the
- * culling hid. A load without popping writes nothing.
+ * Writes the frames of a load's stops where culling hid what shows into `folder` as `<name>.png`,
+ * so people can see what went missing. A load without such a stop writes nothing.
  */
 export function saveOcclusionS6Images(folder: string, result: OcclusionTurnsResult): void {
 	const images = Object.entries(result.images ?? {});
@@ -94,7 +95,7 @@ const ms = (value: number | null, signed = false) =>
 /**
  * The T-36 table of one runner's results: for each preset and buffer size, the share of the
  * entries that the culling hid, the CPU time it added, the render worker's, the GPU's and the
- * frame interval's saving, the popped stops, and whether the culling paid. Loads that failed their
+ * frame interval's saving, the two popping figures, and whether the culling paid. Loads that failed their
  * check stay out, with their problems below the table. Undefined when the plan has no such loads.
  */
 export function occlusionS6Summary(
@@ -114,8 +115,8 @@ export function occlusionS6Summary(
 			failures.push(`${id}: ${result ? failureText(result) : 'no result'}`);
 			continue;
 		}
-		// A load whose stops popped still has figures; its row shows the popping, and the list below
-		// names the stops.
+		// A load that popped still has figures; its row shows the popping, and the list below names
+		// the stops and the late objects.
 		const measurement = occlusionMeasurementProblems(turns);
 		const problems = [...measurement, ...poppingProblems(turns)];
 		if (problems.length > 0) failures.push(`${id}: ${problems.join('; ')}`);
@@ -131,17 +132,18 @@ export function occlusionS6Summary(
 				ms(verdict.savedRenderMs),
 				ms(verdict.savedGpuMs),
 				`${ms(turns.off.intervalMs)} / ${ms(turns.on.intervalMs)}`,
-				`${verdict.poppedStops} of ${turns.stops.length} (noise ${noise})`,
+				`${verdict.hiddenStops} of ${turns.stops.length} (noise ${noise})`,
+				verdict.lateInMotion === null ? '-' : String(verdict.lateInMotion),
 				verdict.pays ? 'yes' : 'no',
 			].join(' | ')} |`,
 		);
 	}
 	if (loads === 0) return undefined;
 	return [
-		`T-36, S6's occlusion turns on WebGL2: medians per frame in ms. Hidden: the entries that culling took out of those in the view. Added: the job workers' and the culling step's added CPU time. Saved: the render worker's and the GPU's time (a dash where the device has no GPU timer). Popped: stops where culling on differs from culling off by more than ${POP_MARGIN_PIXELS} pixels past the noise of two frames with it off. Pays: the savings exceed the added time and nothing popped.`,
+		`T-36, S6's occlusion turns on WebGL2: medians per frame in ms. Hidden: the entries that culling took out of those in the view. Added: the job workers' and the culling step's added CPU time. Saved: the render worker's and the GPU's time (a dash where the device has no GPU timer). Wrongly hidden at rest: stops where culling on differs from culling off by more than ${AT_REST_MARGIN_PIXELS} pixels past the noise of two frames with it off. Late in motion: objects that showed frames late in flight (a dash where the page did not measure it). Pays: the savings exceed the added time and nothing popped.`,
 		'',
-		'| Preset | Buffer | Hidden | Added | Saved, render | Saved, GPU | Interval, off / on | Popped | Pays |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Preset | Buffer | Hidden | Added | Saved, render | Saved, GPU | Interval, off / on | Wrongly hidden at rest | Late in motion | Pays |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...rows,
 		...(failures.length > 0 ? ['', 'Loads with problems:', ...failures] : []),
 	].join('\n');

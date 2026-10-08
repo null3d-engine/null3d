@@ -65,8 +65,8 @@
 //                       calls that grow the scene's object tables, and the engine memory of a
 //                       small scene, on each GPU path, or occlusion-s6, T-36, which times S6 on
 //                       WebGL2 with software occlusion culling off and on in turns at the Low,
-//                       Medium and High presets with two sizes of its buffer, and checks for
-//                       popping at stops along the route
+//                       Medium and High presets with two sizes of its buffer, and checks at
+//                       stops along the route that it hides nothing that shows
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages

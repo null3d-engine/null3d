@@ -7,19 +7,21 @@
 // both its sides fly that stretch from the same start, after a second to settle. The side that runs
 // first changes from round to round. Each side reports the medians of its rounds.
 //
-// The popping check then holds the camera at `?stops=` stops along the route (24 by default). At
-// each stop it captures the frame twice with culling off, then once with it on. The two frames
-// with culling off differ only by the device's noise; a frame with culling on that differs from
-// them by more than that shows that the culling hid something that shows. The PNG files of the
-// first such stops go into the result, so people can see what went missing.
+// The check of what culling hides wrongly at rest then holds the camera at `?stops=` stops along
+// the route (24 by default). At each stop it captures the frame twice with culling off, then once
+// with it on. The two frames with culling off differ only by the device's noise; a frame with
+// culling on that differs from them by more than that shows that the culling hid something that
+// shows. The PNG files of the first such stops go into the result, so people can see what went
+// missing. Objects that show late in motion come from the visual check's popping figure, which the
+// result carries as `lateInMotion` once the page runs it.
 import type { Engine, FrameSummary } from '@null3d/engine';
 import {
 	differingPixels,
+	hiddenAtRest,
 	medianFigures,
 	type OcclusionFigures,
 	type OcclusionStop,
 	type OcclusionTurnsResult,
-	popped,
 	roundSides,
 	roundStart,
 	stopShares,
@@ -31,8 +33,8 @@ import type { QualityLog } from './trace';
 
 /** Seconds that each side flies before it measures, after the camera moves to the round's start. */
 const SETTLE_SECONDS = 1;
-/** Popped stops whose frames go into the result: enough to see the fault, and few enough to send. */
-const POPPED_IMAGES = 2;
+/** Wrongly hidden stops whose frames go into the result: enough to see the fault, few to send. */
+const HIDDEN_IMAGES = 2;
 
 /** Runs the turns on an engine that draws S6, and resolves with their result. */
 export async function occlusionTurns(
@@ -90,7 +92,7 @@ export async function occlusionTurns(
 			differing: differingPixels(off.pixels, on.pixels),
 		};
 		stops.push(stop);
-		if (popped(stop) && Object.keys(images).length < 2 * POPPED_IMAGES) {
+		if (hiddenAtRest(stop) && Object.keys(images).length < 2 * HIDDEN_IMAGES) {
 			images[`stop-${k}-off`] = await png(off);
 			images[`stop-${k}-on`] = await png(on);
 		}

@@ -416,12 +416,12 @@ function s4LowPassesTest(): void {
 
 /**
  * S6's occlusion turns on WebGL2, T-36's page, in a short form: the culling hides part of the
- * nearest objects, both sides measure frames, and no stop shows popping. The device runner's
+ * nearest objects, both sides measure frames, and no stop hides what shows at rest. The device runner's
  * occlusion-s6 plan runs the long form on phones and tablets.
  */
 function s6OcclusionTurnsTest(): void {
 	testUnlessTooSlow('s6 on null3d-webgl2')(
-		's6 on null3d-webgl2 turns occlusion culling off and on, and nothing pops',
+		's6 on null3d-webgl2 turns occlusion culling off and on, and hides nothing wrongly at rest',
 		async ({ page }) => {
 			await page.setViewportSize(PHONE_VIEWPORT);
 			const result = await runPage<PageReport & OcclusionTurnsResult>(
