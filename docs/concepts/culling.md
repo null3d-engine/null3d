@@ -128,7 +128,7 @@ scene.instantiate(city, { occluder: false });
 
 `setOccluder` changes an object afterwards. [The asset pipeline](../guides/assets-pipeline.md#blockers-and-stored-trees) says which meshes get blockers.
 
-The `softwareOcclusion` quality setting turns it on and off during play. It is on from the Medium preset up, and off on Low. The `?occlusion=off` switch turns it off for a page. `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`.
+The `softwareOcclusion` quality setting turns it on and off during play. It is on from the Medium preset up, and off on Low. The `?occlusion=off` switch turns it off for a page. The `?occlusion-buffer=384x216` switch gives the buffer about that many pixels, to measure a larger buffer against the default. `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`.
 
 WebGPU reads the same marks for its own [occlusion culling on the GPU](#gpu-occlusion-culling-on-webgpu), which the `gpuOcclusion` setting turns on, and ignores the `softwareOcclusion` setting.
 

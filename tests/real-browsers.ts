@@ -31,6 +31,7 @@
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan object-growth --cloud bsgalaxys25-chrome
+//   bun tests/real-browsers.ts --plan occlusion-s6 --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan smoke --allow-no-webgpu --lan bsgalaxys25-samsung
 //   bun tests/real-browsers.ts --plan smoke --cloud bsiphone17-safari,bspixel10-chrome --parallel 2
 // Options:
@@ -62,7 +63,10 @@
 //                       that load the city scene's 120 KTX2 textures, with the cache of
 //                       transcoded textures off and on, or object-growth, which times the create
 //                       calls that grow the scene's object tables, and the engine memory of a
-//                       small scene, on each GPU path
+//                       small scene, on each GPU path, or occlusion-s6, T-36, which times S6 on
+//                       WebGL2 with software occlusion culling off and on in turns at the Low,
+//                       Medium and High presets with two sizes of its buffer, and checks for
+//                       popping at stops along the route
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -80,7 +84,8 @@
 //   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4, s5, s6; or the
 //                       scale plan's: s1, s5. The default is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
-//                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
+//                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run.
+//                       In the occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
@@ -179,6 +184,7 @@ import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } f
 import { clearCandidates } from './lib/images.ts';
 import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
 import { objectGrowthSummary } from './lib/object-growth.ts';
+import { occlusionS6Summary } from './lib/occlusion-s6.ts';
 import {
 	animationSummary,
 	benchSummary,
@@ -1022,6 +1028,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'effects-joined',
 	'occlusion',
 	'gpu-occlusion',
+	'occlusion-s6',
 	'overload',
 	'soak',
 	'texture-cache',
@@ -1489,6 +1496,7 @@ async function runPlan(
 			governorSummary,
 			textureCacheSummary,
 			objectGrowthSummary,
+			occlusionS6Summary,
 		].map((summary) => summary(plan.items, resultOf));
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		// The frames that the bench plan's pages captured, which people look at after each run.

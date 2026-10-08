@@ -23,6 +23,7 @@ describe('parseSwitches', () => {
 			cells: true,
 			prepass: undefined,
 			occlusion: undefined,
+			occlusionBuffer: undefined,
 			skinning: 'lean',
 			indexInstances: false,
 			shadowDepthBits: 16,
@@ -38,6 +39,13 @@ describe('parseSwitches', () => {
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
+	});
+
+	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
+		expect(parseSwitches('?occlusion-buffer=384x216').occlusionBuffer).toBe(384 * 216);
+		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
+		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
+			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
 	});
 
 	it('picks how WebGPU skins with ?skinning=, and the lean skinning pass otherwise', () => {

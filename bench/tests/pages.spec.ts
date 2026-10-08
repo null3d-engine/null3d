@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
+import { type OcclusionTurnsResult, occlusionTurnsProblems } from '../../tests/pages/lib/occlusion';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
 import { S5_BACKGROUND } from '../scenes/s5';
@@ -413,6 +414,32 @@ function s4LowPassesTest(): void {
 	});
 }
 
+/**
+ * S6's occlusion turns on WebGL2, T-36's page, in a short form: the culling hides part of the
+ * nearest objects, both sides measure frames, and no stop shows popping. The device runner's
+ * occlusion-s6 plan runs the long form on phones and tablets.
+ */
+function s6OcclusionTurnsTest(): void {
+	testUnlessTooSlow('s6 on null3d-webgl2')(
+		's6 on null3d-webgl2 turns occlusion culling off and on, and nothing pops',
+		async ({ page }) => {
+			await page.setViewportSize(PHONE_VIEWPORT);
+			const result = await runPage<PageReport & OcclusionTurnsResult>(
+				page,
+				pagePath(
+					's6',
+					'null3d-webgl2',
+					`n=${SHORT_RUN_COUNT}&preset=medium&governor=off&occlusion-turns&rounds=2&seconds=1&stops=4`,
+				),
+			);
+			expect(result.tier).toBe('webgl2');
+			expect(occlusionTurnsProblems(result)).toEqual([]);
+			expect(result.stops).toHaveLength(4);
+			expect(result.off.occludedEntries ?? 0).toBe(0);
+		},
+	);
+}
+
 for (const scene of SCENES) {
 	if (isPhoneScene(scene))
 		// S4, S5 and S6 keep SwiftShader's processor busy, so two runs of one side by side can measure no
@@ -421,6 +448,7 @@ for (const scene of SCENES) {
 			test.describe.configure({ mode: 'default' });
 			sceneTests(scene);
 			if (scene === 's4') s4LowPassesTest();
+			if (scene === 's6') s6OcclusionTurnsTest();
 		});
 	else sceneTests(scene);
 }
