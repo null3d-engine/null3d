@@ -11,8 +11,9 @@
 //
 // Options:
 //   --base <dir>     a built checkout to compare with. The default is a worktree of this branch's
-//                    merge base with origin/main, under target/gpu-check, which the check builds
-//                    once per commit
+//                    merge base with origin/main, beside this checkout in a folder named after it
+//                    with -gpu-check-base, which the check builds once per commit. It stays
+//                    outside the checkout, so the unit tests and the linters never read its files
 //   --no-build       compare this checkout as it is built, without bun run build first
 //   --runs <n>       rounds of each page in each build; the default is 3
 //   --seconds <n>    warm-up and measured time of each run; the default is 4
@@ -21,7 +22,7 @@
 // not judged, because the benchmark pages changed between the two commits.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
 import type { Comparison } from './lib/compare';
 import {
@@ -68,6 +69,7 @@ function run(cwd: string, command: string, ...args: string[]): void {
 }
 
 const CHECK_DIR = join(REPO_ROOT, 'target/gpu-check');
+const BASE_DIR = `${REPO_ROOT.replace(/\/$/, '')}-gpu-check-base`;
 
 /**
  * A built worktree of this branch's merge base with origin/main. The worktree stays between
@@ -75,13 +77,14 @@ const CHECK_DIR = join(REPO_ROOT, 'target/gpu-check');
  */
 function mergeBaseCheckout(): string {
 	const sha = git(REPO_ROOT, 'merge-base', 'HEAD', 'origin/main');
-	const dir = join(CHECK_DIR, 'base');
-	const built = join(CHECK_DIR, 'base-built');
+	const dir = BASE_DIR;
+	const built = join(dir, 'target/gpu-check-built');
 	if (!existsSync(dir)) run(REPO_ROOT, 'git', 'worktree', 'add', '--detach', dir, sha);
 	else if (git(dir, 'rev-parse', 'HEAD') !== sha) run(dir, 'git', 'checkout', '--detach', sha);
 	if (!existsSync(built) || readFileSync(built, 'utf8') !== sha) {
 		run(dir, 'bun', 'install');
 		run(dir, 'bun', 'run', 'build');
+		mkdirSync(dirname(built), { recursive: true });
 		writeFileSync(built, sha);
 	}
 	return dir;
