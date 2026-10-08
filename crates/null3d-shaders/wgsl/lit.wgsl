@@ -594,14 +594,14 @@ fn light_surface(
     let mirrored = saturate(reflection.a);
     if has_environment(env) || mirrored > 0.0 {
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
+        let irradiance = environment_irradiance(env, normal) * strength;
+        let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
+        let radiance = mix(surrounding, reflection.rgb, mirrored);
 #else
     if has_environment(env) {
         let strength = material_row.uv_u.w;
-#endif
         let irradiance = environment_irradiance(env, normal) * strength;
-        var radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
-#ifdef CUSTOM
-        radiance = mix(radiance, reflection.rgb, mirrored);
+        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
 #endif
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
