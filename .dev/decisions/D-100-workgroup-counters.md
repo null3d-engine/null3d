@@ -1,6 +1,6 @@
 # D-100: The culling shader counts each workgroup's survivors before it adds to the indirect draws
 
-Status: proposed. Date: 8 October 2026. Task: M2-I5. The runs of prototype G2 on the Mac, the Galaxy S25, the Pixel 9 and a cloud iPad are in, of the first form. The first form failed on the iPad's Safari 27.0, so the claim changed ("Safari 27.0 and the slot claim"). The Mac's run of the new form is in: 75% and 72% faster. The cloud iPad's is in too: 8% and 35% slower, so the form fails G2's rule there. Runs with fewer turns are under way.
+Status: proposed. Date: 8 October 2026. Task: M2-I5. The runs of prototype G2 on the Mac, the Galaxy S25, the Pixel 9 and a cloud iPad are in, of the first form. The first form failed on the iPad's Safari 27.0, so the claim changed ("Safari 27.0 and the slot claim"). The Mac's run of the new form is in: 75% and 72% faster. The cloud iPad's is in too: 8% and 35% slower, so the form fails G2's rule there, and forms with 2 turns and 1 turn were slower there as well. The decision waits for the owner (see Decision).
 
 Summary: Each workgroup of the culling shader counts its visible instances per bucket in workgroup memory. One thread per bucket then adds the workgroup's count to each of the bucket's indirect draws. Before, every visible instance added 1 to the same word, one thread after another. On the Mac the culling pass of 240,000 boxes went from 0.62 ms to 0.14 ms in S1, and from 0.37 ms to 0.10 ms in S1-static. On the Galaxy S25 it went from 2.23 ms to 1.05 ms in S1. The new form, which Safari 27.0 compiles, cut the Mac's culling pass by 75% and 72% against main. The phones' and tablets' figures of the new form are pending.
 
@@ -107,12 +107,28 @@ The cloud iPad's figures for this form, against main ebd64cc21, in Safari 27.0 a
 - So the change fails G2's rule on the iPad: it is slower on one device. The iPad's A14 GPU takes 240,000 atomic adds on one word in S1-static in under 1 ms, so one add per thread costs little there, and the table's clears, barriers and claim cost more than they save. The Mac's M5 Max took 0.22 ms for the same pass on main, and the workgroup counts cut it to 0.06 ms.
 - The runs are `20261007-232334-bench`, `20261007-233141-bench`, `20261007-234117-bench` and `20261007-235016-bench`, made on 8 October 2026 from 07:23 to 08:00 with the command in Data and `--cloud bsipad10-safari`.
 
+Fewer turns cost fewer barriers, so 2 and 1 turns ran next on the same iPad, from builds off the branch: 2 turns at 6625191a5 and 1 turn at 66d2d3a5e. On the Mac, against 3 turns, 2 turns cut the culling pass by 6.5% in S1 and 4% in S1-static, and 1 turn by 13% and 11%, faster in 6 of 6 rounds each. The iPad ran 7 runs of 3 from 08:02 to 09:04, in the order main, 2 turns, 1 turn, 3 turns, 1 turn, 2 turns, main. All passed 8 of 8 pages. Each figure is the median of a build's runs.
+
+| Measure | Main | 1 turn | 2 turns | 3 turns |
+| --- | --- | --- | --- | --- |
+| Culling pass, S1 | 1.29 ms | 1.42 ms (+10%) | 1.41 ms (+9%) | 1.44 ms (+11%) |
+| Culling pass, S1-static | 0.93 ms | 1.13 ms (+21%) | 1.19 ms (+28%) | 1.22 ms (+31%) |
+
+- Every turn count was slower than main in both scenes and in every run. Fewer turns helped a little in S1-static, and made no clear difference in S1. So the barriers of the turns are not the main cost on the A14: clearing the table, the barriers that every form needs, and the atomics in workgroup memory cost more than one add per thread on one word.
+- The whole frame's GPU time does not rank the builds: the third run of every set read 31 to 33 ms in S1 as the tablet warmed.
+- The runs are `20261008-000338-bench`, `20261008-001224-bench`, `20261008-002125-bench`, `20261008-003006-bench`, `20261008-003735-bench`, `20261008-004650-bench` and `20261008-005538-bench`.
+- So no form of the workgroup counts passes G2's rule. The iPad's WebGPU adapter names its vendor and architecture only as "apple", as Safari does on the Mac, so the engine could not keep the counts on the Mac and not on the iPad from what the GPU reports. Hard rule 14 rules out a choice by GPU name or user agent in any case.
+
 
 The engine's shader build now fails on `atomicCompareExchangeWeak` in any of the engine's own shaders, with the reason and the forms that compile (`crates/null3d-shaders/src/features.rs`). A test in the shader crate checks it. Users' shaders, which the Vite plugin compiles, build with a warning that names Safari 27.0 and WebKit's fix, 321006@main, and the Vite plugin prints it. Refusing users' shaders would change the public API for one Safari release's fault that WebKit has already fixed, so the coordinator chose the warning on 8 October 2026, until the owner rules. The owner's choice is between the warning, an error, and saying nothing. A test in the shader crate and one in the Vite plugin check the warning, and the WGSL rules page (`docs/shaders/wgsl-rules.md`) states it. The check can go once the oldest Safari that null3D supports has WebKit's fix.
 
 ## Decision
 
-Pending the figures of G2.
+Pending the owner. No form of the workgroup counts passes G2's rule, because each is slower on the iPad. The choices put to the owner on 8 October 2026:
+
+- Drop the change, and keep one add per instance. This gives up the Galaxy S25's 1.2 ms per frame in S1 and the Mac's 0.17 ms.
+- Choose per device at run time: time both forms on the GPU in the first frames, with the engine's GPU timer, and keep the faster. It needs `timestamp-query`, two forms of the culling shader, and main's form where the timer is missing. It follows hard rule 14, since it measures instead of reading names.
+- Keep the counts on GPUs whose adapter names a vendor other than Apple. It needs an exception to hard rule 14, as D-87 made for the user agent, and it gives up the Mac's gain too.
 
 ## Consequences
 
