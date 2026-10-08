@@ -129,6 +129,18 @@ All runs are from 8 October 2026, in Chrome on the owner's Mac. It is an Apple M
 
 Every page held 120 frames a second in every run. The two runs without the overlay differ by up to 0.03 ms of CPU time and up to 8% of WebGL2's GPU time. Against their mean, the open card adds at most 1.9% CPU and 2.0% GPU, both inside that spread. On WebGPU's GPU time, where the two runs agree within 1%, it adds 1.1 to 1.3%. The collapsed overlay shows no difference beyond the spread. So the open card meets the owner's rule of under 2%, and the GPU timer stays at one frame in eleven. The benchmark pages measure with `engine.measure`, which turns the GPU timer on in every run. So the figures without the overlay include the timer's cost. The open card's extra is the culled counts' readback, the memory figures and the page's memory sampler.
 
+**On a phone (a cloud timing, a rough guide).** On 8 October 2026, a Galaxy S24 (SM-S921B) on BrowserStack Automate ran the examples page's production build. It used Chrome 152.0.7977.54 on Android 16, with the Samsung Xclipse 940 GPU through ANGLE on Vulkan. The page was the instances demo on WebGL2, served from the Mac through BrowserStack Local. The engine chose the Low preset, in the pipelined mode with 8 job workers. Each load ran 30 seconds, then `engine.measure(30)` read the engine's own figures:
+
+| Overlay | Frame rate | Busiest thread, mean (median) | Drawing thread, mean | Slowest job worker, mean |
+| --- | --- | --- | --- | --- |
+| Open (`?stats=open`) | 30.0 fps | 10.42 (11.09) ms | 1.04 ms | 0.62 ms |
+| Collapsed (`?stats=collapsed`) | 30.0 fps | 10.60 (10.98) ms | 1.15 ms | 0.53 ms |
+| Off (`?stats=off`) | 30.0 fps | 11.08 (11.57) ms | 1.09 ms | 0.60 ms |
+
+The busiest thread is the sketch worker. The cloud phone's screen runs at 30 Hz, so every load held the 30 fps cap. The overlay's cost does not show above the spread of the three loads, which is about 0.7 ms. The run without the overlay was the slowest. Cloud timings vary from session to session, so these figures only show that the overlay costs no frames on this phone.
+
+After 60 seconds, the open card read: `30 fps`, `Target 30 fps · 33.3 ms`, the pipelined symbol, Sketch 11.3 ms, Drawing 1.1 ms, Jobs ×8 0.8 ms, GPU not measured. Memory read 25.3 MiB: engine 16.7 MiB, GPU 0.0 MiB, JS heap 8.6 MiB. The counts read 3 draws, 115.9 k triangles and 9,661 objects. The frame rate met the target, so no "held back by" line showed. The whole-page line still read "measuring" after a minute. A click closed the card, and the button stayed at the canvas's top right. The page logged no errors. Chrome warned only that it has no WebGPU adapter, which the probe of the GPU paths causes. The [run's record](../tested-devices/galaxy-s24-sm-s921b-chrome/20261008-144429-stats-overlay.md) has the details.
+
 **Allocation.** `bun run bench:allocation` on S1 with 100,000 instances, bytes per frame of the sketch worker and the render worker:
 
 | Path | Hidden | Collapsed (`--stats-collapsed`) | Open (`--stats`) |
@@ -138,9 +150,9 @@ Every page held 120 frames a second in every run. The two runs without the overl
 
 All six pass. Collapsed matches hidden on both paths. On WebGPU, the open card's extra 61 bytes per frame are the GPU timer's and the culled counts' readbacks, within their budgets above. The first WebGPU runs with the overlay lost their browser window within the same minute, before any figure. Both passed when run again.
 
-**Size.** These are the figures of `bun run build:check-size`, after Brotli. The overlay's file loads at its first showing, and takes 6,457 B. It took 2,245 B before this design, and 882 B on main. That is 39% of the 16 KB budget of a file that loads on first use. The start grows by the switch's two new values and the setup that the start hands the overlay. The file `page.js` grows from 31,394 to 31,501 B, and `page-renderer.js` from 32,426 to 32,495 B. The workers' start files do not change.
+**Size.** These are the figures of `bun run build:check-size`, after Brotli. The overlay's file loads at its first showing, and takes 6,253 B. It took 6,457 B with the corner option, which the top-right ruling removed. It took 2,245 B before this design, and 882 B on main. That is 39% of the 16 KB budget of a file that loads on first use. The start grows by the switch's two new values and the setup that the start hands the overlay. The file `page.js` grows from 31,394 to 31,501 B, and `page-renderer.js` from 32,426 to 32,495 B. The workers' start files do not change.
 
-**Browser tests.** The stats test passes 26 of 26 in Chrome on the Mac's GPU, with the production build. It passes 26 of 26 with `CI=1` too, on SwiftShader with the production build. It covers every thread mode and the figures that the browser does not give. In each thread mode it checks that the overlay sits on the canvas's top-right corner, and that the button stays put as the card closes and opens. It also covers the toggle by pointer and keyboard, the focus ring and drags through the card. And it checks both mode symbols and their tooltips, and the closed overlay's GPU calls. After the owner's ruling for the top right, it passed 26 of 26 again both ways, on 8 October 2026. The first-use tests pass both ways: 26 pass, and 6 skip by their own conditions.
+**Browser tests.** The stats test passes 26 of 26 in Chrome on the Mac's GPU, with the production build. It passes 26 of 26 with `CI=1` too, on SwiftShader with the production build. It covers every thread mode and the figures that the browser does not give. In each thread mode, it checks that the overlay sits on the canvas's top-right corner. It also checks that the button stays put as the card closes and opens. It also covers the toggle by pointer and keyboard, the focus ring and drags through the card. And it checks both mode symbols and their tooltips, and the closed overlay's GPU calls. After the owner's ruling for the top right, it passed 26 of 26 again both ways, on 8 October 2026. The first-use tests pass both ways: 26 pass, and 6 skip by their own conditions.
 
 ## Consequences
 
