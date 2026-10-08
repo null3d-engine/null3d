@@ -275,6 +275,8 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
 
+A mesh's glTF extras change two steps for that mesh alone. `"occluder": false` gives it no blocker, and `"occluder": true` makes it block with its own triangles when no blocker fits. `"quantizePositions": false` keeps its positions as 32-bit floats. Use it for a mesh that spreads small parts over a large space, such as the merged buildings of a city, where the integer steps would move their corners by centimetres.
+
 It exits with 1 when a model fails, after it writes the others. [The asset pipeline](../guides/assets-pipeline.md) says what each step does, and how the Vite plugin runs the same steps when a module imports a model with `?optimized`.
 
 `assets env` makes an environment map from an equirectangular HDR image, a Radiance (`.hdr`) or OpenEXR (`.exr`) file. The output is one KTX2 file. It holds a cube map with a level for each roughness, filtered as the engine's materials reflect light. It also holds nine spherical harmonics coefficients of the diffuse light.
