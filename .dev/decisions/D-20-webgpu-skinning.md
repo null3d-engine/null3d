@@ -1,8 +1,8 @@
 # D-20: WebGPU skinning
 
-Status: proposed. The lean skinning pass is built (M2-C8). The figures of the Mac's Chrome and the Galaxy S25 are in. The Mac's Safari, the iPad, the Pixel 9 and the Pixel 11 are pending. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
+Status: proposed. The lean skinning pass is built (M2-C8). The figures of the Mac's Chrome, the Galaxy S25, the Pixel 9 and the Pixel 11 are in. The compute pass fails the rule on all four. The owner rules on the default. The Mac's Safari and the iPad are pending. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
 
-Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. On the Galaxy S25 it costs 5.6% more GPU time than the vertex shaders in S5. So it fails the rule on both devices measured so far.
+Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones. On the timing page it costs 4% to 79% more on each of them. So it fails the rule on all four devices measured.
 
 ## Question
 
@@ -188,4 +188,53 @@ What the figures show:
 
 The rule keeps the compute pass only if it saves at least 10% of the frame time on every device that decides it. On the Mac's Chrome it saved 1%. On the S25 it costs more than the vertex shaders, in S5 with every knight walking and on the timing page. So the compute pass fails the rule on both devices measured so far. No run on the iPad, the Pixel 9 or the Pixel 11 can make it pass. By the rule, the vertex shaders become the WebGPU default, and the compute pass leaves the engine.
 
-This branch does not make that change. The compute pass stays the default until the owner rules on this record. The Pixel 9 and Pixel 11 runs, now running, and the iPad's run add their figures first.
+This branch does not make that change. The compute pass stays the default until the owner rules on this record. The Pixel 9 and Pixel 11 figures follow in the next addendum.
+
+## Addendum, 2026-10-08: A1 on the Pixel 9 and the Pixel 11
+
+BrowserStack's Pixel 9 (Mali-G715) and Pixel 11 (PowerVR C-Series) ran the same commit and plans as the S25, on Chrome 152, on 7 October 2026. Both screens ran at 60 Hz, so their frame times count too. The figures are GPU times from the GPU's timer, each the middle of 3 runs' medians. The run files are in the folders of the [Pixel 9](../tested-devices/pixel-9-chrome/README.md) and the [Pixel 11](../tested-devices/pixel-11-chrome/README.md).
+
+The checks passed 21 of 21 on each phone. Every page of S5 and of the timing page passed on both. The timing page's two ways differed in 0 of 921,600 pixels, except 1 pixel on the Pixel 11 with 4 cascades, within the page's limit.
+
+S5 drew 150 knights at High, with 3 cascades and the governor off.
+
+| Page | Pixel 9, every knight walks | Pixel 9, half still | Pixel 11, every knight walks | Pixel 11, half still |
+| --- | --- | --- | --- | --- |
+| Lean pass (default) | 30.93 | 28.64 | 24.44 | 26.41 |
+| `full`: neither saving | 32.24 | 29.85 | 26.15 | 27.72 |
+| `skip`: pose skip only | 30.47 | 28.57 | 25.17 | 27.79 |
+| `narrow`: 8-bit directions only | 31.85 | 29.56 | 25.85 | 26.54 |
+| `vertex`: the vertex shaders skin | 32.24 | 30.54 | 24.44 | 24.44 |
+
+On the Pixel 11, each page's 3 runs spread by up to 3.7 ms. So its differences of 1 to 2 ms lie within the spread. With every knight walking, its vertex shaders took 4.03 ms of CPU time. The compute pass pages took 5.51 to 5.57 ms. On the Pixel 9, every page took 10.2 to 10.6 ms of CPU time.
+
+The timing page drew 200 characters at 20 bytes per skinned vertex.
+
+| Phone | Cascades | Vertex shaders, GPU ms | Compute pass, GPU ms | Compute pass against the vertex shaders |
+| --- | --- | --- | --- | --- |
+| Pixel 9 | 2 | 2.95 | 5.27 | 79% more |
+| Pixel 9 | 4 | 4.19 | 6.73 | 61% more |
+| Pixel 11 | 2 | 4.92 | 5.61 | 14% more |
+| Pixel 11 | 4 | 7.49 | 7.78 | 4% more |
+
+### All four devices
+
+The compute pass's saving against the vertex shaders, in GPU time. A negative figure means the compute pass costs more.
+
+| Device | S5, every knight walks | S5, half the knights still | Timing page, 2 cascades | Timing page, 4 cascades |
+| --- | --- | --- | --- | --- |
+| Mac, Chrome (500 knights) | 1% | 3% | not run | not run |
+| Galaxy S25 (Adreno 830) | -5.6% | 12% | -38% | -9% |
+| Pixel 9 (Mali-G715) | 4.1% | 6.2% | -79% | -61% |
+| Pixel 11 (PowerVR) | 0% | -8.1% | -14% | -4% |
+
+- With every knight walking, the compute pass never saves the rule's 10%. The best saving is the Pixel 9's 4.1%.
+- On the timing page, the vertex shaders are faster on every phone, at both cascade counts.
+- The compute pass leads in two places only. On the Pixel 9 it leads by 4.1% and 6.2% in S5. In the S25's set with half the knights still, it leads by 12%. The pose skip gives none of that, and the run does not show why (see the S25 addendum).
+- The lean savings help most on the Pixel 9 and the Pixel 11: the lean pass takes 4% to 7% less GPU time there than `full`. The Pixel 11's share lies within its runs' spread. On the S25 and the Mac they change little.
+
+### The rule's result
+
+The compute pass fails the rule on all four devices. It never saves 10% of the GPU time with every knight walking, and the timing page favors the vertex shaders on every phone. The Mac's Safari and the iPad are still to run. The rule needs a saving on every device, so they cannot make the compute pass pass. By the rule, the vertex shaders become the WebGPU default, and the compute pass leaves the engine.
+
+The vertex shaders are not faster everywhere: the Pixel 9's S5 favors the compute pass by up to 6.2%, under the rule's 10%. The switch of the default waits for the owner's ruling on this record. Until then the engine skins in the compute pass.
