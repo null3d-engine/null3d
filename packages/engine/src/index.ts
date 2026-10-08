@@ -113,7 +113,7 @@ export type {
 	LineOptions,
 	LineValues,
 } from './scene/lines';
-export type { Lut, LutDomain } from './scene/lut';
+export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
 	ObjectEventHandler,
 	ObjectEventType,

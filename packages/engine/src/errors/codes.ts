@@ -138,7 +138,7 @@ const DOCS = {
 	E1208: {
 		title: 'Invalid texture',
 		cause:
-			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format, or numbers that make no color grading table. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
 		example:
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
