@@ -1,7 +1,7 @@
 // Starts a demo on a canvas. The examples page uses it, and so can any page that shows the demos
 // in a layout of its own, such as the website's: the page owns the canvas, the text and the
 // styles, and this module owns how a demo starts.
-import { createEngine, type Engine } from '@null3d/engine';
+import { createEngine, type Engine, type StatsOverlayOptions } from '@null3d/engine';
 import type { Demo } from '../demos';
 
 /** The message that a demo posts to show a label, or to change its text. */
@@ -23,12 +23,15 @@ export interface StartOptions {
 	 */
 	labels?: HTMLElement;
 	/**
-	 * True shows the engine's stats overlay over the canvas's top-left corner, which is the
-	 * default. False leaves it off. The `?stats=off` switch hides it too, and a held frame never
-	 * shows it.
+	 * True shows the engine's stats overlay over the canvas's top-right corner, collapsed to its
+	 * frame rate, which is the default. False leaves it off. The `?stats=off` switch hides it too,
+	 * and a held frame never shows it.
 	 */
 	stats?: boolean;
 }
+
+/** The stats overlay of a demo: clear of a caption at the top left, and small until clicked. */
+const DEMO_STATS: StatsOverlayOptions = { corner: 'top-right', collapsed: true };
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
 export async function startDemo({
@@ -44,7 +47,7 @@ export async function startDemo({
 		canvas,
 		sketch: demo.sketch,
 		largeWorld: demo.largeWorld,
-		stats,
+		stats: stats && DEMO_STATS,
 	});
 	if (labels) showLabels(engine, labels);
 	return engine;
