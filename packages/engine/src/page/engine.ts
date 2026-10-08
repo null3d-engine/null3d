@@ -1486,7 +1486,7 @@ async function startEngine(
 			options: tierSettings,
 			textureCapMiB,
 			highest: withinTier('ultra', tier),
-			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
+			check: checks && !storedCheck,
 		};
 		mode = {
 			build,
