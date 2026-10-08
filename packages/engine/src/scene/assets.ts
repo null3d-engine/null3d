@@ -368,7 +368,7 @@ export class Assets {
 	 * It resolves once the code and the shaders that make the map are ready. The next frame then
 	 * makes the whole map before it draws, so the first frame with the environment already has its
 	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
-	 * call during play makes one long frame. The first one loads the code that makes it, about 8 KB
+	 * call during play makes one long frame. The first one loads the code that makes it, about 12 KB
 	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
 	 * code does not download.
 	 */
@@ -394,7 +394,7 @@ export class Assets {
 	 * disc: the scene's directional light gives the sun's own light. The GPU draws the sky into the
 	 * map and filters it for each roughness, and the CPU works out its diffuse light. It resolves
 	 * once the code and the shaders that make the map are ready, and the next frame makes the whole
-	 * map before it draws. The first call loads the code that makes environments, about 9 KB after
+	 * map before it draws. The first call loads the code that makes environments, about 12 KB after
 	 * Brotli. Throws E1406 when that code does not download.
 	 */
 	async skyEnvironment(): Promise<Environment> {
@@ -714,7 +714,6 @@ async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
 	}
 }
 
-/** The HDR file loader, once its import started. A failed import lets the next load try again. */
 /**
  * Imports the built-in environments' module, which also makes the sky's environment, on the first
  * call that needs it. Throws E1406 when it does not download.
@@ -730,6 +729,7 @@ async function builtinEnvironments(call: string): Promise<typeof import('./built
 	}
 }
 
+/** The HDR file loader, once its import started. A failed import lets the next load try again. */
 let panoramaImport: Promise<typeof import('./panorama')> | undefined;
 
 function panoramaLoader(): Promise<typeof import('./panorama')> {
