@@ -1502,12 +1502,12 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			new Inputs().setF(0, [0, 0, 0]).setF(1, [0, 0, 0]),
 			new Inputs().setF(0, [0.5, 0.2, 0]).setF(1, [0, 0.3, 0.1]),
 			...samples((r) =>
-				new Inputs().setF(0, values(r, 3, -0.2, 0.2)).setF(1, values(r, 3, -0.2, 0.2)),
+				new Inputs().setF(0, values(r, 3, -0.1, 0.1)).setF(1, values(r, 3, -0.1, 0.1)),
 			)(random),
 		],
 		expected: (i) => {
 			const [du, dv] = [xyz(i.f(0)), xyz(i.f(1))];
-			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.04));
+			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.01));
 		},
 	},
 ];
