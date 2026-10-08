@@ -897,8 +897,11 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
-/** The effects that the effect cost page measures: bloom, ambient occlusion, or 4 custom effects. */
-export type CostedEffect = 'bloom' | 'ao' | 'effects';
+/**
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
+ * custom effects.
+ */
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -911,8 +914,9 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
- * one effect's pass. D-21 records the results of the bloom plan and the ao plan, and D-71 those of
- * the effects plan.
+ * one effect's pass. The dof plan times depth of field at the gather's taps of the device's preset.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
+ * D-119 those of the dof plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
@@ -1442,6 +1446,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	dof: () => effectPlan('dof'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,

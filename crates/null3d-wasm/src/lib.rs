@@ -47,6 +47,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::dof::{self, Dof};
 use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
@@ -215,12 +216,14 @@ struct Engine {
 /// threshold and soft edge, a table at its full intensity over colors from 0 to 1, the vignette's
 /// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
-/// bloom's mixing blend and its levels' default shares, then the vignette's falloff and roundness.
+/// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
+/// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
+/// 2% of the image's height and round aperture, with no focus point.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -2648,6 +2651,46 @@ pub fn set_bloom(on: bool) -> u32 {
             weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Turns depth of field on with its focus, aperture, focal length, largest blur, blades and focus
+/// point from the post-processing values, or off, from the next frame on. The TypeScript API checks
+/// the values.
+#[wasm_bindgen(js_name = setDof)]
+pub fn set_dof(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let dof = on.then(|| Dof {
+            focus_distance: value(place::DOF_FOCUS_DISTANCE),
+            focus_point: (value(place::DOF_FOCUS_ON_POINT) > 0.0)
+                .then(|| e.post_values3(place::DOF_FOCUS_POINT).map(f64::from)),
+            aperture: value(place::DOF_APERTURE),
+            focal_length: value(place::DOF_FOCAL_LENGTH),
+            max_blur: value(place::DOF_MAX_BLUR),
+            blades: value(place::DOF_BLADES) as u32,
+        });
+        e.renderer.settings_mut().set_dof(dof);
+        0
+    })
+}
+
+/// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
+/// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
+/// count up, at most 71.
+#[wasm_bindgen(js_name = setDofTaps)]
+pub fn set_dof_taps(taps: u32) -> u32 {
+    with_engine(|e| {
+        let taps = match taps {
+            0 => 0,
+            _ => dof::TAP_COUNTS
+                .into_iter()
+                .find(|&count| count >= taps)
+                .unwrap_or(dof::TAP_COUNTS[dof::TAP_COUNTS.len() - 1]),
+        };
+        e.renderer.settings_mut().set_dof_taps(taps);
         0
     })
 }

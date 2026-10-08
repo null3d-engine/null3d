@@ -102,6 +102,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
@@ -136,6 +137,7 @@ mod ids {
     use super::data::RING;
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
@@ -165,8 +167,10 @@ mod ids {
     pub const BACKGROUND: u32 = AO + 1;
     /// The uniform buffer of the custom effects' blocks.
     pub const EFFECTS: u32 = BACKGROUND + 1;
+    /// The uniform buffer of depth of field's steps.
+    pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EFFECTS + 1;
+    pub const PAGES: u32 = DOF + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -221,8 +225,10 @@ mod ids {
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The linear sampler of the custom effects.
     pub const EFFECT_SAMPLER: u32 = 5;
+    /// The linear sampler of depth of field's steps.
+    pub const DOF_SAMPLER: u32 = 6;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 6;
+    pub const SAMPLERS: u32 = 7;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -252,8 +258,10 @@ mod ids {
     /// The bind group of each custom effect, and of each group of joined effects, after the
     /// background's.
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
-    /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
+    /// The bind group of each step of depth of field, after the effects'.
+    pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
+    /// The bind groups of materials' maps, after depth of field's.
+    pub const TEXTURE_GROUPS: u32 = DOF_GROUPS + DOF_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -440,6 +448,11 @@ impl CpuCulledRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
+                        dof: DofIds {
+                            buffer: ids::DOF,
+                            sampler: ids::DOF_SAMPLER,
+                            first_group: ids::DOF_GROUPS,
                         },
                         view_copy: None,
                     },
@@ -1028,6 +1041,10 @@ impl CpuCulledRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_dof(
+            self.settings
+                .dof_frame(input.scene, input.parity(), input.canvas),
+        );
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),

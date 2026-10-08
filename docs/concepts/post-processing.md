@@ -3,21 +3,22 @@ id: concepts/post-processing
 title: The post-processing chain
 status: experimental
 since: "0.2"
-summary: "HDR scene color, ambient occlusion at half size, custom effects, bloom through a chain of mip levels, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
+summary: "HDR scene color, ambient occlusion at half size, custom effects, depth of field with near and far fields, bloom through a chain of mip levels, an outline mask, and one final pass for the vignette, tone mapping, FXAA, outlines, color grading and dithering."
 ---
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
     scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>joined into few passes"]
-    custom --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
+    custom --> dof["Depth of field:<br/>three steps at half size,<br/>then a composite"]
+    dof --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
-    custom --> final["Final pass: blends in bloom,<br/>then the vignette,<br/>FXAA and tone mapping"]
+    dof --> final["Final pass: blends in bloom,<br/>then the vignette,<br/>FXAA and tone mapping"]
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
     final --> line["In the same pass:<br/>the outline's line"]
@@ -25,7 +26,7 @@ flowchart LR
     grade --> canvas["Canvas"]
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the sketch's custom effects and bloom, read it before the final pass. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -92,6 +93,48 @@ With the default weights, bloom draws 15 small passes: 8 steps down and 7 steps 
 - Phone GPUs pay a fixed cost for each pass, so a smaller base, with fewer levels, saves the most there. Each halving of the base removes two passes.
 - The targets exist only while bloom is on.
 
+## Depth of field
+
+Depth of field blurs what lies in front of and behind the focus distance, as a camera lens does. Each pixel's blur is the circle of confusion of a thin lens, from the pixel's depth, the focal length, the aperture and the focus distance. The near field, what lies in front of the focus, and the far field, what lies behind it, blur apart:
+
+1. The setup step reads four pixels of the scene's color and depth for each texel of a target at half the render size. It finds each pixel's blur, and writes their color with the smallest blur. In-focus color counts less in the average, so sharp detail does not bleed into the blur.
+2. The gather reads a spiral of taps over a disk around each texel, or over a polygon when the aperture has blades. A tap adds to the far field only where both its own blur and the texel's reach it. It adds to the near field wherever its own blur reaches the texel.
+3. A small tent filter smooths the gather.
+4. The composite mixes the blur into each pixel of the scene's color at the render size. The pixel's own blur, read from the full-size depth, decides how much, and so does how much of it the near field covers.
+
+```ts
+camera.setFocalLength(85);
+post.set({ dof: { aperture: 1.8, focusPoint: [0, 1, 0] } });
+```
+
+[The post-processing API](../api/post.md#depth-of-field) lists the settings, and [Cameras](../api/cameras.md#focal-length) the focal length.
+
+- A sharp object in front of a blurred background keeps its edges, and its color never spreads into the background as a halo. A blurred object in front spreads over a sharp one behind it, as a lens shows it.
+- With MSAA, the composite reads each pixel's nearest depth sample. An edge pixel's color is mostly the object in front, so where that object is sharp, its smoothed edge stays.
+- Out-of-focus highlights draw as disks, or as polygons with `blades`. A round aperture turns its taps by a different angle at each texel. A small highlight then fills its disk with a fine grain, which more taps smooth.
+- It runs after the custom effects and before bloom. Bloom then glows from the blurred image, and the final pass tone maps it. The outline's line stays sharp, as it draws in the final pass.
+- Custom effects that would fold into the final pass draw in passes of their own while it is on, as while bloom is on.
+
+### Where depth of field draws
+
+The quality setting `dofSamples` sets the taps of the gather: 22 on Medium, 43 on High and 71 on Ultra. On Low, which phones run, it is 0, so depth of field draws nothing there even when the sketch turns it on. A sketch that wants it on every device sets the taps too:
+
+```ts
+quality.set({ dofSamples: 16 });
+post.set({ dof: { aperture: 2 } });
+```
+
+WebGL2 and WebGPU's compatibility mode run Medium at most, so they draw 22 taps. More taps cost more and fill a wide blur more smoothly. A new tap count changes only the gather's settings, so it makes no GPU object.
+
+### Cost
+
+Depth of field adds three passes at half the render size and one at the render size. The engine's effect cost test timed its scene on a MacBook Pro in Chrome, at 1920 x 1080. With WebGL2, depth of field added about 0.6 ms of GPU time per frame at 22 taps, and 0.9 ms at 43. With WebGPU and MSAA it added 0.7 to 0.9 ms at 22 taps, and about 1.1 to 1.3 ms at 43.
+
+- The gather reaches only as far as the frame's largest blur. A lens closed down to an aperture of 16 reads a smaller disk than one wide open.
+- The scene's render pass keeps its depth for the setup and the composite, where it could be thrown away before.
+- Its half-size targets take 8 bytes per texel. The setup's and the tent's share one texture, so the three take about 4 bytes per pixel of the canvas. The composite's target takes 8 bytes per pixel. They exist only while it draws.
+- While it is off, it costs nothing: none of its passes run, and its shaders do not download until the first `post.set({ dof })`.
+
 ## Custom effects and tone curves
 
 A sketch adds effects of its own with `post.addEffect`. Each is a WGSL function that the engine calls for each pixel, in a full-screen pass of its own. [Custom passes](../guides/custom-passes.md) shows how to write one.
@@ -106,7 +149,7 @@ fn effect(input: EffectInput) -> vec4f {
 post.addEffect({ wgsl: warm });
 ```
 
-- Effects run after the scene passes and before bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
+- Effects run after the scene passes and before depth of field and bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
@@ -219,6 +262,8 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - three.js's glow spans a number of pixels, and null3D's a share of the screen. So a mapping matches at one canvas size, 1080 pixels on the shorter side by default. On a larger screen null3D's glow looks wider than three.js's.
 - A strong bloom spreads a little wider at the edges of the frame than three.js's. three.js's faint haze fades toward the corners, and null3D's keeps its light there. To soften it, lower `strength` or `radius` before you map the settings, or lower `intensity`.
 - pmndrs's `BloomEffect` maps the same way, with `blend: 'screen'`: its `intensity` stays, `luminanceThreshold` becomes `threshold`, and `luminanceSmoothing` becomes `knee`. three.js's `bloom()` node maps as `UnrealBloomPass` does, at a third of the intensity.
+- `new BokehPass(scene, camera, { focus, aperture, maxblur })` becomes `post.set({ dof: { focusDistance: focus, maxBlur } })`, with the lens's `aperture` as an f-number. `BokehPass`'s aperture scales its blur with the distance from the focus. null3D's lens blurs as a camera does, so set `camera.setFocalLength` and pick an f-number by eye, such as 2.8.
+- The `maxblur` of `BokehPass` is a share of the canvas's width, and `maxBlur` is a share of its height. Multiply it by the aspect ratio. In one pass, `BokehPass` blurs each pixel by its own depth, so a sharp object spreads a halo into a blurred background. null3D's near and far fields spread no halo.
 - `new GTAOPass(scene, camera, width, height)` becomes `post.set({ ao: {} })`. Its `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` settings keep their names, with `distanceFalloff` spelled so, and `blendIntensity` becomes `intensity`. Set `quality.set({ aoScale: 0.5 })` too where phones and tablets should draw it.
 - `SSAOPass`, `SAOPass` and the N8AO library also become `post.set({ ao })`. Their settings have other meanings, so start from the defaults and tune `radius` and `scale` by eye.
 - `new OutlinePass(resolution, scene, camera, selectedObjects)` becomes `post.set({ outline: { color, hiddenColor, width } })`, from `visibleEdgeColor` and `hiddenEdgeColor`. `OutlinePass` draws its edge at half size, so a `width` of twice its `edgeThickness` gives about the same line. three.js draws a dark brown line around hidden parts by default, and null3D draws none until `hiddenColor` is set. Each selected mesh calls `setOutlined(true)`. A selected model's copy from `scene.instantiate` calls it once for all of its meshes.
@@ -235,4 +280,4 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - [Objects and transforms](../api/objects.md#mesh-calls): `setOutlined`.
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
-- [Quality presets](quality-presets.md): `bloomSize`, `aoScale`, the depth prepass and the frame-budget governor.
+- [Quality presets](quality-presets.md): `bloomSize`, `aoScale`, `dofSamples`, the depth prepass and the frame-budget governor.

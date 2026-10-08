@@ -500,6 +500,17 @@
       "detect": "\\bPerspectiveCamera\\b"
     },
     {
+      "id": "focal-length",
+      "category": "Cameras",
+      "three": "PerspectiveCamera.setFocalLength / getFocalLength / filmGauge",
+      "status": "changed",
+      "since": "0.2",
+      "target": "camera.setFocalLength(mm) and camera.focalLength",
+      "notes": "null3D's sensor is a full-frame camera's, 24 mm tall, along the canvas's height, so a focal length gives the same field of view on every canvas shape. three.js measures its filmGauge, 35 mm by default, along the longer side. The two agree on a square canvas with filmGauge 24. Depth of field takes the camera's focal length unless its settings give one.",
+      "docs": "api/cameras",
+      "detect": "\\b(set|get)FocalLength\\b|\\bfilmGauge\\b"
+    },
+    {
       "id": "ortho-camera",
       "category": "Cameras",
       "three": "OrthographicCamera(left, right, top, bottom, near, far)",
@@ -1536,13 +1547,13 @@
     {
       "id": "dof",
       "category": "Post-processing",
-      "three": "BokehPass / DepthOfFieldEffect",
-      "status": "post-1.0",
-      "since": null,
-      "target": "Skip it, or write a custom effect with post.addEffect that reads effectDepth",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
-      "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b"
+      "three": "BokehPass / DepthOfFieldEffect / dof() node",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ dof: { focusDistance, focusPoint, aperture, focalLength, maxBlur, blades } }), with camera.setFocalLength(mm)",
+      "notes": "The same intent with a camera's lens: the blur grows with the distance from the focus, and the near and far fields blur apart, so a sharp object spreads no halo into a blurred background. BokehPass's focus becomes focusDistance. Its aperture scales the blur with the distance from the focus, and null3D's aperture is an f-number, so pick one by eye, such as 2.8, with the camera's focal length (camera.setFocalLength). maxblur is a share of the canvas's width, and maxBlur of its height, so multiply by the aspect ratio. pmndrs DepthOfFieldEffect: worldFocusDistance becomes focusDistance, a target to focus on becomes focusPoint, and bokehScale becomes maxBlur with the aperture, tuned by eye. It draws where the quality setting dofSamples is above 0: Medium and up, or quality.set({ dofSamples: 16 }) on Low.",
+      "docs": "concepts/post-processing",
+      "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
     },
     {
       "id": "shader-pass",

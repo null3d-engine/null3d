@@ -158,6 +158,7 @@ Effects:
 | Color grading made in code, with no file | `post.set({ lut: await assets.lutFromData({ size, data }) })` (0.2): three numbers per texel, red fastest, as a `.cube` file | `api/assets` |
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
+| Depth of field, a camera's lens | `camera.setFocalLength(mm)` and `post.set({ dof: { aperture, focusDistance or focusPoint } })` (0.2); quality setting `dofSamples`, 0 on Low | `api/post`, `api/cameras`, `concepts/post-processing` |
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |
 | Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |

@@ -21,7 +21,9 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
-// allocation sample of post.setEffectUniform and the effects' passes.
+// allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
+// of field on, focused on a point that sweeps through the swarm every frame, for the allocation
+// sample of post.set's focus point and depth of field's steps.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
@@ -62,6 +64,10 @@ export default defineSketch(async (context) => {
 	if (ao) context.quality.set({ aoScale: 0.5 });
 	const bloom = switches.has('bloom');
 	const glow = { bloom: { intensity: 0.15 } };
+	// Depth of field's focus point, changed in place, so a frame's call allocates no array.
+	const focus: [number, number, number] = [0, 0, 0];
+	const lens = { dof: { aperture: 2, focusPoint: focus } };
+	const dof = switches.has('dof');
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -133,6 +139,11 @@ export default defineSketch(async (context) => {
 		if (bloom) {
 			glow.bloom.intensity = 0.15 + 0.05 * Math.sin(t);
 			context.post.set(glow);
+		}
+		if (dof) {
+			focus[0] = 20 * Math.sin(0.7 * t);
+			focus[2] = 20 * Math.cos(0.5 * t);
+			context.post.set(lens);
 		}
 		if (tint && haze) {
 			warm[2] = 0.9 + 0.1 * Math.sin(t);

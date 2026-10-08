@@ -165,6 +165,49 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
+const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
+
+/** The depth of field tests' image size: wide enough for the blur's disks to show. */
+const DOF_SIZE = [480, 270] as const;
+
+/**
+ * Depth of field focused on the post near the camera, so the far field blurs; on the lights far
+ * behind, so the near field blurs; and on the box between them, so both blur; and the scene without
+ * it, on every tier. A six-bladed aperture draws the far lights as hexagons. A focus on a point at the box's distance,
+ * and depth of field turned on during play, draw the both-fields image. At half the render scale
+ * the steps draw into the corners of the same targets. A device with no HDR target draws no depth
+ * of field: the page's switch that turns HDR off stands in for one, and must draw the scene without
+ * it.
+ */
+function dofTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DOF_SKETCH}${query}`,
+		hold: 1,
+		size: DOF_SIZE,
+	});
+	return [
+		test('dof-off', ''),
+		test('dof-far-field', '?dof=near'),
+		test('dof-near-field', '?dof=far'),
+		test('dof-both', '?dof=both'),
+		test('dof-hexagon', '?dof=near&blades=6'),
+		{ ...test('dof-point', '?dof=both&point'), reference: 'dof-both' },
+		{ ...test('dof-later', '?dof=both&later'), reference: 'dof-both' },
+		test('dof-scale-50', '?scale=0.5&dof=both'),
+		{
+			...test('dof-8-bit', '?dof=both'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dof-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the custom effects' tests. */
 const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
 
@@ -908,6 +951,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...dofTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),

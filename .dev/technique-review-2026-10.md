@@ -341,7 +341,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
 | 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | After 1.0 |
 | 25 | Automatic exposure | Godot, Unity, Filament | M | After 1.0 |
-| 26 | Depth of field and motion blur | Most engines | M | Depth of field before 1.0, M2-EX17 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); motion blur after 1.0 |
+| 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur after 1.0 |
 | 27 | Weighted blended transparency | | M | After 1.0, opt-in for particle scenes |
 | 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | After 1.0; god rays as a custom-effect recipe in M3 |
 | 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); screen-space reflections after 1.0 |
