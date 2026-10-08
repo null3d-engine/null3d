@@ -32,6 +32,9 @@
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
+// `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
+// figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
+// the GPU culls, and the memory figures that the sketch thread publishes.
 // It samples the production build
 // of the benchmark pages, as a developer ships the engine, and names
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
@@ -58,6 +61,7 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
+//   bun run bench:allocation --stats --gpu webgl2
 //   bun run bench:allocation --sky --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
@@ -152,6 +156,26 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'unfinished gpu/completion.ts': 16,
 	},
 };
+/**
+ * Places that allocate with `--stats` on top of `BUDGETS`, while the overlay samples: on one frame
+ * in eleven, the GPU timer's readback and the readback of the GPU-culled draws' counts each make one
+ * view of the mapped range and one promise with its reaction on WebGPU. On WebGL2 the timer's query
+ * result is a number object. A frame without that readback
+ * allocates nothing more, so these budgets stay the same whatever the scene holds.
+ */
+const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': {
+		'read webgpu/gpu-timer.ts': 24,
+		'copyOut webgpu/gpu-timer.ts': 16,
+		'afterSubmit webgpu/gpu-timer.ts': 16,
+		'read webgpu/culled-counts.ts': 24,
+		'afterSubmit webgpu/culled-counts.ts': 16,
+		'poll webgl2/gpu-timer.ts': 16,
+		'then (built-in)': 32,
+	},
+};
+
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
@@ -272,7 +296,8 @@ async function main(): Promise<void> {
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
 		const sky = args.includes('--sky') ? '&sky' : '';
 		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}`;
+		const stats = args.includes('--stats');
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${stats ? '&stats' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -351,7 +376,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
@@ -359,13 +384,15 @@ async function main(): Promise<void> {
 		const over: string[] = [];
 		for (const [worker, workerSamples] of samples) {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
+			const statsBudgets = stats ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
-					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0);
+					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
+					(statsBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
