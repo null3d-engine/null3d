@@ -128,7 +128,7 @@ WebGL2 and WebGPU's compatibility mode run Medium at most, so they draw 22 taps.
 
 ### Cost
 
-Depth of field adds three passes at half the render size and one at the render size. The engine's effect cost test timed its scene on a MacBook Pro in Chrome, at 1920 x 1080. With WebGL2, depth of field added about 0.6 ms of GPU time per frame at 22 taps, and 0.9 ms at 43. With WebGPU and MSAA it added 0.7 to 0.9 ms at 22 taps, and about 1.1 to 1.3 ms at 43.
+Depth of field adds three passes at half the render size and one at the render size. The engine's effect cost test timed its scene on a MacBook Pro in Chrome, at 1920 x 1080. With WebGL2, depth of field added about 0.6 ms of GPU time per frame at 22 taps, and 0.9 ms at 43. With WebGPU and MSAA it added about 0.85 ms at 22 taps, and 1.3 ms at 43. Bloom costs about 0.8 ms on the same Mac.
 
 - The gather reaches only as far as the frame's largest blur. A lens closed down to an aperture of 16 reads a smaller disk than one wide open.
 - The scene's render pass keeps its depth for the setup and the composite, where it could be thrown away before.

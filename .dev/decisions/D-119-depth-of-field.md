@@ -2,7 +2,7 @@
 
 Status: proposed, 2026-10-09. Date: 2026-10-09. Task: M2-EX17.
 
-Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and turns it off on Low until a phone measures it. It costs about 0.6 to 0.9 ms of GPU time per frame at 1920 x 1080 on the Mac, and nothing while it is off.
+Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and turns it off on Low until a phone measures it. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
 
 ## Question
 
@@ -78,14 +78,16 @@ The blur of a point at distance `d` is the thin lens's circle of confusion, as a
 
 GPU time per frame that depth of field adds, from the effect cost page (`tests/pages/effect-cost.html?effect=dof&taps=<n>`) at 1920 x 1080 and a render scale of 1, in Chrome on the Mac (Apple M-series), WebGPU with MSAA and WebGL2. Each figure is the difference of the medians of three rounds of 2 seconds off and on. WebGPU's timer counts in steps of about 0.07 ms.
 
-| Taps | WebGPU | WebGL2 |
+| Taps | WebGPU, median (lowest to highest) | WebGL2, median (lowest to highest) |
 | --- | --- | --- |
-| 16 | n/a | 0.52 ms |
-| 22 (Medium) | 0.72 to 0.85 ms | 0.64 ms |
-| 43 (High) | 1.05 to 1.31 ms | 0.94 ms |
-| 71 (Ultra) | n/a | 1.25 ms |
+| 16 | 0.72 ms (0.66 to 0.79) | 0.52 ms (below 0 to 1.32) |
+| 22 (Medium) | 0.85 ms (0.26 to 1.18) | 0.64 ms (0.37 to 0.84) |
+| 43 (High) | 1.31 ms (0.85 to 1.64) | 0.94 ms (0.68 to 1.12) |
+| 71 (Ultra) | 1.84 ms (1.64 to 2.03) | 1.25 ms (0.76 to 1.37) |
 
-How the data was produced: a local Playwright run of the cost page, one page at a time, through `heavy.sh`, on 9 October 2026, at a load of 3 to 4 for the first runs. The WebGPU figures come from runs with the setup reading one depth sample. Bloom costs 0.79 to 0.85 ms on the same Mac at the same size ([D-21](D-21-effect-chain.md)).
+How the data was produced: a local Playwright run of the cost page, one page at a time, through `heavy.sh`, on 9 October 2026. Each figure is the median of three such runs at loads of 3 to 6, two or three with the final shaders. The runs spread widely: the frames without depth of field alone moved between 0.33 and 1.6 ms from run to run, as the GPU's clock changes under a light load. The medians are the figures to use. Bloom costs 0.79 to 0.85 ms on the same Mac at the same size ([D-21](D-21-effect-chain.md)).
+
+With MSAA, a setup that read every depth sample cost about 0.5 ms more per frame at 22 taps (1.25 to 1.31 ms against 0.72 ms). So the setup reads the first sample, and only the composite reads each pixel's nearest sample.
 
 While depth of field is off it costs nothing: the frame graph declares none of its passes or targets, the frame asks for none of its pipelines, and the page loads none of its shaders. A unit test of the frame graph checks the passes, the targets, the pipelines and the upload room, and a unit test of `post.set` checks that `dof: false` loads no shader file.
 
@@ -124,5 +126,5 @@ A change of the taps above 0 changes only the gather's block, so it makes no GPU
 - **Code:** `crates/null3d-render/src/dof.rs` and `crates/null3d-shaders/wgsl/dof.wgsl`; the frame graph's four steps; bind layouts 27 and 28 and pipeline templates 41 to 46 in `null3d_gpu::drawlist`; the post values from 41 on; `setDof` and `setDofTaps` in the core's glue; `PerspectiveCamera.setFocalLength` and `focalLength`. Bloom's step blocks and depth of field's share one map of a target's corner onto its source's.
 - **Docs and skills:** `api/post`, `concepts/post-processing`, `api/cameras`, the quality preset tables, the three.js mapping's `dof` entry, the porting skill's post-processing reference and the develop skill's quick reference.
 - **Tests:** the image tests above, the frame graph's and the lens's unit tests, `post.set`'s unit tests, the camera's focal length against three.js, and the `--dof` switch of the allocation check.
-- **Devices:** the device runner's `dof` plan times depth of field on each GPU path at render scales of 1 and 0.5, at the device's preset. The S24+ and the iPad run it before the owner rules on Low.
+- **Devices:** the device runner's `dof` plan times depth of field on each GPU path at render scales of 1 and 0.5, at 16 and 22 taps. The S24+ and the iPad run it before the owner rules on Low.
 - **Later:** a step of the frame-budget governor for depth of field, and tile-based dilation of the near field's blur, which would let a near object's blur reach past the gather's radius.
