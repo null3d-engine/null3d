@@ -1,6 +1,6 @@
 # D-100: The culling shader counts each workgroup's survivors before it adds to the indirect draws
 
-Status: proposed. Date: 8 October 2026. Task: M2-I5. The runs of prototype G2 on the Mac, the Galaxy S25, the Pixel 9 and a cloud iPad are in, of the first form. The first form failed on the iPad's Safari 27.0, so the claim changed ("Safari 27.0 and the slot claim"). The Mac's run of the new form is in. Its runs on phones and iPads are pending.
+Status: proposed. Date: 8 October 2026. Task: M2-I5. The runs of prototype G2 on the Mac, the Galaxy S25, the Pixel 9 and a cloud iPad are in, of the first form. The first form failed on the iPad's Safari 27.0, so the claim changed ("Safari 27.0 and the slot claim"). The Mac's run of the new form is in: 75% and 72% faster. The cloud iPad's is in too: 8% and 35% slower, so the form fails G2's rule there. Runs with fewer turns are under way.
 
 Summary: Each workgroup of the culling shader counts its visible instances per bucket in workgroup memory. One thread per bucket then adds the workgroup's count to each of the bucket's indirect draws. Before, every visible instance added 1 to the same word, one thread after another. On the Mac the culling pass of 240,000 boxes went from 0.62 ms to 0.14 ms in S1, and from 0.37 ms to 0.10 ms in S1-static. On the Galaxy S25 it went from 2.23 ms to 1.05 ms in S1. The new form, which Safari 27.0 compiles, cut the Mac's culling pass by 75% and 72% against main. The phones' and tablets' figures of the new form are pending.
 
@@ -92,7 +92,21 @@ The Mac's figures for this form, against main ebd64cc21, in Chrome 155 at 120 Hz
 - The comparison judged the CPU figures of both pages the same. One run of main in S1 was dropped, as it measured 124 Hz.
 - The run's record is `bench/results/20261007-221015-compare.json`, made with `bun run bench:run --compare ../m2-i5-main,. --runs 10 --seconds 5 --scenes s1,s1-static --pages null3d-webgpu --switches n=240000` on 8 October 2026, 06:10 to 06:18.
 - On 8 October 2026 at 07:22, the cloud iPad (10th generation, Safari 27.0) passed all 4 pages of one bench run of this form, `20261007-231718-bench`, both scenes' bench and image pages. The compare-exchange form had failed every page on the same device. So Safari 27.0 compiles the claim in turns.
-- The Galaxy S25's figures in Data come from the compare-exchange form. The runs on phones and iPads of this form are pending.
+- The Galaxy S25's figures in Data come from the compare-exchange form. The runs on phones of this form are pending.
+
+The cloud iPad's figures for this form, against main ebd64cc21, in Safari 27.0 at 60 Hz, 4 runs of 3 in the order main, branch, branch, main. All 4 runs passed 8 of 8 pages.
+
+| Measure | Main | Workgroup counts, claimed in 3 turns | Change |
+| --- | --- | --- | --- |
+| Culling pass, S1 | 1.29 ms | 1.39 ms | +8% |
+| Culling pass, S1-static | 0.93 ms | 1.25 ms | +35% |
+| Whole frame's GPU time, S1 | 25.1 ms | 26.7 ms | +7% |
+| Whole frame's GPU time, S1-static | 8.14 ms | 8.41 ms | +3% |
+
+- The branch's culling pass was slower in all 12 pairs of runs. Main's slowest run took 1.365 ms in S1 and 0.965 ms in S1-static, and the branch's fastest 1.361 ms and 1.206 ms.
+- So the change fails G2's rule on the iPad: it is slower on one device. The iPad's A14 GPU takes 240,000 atomic adds on one word in S1-static in under 1 ms, so one add per thread costs little there, and the table's clears, barriers and claim cost more than they save. The Mac's M5 Max took 0.22 ms for the same pass on main, and the workgroup counts cut it to 0.06 ms.
+- The runs are `20261007-232334-bench`, `20261007-233141-bench`, `20261007-234117-bench` and `20261007-235016-bench`, made on 8 October 2026 from 07:23 to 08:00 with the command in Data and `--cloud bsipad10-safari`.
+
 
 The engine's shader build now fails on `atomicCompareExchangeWeak` in any of the engine's own shaders, with the reason and the forms that compile (`crates/null3d-shaders/src/features.rs`). A test in the shader crate checks it. Users' shaders, which the Vite plugin compiles, build with a warning that names Safari 27.0 and WebKit's fix, 321006@main, and the Vite plugin prints it. Refusing users' shaders would change the public API for one Safari release's fault that WebKit has already fixed, so the coordinator chose the warning on 8 October 2026, until the owner rules. The owner's choice is between the warning, an error, and saying nothing. A test in the shader crate and one in the Vite plugin check the warning, and the WGSL rules page (`docs/shaders/wgsl-rules.md`) states it. The check can go once the oldest Safari that null3D supports has WebKit's fix.
 
