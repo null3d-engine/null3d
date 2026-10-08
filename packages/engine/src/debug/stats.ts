@@ -197,6 +197,12 @@ function mean(sums: Float64Array, index: number): number {
 	return records > 0 ? (sums[index] as number) / records : 0;
 }
 
+/** The mean of a drawn count, triangles or objects, over the records that knew it, or 0. */
+function drawnMean(sums: Float64Array, counter: number): number {
+	const records =
+		(sums[SUM_RECORDS] as number) - (sums[SUM_COUNTERS + Counter.UncountedFigures] as number);
+	return records > 0 ? (sums[SUM_COUNTERS + counter] as number) / records : 0;
+}
 /**
  * Reads frame figures from a metrics buffer. Each `update` takes in the records written since the
  * last one; once the presented frames in them cover a window, it publishes the window's figures to
@@ -276,8 +282,8 @@ export class FrameStatsWindow {
 		values[PRESENTED_FPS] = rate(render);
 		values[COMPLETED_FPS] = rate(this.completion.sums);
 		values[DRAW_CALLS] = mean(render, SUM_COUNTERS + Counter.DrawCalls);
-		values[TRIANGLES] = mean(render, SUM_COUNTERS + Counter.Triangles);
-		values[OBJECTS] = mean(render, SUM_COUNTERS + Counter.DrawnObjects);
+		values[TRIANGLES] = drawnMean(render, Counter.Triangles);
+		values[OBJECTS] = drawnMean(render, Counter.DrawnObjects);
 		values[UPLOAD_BYTES] = mean(render, SUM_COUNTERS + Counter.UploadBytes);
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
 		values[WASM_BYTES] = this.sources.wasmBytes();

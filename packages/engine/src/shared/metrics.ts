@@ -50,6 +50,7 @@ export const COUNTER_NAMES = [
 	'occludedEntries',
 	'triangles',
 	'drawnObjects',
+	'uncountedFigures',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -84,12 +85,18 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
-const RECORD_WORDS = 23;
+const RECORD_WORDS = 24;
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
 const RINGS = 1;
 const MEASURING = 2;
+/**
+ * Int32 word of the readers of the frame figures, the stats overlay and a sketch's frame figures,
+ * which also want what only they show: the counts of the draws that the GPU culls and the memory
+ * figures. A measurement samples without them.
+ */
+const FIGURES = 3;
 /** Float64 index of the epoch time, in ms, at which the first frame was presented. */
 const FIRST_FRAME = 2;
 /** Float64 index of the display's refresh rate in hertz, as the thread that draws measured it. */
@@ -165,19 +172,21 @@ class MetricsViews {
 }
 
 /**
- * Turns the costly figures on or off for one reader: GPU time from timer queries, the counts of
- * the draws that the GPU culls, and the memory figures that the sketch thread publishes. Readers
- * count, so the engine samples while any reader wants it: a measurement, the stats overlay, or a
- * sketch's frame figures.
+ * Turns the costly figures on or off for one reader of the frame figures, the stats overlay or a
+ * sketch's frame figures: GPU time from timer queries, the counts of the draws that the GPU culls,
+ * and the memory figures that the sketch thread publishes. Readers count, so the engine samples
+ * while any reader wants it. A measurement samples GPU time alone.
  */
 export function sampleFrames(buffer: ArrayBufferLike, on: boolean): void {
-	sample(new Int32Array(buffer, 0, HEADER_WORDS), on);
+	const header = new Int32Array(buffer, 0, HEADER_WORDS);
+	sample(header, MEASURING, on);
+	sample(header, FIGURES, on);
 }
 
-/** Adds a reader that samples to the header's count, or takes one away. */
-function sample(header: Int32Array, on: boolean): void {
-	if (on) Atomics.add(header, MEASURING, 1);
-	else Atomics.sub(header, MEASURING, 1);
+/** Adds a reader to one of the header's counts of readers, or takes one away. */
+function sample(header: Int32Array, word: number, on: boolean): void {
+	if (on) Atomics.add(header, word, 1);
+	else Atomics.sub(header, word, 1);
 }
 
 /**
@@ -214,6 +223,14 @@ export class FrameRecorder {
 	 */
 	get measuring(): boolean {
 		return Atomics.load(this.views.header, MEASURING) !== 0;
+	}
+
+	/**
+	 * True while the stats overlay or a sketch's frame figures read the figures that only they show:
+	 * the counts of the draws that the GPU culls and the memory figures.
+	 */
+	get figures(): boolean {
+		return Atomics.load(this.views.header, FIGURES) !== 0;
 	}
 
 	/** Starts the record of a frame, with every time and counter at zero. */
@@ -396,7 +413,7 @@ export class MetricsReader {
 			this.read[ring] = Atomics.load(header, WRITTEN + ring);
 		this.records = Array.from({ length: this.views.rings }, emptyRecords);
 		this.lost = 0;
-		sample(header, true);
+		sample(header, MEASURING, true);
 	}
 
 	drain(): void {
@@ -431,7 +448,7 @@ export class MetricsReader {
 	/** Drains the last records and turns costly timing off again. */
 	end(): void {
 		this.drain();
-		sample(this.views.header, false);
+		sample(this.views.header, MEASURING, false);
 	}
 }
 

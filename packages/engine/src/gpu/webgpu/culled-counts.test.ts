@@ -89,7 +89,9 @@ describe('CulledCounts', () => {
 		// Each buffer of draws copies once, from its first noted draw to the end of its last.
 		expect(log).toEqual(['copy views 0 to 0, 60 bytes', 'copy lines 20 to 60, 20 bytes']);
 		expect(counts.triangles).toBe(0);
+		expect(counts.known).toBe(false);
 		await mapped();
+		expect(counts.known).toBe(true);
 		// 12 triangles 5 times and 2 triangles twice; the lines add instances and no triangles.
 		expect(counts.triangles).toBe(64);
 		expect(counts.instances).toBe(10);
@@ -118,6 +120,7 @@ describe('CulledCounts', () => {
 		frame();
 		expect(counts.triangles).toBe(0);
 		expect(counts.instances).toBe(0);
+		expect(counts.known).toBe(false);
 	});
 
 	it('copies at the submit that follows the draws, and counts 0 for a sampled frame without any', async () => {

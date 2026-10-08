@@ -41,3 +41,9 @@ export const Triangles = 9;
  * the draws that it culled add the counts of the newest frame read back from the GPU.
  */
 export const DrawnObjects = 10;
+/**
+ * 1 when the frame does not know its triangles and objects yet, else 0: where the GPU culls, the
+ * frames that the stats overlay samples before the culled draws' first counts come back. Their
+ * triangles and objects are 0, and the frame figures leave them out of those means.
+ */
+export const UncountedFigures = 11;

@@ -44,6 +44,11 @@ export class CulledCounts {
 	triangles = 0;
 	/** Instances that the culled draws of the newest frame read back drew. */
 	instances = 0;
+	/**
+	 * True once a sampled frame's counts have come back since the page began to sample. Until then
+	 * a frame does not know what the GPU drew.
+	 */
+	known = false;
 	/** True while the page samples, as of the newest frame. */
 	private sampling = false;
 	private readonly slots: Slot[] = [];
@@ -84,11 +89,13 @@ export class CulledCounts {
 		if (this.current) {
 			this.triangles = 0;
 			this.instances = 0;
+			this.known = true;
 		}
 		this.current = undefined;
 		if (!sampling) {
 			this.triangles = 0;
 			this.instances = 0;
+			this.known = false;
 			return;
 		}
 		if (this.frames++ % SAMPLED_EVERY !== 0) return;
@@ -183,6 +190,7 @@ export class CulledCounts {
 		if (!this.sampling) return;
 		this.triangles = sums.triangles;
 		this.instances = sums.instances;
+		this.known = true;
 	}
 
 	destroy(): void {

@@ -191,8 +191,8 @@ export class WebGPUSceneRenderer implements Renderer {
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	/**
-	 * True once a frame has sampled: the reader of the GPU-culled draws' counts then loads, so a
-	 * page that never samples never downloads it.
+	 * True once a frame has had a reader of the frame figures: the reader of the GPU-culled draws'
+	 * counts then loads, so a page that never shows them never downloads it.
 	 */
 	private culledLoading = false;
 	private destroyed = false;
@@ -266,17 +266,20 @@ export class WebGPUSceneRenderer implements Renderer {
 		const start = performance.now();
 		const { backend } = this;
 		backend.timer?.beginFrame(input.frame);
-		const sampling = record.measuring;
-		if (sampling && !this.culledLoading) this.loadCulledCounts();
-		backend.culled?.beginFrame(sampling);
+		const figures = record.figures;
+		if (figures && !this.culledLoading) this.loadCulledCounts();
+		backend.culled?.beginFrame(figures);
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 		const culled = backend.culled;
-		if (culled) {
+		// Until the culled draws' counts come back, the frame's figures leave its counts out.
+		const uncounted = figures && !culled?.known;
+		if (culled?.known) {
 			backend.counts.triangles += culled.triangles;
 			backend.counts.instances += culled.instances;
 		}
+		record.count(Counter.UncountedFigures, uncounted ? 1 : 0);
 		recordCounts(record, backend);
 	}
 

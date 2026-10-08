@@ -22,8 +22,11 @@ const THREADS: [string, number[]][] = [
 /** Presented time per frame: the window ends with its 30th frame. */
 const PRESENTED_MS = STATS_WINDOW_MS / 30 + 0.001;
 
-/** Writes one frame's records to every ring, with fractions as real frames have. */
-function writeFrame(recorders: FrameRecorder[], frame: number, scale = 1): void {
+/**
+ * Writes one frame's records to every ring, with fractions as real frames have. Without `counted`,
+ * the frame does not know its triangles and objects.
+ */
+function writeFrame(recorders: FrameRecorder[], frame: number, scale = 1, counted = true): void {
 	const [sketch, render, completion, job0, job1] = recorders as [
 		FrameRecorder,
 		FrameRecorder,
@@ -39,8 +42,9 @@ function writeFrame(recorders: FrameRecorder[], frame: number, scale = 1): void 
 	render.addPhase(Phase.Replay, 0.75);
 	render.count(Counter.DrawCalls, 12);
 	render.count(Counter.UploadBytes, 3072);
-	render.count(Counter.Triangles, 1536);
-	render.count(Counter.DrawnObjects, 40);
+	render.count(Counter.Triangles, counted ? 1536 : 0);
+	render.count(Counter.DrawnObjects, counted ? 40 : 0);
+	render.count(Counter.UncountedFigures, counted ? 0 : 1);
 	render.interval(PRESENTED_MS);
 	render.commit(1);
 	completion.begin(frame);
@@ -303,6 +307,18 @@ describe('statsText', () => {
 			'page memory measuring',
 			'main thread 5 s  long tasks 0  input delay n/a',
 		]);
+	});
+});
+
+describe('FrameStatsWindow counts', () => {
+	it('leaves out of the triangles and objects the frames that do not know them', () => {
+		const { recorders, window } = setUp();
+		// The first frames sample before the GPU-culled draws' counts come back.
+		for (let frame = 1; frame <= 30; frame++) writeFrame(recorders, frame, 1, frame > 5);
+		window.update();
+		expect(window.stats.triangles).toBe(1536);
+		expect(window.stats.objects).toBe(40);
+		expect(window.stats.drawCalls).toBe(12);
 	});
 });
 

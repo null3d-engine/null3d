@@ -115,7 +115,10 @@ export interface SketchCore {
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
-/** While the page samples, the frames whose number has none of these bits publish the memory figures. */
+/**
+ * While a reader shows the frame figures, the frames whose number has none of these bits publish
+ * the memory figures.
+ */
 const MEMORY_EVERY_MASK = 7;
 
 /**
@@ -1008,7 +1011,7 @@ export class SketchRunner {
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
 		// The memory figures change slowly, so a few times a window is enough.
-		if ((frame & MEMORY_EVERY_MASK) === 0 && this.record.measuring) this.publishMemory();
+		if ((frame & MEMORY_EVERY_MASK) === 0 && this.record.figures) this.publishMemory();
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;
