@@ -4,9 +4,10 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?occlusion=on or off for occlusion culling, ?skinning=vertex for skinning in the vertex shader of
-// each pass on WebGPU, ?instances=index for vertex shaders that read instance data by index on core
-// WebGPU, ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
+// ?occlusion=on or off for occlusion culling, ?skinning= for how WebGPU skins (vertex for the
+// vertex shader of each pass, or full, skip or narrow for the skinning pass with fewer of its
+// savings), ?instances=index for vertex shaders that read instance data by index on core WebGPU,
+// ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
 // ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
 // in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
 // each frame's list, for a test of memory that the sketch thread frees while the list may still
@@ -61,6 +62,15 @@ const SCENE_FORMATS: readonly SceneFormat[] = ['rg11b10', 'rgba16f'];
 
 /** The bits per texel of the shadow cascades' depth. */
 export type ShadowDepthBits = 16 | 32;
+
+/**
+ * How WebGPU skins, which ?skinning= picks to measure the ways against each other: `lean`, the
+ * default, skins in the skinning pass, which skips characters whose pose held still and writes
+ * normals and tangents in 8 bits. `full` skins every drawn character every frame with 32-bit
+ * directions, `skip` only skips held poses, and `narrow` only writes 8-bit directions. `vertex`
+ * skins in the vertex shader of each pass that draws a character, as WebGL2 does.
+ */
+export type SkinningSwitch = 'lean' | 'vertex' | 'full' | 'skip' | 'narrow';
 
 /** A family of compressed texture formats that KTX2 files can become. */
 export type CompressionFamily = 'astc' | 'bc' | 'etc2';
@@ -155,12 +165,8 @@ export interface Switches {
 	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
-	/**
-	 * True when ?skinning=vertex makes WebGPU skin skinned meshes in the vertex shader of each pass
-	 * that draws them, as WebGL2 does, instead of once per frame in a compute pass, to measure the
-	 * two against each other.
-	 */
-	vertexSkinning: boolean;
+	/** How ?skinning= makes WebGPU skin, `lean` without the switch. */
+	skinning: SkinningSwitch;
 	/**
 	 * True when ?instances=index makes the vertex shaders on core WebGPU read each culled instance
 	 * by index from storage buffers, instead of a copy of its matrix that the culling shader
@@ -297,7 +303,8 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
-		vertexSkinning: params.get('skinning') === 'vertex',
+		skinning:
+			oneOf(params.get('skinning'), ['vertex', 'full', 'skip', 'narrow'] as const) ?? 'lean',
 		indexInstances: params.get('instances') === 'index',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',

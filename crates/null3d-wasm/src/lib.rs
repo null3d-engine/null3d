@@ -65,7 +65,7 @@ use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
-use null3d_render::skinning;
+use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -424,13 +424,14 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
 /// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
 /// every object, with no grid cells skipped first. With `depth_prepass`, each camera view draws its
-/// opaque objects' depth before it shades them. With `vertex_skinning`, WebGPU skins in
-/// the vertex shader of each pass, not in a compute pass. With `index_instances`, WebGPU's vertex
-/// shaders read each culled instance by index from storage buffers, not from a copy that the
-/// culling shader writes, for the test of decision record D-23. With `large_world`, each object's
-/// position holds whole cells besides its 32-bit part, so positions keep their precision at any
-/// distance. With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth
-/// pyramid. The shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
+/// opaque objects' depth before it shades them. `skinning` is the code of WebGPU's skinning mode
+/// (`constants::SKINNING`): the skinning pass with or without its savings, or the vertex shader of
+/// each pass; an unknown code takes the default. With `index_instances`, WebGPU's vertex shaders
+/// read each culled instance by index from storage buffers, not from a copy that the culling
+/// shader writes, for the test of decision record D-23. With `large_world`, each object's position
+/// holds whole cells besides its 32-bit part, so positions keep their precision at any distance.
+/// With `gpu_occlusion`, WebGPU culls each camera view in two phases against a depth pyramid. The
+/// shadow cascades store depth in `shadow_depth_bits`: 32 for floats, else 16.
 /// The scene starts with room for `expected_objects` objects, or for `START_OBJECTS` with 0, and
 /// grows when it needs more (`ensure_room`, `grow_ahead`). Every other capacity is fixed from here
 /// on.
@@ -450,7 +451,7 @@ pub fn init_engine(
     transparent: bool,
     cell_culling: bool,
     depth_prepass: bool,
-    vertex_skinning: bool,
+    skinning: u32,
     index_instances: bool,
     large_world: bool,
     gpu_occlusion: bool,
@@ -518,7 +519,7 @@ pub fn init_engine(
                 ),
                 cell_culling,
                 depth_prepass,
-                vertex_skinning,
+                skinning: SkinningMode::from_code(skinning).unwrap_or_default(),
                 index_instances,
                 gpu_occlusion,
                 cascade_depth,

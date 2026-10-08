@@ -1097,6 +1097,24 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with tangents and a normal map of grooves, which light alike only when every
+	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
+	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
+	...(['', '-full'] as const).map(
+		(way): ImageTest => ({
+			name: `skinning-normal-map${way}`,
+			sketch: 'tests/pages/sketches/skinning-sketch.ts?normalmap',
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			...(way
+				? {
+						tiers: ['webgpu', 'compat'],
+						switches: ['skinning=full'],
+						reference: 'skinning-normal-map',
+					}
+				: { sameOnEveryTier: true }),
+		}),
+	),
 	// The same characters from a quantized mesh, whose joints, weights and normals both paths
 	// read in their own types: it draws the image of floats, within the steps of 8-bit normals.
 	{
@@ -1134,6 +1152,20 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 			tiers: ['webgpu', 'compat'],
 			switches: ['skinning=vertex'],
+			reference: variant ? `skinning-${variant}` : 'skinning',
+		}),
+	),
+	// The same scenes from the skinning pass with neither of its savings: normals as 32-bit floats,
+	// and every character skinned in every frame. The default pass writes 8-bit normals, which must
+	// draw the same images.
+	...(['', 'shadows'] as const).map(
+		(variant): ImageTest => ({
+			name: variant ? `skinning-${variant}-full` : 'skinning-full',
+			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
+			hold: SKINNING_HOLD,
+			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+			tiers: ['webgpu', 'compat'],
+			switches: ['skinning=full'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),

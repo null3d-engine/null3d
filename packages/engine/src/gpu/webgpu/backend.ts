@@ -627,6 +627,14 @@ export class WebGPUBackend {
 				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
 	}
 
+	/**
+	 * Makes the skinning pass write normals and tangents as 32-bit floats, as the core's skinned
+	 * vertices hold them in the skinning modes that measure 8-bit ones against floats.
+	 */
+	skinWithFloatDirections(): void {
+		this.pipelines.floatSkinnedDirections = true;
+	}
+
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
 	private computeReady(template: number, permutation: number): boolean {
 		const variants = this.pipelines.computeVariants(template);

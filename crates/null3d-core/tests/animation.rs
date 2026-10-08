@@ -1844,3 +1844,51 @@ fn freed_joint_runs_merge_and_return_to_the_end() {
     let joined = animations.add_instance(two).unwrap();
     assert_eq!(animations.instance_joints(joined), Some((1, 2)));
 }
+
+#[test]
+fn a_pose_step_changes_only_when_the_instances_matrices_do() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(4);
+    let mut animations = Animations::new(&jobs, 2, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let still = animations.add_instance(id).unwrap();
+    let walking = animations.add_instance(id).unwrap();
+    assert_eq!(animations.pose_step(still), animations.pose_step(walking));
+    animations.play(walking, clip, Play::default()).unwrap();
+
+    // The first step poses both: a new instance counts as changed.
+    animations.update(&jobs, 0.1);
+    let (still_step, walking_step) = (animations.pose_step(still), animations.pose_step(walking));
+    let changed = animations.changed_step();
+    assert_eq!(still_step, walking_step);
+    assert_eq!(still_step, Some(changed));
+
+    // The instance at rest holds its step; the one that plays a clip gets the new one.
+    animations.update(&jobs, 0.1);
+    assert_eq!(animations.pose_step(still), still_step);
+    assert_ne!(animations.pose_step(walking), walking_step);
+    assert_eq!(
+        animations.pose_step(walking),
+        Some(animations.changed_step())
+    );
+
+    // With every clip held still, no instance changes and the table's step stays.
+    animations.time_scales_mut()[walking as usize] = 0.0;
+    animations.update(&jobs, 0.1);
+    let held = (animations.pose_step(walking), animations.changed_step());
+    animations.update(&jobs, 0.1);
+    assert_eq!(
+        (animations.pose_step(walking), animations.changed_step()),
+        held
+    );
+
+    // An instance added in a removed one's place, with the same pose, still counts as changed.
+    animations.remove_instance(still).unwrap();
+    let again = animations.add_instance(id).unwrap();
+    animations.update(&jobs, 0.1);
+    assert_ne!(animations.changed_step(), held.1);
+    assert_eq!(animations.pose_step(again), Some(animations.changed_step()));
+    assert_eq!(animations.pose_step(walking), held.0);
+    assert_eq!(animations.pose_step(99), None);
+}

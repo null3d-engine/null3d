@@ -236,7 +236,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
-				vertexSkinning: false,
+				skinning: C.SKINNING_LEAN,
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,
