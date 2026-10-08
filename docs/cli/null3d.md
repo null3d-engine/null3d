@@ -8,7 +8,7 @@ summary: "create, test, bench, shot, assets, docs, port, skills, mcp, doctor."
 
 # The `null3d` command
 
-> Ships in null3D 0.1, with `assets optimize` and `assets env` from 0.2. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Of `assets`, only `optimize` and `env` are built. Coding agents must not use the others. `test` runs image tests, but no behavior tests yet.
+> Ships in null3D 0.1, with `assets` from 0.2. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Coding agents must not use them. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 
@@ -289,7 +289,46 @@ bunx @null3d/cli assets env hdri/venice_sunset_2k.hdr public/env/venice.ktx2 --s
 | `--format <rgb9e5ufloat\|rgba16float>` | The texel format: 4 or 8 bytes per texel | `rgb9e5ufloat` |
 | `--builtin room` | Writes the engine's built-in room instead of reading an image, and takes only the output file | An input file |
 
-It exits with 1 when the input cannot be read. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) says what the file holds. The other asset commands, `convert`, `pack-orm` and `normal-from-bump`, are not built yet.
+It exits with 1 when the input cannot be read. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) says what the file holds.
+
+`assets convert` turns a model of another format into a binary glTF file. It takes OBJ, FBX, STL and PLY files, and a `.gltf` file with its buffers and images. A Draco-compressed file gets meshopt compression instead. OBJ and FBX materials become glTF's metal-rough materials, with their textures in the file. FBX skins, blend shapes and clips come along. Units become meters, and Y points up.
+
+```sh
+bunx @null3d/cli assets convert models/hero.fbx models/hero.glb
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--compression <none\|meshopt>` | `meshopt` stores vertices as integers and compresses the buffers; `none` leaves them as floats | `meshopt` for a Draco or meshopt input, else `none` |
+
+It prints what the file holds. It adds a note for each part it left out, such as a camera or a texture file it did not find. It exits with 1 when the input cannot be read. [The asset pipeline](../guides/assets-pipeline.md#convert-other-formats) says how each format and material converts.
+
+`assets pack-orm` packs occlusion, roughness and metalness maps into one texture, in the red, green and blue channels where glTF reads them. A `.ktx2` output is UASTC with every mip level; a `.png` output keeps the size of the largest map.
+
+```sh
+bunx @null3d/cli assets pack-orm textures/brick_orm.ktx2 --occlusion brick_ao.png --roughness brick_rough.png
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--occlusion <image>` | The occlusion map, read from its red channel | White |
+| `--roughness <image>` | The roughness map | White |
+| `--metalness <image>` | The metalness map | Black |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+`assets normal-from-bump` makes a normal map from a height map, such as a three.js material's bump map.
+
+```sh
+bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--scale <number>` | The strength of the slopes, as three.js's `bumpScale` | 1 |
+| `--clamp` | The map does not tile, so the edge texels take no neighbors from the opposite edge | The map tiles |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+Both exit with 1 when an image cannot be read. [The asset pipeline](../guides/assets-pipeline.md#pack-occlusion-roughness-and-metalness) says what each makes.
 
 ## Where the commands draw
 

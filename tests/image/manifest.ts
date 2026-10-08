@@ -744,6 +744,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
 	},
+	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
+	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
+	// colors. Each must load and draw alike on every tier.
+	{
+		name: 'converted-models',
+		sketch: 'tests/pages/sketches/converted-models-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.5,
+	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
 	// model. Each tier must place every part the same way.

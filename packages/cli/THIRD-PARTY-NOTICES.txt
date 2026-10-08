@@ -1,0 +1,55 @@
+Third-party code in the null3D command-line tool
+
+The @null3d/cli package ships code from the projects below, built to WebAssembly, in its vendor
+folder. Each section names the files that hold the code, its licence, and the notices that the
+licence asks a copy to carry. The npm packages that the tool depends on carry their own licences.
+
+==============================================================================
+Basis Universal: the KTX2 encoder (vendor/basis/basis_encoder.js, basis_encoder.wasm)
+==============================================================================
+
+Basis Universal v2.50, from https://github.com/BinomialLLC/basis_universal, the official
+build, unchanged. Apache License 2.0, in vendor/basis/LICENSE. It holds Zstandard, under the
+BSD licence in vendor/basis/LICENSE-zstd. Its NOTICE file:
+
+NOTICE
+
+Basis Universal™ Supercompressed GPU Texture Compression Library
+
+Copyright © 2016–2026 Binomial LLC. 
+All rights reserved except as granted under the [Apache 2.0 license](https://github.com/BinomialLLC/basis_universal/blob/master/LICENSE).
+"Basis Universal" is a trademark of Binomial LLC.
+
+The documents in the Basis Universal wiki, and the Basis Universal library, example, and tool source code, fall under the Apache 2.0 license, unless otherwise explicitly indicated. 
+
+Redistributions or derivative works must include a readable copy of the attribution notices from this NOTICE file (see Apache License 2.0 §4(d)).
+
+If you modify the Basis Universal source code, specifications, or wiki documents and redistribute the files, you must cause any modified files to carry prominent notices stating that you changed the files (see Apache 2.0 §4(b)).
+
+**This software, documentation and specifications are provided "as is", without warranty of any kind (see Apache 2.0 §§7–8).**
+
+==============================================================================
+ufbx: the FBX and OBJ reader (vendor/ufbx/ufbx.wasm)
+==============================================================================
+
+ufbx v0.23.1, from https://github.com/ufbx/ufbx, built with the null3D asset tool's own code
+(packages/cli/native/fbx.c in the null3D repository) by tools/build-ufbx.ts. The licence, in
+vendor/ufbx/LICENSE, offers MIT or the Unlicense. null3D takes the MIT licence:
+
+ALTERNATIVE A - MIT License
+Copyright (c) 2020 Samuli Raivio
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

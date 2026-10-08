@@ -1242,8 +1242,8 @@
       "three": "FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader",
       "status": "changed",
       "since": "0.2",
-      "target": "Convert to glTF before release (`bunx @null3d/cli assets convert`, or Blender)",
-      "notes": "The engine loads glTF only.",
+      "target": "Convert to glTF before release: `bunx @null3d/cli assets convert model.fbx model.glb` for FBX, OBJ with MTL, STL and PLY; Blender for Collada, 3DM and USDZ",
+      "notes": "The engine loads glTF only. The command keeps FBX skins, blend shapes and clips, turns materials into metal-rough ones, and puts units in meters with Y up. Bump maps become normal maps.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(FBX|OBJ|MTL|Collada|STL|PLY|3DM|USDZ|TDS|VRML|VTK|Rhino3dm)Loader\\b"
     },

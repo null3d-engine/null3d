@@ -3,12 +3,12 @@ id: guides/assets-pipeline
 title: "The asset pipeline (the `assets` command)"
 status: experimental
 since: "0.2"
-summary: "optimize, env, convert; LODs; texture compression; blockers and stored trees; budget reports."
+summary: "optimize, convert, pack-orm, normal-from-bump, env; LODs; texture compression; blockers and stored trees; budget reports."
 ---
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use that part.
 
 ```mermaid
 flowchart LR
@@ -237,6 +237,103 @@ export default defineConfig({
 ```
 
 For TypeScript, add `@null3d/vite-plugin/client` to the `types` of your `tsconfig.json`, so `?optimized` imports have the type `string`.
+
+## Convert other formats
+
+The engine loads glTF files only. The `assets convert` command turns models of other formats into binary glTF (`.glb`) files:
+
+```sh
+bunx @null3d/cli assets convert models/hero.fbx models/hero.glb
+```
+
+```text
+models/hero.fbx to models/hero.glb: 51.5 KB to 11.4 KB, in 0.0 s
+  1 mesh, 34 triangles, 2 materials, 1 texture, 1 skin, 1 clip
+```
+
+| Input | What the output holds |
+| --- | --- |
+| `.gltf` | The file, its buffers and its images, in one `.glb` file, as they are |
+| `.glb` with Draco | The meshes with meshopt compression instead of Draco |
+| `.obj` | The meshes by object and material, with the materials of the MTL files that the file names, and their textures |
+| `.fbx` | Binary and text FBX from version 3000 (FBX 2006 on): meshes, materials, textures, skins, blend shapes as morph targets, and clips |
+| `.stl` | Binary and text STL: one mesh for each solid, with Materialise's face colors |
+| `.ply` | Text and binary PLY, with normals, colors and texture coordinates. A file without faces becomes points |
+
+Then run `assets optimize` on the output, which quantizes the meshes and encodes the textures for the GPU. `convert` changes the format only and keeps the texture images. The same input gives the same bytes on every computer.
+
+FBX and OBJ files read with [ufbx](https://github.com/ufbx/ufbx), the reader that Blender and Godot use, built into the command as WebAssembly. Nothing else needs installing:
+
+- Units become meters, and Y points up, as in glTF. A model made in centimeters, with Z up, keeps its size and stands up.
+- Each clip of the file becomes a glTF clip. Curves that glTF cannot hold, such as Bézier and step keys, get keys at up to 30 a second.
+- Cameras and lights are left out, and the command says so.
+
+FBX and MTL materials become glTF's metal-rough materials:
+
+| Source | glTF |
+| --- | --- |
+| Diffuse color and its texture | Base color. A texture replaces the color, as in the program that made the file |
+| Physically based roughness and metalness, and their textures | Roughness and metalness. Separate roughness, glossiness, metalness and occlusion textures join into one texture, as [`pack-orm`](#pack-occlusion-roughness-and-metalness) packs them |
+| A Phong exponent (FBX Phong, MTL's `Ns`), without physically based values | Roughness of `(2 / (exponent + 2))^(1/4)`, the roughness whose highlight matches the exponent's |
+| Normal map | Normal map |
+| Bump map, and a gray image in a normal map's place | A normal map made from the heights, as [`normal-from-bump`](#normal-maps-from-bump-maps) makes one, with the file's bump factor as its scale |
+| Opacity | Base color alpha, blended. An opacity texture other than the base color's alpha is left out |
+| Emissive color and its texture | Emission, with `KHR_materials_emissive_strength` above 1 |
+
+Textures go into the file as PNG and JPEG images. TGA images become PNG. The command looks for each texture file where the model names it, then by its name in the model's folder. A missing file gets a note, and the material keeps its other maps.
+
+STL files hold facets with no other data. The command joins corners at the same place and leaves the facets' normals out, so glTF readers shade the faces flat, as the facets say. PLY and STL colors in bytes are sRGB, and the output stores them as linear values, as glTF requires. The engine does not draw glTF points yet, so a PLY point cloud loads with nothing to draw. three.js draws it.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--compression <none\|meshopt>` | `meshopt` stores vertices as integers and compresses the buffers, as `assets optimize` does. `none` leaves them as floats | `meshopt` for a Draco or meshopt input, else `none` |
+
+## Pack occlusion, roughness and metalness
+
+glTF reads a material's roughness from the green channel of one texture and its metalness from the blue. Its occlusion map may share the texture, in the red. Many texture sets come as separate gray maps. `assets pack-orm` packs them:
+
+```sh
+bunx @null3d/cli assets pack-orm textures/brick_orm.ktx2 \
+  --occlusion textures/brick_ao.png --roughness textures/brick_rough.png --metalness textures/brick_metal.png
+```
+
+Each map is a PNG, JPEG or TGA image, read from its red channel. Give at least one. A missing occlusion map is white, for no occlusion. A missing roughness map is white, so the material's roughness factor applies as it is. A missing metalness map is black, for no metal. The texture takes the size of the largest map, and the others stretch to it, so the maps must have one shape.
+
+A `.ktx2` output is UASTC with every mip level, each side at its nearest power of two, as `assets optimize` encodes data maps. A `.png` output keeps the size of the largest map, for a model that `assets optimize` then encodes. Use the texture as the material's metal-rough map and, when you packed occlusion, as its occlusion map too:
+
+```ts
+const orm = await assets.loadTexture('/textures/brick_orm.ktx2', { colorSpace: 'linear' });
+const brick = materials.standard({ metalnessRoughnessMap: orm, aoMap: orm });
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--occlusion <image>` | The occlusion map | White |
+| `--roughness <image>` | The roughness map | White |
+| `--metalness <image>` | The metalness map | Black |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+## Normal maps from bump maps
+
+A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine reads normal maps only. `assets normal-from-bump` makes one from a bump map, such as a three.js material's `bumpMap`:
+
+```sh
+bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2
+```
+
+White stands high and black low. The height map is a PNG, JPEG or TGA image, read from its red channel. A 16-bit PNG keeps its full depth, so gentle slopes do not show steps. The normal map follows glTF: X to the right and Y up the image.
+
+`--scale` works as three.js's `bumpScale`. At 1, a slope of the whole height range per texel tilts the surface 45 degrees. three.js measures the slope per pixel of the screen, so its bumps look stronger when a texel covers less than a pixel. The normal map keeps the strength that three.js shows where one texel covers one pixel. Give the three.js material's `bumpScale` as `--scale`, and check the look up close.
+
+The map tiles: the texels at each edge take their neighbors from the opposite edge. `--clamp` stops that, for a map that does not tile.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--scale <number>` | The strength of the slopes, as three.js's `bumpScale` | 1 |
+| `--clamp` | The edge texels take no neighbors from the opposite edge | The map tiles |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+A `.ktx2` output is UASTC with every mip level, as `assets optimize` encodes normal maps. A `.png` output keeps the height map's size.
 
 ## Environment maps
 

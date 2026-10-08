@@ -103,6 +103,9 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/basis/package.json',
 			'vendor/basis/LICENSE',
 			'vendor/basis/NOTICE',
+			'vendor/ufbx/ufbx.wasm',
+			'vendor/ufbx/LICENSE',
+			'THIRD-PARTY-NOTICES.txt',
 		],
 	},
 };

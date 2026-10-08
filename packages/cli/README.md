@@ -4,11 +4,12 @@ The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a b
 
 You do not need this tool to use the engine. Install `@null3d/engine` from npm, add `@null3d/vite-plugin` to your Vite config, and run Vite. This tool adds jobs that a bundler does not do, such as headless tests, screenshots and benchmarks.
 
-null3D is in early development. This version has three commands:
+null3D is in early development. This version has four commands:
 
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.
 - `test` type checks your project and runs its lint script. Then it compares the image tests that `null3d.json` lists with their reference images.
 - `bench` measures the engine on a production build of your page: CPU time per frame by thread, GPU time and frame rates, over fresh runs.
+- `assets` prepares models and textures. `optimize` quantizes glTF meshes and encodes KTX2 textures. `convert` turns FBX, OBJ, STL and PLY files into glTF. `pack-orm` and `normal-from-bump` make material maps, and `env` makes environment maps from HDR images.
 
 ```sh
 bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2

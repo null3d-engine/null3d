@@ -25,7 +25,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `color` | `color` | Hex values are sRGB in both |
 | `map` | `map` | Must be sRGB (`colorSpace: 'srgb'`). Its alpha multiplies `opacity` |
 | `roughness`, `metalness` | `roughness`, `metalness` | Same meaning (perceptual roughness) and the same defaults |
-| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (0.2; the same texture can hold AO in R) |
+| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm orm.ktx2 --roughness r.png --metalness m.png` (0.2; `--occlusion ao.png` puts AO in R, for `aoMap` too) |
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent space only. The frame comes from the mesh's tangents where it has them, else from the pixels around it, as in three.js |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
 | `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
@@ -35,7 +35,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | The scene's rotation; materials share it |
 | `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | `loadEnvironment` takes the `.hdr` or `.exr` file that `HDRLoader` or `EXRLoader` loaded, and filters it on the GPU. Prefiltering it offline with `bunx @null3d/cli assets env` skips that work at load. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. Reflections match three.js's PMREM, roughness by roughness |
-| `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
+| `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump bump.png normal.ktx2 --scale <bumpScale>` (0.2) | The scale matches three.js where one texel covers one screen pixel; three.js bumps look stronger farther away |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |
 | `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |

@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures.
+3. Models (0.2) and textures. The engine loads glTF only: convert FBX, OBJ, STL and PLY files with `bunx @null3d/cli assets convert <in> <out.glb>` (0.2). It keeps FBX skins, blend shapes and clips, and turns Draco compression into meshopt. Then optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures.
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.
