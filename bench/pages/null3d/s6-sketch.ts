@@ -1,9 +1,9 @@
 // The null3d version of S6, the city: about 19,000 objects of the generated city, from the two
 // model files that the asset tool optimized, under an evening sun that casts shadows, with 32
 // street lights, an environment, a sky, bloom and ambient occlusion. The camera drives the streets.
-// The meshes that the asset tool gave blockers, the towers and many kit buildings, block the view,
-// so occlusion culling skips what they hide: on the job workers on WebGL2, and on the GPU on WebGPU
-// when the page turns it on.
+// The towers, one mesh per material, block the view with their own boxes, and many kit buildings
+// with the blockers that the asset tool gave them. So occlusion culling skips what they hide: on
+// the job workers on WebGL2, and on the GPU on WebGPU when the page turns it on.
 //
 // It loads in stages, as a large scene streams in. The setup waits for the layout and the kit file,
 // creates the street nearest the camera, and returns, so the first frame comes early. Each frame
@@ -42,6 +42,7 @@ import {
 	S6_VIEW_LIGHTS,
 	type S6Data,
 	type S6Layout,
+	s6BuildingAt,
 	s6Camera,
 	s6LabelId,
 	s6PartTransform,
@@ -98,9 +99,11 @@ export default defineSketch(async (context) => {
 
 	// The labels on the tallest towers, and the one that names a picked building, which a marker
 	// carries to the point where the click hit.
-	const towerTops = new Map<number, (typeof data.labels)[number] & { id: string }>(
-		data.labels.map((label, k) => [label.row, { ...label, id: s6LabelId(k) }]),
-	);
+	const towerTops = new Map<number, ((typeof data.labels)[number] & { id: string })[]>();
+	data.labels.forEach((label, k) => {
+		const material = data.material[label.row] as number;
+		towerTops.set(material, [...(towerTops.get(material) ?? []), { ...label, id: s6LabelId(k) }]);
+	});
 	page.post(S6_MESSAGES.labels, [
 		...data.labels.map((label, k) => ({ id: s6LabelId(k), text: label.text })),
 		{ id: S6_PICKED_LABEL, text: '' },
@@ -144,10 +147,10 @@ export default defineSketch(async (context) => {
 			if (building >= 0) mesh.on('click', (event) => pick(building, event.point));
 		}
 	};
-	/** Creates a row's box from the tower file. */
+	/** Creates the mesh of a material's boxes from the tower file. */
 	let towers: Prefab | undefined;
-	const createBox = (row: number) => {
-		const node = (towers as Prefab).find(`b${row}`) as PrefabNode;
+	const createTower = (material: number) => {
+		const node = (towers as Prefab).find(`t${material}`) as PrefabNode;
 		const mesh = scene.createMesh({
 			mesh: node.mesh as MeshGeometry,
 			material: node.material as Material,
@@ -158,14 +161,16 @@ export default defineSketch(async (context) => {
 			receiveShadows: true,
 			occluder: node.occluder,
 		});
-		const building = data.building[row] as number;
-		if (building >= 0) mesh.on('click', (event) => pick(building, event.point));
-		const label = towerTops.get(row);
-		// The label's offset is in the object's own space, whose origin and scale the asset tool
+		mesh.on('click', (event) => {
+			const building = s6BuildingAt(data, material, event.point);
+			if (building >= 0) pick(building, event.point);
+		});
+		// A label's offset is in the object's own space, whose origin and scale the asset tool
 		// moved to fit the mesh's stored positions.
-		if (label) {
-			const [tx, ty, tz] = node.position;
-			const [sx, sy, sz] = node.scale;
+		const [tx, ty, tz] = node.position;
+		const [sx, sy, sz] = node.scale;
+		for (const label of towerTops.get(material) ?? []) {
+			const row = label.row;
 			ui.trackLabel(mesh, label.id, {
 				offset: [
 					((data.position[row * 3] as number) - tx) / sx,
@@ -179,7 +184,7 @@ export default defineSketch(async (context) => {
 	// The stages: the kit's copies in turns, nearest first, then the towers in turns once their
 	// file is in. A held frame creates everything now.
 	let nextKit = 0;
-	let nextBox = 0;
+	let nextTower = 0;
 	let towersSeconds = 0;
 	let loaded = false;
 	towersLoad.then((prefab) => {
@@ -192,11 +197,11 @@ export default defineSketch(async (context) => {
 			createKitRow(data.kitOrder[nextKit++] as number);
 			made++;
 		}
-		while (towers && nextBox < data.boxOrder.length && made < budget) {
-			createBox(data.boxOrder[nextBox++] as number);
+		while (towers && nextTower < data.towerOrder.length && made < budget) {
+			createTower(data.towerOrder[nextTower++] as number);
 			made++;
 		}
-		if (loaded || !towers || nextBox < data.boxOrder.length || nextKit < data.kitOrder.length)
+		if (loaded || !towers || nextTower < data.towerOrder.length || nextKit < data.kitOrder.length)
 			return;
 		loaded = true;
 		environmentReady.then(() =>

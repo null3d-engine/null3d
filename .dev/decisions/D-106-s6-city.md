@@ -101,3 +101,41 @@ S6's page tests are the only tests that stream the city in. On CI's SwiftShader 
 | (b) A third benchmark shard for S6 alone, with a longer wait for each page's result | The streamed load and the load report on null3D's 5 S6 pages, on SwiftShader | About 11 minutes of one runner in every CI run, and a page wait above the usual 90 seconds |
 
 The coordinator put the choice on the owner's list on 8 October 2026.
+
+## Addendum, 2026-10-08: one tower mesh per material
+
+Status: approved by the owner on 2026-10-08 (UTC+8), about 11:00. Pending: the Mac timing of draws, CPU and GPU, which waits for the MSAA fix (#434).
+
+### Question
+
+The tower file gave each of the 1,849 boxes a mesh of its own, so the towers took 1,849 of the city's 1,971 draws in each pass. An asset pipeline that ships a city merges static meshes by material. Should S6 do the same, and how do the corners of boxes that meet stay exact?
+
+### Decision
+
+- The tower file holds one mesh per material, 200 in all, each with every box in that material. Its node stands at the centre of its boxes' base, so the positions stay near zero. Each pass then takes about 322 draws, against 1,971. The city makes 19,089 objects, against 20,738, and the page asks for room for 19,100.
+- A click on a tower mesh finds its building with `s6BuildingAt`: the box of that material nearest the hit point. Both engines use it.
+- The asset tool quantizes positions in steps of 1/16,383 of a mesh's longest side. The tower meshes spread over 134 to 760 m, so the steps would move corners by centimetres, and boxes that meet would open gaps. A new per-mesh setting in the glTF extras, `"quantizePositions": false`, keeps that mesh's positions as 32-bit floats. The other vertex data still takes integers, and meshopt still compresses the buffers. The default stays as it was ([D-18](D-18-asset-tool.md#the-settings)).
+- Each tower mesh sets `"occluder": true` too. The tool's blocker of one or two boxes cannot fit boxes spread over the city, so each mesh blocks with its own triangles, 12 per box.
+
+### Data
+
+The tower file's meshes after the asset tool, without textures, owner's Mac, 8 October 2026. The corner error is each vertex's distance to the nearest true corner of the layout's boxes, over all 44,376 vertices. three.js's `GLTFLoader` with its `MeshoptDecoder` read the same files and gave the same errors.
+
+| Tower file | Meshes | Positions | Largest error | Mean error | Corners off by over 1 mm | Bytes |
+| --- | --- | --- | --- | --- | --- | --- |
+| One mesh per box (before) | 1,849 | 16-bit integers | 1.74 mm | 0.15 mm | 480 | 2,925,592 |
+| One mesh per material, integers | 200 | 16-bit integers | 28.1 mm | 12.5 mm | 44,022 | 645,300 |
+| One mesh per material, floats (chosen) | 200 | 32-bit floats | 0.015 mm | 0.003 mm | 0 | 801,456 |
+
+- A box with its own mesh kept errors under 2 mm: its longest side set its steps, and its shorter sides fell between steps.
+- The floats add 156 KB to the merged file, and the merge saves 2.1 MB against one mesh per box. Most of that saving is the 1,849 blockers, 20,460 triangles, that the old file stored.
+- The tool's blockers: before, 1,705 boxes got a box blocker and the 144 ground slabs none. After, none of the 200 meshes fits a blocker, so all 200 block with their own triangles, the slabs among them.
+
+### Options
+
+| Option | For | Against |
+| --- | --- | --- |
+| (a) Merged meshes with quantized positions | Smallest file | Corners off by up to 28 mm; gaps where boxes meet |
+| (b) Merged meshes in tiles, such as 100 m squares, quantized | Steps of 6 mm or less | More draws; still not exact; a generator of tiles |
+| (c) Merged meshes with float positions, set per mesh (chosen) | Exact corners; any tool user can choose it for such a mesh | 156 KB more for the towers |
+| (d) A tool option for all meshes of a file | One flag | Every mesh of the file pays, the kit's included |

@@ -68,10 +68,11 @@ export const S6_FULL_COUNT = 19_173;
 
 /**
  * The engine objects that the whole city makes, with room to spare: one mesh for each part of each
- * row's model, a box for each box row, and the lights, the camera and the label's marker. The page
- * asks the engine for this room at its start, so its object tables never grow during play.
+ * row's model, one for the boxes of each material, and the lights, the camera and the label's
+ * marker. The page asks the engine for this room at its start, so its object tables never grow
+ * during play.
  */
-export const S6_ENGINE_OBJECTS = 21_000;
+export const S6_ENGINE_OBJECTS = 19_100;
 
 /** The messages that S6's sketch sends its page. */
 export const S6_MESSAGES = {
@@ -169,6 +170,11 @@ export interface S6Data {
 	kitOrder: Uint32Array;
 	/** The rows of boxes, nearest the route's start first. */
 	boxOrder: Uint32Array;
+	/**
+	 * The materials of those boxes, each once, in the order of their first box. The tower file
+	 * holds one mesh per material with every box in it, so a page creates the towers in this order.
+	 */
+	towerOrder: Uint16Array;
 	/** The building count. */
 	buildings: number;
 	/** The route's corners, 2 floats each (x, z), and the distance along the route at each corner. */
@@ -189,7 +195,8 @@ export interface S6Data {
 /**
  * Makes S6's data from the layout. With `count`, only the `count` rows nearest the route's start
  * are created, kit models and boxes alike, so the city can grow from the camera's first view for a
- * sweep. Throws for a layout whose rows lack a field.
+ * sweep. A box brings the mesh of its material, which holds every box in that material, so a
+ * smaller count draws more boxes than its rows. Throws for a layout whose rows lack a field.
  */
 export function createS6(layout: S6Layout, count = layout.objects.rows.length): S6Data {
 	const { fields, rows } = layout.objects;
@@ -223,6 +230,7 @@ export function createS6(layout: S6Layout, count = layout.objects.rows.length): 
 		scale: new Float32Array(total * 3),
 		kitOrder: new Uint32Array(0),
 		boxOrder: new Uint32Array(0),
+		towerOrder: new Uint16Array(0),
 		buildings: layout.counts.buildings,
 		route: new Float64Array(layout.camera.path.flat()),
 		routeDistance: new Float64Array(layout.camera.path.length + 1),
@@ -271,6 +279,7 @@ export function createS6(layout: S6Layout, count = layout.objects.rows.length): 
 		.slice(0, data.count);
 	data.kitOrder = Uint32Array.from(nearest.filter((i) => data.model[i] !== S6_BOX));
 	data.boxOrder = Uint32Array.from(nearest.filter((i) => data.model[i] === S6_BOX));
+	data.towerOrder = Uint16Array.from(new Set(Array.from(data.boxOrder, (i) => data.material[i])));
 
 	const created = new Set(nearest);
 	data.labels = layout.labels
@@ -313,6 +322,37 @@ export function s6Camera(
 	const distance = t * data.speed;
 	routePoint(data, distance, data.height, outPosition);
 	routePoint(data, distance + S6_LOOK.ahead, data.height - S6_LOOK.drop, outTarget);
+}
+
+/**
+ * The building of the box in `material` nearest to a point, such as a click's hit on that
+ * material's tower mesh, or -1 for a box of no building. The boxes of one mesh lie apart or meet
+ * face to face, so the nearest is the one hit.
+ */
+export function s6BuildingAt(
+	data: S6Data,
+	material: number,
+	point: { readonly [index: number]: number },
+): number {
+	let building = -1;
+	let nearest = Number.POSITIVE_INFINITY;
+	for (let row = 0; row < data.model.length; row++) {
+		if (data.model[row] !== S6_BOX || data.material[row] !== material) continue;
+		// The distance from the point to the box, 0 inside it.
+		let d = 0;
+		for (let k = 0; k < 3; k++) {
+			const size = data.scale[row * 3 + k] as number;
+			const low = (data.position[row * 3 + k] as number) - (k === 1 ? 0 : size / 2);
+			const v = point[k] as number;
+			const out = Math.max(low - v, v - (low + size), 0);
+			d += out * out;
+		}
+		if (d < nearest) {
+			nearest = d;
+			building = data.building[row] as number;
+		}
+	}
+	return building;
 }
 
 /** The seconds that the camera takes to drive the whole route once. */
