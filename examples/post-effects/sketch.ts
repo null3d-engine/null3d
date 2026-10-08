@@ -2,14 +2,52 @@
 // front of them. Bloom spreads the neon's light past its edges, ambient occlusion darkens the corner
 // and the ground under the crates, an outline marks one crate, and a vignette darkens the edges. A
 // custom effect splits red from blue toward the edges, as a cheap lens does. Every 3 seconds the
-// color grading table changes: none, then a warm table, then a cool one, each from a .cube file.
-// The pointer moves the pink lamp, and the bloom and the shading follow it.
-import { defineSketch, vec3 } from '@null3d/engine';
+// color grading table changes: none, then a warm table, then a cool one, each made in code from a
+// few numbers. The pointer moves the pink lamp, and the bloom and the shading follow it.
+import { type Assets, defineSketch, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
-import { sampleUrl } from '../lib/samples';
 
 /** Seconds that each color grading table shows. */
 const STEP = 3;
+
+type Rgb = readonly [number, number, number];
+
+/** A grade: contrast and saturation, then lift, gamma and gain per channel, as a colorist sets them. */
+interface Look {
+	contrast?: number;
+	saturation?: number;
+	lift?: Rgb;
+	gamma?: Rgb;
+	/** Gain per channel, which sets the white balance too. */
+	gain: Rgb;
+}
+
+/** Warmer whites and lifted shadows. */
+const WARM: Look = { lift: [0.02, 0.01, 0], gamma: [0.95, 1, 1.05], gain: [1.04, 1.01, 0.9] };
+/** More contrast, less saturation and a blue cast. */
+const COOL: Look = { contrast: 1.15, saturation: 0.85, gain: [0.94, 0.99, 1.06] };
+
+/** A table of 33 texels a side that grades each color by `look`, red fastest as in a .cube file. */
+function grade(assets: Assets, look: Look) {
+	const { contrast = 1, saturation = 1, lift = [0, 0, 0], gamma = [1, 1, 1], gain } = look;
+	const size = 33;
+	const data = new Float32Array(size ** 3 * 3);
+	const contrasted = (v: number) =>
+		Math.min(Math.max((v / (size - 1) - 0.5) * contrast + 0.5, 0), 1);
+	const channel = (value: number, luma: number, i: 0 | 1 | 2) =>
+		lift[i] + Math.max(luma + (value - luma) * saturation, 0) ** gamma[i] * gain[i];
+	let at = 0;
+	for (let b = 0; b < size; b++)
+		for (let g = 0; g < size; g++)
+			for (let r = 0; r < size; r++) {
+				const [red, green, blue] = [contrasted(r), contrasted(g), contrasted(b)];
+				const luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+				data[at++] = channel(red, luma, 0);
+				data[at++] = channel(green, luma, 1);
+				data[at++] = channel(blue, luma, 2);
+			}
+	return assets.lutFromData({ size, data });
+}
 
 // Moves red out and blue in, by up to `shift` pixels at the corners.
 const fringe = /* wgsl */ `
@@ -25,10 +63,7 @@ fn effect(input: EffectInput) -> vec4f {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, quality, time } = ctx;
-	const [warm, cool] = await Promise.all([
-		assets.loadLut(sampleUrl('sources/luts/warm.cube')),
-		assets.loadLut(sampleUrl('sources/luts/cool.cube')),
-	]);
+	const [warm, cool] = await Promise.all([grade(assets, WARM), grade(assets, COOL)]);
 	// Ambient occlusion draws on every preset, at half the canvas's resolution.
 	quality.set({ aoScale: 0.5 });
 	post.set({

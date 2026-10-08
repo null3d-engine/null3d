@@ -338,7 +338,8 @@ const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
 
 /**
  * Color grading on every tier: a table from a .cube file, a table from a .3dl file, the vignette,
- * and a table at part of its intensity with the vignette. Compatibility mode keeps the 8-bit path
+ * and a table at part of its intensity with the vignette. A table made from the .cube file's
+ * numbers must draw the file's image. Compatibility mode keeps the 8-bit path
  * with MSAA, where grading runs the final pass in place of the resolve pass. The page's switch that
  * turns HDR off puts the other tiers on that path too, which must draw the HDR path's image. At
  * half the render scale, the final pass grades the scaled image. The parity test compares the
@@ -353,6 +354,7 @@ function gradingTests(): ImageTest[] {
 	});
 	return [
 		test('lut-cube', '?lut=warm'),
+		{ ...test('lut-numbers', '?lut=warm-numbers'), reference: 'lut-cube' },
 		test('lut-3dl', '?lut=cool'),
 		test('vignette', '?vignette'),
 		test('lut-vignette', '?lut=warm&mix&vignette'),

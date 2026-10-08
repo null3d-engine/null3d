@@ -391,6 +391,7 @@ const room = await assets.builtinEnvironment('room');          // (0.2) three.js
 const skyLight = await assets.skyEnvironment();                 // (0.2) the light of setBackground({ sky }); follows the sun by itself, 6 frames after each change
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
+const made = await assets.lutFromData({ size: 17, data });      // (0.2) 3 or 4 floats (0-1) per texel, red fastest as in .cube; domainMin, domainMax, title
 ship.destroy();   // (0.2) frees its meshes, materials, textures, skeleton and clips; destroy its copies first, else E1111
 ```
 
@@ -488,7 +489,7 @@ post.set({
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
-  lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut, or false; LUTPass's meanings
+  lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut or lutFromData, or false; LUTPass's meanings
   vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off
   outline: { color: '#ffcc00', width: 3 },  // (0.2) a crisp line, width in CSS pixels; hiddenColor draws it around hidden parts; meshes opt in with setOutlined(true)
 });

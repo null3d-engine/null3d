@@ -1,5 +1,5 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
-// by the KTX2 transcoder (ktx2.ts), by the color grading table readers (lut-files.ts), by the
+// by the KTX2 transcoder (ktx2.ts), by the color grading table makers (lut-files.ts), by the
 // environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
 // the sketch's frames, and a count of the downloads for loading screens. Built-in environments need
 // no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
@@ -12,7 +12,7 @@ import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
-import { Lut } from './lut';
+import { Lut, type LutData } from './lut';
 import type { CoreMemory } from './memory';
 import type { Prefab } from './prefab';
 import type { Geometry, Materials } from './resources';
@@ -298,15 +298,7 @@ export class Assets {
 		const call = 'assets.loadLut';
 		const address = this.resolve(url);
 		const text = await (await this.file(address, call)).text();
-		let files: typeof import('./lut-files');
-		try {
-			files = await import('./lut-files');
-		} catch (error) {
-			throw new EngineError(
-				'E1406',
-				`the color grading table reader did not download for ${call}() of ${address}: ${reasonOf(error)}.`,
-			);
-		}
+		const files = await lutMakers(`${call}() of ${address}`);
 		let table: import('./lut-files').LutTable;
 		try {
 			table = files.parseLut(text);
@@ -316,6 +308,32 @@ export class Assets {
 				`${call}() could not read ${address} as a color grading table: ${reasonOf(error)}.`,
 			);
 		}
+		return this.lut(table, call);
+	}
+
+	/**
+	 * Makes a color grading table from numbers, for `post.set({ lut })`, as three.js's `LUTPass`
+	 * takes a `Data3DTexture` that code fills. It takes the numbers in the order of a `.cube` file:
+	 * three or four per texel, red changing fastest. A file and its numbers make the same table.
+	 * The first table loads the code that makes it, as `loadLut` does. Throws E1208 when the size is
+	 * not a whole number from 2 to 256, when `data` does not hold three or four numbers per texel,
+	 * or holds a number that is not finite, and when a domain is not three numbers whose maximum is
+	 * above its minimum. Throws E1406 when the code does not load.
+	 */
+	async lutFromData(table: LutData): Promise<Lut> {
+		const call = 'assets.lutFromData';
+		const files = await lutMakers(`${call}()`);
+		let made: import('./lut-files').LutTable;
+		try {
+			made = files.tableFromData(table);
+		} catch (error) {
+			throw new EngineError('E1208', `${call}() got ${reasonOf(error)}.`);
+		}
+		return this.lut(made, call);
+	}
+
+	/** A table's 3D texture and its `Lut`, the same for a file and for numbers. */
+	private lut(table: import('./lut-files').LutTable, call: string): Lut {
 		const { size, title, domainMin, domainMax, texels } = table;
 		const texture = this.textures.fromVolume(size, texels, call);
 		return new Lut(texture, size, title, domainMin, domainMax);
@@ -683,6 +701,18 @@ function rewritten(at: URL, file: URL, options: LoadGltfOptions, call: string): 
 
 /** The ends of the addresses of Radiance and OpenEXR files. */
 const HDR_FILE = /\.(hdr|exr)$/i;
+
+/** The color grading table makers, or E1406 for `what` when they do not download. */
+async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
+	try {
+		return await import('./lut-files');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the color grading table code did not download for ${what}: ${reasonOf(error)}.`,
+		);
+	}
+}
 
 /** The HDR file loader, once its import started. A failed import lets the next load try again. */
 /**

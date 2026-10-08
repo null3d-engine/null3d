@@ -3,7 +3,7 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
@@ -33,6 +33,7 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadTexture(url, options)` | A texture from a PNG, JPEG, WebP or AVIF file, or a KTX2 file of ETC1S, UASTC or UASTC HDR data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
+| `lutFromData({ size, data })` | A color grading table made from numbers in code, with no file. [Tables from numbers](#tables-from-numbers) says what it takes |
 | `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
 | `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
 | `skyEnvironment()` | The light of the scene's sky, as an `Environment` that follows the sky background |
@@ -113,6 +114,42 @@ A load that fails frees everything that it made before the failure.
 - The first table loads the readers, a file of about 2 KB. The thread that runs the sketch reads the file between frames: a table of 33 takes about 10 ms on a desktop.
 
 `lut.destroy()` frees the table's GPU memory. Give `post.set` a table that lives.
+
+### Tables from numbers
+
+`lutFromData` makes a table from numbers that your code computes, as three.js's `LUTPass` takes a `Data3DTexture` that code fills. It takes the numbers in the order of a `.cube` file's lines, so a file and its numbers make the same table:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ assets, post }) => {
+  // A warm grade: more red and less blue, 17 texels a side.
+  const size = 17;
+  const data = new Float32Array(size ** 3 * 3);
+  let at = 0;
+  for (let b = 0; b < size; b++)
+    for (let g = 0; g < size; g++)
+      for (let r = 0; r < size; r++) {
+        data[at++] = (r / (size - 1)) * 1.05;
+        data[at++] = g / (size - 1);
+        data[at++] = (b / (size - 1)) * 0.9;
+      }
+  post.set({ lut: await assets.lutFromData({ size, data }) });
+  return {};
+});
+```
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `size` | The texels along each side, a whole number from 2 to 256. | Required |
+| `data` | A `Float32Array`, a `Float64Array` or an array of numbers. It holds three numbers per texel, red, green and blue, or four, whose fourth the table skips. Red changes fastest, then green, then blue. The texel at red r, green g and blue b stands for the color (r, g, b) / (size - 1) of the domain. | Required |
+| `domainMin`, `domainMax` | The colors that the first and the last texel along each axis stand for, as a `.cube` file's `DOMAIN_MIN` and `DOMAIN_MAX`. | `[0, 0, 0]` and `[1, 1, 1]` |
+| `title` | A name, which becomes the table's `title`. | None |
+
+- The values are display colors from 0 to 1. Values outside that range are clamped, as in a file. Divide 8-bit values by 255 first.
+- The table becomes the same 3D texture of 4 bytes per texel that `loadLut` makes.
+- The first table loads the code that makes it, the same file of about 2 KB that `loadLut` loads. The call's promise resolves once the texels are in engine memory, as `loadLut`'s does.
+- Input that makes no table throws [E1208](../errors/E1208.md), and the message names the fault. That is a size outside 2 to 256, or data without three or four numbers per texel. It is also a number that is not finite, or a domain whose maximum is not above its minimum.
 
 ## Environments
 
@@ -207,10 +244,10 @@ Each call rejects with an engine error that says how to fix the problem:
 | [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
 | [E1109](../errors/E1109.md) | `loadGltf` made a mesh too large for engine memory |
 | [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read, such as Draco compression |
-| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table readers or the environment map reader did not download, when the first such file loads |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table makers or the environment map reader did not download, when the first such file or table loads |
 | [E1213](../errors/E1213.md) | `builtinEnvironment` got a name that no built-in environment has |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
-| [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |
+| [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take. Also numbers that `lutFromData` cannot make a table from |
 
 `preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again.
 

@@ -83,6 +83,8 @@ The reasons are:
 - Content made in code shows what the engine draws, at any scale, with no download. It keeps each demo self-contained, and the website ships no large files for it.
 - Loading still needs demos of its own: developers load glTF models, HDR environments, KTX2 textures and grading tables, and a comparison with three.js must show both engines loading the same files.
 
+The post effects demo makes its warm and cool grading tables from lift, gamma and gain in code, with `assets.lutFromData`. It loaded two `.cube` files before 9 October 2026. The example of tables loaded from files belongs in the planned demo of asset loading.
+
 Demos load sample files through `sampleUrl('<path>')` from `examples/lib/samples.ts`, with a string literal, so the sample check and `copyNamedSamples` find each file.
 
 ## Always-on interaction

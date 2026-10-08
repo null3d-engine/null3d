@@ -1100,7 +1100,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'.",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }).",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1572,8 +1572,8 @@
       "three": "LUTPass / LUTCubeLoader / LUT3dlLoader",
       "status": "direct",
       "since": "0.2",
-      "target": "post.set({ lut: await assets.loadLut('grade.cube'), lutIntensity })",
-      "notes": "LUTPass's intensity becomes lutIntensity. The table grades display color after the tone mapping, as LUTPass after OutputPass does. LUTImageLoader's PNG strips are not read: export the grade as a .cube file.",
+      "target": "post.set({ lut: await assets.loadLut('grade.cube'), lutIntensity }), or a table from assets.lutFromData({ size, data })",
+      "notes": "LUTPass's intensity becomes lutIntensity. The table grades display color after the tone mapping, as LUTPass after OutputPass does. A Data3DTexture that code fills for LUTPass becomes await assets.lutFromData({ size, data }): the same order, red fastest, with three or four numbers per texel, whose fourth is skipped. Give floats from 0 to 1, so divide 8-bit values by 255. LUTImageLoader's PNG strips are not read: export the grade as a .cube file.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bLUTPass\\b|\\bLUT(Cube|3dl|Image)Loader\\b"
     },
