@@ -1,6 +1,6 @@
 # D-106: How S6, the city, gets its models, loads, and draws in its three.js twin
 
-Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Pending: the Mac timing, which waits for a quiet Mac, and the owner's choice of a CI check of the streamed load ([below](#pending-for-the-owner-a-ci-check-of-the-streamed-load)). Also pending: the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
+Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. The owner also ruled on the CI check of the streamed load: option (a), with no extra shard ([below](#a-ci-check-of-the-streamed-load)). Pending: the Mac timing, which waits for a quiet Mac. Also pending: the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
 
 Summary: S6 builds two model files from the sample content's city layout. It loads them in two stages, kit models first and towers second, with no engine change. Its 20,738 objects needed more than the 16,383 that one engine held. So the engine's object tables grow on demand ([D-103](D-103-growing-object-tables.md)), and S6's page asks for room for 21,000 at its start. The optimized city takes 37.5 MB to download and 87 MB of GPU memory as ETC2 or ASTC. Texture sharing between model files becomes a task of its own.
 
@@ -91,7 +91,7 @@ The browser shards loaded no city page but S6's 3 image tests. The benchmark job
 The browser shards leave S6's image tests out, by the pattern `CITY_TESTS` in `ci.yml`. A `browser (the city)` job runs them after the `city` job. The benchmark and real-browser jobs wait for the `city` job too. `bun run test:browser-weights` leaves those tests out of the shards' times. The coordinator asked on 8 October 2026 for a fix that keeps the time limits, and the limits stay as they were.
 
 
-### Pending for the owner: a CI check of the streamed load
+### A CI check of the streamed load
 
 S6's page tests are the only tests that stream the city in. On CI's SwiftShader runners, null3D's city pages took 30 to 45 seconds to start and drew 0.14 to 0.23 frames a second at 1,000 objects. Two of five short runs gave no result in 90 seconds, and they pushed the second benchmark shard past its 15-minute limit (run 37709876565). So since 8 October 2026 those pages run on real GPUs only, and CI checks the streamed load on no GPU path. The image tests draw held frames, which load everything before they draw. The Mac's runs and the device runs still stream the city.
 
@@ -100,4 +100,4 @@ S6's page tests are the only tests that stream the city in. On CI's SwiftShader 
 | (a) As now: no CI check of the streamed load | Held frames of the city on 3 tiers; the scene-code page and three.js's WebGL page | None |
 | (b) A third benchmark shard for S6 alone, with a longer wait for each page's result | The streamed load and the load report on null3D's 5 S6 pages, on SwiftShader | About 11 minutes of one runner in every CI run, and a page wait above the usual 90 seconds |
 
-The coordinator put the choice on the owner's list on 8 October 2026.
+The coordinator put the choice on the owner's list on 8 October 2026. The owner chose (a) on 8 October 2026: CI keeps no check of the streamed load, and gets no extra shard. The held frames and the real-GPU runs on the Mac and the devices cover the city.
