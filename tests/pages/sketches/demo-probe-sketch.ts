@@ -23,7 +23,7 @@ const inner = (
 ).default;
 
 export default defineSketch(async (context) => {
-	const { scene, page } = context;
+	const { scene, page, time } = context;
 	let camera: Camera | undefined;
 	const moving: Object3D[] = [];
 	/** Keeps an object that the demo made dynamic, the kind that it moves. */
@@ -51,6 +51,7 @@ export default defineSketch(async (context) => {
 	page.onMessage((name) => {
 		if (name !== 'probe') return;
 		const probe: DemoProbe = {
+			time: time.now,
 			camera: camera ? place(camera) : [],
 			objects: moving.map(place),
 		};

@@ -43,10 +43,12 @@ test('a hover leads the math demo light, and leaves its camera alone', async ({ 
 		await page.mouse.move(x, 180);
 		await page.mouse.move(x + 2, 182);
 		await expect
-			.poll(async () => side * (await lightX(page)), { timeout: 5_000 })
+			.poll(async () => side * (await lightX(page)), { timeout: 15_000 })
 			.toBeGreaterThan(3);
 		// The scripted path would cross the middle within 2 seconds; the led light stays on its side.
+		// A small move before each sample keeps the pointer from going idle at any frame rate.
 		for (let sample = 0; sample < 4; sample++) {
+			await page.mouse.move(x + (sample % 2), 182);
 			await page.waitForTimeout(250);
 			expect(side * (await lightX(page))).toBeGreaterThan(3);
 		}
@@ -66,24 +68,49 @@ test('a drag takes the instances demo camera from its script with no jump, and t
 	const before = await probe(page);
 	expect(apart(first.camera, before.camera)).toBeGreaterThan(1);
 
-	// A short drag across: past the click limit, it turns the camera a little around the middle.
+	// A short drag across: past the click limit, it turns the camera a little around the middle. A
+	// press alone hands nothing over, so the script still moves the camera until the drag.
 	await page.mouse.move(320, 180);
 	await page.mouse.down();
+	const pressed = await probe(page);
 	await page.mouse.move(326, 180, { steps: 3 });
 	await page.mouse.up();
-	await page.waitForTimeout(1_000);
-	const taken = await probe(page);
+	// The controls' damping lets the camera coast after the drag. Wait until it rests: two probes at
+	// least a fifth of a second of sketch time apart. A slow software GPU can answer two probes from
+	// one frame, so the probes count the sketch's time, not the page's.
+	let last = await probe(page);
+	await expect
+		.poll(
+			async () => {
+				await page.waitForTimeout(250);
+				const next = await probe(page);
+				if (next.time - last.time < 0.2) return Number.POSITIVE_INFINITY;
+				const moved = apart(next.camera, last.camera);
+				last = next;
+				return moved;
+			},
+			{ timeout: 30_000 },
+		)
+		.toBeLessThan(0.02);
+	const taken = last;
+	// The camera stays on the script's circle: a jump to another pose would leave it.
 	expect(Math.hypot(...taken.camera)).toBeCloseTo(radius, 1);
 	expect(taken.camera[1]).toBeCloseTo(20, 1);
-	// From the script's place, by the drag's small turn and the script's motion until the drag.
-	expect(apart(taken.camera, before.camera)).toBeLessThan(6);
+	// From the script's place at the press, by the drag's small turn and the script's last frames.
+	expect(apart(taken.camera, pressed.camera)).toBeLessThan(8);
 	// The script, which would move the camera 7 m in a second, no longer moves it.
-	await page.waitForTimeout(1_000);
-	expect(apart((await probe(page)).camera, taken.camera)).toBeLessThan(0.2);
+	let later = taken;
+	await expect
+		.poll(async () => {
+			later = await probe(page);
+			return later.time - taken.time;
+		})
+		.toBeGreaterThan(1);
+	expect(apart(later.camera, taken.camera)).toBeLessThan(0.05);
 
 	await page.mouse.wheel(0, -400);
 	await expect
-		.poll(async () => Math.hypot(...(await probe(page)).camera), { timeout: 5_000 })
+		.poll(async () => Math.hypot(...(await probe(page)).camera), { timeout: 15_000 })
 		.toBeLessThan(radius * 0.9);
 	expect(errors).toEqual([]);
 });
