@@ -25,6 +25,8 @@ import {
 const WORKFLOW = '.github/workflows/ci.yml';
 /** The weights in the workflow, one per shard, joined by colons. */
 const WEIGHTS_LINE = /PWTEST_SHARD_WEIGHTS: "([\d:]+)"/;
+/** The tests that a job of their own runs, which the shards leave out: S6's, which load the city. */
+const CITY_LINE = /CITY_TESTS: '([^']+)'/;
 /** The count of CI runs whose median test times the weights come from, by default. */
 const DEFAULT_RUNS = 5;
 /** The count of main's newest passing runs to search for runs with browser jobs. */
@@ -70,8 +72,12 @@ const minutes = (seconds: number) => (seconds / 60).toFixed(1);
 const report = (seconds: number[]) =>
 	`${seconds.map(minutes).join(' ')} minutes, slowest ${minutes(Math.max(...seconds))}`;
 
-const current = WEIGHTS_LINE.exec(readFileSync(join(root, WORKFLOW), 'utf8'))?.[1];
+const workflow = readFileSync(join(root, WORKFLOW), 'utf8');
+const current = WEIGHTS_LINE.exec(workflow)?.[1];
 if (!current) throw new Error(`${WORKFLOW} has no PWTEST_SHARD_WEIGHTS`);
+const cityPattern = CITY_LINE.exec(workflow)?.[1];
+if (!cityPattern) throw new Error(`${WORKFLOW} has no CITY_TESTS`);
+const cityTests = new RegExp(cityPattern);
 const currentWeights = current.split(':').map(Number);
 const shards = Number(option('--shards') ?? currentWeights.length);
 
@@ -171,7 +177,9 @@ const parallelFiles = new Set(
 	),
 );
 const alone = listed.filter((test) => test.project.endsWith(ALONE_PROJECT_SUFFIX));
-const sharded = listed.filter((test) => !test.project.endsWith(ALONE_PROJECT_SUFFIX));
+const sharded = listed.filter(
+	(test) => !test.project.endsWith(ALONE_PROJECT_SUFFIX) && !cityTests.test(test.title),
+);
 
 const { groups, missing } = groupTests(sharded, times, parallelFiles);
 console.log(

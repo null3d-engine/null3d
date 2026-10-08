@@ -1,6 +1,6 @@
 # D-106: How S6, the city, gets its models, loads, and draws in its three.js twin
 
-Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Pending: the Mac timing, which waits for a quiet Mac, the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
+Status: decided by the owner on 2026-10-08 (UTC+8) for the object limit, the load and the layout fix. Pending: the Mac timing, which waits for a quiet Mac. Also pending: the device runs on the iPad, the S24+ and the cloud phones, and load times on a network. Date: 2026-10-08. Task: M2-L3.
 
 Summary: S6 builds two model files from the sample content's city layout. It loads them in two stages, kit models first and towers second, with no engine change. Its 20,738 objects needed more than the 16,383 that one engine held. So the engine's object tables grow on demand ([D-103](D-103-growing-object-tables.md)), and S6's page asks for room for 21,000 at its start. The optimized city takes 37.5 MB to download and 87 MB of GPU memory as ETC2 or ASTC. Texture sharing between model files becomes a task of its own.
 
@@ -71,7 +71,22 @@ Texture sharing: today two model files that name one texture each upload their o
 
 - The engine gains `PrefabNode.occluder`.
 - S6 joins the benchmark lists, the page tests and the image manifest. The parity checks leave it out, with the reason in `LEFT_OUT_OF_PARITY`.
-- The CI jobs that load S6 run `.github/actions/city`, and the benchmark job's Mac shards share one folder of optimized models.
+- CI builds the city's files once per run in a job of its own ([CI](#ci)). S6's image tests also run in a job of their own. The benchmark job's Mac shards share one folder of optimized models.
 - The street tiles stand 1 cm apart in a checkerboard, so no shared edge is a tie of equal depth. S6's image test draws one thread mode, because other copies of one mesh still meet. [Benchmarks](../benchmarks.md#what-s6-found) gives the figures.
 - The benchmark report gains a table of each streamed scene's load, so a run compares the load times and the bytes of both engines.
 - Texture sharing between model files becomes a task of its own after the texture budget (#346) merges. This record's texture figures and S6's load times feed it.
+
+## CI
+
+The first CI run of S6's pull request (run 37704989364, 8 October 2026) built the city's files in every job that loads S6. Each build took 369 seconds, 6.2 minutes, because the Actions cache had no copy. A pull request reads main's caches but saves none, and main had never built the city. All 7 browser shards and the second benchmark shard then hit their 15-minute limit, with their tests passing but 4 to 6 minutes short.
+
+The browser shards loaded no city page but S6's 3 image tests. The benchmark job needs the files in both shards, because its build of the pages holds S6's. Only main's runs save the cache, and a change to the asset tool's source misses it on any branch. So every such run, main's own first run included, would pay the build in each job.
+
+| Option | For | Against |
+| --- | --- | --- |
+| (a) Raise the jobs' time limits | No change to the jobs | Every shard pays 6 minutes on a miss; the limits catch slow tests |
+| (b) Build the city only in the shard that runs S6's tests | One build | Playwright picks the shard by the test count, and the benchmark build needs the files in both shards |
+| (c) A `city` job builds the files once and hands them over as artifacts (chosen) | One build per run; the other jobs only download | The jobs that load S6 start after it, up to 7 minutes later on a miss |
+
+The browser shards leave S6's image tests out, by the pattern `CITY_TESTS` in `ci.yml`. A `browser (the city)` job runs them after the `city` job. The benchmark and real-browser jobs wait for the `city` job too. `bun run test:browser-weights` leaves those tests out of the shards' times. The coordinator asked on 8 October 2026 for a fix that keeps the time limits, and the limits stay as they were.
+
