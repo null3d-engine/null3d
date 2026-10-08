@@ -154,44 +154,29 @@ function decodeMesh(
 	}
 }
 
-/** Each component type's bytes, and the decoder's data type for it. */
-function dataType(draco: DracoModule, componentType: number): [bytes: number, type: number] {
-	switch (componentType) {
-		case BYTE:
-			return [1, draco.DT_INT8];
-		case UNSIGNED_BYTE:
-			return [1, draco.DT_UINT8];
-		case SHORT:
-			return [2, draco.DT_INT16];
-		case UNSIGNED_SHORT:
-			return [2, draco.DT_UINT16];
-		case UNSIGNED_INT:
-			return [4, draco.DT_UINT32];
-		default:
-			return [4, draco.DT_FLOAT32];
-	}
-}
-
-/** The typed array of a component type. */
-function arrayOf(
-	componentType: number,
-	buffer: ArrayBuffer,
-): DracoDecoded['attributes'][number]['array'] {
-	switch (componentType) {
-		case BYTE:
-			return new Int8Array(buffer);
-		case UNSIGNED_BYTE:
-			return new Uint8Array(buffer);
-		case SHORT:
-			return new Int16Array(buffer);
-		case UNSIGNED_SHORT:
-			return new Uint16Array(buffer);
-		case UNSIGNED_INT:
-			return new Uint32Array(buffer);
-		default:
-			return new Float32Array(buffer);
-	}
-}
+/** Each component type's typed array, and the name of the decoder's data type for it. */
+const COMPONENT_TYPES: Readonly<
+	Record<
+		number,
+		readonly [
+			Type:
+				| Int8ArrayConstructor
+				| Uint8ArrayConstructor
+				| Int16ArrayConstructor
+				| Uint16ArrayConstructor
+				| Uint32ArrayConstructor
+				| Float32ArrayConstructor,
+			dataType: 'DT_INT8' | 'DT_UINT8' | 'DT_INT16' | 'DT_UINT16' | 'DT_UINT32' | 'DT_FLOAT32',
+		]
+	>
+> = {
+	[BYTE]: [Int8Array, 'DT_INT8'],
+	[UNSIGNED_BYTE]: [Uint8Array, 'DT_UINT8'],
+	[SHORT]: [Int16Array, 'DT_INT16'],
+	[UNSIGNED_SHORT]: [Uint16Array, 'DT_UINT16'],
+	[UNSIGNED_INT]: [Uint32Array, 'DT_UINT32'],
+	[FLOAT]: [Float32Array, 'DT_FLOAT32'],
+};
 
 /**
  * One attribute's values in its accessor's type, or quantized: float normals and tangents into
@@ -212,13 +197,24 @@ function readAttribute(
 			`its attribute ${wanted.id} has ${components} components, and the accessor of ${wanted.name} ${wanted.components}`,
 		);
 	const values = request.vertices * components;
-	const [size, type] = dataType(draco, wanted.componentType);
-	const byteLength = values * size;
+	// The parser checked the accessor's component type.
+	const [Type, dataType] = COMPONENT_TYPES[
+		wanted.componentType
+	] as (typeof COMPONENT_TYPES)[number];
+	const byteLength = values * Type.BYTES_PER_ELEMENT;
 	const pointer = draco._malloc(byteLength);
 	if (pointer === 0 && byteLength > 0)
 		throw new Error(`the decoder has no memory for ${wanted.name}`);
 	try {
-		if (!decoder.GetAttributeDataArrayForAllPoints(mesh, attribute, type, byteLength, pointer))
+		if (
+			!decoder.GetAttributeDataArrayForAllPoints(
+				mesh,
+				attribute,
+				draco[dataType],
+				byteLength,
+				pointer,
+			)
+		)
 			throw new Error(`its attribute ${wanted.id} does not read as ${wanted.name}`);
 		const heap = draco.HEAPU8.buffer;
 		if (wanted.componentType === FLOAT) {
@@ -227,7 +223,7 @@ function readAttribute(
 			if (quantized) return quantized;
 		}
 		request.take(byteLength, wanted.name);
-		const array = arrayOf(wanted.componentType, heap.slice(pointer, pointer + byteLength));
+		const array = new Type(heap.slice(pointer, pointer + byteLength));
 		return { array, componentType: wanted.componentType, normalized: wanted.normalized };
 	} finally {
 		draco._free(pointer);
