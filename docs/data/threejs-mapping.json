@@ -869,7 +869,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
       "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },

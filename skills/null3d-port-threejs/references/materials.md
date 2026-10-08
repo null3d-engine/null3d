@@ -47,7 +47,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
 | `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
-| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'` |
+| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'`. null3D blends in linear color, as `WebGPURenderer` does; `WebGLRenderer` blends after tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` for debugging, or `scene.createLines({ positions, mode: 'segments' })` (0.2) with two points for each edge of the mesh | |
 | `fog: false` | Same name | |
