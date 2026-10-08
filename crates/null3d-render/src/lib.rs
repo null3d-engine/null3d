@@ -34,6 +34,8 @@
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
+//! - `mirror`: planar reflections: the camera's view mirrored across a plane, with the plane as its
+//!   near plane
 //! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
 //! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
 //!   objects, from which the final pass draws the line
@@ -73,6 +75,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod mirror;
 pub mod morph;
 pub mod occlusion;
 pub mod outline;

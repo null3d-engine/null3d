@@ -22,6 +22,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
+19. Water and mirror floors with a reflection (0.2)
 
 ## 1. Start a new project
 
@@ -543,3 +544,49 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 ```
 
 `onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
+
+## 19. Water and mirror floors with a reflection (0.2)
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+const water = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+struct Uniforms { ripple: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    let slope = vec2f(cos(p.x * 3.1 + frame.time * 1.3), cos(p.y * 4.7 + frame.time * 1.9)) * material.ripple;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);   // the ripples bend the reflection
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0);
+    return s;
+}
+`;
+
+export default defineSketch(({ scene, geometry, materials, textures, render }) => {
+  scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85] } });
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2.5, 8], target: [0, 0.5, 0] }));
+  scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
+  scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#e03030' }), position: [0, 0.5, 0] });
+  // The camera's view mirrored across the water's plane; nothing below the plane shows in it.
+  const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
+  const surface = materials.shader({
+    wgsl: water,
+    color: '#0b2a33',
+    roughness: 0.05,
+    uniforms: { ripple: 0.08 },
+    textures: { mirror: textures.fromPass(pass) },
+  });
+  const plane = scene.createMesh({ mesh: geometry.plane({ width: 30, height: 30 }), material: surface });
+  plane.setRotationEuler(-Math.PI / 2, 0, 0);
+  return {};
+});
+```
+
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky and the sun's light and shadows, but no point or spot lights yet. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.

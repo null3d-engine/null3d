@@ -1605,8 +1605,8 @@
       "three": "SSRPass / ReflectorForSSRPass",
       "status": "post-1.0",
       "since": null,
-      "target": "The environment map",
-      "notes": "Planar and screen-space reflections come after 1.0.",
+      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
+      "notes": "Screen-space reflections come after 1.0. A flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
@@ -1614,11 +1614,11 @@
       "id": "reflector",
       "category": "Post-processing",
       "three": "Reflector / Refractor / Water / Water2 (addons)",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A water surface function that samples the environment map",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction have no port yet.",
+      "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },
     {

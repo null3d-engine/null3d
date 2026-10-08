@@ -365,7 +365,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
-- `textures.fromPass(pass)` (0.2) gives the texture of a scene pass from `render.addPass` (section 16).
+- `textures.fromPass(pass)` (0.2) gives the texture of a scene or reflection pass from `render.addPass` (section 16).
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
@@ -516,9 +516,17 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 render.setPassEnabled(map, false);   // keeps its last image; allocates nothing
 render.removePass(map);              // destroys its textures
 render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
+const water = render.addPass({
+  kind: 'reflection',                // the camera's view mirrored across a plane, clipped at the plane
+  writes: 'water',
+  plane: { point: [0, 0, 0] },       // normal: [0, 1, 0] by default
+  scale: 0.5,                        // optional: the preset's reflectionScale by default
+  every: 1,                          // optional: draw in one frame of every N
+});
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights, no ambient occlusion and no sky for now.
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights and no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
+- A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
 - Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.

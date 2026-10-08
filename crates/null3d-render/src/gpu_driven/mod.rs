@@ -901,6 +901,7 @@ impl GpuDrivenRenderer {
             size: s.size,
         }));
         self.graph.set_skinning(self.skinning.dispatches());
+        self.settings.pace_views();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1366,12 +1367,12 @@ impl GpuDrivenRenderer {
                     opaque::record(list, view, Bundle::Prepass)
                 }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
-                    let camera = view == ViewId::CAMERA;
-                    if camera {
+                    let backdrop = settings.draws_background(view);
+                    if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
                     opaque::record(list, view, Bundle::Opaque)?;
-                    if camera {
+                    if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::Last)?;
                     }
                     Ok(())
