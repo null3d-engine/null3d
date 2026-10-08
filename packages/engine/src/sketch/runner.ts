@@ -223,6 +223,8 @@ export class SketchRunner {
 	private readonly governorLoop: GovernorLoop | undefined;
 	/** The governor's count of changes when the core last took the settings that its steps move. */
 	private stepChanges = 0;
+	/** The budgets' count of changes when the governor last took the steps that they allow. */
+	private budgetChanges = 0;
 	/** The sketch's post-processing settings, which say whether bloom is on. */
 	private readonly post: Post;
 	private readonly render: Render;
@@ -704,6 +706,21 @@ export class SketchRunner {
 	}
 
 	/**
+	 * Gives the governor the steps that the sketch's budgets allow, and moves the budgets to the
+	 * governor's steps of their scale, which calls their `onScale` handlers.
+	 */
+	private followBudgets(): void {
+		const { governor } = this;
+		const { budgets } = this.quality;
+		if (budgets.changes !== this.budgetChanges) {
+			this.budgetChanges = budgets.changes;
+			governor.setBudgetSteps(budgets.steps);
+		}
+		if (governor.budgetLevel !== budgets.level)
+			budgets.follow(governor.budgetLevel, this.reportError);
+	}
+
+	/**
 	 * Follows the sketch's effects. Returns true when the frame has new targets and pipelines, so
 	 * the thread that draws holds it until they are built, and the frame before stays on screen
 	 * meanwhile.
@@ -898,6 +915,7 @@ export class SketchRunner {
 				if (change === RESTART_CHANGE) restart = true;
 				this.notify(this.quality.handlers, this.quality);
 			}
+			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.

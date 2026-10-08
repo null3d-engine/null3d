@@ -4,7 +4,11 @@ import { FramePacer } from '../render/pacer';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
 import {
+	BUDGET_STEP,
+	BUDGET_STEPS,
 	BUDGET_US,
+	budgetScale,
+	budgetSteps,
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
@@ -54,6 +58,7 @@ function controlled(low = 500, high = FULL_SCALE, scale = high) {
 	const judge = (frames: Frames): boolean => {
 		const before = controller.scale;
 		const steps = controller.steps;
+		const budgetLevel = controller.budgetLevel;
 		now += WINDOW_MS;
 		const { window } = controller;
 		window[WINDOW_END] = now;
@@ -61,7 +66,11 @@ function controlled(low = 500, high = FULL_SCALE, scale = high) {
 		window[GPU_DELAY_US] = Math.round(frames.delay * 1000);
 		window[BUDGET_US] = Math.round(BUDGET * 1000);
 		controller.judge();
-		return controller.scale !== before || controller.steps !== steps;
+		return (
+			controller.scale !== before ||
+			controller.steps !== steps ||
+			controller.budgetLevel !== budgetLevel
+		);
 	};
 	/** Judges windows of `frames` for `ms`, and returns the scale after each. */
 	const run = (frames: Frames, ms: number): number[] => {
@@ -85,7 +94,7 @@ function controlled(low = 500, high = FULL_SCALE, scale = high) {
 				seen.push(`${controller.scale} ${controller.farInterval} ${controller.filter}`);
 		return seen;
 	};
-	return { controller, run, untilStep, ladder };
+	return { controller, judge, run, untilStep, ladder };
 }
 
 /** The times, as window ends from the run's start, at which the scale changed. */
@@ -414,6 +423,135 @@ describe('the bloom steps', () => {
 		expect(ladder(SLOW)).toEqual(['950 1 3']);
 		expect(controller.maxSteps).toBe(0);
 		expect(SMALLEST_BLOOM_SIZE).toBe(64);
+	});
+});
+
+describe("the steps of a sketch's budgets", () => {
+	/**
+	 * A governor whose sketch's budgets allow `budgets` steps, over a render scale from `low` to the
+	 * highest, and whose sun casts shadows in three cascades with a 5 x 5 filter every 4th frame.
+	 */
+	function budgeted(budgets: number, low = 800) {
+		const governed = controlled(low);
+		const { controller } = governed;
+		controller.setShadows(5, 4, true);
+		controller.setCasters(3, false);
+		controller.setBudgetSteps(budgets);
+		/** The scale, the budgets' scale and the shadow settings after each step until they stop. */
+		const ladder = (frames: Frames): string[] => {
+			const seen: string[] = [];
+			for (let k = 0; k < 400; k++)
+				if (governed.judge(frames))
+					seen.push(
+						`${controller.scale} ${budgetScale(controller.budgetLevel, 0)} ${controller.farInterval} ${controller.filter}`,
+					);
+			return seen;
+		};
+		return { ...governed, ladder };
+	}
+
+	it('takes steps of a quarter from the full scale to each floor', () => {
+		expect(BUDGET_STEP * BUDGET_STEPS).toBe(FULL_SCALE);
+		expect([0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.9, 1].map(budgetSteps)).toEqual([
+			4, 4, 3, 3, 2, 1, 1, 0,
+		]);
+		expect([0, 1, 2, 3, 4].map((level) => budgetScale(level, 0))).toEqual([1, 0.75, 0.5, 0.25, 0]);
+		expect([0, 1, 2, 3].map((level) => budgetScale(level, 0.3))).toEqual([1, 0.75, 0.5, 0.3]);
+	});
+
+	it('lowers the budgets before each step of the render scale, so they scale down before its floor', () => {
+		const { ladder } = budgeted(4);
+		expect(ladder(SLOW)).toEqual([
+			'1000 0.75 4 5',
+			'950 0.75 4 5',
+			'950 0.5 4 5',
+			'900 0.5 4 5',
+			'900 0.25 4 5',
+			'850 0.25 4 5',
+			'850 0 4 5',
+			'800 0 4 5',
+			'800 0 8 5',
+			'800 0 8 3',
+		]);
+	});
+
+	it('raises them again in the reverse order, so the budgets come back to the full scale last', () => {
+		const { ladder } = budgeted(4);
+		const down = ladder(SLOW);
+		const up = ladder(EASY);
+		expect(up).toEqual([...down.slice(0, -1).reverse(), '1000 1 4 5']);
+	});
+
+	it('takes the steps that the budgets have left before the shadow steps, once the scale is at its floor', () => {
+		// A range of one step: the budgets still take their first step before the scale's.
+		expect(budgeted(3, 950).ladder(SLOW)).toEqual([
+			'1000 0.75 4 5',
+			'950 0.75 4 5',
+			'950 0.5 4 5',
+			'950 0.25 4 5',
+			'950 0.25 8 5',
+			'950 0.25 8 3',
+		]);
+		// A fixed scale, as at Ultra: the budgets take all their steps first.
+		expect(budgeted(2, FULL_SCALE).ladder(SLOW)).toEqual([
+			'1000 0.75 4 5',
+			'1000 0.5 4 5',
+			'1000 0.5 8 5',
+			'1000 0.5 8 3',
+		]);
+		const { ladder } = budgeted(3, 950);
+		const down = ladder(SLOW);
+		expect(ladder(EASY)).toEqual([...down.slice(0, -1).reverse(), '1000 1 4 5']);
+	});
+
+	it('takes the same steps as before without budgets', () => {
+		expect(budgeted(0).ladder(SLOW)).toEqual([
+			'950 1 4 5',
+			'900 1 4 5',
+			'850 1 4 5',
+			'800 1 4 5',
+			'800 1 8 5',
+			'800 1 8 3',
+		]);
+	});
+
+	it('holds the frames at a step of the budgets that lightened them', () => {
+		// A system of the sketch's own makes the frames slow at its full scale and at three
+		// quarters of it. At half, the frames have room, and the render scale stays one step down.
+		const { controller, judge } = budgeted(4);
+		for (let k = 0; k < 400; k++) judge(controller.budgetLevel < 2 ? SLOW : BUSY);
+		expect([controller.scale, controller.budgetLevel, controller.steps]).toEqual([950, 2, 0]);
+	});
+
+	it('waits twice as long before a step up of the budgets that took the frames over the budget', () => {
+		const { controller, untilStep } = budgeted(4);
+		untilStep(SLOW);
+		expect(controller.budgetLevel).toBe(1);
+		const raised = untilStep(EASY);
+		expect(controller.budgetLevel).toBe(0);
+		const dropped = untilStep(SLOW);
+		expect(controller.budgetLevel).toBe(1);
+		expect(dropped - raised).toBeLessThanOrEqual(FAILED_RAISE_MS);
+		expect(untilStep(EASY) - dropped).toBe(raiseGap(2 * RAISE_AFTER_MS));
+	});
+
+	it('keeps its steps within the budgets, and gives them the full scale while off', () => {
+		const { controller, ladder } = budgeted(4);
+		ladder(SLOW);
+		expect(controller.budgetLevel).toBe(4);
+		controller.setBudgetSteps(2);
+		expect(controller.budgetLevel).toBe(2);
+		controller.setBudgetSteps(0);
+		expect(controller.budgetLevel).toBe(0);
+		controller.setBudgetSteps(4);
+		ladder(SLOW);
+		controller.setOn(false);
+		expect([controller.scale, controller.budgetLevel, controller.steps]).toEqual([
+			FULL_SCALE,
+			0,
+			0,
+		]);
+		expect(ladder(SLOW)).toEqual([]);
 	});
 });
 

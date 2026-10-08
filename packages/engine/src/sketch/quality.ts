@@ -6,10 +6,12 @@
 // does, and the change resolves once the thread that draws has taken that frame. The settings fixed
 // while a preset runs keep the values that the engine started with, as the page's options do, until
 // the thread that draws can change them. A setting that the sketch chose itself keeps its value
-// when the engine's preset check lowers the preset.
+// when the engine's preset check lowers the preset. A sketch's own systems register budgets, whose
+// scale the frame-budget governor lowers with its other steps.
 
 import { EngineError } from '../errors/engine-error';
 import type { PresetCheck } from '../quality/check';
+import { budgetScale, budgetSteps } from '../quality/governor';
 import {
 	capTextureMemory,
 	checkSettings,
@@ -101,6 +103,56 @@ export interface QualityGovernor {
 }
 
 /**
+ * A system of the sketch's own that the frame-budget governor scales, as `quality.setBudget` gets
+ * it.
+ *
+ * @category api/quality
+ */
+export interface QualityBudgetOptions {
+	/**
+	 * The system's name, such as `'ai'` or `'particles'`. A second budget with the same name
+	 * replaces the first.
+	 */
+	name: string;
+	/**
+	 * The time in ms that the system may take in each frame at full quality: a number above 0. The
+	 * engine does not measure the system. It scales this time into the budget's `ms`.
+	 */
+	ms: number;
+	/** The lowest scale that the governor gives the system, from 0 to 1. The default is 0. */
+	min?: number;
+	/**
+	 * Called with the budget's scale when the budget is set, and again at the start of each frame
+	 * after the governor moves it.
+	 */
+	onScale?: (scale: number) => void;
+}
+
+/**
+ * A budget that `quality.setBudget` registered: the scale that the frame-budget governor gives the
+ * system now.
+ *
+ * @category api/quality
+ */
+export interface QualityBudget {
+	/** The system's name. */
+	readonly name: string;
+	/**
+	 * The scale from `min` to 1 that the system runs at now: 1 at full quality. The governor lowers
+	 * it in steps of 0.25 when frames take too long, and raises it again when they have time to
+	 * spare.
+	 */
+	readonly scale: number;
+	/** The time in ms that the system may take in each frame now: the budget's `ms` times `scale`. */
+	readonly ms: number;
+	/**
+	 * Removes the budget: the governor stops lowering the system, and `onScale` is not called again.
+	 * The scale keeps its last value.
+	 */
+	remove(): void;
+}
+
+/**
  * The quality preset and settings, as a sketch reads and changes them through `ctx.quality`.
  *
  * @category api/quality
@@ -152,10 +204,123 @@ export interface Quality {
 	 */
 	setPreset(preset: QualityPreset): Promise<void>;
 	/**
+	 * Registers a budget for a system of the sketch's own, such as its AI or its particles, and
+	 * returns it. The frame-budget governor gives every budget one scale from 0 to 1, each no lower
+	 * than its `min`. When frames take too long, the governor lowers the scale by 0.25 before each
+	 * step of the render scale, so the system scales down before the render scale reaches its floor.
+	 * It raises the scale again in the reverse order. A budget with the name of another replaces it.
+	 * Options that the call does not take throw E1213.
+	 */
+	setBudget(options: QualityBudgetOptions): QualityBudget;
+	/**
 	 * Calls `handler` at the start of the first frame after the settings change. Returns a function
 	 * that removes the handler.
 	 */
 	onChange(handler: (quality: Quality) => void): () => void;
+}
+
+/** A registered budget, which the sketch's budgets scale. */
+class Budget implements QualityBudget {
+	scale = 1;
+	min = 0;
+	full = 0;
+	onScale: ((scale: number) => void) | undefined;
+
+	constructor(
+		readonly name: string,
+		private readonly budgets: GameBudgets,
+	) {}
+
+	get ms(): number {
+		return this.full * this.scale;
+	}
+
+	remove(): void {
+		this.budgets.remove(this);
+	}
+}
+
+/**
+ * The sketch's budgets for its own systems, which share the governor's steps of the budgets' scale.
+ * `changes` counts each change of the steps that they allow, so the frame loop gives the governor
+ * the new count. `follow` moves each budget to the governor's steps.
+ */
+export class GameBudgets {
+	/** The governor's steps of the budgets' scale that the budgets follow now. */
+	level = 0;
+	/** The steps that the budgets allow: those down to the lowest of their floors. */
+	steps = 0;
+	/** Counts each change of `steps`. */
+	changes = 0;
+	private readonly budgets = new Map<string, Budget>();
+
+	/** Registers or replaces the budget that `options` give, and calls its `onScale`. */
+	set(options: QualityBudgetOptions): QualityBudget {
+		const call = 'quality.setBudget()';
+		if (typeof options !== 'object' || options === null)
+			throw new EngineError('E1213', `${call} got ${String(options)}, which is not an object.`);
+		const { name, ms, min = 0, onScale } = options;
+		if (typeof name !== 'string' || name === '')
+			throw new EngineError(
+				'E1213',
+				`${call} got the name ${typeof name === 'string' ? '""' : String(name)}, which is not a name of one character or more.`,
+			);
+		if (typeof ms !== 'number' || !(ms > 0) || !Number.isFinite(ms))
+			throw new EngineError(
+				'E1213',
+				`${call} got ms ${String(ms)}, which is not a number above 0.`,
+			);
+		if (typeof min !== 'number' || !(min >= 0 && min <= 1))
+			throw new EngineError(
+				'E1213',
+				`${call} got min ${String(min)}, which is not a number from 0 to 1.`,
+			);
+		if (onScale !== undefined && typeof onScale !== 'function')
+			throw new EngineError('E1213', `${call} got an onScale that is not a function.`);
+		const budget = this.budgets.get(name) ?? new Budget(name, this);
+		this.budgets.set(name, budget);
+		budget.full = ms;
+		budget.min = min;
+		budget.onScale = onScale;
+		budget.scale = budgetScale(this.level, min);
+		this.count();
+		onScale?.(budget.scale);
+		return budget;
+	}
+
+	/** Removes `budget`, unless a budget of the same name replaced it. */
+	remove(budget: Budget): void {
+		if (this.budgets.get(budget.name) !== budget) return;
+		this.budgets.delete(budget.name);
+		this.count();
+	}
+
+	/**
+	 * Moves the budgets to `level`, the governor's steps of their scale, and calls the `onScale` of
+	 * each whose scale changed. `report` gets each error that one throws.
+	 */
+	follow(level: number, report: (error: unknown) => void): void {
+		this.level = level;
+		for (const budget of this.budgets.values()) {
+			const scale = budgetScale(level, budget.min);
+			if (scale === budget.scale) continue;
+			budget.scale = scale;
+			try {
+				budget.onScale?.(scale);
+			} catch (error) {
+				report(error);
+			}
+		}
+	}
+
+	/** Works out the steps that the budgets allow, and counts a change of them. */
+	private count(): void {
+		let steps = 0;
+		for (const budget of this.budgets.values()) steps = Math.max(steps, budgetSteps(budget.min));
+		if (steps === this.steps) return;
+		this.steps = steps;
+		this.changes++;
+	}
 }
 
 /** No change since the frame that last asked. */
@@ -189,6 +354,8 @@ export class SketchQuality implements Quality {
 	private readonly textureCapMiB: number;
 
 	readonly governor: QualityGovernor;
+	/** The sketch's budgets for its own systems. */
+	readonly budgets = new GameBudgets();
 
 	/**
 	 * `governor` reports the governor's steps. Without it, the settings apply as set, as in hold
@@ -275,6 +442,10 @@ export class SketchQuality implements Quality {
 	/** The settings of `preset`, with `kept`'s values, under the device's texture memory cap. */
 	private presetValues(preset: QualityPreset, kept: Partial<QualitySettings>): QualitySettings {
 		return capTextureMemory(presetSettings(preset, kept), kept, this.textureCapMiB);
+	}
+
+	setBudget(options: QualityBudgetOptions): QualityBudget {
+		return this.budgets.set(options);
 	}
 
 	onChange(handler: (quality: Quality) => void): () => void {

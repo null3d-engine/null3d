@@ -2,10 +2,11 @@
 // runner's governor plan reads back. It has two stages:
 //
 // - The walk: the sketch spins on its thread for twice the frame budget in every frame, a load that
-//   no setting lightens. The governor takes every live step down, one after another. The load then
-//   stops, and the governor takes every step back up. The page captures a frame after each step,
-//   and measures the frames all along, so a step that lost the frame's image or stopped the frames
-//   shows.
+//   no setting lightens. The governor takes every live step down, one after another: the steps of
+//   a budget that the sketch registers among them, before the render scale reaches its floor. The
+//   load then stops, and the governor takes every step back up. The page captures a frame after
+//   each step, and measures the frames all along, so a step that lost the frame's image or stopped
+//   the frames shows.
 // - The hold: a plane in front of the camera runs a heavy loop for each of its pixels, so the GPU's
 //   work follows the pixels that the scene draws. With the governor off, the page grows the loop
 //   until the GPU falls well behind. With the governor on, the render scale drops until the frames
@@ -29,6 +30,10 @@ export const GOVERNOR = {
 	farCascadeInterval: 4,
 	/** The walk's lowest render scale: two steps of 0.05, so the walk stays short. */
 	walkMinScale: 0.9,
+	/** The lowest scale of the sketch's budget: two steps of 0.25, so the walk stays short. */
+	budgetMin: 0.5,
+	/** A budget's step, as the governor's. */
+	budgetStep: 0.25,
 	/** The hold's lowest render scale, a quarter of the pixels, which lightens most GPU loads. */
 	holdMinScale: 0.5,
 	/** The walk's load: CPU time per frame on the sketch's thread, in frame budgets. */
@@ -88,38 +93,50 @@ export interface GovernorState {
 	/** Seconds since the page asked for the stage's load. */
 	at: number;
 	renderScale: number;
+	/** The scale of the sketch's budget. */
+	budgetScale: number;
 	steps: number;
 	farCascadeInterval: number;
 	shadowFilter: number;
 }
 
-/** A state as the checks compare it: "scale interval filter". */
-export function stateKey(state: Omit<GovernorState, 'at'>): string {
-	return `${Number(state.renderScale.toFixed(3))} ${state.farCascadeInterval} ${state.shadowFilter}`;
+/** A state as the checks compare it: "scale budget interval filter". */
+export function stateKey(state: Omit<GovernorState, 'at' | 'steps'>): string {
+	const scale = (value: number) => Number(value.toFixed(3));
+	return `${scale(state.renderScale)} ${scale(state.budgetScale)} ${state.farCascadeInterval} ${state.shadowFilter}`;
 }
 
 /**
- * The states that the walk passes, from the first to the bottom: the render scale steps down to
- * the walk's lowest, then the far cascades' interval doubles up to every 8th frame, then the filter
- * goes to 3 texels. The steps up pass them again in the reverse order.
+ * The states that the walk passes, from the first to the bottom: the budget's scale and the render
+ * scale step down in turn, the budget's step first, to their lowest. Then the far cascades'
+ * interval doubles up to every 8th frame, and the filter goes to 3 texels. The steps up pass them
+ * again in the reverse order.
  */
 export function walkStates(): string[] {
-	const { walkMinScale, farCascadeInterval, shadowFilter } = GOVERNOR;
+	const { walkMinScale, budgetMin, budgetStep, farCascadeInterval, shadowFilter } = GOVERNOR;
+	const scaleSteps = Math.round((1 - walkMinScale) / 0.05);
+	const budgetSteps = Math.round((1 - budgetMin) / budgetStep);
 	const states: string[] = [];
-	for (let scale = 1; scale >= walkMinScale - 1e-9; scale -= 0.05)
-		states.push(stateKey({ renderScale: scale, steps: 0, farCascadeInterval, shadowFilter }));
-	for (let interval = farCascadeInterval * 2; interval <= 8; interval *= 2)
+	let scaled = 0;
+	let budgeted = 0;
+	const push = (farInterval: number, filter: number) =>
 		states.push(
 			stateKey({
-				renderScale: walkMinScale,
-				steps: 0,
-				farCascadeInterval: interval,
-				shadowFilter,
+				renderScale: 1 - scaled * 0.05,
+				budgetScale: 1 - budgeted * budgetStep,
+				farCascadeInterval: farInterval,
+				shadowFilter: filter,
 			}),
 		);
-	states.push(
-		stateKey({ renderScale: walkMinScale, steps: 0, farCascadeInterval: 8, shadowFilter: 3 }),
-	);
+	push(farCascadeInterval, shadowFilter);
+	while (scaled < scaleSteps || budgeted < budgetSteps) {
+		if (budgeted < budgetSteps && (budgeted <= scaled || scaled === scaleSteps)) budgeted++;
+		else scaled++;
+		push(farCascadeInterval, shadowFilter);
+	}
+	for (let interval = farCascadeInterval * 2; interval <= 8; interval *= 2)
+		push(interval, shadowFilter);
+	push(8, 3);
 	return states;
 }
 

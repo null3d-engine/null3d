@@ -3,12 +3,12 @@ id: api/quality
 title: Quality API
 status: experimental
 since: "0.1"
-summary: "quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events."
+summary: "quality.preset, quality.set, quality.setPreset, the preset check, the frame-budget governor, budgets for a sketch's own systems, quality events."
 ---
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1, with `quality.setBudget` from null3D 0.2. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -135,6 +135,54 @@ export default defineSketch(({ quality }) => {
 
 A step of the render scale does not call the handlers: read `quality.renderScale` for it. Turn the governor off where every frame must draw the same way, such as a benchmark or a recorded video: `quality.set({ governor: false })`.
 
+## Budgets for the sketch's own systems
+
+`quality.setBudget(options)` registers a budget for a system of the sketch's own, such as its AI, its particles or its crowd. The governor lowers the budget's scale with its own steps, and the sketch decides what a lower scale means for the system:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ quality }) => {
+  const searches: (() => void)[] = []; // path searches that the crowd asks for
+  let thinkers = 200; // the crowd members that think in each frame
+  const ai = quality.setBudget({
+    name: 'ai',
+    ms: 2,
+    min: 0.25,
+    onScale: (scale) => {
+      thinkers = Math.round(200 * scale);
+    },
+  });
+  return {
+    onUpdate() {
+      // Let `thinkers` crowd members think. Then search paths until the budget's time runs out,
+      // and go on in the next frame.
+      const end = performance.now() + ai.ms;
+      while (searches.length > 0 && performance.now() < end) searches.shift()?.();
+    },
+  };
+});
+```
+
+| Option | What it takes |
+| --- | --- |
+| `name` | The system's name. A budget with the name of another replaces it. |
+| `ms` | The time in ms that the system may take in each frame at full quality: a number above 0. The engine does not measure the system. It scales this time into the budget's `ms`. |
+| `min` | The lowest scale that the governor gives the system, from 0 to 1. The default is 0. |
+| `onScale` | A function that gets the budget's scale when the budget is set, and again at the start of each frame after the governor moves it. |
+
+The call returns the budget. Its `scale` runs from `min` to 1, where 1 is full quality. Its `ms` is the time that the system may take now: the option's `ms` times the scale. `remove()` removes the budget. The governor then stops lowering the system, and `onScale` is not called again. Options that the call does not take throw [E1213](../errors/E1213.md).
+
+The governor moves the budgets by these rules:
+
+- All budgets share one scale, which moves in steps of 0.25: 1, 0.75, 0.5, 0.25 and 0. Each budget takes that scale, but never less than its `min`. The governor takes the steps down to the lowest `min` of all the budgets.
+- When frames take too long, a step of the budgets comes before each step of the render scale, while both can go lower. So the sketch's systems scale down before the render scale reaches `minRenderScale`.
+- Once the render scale is at `minRenderScale`, the budgets take the steps they have left. Then the governor takes the shadow and effect steps.
+- When frames have time to spare again, the governor raises the settings in the reverse order. The budgets' first step down comes back last.
+- Each step follows the governor's rules for the render scale. A step down needs about a second over budget, and a step up 5 seconds with time to spare. With the governor off, and in hold mode, every budget's scale is 1.
+
+Each budget step adds a step before a step of the render scale. So with budgets, the render scale reaches `minRenderScale` some seconds later. When a lower budget does not make the frames faster, the governor's next step lowers the render scale. This happens, for example, when the GPU and not the system sets the frame rate.
+
 ## Texture memory
 
 The `quality.textureMemory` object reports the GPU memory of textures against their budget, the `textureMemoryMiB` setting. Its `bytes` are the GPU bytes that every texture takes, with the free layers of texture arrays. Its `budgetBytes` give the budget in bytes. Its `droppedLevels` count the mip levels that the engine dropped from every texture to stay under the budget. Its `droppedTextures` count the textures that hold fewer levels than their own. Each texture's `droppedLevels` gives its own count. [Quality presets](../concepts/quality-presets.md#texture-memory) explains which levels drop and how they come back.
@@ -150,7 +198,7 @@ Some textures never drop levels: those that the sketch made from images or data,
 
 ## Quality events
 
-`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
+`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. A step of the budgets calls their `onScale` functions, not these handlers. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
 
 ## Related pages
 

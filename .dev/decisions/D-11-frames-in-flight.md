@@ -17,6 +17,7 @@ On 3 October 2026:
 | The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. M2-R3 gave the page's thread a measurement of the display of its own, for Safari with `?render=main`. In M1-G6's S4 reruns, the render scale held still in every measured second. M1-K5 moved the step-down line to the line at which the benchmark reports count a held second, and gave each setting its own wait after a failed step up (below) | The iPad's S4 rerun at Low, warm; the owner's answer |
 | The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low. It passed at Low: 298 of 299 seconds at 60 fps | Open for later: the chooser starts the S24+ at Low, though it held Medium for 5 minutes. A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
+| Budgets for a sketch's own systems | Proposed by M2-P3, 2026-10-08: one shared scale in steps of 0.25, whose steps alternate with the render scale's, a budget's step first (below) | The owner's answer; a device run of the governor plan's walk, which now registers a budget |
 
 ## Question
 
@@ -217,7 +218,7 @@ The governor keeps the thresholds of dynamic resolution (M1-G4) for every step. 
 | Step up | After 5 s with room. Each setting keeps its own wait. A step up is on trial for 30 s: a step down from its setting in that time doubles the wait before the next step up into it, up to 80 s. A step down after the trial sets that setting's wait back to 5 s. M1-G5 proposed one wait for all settings and a trial of 3 s |
 | Settle after a step | 1 s |
 | Grace | 2 s after the first frame, after a pause, and while textures wait to upload |
-| Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3, then bloom's samples halved down to a quarter while bloom is on (M2-F1). Up in the reverse order |
+| Order | Render scale in steps of 0.05, then the far cascades' interval doubled up to 8, then the shadow filter from 5 to 3, then bloom's samples halved down to a quarter while bloom is on (M2-F1). Up in the reverse order. A sketch's budgets step by 0.25 in turn with the render scale, a budget's step first (M2-P3, below) |
 
 Why this order: the render scale lightens the GPU's work on every pixel, whatever the scene holds. A step of the scale also makes no GPU object. Scene passes draw into the top-left corner of targets that keep the canvas's size. So a new scale needs no texture, view, bind group or pipeline. The shadow steps help only a scene whose shadows cost much, so they come after the scale has reached `minRenderScale`. Bloom's steps come last (M2-F1, [D-21](D-21-effect-chain.md)). A lower render scale already shrinks bloom's targets with the scene's. Bloom's samples change only a uniform, so a step makes no GPU object. Fewer samples read the same kernels more coarsely. The glow keeps its size, but faint steps show in it, so these steps come last.
 
@@ -369,7 +370,49 @@ bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s4 --pages nu
 
 React Three Fiber's drei has the same problem in `PerformanceMonitor`. It counts the swings between its bounds, and after `flipflops` swings it calls `onFallback` and stops. null3D's governor keeps trying, but each failed setting waits longer, up to 80 s, so a scene that gets lighter still gets its quality back.
 
-## The preset values (M1-G6)
+### The 34 steps of the M1 gate (M2-R6, closed by M2-P3)
+
+M2-R6's audit listed the iPad's governor swings of the M1 gate as open: 34 steps on 03a1ad198 against 8 on 5309dba5, in S4 at Low. They were on WebGPU, not WebGL2, and all of them moved the render scale between 0.75 and 0.9. The iPad rerun on fdf14a28 (run 20261006-040336-bench) had each setting's own wait after a failed step up (M1-K5, above). It took 6 steps and held 60 fps in 300 of 300 seconds ([Releases](../releases.md)). So the swings did not return, and the governor needs no change for them. Closed on 8 October 2026.
+
+### Budgets for a sketch's own systems (M2-P3)
+
+Status: proposed by M2-P3 on 2026-10-08. The owner has not answered yet.
+
+A game registers a budget for a system of its own with `quality.setBudget({ name, ms, min, onScale })`, and gets a scale from 0 to 1. The governor lowers it with its other live steps. The task's rule: a registered system scales down before the render scale reaches its floor, by a rule that the docs give.
+
+#### Rule
+
+- All budgets share one scale. It moves in steps of 0.25: 1, 0.75, 0.5, 0.25 and 0. Each budget takes that scale, but never less than its `min`. The governor takes steps down to the lowest `min` of all budgets.
+- Down: while the budgets and the render scale can both go lower, they take turns, and a budget's step comes first. So the order is budget, scale, budget, scale. Once the render scale is at its floor, the budgets take the steps they have left. Then the shadow and effect steps follow.
+- Up: the reverse order. The shadow and effect steps come back first. Then the budgets' steps that came after the scale's floor come back. Then the render scale and the budgets take turns, and the budgets' first step comes back last.
+- Each budget step is one of the governor's levels, with the same waits and trials as a render scale step. A step down needs a second over budget, and a step up 5 s with room. A failed step up doubles the wait.
+- `ms` is the system's time per frame at full quality, as the game gives it. The engine does not measure the system. The budget's `ms` then gives the time that the system may take now: `ms` times the scale. A game that spreads work over frames, such as path searches, uses that time as its limit.
+- `onScale` runs when the budget is set, and at the start of each frame after the scale moves. The `quality.onChange` handlers do not run for a budget step.
+
+Take a sketch range of 1 to 0.5, which has 10 scale steps, and a budget with `min` 0. The budget reaches 0 after 8 steps, at a render scale of 0.8. With a range of one scale step, the budget still takes its first step before the scale's. With a fixed scale, as at Ultra, the budgets take all of their steps before the shadow steps.
+
+#### Why this rule
+
+- A game registers a budget for work that it accepts to lower. The render scale makes every pixel softer, whatever the scene holds. So the game's own systems go down first.
+- The governor cannot tell which work makes the frames slow. A CPU-bound frame does not get faster at a lower render scale, and a GPU-bound frame does not get faster with fewer AI updates. Taking turns tries both kinds of step early. When one step does not help, the next step is of the other kind. D-11's open question above notes that a CPU-bound scene otherwise walks down every step for nothing.
+- One shared scale keeps the steps few. The governor takes at most 4 budget steps, however many budgets the game registers.
+- Steps of 0.25 keep the walk short. Each step down needs about 2 s (1 s over budget, 1 s to settle), and each step up at least 6 s. Four steps add about 8 s before the render scale reaches its floor. Steps of 0.1 would add 20 s.
+
+#### Options rejected
+
+- Budgets after the render scale's floor, as the shadow steps are. The game's systems would scale down only after every pixel had become softer. This fails the task's rule.
+- All budget steps before the render scale. A GPU-bound scene would take 4 steps that do not help, about 8 s, before the scale moves.
+- Turns with the render scale first. With a range of one scale step, the scale reaches its floor before any budget step, which fails the rule. A budget's step first costs a GPU-bound scene one step, about 2 s.
+- A scale and steps for each budget, in order of `ms`. Three budgets would take 12 steps, and the governor still could not tell which system is slow.
+- The engine measures each system, with a call that wraps it, and lowers only the systems over their `ms`. Each wrapped call costs clock readings and a function call in every frame, and the frame rate already tells when to lower. A later task can add it if games need it.
+- The `quality.onChange` handlers for budget steps. Those handlers apply per-preset tables. The budgets step more often than the shadow settings, and `onScale` reaches only the system that moved.
+
+#### Data
+
+The unit tests in `quality/governor.test.ts` walk the ladder with budgets of 4, 3 and 2 steps. The render scale ranges are 1 to 0.8, one step, and one fixed scale. In each, the budgets take a step before the render scale reaches its floor. The steps up pass the same states in the reverse order. Without budgets, the ladder stays as before. In one test, the sketch's own system makes the frames slow until the budgets' second step. The governor rests at that step, with the render scale one step down.
+
+The browser test's walk (`tests/pages/lib/governor.ts`) registers a budget with a floor of 0.5. Its load spins the sketch's thread at every scale, so no step helps. The walk expects 6 steps down and back up: budget, scale, budget, scale, the far cascades, the filter.
+
 
 Status: set by M1-G6 on 2026-10-03, from the Mac's runs and the reruns on the S24+ and the iPad. The values below stay as proposed. The S24+ holds its gate at Low. The iPad misses its gate at Medium once it is warm, for reasons that no shadow value changes ("The reruns" below). The owner decided on 3 October 2026 to judge the iPad's gate at Low ("Decision on the iPad's gate" below). The iPad's first runs do not count. The governor keeps the thresholds of M1-G5: in every measured second of the reruns, the render scale held still, with no step up or down.
 

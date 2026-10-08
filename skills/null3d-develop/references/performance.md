@@ -150,7 +150,7 @@ The frame-budget governor keeps the frame rate when the scene is too heavy for t
 
 The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
 
-1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas.
+1. The render scale falls in steps of 0.05, down to `minRenderScale`. The scene draws at fewer pixels, and the engine scales the image up to the canvas. Budgets that you register with `quality.setBudget` (0.2) step down by 0.25 before each step of the render scale.
 2. The far shadow cascades draw half as often, up to every 8th frame.
 3. The shadow filter drops to 3 x 3 texels, for cheaper shadow edges.
 
@@ -183,13 +183,13 @@ The scene shaders can do their color math at half precision: lighting, tone mapp
 Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Your systems get budgets of their own through `setBudget` (0.2):
 
 ```ts
-quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
+const ai = quality.setBudget({ name: 'ai', ms: 2, min: 0.25, onScale: (s) => { thinkers = Math.round(200 * s); } });  // (0.2)
 const RAIN = { low: 2000, medium: 5000, high: 10000, ultra: 10000 };  // one table, keyed by preset
 rain.setActiveCount(RAIN[quality.preset]);
 quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
 ```
 
-`onScale` receives a value from 0 to 1: 1 means full quality. Keep the callbacks cheap; they run when quality changes, not every frame.
+`onScale` receives the budget's scale when you register it, and after each change. 1 means full quality. All budgets share one scale that moves in steps of 0.25, down to each budget's `min`. When frames run long, the governor lowers the budgets one step before each render-scale step. So your systems scale down before the render scale reaches `minRenderScale`. It raises them in the reverse order. `ai.ms` is `ms` times the scale. Use it as the time limit for work that you spread over frames, such as path searches. The engine does not time your system. Keep the callbacks cheap; they run when the scale changes, not every frame. Engine docs: `api/quality`.
 
 ## 8. Per-frame code that allocates nothing
 

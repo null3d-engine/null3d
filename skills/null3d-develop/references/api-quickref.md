@@ -536,7 +536,7 @@ quality.textureMemory;                  // (0.2) { bytes, budgetBytes, droppedLe
 await quality.setPreset('low');         // the live settings take Low's values; start-time ones stay; resolves once its frame is on screen
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
-quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
+const ai = quality.setBudget({ name: 'ai', ms: 2, min: 0.25, onScale: (scale) => { aiRate = scale; } });  // (0.2) the governor lowers it in steps of 0.25 before each render-scale step; ai.ms = 2 x scale; ai.remove()
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds, reused }, or null
 ```

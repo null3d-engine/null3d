@@ -13,6 +13,7 @@ import {
 import {
 	LIVE_CHANGE,
 	NO_CHANGE,
+	type QualityBudgetOptions,
 	type QualityStart,
 	type QualityUpdate,
 	RESTART_CHANGE,
@@ -388,5 +389,113 @@ describe('SketchQuality.setPreset', () => {
 		quality.report(check);
 		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check }]);
 		expect(changes).toEqual([[]]);
+	});
+});
+
+describe('SketchQuality.setBudget', () => {
+	it('registers a budget at the full scale, and calls its onScale at once', () => {
+		const { quality } = medium();
+		const scales: number[] = [];
+		const ai = quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => scales.push(scale) });
+		expect([ai.name, ai.scale, ai.ms]).toEqual(['ai', 1, 2]);
+		expect(scales).toEqual([1]);
+		expect(quality.budgets.steps).toBe(4);
+		expect(quality.takeChange()).toBe(NO_CHANGE);
+	});
+
+	it("follows the governor's steps down to each budget's floor, and calls onScale on each change", () => {
+		const { quality } = medium();
+		const scales: number[] = [];
+		const ai = quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => scales.push(scale) });
+		const sparks = quality.setBudget({ name: 'sparks', ms: 1, min: 0.5 });
+		const report = () => {
+			throw new Error('no handler throws');
+		};
+		for (const level of [1, 2, 3, 4, 2, 0]) quality.budgets.follow(level, report);
+		expect(scales).toEqual([1, 0.75, 0.5, 0.25, 0, 0.5, 1]);
+		expect([ai.scale, sparks.scale]).toEqual([1, 1]);
+		quality.budgets.follow(3, report);
+		expect([ai.scale, ai.ms, sparks.scale, sparks.ms]).toEqual([0.25, 0.5, 0.5, 0.5]);
+	});
+
+	it('allows the steps down to the lowest floor, and counts each change of them', () => {
+		const { quality } = medium();
+		const { budgets } = quality;
+		const sparks = quality.setBudget({ name: 'sparks', ms: 1, min: 0.5 });
+		expect([budgets.steps, budgets.changes]).toEqual([2, 1]);
+		const ai = quality.setBudget({ name: 'ai', ms: 2, min: 0.3 });
+		expect([budgets.steps, budgets.changes]).toEqual([3, 2]);
+		// A budget whose floor allows no more steps leaves the count alone.
+		quality.setBudget({ name: 'fog', ms: 1, min: 0.75 });
+		expect([budgets.steps, budgets.changes]).toEqual([3, 2]);
+		ai.remove();
+		expect([budgets.steps, budgets.changes]).toEqual([2, 3]);
+		ai.remove();
+		sparks.remove();
+		expect(budgets.steps).toBe(1);
+	});
+
+	it('replaces a budget of the same name, and starts it at the scale of the steps taken', () => {
+		const { quality } = medium();
+		const first = quality.setBudget({ name: 'ai', ms: 2 });
+		quality.budgets.follow(2, () => {});
+		const scales: number[] = [];
+		const second = quality.setBudget({
+			name: 'ai',
+			ms: 4,
+			min: 0.75,
+			onScale: (scale) => scales.push(scale),
+		});
+		expect(second).toBe(first);
+		expect([second.scale, second.ms]).toEqual([0.75, 3]);
+		expect(scales).toEqual([0.75]);
+		expect(quality.budgets.steps).toBe(1);
+	});
+
+	it('stops calling onScale after remove, and keeps the last scale', () => {
+		const { quality } = medium();
+		const scales: number[] = [];
+		const ai = quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => scales.push(scale) });
+		quality.budgets.follow(1, () => {});
+		ai.remove();
+		quality.budgets.follow(0, () => {});
+		expect(scales).toEqual([1, 0.75]);
+		expect(ai.scale).toBe(0.75);
+		expect(quality.budgets.steps).toBe(0);
+	});
+
+	it('reports an error that onScale throws, and moves the other budgets on', () => {
+		const { quality } = medium();
+		const errors: unknown[] = [];
+		const failing = new Error('the handler failed');
+		let calls = 0;
+		quality.setBudget({
+			name: 'ai',
+			ms: 2,
+			onScale: () => {
+				if (calls++ > 0) throw failing;
+			},
+		});
+		const sparks = quality.setBudget({ name: 'sparks', ms: 1 });
+		quality.budgets.follow(1, (error) => errors.push(error));
+		expect(errors).toEqual([failing]);
+		expect(sparks.scale).toBe(0.75);
+	});
+
+	it('refuses options that it does not take with E1213, and registers nothing', () => {
+		const { quality } = medium();
+		const bad = [
+			null,
+			{ name: '', ms: 2 },
+			{ name: 'ai' },
+			{ name: 'ai', ms: 0 },
+			{ name: 'ai', ms: Number.POSITIVE_INFINITY },
+			{ name: 'ai', ms: 2, min: -0.1 },
+			{ name: 'ai', ms: 2, min: 1.5 },
+			{ name: 'ai', ms: 2, onScale: 'fast' },
+		];
+		for (const options of bad)
+			expect(() => quality.setBudget(options as unknown as QualityBudgetOptions)).toThrow('E1213');
+		expect(quality.budgets.steps).toBe(0);
 	});
 });

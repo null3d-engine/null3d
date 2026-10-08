@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Neither are frame budgets for a sketch's own systems. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves the render scale and then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -252,13 +252,13 @@ A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderSca
 
 ```mermaid
 flowchart LR
-    over["1 s over budget"] --> scale["1. Render scale: 0.05 lower,<br/>down to minRenderScale"]
+    over["1 s over budget"] --> scale["1. Sketch budgets: 0.25 lower, and<br/>render scale: 0.05 lower, in turn,<br/>down to minRenderScale"]
     scale -- "still over budget" --> far["2. Far shadow cascades:<br/>half as often, down to every 8th frame"]
     far -- "still over budget" --> filter["3. Shadow filter: 3 x 3 texels"]
     room["5 s with time to spare"] --> back["One step back up,<br/>in the reverse order"]
 ```
 
-Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings and the effects' settings, one step at a time:
+Dynamic resolution is the first part of the frame-budget governor. A sketch can register budgets for its own systems with `quality.setBudget`. Then a step of their scale comes before each step of the render scale, and their remaining steps come once the render scale is at `minRenderScale`. [Quality API](../api/quality.md#budgets-for-the-sketchs-own-systems) gives the rule. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings and the effects' settings, one step at a time:
 
 1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
