@@ -2,7 +2,7 @@
 
 Status: decided by the owner on 2026-10-08 at about 00:05 (UTC+8): option (d), tables that grow. The coordinator set a small start at about 00:55, so that small games stay small. Timed on the Mac, the Galaxy S25 and the Pixel 9 on 2026-10-08. Date: 2026-10-08. Task: M2-L3 needs it.
 
-Summary: The scene's object tables start with room for 1,023 objects, not 16,383. They double when the scene needs more, up to 1,048,575, the most that a handle names. A small scene's engine memory is 6.2 to 6.5 MB smaller. A growth copies 263 bytes per object: 1 ms from 16,383 to 32,767 objects in Chrome on the Mac, and 2.4 to 5.3 ms on the Galaxy S25 and the Pixel 9. It comes at a frame's start once the scene is three quarters full, or at a create call that finds it full. The `expectedObjects` option sizes the tables from the start.
+Summary: The scene's object tables start with room for 1,023 objects, not 16,383. They double when the scene needs more, up to 1,048,575, the most that a handle names. A small scene's engine memory is 6.2 to 6.5 MB smaller. A growth copies 263 bytes per object. From 16,383 to 32,767 objects it takes 1 ms in Chrome on the Mac, and 2.4 to 5.3 ms on the Galaxy S25 and the Pixel 9. It comes at a frame's start once the scene is three quarters full, or at a create call that finds it full. The `expectedObjects` option sizes the tables from the start.
 
 ## Question
 
@@ -73,7 +73,7 @@ In Chrome the first growth took longer than the second in every run, and these r
 
 The device runner's `object-growth` plan runs `tests/pages/object-growth.html?timing` three times on each GPU path, and its summary gives the tables above ([Device sessions](../devices.md#the-object-growth-plan)).
 
-The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. It gave 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2 for the growth from 16,383 to 32,767 objects, and 1.55 to 1.83 ms and 1.62 to 1.87 ms for the growth to 65,535. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. The engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2 with the default start, and 29.3 to 29.4 MB and 30.1 MB with room for 16,383 objects.
+The plan's first run, in Chrome 155 on the Mac on 2026-10-08 at a 1-minute load of 7.7, passed 6 of 6 loads. The growth from 16,383 to 32,767 objects took 0.98 to 1.07 ms on WebGPU and 0.91 to 0.97 ms on WebGL2. The growth to 65,535 took 1.55 to 1.83 ms and 1.62 to 1.87 ms. Those agree with the table above. The growths to 8,191 objects or fewer took 0.06 to 0.37 ms, less than the table's, and the first growth again varied the most. With the default start, the engine memory was 22.8 to 22.9 MB on WebGPU and 23.5 to 23.6 MB on WebGL2. With room for 16,383 objects, it was 29.3 to 29.4 MB and 30.1 MB.
 
 ### The cost of a growth on phones
 
