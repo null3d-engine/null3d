@@ -181,6 +181,9 @@ run('stats', async (): Promise<StatsResult> => {
 		figures.gpuBufferBytes > 0 &&
 		counted(figures) &&
 		(!gpuTimer || figures.gpuMs !== null) &&
+		// The overlay refreshes a few times a second, so it can show the GPU row as still measuring
+		// for a moment after the figures hold a GPU time.
+		(!gpuTimer || /^\d/.test(readOverlay(canvas)?.figures.gpu ?? '')) &&
 		/^[1-9]/.test(readOverlay(canvas)?.figures.triangles ?? '');
 	const until = performance.now() + WAIT_MS;
 	let figures = await askFigures();
