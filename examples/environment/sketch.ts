@@ -6,9 +6,8 @@
 // change every frame.
 import { createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
+import { sampleUrl } from '../lib/samples';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** Seconds that each environment shows. */
 const STEP = 4;
 /** Spheres in each row, from roughness 0 to 1. */

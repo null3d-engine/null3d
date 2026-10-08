@@ -5,9 +5,8 @@
 // frames. Orbit controls turn the camera on their own, and dragging turns it by hand.
 import { createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
+import { sampleUrl } from '../lib/samples';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** The model's radius after scaling, in meters. */
 const RADIUS = 1;
 

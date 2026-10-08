@@ -5,9 +5,8 @@
 // so the sketch only sets the speed. The sun casts the Knight's skinned shadow.
 import { createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
+import { sampleUrl } from '../lib/samples';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** The Knight's accessories that it carries: one sword and one shield. */
 const KEPT = new Set(['1H_Sword', 'Round_Shield']);
 const ACCESSORIES = [

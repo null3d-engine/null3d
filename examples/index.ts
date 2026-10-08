@@ -2,7 +2,9 @@
 // on a canvas that fills the window. The engine reads its own switches from the address: ?hold=2
 // draws the frame at 2 seconds that the demo's image test holds, and ?gpu=webgl2 forces a GPU tier.
 // A demo's sketch can post 'label' messages: the page then shows each label's text in an element
-// that follows the label's object.
+// that follows the label's object. The page's links are relative, so it runs under any address
+// prefix. Once a demo starts, or fails to, the root element's data-demo attribute says 'running' or
+// 'failed', for tests that load the page.
 import { createEngine, type Engine } from '@null3d/engine';
 import { DEMOS, type Demo } from './demos';
 
@@ -98,11 +100,13 @@ async function runDemo(demo: Demo): Promise<void> {
 	try {
 		const engine = await createEngine({
 			canvas,
-			sketch: new URL(`/examples/${demo.name}/sketch.ts`, location.origin),
+			sketch: demo.sketch,
 			largeWorld: demo.largeWorld,
 		});
 		showLabels(engine, labels);
+		document.documentElement.dataset.demo = 'running';
 	} catch (error) {
+		document.documentElement.dataset.demo = 'failed';
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';
 		panel.append(message);
