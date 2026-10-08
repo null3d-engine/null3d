@@ -202,7 +202,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 scene.createMesh({ mesh: geometry.plane({ width: 2, height: 2 }), material: screen, position: [0, 1, -4] });
 ```
 
-The pass is a declaration. No sketch code runs while it draws, and the render graph orders it before the passes that show its texture. [Render graph API](../api/render.md) lists every option.
+The pass is a declaration. No sketch code runs while it draws, and the render graph orders it before the passes that show its texture. [Render graph API](../api/render.md) lists every option. The [security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) shows a camera's view on a monitor this way, with a camera that turns every frame.
 
 ### Layers and what a pass shows
 
@@ -262,6 +262,7 @@ The texture holds linear color after the exposure, so a material that shows it g
 
 - [Post-processing API](../api/post.md): `post.addEffect`, `post.setEffectUniform`, `post.removeEffect` and `post.set`.
 - [Render graph API](../api/render.md): `render.addPass`, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph`.
+- [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass whose texture a monitor shows.
 - [The post-processing chain](../concepts/post-processing.md): where effects run, and the built-in effects.
 - [Custom shaders](custom-shaders.md): the WGSL build, uniforms and the shader library.
 - [Porting post-processing](../porting/threejs-postprocessing.md): three.js's `ShaderPass` and effect passes.

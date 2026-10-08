@@ -127,6 +127,14 @@ export const DEMOS: readonly Demo[] = [
 		hold: 4,
 	},
 	{
+		name: 'security-camera',
+		title: 'A security camera',
+		summary:
+			'A camera on a pole sweeps a yard behind a wall. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there.',
+		controls: 'Drag to turn the camera, and scroll or pinch to zoom.',
+		hold: 2,
+	},
+	{
 		name: 'sprites-lines',
 		title: 'Sprites and lines',
 		summary:

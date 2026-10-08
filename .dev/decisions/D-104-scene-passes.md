@@ -76,3 +76,4 @@ The coordinator chose B on 8 October 2026, at the helper's recommendation, and f
 - The 8-bit copy: `view_copy.wgsl` has a TONE_MAP build, and the pass targets that WebGPU's copies fill are `rgba8unorm-srgb` on the 8-bit path (`view_target_format` in `frame_graph.rs`).
 - Docs: `api/render` (written), `guides/custom-passes` (render to a texture), `concepts/render-graph`, `api/textures`, the mapping entry `render-target`, E1220 and the fixes of E1502 to E1505.
 - Skills: the develop skill's quick reference, recipes, shaders and `SKILL.md`, and the port skill's post-processing notes.
+- Demo: `examples/security-camera` shows a scene pass on a monitor, and its held frame checks option B's colours in compatibility mode against the tone curve applied twice ([image tests](../image-tests.md#the-feature-demos)).
