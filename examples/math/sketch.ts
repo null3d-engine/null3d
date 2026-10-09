@@ -1,11 +1,9 @@
-// Math helpers: a flock of 300 drones circles a lamp over a landing pad at dusk. Each drone holds a
-// slot in a wide ring below the lamp, and the whole ring turns, so the flock keeps its spacing. Its
-// place, its lean and bank and the spin of its rotors come from time.now alone, through vec3 and
-// quat helpers that write into arrays made once, so a frame allocates nothing. A drone in front of
-// the lamp steps aside from the camera's line of sight, so the lamp stays in view. Each drone
-// carries a small point light. The lamp is a point light too, which casts the crates' shadows on
-// the presets with point light shadows. The pointer can lead the lamp.
-
+// Math helpers: a flock of 300 drones chases a lamp over a landing pad at dusk. Each drone flies
+// the lamp's path at its own lag and circles it at its own speed, so the flock streams after the
+// lamp's turns. Place, lean, bank and rotor spin come from time.now alone, through vec3 and quat
+// helpers that write into arrays made once. While the pointer leads the lamp, each drone eases
+// after it at its own rate. Drones keep clear of the lamp and out of the camera's line of sight to
+// it. Each carries a small point light; the lamp's light casts the crates' shadows on High.
 import type { InstanceBatch, Material, MeshGeometry, Vec3 } from '@null3d/engine';
 import { defineSketch, math, quat, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
@@ -17,13 +15,12 @@ const PAD = [-7, 0, -7, 7, 5, 7] as const;
 /** A point toward the sun: just over the horizon, to the camera's left. */
 const SUN = [-0.95, 0.05, 0.3] as const;
 const GOLD = '#ffd166';
-/** How close to the lamp, across the view, a drone in front of it may come, in meters. */
-const CLEAR = 1.3;
+/** How close to the lamp a drone may come, and how close across the view in front of it. */
+const [GAP, CLEAR] = [1.6, 1.3];
 /** The parts' places on a drone: the middle, a rotor at the end of each arm, the tail light. */
 const MIDDLE = [0, 0, 0] as const;
 const ROTORS = [-0.2, 0.2].flatMap((x) => [-0.2, 0.2].map((z) => [x, 0.045, z] as const));
 const TAIL = [0, 0, -0.16] as const;
-const UP = [0, 1, 0] as const;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, time } = ctx;
@@ -44,7 +41,6 @@ export default defineSketch(async (ctx) => {
 	const ball = geometry.sphere({ radius: 0.3 });
 	const orb = scene.createMesh({ mesh: ball, material: glow(GOLD, 16), dynamic: true });
 	scene.createPointLight({ parent: orb, color: GOLD, intensity: 99, range: 20, castShadows: true });
-
 	// The floor: concrete grain with a painted line along two edges, a grid of lines as it repeats.
 	math.seed(7);
 	const data = new Uint8Array(64 * 64 * 4);
@@ -66,7 +62,6 @@ export default defineSketch(async (ctx) => {
 		const [x, z, size] = [Math.sin(k + 0.5) * 11, Math.cos(k + 0.5) * 11, 0.6 + 0.12 * k];
 		block(wood, [x, size / 2 - 1, z], [size, size, size]);
 	}
-
 	// A drone: a body, two crossed arms, four rotors and a tail light, one instance batch per part.
 	const batch = (mesh: MeshGeometry, rows: number, material: Material) =>
 		scene.createInstances(mesh, rows, { material, dynamic: true });
@@ -79,28 +74,34 @@ export default defineSketch(async (ctx) => {
 	const tails = batch(geometry.box({ width: 0.1, height: 0.03, depth: 0.03 }), DRONES, cyan);
 	const torch = { color: '#7fdcff', intensity: 1, range: 2, dynamic: true };
 	const torches = Array.from({ length: DRONES }, () => scene.createPointLight(torch));
-	// Each drone's slot, spread evenly over the ring by the golden angle: an angle and a distance
-	// outside the lamp's clear space, a height over the pad, and a start for its bob.
+	// Each drone's lag and orbit speed, and an angle, a distance and a height spread over its ring.
 	const slots = Array.from({ length: DRONES }, (_, i) => ({
+		lag: math.randFloat(0, 1.6),
+		spin: math.randFloat(0.2, 0.9),
 		angle: i * 2.4,
-		far: 2.2 + 3.8 * Math.sqrt((i + 0.5) / DRONES),
+		far: 1.8 + 2.4 * Math.sqrt((i + 0.5) / DRONES),
 		height: math.randFloat(-0.4, 1.4),
-		bob: i * 0.7,
 	}));
-
+	// Each drone's own steering, which eases slower the more it lags: its weight and its point.
+	const weights = new Float32Array(DRONES);
+	const points = Array.from({ length: DRONES }, vec3.create);
 	// Scratch arrays: made once, reused in every frame.
 	const [lampAt, before, here, after] = Array.from({ length: 4 }, vec3.create);
 	const [offset, side, toEye, at] = Array.from({ length: 4 }, vec3.create);
 	const [facing, part, blade, none] = Array.from({ length: 4 }, quat.create);
-	const crossed = [Math.PI / 4, -Math.PI / 4].map((a) => quat.setAxisAngle(quat.create(), UP, a));
-	/** Writes the lamp's place at time t into out, moved toward the pointed point while it steers. */
-	const lamp = (out: typeof here, t: number) =>
-		view.steer(vec3.set(out, Math.sin(t * 0.7) * 3, 2 + Math.sin(t * 1.3), Math.sin(t * 1.4) * 2));
-	/** Writes drone i's place at time t into out: its slot on the turning ring around the lamp. */
+	const crossed = [Math.PI / 4, -Math.PI / 4].map((a) => quat.rotateY(quat.create(), none, a));
+	/** Writes the lamp's scripted place at time t into out. */
+	const path = (out: typeof here, t: number) =>
+		vec3.set(out, Math.sin(t * 0.7) * 4.5, 2 + Math.sin(t * 1.3), Math.sin(t * 1.4) * 3);
+	/** Writes drone i's place at time t into out: its slot around its lagged or led center. */
 	const drone = (out: typeof here, i: number, t: number) => {
-		const { angle, far, height, bob } = slots[i];
-		const [x, z] = [Math.cos(angle + t * 0.35) * far, Math.sin(angle + t * 0.35) * far];
-		vec3.set(offset, x, height + Math.sin(t * 1.7 + bob) * 0.15 - lamp(out, t)[1], z);
+		const { lag, spin, angle, far, height } = slots[i];
+		const turn = angle + spin * t + 0.3 * Math.sin(t * 0.8 + i);
+		vec3.lerp(out, path(out, t - lag), points[i], weights[i]);
+		const bob = height + Math.sin(t * 1.7 + i) * 0.15;
+		vec3.set(offset, Math.cos(turn) * far, bob - out[1], Math.sin(turn) * far);
+		vec3.sub(offset, vec3.add(offset, offset, out), lampAt);
+		if (vec3.length(offset) < GAP) vec3.scale(offset, vec3.normalize(offset, offset), GAP);
 		// In front of the lamp, keep out of the cylinder between the lamp and the camera.
 		const front = vec3.dot(offset, toEye);
 		const across = vec3.length(vec3.scaleAndAdd(side, offset, toEye, -front));
@@ -108,7 +109,7 @@ export default defineSketch(async (ctx) => {
 			vec3.scale(side, side, CLEAR / Math.max(across, 1e-3));
 			vec3.scaleAndAdd(offset, side, toEye, front);
 		}
-		return vec3.add(out, out, offset);
+		return vec3.add(out, lampAt, offset);
 	};
 	/** Writes one part of the drone at `here`, facing `facing`, into a row of its batch. */
 	const put = (parts: InstanceBatch, row: number, place: Vec3, turn: typeof none) => {
@@ -119,27 +120,28 @@ export default defineSketch(async (ctx) => {
 		onUpdate(dt) {
 			const t = time.now;
 			view.update(dt);
-			lamp(lampAt, t);
+			view.steer(path(lampAt, t));
 			orb.setPosition(lampAt[0], lampAt[1], lampAt[2]);
 			camera.getPosition(toEye);
 			vec3.normalize(toEye, vec3.sub(toEye, toEye, lampAt));
 			for (let i = 0; i < DRONES; i++) {
-				// Where it was, is and will be a moment apart: it faces the way it flies, leans forward
-				// with its speed, and banks into the turn.
+				const pace = 6 - 3 * slots[i].lag;
+				weights[i] = math.damp(weights[i], view.steering, pace, dt);
+				vec3.lerp(points[i], points[i], view.point, 1 - Math.exp(-pace * dt));
+				// From its places a moment apart: it faces its way, leans with speed, banks into turns.
 				vec3.sub(before, drone(here, i, t), drone(before, i, t - 0.1));
 				vec3.sub(after, drone(after, i, t + 0.1), here);
 				const [a, b] = [vec3.length(before), vec3.length(after)];
-				const yaw = Math.atan2(before[0] + after[0], before[2] + after[2]);
-				const lean = math.clamp((a + b) * 0.25, 0, 0.35);
 				const turn = vec3.cross(at, before, after)[1] / (a * b + 1e-6);
+				const yaw = Math.atan2(before[0] + after[0], before[2] + after[2]);
 				const bank = math.clamp(-8 * turn, -0.6, 0.6);
-				quat.fromEuler(facing, lean, yaw, bank, 'YXZ');
+				quat.fromEuler(facing, math.clamp((a + b) * 0.25, 0, 0.35), yaw, bank, 'YXZ');
 				put(bodies, i, MIDDLE, none);
 				put(tails, i, TAIL, none);
 				put(arms, i * 2, MIDDLE, crossed[0]);
 				put(arms, i * 2 + 1, MIDDLE, crossed[1]);
 				for (let k = 0; k < 4; k++)
-					put(rotors, i * 4 + k, ROTORS[k], quat.setAxisAngle(blade, UP, t * 30 + k));
+					put(rotors, i * 4 + k, ROTORS[k], quat.rotateY(blade, none, t * 30 + k));
 				torches[i].setPosition(here[0], here[1] - 0.15, here[2]);
 			}
 		},
