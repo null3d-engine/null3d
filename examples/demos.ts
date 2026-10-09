@@ -65,9 +65,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./mesh-arrays/sketch.ts', import.meta.url),
 		title: 'Meshes from arrays',
 		summary:
-			'A height field and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not.',
+			'An island and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not. Each vertex of the island has a color of its own, and a reflection pass mirrors the island in the water.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the crystal over the hills.`,
 		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'generators',
@@ -94,10 +95,12 @@ export const DEMOS: readonly Demo[] = [
 		group: 'Basics',
 		sketch: new URL('./input/sketch.ts', import.meta.url),
 		title: 'Input and actions',
-		summary: 'An action map moves a box with the keyboard or a gamepad. The camera follows it.',
+		summary:
+			'An action map moves a small robot with the keyboard or a gamepad. Its legs and arms swing on joints as it walks, and the camera follows it.',
 		controls:
 			'Move with WASD, the arrow keys or the left stick. Jump with Space or A, and change color with E or X. Drag or use the right stick to turn the camera, scroll or pinch to zoom, and right-drag or drag two fingers to pan.',
 		hold: 0,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'far-from-origin',
@@ -105,9 +108,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./far-from-origin/sketch.ts', import.meta.url),
 		title: 'Far from the origin',
 		summary:
-			'A tray of 2 cm keys and a spinning wheel 1,000 km from the origin, seen from 40 cm. Grid cells keep every position precise to a fraction of a millimeter.',
+			"A tray of 2 cm keys and a spinning brass wheel on a desk, 1,000 km from the origin, seen from 40 cm. Grid cells keep every position precise to a fraction of a millimeter, and a label gives the camera's distance from the origin.",
 		controls: CAMERA,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'objects',
@@ -115,9 +119,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./objects/sketch.ts', import.meta.url),
 		title: 'Objects and parents',
 		summary:
-			'Crates ride a turntable and step off in turn. setParent with keepWorld moves each crate between the table and the ground without moving it in the world.',
+			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world.',
 		controls: CAMERA,
 		hold: 2.5,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'layers',
@@ -125,9 +130,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./layers/sketch.ts', import.meta.url),
 		title: 'Render layers',
 		summary:
-			'A street of houses with roofs and map pins on layers of their own. Every 2 seconds the camera draws another set of layers.',
+			'A street of brick cottages in the late afternoon sun, with roofs and map pins on layers of their own. Every 2 seconds the camera draws another set of layers.',
 		controls: CAMERA,
 		hold: 5,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'hold-mode',
@@ -135,9 +141,10 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./hold-mode/sketch.ts', import.meta.url),
 		title: 'Hold mode',
 		summary:
-			'400 balls drop from random places and bounce. Each live run differs, and the held frame is the same on every run.',
+			'400 glossy balls drop from random places into a pen and bounce. Each live run differs, and the held frame is the same on every run.',
 		controls: `${CAMERA} Move the mouse, or tap, to bring up a paddle that kicks the balls up.`,
 		hold: 3,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'gltf-model',
