@@ -280,7 +280,7 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - The map shows the same sun, air and clouds as the background. It leaves out the sun's disc: the directional light gives the sun's own light, and a disc in the map would light every surface twice.
 - After a change of the sky, the engine makes the map again in 20 short steps, one a frame. The first six draw the sky, one face of the cube each. The next thirteen filter the levels, one level or part of one each. The last step puts every new level into the map. The scene draws with the old map until then. The diffuse light changes in the same frame as the reflections.
 - So the light follows a moved sun 19 frames after the frame of the move, about 320 ms at 60 frames per second. A change during a refresh waits until it ends: then it takes up to 39 frames.
-- The steps are short so that a phone keeps its frame rate: each does at most a sixth of the work of the longest step before the split.
+- The steps are short so that a phone keeps its frame rate. On a software GPU, the longest step takes under 6 ms.
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 

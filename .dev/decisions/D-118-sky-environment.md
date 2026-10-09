@@ -2,7 +2,7 @@
 
 Status: decided, 2026-10-09. Date: 2026-10-09. Task: M2-EX14.
 
-Summary: `assets.skyEnvironment()` makes an environment of the sky that `scene.setBackground({ sky })` draws, and the map follows the sky with no further call. The engine core refreshes it in 7 stages, one a frame, so no frame waits for the whole map. Frames draw with the old map until the last stage copies every new level in at once. The diffuse light changes in the same frame. On the Mac each stage costs under 1.1 ms, and the new light shows 6 frames after the move's frame. `timeOfDay(hours or preset)` works out the sun, the sky, the main light, the fog, an ambient light and the exposure from one value. It returns values, which the sketch applies to its own objects.
+Summary: `assets.skyEnvironment()` makes an environment of the sky that `scene.setBackground({ sky })` draws, and the map follows the sky with no further call. The engine core refreshes it in 20 stages, one a frame, so no frame waits for the whole map. Each stage draws one cube face or a few. On a software GPU, the longest stage fell from 27 to 30 ms to under 6 ms. Frames draw with the old map until the last stage copies every new level in at once. The diffuse light changes in the same frame. The new light shows 19 frames after the move's frame, against 6 with the first design's 7 stages. `timeOfDay(hours or preset)` works out the sun, the sky, the main light, the fog, an ambient light and the exposure from one value. It returns values, which the sketch applies to its own objects.
 
 ## Question
 
@@ -40,18 +40,51 @@ A sky map refreshes during play, so it cannot take one long frame at each move o
 
 1. **Each level of the chain comes from the sky itself.** The room's chain halves each level from the one before, so each level waits for the one before. The sky's draw averages 1, then 2 x 2 directions of the sky over each texel of each level, so every level draws at once. Against a chain of 16 x 16 directions per texel, the map's levels moved by less than 0.05 steps of 255.
 2. **Fewer filter directions.** The sky has no sun disc and no small bright light. So the filter takes 128 directions at level 1, and twice as many at each smaller level, up to 2,048. That is a quarter of a file's map.
-3. **The core runs the stages.** The engine core records one draw-list command per stage (`SkyMapStep`, opcode 55, in `crates/null3d-gpu/src/drawlist.rs`):
-   - Stage 0 draws the sky into every level of the chain in one render pass, and into the map's level 0.
-   - Stages 1 to 5 each filter one level.
-   - Stage 6 copies all six levels into the map.
+3. **The core runs the stages.** The engine core records one draw-list command per stage (`SkyMapStep`, opcode 55, in `crates/null3d-gpu/src/drawlist.rs`). The first design had 7 stages: the sky into every level of the chain, one stage for each of the 5 filtered levels, and the copy. The cloud phones then split them further (see [Stages by faces](#stages-by-faces)). Now there are 20:
+   - Stages 0 to 5 each draw one face of the cube into every level of the chain, in one render pass, and into the map's level 0.
+   - Stages 6 to 18 filter the levels: level 1 in 6 stages of one face, level 2 in 3 stages of 2 faces, level 3 in 2 stages of 3 faces, and levels 4 and 5 in one stage each.
+   - Stage 19 copies all six levels into the map.
 
-Until stage 6, the new levels wait in a buffer that frames do not read. So no frame draws a half-made map. The first fill records all 7 stages in one frame, the frame after the generator's code arrives, as for the room. A refresh records one stage a frame. A change during a refresh waits until it ends. Then the next refresh starts with the sky as it is then.
+Until the last stage, the new levels wait in a buffer that frames do not read. So no frame draws a half-made map. The first fill records all 20 stages in one frame, the frame after the generator's code arrives, as for the room. A refresh records one stage a frame. A change during a refresh waits until it ends. Then the next refresh starts with the sky as it is then.
+
+The thread that draws plans the stages (`skyStages` in `packages/engine/src/gpu/environment-steps.ts`), and both GPU paths follow that one plan. The core only counts them: `assets.skyEnvironment()` passes the count, which a unit test checks against the plan.
 
 The core records the stages, so it knows the frame in which the new levels arrive. It switches the diffuse light in that frame. So reflections and diffuse light change together.
 
-A first refresh at a lower size, then a finer one, was not needed: every stage stays under about 1.1 ms on the Mac.
+A first refresh at a lower size, then a finer one, was not needed: every stage stays under about 1.1 ms on the Mac, and under 6 ms on a software GPU.
 
 On WebGL2 a stage packs its texels into pixel pack buffers, as the room does. Firefox on the Mac fills such a buffer late ([implementation notes](../implementation-notes.md#browser-faults)), so the room's generator waits for the GPU after each pack. The sky map unpacks a buffer only in a later stage. That stage asks a fence whether the GPU has run the packs. It waits for the GPU only when the GPU has not, and after a frame it has. The first fill, whose stages share one frame, waits as the room does.
+
+### Stages by faces
+
+The cloud phones ran the first design's 7 stages (see [Data](#data)). The Galaxy S24 took 6.09 ms for the filter of level 1, past the line of 4 ms. So the stages now split by cube faces.
+
+| Option | Verdict |
+| --- | --- |
+| Each stage draws whole faces, and no filtered level shares a stage with another | Chosen |
+| Pack the faces of levels 3 and 4, then 4 and 5, into shared stages: 19 stages | Rejected. On the Mac, those mixed stages cost the most: 1.25 and 0.79 ms of WebGL2's GPU time |
+| Split a texel's directions over frames, with partial sums in a float target | Not done. Only this would shorten level 5 (below), at the cost of a float target and more stages |
+
+The plan weighs a face of level `k` as its texels times its directions per texel: `(size >> k)² × 2^k`. Each level splits into as few stages as keep each one within the weight of one face of level 1. Level 1 takes 6 stages of one face, level 2 three of 2 faces, level 3 two of 3 faces, and levels 4 and 5 one each.
+
+A small level has too few texels to fill a GPU. Its time then follows its directions per texel, not its texels, so two such draws in a row add up. That is why the packed plan's mixed stages cost the most. The S24's figures fit this: its stages 3, 4 and 5 took 2.95, 3.59 and 4.81 ms. Its copy stage draws nothing and took 2.63 ms. Less that, they took about 0.3, 1.0 and 2.2 ms, which double as the directions per texel double. So no split by faces can shorten level 5.
+
+Both plans ran on the owner's Mac on 9 October 2026, with the load at 7 to 9. The 7 stages ran at main's dc0bce314. Each figure is the median of 16 refreshes. The table gives the costliest stage of each plan, and the whole map at once.
+
+| Path | 7 stages: costliest | 20 stages: costliest | Whole map, 7 stages | Whole map, 20 stages |
+| --- | --- | --- | --- | --- |
+| Mac, WebGPU | 1.06 ms (level 4) | 1.00 ms (level 4) | 9.6 ms | 14.0 ms |
+| Mac, compatibility mode | 1.31 ms (level 4) | 1.07 ms (level 4) | 9.5 ms | 13.5 ms |
+| Mac, WebGL2, from the call to the GPU's end | 1.39 ms (level 4) | 1.53 ms (levels 3 and 4) | 10.5 ms | 14.2 ms |
+| Mac, WebGL2, timer queries | 0.70 ms (levels 3 and 4) | 0.69 ms (levels 3 and 4) | | |
+| SwiftShader, WebGPU | 27.31 ms (level 1) | 5.70 ms (a face of level 1) | 183 ms | 174 ms |
+| SwiftShader, compatibility mode | 27.25 ms (level 1) | 5.82 ms (a face of level 1) | 162 ms | 166 ms |
+| SwiftShader, WebGL2, timer queries | 30.26 ms (level 1) | 4.92 ms (a face of level 1) | | |
+
+- The Mac's GPU gains nothing. Its stages cost about 1 ms either way: most of a stage's time there does not grow with its texels. Its GPU time of a whole refresh doubles: on WebGL2's timer queries, from 3.1 ms to 6.6 ms, spread over 20 frames.
+- The software GPU pays for texels, as a phone's GPU does. Its costliest stage falls to a fifth or a sixth. Its whole refresh costs about the same: 73.6 ms and 66.7 ms of WebGL2's GPU time.
+- The light did not change: the levels lie as far from the finer filter as before, to the last digit (see [The filter's directions](#the-filters-directions)).
+- On WebGL2 the browser puts off the upload of the map from its pixel buffer. It runs it when a draw reads the map, or when a later call writes the buffer. The engine's frame reads the map just after the copy. The test page did not. So the next refresh's first stage took the cost: 1.85 ms of GPU time on the Mac, against 0.21 ms for the next face. The page now reads the map after the copy, as a frame does, in both plans' runs above.
 
 ### The diffuse light
 
@@ -79,7 +112,7 @@ The last row shows that the chain's directions barely matter, and the filter's d
 
 ## Data
 
-All Mac figures come from Chrome on the owner's Mac (Apple M5 Max) on 9 October 2026, while other work ran (load 10 to 15). The sky map test page (`tests/pages/sky-map-cost.ts`) times 8 refreshes with a sun that moves. It times each stage from its call until the GPU has finished it, on a queue with no other work. WebGL2 also gives its timer queries' GPU times.
+The figures in this section come from the first design's 7 stages. [Stages by faces](#stages-by-faces) compares them with the 20 stages. All Mac figures come from Chrome on the owner's Mac (Apple M5 Max) on 9 October 2026, while other work ran (load 10 to 15). The sky map test page (`tests/pages/sky-map-cost.ts`) times 8 refreshes with a sun that moves. It times each stage from its call until the GPU has finished it, on a queue with no other work. WebGL2 also gives its timer queries' GPU times.
 
 | Path | Stage 0: the sky | Stages 1 to 5: one level each | Stage 6: the copy | The whole map at once |
 | --- | --- | --- | --- | --- |
@@ -89,7 +122,7 @@ All Mac figures come from Chrome on the owner's Mac (Apple M5 Max) on 9 October 
 | Mac, WebGL2, timer queries | 0.46 ms | 0.35 to 0.69 ms | 0.01 ms | |
 | SwiftShader on the Mac, WebGL2 timer queries | 10.5 ms | 27.8, 13.6, 6.9, 3.3 and 1.9 ms | 0.14 ms | |
 
-Before the chain drew in one render pass, stage 0 took 0.96 ms on WebGPU. On the software GPU, stage 1 costs most: its level has the most texels. On a slow phone, that stage is the one to watch.
+Before the chain drew in one render pass, stage 0 took 0.96 ms on WebGPU. On the software GPU, stage 1 costs most: its level has the most texels. On a slow phone, that stage is the one to watch. On WebGL2, these runs' stage 0 took the upload of the refresh before it ([Stages by faces](#stages-by-faces) says why).
 
 **Cloud devices, a rough guide.** The device runner's `sky` plan ran both test pages on BrowserStack Automate on 9 October 2026, at ea5cb60eb: runs `20261009-030547-sky` and `20261009-030816-sky`. Neither browser gave WebGL2 timer queries. So every figure runs from the stage's call until the GPU has finished it. On the Mac, that wait added 0.3 to 0.7 ms to each stage. The cloud's Galaxy S24 has no WebGPU adapter, so it ran WebGL2 only. Its display ran at 30 Hz.
 
@@ -102,16 +135,17 @@ Before the chain drew in one render pass, stage 0 took 0.96 ms on WebGPU. On the
 
 Each figure is the median of 8 refreshes. The longest single stages were 7.97 ms on the S24 (stage 4) and 8.28 ms on the iPad in compatibility mode (stage 3).
 
-- As on the software GPU, the first filter stage is the S24's slowest, at 6.09 ms. It passes the line of 4 ms that splits a stage by faces. So do the S24's stage 5 (4.81 ms) and the iPad's stage 0 in compatibility mode (5.02 ms). Stage 5 filters the second smallest level, so much of the S24's time there is the wait for the GPU's end, not the filter. Timer queries would tell the two apart, and neither phone has them.
+- As on the software GPU, the first filter stage is the S24's slowest, at 6.09 ms. It passes the line of 4 ms that splits a stage by faces. So do the S24's stage 5 (4.81 ms) and the iPad's stage 0 in compatibility mode (5.02 ms). Stage 5 filters the second smallest level, so much of the S24's time there is the wait for the GPU's end, not the filter. Timer queries would tell the two apart, and neither phone has them. On WebGL2, the stage 0 of both devices may also have taken the upload of the refresh before it, as the Mac's did.
 - On every path of both devices, the new sky's light showed 6 frames after the move, as on the Mac.
+- These figures led to the split by faces. The cloud devices have not run the 20 stages yet.
 
-**Time to the new light.** The sky refresh test (`tests/image/sky-refresh.spec.ts`) moves the sun and captures every frame after the move, with the drawing held to 20 frames a second. On all three tiers, the mirror sphere's reflection and the rough sphere's diffuse light kept the old light for the move's frame and the next 5. Both showed the new light from the 6th frame after the move. At 60 frames a second, that is 100 ms from the move. When a refresh is under way at the move, it takes up to 13 frames, 217 ms.
+**Time to the new light.** The sky refresh test (`tests/image/sky-refresh.spec.ts`) moves the sun and captures every frame after the move, with the drawing held to 20 frames a second. On all three tiers, the mirror sphere's reflection and the rough sphere's diffuse light kept the old light for the move's frame and the next 18. Both showed the new light from the 19th frame after the move. At 60 frames a second, that is 317 ms from the move. When a refresh is under way at the move, it takes up to 39 frames, 650 ms. The first design's 7 stages showed the new light from the 6th frame, 100 ms after the move.
 
 **A sky that changes in every frame** refreshes the map without end, one stage a frame: under 1.1 ms of GPU time per frame on the Mac. A sketch that moves the sun in steps pays only after each step. So does a still scene that animates only the clouds' `time`.
 
 **Memory.** Beside its 2 MB map, a sky map keeps its chain of 9 levels (2.1 MB) and the texture that the stages draw into (1,536 x 511 texels, 3.1 MB). It also keeps its levels on their way into the map: on WebGPU a buffer of 2.1 MB and a strip of 1.6 MB, on WebGL2 two pixel pack buffers of 2.1 MB. That is about 9 MB in all. The engine counts them in its GPU memory figures, and frees them with the map.
 
-**Allocation.** `bun run bench:allocation --sky-environment` lights S1 with the sky's environment and moves the sun in every frame. So a stage runs in six of every seven frames. Both paths passed. Each stage makes one object that the browser returns: on WebGPU its render pass's encoder, 12 bytes per frame on average, and on WebGL2 its fence, 17 bytes per frame. Three places allocated before their fixes:
+**Allocation.** `bun run bench:allocation --sky-environment` lights S1 with the sky's environment and moves the sun in every frame. So a stage that draws runs in 19 of every 20 frames. Both paths passed. Each stage makes one object that the browser returns: on WebGPU its render pass's encoder, 12 bytes per frame on average, and on WebGL2 its fence, 17 bytes per frame. Three places allocated before their fixes:
 
 - The image table's `generator()` returns a new pair. The stage command reads the code with `generatorCodeFor()`, which makes none.
 - A `for...of` loop over a step's targets allocated in the render worker's stage. An index loop does not.
@@ -168,6 +202,7 @@ The image tests `time-of-day-*` draw the four presets with the sky's environment
 
 ## Consequences
 
-- The cloud's S24 and iPad 10th have run the refresh (above). Three stages pass 4 ms there, by figures that include the wait for the GPU's end: the S24's stages 1 and 5 on WebGL2 and the iPad's stage 0 in compatibility mode. The owner decides whether those stages split by faces. The owner's S24+ (WebGPU and WebGL2) and iPad have not run the `sky` plan yet.
+- The cloud's S24 and iPad 10th ran the first design's 7 stages (above). Three stages passed 4 ms there, by figures that include the wait for the GPU's end. They were the S24's stages 1 and 5 on WebGL2, and the iPad's stage 0 in compatibility mode. The stages now split by faces ([Stages by faces](#stages-by-faces)). The `sky` plan runs again on the cloud's S24 after this change lands. The S24's level 5 may still pass 4 ms, since no split by faces shortens it. Only a split of each texel's directions over frames would. The owner's S24+ (WebGPU and WebGL2) and iPad have not run the `sky` plan yet.
+- A refresh now takes 20 frames, not 7. So the light lags a moved sun by about 320 ms at 60 frames a second, not 100 ms. On the Mac, the GPU time of a whole refresh doubles, though no frame's share grows.
 - Each sky map keeps about 9 MB of GPU memory for its stages. A second sky map is rarely useful, since every sky map shows the one sky.
 - The sky model now has three copies: the shaders' `null3d::atmosphere`, the core's `sky_light.rs` for the diffuse light, and the clear sky in `time-of-day.ts`. A change to three.js's sky must change all three. The sky refresh test and the time-of-day image tests compare the first two, through the rough sphere's diffuse light.
