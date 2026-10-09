@@ -1210,7 +1210,8 @@ impl FrameGraph {
 
     /// Turns the copy of the camera's opaque color on while some object lets light through, and
     /// off otherwise, for the next frames. The passes are declared again only when it starts or
-    /// stops drawing. Call it before [`FrameGraph::sync_views`], which declares them.
+    /// stops drawing. Call it before [`FrameGraph::request_pipelines`], which asks for the copy's
+    /// pipeline, so the frame that first wants the copy declares it once the pipeline is built.
     pub(crate) fn set_transmission(&mut self, on: bool) {
         let was = self.transmission_draws();
         self.transmission_wanted = on;

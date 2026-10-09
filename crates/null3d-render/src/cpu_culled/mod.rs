@@ -1066,6 +1066,7 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1086,7 +1087,6 @@ impl CpuCulledRenderer {
         }));
         self.settings.pace_views();
         self.settings.mark_shown_views();
-        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
