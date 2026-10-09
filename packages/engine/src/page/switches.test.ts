@@ -36,6 +36,7 @@ describe('parseSwitches', () => {
 			preset: undefined,
 			hold: undefined,
 			bench: false,
+			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
@@ -105,6 +106,16 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('shows the stats overlay with a bare ?stats or ?stats=on, and hides it with ?stats=off', () => {
+		expect(parseSwitches('?stats').stats).toBe(true);
+		expect(parseSwitches('?gpu=webgl2&stats=on').stats).toBe(true);
+		expect(parseSwitches('?stats=off').stats).toBe(false);
+		expect(parseSwitches('?stats=maybe').stats).toBeUndefined();
+		expect(parseSwitches('?stats=collapsed').stats).toEqual({ collapsed: true });
+		expect(parseSwitches('?stats=open').stats).toEqual({ collapsed: false });
+		expect(parseSwitches('?gpu=webgl2').stats).toBeUndefined();
 	});
 
 	it('reads ?replay-delay, a whole number of ms up to a second', () => {

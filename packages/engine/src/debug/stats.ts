@@ -1,13 +1,14 @@
 // Frame figures for the stats overlay and `debug.frameStats`: means per frame over windows of about
-// half a second of presented frames, read from the rings of the metrics buffer. Reading takes in
-// only the records written since the last read and allocates nothing, so a sketch may read every
-// frame. The figures live in a typed array, and the published object's properties read them, because
-// a fraction stored in an object property is a new heap object in some browsers.
+// half a second of presented frames, read from the rings of the metrics buffer, and the memory
+// figures that the engine's threads publish in its header. Reading takes in only the records written
+// since the last read and allocates nothing, so a sketch may read every frame. The figures live in a
+// typed array, and the published object's properties read them, because a fraction stored in an
+// object property is a new heap object in some browsers.
 
 import type { QualityPreset } from '../quality/presets';
-import type { TextureMemory } from '../scene/textures';
 import {
 	Counter,
+	memoryFigures,
 	PHASE_NAMES,
 	type PhaseName,
 	RingSums,
@@ -61,8 +62,29 @@ export interface FrameStats {
 	readonly cpuMs: number;
 	/** CPU time per frame of each engine thread. */
 	readonly threads: readonly FrameStatsThread[];
-	/** Mean draw calls per frame. */
+	/**
+	 * Mean GPU time per frame, in milliseconds, from the GPU's timer queries on one frame in eleven:
+	 * from the frame's first command to the end of its last pass. Null where the GPU path has no
+	 * timer queries, and until the first timed frame comes back. The window that has no timed frame
+	 * keeps the figure of the window before it.
+	 */
+	readonly gpuMs: number | null;
+	/** Mean draw calls per frame, over every pass. */
 	readonly drawCalls: number;
+	/**
+	 * Mean triangles drawn per frame, over every pass: shadow maps and the depth prepass count as
+	 * well as the passes that shade, as three.js's `renderer.info` counts them. Lines count none.
+	 * On WebGPU the GPU culls most objects, and the count of their triangles comes back from the GPU
+	 * on one frame in eleven, a few frames late.
+	 */
+	readonly triangles: number;
+	/**
+	 * Mean objects drawn per frame, over every pass: each draw counts its instances, so an object
+	 * counts once in each pass that draws it, such as a shadow cascade, and each part of a mesh with
+	 * several materials counts once. On WebGPU the count of the objects that the GPU culls comes
+	 * back from the GPU on one frame in eleven, a few frames late.
+	 */
+	readonly objects: number;
 	/** Mean bytes uploaded to the GPU per frame. */
 	readonly uploadBytes: number;
 	/** The GPU path the engine draws with. */
@@ -74,15 +96,35 @@ export interface FrameStats {
 	 * scene draws at, from 0 to 1. Dynamic resolution moves it during play.
 	 */
 	readonly renderScale: number;
+	/** The size of the engine's WebAssembly memory at the window's end, in bytes. */
+	readonly wasmBytes: number;
 	/**
 	 * The GPU bytes that every texture takes at the window's end, with the free layers of their
-	 * texture arrays. The stats overlay on the page shows 0.
+	 * texture arrays: `quality.textureMemory.bytes`.
 	 */
 	readonly textureBytes: number;
 	/** The GPU bytes that textures may take: the quality setting `textureMemoryMiB` in bytes. */
 	readonly textureBudgetBytes: number;
 	/** The largest mip levels that the texture memory budget dropped, over every texture. */
 	readonly droppedLevels: number;
+	/**
+	 * The GPU bytes that every mesh takes at the window's end: the shared vertex and index buffers,
+	 * which keep room to grow, and the texture of morph target deltas, as `geometry.memoryBytes`.
+	 */
+	readonly meshBytes: number;
+	/**
+	 * The GPU bytes of every texture that the engine holds at the window's end: the scene's
+	 * textures, the render targets with their multisampled copies, the depth and shadow maps, the
+	 * post effects' targets and the environment's maps. Each counts its mip levels, layers and
+	 * samples as the GPU stores them. 0 until the thread that draws first publishes it.
+	 */
+	readonly gpuTextureBytes: number;
+	/**
+	 * The GPU bytes of every buffer that the engine holds at the window's end: vertices, indices,
+	 * instance rows, uniforms, the culling and indirect draw buffers, upload staging and the
+	 * readbacks of the GPU's timings. 0 until the thread that draws first publishes it.
+	 */
+	readonly gpuBufferBytes: number;
 }
 
 /** Presented time that a window of frame figures covers, at least. */
@@ -95,11 +137,8 @@ export interface StatsSources {
 	preset(): QualityPreset;
 	/** The render scale of the newest frame, in thousandths. */
 	renderScaleThousandths(): number;
-	/**
-	 * The textures' GPU memory, their budget and their dropped levels, on the thread that runs the
-	 * sketch. The page's stats overlay has none, and its figures read 0.
-	 */
-	textureMemory?: TextureMemory;
+	/** The size of the engine's WebAssembly memory in bytes. */
+	wasmBytes(): number;
 }
 
 // Float64 slots of the published figures, in the order of `FIGURES`, then each thread's busy time
@@ -111,11 +150,17 @@ const FIGURES = [
 	'completedFps',
 	'cpuMs',
 	'drawCalls',
+	'triangles',
+	'objects',
 	'uploadBytes',
 	'renderScale',
+	'wasmBytes',
 	'textureBytes',
 	'textureBudgetBytes',
 	'droppedLevels',
+	'meshBytes',
+	'gpuTextureBytes',
+	'gpuBufferBytes',
 ] as const;
 const FRAMES = 0;
 const SECONDS = 1;
@@ -123,12 +168,16 @@ const PRESENTED_FPS = 2;
 const COMPLETED_FPS = 3;
 const CPU_MS = 4;
 const DRAW_CALLS = 5;
-const UPLOAD_BYTES = 6;
-const RENDER_SCALE = 7;
-const TEXTURE_BYTES = 8;
-const TEXTURE_BUDGET_BYTES = 9;
-const DROPPED_LEVELS = 10;
-const THREADS = FIGURES.length;
+const TRIANGLES = 6;
+const OBJECTS = 7;
+const UPLOAD_BYTES = 8;
+const RENDER_SCALE = 9;
+const WASM_BYTES = 10;
+/** The published memory figures, in the order of `MemoryFigure`. */
+const MEMORY = 11;
+/** GPU time per frame, or -1 before the first timed frame, which the property reads as null. */
+const GPU_MS = FIGURES.length;
+const THREADS = GPU_MS + 1;
 /** Slots of each thread: its busy time, then each phase's time. */
 const THREAD_VALUES = 1 + PHASE_NAMES.length;
 
@@ -163,6 +212,12 @@ function mean(sums: Float64Array, index: number): number {
 	return records > 0 ? (sums[index] as number) / records : 0;
 }
 
+/** The mean of a drawn count, triangles or objects, over the records that knew it, or 0. */
+function drawnMean(sums: Float64Array, counter: number): number {
+	const records =
+		(sums[SUM_RECORDS] as number) - (sums[SUM_COUNTERS + Counter.UncountedFigures] as number);
+	return records > 0 ? (sums[SUM_COUNTERS + counter] as number) / records : 0;
+}
 /**
  * Reads frame figures from a metrics buffer. Each `update` takes in the records written since the
  * last one; once the presented frames in them cover a window, it publishes the window's figures to
@@ -177,6 +232,10 @@ export class FrameStatsWindow {
 	private readonly rings: (RingSums | undefined)[] = [];
 	private readonly render: RingSums;
 	private readonly completion: RingSums;
+	/** The GPU's timed frames, which the windows share until one holds a timed frame. */
+	private readonly gpu: RingSums;
+	/** The memory figures that the engine's threads publish. */
+	private readonly memory: Float64Array;
 	/** The roles of each thread, in the order of `stats.threads`. */
 	private readonly roles: readonly (readonly number[])[];
 
@@ -192,6 +251,9 @@ export class FrameStatsWindow {
 		const list = [...threads];
 		this.values = new Float64Array(THREADS + list.length * THREAD_VALUES);
 		this.values[RENDER_SCALE] = sources.renderScaleThousandths() / 1000;
+		this.values[GPU_MS] = -1;
+		this.gpu = new RingSums(buffer, Role.Gpu);
+		this.memory = memoryFigures(buffer);
 		const ring = (role: number): RingSums => {
 			let sums = this.rings[role];
 			if (!sums) {
@@ -206,6 +268,10 @@ export class FrameStatsWindow {
 		this.roles = list.map(([, roles]) => roles);
 		const values = this.values;
 		const stats = readFigures({} as Published, FIGURES, values, 0);
+		Object.defineProperty(stats, 'gpuMs', {
+			enumerable: true,
+			get: () => ((values[GPU_MS] as number) >= 0 ? values[GPU_MS] : null),
+		});
 		stats.threads = list.map(([name], k) => {
 			const at = THREADS + k * THREAD_VALUES;
 			const thread = readFigures({ name } as FrameStatsThread, ['busyMs'], values, at);
@@ -222,6 +288,7 @@ export class FrameStatsWindow {
 	/** Takes in the new records, and publishes a window when one has ended. True when it did. */
 	update(): boolean {
 		for (const sums of this.rings) sums?.add();
+		this.gpu.add();
 		const render = this.render.sums;
 		if ((render[SUM_INTERVAL_MS] as number) < STATS_WINDOW_MS) return false;
 		const { values, rings } = this;
@@ -230,13 +297,16 @@ export class FrameStatsWindow {
 		values[PRESENTED_FPS] = rate(render);
 		values[COMPLETED_FPS] = rate(this.completion.sums);
 		values[DRAW_CALLS] = mean(render, SUM_COUNTERS + Counter.DrawCalls);
+		values[TRIANGLES] = drawnMean(render, Counter.Triangles);
+		values[OBJECTS] = drawnMean(render, Counter.DrawnObjects);
 		values[UPLOAD_BYTES] = mean(render, SUM_COUNTERS + Counter.UploadBytes);
 		values[RENDER_SCALE] = this.sources.renderScaleThousandths() / 1000;
-		const textures = this.sources.textureMemory;
-		if (textures) {
-			values[TEXTURE_BYTES] = textures.bytes;
-			values[TEXTURE_BUDGET_BYTES] = textures.budgetBytes;
-			values[DROPPED_LEVELS] = textures.droppedLevels;
+		values[WASM_BYTES] = this.sources.wasmBytes();
+		values.set(this.memory, MEMORY);
+		const gpu = this.gpu.sums;
+		if ((gpu[SUM_RECORDS] as number) > 0) {
+			values[GPU_MS] = mean(gpu, SUM_BUSY_MS);
+			this.gpu.clear();
 		}
 		let busiest = 0;
 		for (let k = 0; k < this.roles.length; k++) {

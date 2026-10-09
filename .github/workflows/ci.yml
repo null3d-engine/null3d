@@ -301,7 +301,8 @@ jobs:
     # The npm packages as a developer installs them: each public package packed as the publish job
     # packs it, and checked for every file it needs, then installed into a fresh Vite project where
     # the command-line tool's test command type checks the project and draws its sketch on every
-    # GPU tier, and Vite builds it for production.
+    # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
+    # around a copy of examples/, as the website does, and two demos must start from that build.
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -337,13 +338,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 7, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/7 }
-          - { part: shard 2 of 7, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/7 }
-          - { part: shard 3 of 7, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/7 }
-          - { part: shard 4 of 7, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/7 }
-          - { part: shard 5 of 7, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/7 }
-          - { part: shard 6 of 7, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/7 }
-          - { part: shard 7 of 7, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/7 }
+          - { part: shard 1 of 9, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/9 }
+          - { part: shard 2 of 9, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/9 }
+          - { part: shard 3 of 9, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/9 }
+          - { part: shard 4 of 9, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/9 }
+          - { part: shard 5 of 9, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/9 }
+          - { part: shard 6 of 9, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/9 }
+          - { part: shard 7 of 9, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/9 }
+          - { part: shard 8 of 9, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/9 }
+          - { part: shard 9 of 9, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/9 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -364,7 +367,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "240:388:228:222:152:126:272"
+          PWTEST_SHARD_WEIGHTS: "157:243:428:138:111:142:176:119:234"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.

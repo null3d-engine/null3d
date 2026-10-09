@@ -221,7 +221,9 @@ const pane = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'bl
 | `'additive'` | Adds the surface's light to what lies behind, times the alpha | Glows, fire, sparks, lasers |
 | `'multiply'` | Tints what lies behind by the surface's color, as far as the alpha says | Stains, shadows painted on, tinted film |
 
-The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. The results match three.js's own blending, and textures loaded with `premultipliedAlpha: true` blend correctly too.
+The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. Textures loaded with `premultipliedAlpha: true` blend correctly too.
+
+The engine blends in linear color, before the tone mapping, as three.js's `WebGPURenderer` does. three.js's `WebGLRenderer` tone maps each surface and encodes it as sRGB first, and then blends it on the canvas. So a see-through surface over a different color looks a little lighter in null3D than in a `WebGLRenderer` port, and an additive glow a little weaker. The [8-bit path](../concepts/color-management.md#the-8-bit-path) of some devices tone maps and encodes each surface first too, so there the engine blends as `WebGLRenderer` does.
 
 ```ts
 // sketch.ts: a pane of glass and a glow that never hides what it crosses.
@@ -296,6 +298,10 @@ const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { m
 ```
 
 A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
+
+### Mirrors, polished floors and water
+
+A custom material can reflect a [reflection pass](render.md#reflection-passes). Its surface function reads the pass's texture where the surface shows on the screen, and sets the surface's `reflection`. The engine lights that color as the light from the mirror direction. The material's Fresnel, metalness and specular values weigh it as they weigh the environment's reflection. [Surface functions](../shaders/surface-functions.md#reflections) shows the WGSL, and [Custom passes](../guides/custom-passes.md#a-water-recipe) a water recipe. Standard materials take no reflection in this version: give a polished floor a custom material with the floor's values.
 
 With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform or a texture that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 

@@ -8,7 +8,7 @@ summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2;
 
 # Culling
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with occlusion culling from 0.2. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ flowchart LR
     occlude --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that marked occluders hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that marked occluders hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera. A view is the camera's, a shadow cascade's, a shadow tile's or a [scene pass](../api/render.md)'s.
 
 ## How each path culls
 
@@ -38,6 +38,13 @@ On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per
 On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. Each group lies inside one grid cell. The job workers skip the objects and groups of the cells out of view.
 
 [GPU tiers and backends](backends.md) describes each path's draw calls and uploads.
+
+## What each kind of object culls with
+
+- An object culls with its mesh's bounding sphere, or with the sphere that `setBounds` gives it ([Bounds that you set](#bounds-that-you-set)).
+- A skinned mesh culls with bounds that follow its pose, so a character's raised arm stays in view.
+- A morphed mesh culls with a sphere that its weights grow: each target's longest move, times its weight.
+- Sprites, points and line segments cull as instance rows do, one sphere each. Sprites and points sized in CSS pixels, with `sizeAttenuation: false`, never cull, because their size in the world grows with their distance.
 
 ## GPU occlusion culling on WebGPU
 
@@ -66,7 +73,7 @@ What it costs and where it runs:
 - It pays only where the hidden objects cost more GPU time than its passes. In a test room whose walls hide 94% of its spheres, it saved 7% of the GPU time on an idle desktop GPU. It cost 38% to 66% more while another app drew on the same GPU. On an iPad and an Android phone, it cost more than it saved. Compare your scene's GPU time in `engine.measure` with `?occlusion=on` and `?occlusion=off` before you keep it on.
 - Every preset leaves it off. The `gpuOcclusion` option of `createEngine` turns it on, and the `?occlusion=on` and `?occlusion=off` switches win over the option. It is fixed while the engine runs.
 - Its shaders download the first time the scene marks an occluder, as the shaders of other features that many scenes leave out do. Until they are built, each camera culls once, as without occlusion culling. A game that must fetch nothing during play lists `'occlusion'` in `createEngine`'s `preload` ([loading screens](../guides/loading-screens.md#loading-everything-up-front)).
-- It runs on WebGPU, in compatibility mode too, without the depth prepass. Shadow cascades and tiles cull with the frustum test alone. See-through objects draw from the sorted list of the transparent pass, and hide nothing.
+- It runs on WebGPU, in compatibility mode too, without the depth prepass. Shadow cascades, shadow tiles and scene passes cull with the frustum test alone. See-through objects draw from the sorted list of the transparent pass, and hide nothing.
 - Some objects draw no depth in the first phase, so they hide nothing. These are objects that blend, cut holes with an alpha mask, skip the depth buffer or use a custom material. Instance rows are never occluders.
 - An object hides only behind the occluders that the first phase kept. An occluder that comes into view hides others from the next frame on. A hidden object costs two culling tests, and no draw.
 
@@ -175,11 +182,14 @@ The cells have these limits:
 - The engine stores positions as 32-bit floats. It places an object 100 km from the origin to within about 4 mm, and 1,000 km out to within about 3 cm. What it computes from those positions, such as a child's place under its parent, keeps its precision.
 - A mesh's vertices are offsets from its object's origin, and they stay 32-bit. Put large coordinates in object positions, never in vertices.
 - `getWorldPosition` and `getWorldMatrix` give 64-bit positions. Pass them a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
-- At most 512 cells hold objects at once. An object in a cell past that stays in the origin cell, where its position keeps only 32-bit precision.
+- At most 512 cells hold objects at once. An object in a cell past that stays in the origin cell, where its position keeps only 32-bit precision. The engine then warns once in the console.
+
+For a world the size of a planet, `createEngine`'s `largeWorld` option keeps every position that you set exact. A batch's `origin` option keeps its rows precise far from the origin. [Large worlds and precision](large-worlds.md) explains both.
 
 ## Related pages
 
 - [GPU tiers and backends](backends.md): how each path draws.
 - [Architecture: threads and the frame](architecture.md): where culling runs in a frame.
 - [Static and dynamic objects](static-dynamic.md): which objects upload their data each frame.
+- [Large worlds and precision](large-worlds.md): `largeWorld` mode and batch origins.
 - [The demo far from the origin](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): keys 2 cm wide, 1,000 km from the origin, seen from 40 cm.

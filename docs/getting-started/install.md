@@ -25,7 +25,7 @@ bun add -d vite @null3d/vite-plugin
 | --- | --- |
 | `@null3d/engine` | The API as JavaScript with TypeScript declarations, the worker entry points, both WebAssembly builds and these docs |
 | `@null3d/vite-plugin` | The build and dev server setup that null3D needs, and the shader compiler |
-| `@null3d/controls` | Orbit and map camera controls, for sketches that use them |
+| `@null3d/controls` | Orbit, map, fly and first-person camera controls, for sketches that use them |
 
 Add the controls when a sketch uses them:
 
@@ -50,6 +50,7 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 - Compiles the WGSL in your code, in `.wgsl` files and in strings tagged `/* wgsl */`, for WebGPU and WebGL2. A shader error stops Vite with its file, line and column. Beside each `.wgsl` file, the plugin writes a TypeScript declaration that holds the types of the file's uniforms. It compiles on worker threads, so the dev server goes on serving while a shader compiles. On the dev server, a shader that you change reaches the running page without a reload. [Custom shaders](../guides/custom-shaders.md) explains both forms and hot reload.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 - Builds the engine's workers as ES modules, so that they share the shader files. Without the plugin, Vite builds each worker as one classic script that holds every shader file. Each worker is then about 34 MB, and the page downloads them all at its start. The plugin warns if another setting builds workers in another format.
+- In each worker, starts the files that a file loaded on demand imports together with that file, as Vite does on the page. Without this, a worker asks for them only once the file has arrived, one round trip later. The engine's workers load the renderers of their GPU path this way.
 - Writes the notices of the third-party code that the engine ships beside the page in each production build. [Hosting](hosting.md#publish-the-third-party-notices) says what to do with them.
 - Writes the list of the build's files, `null3d-files.json`, beside the page in each production build. A game's service worker caches the files of that list for offline play, as [Hosting](hosting.md#offline-play) shows.
 - Keeps each file of the engine a file of its own: the workers' scripts, the WebAssembly and the shader files. Vite would otherwise turn a small file into a `data:` address, which a strict Content-Security-Policy blocks. Your own small files keep Vite's setting.

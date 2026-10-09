@@ -63,10 +63,10 @@ export interface CustomShader {
 }
 
 /**
- * What a generator makes on the GPU: `room`, the built-in room, or the environment map of a
- * panorama from an HDR file.
+ * What a generator makes on the GPU: `room`, the built-in room, `sky`, a map of the scene's sky
+ * that the engine core fills in stages, or the environment map of a panorama from an HDR file.
  */
-export type GeneratorSource = 'room' | Panorama;
+export type GeneratorSource = 'room' | 'sky' | Panorama;
 
 /** True for a generator's source, false for an image. */
 function isGenerator(image: ImageBitmap | GeneratorSource): image is GeneratorSource {
@@ -197,13 +197,23 @@ export class ImageTable {
 	 * the table holds no such generator, or when the code did not load.
 	 */
 	generator<Code>(id: number): [GeneratorSource, Code] {
-		const source = this.generators.get(id);
-		if (!source) throw new Error(`draw list names generator ${id}, which does not exist`);
+		const code = this.generatorCodeFor<Code>(id);
+		return [this.generators.get(id) as GeneratorSource, code];
+	}
+
+	/**
+	 * The generators' code, once the table holds the generator under an id that a draw list's
+	 * command names. Unlike `generator`, it makes no array, for commands that run in every frame.
+	 * Throws as `generator` does.
+	 */
+	generatorCodeFor<Code>(id: number): Code {
+		if (!this.generators.has(id))
+			throw new Error(`draw list names generator ${id}, which does not exist`);
 		if (this.generatorCode === undefined)
 			throw new Error(
 				`the code of the environment generator did not download: ${this.generatorFailure}`,
 			);
-		return [source, this.generatorCode as Code];
+		return this.generatorCode as Code;
 	}
 
 	/** Keeps an image under its id, and closes one that the id named before. */

@@ -21,12 +21,19 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
-// allocation sample of post.setEffectUniform and the effects' passes.
+// allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
+// of field on, focused on a point that sweeps through the swarm every frame, for the allocation
+// sample of post.set's focus point and depth of field's steps.
+// The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
+// swarm and the background into, for the allocation sample of the pass and for its cost: the
+// camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
+// time. `reflection=full`, `half` and `quarter` give the pass that share of the render size, and
+// the switch alone takes the preset's.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
-import { s1Camera } from '../../scenes/spec';
+import { S1_BOB_HEIGHT, S1_EXTENT, s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
 import { followPath, readCount, setUpView } from './sketch-common';
@@ -49,6 +56,8 @@ export default defineSketch(async (context) => {
 	const outlined = switches.has('outline');
 	if (outlined) createOutlined(context);
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
+	const reflection = switches.get('reflection');
+	if (reflection !== null) createWater(context, reflection);
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -62,6 +71,10 @@ export default defineSketch(async (context) => {
 	if (ao) context.quality.set({ aoScale: 0.5 });
 	const bloom = switches.has('bloom');
 	const glow = { bloom: { intensity: 0.15 } };
+	// Depth of field's focus point, changed in place, so a frame's call allocates no array.
+	const focus: [number, number, number] = [0, 0, 0];
+	const lens = { dof: { aperture: 2, focusPoint: focus } };
+	const dof = switches.has('dof');
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -78,6 +91,8 @@ export default defineSketch(async (context) => {
 	let room: Environment | undefined;
 	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
+	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -95,6 +110,10 @@ export default defineSketch(async (context) => {
 	if (skyMode === 'room')
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
+		});
+	if (skyMode === 'light')
+		void context.assets.skyEnvironment().then((loaded) => {
+			context.scene.setEnvironment(loaded);
 		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
@@ -127,6 +146,11 @@ export default defineSketch(async (context) => {
 		if (bloom) {
 			glow.bloom.intensity = 0.15 + 0.05 * Math.sin(t);
 			context.post.set(glow);
+		}
+		if (dof) {
+			focus[0] = 20 * Math.sin(0.7 * t);
+			focus[2] = 20 * Math.cos(0.5 * t);
+			context.post.set(lens);
 		}
 		if (tint && haze) {
 			warm[2] = 0.9 + 0.1 * Math.sin(t);
@@ -187,6 +211,56 @@ async function decodeWithoutEnd({ assets }: SketchContext): Promise<void> {
 		for (const texture of textures) texture.destroy();
 		await assets.loadGltf(MESHOPT_CUBE);
 	}
+}
+
+/** The water's height, below the lowest boxes of the swarm and their bobbing. */
+const WATER_HEIGHT = -S1_EXTENT - S1_BOB_HEIGHT - 2;
+
+/** The reflection pass's share of the render size, by the `reflection` switch's value. */
+const REFLECTION_SCALES = { full: 1, half: 0.5, quarter: 0.25 } as const;
+
+/** Water that ripples with the sketch time, and reads the reflection where it shows on the screen. */
+const WATER = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz * 0.15;
+    let slope = vec2f(cos(p.x + frame.time), cos(p.y * 1.3 + frame.time * 1.7)) * 0.08;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0);
+    return s;
+}
+`;
+
+/** Adds the `reflection` switch's water under the swarm, and the pass that it reflects. */
+function createWater(
+	{ scene, geometry, materials, render, textures }: SketchContext,
+	size: string,
+) {
+	const scale = REFLECTION_SCALES[size as keyof typeof REFLECTION_SCALES];
+	const pass = render.addPass({
+		kind: 'reflection',
+		writes: 'water',
+		plane: { point: [0, WATER_HEIGHT, 0] },
+		...(scale ? { scale } : {}),
+	});
+	const material = materials.shader({
+		wgsl: WATER,
+		color: '#0b2a33',
+		roughness: 0.05,
+		textures: { mirror: textures.fromPass(pass) },
+	});
+	const water = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material,
+		position: [0, WATER_HEIGHT, 0],
+	});
+	water.setRotationEuler(-Math.PI / 2, 0, 0);
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */

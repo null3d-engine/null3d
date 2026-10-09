@@ -11,6 +11,7 @@ import {
 	isExemptCommit,
 } from './check-docs-ack';
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
+import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
@@ -322,5 +323,57 @@ describe('keptCommits', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('the GPU check of a pull request', () => {
+	const shader = 'crates/null3d-shaders/wgsl/lit.wgsl';
+	const check = 'GPU-Checked: 061177262..a0a7c1777 passed: s4 medium 1.86 to 1.90 ms (+2.2%)';
+	const commit = (sha: string, message: string, files: string[] = []) => ({ sha, message, files });
+
+	it('covers shaders, their compiler, the GPU backends, the render loop and the presets', () => {
+		const files = [
+			shader,
+			'crates/null3d-shaders/src/glsl.rs',
+			'crates/null3d-shaders/shaders.toml',
+			'packages/engine/src/gpu/webgpu/backend.ts',
+			'packages/engine/src/render/loop.ts',
+			'packages/engine/src/quality/presets.ts',
+		];
+		expect(gpuBearingFiles(files)).toEqual(files);
+		expect(
+			gpuBearingFiles([
+				'crates/null3d-shaders/tests/build.rs',
+				'packages/engine/src/gpu/readback.test.ts',
+				'packages/engine/src/scene/objects.ts',
+				'bench/run.ts',
+			]),
+		).toEqual([]);
+	});
+
+	it('needs no trailer when no commit changes how the GPU draws', () => {
+		expect(gpuCheckProblem([commit('a1', 'docs(dev): a note', ['.dev/benchmarks.md'])])).toBeNull();
+	});
+
+	it('takes the trailer on the last commit that changes a shader, or on a later commit', () => {
+		const change = commit('b2', 'fix(engine): sample each map directly', [shader]);
+		expect(
+			gpuCheckProblem([commit('c3', `ci: record the GPU check\n\n${check}`), change]),
+		).toBeNull();
+		expect(gpuCheckProblem([{ ...change, message: `${change.message}\n\n${check}` }])).toBeNull();
+	});
+
+	it('fails without a trailer, or with one only on an earlier commit', () => {
+		const change = commit('b2', 'fix(engine): sample each map directly', [shader]);
+		expect(gpuCheckProblem([change])).toContain(
+			'b2 fix(engine): sample each map directly changes how the GPU draws (crates/null3d-shaders/wgsl/lit.wgsl)',
+		);
+		const earlier = commit('a1', `perf(engine): a first try\n\n${check}`, [shader]);
+		expect(gpuCheckProblem([change, earlier])).toContain('neither it nor a later commit');
+	});
+
+	it('fails a trailer that records no check', () => {
+		const change = commit('b2', 'fix(engine): a shader\n\nGPU-Checked: done', [shader]);
+		expect(gpuCheckProblem([change])).toContain('GPU-Checked value "done" records no check');
 	});
 });

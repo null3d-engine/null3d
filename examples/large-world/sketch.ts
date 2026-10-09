@@ -3,8 +3,10 @@
 // position that a setter takes keeps a precision of 0.03 mm or better at that distance: the 15 cm
 // lane marks stay sharp, and the camera moves smoothly. Each stretch of road has its own batches of
 // lane marks and trees, whose rows sit near the batch's origin, so they keep the precision of
-// 32-bit floats too.
+// 32-bit floats too. From the user's first drag, scroll or pinch, the camera orbits a point on the
+// road ahead that drives on, and the camera drives with it.
 import { defineSketch, math } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** The Earth's radius, in meters: the road's height above the origin. */
 const R = 6_378_137;
@@ -15,8 +17,11 @@ const TREES = 60;
 /** The car's speed, in meters per second, and the gap between two lane marks, in meters. */
 const SPEED = 30;
 const MARK_GAP = 8;
+/** How far ahead of the car, along its line of sight, the user's camera orbits, in meters. */
+const AHEAD = 12;
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground({
 		sky: { sunPosition: [-0.5, 0.25, -0.8], turbidity: 4, cloudCoverage: 0.3 },
 	});
@@ -25,6 +30,10 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	scene.createAmbientLight({ color: '#cfe0f5', intensity: 0.8 });
 	const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.1, far: 2000 });
 	scene.setActiveCamera(camera);
+	// The user's camera orbits a point on the car's line of sight. A plain array keeps the point's
+	// full precision, 6,378 km from the origin.
+	const look = [AHEAD, R + 1.4 - (0.9 * AHEAD) / 60, -1.8];
+	const view = interact(ctx, camera, { target: look, minDistance: 2, maxDistance: 200 });
 
 	const box = geometry.box();
 	const asphalt = materials.standard({ color: '#3b3d42', roughness: 0.9 });
@@ -80,10 +89,16 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	/** How far the camera drives before it starts the road again. */
 	const loop = STRETCH * (STRETCHES - 2);
 	return {
-		onUpdate() {
+		onUpdate(dt) {
 			const x = (time.now * SPEED) % loop;
-			camera.setPosition(x, R + 1.4, -1.8);
-			camera.lookAt(x + 60, R + 0.5, -1.8);
+			if (!view.userCamera) {
+				camera.setPosition(x, R + 1.4, -1.8);
+				camera.lookAt(x + 60, R + 0.5, -1.8);
+			}
+			// The user's camera drives on with its target, and starts the road again with the car.
+			view.shift(x + AHEAD - look[0], 0, 0);
+			look[0] = x + AHEAD;
+			view.update(dt);
 		},
 	};
 });
