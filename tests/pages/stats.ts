@@ -64,8 +64,12 @@ interface GpuCalls {
 	readbacks: number;
 }
 
-/** How long the page waits for the figures of a window. */
-const WAIT_MS = 10_000;
+/**
+ * How long the page waits for the figures of a window. They need about four sampled frames: one
+ * window, the GPU time and the culled counts read back from the GPU, and a refresh of the overlay.
+ * CI's software GPU can take more than a second for a frame of the instance rows and their shadows.
+ */
+const WAIT_MS = 20_000;
 
 const params = new URLSearchParams(location.search);
 
