@@ -2,7 +2,7 @@
 
 Status: proposed, 2026-10-09. Date: 2026-10-09. Task: M2-EX17.
 
-Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and turns it off on Low until a phone measures it. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
+Summary: `post.set({ dof })` blurs by distance from the focus, as a camera lens does, with the near and far fields apart, so a sharp object never spreads a halo and a blurred one in front spreads over what lies behind it. It is the gather of KinoBokeh at half the render size: four steps after the custom effects and before bloom, whose code and shaders load on first use. The lens takes a focal length in millimetres on a full-frame sensor, an f-number and a focus distance, or a world point to focus on in each frame. The camera's `setFocalLength` sets the field of view of the same lens. The quality setting `dofSamples` gives the gather 22 taps on Medium, 43 on High and 71 on Ultra, and keeps it off on Low, by the owner's ruling after the cloud phone runs. At 1920 x 1080 on the Mac it costs about 0.6 ms of GPU time per frame at 22 taps with WebGL2 and 0.85 ms with WebGPU, about 0.9 and 1.3 ms at 43 taps, and nothing while it is off.
 
 ## Question
 
@@ -93,6 +93,18 @@ While depth of field is off it costs nothing: the frame graph declares none of i
 
 The allocation check (`bun run bench:allocation --dof`) turns depth of field on in S1 with a focus point that moves every frame. It passed on WebGPU and on WebGL2. On WebGPU the replay allocated about 220 bytes more per frame than without depth of field: the browser's encoders of the four render passes, which the check budgets at bloom's 64 bytes per pass.
 
+**Cloud devices, a rough guide.** These are cloud timings. The device runner's `dof` plan ran on BrowserStack Automate on 9 October 2026, at ccad5d286 on this record's branch: runs `20261009-035340-dof` and `20261009-035934-dof`. The page drew the whole window at the preset's cap on the pixel ratio, with depth of field off and on in turns.
+
+| Device and path | Render scale | 16 taps | 22 taps |
+| --- | --- | --- | --- |
+| iPad 10th (A14), Safari 27, WebGPU GPU time | 1 | +2.16 ms | +4.11 ms |
+| iPad 10th, WebGPU GPU time | 0.5 | +0.98 ms | +1.44 ms |
+| iPad 10th, WebGL2 time between frames (no timer) | 1 | +4.58 ms | +5.20 ms |
+| iPad 10th, WebGL2 time between frames | 0.5 | +1.64 ms | +1.95 ms |
+| Galaxy S24 (Xclipse 940), Chrome 152, WebGL2 (no timer, no WebGPU) | 1 and 0.5 | no change: 33.3 ms, the display's 30 Hz | no change |
+
+At 16 taps and a render scale of 1, depth of field takes about 13% of a 60 Hz frame on the iPad's GPU. At 0.5 it takes about 6%. The S24 held 30 frames a second in every case. Its 30 Hz display hides any cost that still fits in its 33.3 ms frame, so these runs do not show the S24's cost.
+
 ### Download size
 
 | File | Before | After |
@@ -114,7 +126,7 @@ Option D, with the API of option A. The quality setting `dofSamples` takes 0, 16
 
 | Preset | Taps | Why |
 | --- | --- | --- |
-| Low | 0 (off) | Phones run Low. No phone has measured depth of field yet; the cloud phone check (the `dof` plan of the device runner) decides whether Low draws 16 taps |
+| Low | 0 (off) | Phones run Low. The owner ruled on 9 October 2026 that Low stays off for now: 16 taps take about 13% of a 60 Hz frame on the iPad at full render scale, and no Android phone could time it (see the cloud figures above) |
 | Medium | 22 | The most that WebGL2 and compatibility mode run. Round disks with a fine grain at their edges |
 | High | 43 | Desktops. Smooth disks, at about 1 ms at 1920 x 1080 |
 | Ultra | 71 | Desktops with time to spare |
@@ -126,5 +138,5 @@ A change of the taps above 0 changes only the gather's block, so it makes no GPU
 - **Code:** `crates/null3d-render/src/dof.rs` and `crates/null3d-shaders/wgsl/dof.wgsl`; the frame graph's four steps; bind layouts 27 and 28 and pipeline templates 41 to 46 in `null3d_gpu::drawlist`; the post values from 41 on; `setDof` and `setDofTaps` in the core's glue; `PerspectiveCamera.setFocalLength` and `focalLength`. Bloom's step blocks and depth of field's share one map of a target's corner onto its source's.
 - **Docs and skills:** `api/post`, `concepts/post-processing`, `api/cameras`, the quality preset tables, the three.js mapping's `dof` entry, the porting skill's post-processing reference and the develop skill's quick reference.
 - **Tests:** the image tests above, the frame graph's and the lens's unit tests, `post.set`'s unit tests, the camera's focal length against three.js, and the `--dof` switch of the allocation check.
-- **Devices:** the device runner's `dof` plan times depth of field on each GPU path at render scales of 1 and 0.5, at 16 and 22 taps. The S24+ and the iPad run it before the owner rules on Low.
+- **Devices:** the device runner's `dof` plan times depth of field on each GPU path at render scales of 1 and 0.5, at 16 and 22 taps. The cloud's iPad and S24 have run it (above). Low can draw 16 taps once an Android phone with a GPU timer shows that it fits.
 - **Later:** a step of the frame-budget governor for depth of field, and tile-based dilation of the near field's blur, which would let a near object's blur reach past the gather's radius.
