@@ -6,11 +6,13 @@
 //! few enough triangles, and whose material draws a solid surface. A material that blends, cuts
 //! holes with an alpha mask, skips the depth buffer, or runs custom shader code may leave gaps or
 //! move vertices, so its objects never block. Neither do skinned objects, whose drawn shape is not
-//! their mesh's. The picked objects draw nearest first, up to a budget of triangles, and the
-//! camera's culling then hides each source whose bounding sphere lies behind them.
+//! their mesh's. The picked objects' parts draw nearest first, up to a budget of triangles, and
+//! the camera's culling then hides each source whose bounding sphere lies behind them.
 //!
 //! A mesh's blocker, its welded corners and its edges, is built the first time an object with
-//! that mesh blocks the view, and kept, as meshes never change. A mesh from a model file can come
+//! that mesh blocks the view, and kept, as meshes never change. The blocker splits into its
+//! connected parts, and each part takes its place in the frame by its own bounding sphere, so a
+//! mesh that merges parts spread far apart blocks with its near parts first. A mesh from a model file can come
 //! with a simplified blocker of its own, which the asset tool made and checked to lie inside the
 //! mesh; objects with that mesh draw it instead.
 
@@ -42,17 +44,23 @@ const SEE_THROUGH: u32 =
 #[derive(Debug, Default)]
 pub struct Occluders {
     on: bool,
-    /// Each built blocker mesh.
+    /// Each built blocker part.
     meshes: Vec<BlockerMesh>,
-    /// By mesh id: [`UNBUILT`], [`NOT_BLOCKER`], or the index of the mesh's blocker plus one.
+    /// By mesh id: [`UNBUILT`], [`NOT_BLOCKER`], or the index of the mesh's parts plus one.
     by_mesh: Vec<u32>,
-    /// The places of blockers that removed meshes gave back.
+    /// Each mesh's parts: their places in `meshes`.
+    parts: Vec<Vec<u32>>,
+    /// The places of parts, and of lists of parts, that removed meshes gave back.
     free: Vec<u32>,
-    /// The frame's candidates: the nearest distance of each as the bits of a float, which sort as
-    /// whole numbers since none is negative, and its slot. Then scratch space for their sort.
+    free_parts: Vec<u32>,
+    /// The frame's candidates: the nearest distance of each part as the bits of a float, which
+    /// sort as whole numbers since none is negative, and its place in `picked`. Then scratch
+    /// space for their sort.
     distances: Vec<u32>,
     candidates: Vec<u32>,
     scratch: [Vec<u32>; 2],
+    /// Each candidate's slot and part.
+    picked: Vec<[u32; 2]>,
     blockers: Vec<Blocker>,
     buffer: OcclusionBuffer,
 }
@@ -94,7 +102,7 @@ impl Occluders {
         }
         let [width, height, ..] = frame.uniform.target_size;
         self.buffer.resize(width as u32, height as u32)?;
-        self.pick(input, frame, offsets, materials)?;
+        self.pick(input, frame, offsets, meshes, materials)?;
         if self.candidates.is_empty() {
             return Ok(None);
         }
@@ -122,12 +130,10 @@ impl Occluders {
         let world = scene.world(parity);
         let view_proj = &frame.uniform.view_proj;
         let mut triangles = 0;
-        for k in 0..self.candidates.len() {
-            let s = self.candidates[k] as usize;
-            let Some(index) = self.blocker_of(scene.meshes()[s], meshes)? else {
-                continue;
-            };
-            let count = self.meshes[index as usize].triangle_count();
+        for &candidate in &self.candidates {
+            let [slot, part] = self.picked[candidate as usize];
+            let s = slot as usize;
+            let count = self.meshes[part as usize].triangle_count();
             if triangles + count > MAX_FRAME_TRIANGLES {
                 break;
             }
@@ -135,7 +141,7 @@ impl Occluders {
             let [x, y, z, _] = offsets[scene.cells()[s] as usize];
             let material = scene.materials()[s];
             self.blockers.push(Blocker {
-                mesh: index,
+                mesh: part,
                 clip: clip_matrix(view_proj, world.matrix(s), [x, y, z]),
                 double_sided: materials.features(material - 1) & feature::DOUBLE_SIDED != 0,
             });
@@ -145,18 +151,23 @@ impl Occluders {
         Ok(self.buffer.is_active().then_some(&self.buffer))
     }
 
-    /// Lists the scene objects that may block the camera's view, each with the distance along
-    /// the view to its bounding sphere's nearest point.
+    /// Lists the parts of the scene objects that may block the camera's view, each with the
+    /// distance along the view to its bounding sphere's nearest point. An object that merges
+    /// parts spread over a large space, such as a city's buildings of one material, would
+    /// otherwise count as near by its farthest part, and fill the budget before the objects
+    /// that stand nearer.
     fn pick(
         &mut self,
         input: &FrameInput<'_>,
         frame: &ViewFrame,
         offsets: &[[f32; 4]],
+        meshes: &MeshStorage,
         materials: &MaterialTable,
     ) -> Result<(), TryReserveError> {
         let (scene, parity) = (input.scene, input.parity());
         self.candidates.clear();
         self.distances.clear();
+        self.picked.clear();
         let slots = scene.slots().high_water() as usize;
         let object_flags = &scene.flags()[..slots];
         let world = scene.world(parity);
@@ -167,6 +178,21 @@ impl Occluders {
         let m = &frame.uniform.view_proj;
         let scale =
             (m[1] * m[1] + m[5] * m[5] + m[9] * m[9]).sqrt() * 0.5 * self.buffer.size().1 as f32;
+        // The distance along the view to a sphere's nearest point, or `None` for a sphere outside
+        // the frustum or too small to matter.
+        let nearest = |cx: f32, cy: f32, cz: f32, radius: f32| {
+            if !frame.frustum.contains_sphere(cx, cy, cz, radius) {
+                return None;
+            }
+            // A perspective view shrinks a blocker with distance; a blocker that reaches the
+            // camera's plane is always large.
+            let w = m[3] * cx + m[7] * cy + m[11] * cz + m[15];
+            if w > radius && radius * scale / w < MIN_BLOCKER_PIXELS {
+                return None;
+            }
+            let along = depth[0] * cx + depth[1] * cy + depth[2] * cz + depth[3];
+            Some((along - radius).max(0.0))
+        };
         for (s, &object) in object_flags.iter().enumerate() {
             if object & flags::OCCLUDER == 0 {
                 continue;
@@ -185,23 +211,40 @@ impl Occluders {
             }
             let [x, y, z, _] = offsets[scene.cells()[s] as usize];
             let (cx, cy, cz) = (xs[s] + x, ys[s] + y, zs[s] + z);
-            if !frame.frustum.contains_sphere(cx, cy, cz, radius) {
+            if nearest(cx, cy, cz, radius).is_none() {
                 continue;
             }
-            let along = depth[0] * cx + depth[1] * cy + depth[2] * cz + depth[3];
-            // A perspective view shrinks a blocker with distance; a blocker that reaches the
-            // camera's plane is always large.
-            let w = m[3] * cx + m[7] * cy + m[11] * cz + m[15];
-            if w > radius && radius * scale / w < MIN_BLOCKER_PIXELS {
+            let Some(group) = self.parts_of(scene.meshes()[s], meshes)? else {
                 continue;
+            };
+            // Each part's sphere in the view's space: the object's matrix moves its centre, and
+            // its largest scale grows its radius.
+            let a = world.matrix(s);
+            let grow = [0, 1, 2]
+                .map(|c| (a[c] * a[c] + a[4 + c] * a[4 + c] + a[8 + c] * a[8 + c]).sqrt())
+                .into_iter()
+                .fold(0.0f32, f32::max);
+            for p in 0..self.parts[group].len() {
+                let part = self.parts[group][p];
+                let [px, py, pz, pr] = self.meshes[part as usize].sphere();
+                let Some(distance) = nearest(
+                    a[0] * px + a[1] * py + a[2] * pz + a[3] + x,
+                    a[4] * px + a[5] * py + a[6] * pz + a[7] + y,
+                    a[8] * px + a[9] * py + a[10] * pz + a[11] + z,
+                    pr * grow,
+                ) else {
+                    continue;
+                };
+                if self.candidates.len() == self.candidates.capacity() {
+                    let more = self.candidates.len().max(16);
+                    self.candidates.try_reserve(more)?;
+                    self.distances.try_reserve(more)?;
+                    self.picked.try_reserve(more)?;
+                }
+                self.distances.push(distance.to_bits());
+                self.candidates.push(self.picked.len() as u32);
+                self.picked.push([s as u32, part]);
             }
-            if self.candidates.len() == self.candidates.capacity() {
-                let more = self.candidates.len().max(16);
-                self.candidates.try_reserve(more)?;
-                self.distances.try_reserve(more)?;
-            }
-            self.distances.push((along - radius).max(0.0).to_bits());
-            self.candidates.push(s as u32);
         }
         Ok(())
     }
@@ -215,10 +258,8 @@ impl Occluders {
             self.by_mesh.try_reserve(id + 1 - self.by_mesh.len())?;
             self.by_mesh.resize(id + 1, UNBUILT);
         }
-        match self.by_mesh[id] {
-            UNBUILT | NOT_BLOCKER => self.by_mesh[id] = self.store(blocker)?,
-            index => self.meshes[index as usize - 1] = blocker,
-        }
+        self.release(id);
+        self.by_mesh[id] = self.store(blocker)?;
         Ok(())
     }
 
@@ -226,36 +267,65 @@ impl Occluders {
     /// the id builds its own. `ids` count from 0. The blockers' places go to later blockers.
     pub fn forget(&mut self, ids: &[u32]) {
         for &id in ids {
-            let Some(entry) = self.by_mesh.get_mut(id as usize + 1) else {
-                continue;
-            };
-            if *entry != UNBUILT && *entry != NOT_BLOCKER {
-                let index = *entry as usize - 1;
-                self.meshes[index] = BlockerMesh::default();
-                self.free.push(index as u32);
+            if (id as usize + 1) < self.by_mesh.len() {
+                self.release(id as usize + 1);
+                self.by_mesh[id as usize + 1] = UNBUILT;
             }
-            *entry = UNBUILT;
         }
     }
 
-    /// Stores a blocker in a free place or a new one, and returns its index plus one.
+    /// Gives back the places of a mesh's parts, by its id that counts from 1.
+    fn release(&mut self, id: usize) {
+        let entry = self.by_mesh[id];
+        if entry == UNBUILT || entry == NOT_BLOCKER {
+            return;
+        }
+        let group = entry as usize - 1;
+        for &part in &self.parts[group] {
+            self.meshes[part as usize] = BlockerMesh::default();
+            self.free.push(part);
+        }
+        self.parts[group].clear();
+        self.free_parts.push(group as u32);
+    }
+
+    /// Stores a blocker's parts in free places or new ones, and returns the index of their list
+    /// plus one.
     fn store(&mut self, blocker: BlockerMesh) -> Result<u32, TryReserveError> {
-        if let Some(index) = self.free.pop() {
-            self.meshes[index as usize] = blocker;
-            return Ok(index + 1);
+        let parts = blocker.into_parts();
+        let group = match self.free_parts.pop() {
+            Some(group) => group as usize,
+            None => {
+                self.parts.try_reserve(1)?;
+                self.parts.push(Vec::new());
+                self.parts.len() - 1
+            }
+        };
+        self.parts[group].try_reserve(parts.len())?;
+        for part in parts {
+            let index = match self.free.pop() {
+                Some(index) => {
+                    self.meshes[index as usize] = part;
+                    index
+                }
+                None => {
+                    self.meshes.try_reserve(1)?;
+                    self.meshes.push(part);
+                    self.meshes.len() as u32 - 1
+                }
+            };
+            self.parts[group].push(index);
         }
-        self.meshes.try_reserve(1)?;
-        self.meshes.push(blocker);
-        Ok(self.meshes.len() as u32)
+        Ok(group as u32 + 1)
     }
 
-    /// The index of a mesh's blocker, built the first time, or `None` for a mesh that never
-    /// blocks. `mesh` is an object's mesh id, which counts from 1.
-    fn blocker_of(
+    /// The index of the list of a mesh's parts, built the first time, or `None` for a mesh that
+    /// never blocks. `mesh` is an object's mesh id, which counts from 1.
+    fn parts_of(
         &mut self,
         mesh: u32,
         meshes: &MeshStorage,
-    ) -> Result<Option<u32>, TryReserveError> {
+    ) -> Result<Option<usize>, TryReserveError> {
         let id = mesh as usize;
         if self.by_mesh.len() <= id {
             self.by_mesh.try_reserve(id + 1 - self.by_mesh.len())?;
@@ -272,7 +342,7 @@ impl Occluders {
         }
         Ok(match self.by_mesh[id] {
             NOT_BLOCKER => None,
-            index => Some(index - 1),
+            index => Some(index as usize - 1),
         })
     }
 }

@@ -116,6 +116,8 @@ pub struct BlockerMesh {
     edges: Vec<Edge>,
     /// True when every edge joins two triangles that run along it in opposite directions.
     closed: bool,
+    /// The sphere around its corners: the centre of their box, and the distance to the farthest.
+    sphere: [f32; 4],
 }
 
 impl BlockerMesh {
@@ -168,13 +170,37 @@ impl BlockerMesh {
         if triangles.is_empty() {
             return None;
         }
+        Some(Self::welded(xs, ys, zs, triangles))
+    }
+
+    /// A blocker of welded corners and the triangles between them.
+    fn welded(
+        mut xs: Vec<f32>,
+        mut ys: Vec<f32>,
+        mut zs: Vec<f32>,
+        triangles: Vec<[u32; 3]>,
+    ) -> BlockerMesh {
         let corners = xs.len() as u32;
+        let (mut lo, mut hi) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+        for i in 0..xs.len() {
+            for (k, v) in [xs[i], ys[i], zs[i]].into_iter().enumerate() {
+                lo[k] = lo[k].min(v);
+                hi[k] = hi[k].max(v);
+            }
+        }
+        let centre: [f32; 3] = std::array::from_fn(|k| (lo[k] + hi[k]) * 0.5);
+        let radius = (0..xs.len())
+            .map(|i| {
+                let [x, y, z] = [xs[i] - centre[0], ys[i] - centre[1], zs[i] - centre[2]];
+                (x * x + y * y + z * z).sqrt()
+            })
+            .fold(0.0f32, f32::max);
         let padded = xs.len().next_multiple_of(4);
         for v in [&mut xs, &mut ys, &mut zs] {
             v.resize(padded, 0.0);
         }
         let (edges, closed) = edges_of(&triangles);
-        Some(BlockerMesh {
+        BlockerMesh {
             xs,
             ys,
             zs,
@@ -182,7 +208,77 @@ impl BlockerMesh {
             triangles,
             edges,
             closed,
-        })
+            sphere: [centre[0], centre[1], centre[2], radius],
+        }
+    }
+
+    /// The blocker's connected parts, each a blocker of its own: the triangles that share
+    /// corners, directly or through other triangles. A mesh that merges parts spread over a large
+    /// space, such as a city's buildings of one material, then blocks part by part, and each part
+    /// takes its place among the frame's blockers by its own distance. A blocker of one part
+    /// comes back whole.
+    pub fn into_parts(self) -> Vec<BlockerMesh> {
+        let n = self.corners as usize;
+        // Each corner's root among the corners that its triangles join.
+        let mut root: Vec<u32> = (0..self.corners).collect();
+        let find = |root: &mut [u32], mut c: u32| {
+            while root[c as usize] != c {
+                root[c as usize] = root[root[c as usize] as usize];
+                c = root[c as usize];
+            }
+            c
+        };
+        for tri in &self.triangles {
+            for k in 1..3 {
+                let (a, b) = (find(&mut root, tri[0]), find(&mut root, tri[k]));
+                if a != b {
+                    root[a.max(b) as usize] = a.min(b);
+                }
+            }
+        }
+        // Each part's number, in the order of its first corner, and each corner's new id.
+        let mut part = vec![u32::MAX; n];
+        let mut local = vec![0u32; n];
+        let mut sizes: Vec<u32> = Vec::new();
+        for c in 0..self.corners {
+            let r = find(&mut root, c) as usize;
+            if part[r] == u32::MAX {
+                part[r] = sizes.len() as u32;
+                sizes.push(0);
+            }
+            let p = part[r];
+            part[c as usize] = p;
+            local[c as usize] = sizes[p as usize];
+            sizes[p as usize] += 1;
+        }
+        if sizes.len() <= 1 {
+            return vec![self];
+        }
+        // Each part's corners as three arrays, and its triangles.
+        let mut parts: Vec<[Vec<f32>; 3]> = sizes
+            .iter()
+            .map(|&size| std::array::from_fn(|_| Vec::with_capacity(size as usize)))
+            .collect();
+        let mut triangles: Vec<Vec<[u32; 3]>> = vec![Vec::new(); sizes.len()];
+        for c in 0..n {
+            let [xs, ys, zs] = &mut parts[part[c] as usize];
+            xs.push(self.xs[c]);
+            ys.push(self.ys[c]);
+            zs.push(self.zs[c]);
+        }
+        for tri in &self.triangles {
+            triangles[part[tri[0] as usize] as usize].push(tri.map(|c| local[c as usize]));
+        }
+        parts
+            .into_iter()
+            .zip(triangles)
+            .map(|([xs, ys, zs], triangles)| Self::welded(xs, ys, zs, triangles))
+            .collect()
+    }
+
+    /// The sphere around its corners, in the mesh's space: centre and radius.
+    pub fn sphere(&self) -> [f32; 4] {
+        self.sphere
     }
 
     /// The number of triangles.
@@ -1398,5 +1494,77 @@ mod tests {
         assert_eq!(mesh.triangle_count(), 12);
         assert_eq!(mesh.edge_count(), 18);
         assert!(mesh.is_closed());
+        assert_eq!(mesh.sphere(), [0.0, 0.0, 0.0, 3f32.sqrt()]);
+    }
+
+    /// The triangles of a box of half-size `half` around `centre`, with each face's corners
+    /// repeated, as generators make them.
+    fn box_soup(centre: [f32; 3], half: f32) -> Vec<f32> {
+        let mut soup = Vec::new();
+        for axis in 0..3 {
+            for sign in [-1.0f32, 1.0] {
+                // The face's corners, counter-clockwise seen from outside.
+                let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+                let corner = |a: f32, b: f32| {
+                    let mut p = [0.0; 3];
+                    p[axis] = sign;
+                    p[u] = a * sign;
+                    p[v] = b;
+                    std::array::from_fn::<f32, 3, _>(|k| centre[k] + p[k] * half)
+                };
+                let quad = [
+                    corner(-1., -1.),
+                    corner(1., -1.),
+                    corner(1., 1.),
+                    corner(-1., 1.),
+                ];
+                for i in [0, 1, 2, 0, 2, 3] {
+                    soup.extend_from_slice(&quad[i]);
+                }
+            }
+        }
+        soup
+    }
+
+    #[test]
+    fn a_mesh_of_boxes_far_apart_splits_into_one_part_per_box() {
+        use crate::bvh::mesh::TriangleSoup;
+        let centres = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 4.0, -300.0]];
+        let soup: Vec<f32> = centres.iter().flat_map(|&c| box_soup(c, 2.0)).collect();
+        let mesh = BlockerMesh::build(&TriangleSoup { positions: &soup }).expect("a blocker");
+        assert_eq!(mesh.triangle_count(), 36);
+        let whole = mesh.sphere();
+        assert!(
+            whole[3] > 150.0,
+            "the whole mesh's sphere spans the boxes: {whole:?}"
+        );
+        let parts = mesh.into_parts();
+        assert_eq!(parts.len(), 3);
+        for (part, centre) in parts.iter().zip(centres) {
+            assert_eq!(part.corner_count(), 8);
+            assert_eq!(part.triangle_count(), 12);
+            assert_eq!(part.edge_count(), 18);
+            assert!(part.is_closed());
+            assert_eq!(
+                part.sphere(),
+                [centre[0], centre[1], centre[2], 2.0 * 3f32.sqrt()]
+            );
+        }
+    }
+
+    #[test]
+    fn boxes_that_share_corners_stay_one_part() {
+        use crate::bvh::mesh::TriangleSoup;
+        // Two boxes stacked face to face share the four corners of that face.
+        let soup: Vec<f32> = [[0.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+            .iter()
+            .flat_map(|&c| box_soup(c, 1.0))
+            .collect();
+        let mesh = BlockerMesh::build(&TriangleSoup { positions: &soup }).expect("a blocker");
+        assert_eq!(mesh.corner_count(), 12);
+        let parts = mesh.into_parts();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].triangle_count(), 24);
+        assert_eq!(parts[0].sphere()[..3], [0.0, 1.0, 0.0]);
     }
 }
