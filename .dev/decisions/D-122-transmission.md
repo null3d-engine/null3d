@@ -86,7 +86,7 @@ In compatibility mode the 8-bit path averages the edge samples of the tinted bal
 
 **Allocation.** TBD.
 
-**Size.** TBD.
+**Size.** `bun run build:check-size` against main at 3b6cd82b, after Brotli. The pipelined start grew from 129.8 to 130.3 KB on WebGPU, and from 127.1 to 127.4 KB on WebGL2. The material options, the copy's pipeline and binding, and the WebGPU backend's cached mip chains make most of it. Two files that load later grew by 2.1%. The renderer that the sketch worker loads in its own thread modes holds the copy and the mip chains, and the glTF worker reads the two extensions. The WebAssembly files grew 0.5%. Each shader file of the `transmission` feature takes 16.4 to 19.2 KB of its 32 KB budget, and loads only with the first material that lets light through.
 
 **GPU check.** TBD.
 
