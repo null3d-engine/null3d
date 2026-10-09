@@ -91,6 +91,20 @@ All Mac figures come from Chrome on the owner's Mac (Apple M5 Max) on 9 October 
 
 Before the chain drew in one render pass, stage 0 took 0.96 ms on WebGPU. On the software GPU, stage 1 costs most: its level has the most texels. On a slow phone, that stage is the one to watch.
 
+**Cloud devices, a rough guide.** The device runner's `sky` plan ran both test pages on BrowserStack Automate on 9 October 2026, at ea5cb60eb: runs `20261009-030547-sky` and `20261009-030816-sky`. Neither browser gave WebGL2 timer queries. So every figure runs from the stage's call until the GPU has finished it. On the Mac, that wait added 0.3 to 0.7 ms to each stage. The cloud's Galaxy S24 has no WebGPU adapter, so it ran WebGL2 only. Its display ran at 30 Hz.
+
+| Device and path | Stage 0: the sky | Stages 1 to 5: one level each | Stage 6: the copy | The whole map at once |
+| --- | --- | --- | --- | --- |
+| iPad 10th (A14), Safari 27, WebGPU | 3.12 ms | 3.48, 2.94, 3.24, 2.08 and 1.58 ms | 1.08 ms | 89.3 ms |
+| iPad 10th, compatibility mode | 5.02 ms | 4.08, 4.08, 3.84, 2.80 and 2.12 ms | 1.42 ms | 30.1 ms |
+| iPad 10th, WebGL2 | 3.50 ms | 3.40, 1.94, 1.46, 1.50 and 1.22 ms | 0.70 ms | 111.6 ms |
+| Galaxy S24 (Xclipse 940), Chrome 152, WebGL2 | 3.96 ms | 6.09, 3.84, 2.95, 3.59 and 4.81 ms | 2.63 ms | 50.2 ms |
+
+Each figure is the median of 8 refreshes. The longest single stages were 7.97 ms on the S24 (stage 4) and 8.28 ms on the iPad in compatibility mode (stage 3).
+
+- As on the software GPU, the first filter stage is the S24's slowest, at 6.09 ms. It passes the line of 4 ms that splits a stage by faces. So do the S24's stage 5 (4.81 ms) and the iPad's stage 0 in compatibility mode (5.02 ms). Stage 5 filters the second smallest level, so much of the S24's time there is the wait for the GPU's end, not the filter. Timer queries would tell the two apart, and neither phone has them.
+- On every path of both devices, the new sky's light showed 6 frames after the move, as on the Mac.
+
 **Time to the new light.** The sky refresh test (`tests/image/sky-refresh.spec.ts`) moves the sun and captures every frame after the move, with the drawing held to 20 frames a second. On all three tiers, the mirror sphere's reflection and the rough sphere's diffuse light kept the old light for the move's frame and the next 5. Both showed the new light from the 6th frame after the move. At 60 frames a second, that is 100 ms from the move. When a refresh is under way at the move, it takes up to 13 frames, 217 ms.
 
 **A sky that changes in every frame** refreshes the map without end, one stage a frame: under 1.1 ms of GPU time per frame on the Mac. A sketch that moves the sun in steps pays only after each step. So does a still scene that animates only the clouds' `time`.
@@ -154,6 +168,6 @@ The image tests `time-of-day-*` draw the four presets with the sky's environment
 
 ## Consequences
 
-- The phones' figures are open: the refresh cost and the time to the new light on the Galaxy S24+ (WebGPU and WebGL2) and on the iPad. The device runner can run `tests/pages/sky-map-cost.html` as it runs the generator page, and `tests/pages/sky-refresh.html`. If a stage passes 4 ms on a phone, that stage splits by faces.
+- The cloud's S24 and iPad 10th have run the refresh (above). Three stages pass 4 ms there, by figures that include the wait for the GPU's end: the S24's stages 1 and 5 on WebGL2 and the iPad's stage 0 in compatibility mode. The owner decides whether those stages split by faces. The owner's S24+ (WebGPU and WebGL2) and iPad have not run the `sky` plan yet.
 - Each sky map keeps about 9 MB of GPU memory for its stages. A second sky map is rarely useful, since every sky map shows the one sky.
 - The sky model now has three copies: the shaders' `null3d::atmosphere`, the core's `sky_light.rs` for the diffuse light, and the clear sky in `time-of-day.ts`. A change to three.js's sky must change all three. The sky refresh test and the time-of-day image tests compare the first two, through the rough sphere's diffuse light.
