@@ -17,7 +17,9 @@ const SQUARE: [number, number] = [-1.6, -1.3];
 const SQUARE_STEP = 0.16;
 const SQUARE_DEPTH = 2;
 const CAPTURES_BEFORE = 3;
-const MOST_CAPTURES = 60;
+const MOST_CAPTURES = 100;
+/** The count that the squares stop at. */
+const LAST = 31;
 
 /** The pixel of a point of the scene's plane `z` units in front of the spheres' plane. */
 function pixel([x, y]: [number, number], z = 0): [number, number] {
@@ -45,8 +47,8 @@ function since(pixels: Uint8Array): number {
 		const [x, y] = pixel([SQUARE[0] + SQUARE_STEP * k, SQUARE[1]], SQUARE_DEPTH);
 		return (pixels[(y * WIDTH + x) * 4] as number) > 128;
 	};
-	if (!lit(4)) return -1;
-	return [0, 1, 2, 3].reduce((count, k) => count | (lit(k) ? 1 << k : 0), 0);
+	if (!lit(5)) return -1;
+	return [0, 1, 2, 3, 4].reduce((count, k) => count | (lit(k) ? 1 << k : 0), 0);
 }
 
 run('sky-refresh', async () => {
@@ -72,7 +74,7 @@ run('sky-refresh', async () => {
 	};
 	for (let k = 0; k < CAPTURES_BEFORE; k++) await capture();
 	engine.postToSketch('move');
-	for (let k = 0; k < MOST_CAPTURES; k++) if ((await capture()).since === 15) break;
+	for (let k = 0; k < MOST_CAPTURES; k++) if ((await capture()).since === LAST) break;
 	await engine.destroy();
 	return { tier: engine.capabilities.tier, frames };
 });

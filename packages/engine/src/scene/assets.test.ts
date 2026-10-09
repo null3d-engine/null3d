@@ -262,7 +262,12 @@ describe('environments', () => {
 				cubes.push([size, levels, 'rgb9e5ufloat', name]);
 				return { bytes: 0 } as unknown as Texture;
 			},
-			addSkyMap(_: Texture, call: string, defaults: (values: Float32Array) => void) {
+			addSkyMap(
+				_: Texture,
+				_stages: number,
+				call: string,
+				defaults: (values: Float32Array) => void,
+			) {
 				const values = new Float32Array(BACKGROUND_VALUE_COUNT);
 				defaults(values);
 				skyMaps.push([

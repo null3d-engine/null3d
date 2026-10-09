@@ -651,13 +651,18 @@ export class Textures {
 
 	/**
 	 * @internal Makes a cube texture that `fromGenerator` made for the sky a map of the scene's
-	 * sky, after `defaults` wrote the sky's defaults into the background's block of values where no
-	 * sky background wrote its own.
+	 * sky, which refreshes in `stages` stages, after `defaults` wrote the sky's defaults into the
+	 * background's block of values where no sky background wrote its own.
 	 */
-	addSkyMap(texture: Texture, call: string, defaults: (values: Float32Array) => void): void {
+	addSkyMap(
+		texture: Texture,
+		stages: number,
+		call: string,
+		defaults: (values: Float32Array) => void,
+	): void {
 		const { core } = this;
 		defaults(core.f32(core.glue.backgroundValues(), BACKGROUND_VALUE_COUNT));
-		core.check(core.glue.addSkyMap(texture.handle), call, 'a texture', true);
+		core.check(core.glue.addSkyMap(texture.handle, stages), call, 'a texture', true);
 	}
 
 	/**

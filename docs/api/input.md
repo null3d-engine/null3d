@@ -40,7 +40,7 @@ export default defineSketch(({ scene, input }) => {
 });
 ```
 
-The [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) moves a box with an action map. Drags turn its camera, and the wheel and trackpad pinches zoom.
+The [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) moves a small robot with an action map. Drags turn its camera, and the wheel and trackpad pinches zoom.
 
 ## Names
 

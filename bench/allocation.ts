@@ -190,8 +190,8 @@ const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 
 /**
  * Places that allocate with `--sky-environment` on top of `BUDGETS`, while the sun moves in every
- * frame. Each stage of the sky map that draws makes one object that the browser returns, on six of
- * every seven frames: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
+ * frame. Each stage of the sky map that draws makes one object that the browser returns, in every
+ * frame but the copy's: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
  * about 16 bytes.
  */
 const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
