@@ -289,46 +289,62 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 
 ### The same overlay for another engine
 
-`@null3d/engine/stats` exports a text layout of the overlay's figures, the figure types and the page's meters. A page that draws with another engine, such as three.js, prints its own figures in the same layout. The same code measures both engines' page figures, so a comparison of the two stays fair.
+`@null3d/engine/stats` exports the overlay's panel, its figure types, a text layout of the figures and the page's meters. A page that draws with another engine, such as three.js, shows its own figures in the same panel. The same code measures both engines' page figures, so a comparison of the two stays fair.
+
+`new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. `collapsed: true` starts it closed. `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
+
+- `showRate(frames, fps, refreshHz)` shows the frame rate in the header.
+- `update(figures, frame)` shows a set of figures in the card. `frame` gives the display's refresh rate, whether the GPU's work is timed, and how the threads share each frame. A renderer that prepares and draws each frame on one thread passes `mode: 'one-thread'`. It names that thread in `bothSteps`.
+- `follow()` keeps the panel on the canvas's corner. Call it as the figures come.
+- `setCollapsed(collapsed)` opens or closes the card from code, and `remove()` takes the panel off the page.
+
+The panel judges the figures against the engine's own target: the display's refresh rate, at most 60 frames a second. A figure that the page does not know is `null`, and the card leaves it out.
 
 ```ts
 import {
-  MainThreadWindow,
   PageMemorySampler,
   pageHeapBytes,
-  statsText,
+  StatsPanel,
 } from '@null3d/engine/stats';
 
-const element = document.querySelector('#stats') as HTMLElement;
-const mainThread = new MainThreadWindow();
+const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 const pageMemory = new PageMemorySampler();
-pageMemory.start();
+const panel = new StatsPanel(canvas, {
+  collapsed: true,
+  onToggle: (collapsed) => (collapsed ? pageMemory.stop() : pageMemory.start()),
+});
 
-// Call it twice a second with the figures that your own frame loop collected.
+// Call it four times a second with the figures that your own frame loop collected.
 function showFigures(fps: number, cpuMs: number, info: { calls: number; triangles: number }) {
-  element.textContent = statsText({
-    heading: 'three.js WebGLRenderer',
-    frames: 30,
-    presentedFps: fps,
-    completedFps: null,
-    cpuMs,
-    threads: [{ name: 'main', busyMs: cpuMs }],
-    gpuMs: null,
-    drawCalls: info.calls,
-    uploadBytes: null,
-    triangles: info.triangles,
-    objects: null,
-    memory: {
-      wasmBytes: null,
-      gpuTextureBytes: null,
-      gpuBufferBytes: null,
-      jsHeapBytes: pageHeapBytes(),
-      page: pageMemory.page,
+  panel.follow();
+  panel.update(
+    {
+      heading: 'three.js WebGLRenderer',
+      frames: 30,
+      presentedFps: fps,
+      completedFps: null,
+      cpuMs,
+      threads: [{ name: 'main', busyMs: cpuMs }],
+      gpuMs: null,
+      drawCalls: info.calls,
+      uploadBytes: null,
+      triangles: info.triangles,
+      objects: null,
+      memory: {
+        wasmBytes: null,
+        gpuTextureBytes: null,
+        gpuBufferBytes: null,
+        jsHeapBytes: pageHeapBytes(),
+        page: pageMemory.page,
+      },
+      mainThread: null,
     },
-    mainThread: mainThread.take(),
-  });
+    { refreshHz: 60, gpuTimer: false, mode: 'one-thread', bothSteps: 'main' },
+  );
 }
 ```
+
+`statsText(figures)` lays out the same figures as lines of text, for a page that prints them in an element of its own or in a log.
 
 ## Frame measurement
 

@@ -14,6 +14,12 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
+| `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
+| `examples/compare/<name>/` | One comparison: `scene.ts`, the description that both engines draw, `sketch.ts`, the null3D half, and `three.ts`, the three.js half |
+| `examples/lib/compare.ts`, `ramp.ts` | `startComparison`, `rampComparison` and the ramp's logic, which any page lays out its own way |
+| `examples/lib/compare-scene.ts` | What the comparison scenes share, with no engine imports: the fixed-step clock, meshes, textures made in code and the grading table |
+| `examples/lib/three-worker.ts`, `stats-three.ts` | The three.js half's worker, and its stats meter in the engine's panel |
+| `examples/compare-page.ts` | The comparison panel of the clone's examples page |
 
 The image tests, the device plans and the page tests read `examples/demos.ts` and the `examples/<name>/sketch.ts` paths ([Image tests](image-tests.md)). A folder under `examples/` that holds a `sketch.ts` must be a demo in the list.
 
@@ -31,15 +37,15 @@ The examples page links only by relative addresses, and each demo's entry names 
 
 The website's repository holds this repository as a git submodule, pinned to the release tag that matches the `@null3d/engine` version it installs. Its build:
 
-1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and never lists the submodule as a workspace, whose `workspace:*` versions would break.
-2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
+1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and `three` at the version that `examples/package.json` pins, for the comparisons. It never lists the submodule as a workspace, whose `workspace:*` versions would break.
+2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. It shows the comparisons from `examples/compare/comparisons.ts` with `startComparison` from `examples/lib/compare.ts`. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
 3. Builds its pages with `null3d()` from the plugin, `base: './'`, and `resolve.dedupe` for `@null3d/engine` and `@null3d/controls`. The dedupe matters when the submodule has its own `node_modules`: its workspace links point at packages whose built files are missing. Each entry of the list names its sketch with a literal address, so the build ships every sketch that the website imports.
 4. Sets the environment variable `VITE_NULL3D_SAMPLES_BASE` to the folder of the sample files, such as `./samples/`, and copies them there with `copyNamedSamples` from `tools/lib/samples.ts`, which copies every file that the demos name.
 5. Sends the isolation headers, for example with a Cloudflare Pages `_headers` file, as [hosting](../docs/getting-started/hosting.md) says.
 
 Until the first npm release, the website builds the engine from the submodule instead: `bun install` and `bun run build` in the submodule, then the same config with the repository's `sourceResolve`.
 
-`bun run test:packages` checks this path in CI. After its fresh project passes, it copies `examples/` into the project, where a submodule would sit. Beside it, it writes a page of its own layout that imports only the list and `startDemo`, and builds that page against the packed tarballs, with `VITE_NULL3D_SAMPLES_BASE` set. Then the instances and security camera demos must start from the build. Those two make their content in code, so the check needs no sample files.
+`bun run test:packages` checks this path in CI. After its fresh project passes, it copies `examples/` into the project, where a submodule would sit. Beside it, it writes a page of its own layout that imports only the list and `startDemo`, and builds that page against the packed tarballs, with `VITE_NULL3D_SAMPLES_BASE` set. Then the instances and security camera demos must start from the build, and so must Factory in each engine. Those make their content in code, so the check needs no sample files.
 
 ## The examples page of a clone
 
@@ -130,6 +136,48 @@ Why it works this way:
 - The controls start with the demo, not at the first gesture. Controls ignore a button that is already down when they start, so controls made at the first press would ignore the whole first drag.
 - Hover steers, not a drag, because a drag already turns the camera. On a touch screen, a tap is the only gesture that a drag does not take.
 - The weight eases back after an idle time because the sketch cannot see a pointer leave the canvas. Without it, the last pointed point would hold the object for the rest of the visit.
+
+## Comparisons with three.js
+
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory is the first ([D-121](decisions/D-121-comparison-tier.md)). Battle, Night town and Busy page follow.
+
+### The parts
+
+- `scene.ts` holds everything that both engines draw: the seed, the layout, the fixed-step simulation, the meshes as arrays, the surfaces, the lights and the camera path. It also holds the ramp of each device class and the held frame. It imports no engine, so both halves run the same code.
+- `sketch.ts` is the null3D half. It reads its settings from its own address: `capacity`, the cells to make, `count`, the cells that move, and `effects`. The page's `count` message changes the count during play.
+- `three.ts` is the three.js half. It builds the scene with three.js 0.186.1 and hands it to `runThreeWorker`, which runs it in one worker with an OffscreenCanvas.
+- `startComparison({ canvas, comparison, engine })` starts one engine on a canvas. It returns the run: `setCount`, `measure`, `collapseStats` and `destroy`. `rampComparison(run)` runs the ramp. The website lays out its own controls over these calls, as the clone's page does.
+- The clone's page runs a comparison at `?compare=<name>&engine=null3d` or `&engine=threejs`. Its caption holds an engine switch, a count slider, the effect switches, "Run the ramp", and an "about this comparison" panel. Each engine runs on a page of its own, so the switch and the ramp load the page again. The ramp keeps each engine's result for the session, and shows "null3D held N, three.js held M" once both have run.
+
+### The ramp
+
+The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the presented frame rate for a second. A step holds the display rate at 95% of it or more. The ramp stops after two steps in a row that miss it, or at the plan's maximum. It reports the largest count held, and the largest held at half the display rate. Both engines measure their own presented frames: null3D with `engine.measure`, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
+
+Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
+
+### Fairness rules
+
+These rules show on the page's "about this comparison" panel, from `FAIRNESS_RULES` in `examples/lib/compare.ts`:
+
+- The same scene description in both engines: the same seed, layout, meshes, surfaces, lights, camera path and fixed-step simulation.
+- The same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.
+- null3D's quality governor off, a fixed preset (High, which WebGL2 caps at Medium), and every pixel drawn. Ambient occlusion draws at half the render size each way in both engines.
+- three.js on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas. It uses its add-ons and the methods of its official examples.
+- One engine at a time: each runs on a page of its own.
+- One memory definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.
+- The ramp runs with the stats panel collapsed in both engines.
+
+### The look
+
+Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
+
+### The stats panel of three.js
+
+`examples/lib/stats-three.ts` measures three.js as the engine's overlay measures null3D, and shows the figures in the same panel, `StatsPanel` from `@null3d/engine/stats`. The worker times its frames, splits each into the scene's code and three.js's render calls, and counts draws, triangles and instances through `renderer.info`. The GPU time comes from WebGL2's timer queries or WebGPURenderer's timestamps, where the page starts with the panel open. The page adds its own heap and the whole page's memory with the overlay's calls. three.js reports no GPU bytes, so the card leaves those out and names the counts of geometries and textures in its last line.
+
+### Before a comparison goes on the page
+
+A device sitting runs its ramp on the Mac in Chrome and Safari, the S24+, a Pixel, the iPad and a WebGL-only iPhone. Each run goes into [tested devices](tested-devices.md). null3D must hold the higher count on every device class.
 
 ## Showcase scenes
 

@@ -1,0 +1,54 @@
+# D-121: The comparison tier with three.js, and Factory
+
+Status: built, 2026-10-09, from the owner's decisions of 8 October 2026 ([Examples](../examples.md#decisions-of-8-october-2026)). Task: M2-EX5. Factory does not go on the page until a device sitting shows that null3D holds the higher count on every device class.
+
+Summary: The comparisons with three.js live in `examples/compare/`, one folder per scene, with one shared description that both engines draw. A shell in `examples/lib/` starts either engine on a canvas with the same settings, sets the count, measures and runs the ramp, so the website can draw its own controls. `@null3d/engine/stats` now exports the overlay's panel, so the three.js half shows its figures in the engine's own card. Factory is the first comparison. On the Mac in Chrome at 60 Hz, both engines held the ramp's top of 50,000 moving parts, and three.js's tuned version used less CPU time per frame than null3D.
+
+## Question
+
+The old `demos-vs-threejs` repository compared the engines in an app of its own. The owner moved the comparisons into `examples/` on 8 October 2026. How do the comparisons run there, so that the clone's page and the website both show them, both engines draw the same scene by the same rules, and the headline figure is fair?
+
+## Rule
+
+- One description per scene, with no engine imports, which both engines run: the seed, the layout, the fixed-step simulation, the meshes, the surfaces, the lights and the camera path.
+- The fairness rules of [Examples](../examples.md#fairness-rules): the same pixel ratio and MSAA, null3D's governor off with a fixed preset, three.js on its faster renderer in one worker, one engine at a time, one memory definition.
+- Each engine draws each effect with its own best technique for the same intent ([D-52](D-52-intent-parity.md)), and each effect is a switch.
+- The headline figure is the largest count that each engine holds at the display rate on the viewer's device.
+
+## Decision
+
+1. **Files.** `examples/compare/<name>/` holds `scene.ts`, `sketch.ts` (null3D) and `three.ts` (three.js 0.186.1 in a worker). `examples/compare/comparisons.ts` lists them, with literal addresses of the sketch and the worker, so a production build ships both. `examples/lib/compare-scene.ts` holds what every scene shares: the fixed-step clock, rotations, camera loops, meshes as arrays with texture coordinates in meters, textures made in code and the grading table. The old repository's measuring tools stay behind: `bench/` and `tests/real-browsers.ts` do that work here.
+2. **The shell.** `startComparison({ canvas, comparison, engine })` starts one engine and returns `setCount`, `measure`, `collapseStats` and `destroy`. `rampComparison(run)` runs the ramp. The clone's page (`examples/compare-page.ts`) is one layout over them: an engine switch, a count slider, effect switches, "Run the ramp" and an "about this comparison" panel. Each engine runs on a page of its own, as each demo does, so the switch and the ramp load the page again. A page that swapped engines in place would hold two engines' memories on an iPad ([Examples](../examples.md#each-pick-is-a-new-page)).
+3. **The ramp.** Each step sets the count, settles for half a second and measures a second of presented frames. A step holds at 95% of the display rate or more. The ramp stops after two missed steps in a row, or at its maximum. The old ramp grew the count once a second on the wall clock and stopped after three misses past 20 seconds, to line up recordings of both engines. A comparison on one device needs no such alignment, and the shorter rule finishes sooner.
+4. **The three.js half.** It is the old repository's tuned version: one `InstancedMesh` per part kind, and a loop of game code that writes every moving part's world matrix in closed form. A unit test checks those matrices against the parent-first walk of each arm's tree, for every part and crate. Its worker (`examples/lib/three-worker.ts`) draws the effects with three.js's own techniques. On WebGLRenderer, these are `EffectComposer` with `GTAOPass`, `UnrealBloomPass`, `OutputPass` (AgX) and `LUTPass`. On WebGPURenderer, they are the GTAO node, the bloom node, the output transform and the 3D LUT node. The room environment comes from `RoomEnvironment` through `PMREMGenerator`. three.js has no height fog, so the worker gives it null3D's fog formula: GLSL in place of `FogExp2`'s chunks, and a fog node.
+5. **The null3D half.** Each arm is a tree of scene objects: the base stands still, and six parts move under their parents. The sketch writes each joint that changed, and the engine works out the world transforms on its job workers. The still parts and the crates hang under the base, so one `setVisible` hides a cell. A held crate follows the wrist. After the engine moves the trees, `onLateUpdate` reads the wrist's world transform and places the crate in the same frame. Reparenting the crate at each grip would rebuild the draw tables several times a second.
+6. **Making the cells.** The engine queues at most 65,536 structural changes between two frames ([Scene](../../docs/api/scene.md)). Making 5,000 cells at once, 75,000 objects, failed with E1102. Each object takes about four changes, so the sketch makes 250 cells in its setup and 250 in each frame after it.
+7. **The stats panel.** The engine's overlay now builds its header and card through `StatsPanel`, which `@null3d/engine/stats` exports. `examples/lib/stats-three.ts` fills one with three.js's figures: the worker's frame time split into the scene's code and the render calls, `renderer.info` draws and triangles, instances counted per draw, GPU time from WebGL2's timer queries or WebGPURenderer's timestamps where the page starts with the panel open, and the page's heap and whole-page memory with the overlay's calls. three.js reports no GPU bytes, so those parts stay out of the card. A new frame mode, `'one-thread'`, explains a renderer that prepares and draws each frame on one thread.
+8. **Factory's scale.** The ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones, where three.js's per-object work was expected to show on phones. Each row waits for a device sitting.
+9. **three.js's renderer.** In Chrome on the Mac, WebGLRenderer used a quarter of WebGPURenderer's CPU time per frame on Factory. So WebGLRenderer is the default on every GPU path until a device sitting shows otherwise, and `?renderer=webgpu` picks the other.
+
+## Options rejected
+
+- **Batch rows for the null3D half, with the closed-form poses that three.js uses.** Batch rows do not cast or receive shadows yet ([Instance batches](../../docs/concepts/instances.md)), and the spot lights' shadows are part of the look. A tree of objects is also what the scene is about.
+- **One page that swaps engines in place.** Safari reserves address space for each engine's memory, and frees a dropped memory late.
+- **An effect only where both engines draw it pixel for pixel**, the old repository's rule. The owner replaced it on 8 October 2026 with intent parity and a review of both engines' held frames.
+
+## First figures
+
+All runs are from 9 October 2026, in Chrome 155 on the owner's Mac (Apple M5 Max), in a window that Playwright opened at 1280 x 720 CSS pixels, at pixel ratio 1, with every effect on. The window presented 60 frames a second, not the display's 120. The [run's record](../tested-devices/macbook-pro-chrome/20261009-125644-factory-ramp.md) has the details.
+
+| Engine and path | Held (of 50,000) | Busiest thread at 2,000 | At 50,000 | 1-minute load |
+| --- | --- | --- | --- | --- |
+| null3D, WebGPU, High | 50,000 | 1.81 ms | 3.17 ms | 6.1 |
+| three.js, WebGPURenderer | 50,000 | 4.88 ms | 6.63 ms | 5.4 |
+| three.js, WebGLRenderer | 50,000 | 0.51 ms | 1.58 ms | 9.9 |
+| null3D, WebGL2, Medium | 50,000 | 2.09 ms | 5.00 ms | 22.1 |
+| three.js, WebGLRenderer (WebGL2 path) | 50,000 | 0.65 ms | 1.69 ms | 18.6 |
+
+- Every engine held the ramp's top at 60 Hz, so the ramp showed no gap on this Mac.
+- three.js's tuned version used less CPU time per frame than null3D on both paths. Its closed-form loop writes 10 matrices per cell, and its draws are 13 instanced batches. The two WebGL2 rows ran at a load above 8, so they are not timings.
+- So Factory does not yet show where null3D leads, on the Mac at 60 Hz. Before it goes on the page, the sitting must run it at 120 Hz and on the phones, and the null3D half's cost per cell needs a profile. The owner's rule decides: a comparison ships only where null3D leads on every device class, and is otherwise reworked or dropped.
+
+## Device sitting before Factory goes on the page
+
+Factory's ramp on the Mac in Chrome (at 120 Hz) and Safari, the Galaxy S24+, a Pixel, the iPad, and a WebGL-only iPhone, each with the runs recorded in [tested devices](../tested-devices.md).

@@ -86,6 +86,18 @@
 			.caption .controls { color: var(--muted); }
 			.caption .quiet { font-size: 12px; }
 			.caption .quiet a { color: var(--muted); }
+			.compare { max-height: calc(100% - 1.5rem); overflow-y: auto; }
+			.compare .switch { display: flex; gap: 0.25rem; }
+			.compare .switch a { padding: 0.15rem 0.6rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
+			.compare .switch a[aria-current="page"] { background: var(--pick); border-color: var(--link); color: var(--text); }
+			.compare .count { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
+			.compare .count input { flex: 1; min-width: 6rem; }
+			.compare .count output { min-width: 10rem; font-variant-numeric: tabular-nums; }
+			.compare .effects { display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; color: var(--muted); }
+			.compare button { margin-top: 0.4rem; padding: 0.3rem 0.8rem; font: inherit; color: var(--text); background: var(--pick); border: 1px solid var(--link); border-radius: 6px; cursor: pointer; }
+			.compare button:disabled { opacity: 0.6; cursor: default; }
+			.compare .result { font-weight: 600; font-variant-numeric: tabular-nums; }
+			.compare .about ul { margin: 0.35rem 0 0; padding-left: 1.1rem; font-size: 13px; color: var(--muted); }
 			.welcome { max-width: 36rem; padding: 2rem 1.5rem; }
 			.welcome h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
 			.error { color: #ff8a80; white-space: pre-wrap; }
