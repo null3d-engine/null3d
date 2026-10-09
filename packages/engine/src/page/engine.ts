@@ -3,6 +3,7 @@
 // page loads the renderer only when it draws itself, and the sketch runner and the scene API only
 // when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
+import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -28,7 +29,7 @@ import {
 	type QualityPreset,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -94,6 +95,7 @@ import {
 	takeParkedWorker,
 	takeWhenFree,
 } from './ownership';
+import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
@@ -319,6 +321,13 @@ export interface EngineOptions {
 	 * draw. Throws E1421 for a name it does not know.
 	 */
 	preload?: readonly ShaderFeature[];
+	/**
+	 * True or options show the stats overlay over the canvas from the first frame, as
+	 * `engine.stats` does with the same value. The default is false. The `?stats` or `?stats=on`
+	 * switch shows it too, with these options when they are given, and `?stats=off` hides it,
+	 * whatever this option says. A held engine for image tests shows no overlay.
+	 */
+	stats?: boolean | StatsOverlayOptions;
 }
 
 /**
@@ -517,6 +526,19 @@ export interface Engine {
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
+	 * Shows an overlay of figures over the top-right corner of the canvas, or hides it with
+	 * `false`: the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw
+	 * calls, triangles and objects drawn, memory, and the page thread's long tasks and input delay.
+	 * Its header is a button with the frame rate, which shows and hides the other figures. Options
+	 * pick whether the overlay starts collapsed to its header; a call on a shown overlay changes
+	 * the options it names. The page draws the overlay and updates it a few times a second, and its
+	 * code downloads at the first call. While the other figures show, the engine times one frame in
+	 * eleven on the GPU and reads back the counts of the objects that the GPU culls, which costs a
+	 * little GPU time. The sketch's `debug.stats` shows and hides the same overlay, and the last
+	 * call wins.
+	 */
+	stats(show?: boolean | StatsOverlayOptions): void;
+	/**
 	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
 	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
 	 * a worker draws. In hold mode it is an image of the held frame, whose pixels the page keeps, so
@@ -544,6 +566,14 @@ export interface Engine {
 	 * handles one.
 	 */
 	simulateGpuLoss(): void;
+	/**
+	 * Locks the pointer to the canvas, for first-person controls and games that turn with the mouse.
+	 * The browser hides the pointer, and the sketch's `input.pointer.dx` and `dy` give the mouse's
+	 * movement, with no edge to stop it. Call it in a click or key handler: browsers lock the pointer
+	 * only right after the user acts. Resolves once the lock begins. Fails with E1425 when the browser
+	 * refuses it. The user ends the lock with Esc, and the page with `document.exitPointerLock()`.
+	 */
+	requestPointerLock(options?: PointerLockOptions): Promise<void>;
 	/**
 	 * Stops the engine and its workers. The engine cannot start again. The sketch's `onDestroy` runs
 	 * first, and later calls from the sketch's code fail with E1420. The thread that draws destroys
@@ -643,8 +673,8 @@ interface WorkerEvents {
 	failure(error: EngineError, endsStart?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
-	/** The sketch asked to show or hide the stats overlay. */
-	stats(show: boolean): void;
+	/** The sketch asked to show or hide the stats overlay, or to change its options. */
+	stats(show: StatsRequest): void;
 	/** The slot in the label table of a label's id, or -1 once it has none. */
 	labelSlot: LabelSlotSender;
 }
@@ -1209,7 +1239,12 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
+			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
+		sharedMemory: threaded,
+		fpsCap: switches.fps,
+		gpuFeatures,
+		mode,
 	}));
 	Atomics.store(slots, Slot.Running, 1);
 	/**
@@ -1272,6 +1307,10 @@ async function startEngine(
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
 	let coreMemory: WebAssembly.Memory | undefined;
+	/** The engine's WebAssembly memory as the page sees it, once the core has loaded. */
+	let wasmMemory: WebAssembly.Memory | undefined;
+	/** The GPU features or WebGL2 extensions that the engine found, once it has probed the device. */
+	let gpuFeatures: readonly string[] = [];
 	let memoryKey: MemoryKey | undefined;
 	/** True while the page's own core starts in the shared memory. */
 	let pageCoreStarting = false;
@@ -1357,6 +1396,8 @@ async function startEngine(
 			await localDrawing?.stop();
 			localRunner?.dispose();
 			input?.listen(false);
+			// A stopped engine reads no input, so it gives the pointer back.
+			if (globalThis.document?.pointerLockElement === options.canvas) document.exitPointerLock();
 			canvasWatch?.listen(false);
 			stopPreferences?.();
 			stopDisplay?.();
@@ -1486,7 +1527,7 @@ async function startEngine(
 			options: tierSettings,
 			textureCapMiB,
 			highest: withinTier('ultra', tier),
-			check: checks && !storedCheck ? { fps: switches.fps } : undefined,
+			check: checks && !storedCheck,
 		};
 		mode = {
 			build,
@@ -1525,18 +1566,18 @@ async function startEngine(
 			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
-		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
-		// first, so the thread that draws starts its download now, while the core downloads.
+		// The GPU path and the device's fixed bits choose the renderers and the shader file that the
+		// thread that draws loads first, so it starts their downloads now, while the core downloads.
 		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
 		if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
 		else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
-		else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
+		else if (drawModule) preloadDeviceFiles(drawModule, tier, device.shaderBits);
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;
 		memoryKey = core.memoryKey;
 		onProgress('core');
-		let wasmMemory = core.memory;
+		wasmMemory = core.memory;
 		const capabilities: EngineCapabilities = {
 			tier,
 			threaded,
@@ -1551,6 +1592,7 @@ async function startEngine(
 			maxCanvasSize: maxCanvasSize(tier, report),
 			depth: device.depth,
 		};
+		gpuFeatures = capabilities.features;
 		// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
 		const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
 		setWakeByMessage(wakeByMessage);
@@ -1944,6 +1986,9 @@ async function startEngine(
 					perSecond: secondRates(reader.records),
 				};
 			},
+			stats(show = true) {
+				if (!stopped()) statsSwitch.show(show);
+			},
 			async capture() {
 				try {
 					if (stopped()) throw new Error('the engine has stopped');
@@ -1959,6 +2004,9 @@ async function startEngine(
 				if (localDrawing) localDrawing.simulateLoss();
 				else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
 			},
+			requestPointerLock(lockOptions) {
+				return requestPointerLock(options.canvas, lockOptions);
+			},
 			async destroy(destroyOptions) {
 				await stop();
 				if (destroyOptions?.release) releaseMemories();
@@ -1966,6 +2014,11 @@ async function startEngine(
 		};
 		if (hold === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+			// The switch's start state goes on top of the option's corner.
+			if (switches.stats !== false) {
+				if (options.stats) statsSwitch.show(options.stats);
+				if (switches.stats) statsSwitch.show(switches.stats);
+			}
 			return engine;
 		}
 		try {

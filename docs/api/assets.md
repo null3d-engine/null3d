@@ -3,7 +3,7 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
@@ -33,8 +33,10 @@ export default defineSketch(async ({ assets, page }) => {
 | `loadTexture(url, options)` | A texture from a PNG, JPEG, WebP or AVIF file, or a KTX2 file of ETC1S, UASTC or UASTC HDR data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
+| `lutFromData({ size, data })` | A color grading table made from numbers in code, with no file. [Tables from numbers](#tables-from-numbers) says what it takes |
 | `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
 | `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
+| `skyEnvironment()` | The light of the scene's sky, as an `Environment` that follows the sky background |
 | `loadCubemap(urls)` | A `Cubemap` of six images, a sky box for `scene.setBackground`. [Cube maps](#cube-maps) says what it reads |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
@@ -113,6 +115,42 @@ A load that fails frees everything that it made before the failure.
 
 `lut.destroy()` frees the table's GPU memory. Give `post.set` a table that lives.
 
+### Tables from numbers
+
+`lutFromData` makes a table from numbers that your code computes, as three.js's `LUTPass` takes a `Data3DTexture` that code fills. It takes the numbers in the order of a `.cube` file's lines, so a file and its numbers make the same table:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ assets, post }) => {
+  // A warm grade: more red and less blue, 17 texels a side.
+  const size = 17;
+  const data = new Float32Array(size ** 3 * 3);
+  let at = 0;
+  for (let b = 0; b < size; b++)
+    for (let g = 0; g < size; g++)
+      for (let r = 0; r < size; r++) {
+        data[at++] = (r / (size - 1)) * 1.05;
+        data[at++] = g / (size - 1);
+        data[at++] = (b / (size - 1)) * 0.9;
+      }
+  post.set({ lut: await assets.lutFromData({ size, data }) });
+  return {};
+});
+```
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `size` | The texels along each side, a whole number from 2 to 256. | Required |
+| `data` | A `Float32Array`, a `Float64Array` or an array of numbers. It holds three numbers per texel, red, green and blue, or four, whose fourth the table skips. Red changes fastest, then green, then blue. The texel at red r, green g and blue b stands for the color (r, g, b) / (size - 1) of the domain. | Required |
+| `domainMin`, `domainMax` | The colors that the first and the last texel along each axis stand for, as a `.cube` file's `DOMAIN_MIN` and `DOMAIN_MAX`. | `[0, 0, 0]` and `[1, 1, 1]` |
+| `title` | A name, which becomes the table's `title`. | None |
+
+- The values are display colors from 0 to 1. Values outside that range are clamped, as in a file. Divide 8-bit values by 255 first.
+- The table becomes the same 3D texture of 4 bytes per texel that `loadLut` makes.
+- The first table loads the code that makes it, the same file of about 2 KB that `loadLut` loads. The call's promise resolves once the texels are in engine memory, as `loadLut`'s does.
+- Input that makes no table throws [E1208](../errors/E1208.md), and the message names the fault. That is a size outside 2 to 256, or data without three or four numbers per texel. It is also a number that is not finite, or a domain whose maximum is not above its minimum.
+
 ## Environments
 
 `loadEnvironment` reads two kinds of file:
@@ -120,7 +158,7 @@ A load that fails frees everything that it made before the failure.
 - The KTX2 file that `bunx @null3d/cli assets env` writes, the fast path. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light.
 - An HDR file of an equirectangular panorama, as three.js's `HDRLoader` and `EXRLoader` read it: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps, as three.js's `PMREMGenerator.fromEquirectangular` does.
 
-`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. The GPU draws it and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
+`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. `skyEnvironment()` makes the light of the sky that [`scene.setBackground({ sky })`](scene.md#environments-cube-maps-and-the-sky) draws, as three.js's `PMREMGenerator.fromScene` does with its `Sky`. The GPU draws each of them and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -137,12 +175,14 @@ export default defineSketch(async ({ scene, assets }) => {
 ```
 
 - An `Environment` has its cube map's `size`, the width of the largest faces, its `levels`, its `format` and its GPU `bytes`.
-- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room loads the code and the shaders that make it on the GPU, about 8 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
+- The first environment file loads the file reader, under 1 KB after Brotli. The first built-in room or sky's environment loads the code and the shaders that make it on the GPU, about 12 KB after Brotli. [Lighting and environment](../concepts/lighting.md#cost) gives the GPU's time.
 - A KTX2 file's cube map uploads in the frames after the load, and the scene draws without it until it is on the GPU.
 - A worker reads an HDR file, outside the sketch's frames. The first one loads the reader and its worker, about 6.5 KB after Brotli. It also loads the code and shaders that make the room, which filter the file. They start at the call for an address that ends in `.hdr` or `.exr`, so they load during the download. The call resolves once the file is read and those shaders are ready. The GPU then filters the whole map in the next frame, before that frame draws. So no frame draws the scene without its light. Load HDR files while the scene loads.
 - An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
 - The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
+- `skyEnvironment` loads the same code and shaders as the room, and resolves once they are ready. The next frame makes the whole map, in about 10 ms on a MacBook Pro. Until the scene's first sky background, the map shows the sky's defaults.
+- The sky's map follows the sky. After `setBackground({ sky })` changes it, the map refreshes in 7 steps, one a frame. The scene draws with the old map until the last step. Each step takes under 1.1 ms on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
 - The tool's file needs no reading or filtering at load, so prefer it for maps that ship with a game. HDR files suit maps that change, such as files that users upload. The tool's file is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each.
@@ -204,10 +244,10 @@ Each call rejects with an engine error that says how to fix the problem:
 | [E1416](../errors/E1416.md) | `loadGltf` got a file that is not a glTF 2.0 model it can read: broken JSON, an offset or a count past the data, a missing buffer or image, or a loop of nodes. Or the file passes a limit on what one file may decode to, as [Assets and prefabs](../concepts/assets.md#limits-on-each-file) lists |
 | [E1109](../errors/E1109.md) | `loadGltf` made a mesh too large for engine memory |
 | [E1417](../errors/E1417.md) | `loadGltf` got a file that requires an extension the engine does not read, such as Draco compression |
-| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table readers or the environment map reader did not download, when the first such file loads |
+| [E1406](../errors/E1406.md) | The files of the KTX2 transcoder, the glTF loader, the table makers or the environment map reader did not download, when the first such file or table loads |
 | [E1213](../errors/E1213.md) | `builtinEnvironment` got a name that no built-in environment has |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
-| [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |
+| [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take. Also numbers that `lutFromData` cannot make a table from |
 
 `preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again.
 

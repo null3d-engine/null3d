@@ -80,6 +80,17 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
+	dofSamples: {
+		label: 'Depth of field',
+		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
+	},
+	reflectionScale: {
+		label: 'Reflection passes',
+		print: (value) =>
+			({ 0.25: 'quarter resolution', 0.5: 'half resolution', 1: 'full resolution' })[
+				Number(value)
+			] ?? '',
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

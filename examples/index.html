@@ -6,24 +6,163 @@
 		<title>null3D demos</title>
 		<link rel="icon" href="data:," />
 		<style>
-			:root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; }
-			body { margin: 0; background: #0d1117; color: #e6e8eb; }
-			a { color: #7fb2ff; }
-			main { max-width: 44rem; margin: 0 auto; padding: 1.5rem 1rem; }
-			li { margin-bottom: 1rem; }
-			li p { margin: 0.25rem 0; }
-			canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-			.panel { position: fixed; top: 0.75rem; left: 0.75rem; max-width: 24rem; padding: 0.5rem 0.75rem; background: rgb(13 17 23 / 0.8); border-radius: 6px; }
-			.panel h1 { font-size: 1rem; margin: 0; }
-			.panel p { margin: 0.25rem 0; }
-			.labels { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+			:root {
+				color-scheme: dark;
+				font: 15px/1.5 system-ui, sans-serif;
+				--bg: #0d1117;
+				--side: #11161d;
+				--line: #222a33;
+				--text: #e6e8eb;
+				--muted: #8b949e;
+				--link: #7fb2ff;
+				--pick: #1c2633;
+				--bar: 2.75rem;
+				--drawer: min(18rem, 85vw);
+			}
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				height: 100vh;
+				height: 100dvh;
+				overflow: hidden;
+				display: grid;
+				grid-template-columns: 16rem minmax(0, 1fr);
+				background: var(--bg);
+				color: var(--text);
+			}
+			a { color: var(--link); }
+			:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+			.bar { display: none; }
+			.sidebar {
+				overflow-y: auto;
+				overscroll-behavior: contain;
+				padding: 1rem 0.75rem 1.5rem;
+				background: var(--side);
+				border-right: 1px solid var(--line);
+			}
+			.brand { margin: 0 0.5rem 0.75rem; font-weight: 600; }
+			.brand a { color: var(--text); text-decoration: none; }
+			.sidebar h2 {
+				margin: 1rem 0.5rem 0.25rem;
+				font-size: 0.75rem;
+				font-weight: 600;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: var(--muted);
+			}
+			.sidebar ul { margin: 0; padding: 0; list-style: none; }
+			.sidebar li a {
+				display: block;
+				padding: 0.3rem 0.5rem;
+				border-radius: 6px;
+				color: var(--text);
+				text-decoration: none;
+			}
+			.sidebar li a:hover { background: var(--pick); }
+			.scene { color: var(--muted); font-weight: 400; }
+			.tag {
+				margin-left: 0.25rem;
+				padding: 0 0.3rem;
+				font-size: 10px;
+				white-space: nowrap;
+				color: var(--muted);
+				border: 1px solid var(--line);
+				border-radius: 4px;
+			}
+			.sidebar li a[aria-current="page"] {
+				background: var(--pick);
+				box-shadow: inset 3px 0 0 var(--link);
+				font-weight: 600;
+			}
+			.stage { position: relative; overflow: hidden; }
+			canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+			.labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 			.label { padding: 0.1rem 0.4rem; font-size: 13px; white-space: nowrap; background: rgb(13 17 23 / 0.75); border-radius: 4px; }
 			.label.active { background: #f2c14e; color: #111; }
+			.caption {
+				position: absolute;
+				top: 0.75rem;
+				left: 0.75rem;
+				/* Room at the right for the stats overlay, collapsed to its frame rate. */
+				max-width: min(24rem, calc(100% - 10rem));
+				padding: 0.4rem 0.75rem;
+				font-size: 14px;
+				background: rgb(13 17 23 / 0.8);
+				border-radius: 6px;
+			}
+			.caption summary { cursor: pointer; }
+			.caption h1 { display: inline; font-size: 1rem; margin: 0; }
+			.caption p { margin: 0.35rem 0 0; }
+			.caption .controls { color: var(--muted); }
+			.caption .quiet { font-size: 12px; }
+			.caption .quiet a { color: var(--muted); }
+			.welcome { max-width: 36rem; padding: 2rem 1.5rem; }
+			.welcome h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
 			.error { color: #ff8a80; white-space: pre-wrap; }
+			@media (max-width: 767.98px) {
+				body { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--bar) minmax(0, 1fr); }
+				.bar {
+					display: flex;
+					align-items: center;
+					gap: 0.75rem;
+					padding: 0 0.5rem;
+					background: var(--side);
+					border-bottom: 1px solid var(--line);
+				}
+				.bar .brand { margin: 0; }
+				.menu {
+					display: inline-flex;
+					align-items: center;
+					gap: 0.4rem;
+					padding: 0.3rem 0.6rem;
+					font: inherit;
+					color: var(--text);
+					background: transparent;
+					border: 1px solid var(--line);
+					border-radius: 6px;
+				}
+				.menu svg { width: 1rem; height: 1rem; }
+				/* The drawer slides in under the bar, so the menu button stays in reach to close it. */
+				.sidebar {
+					position: fixed;
+					top: var(--bar);
+					bottom: 0;
+					left: 0;
+					z-index: 2;
+					width: var(--drawer);
+					transform: translateX(-100%);
+					visibility: hidden;
+					transition: transform 0.2s ease, visibility 0s linear 0.2s;
+				}
+				.sidebar.open { transform: none; visibility: visible; transition: transform 0.2s ease; }
+				.sidebar .brand { display: none; }
+				.backdrop { position: fixed; inset: var(--bar) 0 0 0; z-index: 1; background: rgb(0 0 0 / 0.5); }
+				/* The stats overlay sits over the whole page, so it hides while the drawer is open. */
+				body:has(.sidebar.open) [data-null3d-stats] { display: none; }
+				.welcome { padding: 1.25rem 1rem; }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.sidebar, .sidebar.open { transition: none; }
+			}
 		</style>
 	</head>
 	<body>
-		<main></main>
+		<header class="bar">
+			<button type="button" class="menu" aria-expanded="false" aria-controls="demos">
+				<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+					<rect x="1" y="3" width="14" height="1.6" rx="0.8" />
+					<rect x="1" y="7.2" width="14" height="1.6" rx="0.8" />
+					<rect x="1" y="11.4" width="14" height="1.6" rx="0.8" />
+				</svg>
+				Demos
+			</button>
+			<p class="brand"><a href="./">null3D demos</a></p>
+		</header>
+		<nav id="demos" class="sidebar" aria-label="Demos">
+			<p class="brand"><a href="./">null3D demos</a></p>
+		</nav>
+		<div class="backdrop" hidden></div>
+		<main class="stage"></main>
 		<script type="module" src="./index.ts"></script>
 	</body>
 </html>

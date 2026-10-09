@@ -165,6 +165,49 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
+const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
+
+/** The depth of field tests' image size: wide enough for the blur's disks to show. */
+const DOF_SIZE = [480, 270] as const;
+
+/**
+ * Depth of field focused on the post near the camera, so the far field blurs; on the lights far
+ * behind, so the near field blurs; and on the box between them, so both blur; and the scene without
+ * it, on every tier. A six-bladed aperture draws the far lights as hexagons. A focus on a point at the box's distance,
+ * and depth of field turned on during play, draw the both-fields image. At half the render scale
+ * the steps draw into the corners of the same targets. A device with no HDR target draws no depth
+ * of field: the page's switch that turns HDR off stands in for one, and must draw the scene without
+ * it.
+ */
+function dofTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DOF_SKETCH}${query}`,
+		hold: 1,
+		size: DOF_SIZE,
+	});
+	return [
+		test('dof-off', ''),
+		test('dof-far-field', '?dof=near'),
+		test('dof-near-field', '?dof=far'),
+		test('dof-both', '?dof=both'),
+		test('dof-hexagon', '?dof=near&blades=6'),
+		{ ...test('dof-point', '?dof=both&point'), reference: 'dof-both' },
+		{ ...test('dof-later', '?dof=both&later'), reference: 'dof-both' },
+		test('dof-scale-50', '?scale=0.5&dof=both'),
+		{
+			...test('dof-8-bit', '?dof=both'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dof-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the custom effects' tests. */
 const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
 
@@ -338,7 +381,8 @@ const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
 
 /**
  * Color grading on every tier: a table from a .cube file, a table from a .3dl file, the vignette,
- * and a table at part of its intensity with the vignette. Compatibility mode keeps the 8-bit path
+ * and a table at part of its intensity with the vignette. A table made from the .cube file's
+ * numbers must draw the file's image. Compatibility mode keeps the 8-bit path
  * with MSAA, where grading runs the final pass in place of the resolve pass. The page's switch that
  * turns HDR off puts the other tiers on that path too, which must draw the HDR path's image. At
  * half the render scale, the final pass grades the scaled image. The parity test compares the
@@ -353,6 +397,7 @@ function gradingTests(): ImageTest[] {
 	});
 	return [
 		test('lut-cube', '?lut=warm'),
+		{ ...test('lut-numbers', '?lut=warm-numbers'), reference: 'lut-cube' },
 		test('lut-3dl', '?lut=cool'),
 		test('vignette', '?vignette'),
 		test('lut-vignette', '?lut=warm&mix&vignette'),
@@ -458,6 +503,32 @@ function minimapTests(): ImageTest[] {
 		hold: 0,
 	});
 	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+}
+
+/** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
+export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
+
+/**
+ * A reflection pass mirrors the camera's view across a floor at height 0, on every tier. The floor
+ * is a smooth metal mirror, so a red box at the left and a green box at the right each hang upside
+ * down below themselves, with the sky around them, which the pass draws as the camera's view
+ * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
+ * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
+ * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
+ * The quarter test draws the reflection at a quarter of the render size. The reflection spec
+ * checks where the boxes' reflections land, and that no magenta shows.
+ */
+function reflectionTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${REFLECTION_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('reflection-mirror', ''),
+		test('reflection-water', '?water'),
+		test('reflection-quarter', '?quarter'),
+	];
 }
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
@@ -906,12 +977,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...dofTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
 	...minimapTests(),
+	...reflectionTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1427,6 +1500,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 		timeoutSeconds: 60,
 	},
+	// Four times of day from `timeOfDay`: the sky background, the sky's environment, the main
+	// light, the fog and the exposure together, over spheres from mirror to rough. The sky's
+	// environment must show the sky behind it in the smooth spheres at each time. A held frame
+	// makes the whole map at once, which a software GPU does slowly (D-118).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `time-of-day-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/time-of-day-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

@@ -3,12 +3,12 @@ id: api/engine
 title: "Page API: createEngine"
 status: experimental
 since: "0.1"
-summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages and destroy."
+summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages, pointer lock and destroy."
 ---
 
 # Page API: createEngine
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with `requestPointerLock` from null3D 0.2. The API is experimental, so it can still change between versions.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 
@@ -98,6 +98,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
+| `stats` | false | `true` shows the stats overlay from the first frame, and `{ collapsed: true }` shows it with its card closed: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
 ## A transparent canvas
 
@@ -140,17 +141,19 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). After E1404 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). The engine then draws on without the objects that failed. Without a handler, the engine logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
+- `stats(true)` shows the stats overlay over the canvas, and `stats(false)` hides it: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). Options in place of `true` set whether the card starts closed, on a shown overlay too. The sketch's `debug.stats` shows and hides the same overlay, and the last call from either side wins.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
 - `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [UI overlays and labels](ui.md).
+- `requestPointerLock()` locks the pointer to the canvas, for [first-person controls](controls.md#pointer-lock) and games that turn with the mouse. Call it in a click or key handler: browsers lock the pointer only right after the user acts. It resolves once the lock begins. It fails with [E1425](../errors/E1425.md) when the browser refuses the lock: on a phone, in a frame without `allow-pointer-lock`, or just after the user pressed Esc. The option `{ unadjustedMovement: true }` asks for the mouse's raw movement, which some browsers cannot give. While the lock holds, the sketch's `input.pointer.locked` is true. The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine ends it too.
 - `destroy()` stops the engine and its threads, and the engine cannot start again. The sketch's `onDestroy` runs first, and every later call from the sketch's code fails with [E1420](../errors/E1420.md). Wait for its promise before you start another engine on the same page.
 - The page keeps the memory that a stopped engine's threads shared, for about 30 seconds. The next engine with the same memory maximum takes it. React's StrictMode, route changes and hot reloads destroy and create the engine again. Such a page then asks the browser for no new memory. Safari can refuse a new memory for some seconds after a page drops one. The page keeps at most 2 memories. Their RAM stays in use until a new engine takes one, the 30 seconds end or the page goes away. Call `destroy({ release: true })` when the page will not start the engine again soon: the browser can then free the memory at once. An engine whose threads did not all stop cleanly leaves no memory to reuse. The single-threaded build's memory is not shared, and the page keeps its core for the next engine.
 - A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker. So the new engine needs the same thread options as the old one. The worker ends when the canvas leaves the page or the page goes away. It also ends when the browser refuses memory for a new engine while no engine runs on the canvas. A new engine on its canvas then fails with [E1419](../errors/E1419.md), as on a canvas whose engine still runs.
 - In Safari, a stopped engine's canvas that stays in the page keeps the engine's memory, 1 GiB by default, until that worker ends. A new engine that needs the room gets it. Other code does not: a page that also loads a large WebAssembly module can run out of room. So remove the canvas from the page once you are done with it.
 - A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
 
-Each `on...` call returns a function that removes its handler. `engine.requestPointerLock` comes in null3D 0.2.
+Each `on...` call returns a function that removes its handler.
 
 ## Screenshots
 

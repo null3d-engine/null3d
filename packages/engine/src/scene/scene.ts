@@ -65,6 +65,7 @@ import {
 	DEFAULT_FAR,
 	DEFAULT_FOV,
 	DEFAULT_NEAR,
+	HALF_SENSOR_MM,
 	newCamera,
 	type OrthographicView,
 	orthographicView,
@@ -1446,6 +1447,25 @@ export class PerspectiveCamera extends Camera {
 		}
 		this.verticalFov = degrees;
 		this.scene.lensChanged(this);
+	}
+
+	/**
+	 * The focal length in millimetres of a lens with this field of view on a full-frame sensor, 24
+	 * mm tall. The default field of view of 50 degrees is about 25.7 mm.
+	 */
+	get focalLength(): number {
+		return HALF_SENSOR_MM / Math.tan((this.verticalFov * Math.PI) / 360);
+	}
+
+	/**
+	 * Sets the field of view of a lens of `millimetres` on a full-frame sensor, 24 mm tall, as a
+	 * photographer picks a lens: 24 is wide, 50 normal and 85 a portrait lens. Depth of field takes
+	 * the same focal length unless its settings give another. Throws E1108 for a length that is not
+	 * above 0.
+	 */
+	setFocalLength(millimetres: number): void {
+		if (DEV) checkSize('setFocalLength', 'focal length', millimetres, this);
+		this.setFov((360 / Math.PI) * Math.atan(HALF_SENSOR_MM / millimetres));
 	}
 
 	/** @internal */

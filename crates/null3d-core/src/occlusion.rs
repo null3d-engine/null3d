@@ -71,7 +71,8 @@ const BLOCK_SUBTILES_X: u32 = 4;
 const BLOCK_SUBTILES_Y: u32 = BAND_HEIGHT / SUBTILE_HEIGHT;
 /// Pixels across a row word of a band's scratch mask: four subtiles.
 const WORD_PIXELS: u32 = 32;
-/// The pixels that the buffer holds about, for any shape of target.
+/// The pixels that the buffer holds about, for any shape of target, unless the engine asks for
+/// another count.
 pub const TARGET_PIXELS: u32 = 256 * 144;
 /// The most triangles that one blocker mesh may have. A larger mesh blocks nothing.
 pub const MAX_BLOCKER_TRIANGLES: u32 = 4096;
@@ -477,6 +478,8 @@ impl Screen {
 /// See the module's notes.
 #[derive(Clone, Debug, Default)]
 pub struct OcclusionBuffer {
+    /// The pixels that the buffer holds about, or 0 for [`TARGET_PIXELS`].
+    pixels: u32,
     width: u32,
     height: u32,
     tiles_x: u32,
@@ -543,20 +546,31 @@ impl OcclusionBuffer {
         (self.width, self.height)
     }
 
-    /// The buffer's size for a target of `width` x `height` pixels: about [`TARGET_PIXELS`] of
-    /// the same shape, whole subtile columns and whole bands.
-    pub fn size_for(width: u32, height: u32) -> (u32, u32) {
+    /// The buffer's size for a target of `width` x `height` pixels: about `pixels` of the same
+    /// shape, whole subtile columns and whole bands.
+    pub fn size_for(width: u32, height: u32, pixels: u32) -> (u32, u32) {
         let aspect = f64::from(width.max(1)) / f64::from(height.max(1));
         let round = |v: f64, step: u32| ((v / f64::from(step)).round() as u32).max(1) * step;
-        let w = round((f64::from(TARGET_PIXELS) * aspect).sqrt(), WORD_PIXELS).min(1024);
+        let w = round((f64::from(pixels) * aspect).sqrt(), WORD_PIXELS).min(1024);
         let h = round(f64::from(w) / aspect, BAND_HEIGHT).min(1024);
         (w, h)
+    }
+
+    /// Sets the pixels that the buffer holds about from the next resize on, or 0 for
+    /// [`TARGET_PIXELS`]. A larger buffer hides objects behind narrower gaps, for more work.
+    pub fn set_pixels(&mut self, pixels: u32) {
+        self.pixels = pixels;
     }
 
     /// Takes the size [`OcclusionBuffer::size_for`] gives a target of `width` x `height` pixels.
     /// Memory grows only when the size changes.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), TryReserveError> {
-        let (w, h) = Self::size_for(width, height);
+        let pixels = if self.pixels == 0 {
+            TARGET_PIXELS
+        } else {
+            self.pixels
+        };
+        let (w, h) = Self::size_for(width, height, pixels);
         if (w, h) == (self.width, self.height) {
             return Ok(());
         }
@@ -1449,10 +1463,15 @@ mod tests {
 
     #[test]
     fn sizes_keep_the_shape_in_whole_subtiles_and_bands() {
-        assert_eq!(OcclusionBuffer::size_for(1920, 1080), (256, 144));
-        let (w, h) = OcclusionBuffer::size_for(1080, 1920);
+        assert_eq!(
+            OcclusionBuffer::size_for(1920, 1080, TARGET_PIXELS),
+            (256, 144)
+        );
+        // Bands of 16 rows round the larger size's 216 rows up to 224.
+        assert_eq!(OcclusionBuffer::size_for(1920, 1080, 384 * 216), (384, 224));
+        let (w, h) = OcclusionBuffer::size_for(1080, 1920, TARGET_PIXELS);
         assert!(w % WORD_PIXELS == 0 && h % BAND_HEIGHT == 0 && h > w);
-        let (w, h) = OcclusionBuffer::size_for(1, 1);
+        let (w, h) = OcclusionBuffer::size_for(1, 1, TARGET_PIXELS);
         assert!(w == 192 && h == 192);
     }
 

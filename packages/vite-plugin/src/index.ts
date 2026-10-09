@@ -48,6 +48,7 @@ import {
 	WGSL_TAG,
 	type WgslError,
 } from './wgsl.ts';
+import { workerPreloadPlugin } from './worker-preload.ts';
 
 export type { AssetOptions } from './assets.ts';
 export { FILES_LIST, type OfflineFiles } from './offline.ts';
@@ -378,7 +379,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				},
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
-				worker: { format: 'es', plugins: () => [workerFilesPlugin(workerFiles)] },
+				worker: {
+					format: 'es',
+					plugins: () => [workerFilesPlugin(workerFiles), workerPreloadPlugin()],
+				},
 				build: {
 					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
 				},

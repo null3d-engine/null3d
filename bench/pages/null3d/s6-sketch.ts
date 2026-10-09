@@ -17,6 +17,9 @@
 // Clicks pick buildings: a label names the picked building where the click hit it. Labels follow the
 // eight tallest towers. With `?demo`, the stats overlay shows the frame's phases, and Space pauses
 // and resumes the drive.
+//
+// The page's occlusion turns (T-36) move the camera to a share of the route, held there or driving
+// on, and turn software occlusion culling on and off. The sketch answers each once a frame has it.
 import {
 	defineSketch,
 	type Material,
@@ -44,6 +47,7 @@ import {
 	type S6Layout,
 	s6Camera,
 	s6LabelId,
+	s6LoopSeconds,
 	s6PartTransform,
 } from '../../scenes/s6';
 import { loadedBytes, S6_KIT_URL, S6_TOWERS_URL } from '../lib/s6-city';
@@ -221,6 +225,18 @@ export default defineSketch(async (context) => {
 	let paused = false;
 	let drive = 0;
 	if (demo) debug.stats(true);
+	// The occlusion turns' camera: a move that the next frame makes, the seconds it adds to the
+	// clock's, or a held route time, and whether the next frame answers the page.
+	let move: { share: number; still: boolean } | undefined;
+	let offset = 0;
+	let heldAt: number | undefined;
+	let answer = false;
+	page.onMessage((type, message) => {
+		if (type === S6_MESSAGES.drive) move = message as typeof move;
+		else if (type === S6_MESSAGES.occlusion) quality.set({ softwareOcclusion: message === true });
+		else return;
+		answer = true;
+	});
 	return {
 		onUpdate() {
 			if (!loaded) stream(CREATED_PER_FRAME);
@@ -229,9 +245,19 @@ export default defineSketch(async (context) => {
 				if (!paused) drive += time.dt;
 				moveCamera(drive);
 			} else {
-				moveCamera(time.now);
+				if (move) {
+					const at = move.share * s6LoopSeconds(data);
+					heldAt = move.still ? at : undefined;
+					offset = at - time.now;
+					move = undefined;
+				}
+				moveCamera(heldAt ?? time.now + offset);
 			}
 			reportQuality();
+			if (answer) {
+				answer = false;
+				page.post(S6_MESSAGES.done, time.frame);
+			}
 		},
 	};
 });

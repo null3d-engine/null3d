@@ -3,6 +3,7 @@
 // its roofs, then with the pins too, then without the roofs, which shows the rooms. A new mask
 // changes no table of what the engine draws, so a sketch can change layers in any frame.
 import { defineSketch } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** The ground, the walls and the furniture. */
 const STREET = 1 << 0;
@@ -14,7 +15,8 @@ const VIEWS = [STREET | ROOFS, STREET | ROOFS | PINS, STREET | PINS];
 const STEP = 2;
 const HOUSES = 5;
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#9cc3e6');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
@@ -23,6 +25,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 		layers: VIEWS[0],
 	});
 	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, { target: [0, 0, 0] });
 	scene.createDirectionalLight({ direction: [-1, -2, -0.6], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.5 });
 
@@ -51,27 +54,28 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 			position: [0, 0.05, 0],
 			scale: [2.4, 0.1, 2.4],
 		});
-		// Three walls, open at the front, low enough to look over.
+		// Three walls on the floor, open at the front, low enough to look over. The back wall fits
+		// between the side walls, so no two faces share a plane and flicker.
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [0, 0.6, -1.15],
-			scale: [2.4, 1.1, 0.1],
+			position: [0, 0.625, -1.15],
+			scale: [2.2, 1.05, 0.1],
 		});
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [-1.15, 0.6, 0],
-			scale: [0.1, 1.1, 2.4],
+			position: [-1.15, 0.625, 0],
+			scale: [0.1, 1.05, 2.4],
 		});
 		scene.createMesh({
 			mesh: box,
 			material: wall,
 			parent: house,
-			position: [1.15, 0.6, 0],
-			scale: [0.1, 1.1, 2.4],
+			position: [1.15, 0.625, 0],
+			scale: [0.1, 1.05, 2.4],
 		});
 		// A table and a bed in a color of their own.
 		const color = furniture[h % furniture.length];
@@ -107,13 +111,14 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	});
 	for (let h = 0; h < HOUSES; h++) pins.positions.set([(h - (HOUSES - 1) / 2) * 3, 2.2, 0], h * 3);
 
-	let view = 0;
+	let shown = 0;
 	return {
-		onUpdate() {
+		onUpdate(dt) {
+			view.update(dt);
 			const next = Math.floor(time.now / STEP) % VIEWS.length;
-			if (next === view) return;
-			view = next;
-			camera.setLayers(VIEWS[view]);
+			if (next === shown) return;
+			shown = next;
+			camera.setLayers(VIEWS[shown]);
 		},
 	};
 });

@@ -4,11 +4,10 @@
 // built-in room, which the GPU makes with no file. The background shows each environment, blurred,
 // and both turn slowly together. setEnvironment and setBackground allocate nothing, so they can
 // change every frame.
-import { createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
+import { interact } from '../lib/interact';
+import { sampleUrl } from '../lib/samples';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** Seconds that each environment shows. */
 const STEP = 4;
 /** Spheres in each row, from roughness 0 to 1. */
@@ -24,14 +23,13 @@ export default defineSketch(async (ctx) => {
 		assets.builtinEnvironment('room'),
 	]);
 	const environments = [sunset, studio, room];
-	const camera = scene.createPerspectiveCamera({ fov: 40, position: [0, 0.4, 6.8] });
-	scene.setActiveCamera(camera);
-	const controls = createOrbitControls(ctx, camera, {
+	const camera = scene.createPerspectiveCamera({
+		fov: 40,
+		position: [0, 0.4, 6.8],
 		target: [0, 0, 0],
-		enableDamping: true,
-		minDistance: 4,
-		maxDistance: 16,
 	});
+	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, { target: [0, 0, 0], minDistance: 4, maxDistance: 16 });
 
 	const sphere = geometry.sphere({ radius: 0.42, widthSegments: 48, heightSegments: 24 });
 	const rows = [
@@ -50,14 +48,14 @@ export default defineSketch(async (ctx) => {
 
 	// One options object for both calls, changed in place each frame.
 	const rotation: [number, number, number] = [0, 0, 0];
-	const view = { blur: 0.1, rotation };
+	const display = { blur: 0.1, rotation };
 	return {
 		onUpdate(dt) {
 			rotation[1] = time.now * 0.15;
 			const environment = environments[Math.floor(time.now / STEP) % environments.length] ?? room;
-			scene.setEnvironment(environment, view);
-			scene.setBackground(environment, view);
-			controls.update(dt);
+			scene.setEnvironment(environment, display);
+			scene.setBackground(environment, display);
+			view.update(dt);
 		},
 	};
 });

@@ -1,7 +1,8 @@
-// The readers of color grading table files, which `assets.loadLut` imports the first time, so a
-// page without tables never downloads them. Each reads a file's text in one pass over its
-// characters, with no string per number, and writes the table's texels as linear 8-bit color, red
-// fastest, then green, then blue, as a 3D texture holds them.
+// The makers of color grading tables, which `assets.loadLut` and `assets.lutFromData` import the
+// first time, so a page without tables never downloads them. The readers take a file's text in one
+// pass over its characters, with no string per number. Every maker writes the table's texels as
+// linear 8-bit color, red fastest, then green, then blue, as a 3D texture holds them, and checks
+// the size and the domain with the same rules, so a file and its numbers make the same table.
 //
 // - `.cube` (Adobe's and DaVinci Resolve's form): `LUT_3D_SIZE`, an optional `TITLE`, the domain
 //   from `DOMAIN_MIN` and `DOMAIN_MAX` or from Resolve's `LUT_3D_INPUT_RANGE`, then one line of
@@ -10,6 +11,8 @@
 //   one line of three whole numbers per texel, blue fastest. The output's bit depth comes from a
 //   Lustre `Mesh` line, or else from the largest value. three.js's `LUT3dlLoader` reads the same
 //   form, but refuses a grid whose steps differ by one from rounding, as many files' do.
+
+import type { LutData, LutDomain } from './lut';
 
 /** The fewest and the most texels along each side of a table. */
 export const MIN_LUT_SIZE = 2;
@@ -21,15 +24,18 @@ export const MAX_LUT_SIZE = 256;
  */
 const MIN_DOMAIN_SPAN = 2 ** -126;
 
-/** A table as a file gives it. */
+/** A domain's three numbers, red first, which the table owns. */
+type LutDomainCopy = [number, number, number];
+
+/** A table as a file or numbers give it. */
 export interface LutTable {
 	/** Texels along each side. */
 	size: number;
 	/** The title that a `.cube` file names. */
 	title: string | undefined;
 	/** The colors that the first and the last texel along each axis stand for, red first. */
-	domainMin: [number, number, number];
-	domainMax: [number, number, number];
+	domainMin: LutDomainCopy;
+	domainMax: LutDomainCopy;
 	/** Four bytes per texel, red fastest, then green, then blue. */
 	texels: Uint8Array;
 }
@@ -282,6 +288,12 @@ export function parseCube(text: string): LutTable {
 	}
 	if (!texels) fail('no LUT_3D_SIZE');
 	if (count !== size ** 3) fail(`${count} texels where a table of ${size} a side has ${size ** 3}`);
+	checkDomain(domainMin, domainMax);
+	return { size, title, domainMin, domainMax, texels };
+}
+
+/** Checks that each axis of a domain spans a range that 32-bit floats hold. */
+function checkDomain(domainMin: readonly number[], domainMax: readonly number[]): void {
 	for (let axis = 0; axis < 3; axis++) {
 		const span = Math.fround(
 			Math.fround(domainMax[axis] as number) - Math.fround(domainMin[axis] as number),
@@ -289,6 +301,44 @@ export function parseCube(text: string): LutTable {
 		if (!(span >= MIN_DOMAIN_SPAN))
 			fail('a domain whose maximum is not above its minimum by a span that 32-bit floats hold');
 		if (!Number.isFinite(span)) fail('a domain wider than 32-bit floats hold');
+	}
+}
+
+/** A domain's three numbers, or a failure that names the domain's end. */
+function domainOf(value: LutDomain | undefined, fallback: number, end: string): LutDomainCopy {
+	if (value === undefined) return [fallback, fallback, fallback];
+	if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite))
+		fail(`the ${end} ${String(value)}, which is not three finite numbers`);
+	return [value[0], value[1], value[2]];
+}
+
+/**
+ * Makes a table from numbers: three or four per texel, in the order of a `.cube` file's lines,
+ * red fastest, then green, then blue. A fourth number of a texel is skipped. Values clamp to 0 to
+ * 1, as a file's do. Throws a `LutFileError` that says what in the numbers the engine cannot use.
+ */
+export function tableFromData(table: LutData): LutTable {
+	const { size, data, title } = table;
+	checkSize(size);
+	const domainMin = domainOf(table.domainMin, 0, 'domainMin');
+	const domainMax = domainOf(table.domainMax, 1, 'domainMax');
+	checkDomain(domainMin, domainMax);
+	const count = size ** 3;
+	const length = data?.length;
+	const stride = length === count * 3 ? 3 : length === count * 4 ? 4 : 0;
+	if (stride === 0)
+		fail(
+			`${length} numbers for a table of ${size} a side: give ${count * 3}, three per texel, or ${count * 4}, four per texel`,
+		);
+	const texels = new Uint8Array(count * 4);
+	for (let k = 0, from = 0, at = 0; k < count; k++, from += stride, at += 4) {
+		for (let channel = 0; channel < 3; channel++) {
+			const value = data[from + channel] as number;
+			if (!Number.isFinite(value))
+				fail(`${value} at number ${from + channel}: give finite numbers from 0 to 1`);
+			texels[at + channel] = byte(value);
+		}
+		texels[at + 3] = 255;
 	}
 	return { size, title, domainMin, domainMax, texels };
 }

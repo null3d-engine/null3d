@@ -222,7 +222,7 @@ export class SceneBackground {
 			kind = BACKGROUND_KIND_CUBEMAP;
 			texture = source.texture.handle;
 		} else {
-			this.writeSky(values, source.sky);
+			writeSky(values, source.sky);
 		}
 		const status = this.core.glue.setBackgroundSource(kind, texture);
 		this.core.check(status, CALL, 'a texture', true);
@@ -231,30 +231,6 @@ export class SceneBackground {
 	/** Draws only the background color from the next frame on. */
 	clear(): void {
 		this.core.glue.setBackgroundSource(BACKGROUND_KIND_NONE, 0);
-	}
-
-	/**
-	 * Writes the sky's settings into the block, each read once by its name and written straight
-	 * in. A fraction read from an object for a comparison as well, or read by a key that changes,
-	 * becomes an object of its own in the browser.
-	 */
-	private writeSky(values: Float32Array, sky: SkyOptions): void {
-		const d = SKY_DEFAULTS;
-		const sun = sky.sunPosition ?? d.sunPosition;
-		values[BACKGROUND_VALUE_SUN_POSITION] = sun[0];
-		values[BACKGROUND_VALUE_SUN_POSITION + 1] = sun[1];
-		values[BACKGROUND_VALUE_SUN_POSITION + 2] = sun[2];
-		values[BACKGROUND_VALUE_TURBIDITY] = sky.turbidity ?? d.turbidity;
-		values[BACKGROUND_VALUE_RAYLEIGH] = sky.rayleigh ?? d.rayleigh;
-		values[BACKGROUND_VALUE_MIE_COEFFICIENT] = sky.mieCoefficient ?? d.mieCoefficient;
-		values[BACKGROUND_VALUE_MIE_DIRECTIONAL_G] = sky.mieDirectionalG ?? d.mieDirectionalG;
-		values[BACKGROUND_VALUE_CLOUD_COVERAGE] = sky.cloudCoverage ?? d.cloudCoverage;
-		values[BACKGROUND_VALUE_CLOUD_DENSITY] = sky.cloudDensity ?? d.cloudDensity;
-		values[BACKGROUND_VALUE_CLOUD_ELEVATION] = sky.cloudElevation ?? d.cloudElevation;
-		values[BACKGROUND_VALUE_CLOUD_SCALE] = sky.cloudScale ?? d.cloudScale;
-		values[BACKGROUND_VALUE_CLOUD_SPEED] = sky.cloudSpeed ?? d.cloudSpeed;
-		values[BACKGROUND_VALUE_TIME] = sky.time ?? d.time;
-		values[BACKGROUND_VALUE_SUN_DISC] = sky.showSunDisc === false ? 0 : 1;
 	}
 
 	/** The core's block of values, through a view made again after the memory grew. */
@@ -266,6 +242,40 @@ export class SceneBackground {
 		}
 		return this.values;
 	}
+}
+
+/**
+ * Writes the sky's settings into the background's block, each read once by its name and written
+ * straight in. A fraction read from an object for a comparison as well, or read by a key that
+ * changes, becomes an object of its own in the browser.
+ */
+function writeSky(values: Float32Array, sky: SkyOptions): void {
+	const d = SKY_DEFAULTS;
+	const sun = sky.sunPosition ?? d.sunPosition;
+	values[BACKGROUND_VALUE_SUN_POSITION] = sun[0];
+	values[BACKGROUND_VALUE_SUN_POSITION + 1] = sun[1];
+	values[BACKGROUND_VALUE_SUN_POSITION + 2] = sun[2];
+	values[BACKGROUND_VALUE_TURBIDITY] = sky.turbidity ?? d.turbidity;
+	values[BACKGROUND_VALUE_RAYLEIGH] = sky.rayleigh ?? d.rayleigh;
+	values[BACKGROUND_VALUE_MIE_COEFFICIENT] = sky.mieCoefficient ?? d.mieCoefficient;
+	values[BACKGROUND_VALUE_MIE_DIRECTIONAL_G] = sky.mieDirectionalG ?? d.mieDirectionalG;
+	values[BACKGROUND_VALUE_CLOUD_COVERAGE] = sky.cloudCoverage ?? d.cloudCoverage;
+	values[BACKGROUND_VALUE_CLOUD_DENSITY] = sky.cloudDensity ?? d.cloudDensity;
+	values[BACKGROUND_VALUE_CLOUD_ELEVATION] = sky.cloudElevation ?? d.cloudElevation;
+	values[BACKGROUND_VALUE_CLOUD_SCALE] = sky.cloudScale ?? d.cloudScale;
+	values[BACKGROUND_VALUE_CLOUD_SPEED] = sky.cloudSpeed ?? d.cloudSpeed;
+	values[BACKGROUND_VALUE_TIME] = sky.time ?? d.time;
+	values[BACKGROUND_VALUE_SUN_DISC] = sky.showSunDisc === false ? 0 : 1;
+}
+
+/**
+ * @internal Writes the sky's defaults into the background's block of `values` unless a sky
+ * background wrote its settings there, so a sky map shows the default sky until the first one.
+ */
+export function writeSkyDefaults(values: Float32Array): void {
+	const sun = BACKGROUND_VALUE_SUN_POSITION;
+	// Only a sky background writes the sun's position, and it is never zero.
+	if (values[sun] === 0 && values[sun + 1] === 0 && values[sun + 2] === 0) writeSky(values, {});
 }
 
 /** True for a background source of the sky. */

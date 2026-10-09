@@ -3,7 +3,8 @@
 // positions in 32-bit floats would pile the keys onto each other and shake the view. The engine
 // keeps each object relative to its grid cell instead, and draws every position relative to the
 // camera. The keys stay 1 cm apart and the view stays steady.
-import { defineSketch } from '@null3d/engine';
+import { defineSketch, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** The scene's place: the center of the grid cell 977 cells of 1,024 m along x. */
 const SITE: [number, number, number] = [977 * 1024, 0, 0];
@@ -13,8 +14,15 @@ const KEYS = 8;
 const PITCH = 0.03;
 /** Spokes on the wheel. */
 const SPOKES = 12;
+/** The camera's distance from the tray's middle, its height, and its downward tilt in radians. */
+const CIRCLE = 0.4;
+const HEIGHT = 0.22;
+const TILT = 0.5;
+/** Where the camera's view meets the tray, along the line from the middle to the camera. */
+const REACH = CIRCLE - HEIGHT / Math.tan(TILT);
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#0b0f14');
 	scene.createDirectionalLight({ direction: [-1, -1.5, -0.7], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.4 });
@@ -22,16 +30,17 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	// Children take the cell of their root object, and keep their places under it to a fraction
 	// of a millimeter.
 	const site = scene.createGroup({ position: SITE });
-	const rig = scene.createGroup({ parent: site, dynamic: true });
+	// Orbit controls need a camera whose parents do not turn, so the script circles the camera itself.
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
 		near: 0.005,
 		far: 50,
-		parent: rig,
-		position: [0, 0.22, 0.4],
+		parent: site,
+		position: [0, HEIGHT, CIRCLE],
 	});
-	camera.setRotationEuler(-0.5, 0, 0);
 	scene.setActiveCamera(camera);
+	const look = vec3.create();
+	const view = interact(ctx, camera, { target: look, minDistance: 0.05, maxDistance: 3 });
 
 	scene.createMesh({
 		mesh: geometry.box({ width: 0.3, height: 0.01, depth: 0.3 }),
@@ -68,8 +77,15 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	}
 
 	return {
-		onUpdate() {
-			rig.setRotationEuler(0, time.now * 0.3, 0);
+		onUpdate(dt) {
+			// The camera circles the tray and looks down at it, at the point where the controls take over.
+			const turn = time.now * 0.3;
+			if (!view.userCamera) {
+				camera.setPosition(Math.sin(turn) * CIRCLE, HEIGHT, Math.cos(turn) * CIRCLE);
+				camera.setRotationEuler(-TILT, turn, 0, 'YXZ');
+			}
+			vec3.set(look, Math.sin(turn) * REACH, 0, Math.cos(turn) * REACH);
+			view.update(dt);
 			wheel.setRotationEuler(0, -time.now * 0.8, 0);
 		},
 	};

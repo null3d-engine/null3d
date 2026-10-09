@@ -1,7 +1,8 @@
 // Input and actions: an action map gives each move a name, and the keyboard and a gamepad both
-// press it. The box moves on the floor and jumps. Dragging turns the camera around the box, and
-// the wheel or a trackpad pinch moves the camera nearer or farther. math.damp eases the camera.
-import { defineSketch, math } from '@null3d/engine';
+// press it. The box moves on the floor and jumps, and the camera follows it. Orbit controls turn
+// the camera around the box from the user's first drag, scroll or pinch, and follow the box after.
+import { defineSketch, math, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** Walking speed, in meters per second. */
 const SPEED = 5;
@@ -12,11 +13,22 @@ const GRAVITY = 20;
 const BOUNDS = 7;
 /** Tiles along each side of the floor. */
 const TILES = 15;
+/** The camera's distance from the box, until the user moves it. */
+const DISTANCE = 11;
 
-export default defineSketch(({ scene, geometry, materials, input }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, input } = ctx;
 	scene.setBackground('#1b2230');
 	const camera = scene.createPerspectiveCamera({ fov: 55, near: 0.1, far: 100 });
 	scene.setActiveCamera(camera);
+	// The point that the camera looks at: the box, at the height of its middle.
+	const look = vec3.set(vec3.create(), 0, 0.5, 0);
+	const view = interact(ctx, camera, {
+		target: look,
+		maxPolarAngle: Math.PI * 0.48,
+		minDistance: 4,
+		maxDistance: 25,
+	});
 	scene.createDirectionalLight({ direction: [-1, -2, -0.8], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.4 });
 
@@ -58,17 +70,17 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 	let z = 0;
 	let height = 0;
 	let rise = 0;
-	// Where the camera is going, and where it is: its angle around the box and its distance.
+	// The camera's angle around the box, until the user turns it.
 	let yaw = 0.6;
-	let distance = 11;
-	let cameraYaw = yaw;
-	let cameraDistance = distance;
 
 	return {
 		onUpdate(dt) {
-			yaw -= input.pointer.dragDx * 0.008;
-			yaw += (input.value('turnRight') - input.value('turnLeft')) * 2.5 * dt;
-			distance = math.clamp(distance + input.pointer.wheel * 0.01, 4, 25);
+			// The right stick turns the camera, before and after the user takes it.
+			const stick = (input.value('turnRight') - input.value('turnLeft')) * 2.5 * dt;
+			if (view.userCamera) {
+				view.controls.rotateLeft(-stick);
+				yaw = view.controls.getAzimuthalAngle();
+			} else yaw += stick;
 
 			// Walk relative to the camera: forward goes away from it.
 			const across = input.value('right') - input.value('left');
@@ -88,13 +100,21 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 				color = (color + 1) % colors.length;
 				player.setMaterial(colors[color]);
 			}
-
-			cameraYaw = math.damp(cameraYaw, yaw, 8, dt);
-			cameraDistance = math.damp(cameraDistance, distance, 8, dt);
-			const cameraX = x + Math.sin(cameraYaw) * cameraDistance;
-			const cameraZ = z + Math.cos(cameraYaw) * cameraDistance;
-			camera.setPosition(cameraX, 2 + cameraDistance * 0.5, cameraZ);
-			camera.lookAt(x, 0.5, z);
+		},
+		onLateUpdate(dt) {
+			// The camera follows the box. Until the user takes it, the script places it. From then on,
+			// the user's camera and its target move with the box.
+			if (!view.userCamera) {
+				camera.setPosition(
+					x + Math.sin(yaw) * DISTANCE,
+					2 + DISTANCE * 0.5,
+					z + Math.cos(yaw) * DISTANCE,
+				);
+				camera.lookAt(x, 0.5, z);
+			}
+			view.shift(x - look[0], 0, z - look[2]);
+			vec3.set(look, x, 0.5, z);
+			view.update(dt);
 		},
 	};
 });

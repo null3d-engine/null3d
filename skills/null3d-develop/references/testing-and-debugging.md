@@ -108,6 +108,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
+| `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
 | `?skinning=vertex` | On WebGPU, skin in the vertex shader of each pass instead of once per frame in a compute pass, to compare GPU time (`api/animation`) |
 | `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
@@ -132,7 +133,7 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase | Every build |
+| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of work bars against the target frame rate, GPU time, memory, and triangles and objects drawn | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |
