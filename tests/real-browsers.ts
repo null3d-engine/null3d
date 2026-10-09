@@ -1024,6 +1024,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'dof',
 	'effects',
 	'effects-joined',
 	'occlusion',

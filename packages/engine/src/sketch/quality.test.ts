@@ -236,6 +236,7 @@ describe('SketchQuality.lower', () => {
 			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
+			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
@@ -253,7 +254,8 @@ describe('SketchQuality.lower', () => {
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
-		// budget, the shadow filter, the far cascades' interval, bloom's size, the reflections' size
+		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
+		// the reflections' size
 		// and software occlusion culling did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
@@ -261,6 +263,7 @@ describe('SketchQuality.lower', () => {
 			'shadowFilter',
 			'farCascadeInterval',
 			'bloomSize',
+			'dofSamples',
 			'reflectionScale',
 			'softwareOcclusion',
 		]);
