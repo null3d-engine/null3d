@@ -90,7 +90,7 @@ import {
 	steadyPlaces,
 	totalSize,
 } from './lib/allocation';
-import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
+import { attachWorkers, DevTools, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -277,14 +277,18 @@ function nameNodes(node: ProfileNode, names: BuildNames): void {
 const INPUT_STEP_MS = 16;
 
 /**
- * Moves the mouse in circles over the canvas until `running` turns false. It presses a key every
- * 10 steps and holds the mouse button down for a few steps in every 30, so the page writes moves,
- * drags, clicks and key presses into the input ring.
+ * Moves the mouse in circles over the canvas until `running` turns false, and counts its steps in
+ * `driven`. It presses a key every 10 steps and holds the mouse button down for a few steps in every
+ * 30, so the page writes moves, drags, clicks and key presses into the input ring.
  */
-async function driveInput(page: Page, running: () => boolean): Promise<void> {
+async function driveInput(
+	page: Page,
+	running: () => boolean,
+	driven: { steps: number },
+): Promise<void> {
 	const box = await page.locator('canvas').boundingBox();
 	if (!box) throw new Error('the benchmark page has no canvas');
-	for (let step = 0; running(); step++) {
+	for (let step = 0; running(); step++, driven.steps++) {
 		const angle = step * 0.2;
 		await page.mouse.move(
 			box.x + box.width * (0.5 + 0.3 * Math.cos(angle)),
@@ -299,6 +303,13 @@ async function driveInput(page: Page, running: () => boolean): Promise<void> {
 
 /** Seconds without a new frame after which the check gives up on a page that stopped drawing. */
 const STALL_SECONDS = 60;
+
+/**
+ * The longest that one call to the browser may take, such as starting or stopping a sample, or
+ * reading the frame count. Each takes under a few seconds; a call that never returns would
+ * otherwise hold CI's machine until the job's own time runs out.
+ */
+const STEP_MS = 60_000;
 
 /**
  * Waits until `frames` counts `target` frames, and says how far the count has come once a minute.
@@ -425,22 +436,27 @@ async function main(): Promise<void> {
 				scope.__frameCounter = counter;
 			});
 		const framesSoFar = () =>
-			page.evaluate(() => {
-				const scope = globalThis as {
-					__frameCounter?: { frames: number };
-					__null3dFrames?: Int32Array;
-				};
-				return scope.__null3dFrames
-					? Atomics.load(scope.__null3dFrames, 0)
-					: (scope.__frameCounter?.frames ?? 0);
-			});
+			within(
+				page.evaluate(() => {
+					const scope = globalThis as {
+						__frameCounter?: { frames: number };
+						__null3dFrames?: Int32Array;
+					};
+					return scope.__null3dFrames
+						? Atomics.load(scope.__null3dFrames, 0)
+						: (scope.__frameCounter?.frames ?? 0);
+				}),
+				STEP_MS,
+				'reading the frame count',
+			);
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
 		const { workers: sessions } = await attachWorkers(devtools, target.targetId, WORKERS);
 		// Input runs from now to the end of the sample, so the code that reads it warms up too.
 		let driving = true;
-		const input = driveInput(page, () => driving);
+		const driven = { steps: 0 };
+		const input = driveInput(page, () => driving, driven);
 		// A failure is reported where the input is awaited, after the sample.
 		input.catch(() => {});
 		// Let the sketch run its setup and warm up before sampling.
@@ -450,34 +466,43 @@ async function main(): Promise<void> {
 		console.log(
 			`Warmed up: ${await framesSoFar()} frames in ${((performance.now() - warmupStart) / 1000).toFixed(0)} s`,
 		);
-		for (const sessionId of sessions.values())
-			await devtools.send('HeapProfiler.enable', {}, sessionId);
+		for (const [name, sessionId] of sessions)
+			await within(
+				devtools.send('HeapProfiler.enable', {}, sessionId),
+				STEP_MS,
+				`enabling the heap profiler in the ${name}`,
+			);
+		const stepsBefore = driven.steps;
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
 		for (let k = 0; k < SAMPLES; k++) {
-			for (const sessionId of sessions.values()) {
+			for (const [name, sessionId] of sessions) {
 				// The profiler keeps the samples of objects that garbage collection frees, which
 				// per-frame garbage is; by default it reports only objects still alive when sampling
 				// stops.
-				await devtools.send(
-					'HeapProfiler.startSampling',
-					{
-						samplingInterval: SAMPLING_INTERVAL,
-						includeObjectsCollectedByMajorGC: true,
-						includeObjectsCollectedByMinorGC: true,
-					},
-					sessionId,
+				await within(
+					devtools.send(
+						'HeapProfiler.startSampling',
+						{
+							samplingInterval: SAMPLING_INTERVAL,
+							includeObjectsCollectedByMajorGC: true,
+							includeObjectsCollectedByMinorGC: true,
+						},
+						sessionId,
+					),
+					STEP_MS,
+					`starting sample ${k + 1} in the ${name}`,
 				);
 			}
 			const startFrames = await framesSoFar();
 			await sleep(seconds * 1000);
 			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
-				const { profile } = await devtools.send<{ profile: HeapProfile }>(
-					'HeapProfiler.stopSampling',
-					{},
-					sessionId,
+				const { profile } = await within(
+					devtools.send<{ profile: HeapProfile }>('HeapProfiler.stopSampling', {}, sessionId),
+					STEP_MS,
+					`stopping sample ${k + 1} in the ${name}`,
 				);
 				if (server.names) nameNodes(profile.head, server.names);
 				profiles.set(name, profile);
@@ -493,10 +518,16 @@ async function main(): Promise<void> {
 			}
 		}
 		driving = false;
-		await input;
+		const inputSteps = driven.steps - stepsBefore;
+		// On SwiftShader a mouse or key press now and then never returns. The input then stops, and
+		// the frames go on, so the samples still judge the frame code; the count shows how much input
+		// they held.
+		await within(input, STEP_MS, 'moving the mouse and pressing keys').catch((e: Error) =>
+			console.log(`warning: ${e.message}`),
+		);
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
@@ -532,7 +563,10 @@ async function main(): Promise<void> {
 		console.log(over.length === 0 ? 'pass' : `FAIL: over budget: ${over.join('; ')}`);
 		process.exitCode = over.length === 0 ? 0 : 1;
 	} finally {
-		await browser.close();
+		// A browser that does not close must not hide the error that ended the check.
+		await within(browser.close(), STEP_MS, 'closing the browser').catch((e: Error) =>
+			console.error(`error: ${e.message}`),
+		);
 		server.stop();
 	}
 }
