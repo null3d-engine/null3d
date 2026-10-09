@@ -1,8 +1,9 @@
 // The glass scene (bench/scenes/transmission.ts), which the parity test also draws with three.js:
 // a smooth, a rough and a tinted glass ball in front of a striped wall. Each ball lets all the
-// light behind it through, from the copy of the opaque objects' color. ?opaque makes the balls
-// without transmission, so they show white, and the transmission spec compares the two. ?custom
-// draws the balls with a custom material whose surface function sets the transmission itself.
+// light behind it through, from the copy of the opaque objects' color. ?thin gives the balls no
+// thickness, so they bend no light, and ?empty leaves them out: the transmission spec compares
+// each with the scene. ?custom draws the balls with a custom material whose surface function sets
+// the transmission itself.
 // ?blend adds a blended pane in front of the balls, which draws in the same pass as they do.
 // ?tone=none turns the tone mapping off, as the parity test's three.js twin draws.
 import { defineSketch } from '@null3d/engine';
@@ -53,15 +54,17 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 	}
 	const [widthSegments, heightSegments] = BALL_SEGMENTS;
 	const ball = geometry.sphere({ radius: BALL_RADIUS, widthSegments, heightSegments });
-	const opaque = params.has('opaque');
-	for (const { position: center, roughness, thickness, attenuation } of TRANSMISSION_BALLS) {
+	const balls = params.has('empty') ? [] : TRANSMISSION_BALLS;
+	const thin = params.has('thin');
+	for (const { position: center, roughness, thickness, attenuation } of balls) {
 		const options = {
 			color: '#ffffff',
 			metalness: 0,
 			roughness,
 			ior: BALL_IOR,
-			...(opaque ? {} : { transmission: 1, thickness }),
-			...(attenuation && !opaque
+			transmission: 1,
+			thickness: thin ? 0 : thickness,
+			...(attenuation
 				? { attenuationColor: attenuation.color, attenuationDistance: attenuation.distance }
 				: {}),
 		};

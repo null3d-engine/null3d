@@ -89,7 +89,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 			thickness: DEPTH,
 			attenuationColor: '#6fc4b8',
 			attenuationDistance: 1.2,
-			uniforms: { ripple: params.has('flat') ? 0 : 0.3 },
+			uniforms: { ripple: params.has('flat') ? 0 : 1 },
 		}),
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
