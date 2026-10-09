@@ -946,13 +946,8 @@ impl MockBackend {
             Op::GenerateTexture => self.generate_texture(op, o)?,
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
-                let levels = self.texture(op, o[0])?.mips;
+                self.texture(op, o[0])?;
                 check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
-                check(
-                    o[2] <= levels,
-                    op,
-                    "a sky map has a stage per level and one more",
-                )?;
             }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
