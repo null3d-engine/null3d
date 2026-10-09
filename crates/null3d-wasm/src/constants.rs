@@ -157,8 +157,19 @@ pub mod post_value {
     /// The vignette's falloff and roundness.
     pub const VIGNETTE_FALLOFF: u32 = 39;
     pub const VIGNETTE_ROUNDNESS: u32 = 40;
+    /// Depth of field's focus distance, aperture as an f-number, focal length in millimetres (0
+    /// for the camera's), largest blur as a share of the image's height, and aperture blades, in
+    /// this order.
+    pub const DOF_FOCUS_DISTANCE: u32 = 41;
+    pub const DOF_APERTURE: u32 = 42;
+    pub const DOF_FOCAL_LENGTH: u32 = 43;
+    pub const DOF_MAX_BLUR: u32 = 44;
+    pub const DOF_BLADES: u32 = 45;
+    /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
+    pub const DOF_FOCUS_POINT: u32 = 46;
+    pub const DOF_FOCUS_ON_POINT: u32 = 49;
     /// The values in the block.
-    pub const COUNT: u32 = 41;
+    pub const COUNT: u32 = 50;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -896,6 +907,13 @@ pub fn typescript() -> String {
                 ("OUTLINE_WIDTH", post_value::OUTLINE_WIDTH),
                 ("BLOOM_BLEND", post_value::BLOOM_BLEND),
                 ("BLOOM_WEIGHTS", post_value::BLOOM_WEIGHTS),
+                ("DOF_FOCUS_DISTANCE", post_value::DOF_FOCUS_DISTANCE),
+                ("DOF_APERTURE", post_value::DOF_APERTURE),
+                ("DOF_FOCAL_LENGTH", post_value::DOF_FOCAL_LENGTH),
+                ("DOF_MAX_BLUR", post_value::DOF_MAX_BLUR),
+                ("DOF_BLADES", post_value::DOF_BLADES),
+                ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
+                ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
                 ("COUNT", post_value::COUNT),
             ],
         ),

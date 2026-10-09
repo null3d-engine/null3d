@@ -40,7 +40,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeThickness`, `selectedObjects`) | `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) | A crisp line, with no blur. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`. `OutlinePass` draws its edge at half size, so `width` is about 2 × `edgeThickness`. three.js draws a dark brown hidden line by default; keep it with `hiddenColor: [0.1, 0.04, 0.02]`, as null3D draws none by default. `edgeStrength` has no setting, as the line is opaque. `edgeGlow` above 0, `pulsePeriod` and the pattern texture have no setting: list the soft look as a visible difference. To pulse the line, change its color or width every frame. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file. A `Data3DTexture` that code fills becomes `lut: await assets.lutFromData({ size, data })`, floats from 0 to 1 in the same order (divide 8-bit values by 255) |
 | `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
-| `BokehPass` (depth of field) | A custom effect that reads `effectDepth` (0.2), or skip | Section 6. A wide blur reads many pixels for each pixel, so check its cost on phones |
+| `BokehPass` (`focus`, `aperture`, `maxblur`) | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), with `camera.setFocalLength(mm)` (0.2) | A camera's lens: `aperture` is an f-number (try 2.8, lower blurs more), and the focal length is the camera's. `maxblur` is a share of the width; `maxBlur` of the height, so multiply by the aspect ratio. Near and far fields blur apart, so sharp edges spread no halo: list that as a visible difference. It draws where `dofSamples` is above 0: Medium and up, or `quality.set({ dofSamples: 16 })` on Low |
 | `SSRPass`, `ReflectorForSSRPass` | Not in 1.0 | Environment reflections (0.2), or a reflection pass for a flat floor (0.2) |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect` (0.2), one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. Effects take no textures, so `GlitchPass`'s random texture becomes `null3d::noise` |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. List it as dropped |
@@ -59,7 +59,8 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `SSAOEffect`, N8AO | `ao` (0.2) |
 | `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
-| `DepthOfFieldEffect`, `GodRaysEffect` | A custom effect (0.2) that reads `effectDepth`, where essential |
+| `DepthOfFieldEffect` (`worldFocusDistance`, `bokehScale`, `target`) | `dof: { focusDistance, maxBlur, aperture }` (0.2): `worldFocusDistance` becomes `focusDistance`, a `target` becomes `focusPoint`, and `bokehScale` becomes `maxBlur` with `aperture`, tuned by eye |
+| `GodRaysEffect` | A custom effect (0.2) that reads `effectDepth`, where essential |
 | `SSREffect` | Not in 1.0 |
 | `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
 | `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold (0.2) |
@@ -72,7 +73,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `bloom(node, strength, radius, threshold)` | `bloom: { ..., blend: 'add' }` (0.2), mapped as `UnrealBloomPass` at a third of the intensity (section 5) |
 | `fxaa(node)`, `smaa(node)` | `createEngine({ antialias: 'fxaa' })`, or MSAA, which the presets from Medium use |
 | `ao(...)`, `gtao(...)` | `ao` (0.2) |
-| `dof(...)` | A custom effect (0.2) that reads `effectDepth` |
+| `dof(node, viewZ, focus, aperture, maxblur)` | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), mapped as `BokehPass` |
 | `ssr(...)` | Not in 1.0 |
 | Custom node graphs on the scene color | A custom effect in WGSL (0.2), section 6. The pass's color node becomes `input.color` or `effectColor(uv)`, and its depth node `effectDepth(uv)` |
 

@@ -154,6 +154,15 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 0.25, 0.5],
 	},
+	// The taps of depth of field's gather at half the render size: a spiral of taps over a disk
+	// around a center tap. More taps fill a wide blur more smoothly. 0 draws no depth
+	// of field even when the sketch turns it on. The taps live in a uniform block, so a change
+	// makes no GPU object; a change to or from 0 adds or removes depth of field's passes (D-119).
+	dofSamples: {
+		presets: [0, 22, 43, 71],
+		changes: 'live',
+		values: [0, 16, 22, 43, 71],
+	},
 	// The size of the textures of reflection passes whose `scale` option names none, as a share of
 	// the render size each way. A reflection draws the scene a second time, so its cost follows its
 	// pixels: half the size each way draws a quarter of them. A change makes the texture again on
@@ -356,6 +365,12 @@ export interface QualitySettings {
 	 * change to or from 0 adds or removes ambient occlusion's passes.
 	 */
 	aoScale: 0 | 0.25 | 0.5;
+	/**
+	 * The taps of depth of field's gather: 16, 22, 43 or 71, or 0, which draws no depth of field
+	 * even when `post.set` turns it on. More taps fill a wide blur more smoothly and cost more. It
+	 * changes during play.
+	 */
+	dofSamples: 0 | 16 | 22 | 43 | 71;
 	/**
 	 * The size of a reflection pass's texture, as a share of the render size each way: 1, 0.5 or
 	 * 0.25, for each reflection whose `scale` option names none. A reflection draws the scene again,

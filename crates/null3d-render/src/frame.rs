@@ -32,6 +32,7 @@ use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
@@ -658,6 +659,10 @@ pub struct SceneSettings {
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
     /// quality settings set: 0 draws none.
     ao_scale: f32,
+    /// Depth of field's settings while the sketch turns it on.
+    dof: Option<Dof>,
+    /// The taps of depth of field's gather, which the quality settings set.
+    dof_taps: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -731,6 +736,8 @@ impl SceneSettings {
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
+            dof: None,
+            dof_taps: dof::TAP_COUNTS[1],
             lut: None,
             vignette: None,
             environment: None,
@@ -967,6 +974,66 @@ impl SceneSettings {
     /// same targets, so it makes no GPU object.
     pub fn set_ao_scale(&mut self, scale: f32) {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,
+    /// and no debug view draws.
+    pub fn dof(&self) -> Option<Dof> {
+        self.dof
+            .filter(|_| self.dof_taps > 0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns depth of field on with its settings, or off with `None`, from the next recorded frame
+    /// on.
+    pub fn set_dof(&mut self, dof: Option<Dof>) {
+        self.dof = dof;
+    }
+
+    /// Sets the taps of depth of field's gather, one of [`dof::TAP_COUNTS`] or 0, which draws none,
+    /// from the next recorded frame on. A count above 0 changes only the gather's block, so it
+    /// makes no GPU object.
+    pub fn set_dof_taps(&mut self, taps: u32) {
+        self.dof_taps = taps;
+    }
+
+    /// What depth of field draws with in a frame of `scene`'s positions of `parity`, for the
+    /// camera's view of a canvas of `canvas` pixels, or `None` while it is off or without a camera.
+    /// With a focus point, the focus is the point's distance along the camera's view in this frame,
+    /// so the focus follows the camera and the point. Without a focal length, the lens takes the
+    /// camera's field of view on a full-frame sensor, or 50 mm for an orthographic camera.
+    pub(crate) fn dof_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<DofFrame> {
+        let settings = self.dof()?;
+        let view = self.views.first()?;
+        let (_, lens) = view.camera()?;
+        let (_, inverse_projection) = self.camera_projection(canvas)?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        let focus = match settings.focus_point {
+            Some(point) => {
+                let at = camera.cell.absolute();
+                let row = camera.depth.row;
+                (0..3).fold(row[3], |sum, k| sum + row[k] * (point[k] - at[k]) as f32)
+            }
+            None => settings.focus_distance,
+        };
+        let focal_length = match (settings.focal_length, lens) {
+            (mm, _) if mm > 0.0 => mm,
+            (_, Lens::Perspective(lens)) => dof::focal_length_of_fov(lens.fov_degrees),
+            (_, Lens::Orthographic(_)) => 50.0,
+        };
+        Some(DofFrame {
+            dof: settings,
+            lens: dof::Lens::new(focal_length, settings.aperture, focus),
+            near: camera.depth.near,
+            far: camera.depth.far,
+            inverse_projection,
+            taps: self.dof_taps,
+        })
     }
 
     /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
