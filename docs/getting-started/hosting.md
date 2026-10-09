@@ -149,7 +149,7 @@ The engine's shader text compresses well with Brotli, which finds text that repe
 
 | The host sends | The engine's JavaScript at the start |
 | --- | --- |
-| Brotli | 129 KB |
+| Brotli | 130 KB |
 | gzip at level 9 | 165 KB |
 | gzip at level 6, a common setting for compression on the fly | about 167 KB |
 | Files as they are | 0.6 MB |

@@ -2,7 +2,7 @@
 
 Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
 
-Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start. On 9 October 2026 each GPU path's renderers moved into files of their own. A page downloads those of its own path only. Every thread mode's start fell by 8.5 to 9.3 KB after Brotli. The largest is now 129.4 KB ([One GPU path's renderers](#one-gpu-paths-renderers-for-each-page-9-october-2026)).
+Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start. On 9 October 2026 each GPU path's renderers moved into files of their own. A page downloads those of its own path only. Every thread mode's start fell by 8.5 to 9.2 KB after Brotli. The largest is now 129.9 KB ([One GPU path's renderers](#one-gpu-paths-renderers-for-each-page-9-october-2026)).
 
 ## Question
 
@@ -467,24 +467,38 @@ Rejected:
 
 ### Results
 
-`bun run build:check-size` against main at ea5cb60eb. KB after Brotli at quality 11, and after gzip at level 9:
+`bun run build:check-size` against main at ea4df4b37, with depth of field. KB after Brotli at quality 11, and after gzip at level 9:
 
 | Thread mode and GPU path | Main, Brotli | This change, Brotli | Saved | Main, gzip | This change, gzip |
 | --- | --- | --- | --- | --- | --- |
-| pipelined, WebGPU | 137.9 KB | 129.4 KB | 8.6 KB | 175.7 KB | 164.5 KB |
-| pipelined, WebGL2 | 135.7 KB | 126.7 KB | 9.0 KB | 177.5 KB | 166.0 KB |
-| low latency, WebGPU | 135.5 KB | 126.8 KB | 8.7 KB | 172.9 KB | 161.6 KB |
-| low latency, WebGL2 | 133.3 KB | 124.1 KB | 9.2 KB | 174.7 KB | 163.2 KB |
-| drawing on the main thread, WebGPU | 135.2 KB | 126.5 KB | 8.8 KB | 172.5 KB | 161.3 KB |
-| drawing on the main thread, WebGL2 | 133.0 KB | 123.7 KB | 9.3 KB | 174.3 KB | 162.7 KB |
-| single-threaded, WebGPU | 128.5 KB | 119.7 KB | 8.8 KB | 164.7 KB | 153.4 KB |
-| single-threaded, WebGL2 | 126.2 KB | 117.0 KB | 9.3 KB | 166.5 KB | 154.8 KB |
-| sketch on the main thread, WebGPU | 132.4 KB | 123.9 KB | 8.5 KB | 169.3 KB | 158.0 KB |
-| sketch on the main thread, WebGL2 | 130.2 KB | 121.2 KB | 9.0 KB | 171.1 KB | 159.6 KB |
+| pipelined, WebGPU | 138.3 KB | 129.9 KB | 8.5 KB | 176.2 KB | 165.0 KB |
+| pipelined, WebGL2 | 136.1 KB | 127.1 KB | 9.0 KB | 178.0 KB | 166.4 KB |
+| low latency, WebGPU | 136.0 KB | 127.3 KB | 8.7 KB | 173.4 KB | 162.1 KB |
+| low latency, WebGL2 | 133.7 KB | 124.6 KB | 9.2 KB | 175.2 KB | 163.6 KB |
+| drawing on the main thread, WebGPU | 135.6 KB | 127.0 KB | 8.6 KB | 173.1 KB | 161.7 KB |
+| drawing on the main thread, WebGL2 | 133.4 KB | 124.2 KB | 9.2 KB | 174.9 KB | 163.1 KB |
+| single-threaded, WebGPU | 128.8 KB | 120.2 KB | 8.6 KB | 165.2 KB | 153.9 KB |
+| single-threaded, WebGL2 | 126.6 KB | 117.4 KB | 9.2 KB | 167.0 KB | 155.2 KB |
+| sketch on the main thread, WebGPU | 132.8 KB | 124.3 KB | 8.5 KB | 169.8 KB | 158.5 KB |
+| sketch on the main thread, WebGL2 | 130.6 KB | 121.5 KB | 9.0 KB | 171.6 KB | 160.0 KB |
 
-On main, the size report counted each mode with the largest shader file of either path, a WebGPU file. The rows for WebGL2 above count the largest GLSL file instead. The largest start is now 129.4 KB, 92% of the budget, and leaves 10.6 KB for the features before 1.0.
+On main, the size report counted each mode with the largest shader file of either path, a WebGPU file. The rows for WebGL2 above count the largest GLSL file instead. The largest start is now 129.9 KB, 93% of the budget. That leaves 10.1 KB for the features before 1.0.
 
 After Brotli, the render worker's own file is 10.5 KB. Its WebGPU renderers take 12.7 KB, its WebGL2 renderers 12.3 KB and the shared file 3.2 KB. In three files, a path's code takes about 1 KB more than in one file, because each file compresses alone.
+
+The start makes two more requests: the path's renderers and the shared file. It is not slower. `bun run bench:startup --modes all` made three cold loads of each mode on Slow 4G, against main at ea5cb60eb. It ran on a MacBook Pro in Chrome 155 on 9 October 2026, while the machine's load was below 8. The medians of the first frame done, in ms:
+
+| Thread mode | WebGPU, main | WebGPU, this change | WebGL2, main | WebGL2, this change |
+| --- | --- | --- | --- | --- |
+| pipelined | 4,834 | 4,797 | 4,833 | 4,781 |
+| low latency | 4,790 | 4,760 | 4,802 | 4,751 |
+| single-threaded | 4,731 | 4,693 | 4,719 | 4,682 |
+| drawing on the main thread | 5,080 | 5,052 | 5,066 | 5,019 |
+| sketch on the main thread | 4,783 | 4,749 | 4,784 | 4,723 |
+
+Every mode on both paths drew its first frame 28 to 61 ms sooner, with 8.3 to 9.4 KB less to download after compression.
+
+The renderers draw the same commands with the same shaders. `bun run bench:gpu-check` found no page slower than its rule allows. At Medium, S4's GPU time stayed at 3.91 ms and S6's went from 4.95 to 4.84 ms. At High the runs spread by 9 to 19%, and the check judged both scenes the same. The lowest S4 run was 2.76 ms on main and 2.77 ms with this change.
 
 ### Consequences
 
