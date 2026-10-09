@@ -4,7 +4,7 @@
 // core, and the next engine on the same canvas starts it again with a core of its own.
 
 import { messageOf } from '../errors/message';
-import { captureFrame, captureImage, preloadDeviceShaders, startDrawing } from '../render/draw';
+import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { setWakeByMessage } from '../shared/wake';
@@ -36,7 +36,7 @@ startWorker(
 	async (event: MessageEvent<RenderWorkerInit | ShaderPreload | RendererRequest>) => {
 		const message = event.data;
 		if (message.type === 'load-shaders') {
-			preloadDeviceShaders(message.tier, message.bits);
+			preloadDeviceFiles(message.tier, message.bits);
 		} else if (message.type === 'init') {
 			try {
 				canvas = message.canvas ?? canvas;

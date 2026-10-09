@@ -39,23 +39,38 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', href?
 const demoLink = (demo: Demo, held = false) =>
 	`?demo=${demo.name}${held ? `&hold=${demo.hold}` : ''}`;
 
+/** A demo's title, then its scene in a quieter style: "Instancing · 100,000 columns". */
+function heading(demo: Demo): (string | HTMLElement)[] {
+	const scene = element('span', ` · ${demo.scene}`);
+	scene.className = 'scene';
+	return [demo.title, scene];
+}
+
 /** Lists the demos in the sidebar, group by group, and marks the one that runs. */
 function listDemos(): void {
-	// The comparisons with three.js come first, each on its null3D page.
-	const compared = element('ul');
-	for (const entry of COMPARISONS) {
-		const link = element('a', entry.title, `?compare=${entry.name}`);
-		if (entry === comparison) link.setAttribute('aria-current', 'page');
-		const item = element('li');
-		item.append(link);
-		compared.append(item);
-	}
-	if (compared.childElementCount > 0) nav.append(element('h2', COMPARE_GROUP), compared);
 	for (const group of DEMO_GROUPS) {
 		const list = element('ul');
+		// The comparisons with three.js have a group of their own, each linked to its null3D page.
+		if (group === COMPARE_GROUP) {
+			for (const entry of COMPARISONS) {
+				const link = element('a', entry.title, `?compare=${entry.name}`);
+				if (entry === comparison) link.setAttribute('aria-current', 'page');
+				const item = element('li');
+				item.append(link);
+				list.append(item);
+			}
+		}
 		for (const demo of DEMOS) {
 			if (demo.group !== group) continue;
-			const link = element('a', demo.title, demoLink(demo));
+			const link = element('a', '', demoLink(demo));
+			link.append(...heading(demo));
+			// A demo that loads files says so, and why, as the website's list does.
+			if (demo.assets) {
+				const tag = element('span', 'loads files');
+				tag.className = 'tag';
+				tag.title = demo.assets;
+				link.append(' ', tag);
+			}
 			if (demo === current) link.setAttribute('aria-current', 'page');
 			const item = element('li');
 			item.append(link);
@@ -114,7 +129,7 @@ function welcome(missing?: string): void {
  * links open the held frame, or the live demo from it, and the demo's code on the main branch.
  */
 async function runDemo(demo: Demo): Promise<void> {
-	document.title = `${demo.title}: null3D demos`;
+	document.title = `${demo.title} · ${demo.scene}: null3D demos`;
 	const canvas = element('canvas');
 	// The labels' layer covers the canvas, and lets the pointer through to it.
 	const labels = element('div');
@@ -124,7 +139,9 @@ async function runDemo(demo: Demo): Promise<void> {
 	// A narrow window starts with the caption folded to its title, to leave the canvas clear.
 	caption.open = wide.matches;
 	const title = element('summary');
-	title.append(element('h1', demo.title));
+	const h1 = element('h1');
+	h1.append(...heading(demo));
+	title.append(h1);
 	caption.append(title, element('p', demo.summary));
 	if (demo.controls) {
 		const controls = element('p', demo.controls);

@@ -4,11 +4,12 @@
 // literal addresses, so a production build ships both, under any address prefix. A page starts a
 // comparison with `startComparison` from examples/lib/compare.ts.
 
+import type { DemoGroup } from '../demos';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
 
 /** The group that a page lists the comparisons under. */
-export const COMPARE_GROUP = 'Compare with three.js';
+export const COMPARE_GROUP: DemoGroup = 'Compare with three.js';
 
 /** A comparison of null3D with three.js on the same scene. */
 export interface Comparison {
