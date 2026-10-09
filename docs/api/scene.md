@@ -252,7 +252,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 });
 ```
 
-[Lighting and environment](../concepts/lighting.md#time-of-day) explains each value, the presets and the sun's path. A value that is not a finite number, or an unknown preset, throws a `RangeError`.
+[Lighting and environment](../concepts/lighting.md#time-of-day) explains each value, the presets and the sun's path. A value that is not a finite number, or an unknown preset, throws a `RangeError`. The [time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day) passes a whole day over a lighthouse in 40 seconds, and lights its windows and its lamp at dusk.
 
 ## Lights
 

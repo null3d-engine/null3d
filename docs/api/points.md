@@ -56,7 +56,7 @@ export default defineSketch(async ({ scene, time }) => {
 
 ## Create a batch
 
-`scene.createPoints(options)` returns a promise of the batch. The first call downloads the sprite code, which points share with sprites. A page without points or sprites never downloads it. Await the call in the setup function, as the example does. If the sprite code does not download, the promise rejects with [E1406](../errors/E1406.md).
+`scene.createPoints(options)` returns a promise of the batch. The first call downloads the sprite code, which points share with sprites. A page without points or sprites never downloads it. Await the call in the setup function, as the example does. The [points demo](https://github.com/null3d-engine/null3d/tree/main/examples/galaxy) draws a galaxy of 120,000 stars in one batch, and writes their positions in every frame. If the sprite code does not download, the promise rejects with [E1406](../errors/E1406.md).
 
 `scene.createPoints` takes these options:
 
