@@ -1,11 +1,10 @@
-// A security camera: a camera on a pole sweeps across a yard behind a brick wall, and a scene pass
-// draws what it sees into a texture. A monitor on the near side of the wall shows that texture, so
-// it shows the robot that patrols behind the wall, which the main camera cannot see. The pass never
-// draws an object that shows its own texture, so the monitor stays out of its own picture. Scene
-// passes draw the sun, its shadows and the ambient light, but no point or spot lights yet, so the
-// yard has none.
-import { createOrbitControls } from '@null3d/controls';
-import { defineSketch, type Material, type Vec3 } from '@null3d/engine';
+// A security camera: a camera on a pole sweeps a yard behind a brick wall, or aims where the pointer
+// points, and a scene pass draws its view into a texture. A monitor on the near side of the wall
+// shows it, with the robot that patrols out of the main camera's sight. The pass never draws an
+// object that shows its own texture, so the monitor stays out of its own picture. Scene passes draw
+// no point or spot lights yet, so the yard has only the sun, its shadows and the ambient light.
+import { defineSketch, type Material, type Vec3, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** A quarter turn about X, which lays a plane flat or points a cylinder along Z. */
 const QUARTER_X = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
@@ -53,7 +52,7 @@ export default defineSketch((ctx) => {
 
 	scene.createMesh({
 		mesh: geometry.plane({ width: 40, height: 40 }),
-		material: solid('#7d8a6a', 0.95),
+		material: materials.standard({ color: '#7d8a6a', roughness: 0.95, doubleSided: true }),
 		rotation: QUARTER_X,
 		receiveShadows: true,
 	});
@@ -120,15 +119,18 @@ export default defineSketch((ctx) => {
 		position: [0.04, 2.4, 0.3],
 	});
 
-	const camera = scene.createPerspectiveCamera({ fov: 50, position: [-1.4, 1.7, 5.6] });
+	const look: Vec3 = [-0.2, 1.8, 0];
+	const camera = scene.createPerspectiveCamera({ position: [-1.398, 2.16, 5.59], target: look });
 	scene.setActiveCamera(camera);
-	const controls = createOrbitControls(ctx, camera, {
-		target: [-0.2, 1.8, 0],
-		enableDamping: true,
+	const view = interact(ctx, camera, {
+		target: look,
 		maxPolarAngle: Math.PI * 0.48,
 		minDistance: 3,
 		maxDistance: 20,
+		groundY: 0,
+		bounds: [-6, 0, -9, 6, 0, -1.5],
 	});
+	const aim = vec3.create();
 
 	return {
 		onUpdate(dt) {
@@ -138,9 +140,10 @@ export default defineSketch((ctx) => {
 			const cos = Math.cos(angle);
 			robot.setPosition(cos * PATROL.x, 0.8, PATROL.centerZ + sin * PATROL.z);
 			robot.setRotationEuler(0, Math.atan2(-sin * PATROL.x, cos * PATROL.z), 0);
-			// The security camera sweeps from one side of the yard to the other.
-			security.lookAt(-Math.sin(time.now * 0.45) * 3.5, 0.6, PATROL.centerZ);
-			controls.update(dt);
+			// The security camera sweeps from one side of the yard to the other, or aims where pointed.
+			view.update(dt);
+			view.steer(vec3.set(aim, -Math.sin(time.now * 0.45) * 3.5, 0.6, PATROL.centerZ));
+			security.lookAt(aim[0], aim[1], aim[2]);
 		},
 	};
 });

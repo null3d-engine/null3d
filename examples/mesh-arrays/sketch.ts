@@ -1,8 +1,10 @@
 // Meshes from arrays: a height field of 9,409 vertices and a crystal, each built with
 // geometry.fromArrays from typed arrays. The engine computes the normals of both. The height
 // field's triangles share their vertices, so it shades smoothly. Each face of the crystal has its
-// own three vertices, so its edges stay hard.
-import { defineSketch, type MeshArrays } from '@null3d/engine';
+// own three vertices, so its edges stay hard. The crystal hovers over the point of the ground that
+// the pointer points at, which a raycast finds.
+import { defineSketch, type MeshArrays, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 /** Quads along each side of the height field. */
 const QUADS = 96;
@@ -49,16 +51,25 @@ function crystal(): MeshArrays {
 	return { positions, computeNormals: true };
 }
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#8fb4d8');
 	const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.1, far: 100 });
 	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, {
+		target: [0, 1.5, 0],
+		groundY: 0,
+		surfaces: true,
+		bounds: [-11, -5, -11, 11, 5, 11],
+	});
+	const over = vec3.create();
 	scene.createDirectionalLight({ direction: [-1, -1.5, -0.6], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.4 });
 
 	scene.createMesh({
 		mesh: geometry.fromArrays(heightField()),
-		material: materials.standard({ color: '#6f9e58' }),
+		// Both faces draw, so the hills stay in view when the camera orbits under them.
+		material: materials.standard({ color: '#6f9e58', doubleSided: true }),
 	});
 	const gem = scene.createMesh({
 		mesh: geometry.fromArrays(crystal()),
@@ -69,12 +80,18 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 	});
 
 	return {
-		onUpdate() {
+		onUpdate(dt) {
 			const t = time.now;
+			if (!view.userCamera) {
+				camera.setPosition(Math.sin(t * 0.15) * 16, 8, Math.cos(t * 0.15) * 16);
+				camera.lookAt(0, 1.5, 0);
+			}
+			view.update(dt);
+			// The crystal hovers 4 m over the ground: over the middle, or over the pointed point.
+			view.steer(vec3.set(over, 0, 0, 0));
+			const ground = heightAt(over[0], over[2]);
 			gem.setRotationEuler(0, t * 0.8, 0);
-			gem.setPosition(0, 4 + 0.3 * Math.sin(t * 1.5), 0);
-			camera.setPosition(Math.sin(t * 0.15) * 16, 8, Math.cos(t * 0.15) * 16);
-			camera.lookAt(0, 1.5, 0);
+			gem.setPosition(over[0], ground + 4 + 0.3 * Math.sin(t * 1.5), over[2]);
 		},
 	};
 });

@@ -156,12 +156,23 @@ pub enum Op {
     /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
     /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
+    /// [texture id, image id, stage, then the sky's settings as 16 floats: the sun's position and
+    /// a spare, the turbidity, Rayleigh, Mie coefficient and Mie directional g, the cloud scale,
+    /// speed, coverage and density, and the cloud elevation, the time and two spares]: runs one
+    /// stage of a sky map on the cube texture that the generator under the image id filled. Stage
+    /// 0 draws the sky into the generator's own chain of levels; stage `k`, from 1 to the
+    /// texture's last level, filters level `k` of the map for its roughness from the chain; the
+    /// stage after the last level copies the finished levels into the texture at once. Only stage
+    /// 0 reads the settings. The stages before the copy write nothing that a frame reads, so a
+    /// map can refresh over several frames while frames draw with the old one. Each stage reads
+    /// only what earlier stages wrote, in this list or in an earlier one.
+    SkyMapStep = 55,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 40] = [
+    pub const ALL: [Op; 41] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -201,6 +212,7 @@ impl Op {
         Op::ReleaseImage,
         Op::DestroyPipeline,
         Op::GenerateTexture,
+        Op::SkyMapStep,
         Op::Submit,
     ];
 
@@ -249,6 +261,7 @@ impl Op {
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
             Op::GenerateTexture => "GENERATE_TEXTURE",
+            Op::SkyMapStep => "SKY_MAP_STEP",
             Op::Submit => "SUBMIT",
         }
     }
@@ -709,6 +722,12 @@ pub mod layout {
     /// Group 0 of the copy of a view's image into its target: the image, which it reads with
     /// `textureLoad`, as plain floats. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
+    /// blurred image at half the render size, which the step reads with the linear sampler.
+    pub const DOF_COMPOSITE: u32 = 27;
+    /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
+    /// WebGPU has it.
+    pub const DOF_COMPOSITE_MS: u32 = 28;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1465,6 +1484,23 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// Depth of field's first step: one triangle over a target at half the render size, which
+    /// reads four pixels of the scene's color and depth for each texel and writes their color with
+    /// the blur's signed size. It binds as a custom effect that reads depth does.
+    pub const DOF_SETUP: u32 = 41;
+    /// [`DOF_SETUP`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_SETUP_MS: u32 = 42;
+    /// Depth of field's gather: a disk or polygon of taps around each texel, which splits what it
+    /// reads into the near and the far field. It binds as a step of bloom does.
+    pub const DOF_BLUR: u32 = 43;
+    /// Depth of field's small tent filter over the gather's result. It binds as a step of bloom
+    /// does.
+    pub const DOF_FILTER: u32 = 44;
+    /// Depth of field's last step: one triangle over a target of the render size, which mixes the
+    /// blurred image into the scene's color by each pixel's own blur size.
+    pub const DOF_COMPOSITE: u32 = 45;
+    /// [`DOF_COMPOSITE`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_COMPOSITE_MS: u32 = 46;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1751,6 +1787,8 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1837,6 +1875,12 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),
+                ("DOF_SETUP", template::DOF_SETUP),
+                ("DOF_SETUP_MS", template::DOF_SETUP_MS),
+                ("DOF_BLUR", template::DOF_BLUR),
+                ("DOF_FILTER", template::DOF_FILTER),
+                ("DOF_COMPOSITE", template::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

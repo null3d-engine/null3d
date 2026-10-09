@@ -83,6 +83,8 @@ export interface EnginePart {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * The reader of the counts of the draws that the GPU culls loads in the thread that draws on WebGPU,
+ * at the first frame that samples, such as with the stats overlay shown.
  * The built-in environments' numbers load in the thread that runs the sketch with the first one,
  * and the texture generators that make their maps on the GPU load in the thread that draws. The
  * code that joins custom effects into fewer passes loads in the thread that draws with the first
@@ -95,6 +97,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'page-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'page-renderer.js',
+	},
+	{
+		name: 'page-culled-counts.js',
+		module: 'gpu/webgpu/culled-counts.ts',
 		loadedBy: 'page-renderer.js',
 	},
 	{
@@ -137,6 +144,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'sketch-worker-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'sketch-worker-renderer.js',
+	},
+	{
+		name: 'sketch-worker-culled-counts.js',
+		module: 'gpu/webgpu/culled-counts.ts',
 		loadedBy: 'sketch-worker-renderer.js',
 	},
 	{
@@ -188,6 +200,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{
 		name: 'render-worker-call-timing.js',
 		module: 'gpu/webgl2/call-timing.ts',
+		loadedBy: 'render-worker.js',
+	},
+	{
+		name: 'render-worker-culled-counts.js',
+		module: 'gpu/webgpu/culled-counts.ts',
 		loadedBy: 'render-worker.js',
 	},
 	{

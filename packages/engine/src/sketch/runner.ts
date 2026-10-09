@@ -20,6 +20,7 @@
 
 import { DebugDraw } from '../debug/draw';
 import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
+import type { StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -63,7 +64,7 @@ import {
 	type PreloadSender,
 	type ShaderSender,
 } from '../shared/images';
-import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -107,14 +108,19 @@ export interface SketchCore {
 	fps?: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
-	/** Asks the page to show or hide its stats overlay. */
-	showStats(show: boolean): void;
+	/** Asks the page to show or hide its stats overlay, or to change its options. */
+	showStats(show: StatsRequest): void;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/**
+ * While a reader shows the frame figures, the first frame that samples publishes the memory
+ * figures, and then one frame in every this many.
+ */
+const MEMORY_EVERY = 8;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -199,6 +205,11 @@ export class SketchRunner {
 	/** The page's count of canvas size changes when the viewport last read them. */
 	private viewportSerial = -1;
 	private gpuEpoch = 0;
+	/**
+	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
+	 * 0 while nobody samples, so the first frame that samples publishes them.
+	 */
+	private memoryWait = 0;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -301,6 +312,7 @@ export class SketchRunner {
 		} = sketch.quality.settings;
 		glue.setShadowTiles(shadowTiles, shadowTileSize, pointLightShadows);
 		glue.setMorphTargets(morphTargets);
+		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		// Directional lights that name no cascades or map size take the preset's.
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
@@ -381,7 +393,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				textureMemory: textures.memory,
+				wasmBytes: () => this.core.memory.buffer.byteLength,
 			},
 		};
 		const templates = new ShaderTemplates(sketch.sendShader);
@@ -461,7 +473,7 @@ export class SketchRunner {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
-		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		if (check && this.holdSeconds === undefined) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
 		// the frame loop never records while a setup frame does.
 		await this.setupFrames;
@@ -475,7 +487,7 @@ export class SketchRunner {
 	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
 	 * check that cannot load leaves the preset as it is.
 	 */
-	private async checkPreset(fps: number | undefined): Promise<void> {
+	private async checkPreset(): Promise<void> {
 		if (!(await this.drawSetupFrame())) return;
 		const loading = import('./preset-check');
 		let loaded = false;
@@ -497,7 +509,7 @@ export class SketchRunner {
 					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxFps: fps,
+					maxFps: this.sketch.fps,
 					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
@@ -638,6 +650,16 @@ export class SketchRunner {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
 
+	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
+	private publishMemory(): void {
+		const { record } = this;
+		const textures = this.textures.memory;
+		record.publishMemory(MemoryFigure.TextureBytes, textures.bytes);
+		record.publishMemory(MemoryFigure.TextureBudgetBytes, textures.budgetBytes);
+		record.publishMemory(MemoryFigure.DroppedLevels, textures.droppedLevels);
+		record.publishMemory(MemoryFigure.MeshBytes, this.context.geometry.memoryBytes);
+	}
+
 	/**
 	 * Applies the settings that the frames read: gives the governor the render scale's range and
 	 * the shadow settings, and tells the core whether the scale can drop below the whole canvas, and
@@ -666,6 +688,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
@@ -994,6 +1018,16 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The memory figures change slowly, so a few times a window is enough. They start with the
+		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
+		// memory of the last time a reader sampled.
+		if (this.record.figures) {
+			if (this.memoryWait === 0) {
+				this.publishMemory();
+				this.memoryWait = MEMORY_EVERY;
+			}
+			this.memoryWait--;
+		} else this.memoryWait = 0;
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;

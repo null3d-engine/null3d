@@ -31,6 +31,7 @@ import {
 	REFERENCE_MAP_SIZE,
 	type ShadowCheck,
 } from '../lib/shadow-check';
+import { withMembers } from '../lib/with-members';
 
 const params = new URL(import.meta.url).searchParams;
 const scenePath = params.get('scene');
@@ -43,17 +44,6 @@ const inner = (
 		default: SketchDefinition;
 	}
 ).default;
-
-/** `target` with some of its members replaced, and its methods bound to it. */
-function withMembers<T extends object>(target: T, members: Partial<T>): T {
-	return new Proxy(target, {
-		get(object, key) {
-			if (key in members) return members[key as keyof T];
-			const value = Reflect.get(object, key, object);
-			return typeof value === 'function' ? value.bind(object) : value;
-		},
-	});
-}
 
 /** Multiplies quaternion `q` by a turn of `angle` radians about the world's up, from the left. */
 function turnAboutUp(q: Float64Array, angle: number): void {

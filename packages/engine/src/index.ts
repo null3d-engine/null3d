@@ -3,6 +3,7 @@
 
 export type { Debug, DebugGridOptions, DebugLightOptions, DebugView } from './debug/debug';
 export type { FrameStats, FrameStatsThread } from './debug/stats';
+export type { StatsOverlayOptions } from './debug/stats-options';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 export type { ShaderFeature } from './generated/shader-features';
@@ -68,6 +69,7 @@ export type {
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { EngineLabels } from './page/labels';
+export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { PresetCheck, PresetCheckRound } from './quality/check';
 export type { DeviceHints } from './quality/chooser';
@@ -111,7 +113,7 @@ export type {
 	LineOptions,
 	LineValues,
 } from './scene/lines';
-export type { Lut, LutDomain } from './scene/lut';
+export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
 	ObjectEventHandler,
 	ObjectEventType,
@@ -121,6 +123,7 @@ export type {
 	AoSettings,
 	BloomBlend,
 	BloomSettings,
+	DofSettings,
 	OutlineSettings,
 	Post,
 	PostSettings,
@@ -236,6 +239,8 @@ export type {
 	Textures,
 	TextureWrap,
 } from './scene/textures';
+export type { TimeOfDay, TimeOfDayOptions, TimeOfDayPreset } from './scene/time-of-day';
+export { timeOfDay } from './scene/time-of-day';
 export type {
 	TextureValues,
 	UniformType,

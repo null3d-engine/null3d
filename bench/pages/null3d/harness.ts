@@ -42,6 +42,12 @@ export interface Null3dPageOptions {
 	 * scene is whole, with figures for the report. A timed run warms up only after it resolves.
 	 */
 	started?: (engine: Engine) => Promise<Record<string, unknown>>;
+	/**
+	 * A measurement of the page's own, such as S6's occlusion turns, which runs in place of the
+	 * timed run once the scene is whole, and resolves with its figures for the report. Undefined,
+	 * or a call that returns undefined, keeps the timed run.
+	 */
+	measure?: (engine: Engine, log: QualityLog | undefined) => Promise<object> | undefined;
 }
 
 /**
@@ -53,10 +59,12 @@ export interface Null3dPageOptions {
  * `outline` adds outlined boxes to S1, `labels` adds that many labeled objects to S1, whose
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
  * point light shadows on, `environment` lights S1 with the built-in room, which turns every
- * frame, `effects` adds two custom effects to S1, whose uniforms change every frame,
+ * frame, `effects` adds two custom effects to S1, whose uniforms change every frame, `dof` turns
+ * depth of field on in S1, focused on a point that moves every frame,
  * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
- * makes it draw before S1's objects, `extraBox` adds a small box to S1, `sides` draws S2's boxes
+ * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
+ * that a reflection pass mirrors S1 into under the swarm, `sides` draws S2's boxes
  * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
  * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
  * share of S5's knights stand still in one pose, as waiting characters do.
@@ -70,6 +78,7 @@ const SKETCH_SWITCHES = [
 	'lines',
 	'ao',
 	'bloom',
+	'dof',
 	'outline',
 	'labels',
 	'tileShadows',
@@ -81,6 +90,7 @@ const SKETCH_SWITCHES = [
 	'sky',
 	'backgroundFirst',
 	'extraBox',
+	'reflection',
 	'still',
 ] as const;
 
@@ -181,10 +191,12 @@ export function runNull3dPage(
 				const { width, height, pixels } = await engine.captureFrame();
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
-			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
 			// The warm-up counts from the first frame. A start that takes the stored result of an
 			// earlier preset check resolves before its first frame, and a first visit only after it.
 			await firstFrameOrFailure(engine);
+			const own = pageOptions.measure?.(engine, log);
+			if (own) return { ...report, ...(await own), userAgent: navigator.userAgent };
+			const measureSeconds = options.seconds ?? MEASURE_SECONDS;
 			const timed = await timedRun({
 				engine,
 				warmupSeconds: options.seconds ?? WARMUP_SECONDS,

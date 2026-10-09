@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
+import { type OcclusionTurnsResult, occlusionTurnsProblems } from '../../tests/pages/lib/occlusion';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
 import { S5_BACKGROUND } from '../scenes/s5';
@@ -92,12 +93,15 @@ const isPhoneScene = (scene: (typeof SCENES)[number]) => PHONE_SCENES.includes(s
  * first frames, with shadows in cascades over 5,000 objects. S6's twin on WebGPURenderer held no
  * frame of the whole city in 90 seconds. On CI's runners, S6's null3D pages took 30 to 45 seconds
  * to start and drew 0.14 to 0.23 frames a second at 1,000 objects, so two of five short runs gave no
- * result in 90 seconds. The tests run these pages on real GPUs only. S6's image tests still draw
- * null3D's held frames on SwiftShader, and its WebGL twin passes here.
+ * result in 90 seconds. S6's twin on WebGLRenderer draws about one frame in 8 seconds there, and
+ * the busy software GPU then held the next test's browser context past its time limit. The tests
+ * run these pages on real GPUs only. S6's image tests still draw null3D's held frames on
+ * SwiftShader, and its scene-code page still runs here.
  */
 const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
 	's4 on threejs-webgl',
 	's4 on threejs-webgpu',
+	's6 on threejs-webgl',
 	's6 on threejs-webgpu',
 	's6 on null3d-webgpu',
 	's6 on null3d-webgl2',
@@ -106,12 +110,34 @@ const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = [
 	's6 on null3d-webgl2-low',
 ];
 /**
- * Declares a page's test, or a skipped one on SwiftShader when SwiftShader draws the page too
- * slowly. A skip declared this way sets up no browser context, which a busy software GPU can hold
- * past the test's time limit.
+ * A test whose page opens in a browser of its own, which is killed when the test ends. A closed
+ * page of S4, S5 or S6 can leave SwiftShader busy for minutes, and the browser that drew it sets
+ * up no new context until SwiftShader is done. Killing the browser ends that work, so the next test
+ * starts at once.
  */
-const testUnlessTooSlow = (page: string) =>
-	SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(page) ? test.skip : test;
+const testInOwnBrowser = test.extend({
+	context: async ({ playwright, launchOptions, baseURL }, use) => {
+		const server = await playwright.chromium.launchServer(launchOptions);
+		try {
+			const browser = await playwright.chromium.connect(server.wsEndpoint());
+			await use(await browser.newContext({ baseURL }));
+		} finally {
+			await server.kill();
+		}
+	},
+});
+/** The test of a scene's pages: the phone scenes' pages each run in a browser of their own. */
+const sceneTest = (scene: (typeof SCENES)[number]) =>
+	isPhoneScene(scene) ? testInOwnBrowser : test;
+/**
+ * Declares a page's test, or a skipped one on SwiftShader when SwiftShader draws the page too
+ * slowly. A skip declared this way sets up no browser, which a busy software GPU can hold past the
+ * test's time limit.
+ */
+const testUnlessTooSlow = (scene: (typeof SCENES)[number], kind: PageKind) =>
+	SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(`${scene} on ${kind}`)
+		? sceneTest(scene).skip
+		: sceneTest(scene);
 /**
  * The warm-up and measured seconds of a page's short benchmark run. null3D counts a frame only when
  * the sketch stepped it and the renderer drew it inside the measured time, and the renderer draws a
@@ -291,7 +317,7 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 			continue;
 		}
 		if (!isNull3dPage(kind))
-			testUnlessTooSlow(`${scene} on ${kind}`)(
+			testUnlessTooSlow(scene, kind)(
 				`${scene} on ${kind} renders a hold frame that is not blank`,
 				async ({ page }) => {
 					const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
@@ -328,7 +354,7 @@ function sceneTests(scene: (typeof SCENES)[number]): void {
 				},
 			);
 
-		testUnlessTooSlow(`${scene} on ${kind}`)(
+		testUnlessTooSlow(scene, kind)(
 			`${scene} on ${kind} runs a short benchmark`,
 			async ({ page }) => {
 				if (isPhoneScene(scene)) await page.setViewportSize(PHONE_VIEWPORT);
@@ -393,24 +419,56 @@ const S4_LOW_DRAW_CALLS = 63;
 const S4_LOW_PASSES = ['compute 1', 'render 1', 'render 2', 'render 3', 'render 4'];
 
 function s4LowPassesTest(): void {
-	test('s4 on null3d-webgpu at Low draws both cascades in every frame and no other pass', async ({
-		page,
-	}) => {
-		await page.setViewportSize(PHONE_VIEWPORT);
-		const result = await runShortBenchmark(page, 's4', 'null3d-webgpu', 'preset=low&governor=off');
-		expect(result.frames).toBeGreaterThan(0);
-		const { drawCalls, gpuPassMs } = result.stats;
-		expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
-		expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
-		// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
-		if (gpuPassMs) {
-			const passes = gpuPassMs
-				.map((part) => part.name)
-				.filter((name) => name !== 'copies' && name !== 'between passes');
-			expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
-			expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
-		}
-	});
+	testInOwnBrowser(
+		's4 on null3d-webgpu at Low draws both cascades in every frame and no other pass',
+		async ({ page }) => {
+			await page.setViewportSize(PHONE_VIEWPORT);
+			const result = await runShortBenchmark(
+				page,
+				's4',
+				'null3d-webgpu',
+				'preset=low&governor=off',
+			);
+			expect(result.frames).toBeGreaterThan(0);
+			const { drawCalls, gpuPassMs } = result.stats;
+			expect(drawCalls.median).toBe(S4_LOW_DRAW_CALLS);
+			expect(drawCalls.p99).toBe(S4_LOW_DRAW_CALLS);
+			// Where the device has timestamp queries, the GPU timer names each pass of the timed frames.
+			if (gpuPassMs) {
+				const passes = gpuPassMs
+					.map((part) => part.name)
+					.filter((name) => name !== 'copies' && name !== 'between passes');
+				expect(S4_LOW_PASSES).toEqual(expect.arrayContaining(passes));
+				expect(passes).toEqual(expect.arrayContaining(S4_LOW_PASSES));
+			}
+		},
+	);
+}
+
+/**
+ * S6's occlusion turns on WebGL2, T-36's page, in a short form: the culling hides part of the
+ * nearest objects, both sides measure frames, and no stop hides what shows at rest. The device runner's
+ * occlusion-s6 plan runs the long form on phones and tablets.
+ */
+function s6OcclusionTurnsTest(): void {
+	testUnlessTooSlow('s6', 'null3d-webgl2')(
+		's6 on null3d-webgl2 turns occlusion culling off and on, and hides nothing wrongly at rest',
+		async ({ page }) => {
+			await page.setViewportSize(PHONE_VIEWPORT);
+			const result = await runPage<PageReport & OcclusionTurnsResult>(
+				page,
+				pagePath(
+					's6',
+					'null3d-webgl2',
+					`n=${SHORT_RUN_COUNT}&preset=medium&governor=off&occlusion-turns&rounds=2&seconds=1&stops=4`,
+				),
+			);
+			expect(result.tier).toBe('webgl2');
+			expect(occlusionTurnsProblems(result)).toEqual([]);
+			expect(result.stops).toHaveLength(4);
+			expect(result.off.occludedEntries ?? 0).toBe(0);
+		},
+	);
 }
 
 for (const scene of SCENES) {
@@ -421,6 +479,7 @@ for (const scene of SCENES) {
 			test.describe.configure({ mode: 'default' });
 			sceneTests(scene);
 			if (scene === 's4') s4LowPassesTest();
+			if (scene === 's6') s6OcclusionTurnsTest();
 		});
 	else sceneTests(scene);
 }

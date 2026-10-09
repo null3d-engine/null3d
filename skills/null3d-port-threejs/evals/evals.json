@@ -69,11 +69,11 @@
     {
       "id": 5,
       "prompt": "Port our three.js car configurator to null3d. It uses MeshPhysicalMaterial clearcoat for the paint, transmission for the glass, and the Reflector addon for a mirror floor.",
-      "expected_output": "Before porting, the answer flags clearcoat, transmission and Reflector as not in null3d 1.0, gives the workaround and visual cost of each, asks the user to decide, and suggests waiting if these define the product.",
+      "expected_output": "Before porting, the answer flags clearcoat and transmission as not in null3d 1.0, gives the workaround and visual cost of each, maps the Reflector floor to a reflection pass, asks the user to decide, and suggests waiting if these define the product.",
       "files": [],
       "expectations": [
         "Flags clearcoat and transmission as MeshPhysicalMaterial features after 1.0",
-        "Flags Reflector as after 1.0",
+        "Maps the Reflector mirror floor to a reflection pass (render.addPass with kind reflection) and a custom material",
         "Gives a workaround for each with its visual cost",
         "Asks the user to decide before porting, or recommends waiting because the look depends on these",
         "Does not silently drop any of the three features"

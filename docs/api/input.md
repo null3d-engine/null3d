@@ -8,7 +8,7 @@ summary: "Pointer, keyboard, touch and gamepad; action maps; pointer events on o
 
 # Input
 
-> Ships in null3D 0.1, with pointer events on objects from null3D 0.2. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with pointer events on objects and the pointer lock from null3D 0.2. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -78,6 +78,7 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 | `wheel` | The wheel's scroll since the previous frame, in pixels. It is positive where a page would scroll down. A line counts 16 pixels and a page 100, as three.js's controls count them. |
 | `pinch` | The part of `wheel` that came from a pinch on a trackpad. It is positive as the fingers close. |
 | `isTouch` | True when the pointer is a finger |
+| `locked` | True while the canvas holds the pointer lock |
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
 
@@ -86,6 +87,8 @@ A frame's drag belongs to one press. During a slow frame, one drag can end and t
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
 When the user presses a button on the canvas, the canvas captures the pointer. A drag that leaves the canvas keeps its movement and ends with a release.
+
+The page can ask for the pointer lock with [`engine.requestPointerLock()`](engine.md#the-running-engine). While the canvas holds the lock, the browser hides the pointer and keeps it still. The fields `x` and `y` then stay where the lock began, and `dx` and `dy` give the mouse's movement, with no edge to stop it. Objects take no pointer events during the lock. [First-person controls](controls.md#pointer-lock) turn the view by the movement.
 
 ## Touches
 

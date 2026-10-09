@@ -13,8 +13,8 @@ export class StandInCamera {
 	readonly fov = STAND_IN_FOV;
 	/** The position, as the engine stores it. */
 	readonly stored = new Float32Array(3);
-	/** The rotation quaternion, as the engine stores it. */
-	readonly rotation = new Float32Array(4);
+	/** The rotation quaternion, as the engine stores it: none at first. */
+	readonly rotation = new Float32Array([0, 0, 0, 1]);
 	private readonly turn = new Float64Array(4);
 	private readonly toward = new Float64Array(3);
 
@@ -28,6 +28,20 @@ export class StandInCamera {
 		out[0] = this.stored[0] as number;
 		out[1] = this.stored[1] as number;
 		out[2] = this.stored[2] as number;
+	}
+
+	setRotation(x: number, y: number, z: number, w: number): void {
+		this.rotation[0] = x;
+		this.rotation[1] = y;
+		this.rotation[2] = z;
+		this.rotation[3] = w;
+	}
+
+	getRotation(out: { [index: number]: number }): void {
+		out[0] = this.rotation[0] as number;
+		out[1] = this.rotation[1] as number;
+		out[2] = this.rotation[2] as number;
+		out[3] = this.rotation[3] as number;
 	}
 
 	/** Cameras look down their -Z axis, so the engine swaps the eye and the target. */

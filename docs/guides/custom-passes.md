@@ -3,12 +3,12 @@ id: guides/custom-passes
 title: Custom passes and render targets
 status: experimental
 since: "0.2"
-summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks."
+summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks; reflections and a water recipe."
 ---
 
 # Custom passes and render targets
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene and reflection passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -244,6 +244,109 @@ A scene pass draws with the scene's materials, the sun, the sun's shadows where 
 
 The texture holds linear color after the exposure, so a material that shows it gives the camera the light that the pass saw. On devices that draw 8-bit color, each material tone maps its own color. In compatibility mode with MSAA, the texture holds that color turned back to linear, so the tone curve applies twice and the image looks a little lighter in the middle tones. On WebGL2 devices without float targets, the texture holds display color, which looks brighter and flatter.
 
+## Reflections
+
+A reflection pass draws the camera's view mirrored across a plane into a texture, as three.js's `Reflector` add-on does. Everything below the plane is clipped. A custom material reads the texture where its surface shows on the screen, so water and polished floors reflect what stands on them. [Render graph API](../api/render.md#reflection-passes) lists the options, and [Surface functions](../shaders/surface-functions.md#reflections) the WGSL side.
+
+```ts
+const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
+const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.fromPass(pass) } });
+```
+
+- The pass follows the active camera. The quality preset sets its size: half the render size each way on Medium and High.
+- The surface function puts the pass's color in the surface's `reflection`. The engine's lighting then weighs it with the material's Fresnel, so water reflects little straight down and much at a low angle.
+- `scale: 1` gives a sharp mirror. `every: 2` draws the reflection in every other frame, for a camera that moves slowly.
+- A reflection draws the scene's background and the sun's light and shadows. It draws no point or spot lights and no ambient occlusion yet.
+
+### A water recipe
+
+This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky. It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.
+
+```ts
+const waterWgsl = /* wgsl */ `
+#import null3d::noise::{fbm2}
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+struct Uniforms {
+    shallow: vec3f,
+    level: f32,
+    deep: vec3f,
+    clarity: f32,
+    foam: vec3f,
+    ripple: f32,
+}
+
+/// The height of the bed under a point of the water: here a channel 1.5 m deep in its middle.
+/// Use the function that shapes your terrain, or sample its height map.
+fn bedHeight(p: vec2f) -> f32 {
+    return -1.5 * exp(-p.x * p.x * 0.08);
+}
+
+/// The water's normal at a point: the slopes of three sine waves that cross it as time passes.
+fn ripples(p: vec2f, time: f32) -> vec3f {
+    let waves = array<vec4f, 3>(
+        vec4f(0.8, 0.6, 3.1, 1.3),
+        vec4f(-0.5, 0.9, 4.7, 1.9),
+        vec4f(0.95, -0.3, 7.3, 2.6),
+    );
+    var slope = vec2f(0.0);
+    for (var k = 0u; k < 3u; k++) {
+        let along = normalize(waves[k].xy);
+        let phase = dot(along, p) * waves[k].z + time * waves[k].w;
+        slope += along * cos(phase) / waves[k].z;
+    }
+    slope *= material.ripple;
+    return normalize(vec3f(-slope.x, 1.0, -slope.y));
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    s.normal = ripples(p, frame.time);
+    // Shallow water shows the bed's color, and deep water its own.
+    let depth = max(material.level - bedHeight(p), 0.0);
+    s.baseColor = mix(material.shallow, material.deep, 1.0 - exp(-depth * material.clarity));
+    // Foam where the water thins at the banks, broken up by noise that drifts.
+    let edge = 1.0 - smoothstep(0.0, 0.3, depth);
+    let froth = edge * smoothstep(0.1, 0.4, fbm2(p * 3.0 + frame.time * 0.4, 3u));
+    s.baseColor = mix(s.baseColor, material.foam, froth);
+    s.roughness = mix(s.roughness, 0.9, froth);
+    // The reflection, moved by the ripples' tilt, and hidden under the foam.
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0 - froth);
+    return s;
+}
+`;
+
+// In the setup:
+const level = 0;
+const pass = render.addPass({ kind: 'reflection', writes: 'stream', plane: { point: [0, level, 0] } });
+const stream = materials.shader({
+  wgsl: waterWgsl,
+  roughness: 0.05,
+  uniforms: {
+    shallow: '#5a7a5c',
+    deep: '#0b2a33',
+    foam: '#e8eef0',
+    level,
+    clarity: 1.2,
+    ripple: 0.25,
+  },
+  textures: { mirror: textures.fromPass(pass) },
+});
+const surface = scene.createMesh({ mesh: geometry.plane({ width: 8, height: 40 }), material: stream });
+surface.setRotationEuler(-Math.PI / 2, 0, 0);
+```
+
+- `level` is the water's height, the same as the plane's point. `clarity` sets how fast the tint deepens. A larger value makes shallow water darker.
+- `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
+- The foam hides the reflection where it lies, through the reflection's share in `a`.
+- The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
+- Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
+
 ## Errors
 
 | Code | Cause |
@@ -253,7 +356,7 @@ The texture holds linear color after the exposure, so a material that shows it g
 | E1213 | A ninth effect. |
 | E1203 | An `order` that is not a number. |
 | E1101 | `setEffectUniform` on an effect that `removeEffect` removed, or a call on a render pass that `render.removePass` removed. |
-| E1220 | Options that `render.addPass` does not take, or a texture name that another pass writes. |
+| E1220 | Options that `render.addPass` does not take, such as a reflection's plane without a point, or a texture name that another pass writes. |
 | E1502 | A name in `reads` that no pass writes. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
 | E1504 | A pass that reads its own texture. |

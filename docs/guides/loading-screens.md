@@ -144,6 +144,11 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | `'background'` | with the first texture, environment or cube map background |
 | `'sky'` | with the first sky background |
 | `'occlusion'` | with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |
+| `'coverage'` | with the first masked material that MSAA smooths with alpha to coverage |
+| `'hash'` | with the first material whose alpha mode is `'hash'` |
+| `'cutout'` | with the first masked object that casts shadows. It casts none until its shaders are built |
+| `'views'` | with the first scene pass. Its texture shows nothing until its shaders are built |
+| `'effect_groups'` | the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own |
 
 Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 

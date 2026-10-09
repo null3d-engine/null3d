@@ -3,16 +3,19 @@
 // world, as three.js's attach does. A crate on the table turns with it; a crate on the ground stays
 // where it stepped off. The table turns with rotateY, and each crate spins on its own axis.
 import { defineSketch } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 const CRATES = 6;
 /** Seconds between two crates stepping off, and how long each stays off. */
 const STAGGER = 1;
 const OFF = 3;
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
+export default defineSketch((ctx) => {
+	const { scene, geometry, materials, time } = ctx;
 	scene.setBackground('#1a1f27');
 	const camera = scene.createPerspectiveCamera({ fov: 50, position: [0, 7, 9], target: [0, 0, 0] });
 	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, { target: [0, 0, 0] });
 	scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
 	scene.createAmbientLight({ intensity: 0.45 });
 
@@ -56,6 +59,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 				onTable[k] = !off;
 				crates[k].setParent(off ? null : table, { keepWorld: true });
 			}
+			view.update(dt);
 		},
 	};
 });

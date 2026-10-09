@@ -67,4 +67,51 @@ describe('WebGL2Backend', () => {
 		expect(calls.filter((name) => name === 'createFramebuffer')).toHaveLength(2);
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
 	});
+
+	it('keeps a running total of the GPU memory that its buffers, textures and renderbuffers take', async () => {
+		const { gl } = fakeContext();
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const replay = () => {
+			const list = new Uint32Array(words.splice(0));
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const sampled = G.TEXTURE_USAGE_TEXTURE_BINDING | G.TEXTURE_USAGE_COPY_DST;
+		const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT;
+		push(G.OP_CREATE_BUFFER, [1, 1000, G.BUFFER_USAGE_VERTEX]);
+		push(G.OP_CREATE_BUFFER, [2, 256, G.BUFFER_USAGE_UNIFORM]);
+		// A cube of 16 x 16 faces with its levels of 8 x 8 and 4 x 4.
+		push(G.OP_CREATE_TEXTURE, [3, 16, 16, 6, G.FORMAT_RGBA16_FLOAT, sampled, 1, 3, G.VIEW_CUBE]);
+		// A multisampled color target, which lives in a renderbuffer of 4 samples.
+		push(G.OP_CREATE_TEXTURE, [4, 32, 32, 1, G.FORMAT_RGBA8_UNORM, target, 4, 1, G.VIEW_2D]);
+		// A multisampled depth target that shaders read, with its copy of one sample.
+		push(G.OP_CREATE_TEXTURE, [
+			5,
+			32,
+			32,
+			1,
+			G.FORMAT_DEPTH24_PLUS,
+			target | G.TEXTURE_USAGE_TEXTURE_BINDING,
+			4,
+			1,
+			G.VIEW_2D,
+		]);
+		push(G.OP_CREATE_TEXTURE_VIEW, [6, 3, 1, 2]);
+		replay();
+		const cube = 6 * (16 * 16 + 8 * 8 + 4 * 4) * 8;
+		const color = 32 * 32 * 4 * 4;
+		const depth = 32 * 32 * 4 * 4 + 32 * 32 * 4;
+		expect([...backend.gpuMemory.bytes]).toEqual([cube + color + depth, 1256]);
+		push(G.OP_CREATE_BUFFER, [1, 3000, G.BUFFER_USAGE_VERTEX]);
+		push(G.OP_DESTROY_BUFFER, [2]);
+		push(G.OP_DESTROY_TEXTURE, [5]);
+		push(G.OP_DESTROY_TEXTURE, [6]);
+		replay();
+		expect([...backend.gpuMemory.bytes]).toEqual([cube + color, 3000]);
+		backend.destroy();
+		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
+	});
 });

@@ -2,8 +2,10 @@
 // that blends by adding light. Each spark rises, falls and fades from yellow to red, from a formula
 // of the time, so the sketch writes the batch's arrays with no call per spark. A lit helix of wide
 // lines in world units winds around the fountain, and dashes in screen pixels run around a ring on
-// the ground. The sprites' soft dot is a texture made from data.
-import { color, defineSketch, math } from '@null3d/engine';
+// the ground. The sprites' soft dot is a texture made from data. The pointer moves the fountain, and
+// each spark keeps the place it was born at.
+import { color, defineSketch, math, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
 const SPARKS = 2000;
 /** How long a spark flies, in seconds, and the pull of gravity. */
@@ -15,7 +17,8 @@ const TURNS = 5;
 /** Points around the dashed ring. */
 const RING = 128;
 
-export default defineSketch(async ({ scene, geometry, materials, textures, time }) => {
+export default defineSketch(async (ctx) => {
+	const { scene, geometry, materials, textures, time } = ctx;
 	scene.setBackground('#0a0c14');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
@@ -23,6 +26,11 @@ export default defineSketch(async ({ scene, geometry, materials, textures, time 
 		target: [0, 1.6, 0],
 	});
 	scene.setActiveCamera(camera);
+	const view = interact(ctx, camera, {
+		target: [0, 1.6, 0],
+		groundY: 0,
+		bounds: [-2.4, 0, -2.4, 2.4, 0, 2.4],
+	});
 	scene.createDirectionalLight({ direction: [-1, -1.5, -1], intensity: 2.5 });
 	scene.createAmbientLight({ intensity: 0.4 });
 	scene.createMesh({
@@ -47,8 +55,12 @@ export default defineSketch(async ({ scene, geometry, materials, textures, time 
 		blending: 'additive',
 		dynamic: true,
 	});
-	// Each spark's launch: its delay within a life, and its speed along x, y and z.
+	// Each spark's launch: its delay within a life, and its speed along x, y and z. Each spark keeps
+	// the fountain's place at its birth, and the count of its births, which says when it is reborn.
 	const launch = new Float32Array(SPARKS * 4);
+	const origins = new Float32Array(SPARKS * 2);
+	const births = new Int32Array(SPARKS);
+	const fountain = vec3.create();
 	for (let i = 0; i < SPARKS; i++) {
 		const angle = math.randFloat(0, Math.PI * 2);
 		const out = math.randFloat(0.4, 1.6);
@@ -103,14 +115,22 @@ export default defineSketch(async ({ scene, geometry, materials, textures, time 
 	const yellow = color.fromHex([0, 0, 0], '#ffe08a');
 	const red = color.fromHex([0, 0, 0], '#ff4b1f');
 	return {
-		onUpdate() {
+		onUpdate(dt) {
+			view.update(dt);
+			view.steer(vec3.set(fountain, 0, 0, 0));
 			const { positions, sizes, colors } = sparks;
 			for (let i = 0; i < SPARKS; i++) {
 				const age = (time.now + launch[i * 4]) % LIFE;
+				const birth = Math.floor((time.now + launch[i * 4]) / LIFE);
+				if (birth !== births[i]) {
+					births[i] = birth;
+					origins[i * 2] = fountain[0];
+					origins[i * 2 + 1] = fountain[2];
+				}
 				const fade = age / LIFE;
-				positions[i * 3] = launch[i * 4 + 1] * age;
+				positions[i * 3] = origins[i * 2] + launch[i * 4 + 1] * age;
 				positions[i * 3 + 1] = 0.2 + launch[i * 4 + 2] * age - 0.5 * GRAVITY * age * age;
-				positions[i * 3 + 2] = launch[i * 4 + 3] * age;
+				positions[i * 3 + 2] = origins[i * 2 + 1] + launch[i * 4 + 3] * age;
 				sizes[i * 2] = sizes[i * 2 + 1] = 0.2 * (1 - 0.6 * fade);
 				for (let c = 0; c < 3; c++) heat[c] = math.lerp(yellow[c], red[c], fade);
 				colors.set(heat, i * 4);

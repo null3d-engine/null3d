@@ -138,7 +138,7 @@ const DOCS = {
 	E1208: {
 		title: 'Invalid texture',
 		cause:
-			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format, or numbers that make no color grading table. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
 		example:
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
@@ -400,9 +400,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, effect_groups, hash, lines, morph, occlusion, skinning, sky, sprites and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, instance_index, lines, morph, skinning, sprites, texcoords.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, effect_groups, hash, instance_index, lines, morph, occlusion, skinning, sky, sprites, texcoords, views.",
 		since: '0.2',
 	},
 	E1422: {
@@ -419,6 +419,13 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
 		example:
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
+		since: '0.2',
+	},
+	E1425: {
+		title: 'Pointer lock refused',
+		cause:
+			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
+		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
 		since: '0.2',
 	},
 	E1501: {

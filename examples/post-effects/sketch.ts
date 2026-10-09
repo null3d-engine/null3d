@@ -2,13 +2,52 @@
 // front of them. Bloom spreads the neon's light past its edges, ambient occlusion darkens the corner
 // and the ground under the crates, an outline marks one crate, and a vignette darkens the edges. A
 // custom effect splits red from blue toward the edges, as a cheap lens does. Every 3 seconds the
-// color grading table changes: none, then a warm table, then a cool one, each from a .cube file.
-import { defineSketch } from '@null3d/engine';
+// color grading table changes: none, then a warm table, then a cool one, each made in code from a
+// few numbers. The pointer moves the pink lamp, and the bloom and the shading follow it.
+import { type Assets, defineSketch, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
-/** The address of a sample file on the dev server, as `sampleUrl` in tools/lib/samples.ts gives it. */
-const sampleUrl = (path: string) => `/samples/${path}`;
 /** Seconds that each color grading table shows. */
 const STEP = 3;
+
+type Rgb = readonly [number, number, number];
+
+/** A grade: contrast and saturation, then lift, gamma and gain per channel, as a colorist sets them. */
+interface Look {
+	contrast?: number;
+	saturation?: number;
+	lift?: Rgb;
+	gamma?: Rgb;
+	/** Gain per channel, which sets the white balance too. */
+	gain: Rgb;
+}
+
+/** Warmer whites and lifted shadows. */
+const WARM: Look = { lift: [0.02, 0.01, 0], gamma: [0.95, 1, 1.05], gain: [1.04, 1.01, 0.9] };
+/** More contrast, less saturation and a blue cast. */
+const COOL: Look = { contrast: 1.15, saturation: 0.85, gain: [0.94, 0.99, 1.06] };
+
+/** A table of 33 texels a side that grades each color by `look`, red fastest as in a .cube file. */
+function grade(assets: Assets, look: Look) {
+	const { contrast = 1, saturation = 1, lift = [0, 0, 0], gamma = [1, 1, 1], gain } = look;
+	const size = 33;
+	const data = new Float32Array(size ** 3 * 3);
+	const contrasted = (v: number) =>
+		Math.min(Math.max((v / (size - 1) - 0.5) * contrast + 0.5, 0), 1);
+	const channel = (value: number, luma: number, i: 0 | 1 | 2) =>
+		lift[i] + Math.max(luma + (value - luma) * saturation, 0) ** gamma[i] * gain[i];
+	let at = 0;
+	for (let b = 0; b < size; b++)
+		for (let g = 0; g < size; g++)
+			for (let r = 0; r < size; r++) {
+				const [red, green, blue] = [contrasted(r), contrasted(g), contrasted(b)];
+				const luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+				data[at++] = channel(red, luma, 0);
+				data[at++] = channel(green, luma, 1);
+				data[at++] = channel(blue, luma, 2);
+			}
+	return assets.lutFromData({ size, data });
+}
 
 // Moves red out and blue in, by up to `shift` pixels at the corners.
 const fringe = /* wgsl */ `
@@ -22,11 +61,9 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
-export default defineSketch(async ({ scene, assets, geometry, materials, post, quality, time }) => {
-	const [warm, cool] = await Promise.all([
-		assets.loadLut(sampleUrl('sources/luts/warm.cube')),
-		assets.loadLut(sampleUrl('sources/luts/cool.cube')),
-	]);
+export default defineSketch(async (ctx) => {
+	const { scene, assets, geometry, materials, post, quality, time } = ctx;
+	const [warm, cool] = await Promise.all([grade(assets, WARM), grade(assets, COOL)]);
 	// Ambient occlusion draws on every preset, at half the canvas's resolution.
 	quality.set({ aoScale: 0.5 });
 	post.set({
@@ -40,15 +77,29 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, q
 	scene.setBackground('#07080c');
 	const camera = scene.createPerspectiveCamera({ fov: 45 });
 	scene.setActiveCamera(camera);
+	// The pointer points at the lamp's height, inside the room.
+	const view = interact(ctx, camera, {
+		target: [-0.6, 0.8, -0.6],
+		groundY: 2.2,
+		bounds: [-1.7, 0, -1.7, 3.5, 4, 3.5],
+	});
 	scene.createAmbientLight({ color: '#aab4e0', intensity: 1.2 });
-	scene.createPointLight({ position: [0.6, 2.2, -1], color: '#ff4fa3', intensity: 5, range: 8 });
+	const pink = [0.6, 2.2, -1] as const;
+	const lamp = scene.createPointLight({
+		position: pink,
+		color: '#ff4fa3',
+		intensity: 5,
+		range: 8,
+		dynamic: true,
+	});
+	const lampAt = vec3.create();
 	scene.createPointLight({ position: [-1.2, 1.8, 1.2], color: '#36d6ff', intensity: 4, range: 8 });
 
 	const box = geometry.box();
 	const concrete = materials.standard({ color: '#8a8b92', roughness: 0.9 });
 	scene.createMesh({ mesh: box, material: concrete, position: [0, -0.05, 0], scale: [8, 0.1, 8] });
 	scene.createMesh({ mesh: box, material: concrete, position: [0, 2, -2.05], scale: [8, 4, 0.1] });
-	scene.createMesh({ mesh: box, material: concrete, position: [-2.05, 2, 0], scale: [0.1, 4, 8] });
+	scene.createMesh({ mesh: box, material: concrete, position: [-2.05, 2, 1], scale: [0.1, 4, 6] });
 
 	const wood = materials.standard({ color: '#c4c8d4', roughness: 0.8 });
 	const crates = [
@@ -78,11 +129,16 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, q
 	const grading = { lut: tables[0] as (typeof tables)[number], lutIntensity: 1 };
 	let shown = 0;
 	return {
-		onUpdate() {
+		onUpdate(dt) {
 			// The camera sways along an arc in front of the corner.
 			const angle = 0.75 + 0.25 * Math.sin(time.now * 0.4);
-			camera.setPosition(Math.sin(angle) * 6, 2.4, Math.cos(angle) * 6);
-			camera.lookAt(-0.6, 0.8, -0.6);
+			if (!view.userCamera) {
+				camera.setPosition(Math.sin(angle) * 6, 2.4, Math.cos(angle) * 6);
+				camera.lookAt(-0.6, 0.8, -0.6);
+			}
+			view.update(dt);
+			view.steer(vec3.copy(lampAt, pink));
+			lamp.setPosition(lampAt[0], lampAt[1], lampAt[2]);
 			const next = Math.floor(time.now / STEP) % tables.length;
 			if (next === shown) return;
 			shown = next;

@@ -1,9 +1,11 @@
 // Checks the trailers on every commit in a range that main's squash keeps, so a commit made with
-// --no-verify cannot skip them: the acknowledgement trailers, and that each Size-Growth trailer
-// names a file and gives a reason. CI runs it on pull requests:
+// --no-verify cannot skip them: the acknowledgement trailers, that each Size-Growth trailer names a
+// file and gives a reason, and that a pull request that changes how the GPU draws records its GPU
+// check. CI runs it on pull requests:
 //   bun tools/hooks/check-trailers.ts origin/main..HEAD
 import { execFileSync } from 'node:child_process';
 import { DOCS_ACK_RULE } from './check-docs-ack';
+import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
 import { checkAck } from './commit-ack';
@@ -45,10 +47,12 @@ function main(): void {
 		process.exit(2);
 	}
 	const failures: string[] = [];
+	const commits: CommitWithFiles[] = [];
 	for (const { sha, authoredAt, message } of keptCommits(range)) {
 		const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', sha)
 			.split('\n')
 			.filter(Boolean);
+		commits.push({ sha, message, files });
 		const commit = `${sha.slice(0, 8)} ${message.split('\n')[0]}`;
 		for (const rule of RULES) {
 			const result = checkAck(message, files, rule, authoredAt);
@@ -56,6 +60,8 @@ function main(): void {
 		}
 		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
 	}
+	const gpu = gpuCheckProblem(commits);
+	if (gpu) failures.push(gpu);
 	if (failures.length === 0) {
 		console.log(`trailers OK in ${range}`);
 		return;

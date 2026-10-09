@@ -325,6 +325,34 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.ao]
 shaders = ["ao", "ao_ms"]
 
+# Depth of field's steps (see dof.wgsl): `setup` writes half-size color with each texel's signed
+# blur size from the depth, `gather` blurs the near and the far field apart over a disk or polygon of
+# taps, `tent` smooths the gather, and `composite` mixes the blur into the scene's color at the
+# render size. The WebGL2 variant reads a copy of one depth sample that its backend keeps.
+[shaders.dof]
+file = "dof.wgsl"
+by_device = true
+pipelines.setup = { vertex = "vs", fragment = "setup" }
+pipelines.gather = { vertex = "vs", fragment = "gather" }
+pipelines.tent = { vertex = "vs", fragment = "tent" }
+pipelines.composite = { vertex = "vs", fragment = "composite" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The steps that read the depth, from a multisampled depth target: they read sample 0. Only WebGPU
+# reads multisampled textures.
+[shaders.dof_ms]
+file = "dof.wgsl"
+by_device = true
+pipelines.setup = { vertex = "vs", fragment = "setup" }
+pipelines.composite = { vertex = "vs", fragment = "composite" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads depth of field's steps when the sketch first turns it on. The frames draw without
+# it until the steps' pipelines are built.
+[first_use.dof]
+shaders = ["dof", "dof_ms"]
+
 # The copy of a view's image into the target that materials sample, with its rows turned around,
 # so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
 # the view into its target directly.
@@ -421,9 +449,10 @@ variants.webgl2 = { targets = ["glsl"] }
 
 # Environment maps made on the GPU (D-19): the built-in room, traced from its center and blurred as
 # three.js's examples blur it, or a panorama from an HDR file mapped onto the cube; then halved into
-# a chain of levels, and filtered for each roughness, the six faces of one level per draw. It loads
-# on first use, with the generator code that the thread that draws loads when a sketch first asks
-# for the room or loads an HDR file.
+# a chain of levels, and filtered for each roughness, the six faces of one level per draw. The
+# sky's environment draws three.js's sky into each level of its chain instead. It loads on first
+# use, with the generator code that the thread that draws loads when a sketch first asks for the
+# room or the sky's environment, or loads an HDR file.
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
@@ -432,6 +461,7 @@ pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
+pipelines.sky = { vertex = "vs_main", fragment = "fs_sky" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
@@ -511,6 +541,7 @@ variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
 variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
 variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
+variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 

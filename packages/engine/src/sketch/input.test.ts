@@ -8,10 +8,12 @@ import {
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
+	EVENT_POINTER_LOCK,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
 	FLAG_CONTROL,
+	FLAG_LOCKED,
 	FLAG_PRIMARY,
 	FLAG_TOUCH,
 	INPUT_RING_EVENTS,
@@ -319,6 +321,43 @@ describe('input: the pointer', () => {
 		next();
 		expect(input.pointer.dx).toBe(2);
 		expect(edges(input, 'Mouse0')).toEqual({ down: false, pressed: false, released: true });
+	});
+
+	it("takes a locked pointer's movement, keeps its position, and says when the lock begins and ends", () => {
+		const { input, next, pointer, ring } = setup();
+		const locked = FLAG_PRIMARY | FLAG_LOCKED;
+		const log = { count: 0, add: () => log.count++ };
+		input.pointerLog = log as unknown as InputReader['pointerLog'];
+		pointer(EVENT_POINTER_MOVE, 40, 30);
+		next();
+		expect(log.count).toBe(1);
+		ring.write(EVENT_POINTER_LOCK, 0, 0, 1, 0, 0, 0);
+		pointer(EVENT_POINTER_MOVE, 12, -3, 0, 1, locked);
+		pointer(EVENT_POINTER_MOVE, 5.5, 4, 0, 1, locked);
+		next();
+		expect(input.pointer).toMatchObject({ x: 40, y: 30, dx: 17.5, dy: 1, dragDx: 0, locked: true });
+		// Objects take no pointer events from movement, which points at nothing.
+		expect(log.count).toBe(0);
+		pointer(EVENT_POINTER_DOWN, 0, 0, 1, 1, locked);
+		pointer(EVENT_POINTER_MOVE, -20, 8, 1, 1, locked);
+		next();
+		expect(input.pointer).toMatchObject({
+			x: 40,
+			y: 30,
+			dx: -20,
+			dragDx: -20,
+			dragDy: 8,
+			buttons: 1,
+		});
+		expect(edges(input, 'Mouse0')).toEqual({ down: true, pressed: true, released: false });
+		pointer(EVENT_POINTER_UP, 0, 0, 0, 1, locked);
+		ring.write(EVENT_POINTER_LOCK, 0, 0, 0, 0, 0, 0);
+		next();
+		expect(input.pointer).toMatchObject({ x: 40, y: 30, dx: 0, buttons: 0, locked: false });
+		expect(edges(input, 'Mouse0')).toEqual({ down: false, pressed: false, released: true });
+		pointer(EVENT_POINTER_MOVE, 42, 30);
+		next();
+		expect(input.pointer).toMatchObject({ x: 42, dx: 2 });
 	});
 });
 
