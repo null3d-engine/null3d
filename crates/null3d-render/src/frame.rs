@@ -51,6 +51,7 @@ use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
+use crate::sky_maps::SkyMaps;
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -663,6 +664,8 @@ pub struct SceneSettings {
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The environment maps of the scene's sky.
+    sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
@@ -685,6 +688,9 @@ pub struct SceneSettings {
     /// The camera object and lens that fit the main directional light's cascades in place of the
     /// camera's view, for the debug API's shadow camera.
     shadow_camera: Option<(Handle, Lens)>,
+    /// How many times the targets of mirror views without a size of their own halve the render
+    /// size, which the quality settings set.
+    mirror_halvings: u8,
 }
 
 impl SceneSettings {
@@ -728,6 +734,7 @@ impl SceneSettings {
             lut: None,
             vignette: None,
             environment: None,
+            sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
             effect_joins: EffectJoins::default(),
@@ -738,6 +745,7 @@ impl SceneSettings {
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
+            mirror_halvings: 1,
         }
     }
 
@@ -988,6 +996,15 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// The environment maps of the scene's sky.
+    pub fn sky_maps(&self) -> &SkyMaps {
+        &self.sky_maps
+    }
+
+    pub fn sky_maps_mut(&mut self) -> &mut SkyMaps {
+        &mut self.sky_maps
+    }
+
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
     /// while the scene has no environment to draw, with the environment's part of the frame
     /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
@@ -997,10 +1014,15 @@ impl SceneSettings {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((environment, (map, levels))) => (
-                map,
-                environment.uniform(levels, self.drawn_output().exposure),
-            ),
+            Some((mut environment, (map, levels))) => {
+                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                    environment.sh = sh;
+                }
+                (
+                    map,
+                    environment.uniform(levels, self.drawn_output().exposure),
+                )
+            }
             None => (blank, EnvironmentUniform::default()),
         }
     }
@@ -1115,6 +1137,13 @@ impl SceneSettings {
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
+        if let Some(Background {
+            source: BackgroundSource::Sky(sky),
+            ..
+        }) = background
+        {
+            self.sky_maps.set_sky(sky);
+        }
         self.background = background;
     }
 
@@ -1138,6 +1167,7 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
+        self.sky_maps.record(&self.textures, list)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(
@@ -1368,6 +1398,35 @@ impl SceneSettings {
         }
     }
 
+    /// Sets how many times the targets of mirror views without a size of their own halve the
+    /// render size, from the next frame on.
+    pub fn set_mirror_halvings(&mut self, halvings: u8) {
+        self.mirror_halvings = halvings;
+    }
+
+    /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
+    /// has its own, and the preset's size unless it has its own, and each view that draws once in
+    /// several frames moves its turn on. A builder calls it once per frame, before it syncs its
+    /// graph with the views.
+    pub(crate) fn pace_views(&mut self) {
+        let camera_layers = self.views[ViewId::CAMERA.index()].layers();
+        let halvings = self.mirror_halvings;
+        for view in self.views.iter_mut().skip(1) {
+            view.follow_camera(halvings, camera_layers);
+            view.target_mut().pace();
+        }
+    }
+
+    /// True when a view draws the scene's background behind its objects: the camera's view, and
+    /// each mirror view, whose image shows the sky as a mirror does.
+    pub(crate) fn draws_background(&self, view: ViewId) -> bool {
+        view == ViewId::CAMERA
+            || self
+                .views
+                .get(view.index())
+                .is_some_and(|view| view.mirrored().is_some())
+    }
+
     /// Switches a view other than the camera's on or off. A view switched off keeps the last
     /// image it drew.
     pub fn set_view_enabled(&mut self, view: ViewId, enabled: bool) {
@@ -1415,7 +1474,7 @@ impl SceneSettings {
             .iter()
             .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
-            && drawn.target().enabled
+            && drawn.target().draws()
             && (self.textures.shown_views() & bit != 0 || read)
     }
 
@@ -1750,7 +1809,13 @@ impl SceneSettings {
             _ => (canvas, self.pixel_ratio),
         };
         let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;
-        let camera = view.transform(scene, parity, aspect)?;
+        let camera = match view.mirrored() {
+            Some(mirror) => {
+                let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+                mirror.transform(scene, parity, camera, &lens, aspect)?
+            }
+            None => view.transform(scene, parity, aspect)?,
+        };
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();

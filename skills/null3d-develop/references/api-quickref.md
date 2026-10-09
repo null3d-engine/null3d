@@ -125,8 +125,8 @@ export default defineSketch(async (ctx) => {
 | `scene.setActiveCamera(camera)` | | The camera the canvas shows |
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
-| `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing |
-| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` or `assets.builtinEnvironment('room')`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
+| `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
+| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setBackground(env or cubemap, { blur, intensity, rotation })` (0.2) | | An environment or a cube map around the scene, as three.js's `backgroundBlurriness`, `backgroundIntensity` and `backgroundRotation`. Only environments blur, at no extra cost. Allocates nothing, so it can change every frame |
 | `scene.setFog({ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent })` or `null` | | Fog by straight-line distance from the camera. `curve`: `'exponential'` (default, `density` 0.01), `'exp2'` or `'linear'` (`near`, `far`). `heightFalloff` above 0 thins the fog above `height`; `sunGlow` above 0 lights the fog toward the main directional light. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
@@ -232,6 +232,8 @@ scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   /
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });  // stored, but does not light surfaces yet
+const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
+scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 
@@ -362,7 +364,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
 - `scene.setBackground(tex)` shows a texture behind every object. The color set before it shows until its texels are on the GPU.
-- `textures.fromPass(pass)` (0.2) gives the texture of a scene pass from `render.addPass` (section 16).
+- `textures.fromPass(pass)` (0.2) gives the texture of a scene or reflection pass from `render.addPass` (section 16).
 - Cube maps come from `assets.loadCubemap` (0.2), section 11.
 
 Use KTX2 for large textures, above all on phones: a compressed texel takes a quarter or an eighth of the GPU memory of RGBA8. Encode mip levels into the file (`basisu -mipmap`), since the GPU cannot make them for compressed texels. UASTC keeps more detail, and ETC1S makes smaller files. The first KTX2 file downloads the transcoder, about 365 KB after Brotli. A page without KTX2 files downloads none of it. The engine keeps transcoded textures in the browser's Cache Storage (0.2), so a repeat visit skips the transcoder; nothing to set up (`api/assets`). A texture from a KTX2 file takes no `update`.
@@ -386,6 +388,7 @@ ship.clips;                // (0.2) clip names, which a copy's animator plays
 const env = await assets.loadEnvironment('/env/sunset.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const hdr = await assets.loadEnvironment('/hdri/sunset_2k.hdr');  // (0.2) .hdr or .exr, filtered on the GPU at load
 const room = await assets.builtinEnvironment('room');          // (0.2) three.js's RoomEnvironment, made on the GPU; no file. Ask while loading: the next frame makes it whole (50-110 ms on phones)
+const skyLight = await assets.skyEnvironment();                 // (0.2) the light of setBackground({ sky }); follows the sun by itself, 6 frames after each change
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2) square faces in three.js's order, for scene.setBackground
 const lut = await assets.loadLut('/grade.cube');                // (0.2) .cube or .3dl; lut.size, lut.title, lut.destroy()
 const made = await assets.lutFromData({ size: 17, data });      // (0.2) 3 or 4 floats (0-1) per texel, red fastest as in .cube; domainMin, domainMax, title
@@ -511,9 +514,17 @@ const screen = materials.unlit({ map: textures.fromPass(map) });
 render.setPassEnabled(map, false);   // keeps its last image; allocates nothing
 render.removePass(map);              // destroys its textures
 render.dumpGraph();                  // Graphviz DOT text of the compiled graph, for debugging
+const water = render.addPass({
+  kind: 'reflection',                // the camera's view mirrored across a plane, clipped at the plane
+  writes: 'water',
+  plane: { point: [0, 0, 0] },       // normal: [0, 1, 0] by default
+  scale: 0.5,                        // optional: the preset's reflectionScale by default
+  every: 1,                          // optional: draw in one frame of every N
+});
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights, no ambient occlusion and no sky for now.
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights and no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
+- A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
 - Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.

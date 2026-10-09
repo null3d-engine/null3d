@@ -30,6 +30,9 @@
 #ifdef NOISE
 #import null3d::noise
 #endif
+#ifdef REFLECTION
+#import null3d::reflection
+#endif
 #ifdef SDF
 #import null3d::sdf
 #endif
@@ -290,6 +293,9 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 101u: {
             return triple(null3d::fog::fog_color(test_fog(u, f), f[4].xyz, f[5].xyz, f[6].xyz));
         }
+#endif
+#ifdef REFLECTION
+        case 102u: { return pair(null3d::reflection::reflection_uv(f[0], f[1].xy)); }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.

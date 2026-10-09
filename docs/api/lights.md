@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with the light from the sky from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -94,6 +94,22 @@ In this version:
 
 To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks.
 
+## Light from the sky
+
+A directional light gives the sun's own light. The light of the sky around it comes from an environment. [`assets.skyEnvironment()`](assets.md#environments) makes one of the sky that `scene.setBackground({ sky })` draws, and it follows the sky as the sun moves. [`timeOfDay`](scene.md#time-of-day) gives the sun's direction, color and intensity for an hour, and the sky that matches them. At night it gives the moon.
+
+```ts
+import { defineSketch, timeOfDay } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  const day = timeOfDay(16);
+  scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
+  scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
+  scene.createDirectionalLight({ ...day.light, castShadows: true });
+  return {};
+});
+```
+
 ## Shadows
 
 `castShadows: true` and `setCastShadows(true)` make a directional light cast shadows. The first directional light created casts them, and objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases:
@@ -133,6 +149,7 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 | `new SpotLight(color, intensity, distance, angle, penumbra, decay)` | `createSpotLight({ color, intensity, range: distance, angle, penumbra, decay, target: [x, y, z] })` |
 | `new HemisphereLight(skyColor, groundColor, intensity)` | `createHemisphereLight({ skyColor, groundColor, intensity })` |
 | `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
+| `scene.environment = pmremGenerator.fromScene(skyScene).texture`, again after each change of the sky | `scene.setEnvironment(await assets.skyEnvironment())` once: the map follows `setBackground({ sky })` |
 | `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
 | `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
 | `light.visible = false` | `light.setVisible(false)` |

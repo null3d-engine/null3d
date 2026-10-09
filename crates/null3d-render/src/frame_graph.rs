@@ -1043,7 +1043,8 @@ impl FrameGraph {
     pub(crate) fn sync_views(&mut self, views: &[View], names: &[ViewNames]) {
         let declares = |view: &View| {
             let target = view.target();
-            (view.is_removed(), target.size, target.shown, target.reads)
+            let size = (target.size, target.halvings);
+            (view.is_removed(), size, target.shown, target.reads)
         };
         let same = self.declared
             && views.len() == self.declared_views.len()
@@ -1063,11 +1064,11 @@ impl FrameGraph {
         if views
             .iter()
             .zip(&self.view_on)
-            .any(|(view, &on)| view.target().enabled != on)
+            .any(|(view, &on)| view.target().draws() != on)
         {
             self.view_on.clear();
             self.view_on
-                .extend(views.iter().map(|view| view.target().enabled));
+                .extend(views.iter().map(|view| view.target().draws()));
             self.enable_views();
         }
         for (&pass, view) in self.opaque.iter().zip(views) {
@@ -1115,9 +1116,11 @@ impl FrameGraph {
     }
 
     /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
-    /// for a view that draws at the render size. A view with a target size of its own culls once.
+    /// for a view that draws at the render size. A view with a target size of its own, or a
+    /// mirror view, culls once.
     fn view_occludes(&self, view: &View, index: usize) -> bool {
-        self.occlusion() && (index == ViewId::CAMERA.index() || view.target().size.is_none())
+        let full = view.target().graph_size() == Size::Full && view.mirrored().is_none();
+        self.occlusion() && (index == ViewId::CAMERA.index() || full)
     }
 
     /// The draw list's id of the texture that materials sample a view's target from, or `None`
@@ -1353,7 +1356,7 @@ impl FrameGraph {
         }
         self.view_on.clear();
         self.view_on
-            .extend(views.iter().map(|view| view.target().enabled));
+            .extend(views.iter().map(|view| view.target().draws()));
         self.enable_views();
         self.declare_outline(color.samples);
         self.declare_effects();
@@ -2359,12 +2362,10 @@ fn joined(name: &str, end: &str) -> Cow<'static, str> {
     Cow::Owned(text)
 }
 
-/// The size that a view draws at: its target's size in texels, or the render size.
+/// The size that a view draws at: its target's size in texels, or the render size halved as many
+/// times as its target says.
 fn view_size(view: &View) -> Size {
-    match view.target().size {
-        Some((width, height)) => Size::Fixed { width, height },
-        None => Size::Full,
-    }
+    view.target().graph_size()
 }
 
 /// The pass, optional when it belongs to a view other than the camera's, so it runs only while a
@@ -2447,6 +2448,32 @@ mod tests {
         }
     }
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
+
+    #[test]
+    fn a_mirror_view_draws_at_its_share_of_the_render_size_and_culls_once() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.set_occlusion(true);
+        let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
+        let mut reflection = View::mirror(mirror, None, None).with_target(ViewTarget {
+            shown: true,
+            ..ViewTarget::default()
+        });
+        reflection.follow_camera(1, 1);
+        frames.sync(&[View::default(), reflection, shown()]);
+        let size = |view: usize| frames.graph().pass_size(frames.opaque[view]);
+        assert_eq!(size(1), Size::HALF);
+        assert_eq!(size(2), Size::Full);
+        assert!(frames.occludes(ViewId::CAMERA));
+        assert!(
+            !frames.occludes(ViewId::from_index(1)),
+            "a mirror view culls once"
+        );
+        assert!(frames.occludes(ViewId::from_index(2)));
+        // A new share of the render size declares the passes again.
+        reflection.follow_camera(2, 1);
+        frames.sync(&[View::default(), reflection, shown()]);
+        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::QUARTER);
+    }
 
     #[test]
     fn views_after_the_camera_take_their_number_in_their_names() {

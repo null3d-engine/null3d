@@ -9,6 +9,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	BACKGROUND_VALUE_COUNT,
 	TEXTURE_FILTER_LINEAR,
 	TEXTURE_FILTER_NEAREST,
 	TEXTURE_FORMAT_ASTC,
@@ -646,6 +647,17 @@ export class Textures {
 		}
 		await this.arrived(id);
 		return texture;
+	}
+
+	/**
+	 * @internal Makes a cube texture that `fromGenerator` made for the sky a map of the scene's
+	 * sky, after `defaults` wrote the sky's defaults into the background's block of values where no
+	 * sky background wrote its own.
+	 */
+	addSkyMap(texture: Texture, call: string, defaults: (values: Float32Array) => void): void {
+		const { core } = this;
+		defaults(core.f32(core.glue.backgroundValues(), BACKGROUND_VALUE_COUNT));
+		core.check(core.glue.addSkyMap(texture.handle), call, 'a texture', true);
 	}
 
 	/**

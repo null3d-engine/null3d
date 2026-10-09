@@ -1056,6 +1056,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
+        self.settings.pace_views();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1269,17 +1270,17 @@ impl CpuCulledRenderer {
             skips,
             |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
-                    let camera = view == ViewId::CAMERA;
+                    let backdrop = settings.draws_background(view);
                     let slot = opaque.frame_slot(view);
                     let group = ids::frame_group(view) + light_slot;
-                    if camera {
+                    if backdrop {
                         background.record(list, group, &[slot, slot], Place::First)?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
                     let hidden = hidden_in(view);
                     opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)?;
-                    if camera {
+                    if backdrop {
                         background.record(list, group, &[slot, slot], Place::Last)?;
                     }
                     Ok(())
@@ -1606,6 +1607,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.skins.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.sky_maps_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

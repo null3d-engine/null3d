@@ -156,12 +156,23 @@ pub enum Op {
     /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
     /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
+    /// [texture id, image id, stage, then the sky's settings as 16 floats: the sun's position and
+    /// a spare, the turbidity, Rayleigh, Mie coefficient and Mie directional g, the cloud scale,
+    /// speed, coverage and density, and the cloud elevation, the time and two spares]: runs one
+    /// stage of a sky map on the cube texture that the generator under the image id filled. Stage
+    /// 0 draws the sky into the generator's own chain of levels; stage `k`, from 1 to the
+    /// texture's last level, filters level `k` of the map for its roughness from the chain; the
+    /// stage after the last level copies the finished levels into the texture at once. Only stage
+    /// 0 reads the settings. The stages before the copy write nothing that a frame reads, so a
+    /// map can refresh over several frames while frames draw with the old one. Each stage reads
+    /// only what earlier stages wrote, in this list or in an earlier one.
+    SkyMapStep = 55,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 40] = [
+    pub const ALL: [Op; 41] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -201,6 +212,7 @@ impl Op {
         Op::ReleaseImage,
         Op::DestroyPipeline,
         Op::GenerateTexture,
+        Op::SkyMapStep,
         Op::Submit,
     ];
 
@@ -249,6 +261,7 @@ impl Op {
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
             Op::GenerateTexture => "GENERATE_TEXTURE",
+            Op::SkyMapStep => "SKY_MAP_STEP",
             Op::Submit => "SUBMIT",
         }
     }

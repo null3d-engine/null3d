@@ -421,9 +421,10 @@ variants.webgl2 = { targets = ["glsl"] }
 
 # Environment maps made on the GPU (D-19): the built-in room, traced from its center and blurred as
 # three.js's examples blur it, or a panorama from an HDR file mapped onto the cube; then halved into
-# a chain of levels, and filtered for each roughness, the six faces of one level per draw. It loads
-# on first use, with the generator code that the thread that draws loads when a sketch first asks
-# for the room or loads an HDR file.
+# a chain of levels, and filtered for each roughness, the six faces of one level per draw. The
+# sky's environment draws three.js's sky into each level of its chain instead. It loads on first
+# use, with the generator code that the thread that draws loads when a sketch first asks for the
+# room or the sky's environment, or loads an HDR file.
 [shaders.environment]
 file = "environment.wgsl"
 first_use = true
@@ -432,6 +433,7 @@ pipelines.blur = { vertex = "vs_main", fragment = "fs_blur" }
 pipelines.half = { vertex = "vs_main", fragment = "fs_half" }
 pipelines.prefilter = { vertex = "vs_main", fragment = "fs_prefilter" }
 pipelines.panorama = { vertex = "vs_main", fragment = "fs_panorama" }
+pipelines.sky = { vertex = "vs_main", fragment = "fs_sky" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
@@ -511,6 +513,7 @@ variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
 variants.lighting = { defs = ["LIGHTING"], targets = ["wgsl", "glsl"] }
 variants.math = { defs = ["MATH"], targets = ["wgsl", "glsl"] }
 variants.noise = { defs = ["NOISE"], targets = ["wgsl", "glsl"] }
+variants.reflection = { defs = ["REFLECTION"], targets = ["wgsl", "glsl"] }
 variants.sdf = { defs = ["SDF"], targets = ["wgsl", "glsl"] }
 variants.vertex = { defs = ["VERTEX"], targets = ["wgsl", "glsl"] }
 

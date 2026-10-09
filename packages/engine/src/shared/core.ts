@@ -373,6 +373,12 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	generateTexture(texture: number): number;
 	/**
+	 * Makes a generated cube texture a map of the scene's sky, which fills once its generator ran
+	 * and refreshes over the next frames whenever the sky changes. Before the scene's first sky
+	 * background, the maps show the sky of the background's values, which TypeScript writes first.
+	 */
+	addSkyMap(texture: number): number;
+	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
 	 * layer, and level after level for a texture whose data brings its mip levels.
@@ -435,13 +441,16 @@ export interface CoreGlue extends CoreErrors {
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
-	 * Adds a scene pass: a view that draws into a `width` x `height` target named `target`,
-	 * through a pass named `pass`, which reads the targets named in `reads`, one per line. With
-	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. Returns the
-	 * view's place from 1, or 0 on failure: the render graph's errors (1502 to 1505), whose message
-	 * `renderGraphMessage` gives.
+	 * Adds a pass named `pass`, which draws into a target named `target` and reads the targets
+	 * named in `reads`, one per line. With `clears`, the target clears to the exposed linear color
+	 * `r`, `g`, `b`, `a`. With `scale` below 0 it is a scene pass of a `width` x `height` target.
+	 * From 0 it is a reflection pass across the plane through the point (`px`, `py`, `pz`) with
+	 * normal (`nx`, `ny`, `nz`), whose target takes `scale` of the render size each way, or the
+	 * share that `setReflectionScale` sets for 0, and which draws the objects on `layers`, or the
+	 * camera's for -1, in one frame of every `every`. Returns the view's place from 1, or 0 on
+	 * failure: the render graph's errors (1502 to 1505), whose message `renderGraphMessage` gives.
 	 */
-	addScenePass(
+	addPass(
 		pass: string,
 		target: string,
 		reads: string,
@@ -452,7 +461,21 @@ export interface CoreGlue extends CoreErrors {
 		g: number,
 		b: number,
 		a: number,
+		scale: number,
+		every: number,
+		layers: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		px: number,
+		py: number,
+		pz: number,
 	): number;
+	/**
+	 * Sets the share of the render size each way that the targets of reflection passes without a
+	 * scale of their own take.
+	 */
+	setReflectionScale(scale: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -782,6 +805,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setTextureImage',
 	'setCubeImages',
 	'generateTexture',
+	'addSkyMap',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -794,7 +818,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPerspectiveCamera',
 	'setOrthographicCamera',
 	'clearShadowCamera',
-	'addScenePass',
+	'addPass',
+	'setReflectionScale',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',

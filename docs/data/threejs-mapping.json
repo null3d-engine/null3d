@@ -220,7 +220,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'))",
-      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
+      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. `pmremGenerator.fromScene(sceneWithSky)` becomes `await assets.skyEnvironment()`, once: its map follows `scene.setBackground({ sky })`, so drop the calls that make the map again after each change. Its map leaves out the sun's disc, whose light the directional light gives. scene.environmentIntensity becomes the `intensity` option.",
       "docs": "concepts/lighting",
       "detect": "\\.environment\\s*=|\\bRoomEnvironment\\b"
     },
@@ -1594,8 +1594,8 @@
       "three": "SSRPass / ReflectorForSSRPass",
       "status": "post-1.0",
       "since": null,
-      "target": "The environment map",
-      "notes": "Planar and screen-space reflections come after 1.0.",
+      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
+      "notes": "Screen-space reflections come after 1.0. A flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
@@ -1603,11 +1603,11 @@
       "id": "reflector",
       "category": "Post-processing",
       "three": "Reflector / Refractor / Water / Water2 (addons)",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A water surface function that samples the environment map",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction have no port yet.",
+      "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },
     {
@@ -1617,7 +1617,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
-      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js.",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other.",
       "docs": "api/scene",
       "detect": "new\\s+Sky(Mesh)?\\s*\\("
     },

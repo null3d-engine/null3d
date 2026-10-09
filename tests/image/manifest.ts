@@ -462,6 +462,32 @@ function minimapTests(): ImageTest[] {
 	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
 }
 
+/** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
+export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
+
+/**
+ * A reflection pass mirrors the camera's view across a floor at height 0, on every tier. The floor
+ * is a smooth metal mirror, so a red box at the left and a green box at the right each hang upside
+ * down below themselves, with the sky around them, which the pass draws as the camera's view
+ * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
+ * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
+ * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
+ * The quarter test draws the reflection at a quarter of the render size. The reflection spec
+ * checks where the boxes' reflections land, and that no magenta shows.
+ */
+function reflectionTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${REFLECTION_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('reflection-mirror', ''),
+		test('reflection-water', '?water'),
+		test('reflection-quarter', '?quarter'),
+	];
+}
+
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
 
@@ -914,6 +940,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...aoTests(),
 	...outlineTests(),
 	...minimapTests(),
+	...reflectionTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1429,6 +1456,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 		timeoutSeconds: 60,
 	},
+	// Four times of day from `timeOfDay`: the sky background, the sky's environment, the main
+	// light, the fog and the exposure together, over spheres from mirror to rough. The sky's
+	// environment must show the sky behind it in the smooth spheres at each time. A held frame
+	// makes the whole map at once, which a software GPU does slowly (D-118).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `time-of-day-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/time-of-day-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot

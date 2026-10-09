@@ -9,7 +9,7 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { reasonOf } from '../errors/message';
-import { Cubemap } from './background';
+import { Cubemap, writeSkyDefaults } from './background';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { Lut, type LutData } from './lut';
@@ -368,21 +368,13 @@ export class Assets {
 	 * It resolves once the code and the shaders that make the map are ready. The next frame then
 	 * makes the whole map before it draws, so the first frame with the environment already has its
 	 * light. That frame takes longer, by the map's GPU time: call it while the scene loads, since a
-	 * call during play makes one long frame. The first one loads the code that makes it, about 8 KB
+	 * call during play makes one long frame. The first one loads the code that makes it, about 12 KB
 	 * after Brotli. Throws E1213 for a name that no built-in environment has, and E1406 when its
 	 * code does not download.
 	 */
 	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
 		const call = 'assets.builtinEnvironment';
-		let builtins: typeof import('./builtin-environments');
-		try {
-			builtins = await import('./builtin-environments');
-		} catch (error) {
-			throw new EngineError(
-				'E1406',
-				`the built-in environments did not download for ${call}(): ${reasonOf(error)}.`,
-			);
-		}
+		const builtins = await builtinEnvironments(call);
 		if (!Object.hasOwn(builtins.BUILTIN_ENVIRONMENTS, name))
 			throw new EngineError(
 				'E1213',
@@ -390,6 +382,26 @@ export class Assets {
 			);
 		const { size, levels, sh } = builtins.BUILTIN_ENVIRONMENTS[name];
 		const texture = await this.textures.fromGenerator(name, size, levels, call);
+		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
+	}
+
+	/**
+	 * Makes an environment of the scene's sky, the sky that `scene.setBackground({ sky })` draws,
+	 * as three.js's `PMREMGenerator.fromScene` makes one from a scene that holds its `Sky`. Light it
+	 * with `scene.setEnvironment`. The map follows the sky: when the sketch moves the sun or changes
+	 * the air or the clouds, the map refreshes over the next frames, and no call is needed. Until
+	 * the scene's first sky background, it shows the sky's defaults. The map leaves out the sun's
+	 * disc: the scene's directional light gives the sun's own light. The GPU draws the sky into the
+	 * map and filters it for each roughness, and the CPU works out its diffuse light. It resolves
+	 * once the code and the shaders that make the map are ready, and the next frame makes the whole
+	 * map before it draws. The first call loads the code that makes environments, about 12 KB after
+	 * Brotli. Throws E1406 when that code does not download.
+	 */
+	async skyEnvironment(): Promise<Environment> {
+		const call = 'assets.skyEnvironment';
+		const { size, levels, sh } = (await builtinEnvironments(call)).SKY_MAP;
+		const texture = await this.textures.fromGenerator('sky', size, levels, call);
+		this.textures.addSkyMap(texture, call, writeSkyDefaults);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
@@ -698,6 +710,21 @@ async function lutMakers(what: string): Promise<typeof import('./lut-files')> {
 		throw new EngineError(
 			'E1406',
 			`the color grading table code did not download for ${what}: ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/**
+ * Imports the built-in environments' module, which also makes the sky's environment, on the first
+ * call that needs it. Throws E1406 when it does not download.
+ */
+async function builtinEnvironments(call: string): Promise<typeof import('./builtin-environments')> {
+	try {
+		return await import('./builtin-environments');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the built-in environments did not download for ${call}(): ${reasonOf(error)}.`,
 		);
 	}
 }

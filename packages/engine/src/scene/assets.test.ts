@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { BACKGROUND_VALUE_COUNT, BACKGROUND_VALUE_SUN_POSITION } from '../generated/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
@@ -261,9 +262,32 @@ describe('environments', () => {
 				cubes.push([size, levels, 'rgb9e5ufloat', name]);
 				return { bytes: 0 } as unknown as Texture;
 			},
+			addSkyMap(_: Texture, call: string, defaults: (values: Float32Array) => void) {
+				const values = new Float32Array(BACKGROUND_VALUE_COUNT);
+				defaults(values);
+				skyMaps.push([
+					call,
+					Array.from(
+						values.subarray(BACKGROUND_VALUE_SUN_POSITION, BACKGROUND_VALUE_SUN_POSITION + 3),
+					),
+				]);
+			},
 		} as unknown as Textures;
-		return { textures, cubes };
+		const skyMaps: [string, number[]][] = [];
+		return { textures, cubes, skyMaps };
 	}
+
+	test("make the sky's environment on the GPU, as a map of the scene's sky", async () => {
+		const { textures, cubes, skyMaps } = cubeTextures();
+		const sky = await new Assets(textures, PAGE).skyEnvironment();
+		expect(sky).toBeInstanceOf(Environment);
+		expect([sky.size, sky.levels, sky.format]).toEqual([256, 6, 'rgb9e5ufloat']);
+		expect(cubes).toEqual([[256, 6, 'rgb9e5ufloat', 'sky']]);
+		// With no sky background yet, the map shows the default sky of three.js's example.
+		const [[call, sun] = ['', []]] = skyMaps;
+		expect(call).toBe('assets.skyEnvironment');
+		expect(sun.map((c) => Math.round(c * 1e4) / 1e4)).toEqual([0, 0.0349, -0.9994]);
+	});
 
 	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
 		serve({ 'https://game.example/env/room.ktx2': smallMap() });

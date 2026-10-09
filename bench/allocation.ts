@@ -31,7 +31,10 @@
 // frame. `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
-// moves its sun and its clouds every frame. `--prepass` turns the depth prepass on, in any scene.
+// moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
+// the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
+// puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
+// view into in every frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -65,6 +68,8 @@
 //   bun run bench:allocation --effects --gpu webgl2
 //   bun run bench:allocation --stats --gpu webgl2
 //   bun run bench:allocation --sky --gpu webgl2
+//   bun run bench:allocation --sky-environment --gpu webgl2
+//   bun run bench:allocation --reflection --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
@@ -180,6 +185,17 @@ const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 	},
 };
 
+/**
+ * Places that allocate with `--sky-environment` on top of `BUDGETS`, while the sun moves in every
+ * frame. Each stage of the sky map that draws makes one object that the browser returns, on six of
+ * every seven frames: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
+ * about 16 bytes.
+ */
+const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': { 'draw webgpu/environment.ts': 20, 'stage webgl2/environment.ts': 20 },
+};
+
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
@@ -203,6 +219,14 @@ const BLOOM_REPLAY_BUDGET = 15 * 64;
  * the encoders of the two effects' render passes, at bloom's allowance per pass.
  */
 const EFFECTS_REPLAY_BUDGET = 2 * 64;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--reflection`:
+ * the encoders of the reflection's culling pass, its render pass and the pass that copies its
+ * image upright, at bloom's allowance per pass. On the Mac the replay allocated 137 bytes more per
+ * frame with the reflection, about 46 per pass.
+ */
+const REFLECTION_REPLAY_BUDGET = 3 * 64;
 
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
@@ -298,12 +322,15 @@ async function main(): Promise<void> {
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
-		const sky = args.includes('--sky') ? '&sky' : '';
-		if (sky && scene !== 's1') throw new Error('--sky draws behind S1 only');
+		const skyLight = args.includes('--sky-environment');
+		const sky = skyLight ? '&sky=light' : args.includes('--sky') ? '&sky' : '';
+		if (sky && scene !== 's1') throw new Error('--sky and --sky-environment draw behind S1 only');
+		const reflection = args.includes('--reflection') ? '&reflection' : '';
+		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${statsQuery}`;
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${statsQuery}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
@@ -391,6 +418,9 @@ async function main(): Promise<void> {
 		for (const [worker, workerSamples] of samples) {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
 			const statsBudgets = stats ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
+			const skyBudgets = skyLight
+				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
+				: {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const replay = name === 'replay webgpu/backend.ts';
@@ -398,7 +428,9 @@ async function main(): Promise<void> {
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
-					(statsBudgets[name] ?? 0);
+					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
+					(statsBudgets[name] ?? 0) +
+					(skyBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
