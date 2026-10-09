@@ -32,7 +32,7 @@ The examples page links only by relative addresses, and each demo's entry names 
 The website's repository holds this repository as a git submodule, pinned to the release tag that matches the `@null3d/engine` version it installs. Its build:
 
 1. Installs `@null3d/engine`, `@null3d/controls` and `@null3d/vite-plugin` from npm, and never lists the submodule as a workspace, whose `workspace:*` versions would break.
-2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
+2. Shows the demos in its own layout. Its pages import `examples/demos.ts`, the list of demos with their groups, titles, scenes, summaries, controls and sketches, and `startDemo` from `examples/lib/run.ts`. A page shows each demo's `scene` after its title, as in "Instancing · 100,000 columns". It marks a demo with an `assets` field as one that loads files. It links each demo to its code with `sourceUrl` from `examples/lib/source.ts`, at the release tag that it builds from. The website owns the canvas, the text and the styles; the examples page of this repository is not part of it. Code that every layout needs, such as how a demo starts, its labels and its stats overlay, belongs in `examples/lib/`, not in `examples/index.ts`.
 3. Builds its pages with `null3d()` from the plugin, `base: './'`, and `resolve.dedupe` for `@null3d/engine` and `@null3d/controls`. The dedupe matters when the submodule has its own `node_modules`: its workspace links point at packages whose built files are missing. Each entry of the list names its sketch with a literal address, so the build ships every sketch that the website imports.
 4. Sets the environment variable `VITE_NULL3D_SAMPLES_BASE` to the folder of the sample files, such as `./samples/`, and copies them there with `copyNamedSamples` from `tools/lib/samples.ts`, which copies every file that the demos name.
 5. Sends the isolation headers, for example with a Cloudflare Pages `_headers` file, as [hosting](../docs/getting-started/hosting.md) says.
@@ -45,7 +45,7 @@ Until the first npm release, the website builds the engine from the submodule in
 
 The examples page is the clone's own layout of the demos. The website has a layout of its own and does not use this page.
 
-- In a wide window, a sidebar at the left lists the demos by group. The groups come in the order of `DEMO_GROUPS` in `examples/demos.ts`, and a group with no demos does not show. The panel at the right runs the demo that `?demo=<name>` names. Its canvas fills the panel. A caption at the top left gives the demo's title, its summary and how to steer it.
+- In a wide window, a sidebar at the left lists the demos by group. The groups come in the order of `DEMO_GROUPS` in `examples/demos.ts`, and a group with no demos does not show. Each link gives the demo's title and its scene, and a small "loads files" tag marks a demo with an `assets` field. The panel at the right runs the demo that `?demo=<name>` names. Its canvas fills the panel. A caption at the top left gives the demo's title and scene, its summary and how to steer it.
 - In a window narrower than 768 CSS pixels, the sidebar is a drawer. A menu button in a bar at the top opens it. The drawer slides in below the bar, so the same button closes it. Escape, a tap beside the drawer and a pick close it too. The caption starts folded to its title there, to leave the canvas clear.
 - Without `?demo=`, the panel shows a short welcome and starts no engine. A page that ran a demo at once would start an engine on every visit, before the reader picks one.
 - A small link in the caption opens the demo's held frame (`?hold=<time>`). The held page links back to the live demo. Beside it, "View code" opens the demo's code on the main branch in a new tab.
@@ -106,7 +106,7 @@ What the pointer steers in each demo:
 
 | Demo | The pointer steers |
 | --- | --- |
-| math | The light that the drones chase, on the plane at the light's mean height, inside the room |
+| math | The lamp that the flock circles, on the plane at the lamp's mean height, over the pad |
 | character | The Knight, which walks to the pointed point. Its speed, and so its blend of clips, comes from the distance left |
 | sprites-lines | The fountain. Each spark keeps the place it was born at, so the fountain does not slide |
 | instances | The center of the wave |
@@ -131,6 +131,46 @@ Why it works this way:
 - Hover steers, not a drag, because a drag already turns the camera. On a touch screen, a tap is the only gesture that a drag does not take.
 - The weight eases back after an idle time because the sketch cannot see a pointer leave the canvas. Without it, the last pointed point would hold the object for the rest of the visit.
 
+## The look of the feature demos
+
+On 8 October 2026 the owner asked for feature demos that look much better, while each stays one short sketch that is easy to copy. The engine makes each part of the look cost a line or so. The parts are the generated sky with clouds and a low sun, cascade shadows and the built-in room environment. Height fog with sun glow, ambient occlusion, bloom from bright emissive surfaces, the tone curve and a vignette complete it. A small texture from `textures.fromData` adds detail where it helps. The math, instances and generators demos changed first, so the owner could review the look before the other demos follow (M2-EX9).
+
+| Demo | What it shows now |
+| --- | --- |
+| math | A flock of 300 drones circles a lamp over a landing pad at dusk. Each drone has a body, two arms, four spinning rotors, a cyan tail light that blooms and a small point light of its own. The lamp is a point light that casts the crates' shadows. The floor's texture is concrete grain with painted lines |
+| instances | 100,489 columns (317 on each side) in one batch at golden hour, and 10,201 on the Low preset of phones. The sky lights the columns through `assets.skyEnvironment()`. A lamp, which blooms, hovers over the center of the wave and lights the columns around it |
+| generators | The nine shapes in polished, gold and brushed metal, plastic, a tile texture that shows each shape's texture coordinates, and a ring that blooms, over a tiled terrace at golden hour |
+
+The rules that the reworked demos follow, and why:
+
+- They use only what the engine draws today. Instance batches cast and receive no shadows yet, and their row colors do not draw yet. So the instances demo gets its depth from the low sun, the sky's light, the lamp, ambient occlusion and fog.
+- They leave the count of shadow cascades to the preset: 2 on Low, 3 on Medium and High, and 4 on Ultra. They set only the shadow distance. A light that names 4 cascades draws 4 on a phone too.
+- Point lights cast shadows only on the presets with `pointLightShadows`, High and Ultra. WebGL2 and WebGPU's compatibility mode run at most Medium. There the math demo's lamp lights the pad, but casts no shadows.
+- The math demo's lamp shadows did not show at first, because the ambient and environment light filled them in. A test frame lit by the lamp alone showed the crates' shadows. So the demo lowered the fill light, and made the lamp and the floor brighter.
+- The owner reviewed the first math demo on 9 October 2026. Its flat drones piled up round the lamp each time the lamp's path turned. The demo then had each drone fly the lamp's path a moment late, and those late places crowd together on a turn. The second version gave each drone a fixed slot in a wide ring below the lamp, and turned the whole ring. The flock kept its spacing, but moved as one block. The owner then asked for drones that fly at varying speeds, so that the chase has a livelier motion as a whole. Now each drone follows the lamp's path at a lag of its own, up to 1.6 s. It circles that point on a ring of its own, 1.8 to 4.2 m out. Its orbit speed differs from its neighbors' and wobbles a little. So the flock stretches into a stream after each turn of the lamp: the drones with short lags cut in, and the long ones trail. The rings keep the drones apart, and the slots spread over them by the golden angle. Each drone is four instance batches' rows: a body, two crossed arms, four rotors and a tail light.
+- The lamp stays in view. No drone comes within 1.6 m of the lamp: one that would is pushed out to that distance. The rings fly lower than the lamp, so the default camera looks over the flock at it. On the lamp's near side, a drone comes no closer than 1.3 m to the line from the lamp to the camera. One whose slot falls there steps sideways out of it. The camera's place is an input, so this holds while the user orbits, and a held frame stays exact.
+- Each drone carries a point light of 2 m range. The engine lists at most 128 lights in a cluster. With a range of 3.5 m, the clusters under the flock held more than that. They dropped lights, and the pad showed square patches of light. A flock that flies low and lights of 2 m keep each cluster to an estimated 30 to 70 lights. The held frames show no patches. With the 300 lights, the Mac still drew at 120 fps on both GPU paths.
+- The fog does not cover the sky. A ground 40 m across ended well below the horizon, and a band of the sky's dark lower part showed between them. Each ground now reaches 5 km from the camera, as does the camera's far plane. So the ground ends a pixel or two under the horizon. Each fog color matches the sky just above the horizon in the held frame, so the far ground fades into the sky. The colors came from samples of the held frames: the generators' sky there was pinkish gray, and the math demo's sky almost black.
+- Motion comes from `time.now` ([Image tests](image-tests.md#the-feature-demos)). The first math demo moved each drone a share of the way to its goal in each frame, which adds up the frame steps. Now each drone's scripted place is a function of the time. It is the lamp's path at the drone's lag, plus its slot on its ring. Its places 100 ms before and after give its heading, its forward lean with its own speed and its bank into the turn.
+- While the pointer steers, each drone eases toward the pointed point at a rate of its own. The rate falls from 6 to 1.2 a second as its lag grows. So a sudden move of the lamp sends a ripple through the flock. Each drone keeps its steering weight and its point in arrays, the only state of the demo. With no input both stay exactly 0, so the scripted path and the held frames do not change.
+- The instances demo writes each row's place across the field once, in the setup, since only the heights change. In each frame it works out the part of the height that depends only on the column once per column, not once per row.
+- The owner found the first instances demo too dark. It now takes golden hour from `timeOfDay`, and the sky's own light from `assets.skyEnvironment()`, with the helper's ambient light and a third more exposure. Its columns are less metallic, so the sky and the sun light them. The helper's fog color is the horizon toward the sun. Across the view, the sky's rim is a dim rose, so the demo's fog takes an amber between the two. The clouds stay still. The engine makes the sky's light again after each change of the sky, one step a frame. So drifting clouds would cost a step in every frame.
+- The instances demo takes its count of columns from a table by preset. `quality.onChange` sets the batch's active count again when the preset changes. The setup places the rows ring by ring from the middle out. So the first rows of any count fill a square in the middle of the field. Low draws 10,201 rows, the old demo's count, and the other presets draw all 100,489. The Mac held the full field at 120 fps on both GPU paths. No phone has run it yet.
+- The demos' interaction test (`tests/image/demo-interaction.spec.ts`) opens the math and instances demos on the Low preset. It checks the camera and the steering, not the look. On SwiftShader on the Mac, the full look took the instances test from 11.4 s to 25 to 30 s. The math test took 17 s. In CI, main's instances test already took 44.6 s of its 60 s, about four times its time on the Mac. On Low, the two tests took 7 to 10 s and 12 s on the Mac. With a quarter of the field on Low, the instances test took 14 s. That is too close to the limit in CI.
+- The three demos make the room environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 6 to 15 s, four tests at once. So their image tests take 60 s, as the other demos with the room environment do, since CI's machines are slower.
+
+### Frame rates on the Mac
+
+The figures come from Chrome 155 on a Mac with an Apple M5 Max, on 9 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The math figures are from its third version, and the instances figures from its second, each measured after the owner's review. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, over 5 seconds.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| math | 120 fps, GPU 5.1 to 5.6 ms, sketch 0.4 to 0.5 ms, 300 drone lights | 120 fps, GPU 5.6 to 6.6 ms, sketch 0.5 to 0.6 ms |
+| instances | 120 fps, GPU 4.2 to 4.8 ms, sketch 1.0 to 1.6 ms, 1.25 million triangles | 120 fps, GPU 3.0 to 5.4 ms, sketch 0.9 to 1.7 ms |
+| generators | 120 fps, GPU 3.9 to 4.7 ms | 120 fps, GPU 4.1 to 5.2 ms |
+
+Before the change, all three held 120 fps on both paths too. The instances demo had 10,000 rows then. On a phone, a loop over all 100,489 rows should take about four times as long as on the Mac. The phone and tablet checks of the three demos are still to run.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
@@ -147,6 +187,22 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
   Batch shadows come from M2-R6.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+
+## Groups and titles (owner, 9 October 2026)
+
+The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos, so the first two wait for their scenes.
+
+| Group | Demos |
+| --- | --- |
+| Building scenes | generators, mesh-arrays, objects, layers |
+| Light, materials and effects | environment, gltf-model, post-effects, sprites-lines, security-camera |
+| Motion and interaction | character, input, picking, math |
+| Scale | instances, far-from-origin, large-world |
+| Testing and tools | hold-mode |
+
+- Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.
+- The folder names stay as they were. The image tests, the code links and the device plans use them.
+- The demos that load files (gltf-model, character and environment) carry a "loads files" tag, from their `assets` field. The gltf-model demo sits with light and materials, since its look is what it shows.
 
 ## Decisions of 8 October 2026
 
@@ -166,7 +222,7 @@ The owner decided these points about the examples:
 
 ## The look of the rendering demos
 
-The owner's bar for every feature demo is the reworked generators demo. A second group of eight demos took a new look on 9 October 2026 (M2-EX9): picking, sprites and lines, the large world, the security camera, the glTF model, the character, environment light and post effects. Each stays one sketch under 150 lines that makes its look inline. The three demos that show loading keep their loaded files, and everything around those files is made in code.
+The owner's bar for every feature demo is the reworked generators demo. Eight more demos took a new look on 9 October 2026 (M2-EX9): picking, sprites and lines, the large world, the security camera, the glTF model, the character, environment light and post effects. Each stays one sketch under 150 lines that makes its look inline. The three demos that show loading keep their loaded files, and everything around those files is made in code.
 
 | Demo | What it shows now |
 | --- | --- |
