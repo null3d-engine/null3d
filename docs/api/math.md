@@ -64,7 +64,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 });
 ```
 
-The [math helpers demo](https://github.com/null3d-engine/null3d/tree/main/examples/math) moves 300 drones this way, as the rows of one instance batch.
+The [vector and quaternion math demo](https://github.com/null3d-engine/null3d/tree/main/examples/math) moves 300 drones with the same helpers, as the rows of one instance batch. There, each drone's place comes from `time.now` alone, so a held frame shows what the live demo shows at that time. Each drone follows a lamp's path at a lag of its own, on a turning ring of its own. Its places a moment before and after give its heading, its lean and its bank, and `quat.fromEuler` turns it by those angles.
 
 ## Conventions
 

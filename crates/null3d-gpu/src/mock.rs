@@ -944,6 +944,11 @@ impl MockBackend {
                 self.generators.remove(&o[0]);
             }
             Op::GenerateTexture => self.generate_texture(op, o)?,
+            Op::SkyMapStep => {
+                self.generate_texture(op, o)?;
+                self.texture(op, o[0])?;
+                check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
+            }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);

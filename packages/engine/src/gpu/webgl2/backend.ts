@@ -27,6 +27,7 @@ import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
+import { GpuMemory, textureBytes } from '../memory';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -69,6 +70,8 @@ const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
+/** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
+const TRIANGLES = 0x0004;
 /**
  * Pixel unpack buffers in the ring that texture rewrites go through: one for the frame being
  * replayed and one for each frame that the GPU may still be reading.
@@ -96,6 +99,8 @@ interface GlBuffer {
 
 /** How GL stores a texture format, and how texels of it upload. */
 interface GlFormat {
+	/** The draw list's code of the format. */
+	readonly code: number;
 	/** The sized internal format. */
 	readonly internal: number;
 	/** The format and type of uploaded texels: bytes of blocks for a compressed format. */
@@ -133,6 +138,8 @@ interface GlTexture {
 	readonly layer: number;
 	/** True for a view, which shares its texture and never deletes it. */
 	readonly view: boolean;
+	/** The GPU bytes of the texture and the renderbuffer, or 0 for a view. */
+	readonly bytes: number;
 	/** True once a write has gone into the texture, so later writes go through an unpack buffer. */
 	written: boolean;
 	/**
@@ -239,6 +246,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 		attachment: number,
 	) => {
 		formats[code] = {
+			code,
 			internal,
 			format,
 			type,
@@ -300,6 +308,7 @@ function glTexture(
 	level: number,
 	layer: number,
 	view: boolean,
+	bytes: number,
 ): GlTexture {
 	return {
 		texture,
@@ -312,6 +321,7 @@ function glTexture(
 		level,
 		layer,
 		view,
+		bytes,
 		written: false,
 		framebuffer: null,
 		framebufferDepth: null,
@@ -399,13 +409,24 @@ export class WebGL2Backend {
 	 * copies into its place, by format.
 	 */
 	private readonly spares = new Map<number, GlTexture>();
+	/** The GPU memory of every buffer, texture and renderbuffer that the backend holds. */
+	readonly gpuMemory = new GpuMemory();
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
 	/**
 	 * What the replays since the last reset uploaded, drew and built, the other objects they made,
-	 * and the draw commands they skipped because the program was still compiling.
+	 * and the draw commands they skipped because the program was still compiling. The triangles and
+	 * instances are those that the draws drew.
 	 */
-	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0, objects: 0, skippedDraws: 0 };
+	readonly counts = {
+		uploadBytes: 0,
+		drawCalls: 0,
+		pipelines: 0,
+		objects: 0,
+		skippedDraws: 0,
+		triangles: 0,
+		instances: 0,
+	};
 
 	// Views on engine memory, rebuilt when it grows, and copies for browsers that refuse views on
 	// shared memory. The replay's own views give the words and the floats.
@@ -429,7 +450,7 @@ export class WebGL2Backend {
 	private program: WebGLProgram | null = null;
 	private vertexArray: WebGLVertexArrayObject | null = null;
 	private activeUnit = -1;
-	private readonly unitTextures: (WebGLTexture | null)[] = [];
+	private readonly unitTextures: (WebGLTexture | null | undefined)[] = [];
 	private readonly unitSamplers: (WebGLSampler | null)[] = [];
 	/** The texture that bind groups set at each slot, which the program's unit for the slot gets. */
 	private readonly slotTextures: (WebGLTexture | null)[] = [];
@@ -442,7 +463,7 @@ export class WebGL2Backend {
 	 * borrowed changed since the program's units were set.
 	 */
 	private unitsChanged = true;
-	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
+	private readonly blockBuffers: (WebGLBuffer | null | undefined)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
 	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
@@ -761,6 +782,16 @@ export class WebGL2Backend {
 		this.counts.pipelines = 0;
 		this.counts.objects = 0;
 		this.counts.skippedDraws = 0;
+		this.counts.triangles = 0;
+		this.counts.instances = 0;
+	}
+
+	/** Counts a draw of `count` vertices or indices, `instances` times, with the current pipeline. */
+	private countDraw(count: number, instances: number): void {
+		this.counts.drawCalls++;
+		this.counts.instances += instances;
+		if ((this.current as Pipeline).mode === TRIANGLES)
+			this.counts.triangles += Math.floor(count / 3) * instances;
 	}
 
 	/**
@@ -837,7 +868,8 @@ export class WebGL2Backend {
 					this.destroyPipeline(words[a] as number);
 					break;
 				case G.OP_GENERATE_TEXTURE:
-					this.generateTexture(words, a);
+				case G.OP_SKY_MAP_STEP:
+					this.generateTexture(op, words, floats, a);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);
@@ -934,7 +966,7 @@ export class WebGL2Backend {
 						words[a] as number,
 						words[a + 1] as number,
 					);
-					this.counts.drawCalls++;
+					this.countDraw(words[a] as number, words[a + 1] as number);
 					break;
 				case G.OP_DRAW_INDEXED: {
 					if (this.skipDraws) {
@@ -951,7 +983,7 @@ export class WebGL2Backend {
 						(words[a + 2] as number) * this.indexBytes,
 						words[a + 1] as number,
 					);
-					this.counts.drawCalls++;
+					this.countDraw(words[a] as number, words[a + 1] as number);
 					break;
 				}
 				case G.OP_MULTI_DRAW_INDEXED:
@@ -1202,12 +1234,14 @@ export class WebGL2Backend {
 		gl.bindBuffer(target, buffer);
 		gl.bufferData(target, size, gl.DYNAMIC_DRAW);
 		this.buffers[id] = { buffer, size };
+		this.gpuMemory.addBuffers(size);
 	}
 
 	private destroyBuffer(id: number): void {
 		const old = this.buffers[id];
 		if (!old) return;
 		this.gl.deleteBuffer(old.buffer);
+		this.gpuMemory.addBuffers(-old.size);
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
 			if (this.blockBuffers[slot] === old.buffer) this.blockBuffers[slot] = null;
@@ -1242,20 +1276,19 @@ export class WebGL2Backend {
 			const renderbuffer = gl.createRenderbuffer();
 			if (!renderbuffer) throw new Error('WebGL2 could not create a renderbuffer');
 			gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+			const stored = samples > 1 ? Math.min(samples, this.maxSamples) : 1;
 			if (samples > 1) {
-				gl.renderbufferStorageMultisample(
-					gl.RENDERBUFFER,
-					Math.min(samples, this.maxSamples),
-					format.internal,
-					width,
-					height,
-				);
+				gl.renderbufferStorageMultisample(gl.RENDERBUFFER, stored, format.internal, width, height);
 			} else {
 				gl.renderbufferStorage(gl.RENDERBUFFER, format.internal, width, height);
 			}
 			const copied = samples > 1 && usage & G.TEXTURE_USAGE_TEXTURE_BINDING;
 			const copy = copied ? this.depthCopy(width, height, format) : null;
 			const target = copy ? gl.TEXTURE_2D : 0;
+			const bytes =
+				textureBytes(format.code, width, height, 1, 1, stored) +
+				(copy ? textureBytes(format.code, width, height, 1, 1, 1) : 0);
+			this.gpuMemory.addTextures(bytes);
 			this.textures[id] = glTexture(
 				copy,
 				renderbuffer,
@@ -1267,6 +1300,7 @@ export class WebGL2Backend {
 				0,
 				0,
 				false,
+				bytes,
 			);
 			return;
 		}
@@ -1283,7 +1317,22 @@ export class WebGL2Backend {
 		// textures are complete only with nearest filters.
 		gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		this.textures[id] = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
+		const volume = target === gl.TEXTURE_3D;
+		const bytes = textureBytes(format.code, width, height, layers, mips, 1, volume);
+		this.gpuMemory.addTextures(bytes);
+		this.textures[id] = glTexture(
+			texture,
+			null,
+			target,
+			width,
+			height,
+			format,
+			mips,
+			0,
+			0,
+			false,
+			bytes,
+		);
 	}
 
 	/** The texture of one sample that shaders read in place of a multisampled depth target. */
@@ -1324,6 +1373,7 @@ export class WebGL2Backend {
 			level,
 			words[a + 3] as number,
 			true,
+			0,
 		);
 	}
 
@@ -1334,7 +1384,9 @@ export class WebGL2Backend {
 		this.textures[id] = undefined;
 		this.forgetFramebuffers(old);
 		if (old.view) return;
+		this.gpuMemory.addTextures(-old.bytes);
 		if (old.texture) {
+			this.generators?.release(gl, old.texture, this.gpuMemory);
 			for (const other of this.textures)
 				if (other?.view && other.texture === old.texture) this.forgetFramebuffers(other);
 			gl.deleteTexture(old.texture);
@@ -1390,6 +1442,7 @@ export class WebGL2Backend {
 			const grown = Math.max(bytes, 2 * size);
 			gl.bufferData(gl.PIXEL_UNPACK_BUFFER, grown, gl.STREAM_DRAW);
 			this.unpackSizes[slot] = grown;
+			this.gpuMemory.addBuffers(grown - size);
 			at = 0;
 		}
 		this.writeBytes(gl.PIXEL_UNPACK_BUFFER, at, source, bytes);
@@ -1573,16 +1626,32 @@ export class WebGL2Backend {
 		this.endSpareDraws(texture);
 	}
 
+	/** The generators' code once a generator ran, which frees a sky map with its texture. */
+	private generators: CubeGenerator | undefined;
+
 	/**
-	 * Runs a generator that the table holds, which fills a whole cube texture on the GPU. The
-	 * generator draws full-screen triangles with no depth test, culling, scissor or blending, and
-	 * writes every channel. It changes bindings that the state cache holds, so the cache forgets
-	 * them, and the next draws bind what they need again.
+	 * Runs a generator that the table holds on a cube texture: the whole map, or one stage of a sky
+	 * map, whose stages before the last write only what the generator keeps. The generator draws
+	 * full-screen triangles with no depth test, culling, scissor or blending, and writes every
+	 * channel. It changes bindings that the state cache holds, so the cache forgets them, and the
+	 * next draws bind what they need again.
 	 */
-	private generateTexture(words: Uint32Array, a: number): void {
+	private generateTexture(op: number, words: Uint32Array, floats: Float32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
-		const generator = words[a + 1] as number;
-		const [source, code] = this.images.generator<CubeGenerator>(generator);
+		const id = words[a + 1] as number;
+		const code = this.images.generatorCodeFor<CubeGenerator>(id);
+		this.generators = code;
+		this.beforeGenerator();
+		const target = texture.texture as WebGLTexture;
+		const { width, mips } = texture;
+		if (op === G.OP_SKY_MAP_STEP)
+			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
+		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		this.afterGenerator();
+	}
+
+	/** Sets the state that a generator's draws take: no depth test, culling, scissor or blending. */
+	private beforeGenerator(): void {
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(0);
@@ -1591,17 +1660,18 @@ export class WebGL2Backend {
 		this.setAlphaToCoverage(false);
 		this.useVertexArray(null);
 		for (let unit = 0; unit < this.unitSamplers.length; unit++) this.bindUnitSampler(unit, null);
-		code.run(
-			this.programHost,
-			texture.texture as WebGLTexture,
-			texture.width,
-			texture.mips,
-			source,
-		);
+	}
+
+	/**
+	 * Forgets the bindings that a generator changed, so the next draws bind what they need. The
+	 * caches keep their length, so a sky map's stage in every frame grows no array again.
+	 */
+	private afterGenerator(): void {
 		this.program = null;
 		this.activeUnit = -1;
-		this.unitTextures.length = 0;
-		this.blockBuffers.length = 0;
+		// Loops rather than `fill`, which takes the browser's slow path on these sparse arrays.
+		for (let unit = 0; unit < this.unitTextures.length; unit++) this.unitTextures[unit] = undefined;
+		for (let slot = 0; slot < this.blockBuffers.length; slot++) this.blockBuffers[slot] = undefined;
 		this.viewport.fill(-1);
 		this.unitsChanged = true;
 	}
@@ -1710,12 +1780,14 @@ export class WebGL2Backend {
 		const w = Math.max(1, width, old?.width ?? 0);
 		const h = Math.max(1, height, old?.height ?? 0);
 		if (old && old.width === w && old.height === h) return old;
-		if (old?.texture) gl.deleteTexture(old.texture);
+		if (old) this.deleteSpare(old);
 		const spare = gl.createTexture();
 		if (!spare) throw new Error('WebGL2 could not create a texture');
 		this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, spare);
 		gl.texStorage2D(gl.TEXTURE_2D, 1, format.internal, w, h);
-		const made = glTexture(spare, null, gl.TEXTURE_2D, w, h, format, 1, 0, 0, false);
+		const bytes = textureBytes(format.code, w, h, 1, 1, 1);
+		this.gpuMemory.addTextures(bytes);
+		const made = glTexture(spare, null, gl.TEXTURE_2D, w, h, format, 1, 0, 0, false, bytes);
 		this.spares.set(format.internal, made);
 		return made;
 	}
@@ -2427,16 +2499,23 @@ export class WebGL2Backend {
 				ints[offsets] as number,
 				ints[instances] as number,
 			);
-			this.counts.drawCalls += 1;
+			this.countDraw(ints[counts] as number, ints[instances] as number);
 			return;
 		}
 		if (this.drawLists.length < 3 * count) this.drawLists = new Int32Array(3 * count);
 		const lists = this.drawLists;
+		let drawn = 0;
+		let triangles = 0;
 		for (let k = 0; k < count; k++) {
+			const instanceCount = ints[instances + k] as number;
 			lists[k] = ints[counts + k] as number;
 			lists[count + k] = ints[offsets + k] as number;
-			lists[2 * count + k] = ints[instances + k] as number;
+			lists[2 * count + k] = instanceCount;
+			drawn += instanceCount;
+			triangles += Math.floor((ints[counts + k] as number) / 3) * instanceCount;
 		}
+		this.counts.instances += drawn;
+		if (mode === TRIANGLES) this.counts.triangles += triangles;
 		ext.multiDrawElementsInstancedWEBGL(
 			mode,
 			lists,
@@ -2462,9 +2541,22 @@ export class WebGL2Backend {
 		for (const v of this.layoutArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);
-		for (const buffer of this.unpackBuffers) if (buffer) gl.deleteBuffer(buffer);
+		for (let slot = 0; slot < UNPACK_RING; slot++) {
+			const buffer = this.unpackBuffers[slot];
+			if (buffer) gl.deleteBuffer(buffer);
+			this.unpackBuffers[slot] = null;
+			this.gpuMemory.addBuffers(-(this.unpackSizes[slot] as number));
+			this.unpackSizes[slot] = 0;
+		}
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
 		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
-		for (const spare of this.spares.values()) gl.deleteTexture(spare.texture);
+		for (const spare of this.spares.values()) this.deleteSpare(spare);
+		this.spares.clear();
+	}
+
+	/** Deletes a spare texture, and takes its bytes off the memory total. */
+	private deleteSpare(spare: GlTexture): void {
+		this.gl.deleteTexture(spare.texture);
+		this.gpuMemory.addTextures(-spare.bytes);
 	}
 }

@@ -66,7 +66,10 @@
 //                       small scene, on each GPU path, or occlusion-s6, T-36, which times S6 on
 //                       WebGL2 with software occlusion culling off and on in turns at the Low,
 //                       Medium and High presets with two sizes of its buffer, and checks at
-//                       stops along the route that it hides nothing that shows
+//                       stops along the route that it hides nothing that shows, or sky, which
+//                       times each stage of a sky map's refresh and counts the frames from a sun
+//                       move to the new light on each GPU path, or reflection, which times S1 with
+//                       a reflection pass at a quarter and at half the render size against none
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -1024,6 +1027,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'dof',
 	'effects',
 	'effects-joined',
 	'occlusion',
@@ -1032,6 +1036,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'overload',
 	'soak',
 	'texture-cache',
+	'reflection',
 ]);
 
 /**

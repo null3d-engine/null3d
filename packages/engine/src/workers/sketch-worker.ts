@@ -7,7 +7,7 @@
 // engine on the same canvas starts it again.
 
 import { messageOf } from '../errors/message';
-import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
@@ -47,7 +47,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		drawLoad ??= loadDrawModule();
 	} else if (message.type === 'load-shaders') {
 		drawLoad ??= loadDrawModule();
-		preloadShaders(drawLoad, message.tier, message.bits);
+		preloadDeviceFiles(drawLoad, message.tier, message.bits);
 	} else if (message.type === 'init') {
 		try {
 			// The renderer loads while the core and the sketch start, if the page did not ask for it

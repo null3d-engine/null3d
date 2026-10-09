@@ -13,6 +13,8 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
+	LAYOUT_DOF_COMPOSITE,
+	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
@@ -61,6 +63,12 @@ import {
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_DEPTH_PYRAMID,
+	TEMPLATE_DOF_BLUR,
+	TEMPLATE_DOF_COMPOSITE,
+	TEMPLATE_DOF_COMPOSITE_MS,
+	TEMPLATE_DOF_FILTER,
+	TEMPLATE_DOF_SETUP,
+	TEMPLATE_DOF_SETUP_MS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -101,7 +109,6 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
-import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
@@ -112,6 +119,16 @@ import {
 	vertexAttribute,
 	vertexStride,
 } from '../vertex-format';
+
+declare const __NULL3D_DEV__: boolean | undefined;
+
+/**
+ * True in development builds, which add the debug views' templates. This file reads the constant
+ * itself, as the files that load on first use do. It loads with its GPU path's renderers, apart from
+ * the start's files, so a check through the shared constant would keep the debug views' shaders in
+ * the start's files of a production build. A check that folds within this file drops them.
+ */
+const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -595,6 +612,15 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 		]);
+		// Depth of field's composite: an effect's entries with the scene's depth, then the blurred
+		// image, which it reads with the linear sampler.
+		const blurred: GPUBindGroupLayoutEntry = { binding: 4, visibility: fragment, texture: {} };
+		this.defineLayout(LAYOUT_DOF_COMPOSITE, 'dof', [...effectEntries, unfiltered(3), blurred]);
+		this.defineLayout(LAYOUT_DOF_COMPOSITE_MS, 'dof ms', [
+			...effectEntries,
+			unfiltered(3, true),
+			blurred,
+		]);
 		// The final pass with custom effects folded into it: the pass's own entries, then every
 		// effect's block and the scene's depth, which the effects read as a group does. The effects
 		// sample the scene color with a linear filter, so it binds as a filterable float texture:
@@ -686,6 +712,18 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
+			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
+			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],
+			[TEMPLATE_DOF_FILTER, 'dof tent', shaders.dof, 'tent', LAYOUT_BLOOM],
+			[TEMPLATE_DOF_COMPOSITE, 'dof composite', shaders.dof, 'composite', LAYOUT_DOF_COMPOSITE],
+			[
+				TEMPLATE_DOF_COMPOSITE_MS,
+				'dof composite ms',
+				shaders.dof_ms,
+				'composite',
+				LAYOUT_DOF_COMPOSITE_MS,
+			],
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}

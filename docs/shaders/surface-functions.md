@@ -3,7 +3,7 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; vertex-offset functions; per-instance attributes."
+summary: "The surface record; uniforms and textures; reflections; vertex-offset functions; per-instance attributes."
 ---
 
 # Surface functions
@@ -71,8 +71,9 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `emissive` | `vec3f` | Light that the point gives off itself, added after lighting |
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
+| `reflection` | `vec4f` | Light from the mirror direction in `rgb`, such as a reflection pass's color, and in `a` how much of it takes the place of the environment's reflection, from 0 to 1 ([Reflections](#reflections)) |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance is zero. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -170,6 +171,33 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 
 Full shaders take no textures in this version.
 
+## Reflections
+
+A [reflection pass](../api/render.md#reflection-passes) draws the camera's view mirrored across a plane, such as water or a polished floor. A surface function reads its texture where the surface shows on the screen, and puts the color in the surface's `reflection`:
+
+```wgsl
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    // A tilted normal moves the place where the surface reads the reflection.
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0);
+    return s;
+}
+```
+
+Give the pass's texture to the material with `textures: { mirror: textures.fromPass(pass) }`.
+
+- The engine lights `reflection.rgb` as the light that arrives from the mirror direction. It takes the place of that share of the environment's reflection. The material's Fresnel, metalness, specular values and roughness weigh it as they weigh the environment. Water then reflects little when you look straight down at it, and much at a low angle. A metal with roughness 0 is a perfect mirror.
+- With `a` at 1, the reflection replaces the environment's reflection. Values between 0 and 1 mix the two. The environment's diffuse light stays.
+- The reflection works with or without an environment.
+- `reflection_uv(clip, offset)` gives the texture coordinates of the point whose clip position is `clip`. The texture holds the mirrored image, so the function turns the screen's x around. `offset` moves the place in texture coordinates. A ripple's tilt, such as `s.normal.xz * 0.05`, makes the reflection waver.
+- Roughness does not blur the reflection, which keeps the pass's resolution. A reflection at a quarter of the render size looks soft.
+
 ## Vertex offsets
 
 A vertex offset moves each vertex of the mesh before the engine places the object in the world. You write `fn vertexOffset`, which returns how far to move the vertex, in the mesh's own space. The engine then applies the object's transform and instancing, and lights the moved surface:
@@ -234,3 +262,4 @@ When the WGSL breaks a rule, the build stops with the file, line and column of t
 - [Materials](../api/materials.md): `materials.shader` and the standard options.
 - [Materials and pipelines](../concepts/materials.md): why materials share shaders.
 - [Shader library and imports](library.md): the functions that a surface function can import.
+- [Render graph API](../api/render.md#reflection-passes): reflection passes.

@@ -47,6 +47,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::dof::{self, Dof};
 use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
@@ -59,6 +60,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
+use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -215,12 +217,14 @@ struct Engine {
 /// threshold and soft edge, a table at its full intensity over colors from 0 to 1, the vignette's
 /// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
-/// bloom's mixing blend and its levels' default shares, then the vignette's falloff and roundness.
+/// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
+/// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
+/// 2% of the image's height and round aperture, with no focus point.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -2357,18 +2361,28 @@ fn graph_failure(e: &mut Engine, error: GraphError) -> u32 {
     fail(error.code(), error.details())
 }
 
-/// Adds a scene pass: a view that draws the scene into a target of `width` x `height` texels,
-/// which the render graph names `target`, through a pass that it names `pass`. The view reads the
-/// targets of the other passes named in `reads`, one name per line, so the objects it draws may
-/// show them. With `clears`, its target clears to the exposed linear color `r`, `g`, `b` and
-/// alpha `a`; without, to the color the camera's target clears to. The view draws once a camera
-/// is set for it through `setPerspectiveCamera` or `setOrthographicCamera`, with
-/// `constants::camera_target::PASS_VIEWS` plus its place. Returns its place, from 1, or 0 when the
-/// builder draws the most views already, or when the pass does not fit the render graph, with the
-/// graph's error (E1502 to E1505), whose message `renderGraphMessage` gives.
-#[wasm_bindgen(js_name = addScenePass)]
+/// Adds a scene pass or a reflection pass, through a pass that the render graph names `pass`, which
+/// draws into a target that it names `target`. The view reads the targets of the other passes
+/// named in `reads`, one name per line, so the objects it draws may show them. With `clears`, its
+/// target clears to the exposed linear color `r`, `g`, `b` and alpha `a`; without, to the color
+/// the camera's target clears to.
+///
+/// With `scale` below 0 it is a scene pass: a view that draws the scene into a target of `width` x
+/// `height` texels. The view draws once a camera is set for it through `setPerspectiveCamera` or
+/// `setOrthographicCamera`, with `constants::camera_target::PASS_VIEWS` plus its place.
+///
+/// With `scale` from 0 it is a reflection pass: a view that draws the camera's view mirrored across
+/// the plane through the point (`px`, `py`, `pz`) of the world with normal (`nx`, `ny`, `nz`). Its
+/// target takes `scale` of the render size each way, 1, 0.5 or 0.25, or for 0 the share that
+/// `setReflectionScale` sets. It draws the objects on `layers`, or below 0 those on the camera's
+/// layers, in one frame of every `every`.
+///
+/// Returns the view's place, from 1, or 0 when the builder draws the most views already, or when
+/// the pass does not fit the render graph, with the graph's error (E1502 to E1505), whose message
+/// `renderGraphMessage` gives.
+#[wasm_bindgen(js_name = addPass)]
 #[allow(clippy::too_many_arguments)]
-pub fn add_scene_pass(
+pub fn add_pass(
     pass: &str,
     target: &str,
     reads: &str,
@@ -2379,7 +2393,41 @@ pub fn add_scene_pass(
     g: f32,
     b: f32,
     a: f32,
+    scale: f32,
+    every: u32,
+    layers: f64,
+    nx: f32,
+    ny: f32,
+    nz: f32,
+    px: f64,
+    py: f64,
+    pz: f64,
 ) -> u32 {
+    let target_of = |size| ViewTarget {
+        size,
+        every: every.max(1),
+        clear: clears.then_some([r, g, b, a]),
+        ..ViewTarget::default()
+    };
+    let view = if scale < 0.0 {
+        View::default().with_target(target_of(Some((width.max(1), height.max(1)))))
+    } else {
+        // The TypeScript API refuses a normal without length; the plane faces up in its place.
+        let point = [px, py, pz];
+        let mirror = Mirror::new([nx, ny, nz], point)
+            .or_else(|| Mirror::new([0.0, 1.0, 0.0], point))
+            .expect("the up direction has length");
+        let halvings = (scale > 0.0).then(|| halvings_of(scale));
+        let layers = (layers >= 0.0).then_some(layers as u32);
+        View::mirror(mirror, halvings, layers).with_target(target_of(None))
+    };
+    add_pass_view(view, pass, target, reads)
+}
+
+/// Adds the view of a sketch's pass with the render graph's names `pass` and `target`, reading
+/// the targets named in `reads`, one name per line. Returns its place, from 1, or 0 with the
+/// failures of `addPass`.
+fn add_pass_view(view: View, pass: &str, target: &str, reads: &str) -> u32 {
     value_with_engine(|e| {
         let names = ViewNames {
             pass: pass.to_owned(),
@@ -2390,11 +2438,6 @@ pub fn add_scene_pass(
                 .map(str::to_owned)
                 .collect(),
         };
-        let view = View::default().with_target(ViewTarget {
-            size: Some((width.max(1), height.max(1))),
-            clear: clears.then_some([r, g, b, a]),
-            ..ViewTarget::default()
-        });
         let settings = e.renderer.settings_mut();
         let Some(id) = settings.add_named_view(view, names) else {
             return Err(render_failure(
@@ -2412,6 +2455,25 @@ pub fn add_scene_pass(
         e.structure_changed = true;
         Ok(id.index() as u32)
     })
+}
+
+/// Sets the share of the render size each way, 1, 0.5 or 0.25, that the targets of reflection
+/// passes without a scale of their own take, from the next frame on: the quality preset's
+/// reflection scale.
+#[wasm_bindgen(js_name = setReflectionScale)]
+pub fn set_reflection_scale(scale: f32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_mirror_halvings(halvings_of(scale));
+        0
+    })
+}
+
+/// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
+/// size, 1 for half and 2 for a quarter.
+fn halvings_of(scale: f32) -> u8 {
+    (1.0 / scale.clamp(1.0 / 128.0, 1.0)).log2().round() as u8
 }
 
 /// Removes the scene pass of view place `place`, from 1. Fails with the render graph's error
@@ -2452,8 +2514,9 @@ pub fn set_scene_pass_enabled(place: u32, enabled: bool) -> u32 {
 }
 
 /// Creates a texture that shows the target of the scene pass of view place `place`, from 1, and
-/// returns its handle. It holds the pass's `width` x `height` texels, and samples as no texture
-/// until the pass first draws.
+/// returns its handle. It holds the pass's `width` x `height` texels, or for a reflection pass,
+/// whose target follows the render size, 0 x 0, and samples as no texture until the pass first
+/// draws.
 #[wasm_bindgen(js_name = createPassTexture)]
 pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
     value_with_engine(|e| {
@@ -2465,7 +2528,7 @@ pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
         };
         let texture = settings
             .textures_mut()
-            .create_pass(place, width, height, format)
+            .create_pass(place, width.max(1), height.max(1), format)
             .map_err(texture_failure)?;
         // The camera's passes now read the target, which can close a cycle.
         if let Err(error) = e.renderer.check_graph() {
@@ -2669,6 +2732,46 @@ pub fn set_bloom(on: bool) -> u32 {
     })
 }
 
+/// Turns depth of field on with its focus, aperture, focal length, largest blur, blades and focus
+/// point from the post-processing values, or off, from the next frame on. The TypeScript API checks
+/// the values.
+#[wasm_bindgen(js_name = setDof)]
+pub fn set_dof(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let dof = on.then(|| Dof {
+            focus_distance: value(place::DOF_FOCUS_DISTANCE),
+            focus_point: (value(place::DOF_FOCUS_ON_POINT) > 0.0)
+                .then(|| e.post_values3(place::DOF_FOCUS_POINT).map(f64::from)),
+            aperture: value(place::DOF_APERTURE),
+            focal_length: value(place::DOF_FOCAL_LENGTH),
+            max_blur: value(place::DOF_MAX_BLUR),
+            blades: value(place::DOF_BLADES) as u32,
+        });
+        e.renderer.settings_mut().set_dof(dof);
+        0
+    })
+}
+
+/// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
+/// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
+/// count up, at most 71.
+#[wasm_bindgen(js_name = setDofTaps)]
+pub fn set_dof_taps(taps: u32) -> u32 {
+    with_engine(|e| {
+        let taps = match taps {
+            0 => 0,
+            _ => dof::TAP_COUNTS
+                .into_iter()
+                .find(|&count| count >= taps)
+                .unwrap_or(dof::TAP_COUNTS[dof::TAP_COUNTS.len() - 1]),
+        };
+        e.renderer.settings_mut().set_dof_taps(taps);
+        0
+    })
+}
+
 /// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
 /// next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setAo)]
@@ -2849,20 +2952,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let values = &e.background_values;
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
-        let sky = Sky {
-            sun_position: three(at::SUN_POSITION),
-            turbidity: value(at::TURBIDITY),
-            rayleigh: value(at::RAYLEIGH),
-            mie_coefficient: value(at::MIE_COEFFICIENT),
-            mie_directional_g: value(at::MIE_DIRECTIONAL_G),
-            cloud_scale: value(at::CLOUD_SCALE),
-            cloud_speed: value(at::CLOUD_SPEED),
-            cloud_coverage: value(at::CLOUD_COVERAGE),
-            cloud_density: value(at::CLOUD_DENSITY),
-            cloud_elevation: value(at::CLOUD_ELEVATION),
-            time: value(at::TIME),
-            sun_disc: value(at::SUN_DISC) > 0.0,
-        };
+        let sky = sky_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -2886,6 +2976,53 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             blur,
             rotation,
         }));
+        0
+    })
+}
+
+/// The sky's settings in the background's values.
+fn sky_of(values: &[f32]) -> Sky {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    Sky {
+        sun_position: std::array::from_fn(|k| value(at::SUN_POSITION + k as u32)),
+        turbidity: value(at::TURBIDITY),
+        rayleigh: value(at::RAYLEIGH),
+        mie_coefficient: value(at::MIE_COEFFICIENT),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+    }
+}
+
+// Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
+// scene's sky, which fills in the first frame after the generator ran and refreshes over the next
+// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
+// sky background, the maps show the sky of the background's values, which TypeScript writes
+// first. Fails for a texture that is not live.
+/// Makes a generated cube texture a map of the scene's sky.
+#[wasm_bindgen(js_name = addSkyMap)]
+pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
+    with_engine(|e| {
+        let sky = sky_of(&e.background_values[..]);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        if texture.is_none() {
+            return 0;
+        }
+        let maps = settings.sky_maps_mut();
+        if maps.sky().is_none() {
+            maps.set_sky(sky);
+        }
+        maps.add(texture, stages);
         0
     })
 }
@@ -3649,6 +3786,14 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reflections_share_of_the_render_size_becomes_halvings() {
+        assert_eq!(halvings_of(1.0), 0);
+        assert_eq!(halvings_of(0.5), 1);
+        assert_eq!(halvings_of(0.25), 2);
+        assert_eq!(halvings_of(2.0), 0, "a share above 1 takes the whole size");
+    }
 
     #[test]
     fn a_growth_doubles_until_a_quarter_of_the_places_is_spare() {

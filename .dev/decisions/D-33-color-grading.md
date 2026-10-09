@@ -88,3 +88,16 @@ The owner settled the vignette's default that evening, as ruling 3 of [D-53](D-5
 The work is task M2-F9. Prototype P3 then measured `R11F_G11F_B10F` scene color on WebGL2, and WebGL2 keeps `RGBA16F` ([D-77](D-77-final-pass-order-and-formats.md#the-phones-p3)).
 
 [D-77](D-77-final-pass-order-and-formats.md) records the build: the vignette's new settings and its falloff, the dither, and the WebGL2 format's probe and switch. The `lut-vignette` parity scene became a sanity comparison.
+
+## Addendum, 2026-10-09: tables from numbers
+
+Task M2-EX3 adds `assets.lutFromData({ size, data, domainMin, domainMax, title })`. It makes a table from numbers that code computes, as three.js's `LUTPass` takes a `Data3DTexture` that code fills. The demos make their content in code ([Examples](../examples.md#procedural-first)), so the post effects demo needed a way to grade with no file.
+
+- Where it lives: it is a call of `assets`, beside `loadLut`, and not of `textures`. A `Lut` is not a texture: it holds a domain and a title, and `post.set` takes only a `Lut`. The assets page documents the `Lut` type. `assets.builtinEnvironment` already makes an asset with no file. The name follows `textures.fromData`, and so does its single object argument.
+- One path: `lutFromData` and `loadLut` both make the same `LutTable` in `lut-files.ts`: 8-bit texels, red fastest. Both check its size and domain with the same functions, and both pass it to one private step that makes the 3D texture and the `Lut`. The numbers come in a `.cube` file's order, so a file and its numbers make the same bytes. A unit test checks this against `parseCube`, and the `lut-numbers` image test draws the warm table from its file's numbers against the `lut-cube` test's references on every tier.
+- First use: the call returns a promise and imports `lut-files.ts` on its first table, as `loadLut` does. A synchronous call would put the conversion and its checks into the start's JavaScript, which has little room under its budget. The start grows only by the call itself.
+- Checks: the call always checks its input, not only in development builds, because a wrong count would read past the data. A bad size, count, value or domain throws E1208, "Invalid texture", whose page now names grading tables. E1412 is for files that do not read. A new code would add a fix text to every page's download, for a case that E1208 covers.
+- Four numbers per texel: the call accepts them and skips the fourth, so data laid out as three.js's RGBA `Data3DTexture` passes as it is. Grading changes color, not alpha.
+- Not grading controls: the call takes a finished table. Grading controls, such as lift, gamma and gain as settings of `post.set`, are still a later task, as the addendum above says. The post effects demo shows that a sketch can compute such a grade itself in a few lines.
+
+The demo's two grades use the formulas of the sample content's script that wrote `warm.cube` and `cool.cube`. Warm is lift, gamma and gain per channel. Cool is contrast 1.15, saturation 0.85 and a gain that cools the white balance. The demo's tables have 33 texels a side, as the files do. They differ from the files' tables by one 8-bit step at most. That step occurs in 1,089 of 143,748 bytes for warm, and in 97 for cool.

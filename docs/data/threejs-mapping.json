@@ -98,8 +98,8 @@
       "three": "renderer.info / stats.js",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.stats(true); debug.frameStats() for numbers",
-      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It counts no triangles. engine.measure() on the page adds GPU time and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
+      "target": "debug.stats(true), or createEngine({ stats: true }) on the page; debug.frameStats() for numbers",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. From 0.2 it sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats (0.2). @null3d/engine/stats (0.2) prints a three.js page's own figures in the same layout. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
       "docs": "api/debug",
       "detect": "\\.info\\.(render|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
     },
@@ -109,8 +109,8 @@
       "three": "renderer.info.memory.textures",
       "status": "changed",
       "since": "0.2",
-      "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB",
-      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns.",
+      "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB; debug.frameStats().gpuTextureBytes and gpuBufferBytes",
+      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns. debug.frameStats() (0.2) also gives the bytes of every GPU texture and buffer that the engine holds, render targets and shadow maps included.",
       "docs": "concepts/quality-presets",
       "detect": "\\.info\\.memory\\b"
     },
@@ -220,7 +220,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'))",
-      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. scene.environmentIntensity becomes the `intensity` option.",
+      "notes": "`loadEnvironment` takes an HDR file as it is, or its map from `bunx @null3d/cli assets env`, which needs no filtering at load. `pmremGenerator.fromScene(new RoomEnvironment(), 0.04)` becomes `await assets.builtinEnvironment('room')`: the same room with the same blur, made on the GPU as three.js makes it, with no file to download. `pmremGenerator.fromScene(sceneWithSky)` becomes `await assets.skyEnvironment()`, once: its map follows `scene.setBackground({ sky })`, so drop the calls that make the map again after each change. Its map leaves out the sun's disc, whose light the directional light gives. scene.environmentIntensity becomes the `intensity` option.",
       "docs": "concepts/lighting",
       "detect": "\\.environment\\s*=|\\bRoomEnvironment\\b"
     },
@@ -498,6 +498,17 @@
       "notes": "fov is vertical and in degrees, as in three.js. The aspect ratio is automatic. The fov, near and far properties are read-only: change them with camera.setFov(degrees) and camera.setNearFar(near, far).",
       "docs": "api/cameras",
       "detect": "\\bPerspectiveCamera\\b"
+    },
+    {
+      "id": "focal-length",
+      "category": "Cameras",
+      "three": "PerspectiveCamera.setFocalLength / getFocalLength / filmGauge",
+      "status": "changed",
+      "since": "0.2",
+      "target": "camera.setFocalLength(mm) and camera.focalLength",
+      "notes": "null3D's sensor is a full-frame camera's, 24 mm tall, along the canvas's height, so a focal length gives the same field of view on every canvas shape. three.js measures its filmGauge, 35 mm by default, along the longer side. The two agree on a square canvas with filmGauge 24. Depth of field takes the camera's focal length unless its settings give one.",
+      "docs": "api/cameras",
+      "detect": "\\b(set|get)FocalLength\\b|\\bfilmGauge\\b"
     },
     {
       "id": "ortho-camera",
@@ -869,7 +880,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
       "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },
@@ -1100,7 +1111,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'.",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }).",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1407,8 +1418,8 @@
       "three": "FlyControls / FirstPersonControls / PointerLockControls",
       "status": "changed",
       "since": "0.2",
-      "target": "createFlyControls / createFirstPersonControls from @null3d/controls",
-      "notes": "Pointer lock is requested on the page: engine.requestPointerLock().",
+      "target": "createFlyControls(ctx, camera, { movementSpeed, rollSpeed, dragToLook, autoForward }) or createFirstPersonControls(ctx, camera, { movementSpeed, lookSpeed, pointerSpeed, minPolarAngle, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate",
+      "notes": "Option names and defaults match FlyControls, FirstPersonControls and PointerLockControls. First-person controls take the place of both FirstPersonControls and PointerLockControls: while the canvas holds the pointer lock, the mouse turns the view as PointerLockControls turn it. The page asks for the lock in a click handler with engine.requestPointerLock(), and the sketch reads input.pointer.locked; lock(), unlock(), isLocked and the lock and unlock events have no equivalent. For code that moves the camera itself, set movementSpeed: 0 and call controls.moveForward and controls.moveRight. There is no DOM element, dispose or change event: update(dt) returns true when the camera moved.",
       "docs": "api/controls",
       "detect": "\\b(Fly|FirstPerson|PointerLock)Controls\\b"
     },
@@ -1536,13 +1547,13 @@
     {
       "id": "dof",
       "category": "Post-processing",
-      "three": "BokehPass / DepthOfFieldEffect",
-      "status": "post-1.0",
-      "since": null,
-      "target": "Skip it, or write a custom effect with post.addEffect that reads effectDepth",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
-      "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b"
+      "three": "BokehPass / DepthOfFieldEffect / dof() node",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ dof: { focusDistance, focusPoint, aperture, focalLength, maxBlur, blades } }), with camera.setFocalLength(mm)",
+      "notes": "The same intent with a camera's lens: the blur grows with the distance from the focus, and the near and far fields blur apart, so a sharp object spreads no halo into a blurred background. BokehPass's focus becomes focusDistance. Its aperture scales the blur with the distance from the focus, and null3D's aperture is an f-number, so pick one by eye, such as 2.8, with the camera's focal length (camera.setFocalLength). maxblur is a share of the canvas's width, and maxBlur of its height, so multiply by the aspect ratio. pmndrs DepthOfFieldEffect: worldFocusDistance becomes focusDistance, a target to focus on becomes focusPoint, and bokehScale becomes maxBlur with the aperture, tuned by eye. It draws where the quality setting dofSamples is above 0: Medium and up, or quality.set({ dofSamples: 16 }) on Low.",
+      "docs": "concepts/post-processing",
+      "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
     },
     {
       "id": "shader-pass",
@@ -1572,8 +1583,8 @@
       "three": "LUTPass / LUTCubeLoader / LUT3dlLoader",
       "status": "direct",
       "since": "0.2",
-      "target": "post.set({ lut: await assets.loadLut('grade.cube'), lutIntensity })",
-      "notes": "LUTPass's intensity becomes lutIntensity. The table grades display color after the tone mapping, as LUTPass after OutputPass does. LUTImageLoader's PNG strips are not read: export the grade as a .cube file.",
+      "target": "post.set({ lut: await assets.loadLut('grade.cube'), lutIntensity }), or a table from assets.lutFromData({ size, data })",
+      "notes": "LUTPass's intensity becomes lutIntensity. The table grades display color after the tone mapping, as LUTPass after OutputPass does. A Data3DTexture that code fills for LUTPass becomes await assets.lutFromData({ size, data }): the same order, red fastest, with three or four numbers per texel, whose fourth is skipped. Give floats from 0 to 1, so divide 8-bit values by 255. LUTImageLoader's PNG strips are not read: export the grade as a .cube file.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bLUTPass\\b|\\bLUT(Cube|3dl|Image)Loader\\b"
     },
@@ -1594,8 +1605,8 @@
       "three": "SSRPass / ReflectorForSSRPass",
       "status": "post-1.0",
       "since": null,
-      "target": "The environment map",
-      "notes": "Planar and screen-space reflections come after 1.0.",
+      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
+      "notes": "Screen-space reflections come after 1.0. A flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
@@ -1603,11 +1614,11 @@
       "id": "reflector",
       "category": "Post-processing",
       "three": "Reflector / Refractor / Water / Water2 (addons)",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A water surface function that samples the environment map",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction have no port yet.",
+      "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },
     {
@@ -1617,7 +1628,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
-      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js.",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other.",
       "docs": "api/scene",
       "detect": "new\\s+Sky(Mesh)?\\s*\\("
     },

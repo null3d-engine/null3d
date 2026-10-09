@@ -43,7 +43,12 @@ export function percentile(sorted: ArrayLike<number>, fraction: number): number 
 	return low + (high - low) * (position - lower);
 }
 
-/** The median, 95th and 99th percentiles and mean. Sorts a copy, so call it outside frame code. */
+/**
+ * The median, 95th and 99th percentiles and mean of per-frame samples. It sorts a copy, so call it
+ * outside frame code.
+ *
+ * @category api/debug
+ */
 export function percentiles(samples: ArrayLike<number>): Percentiles {
 	const sorted = Float64Array.from(samples).sort();
 	let sum = 0;
@@ -60,6 +65,8 @@ export function percentiles(samples: ArrayLike<number>): Percentiles {
 /**
  * Events per second from the intervals between them: the count over the time they took, so a few
  * long intervals lower the rate as much as they cost. Null without intervals.
+ *
+ * @category api/debug
  */
 export function ratePerSecond(intervalsMs: ArrayLike<number>): number | null {
 	if (intervalsMs.length === 0) return null;
@@ -78,6 +85,8 @@ export function spanMs(intervalsMs: ArrayLike<number>): number {
  * Events in each whole second, from the intervals between them. An event falls in the second that
  * the running sum of the intervals reaches at it. It counts the first `seconds` seconds, by default
  * every second that has ended: the ones before the last event's second.
+ *
+ * @category api/debug
  */
 export function countPerSecond(
 	intervalsMs: ArrayLike<number>,
