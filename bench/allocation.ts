@@ -140,7 +140,7 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
-const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
@@ -154,7 +154,8 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'commandEncoder webgpu/backend.ts': 32,
 		'colorView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
-		'drawFrame render/scene-renderer.ts': 192,
+		'drawFrame render/webgpu-renderers.ts': 192,
+		'drawFrame render/webgl2-renderers.ts': 192,
 		'(IDLE)': 48,
 		'(JS)': 24,
 		'take webgpu/staging.ts': 160,
@@ -178,7 +179,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
  * without a readback allocates nothing more, so these budgets stay the same whatever the scene
  * holds. WebGL2's timer allocated nothing that the profiler saw.
  */
-const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': {
 		'copyOut webgpu/gpu-timer.ts': 24,
@@ -197,7 +198,7 @@ const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
  * frame but the copy's: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
  * about 16 bytes.
  */
-const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': { 'draw webgpu/environment.ts': 20, 'stage webgl2/environment.ts': 20 },
 };
