@@ -222,7 +222,7 @@ The owner decided these points about the examples:
 
 ## The look of the rendering demos
 
-The owner's bar for every feature demo is the reworked generators demo. Eight more demos took a new look on 9 October 2026 (M2-EX9): picking, sprites and lines, the large world, the security camera, the glTF model, the character, environment light and post effects. Each stays one sketch under 150 lines that makes its look inline. The three demos that show loading keep their loaded files, and everything around those files is made in code.
+The owner's bar for every feature demo is the reworked generators demo. Eight more demos took a new look on 9 October 2026 (M2-EX9). They are picking, sprites and lines, the large world, the security camera, the glTF model, the character, environment light and post effects. Each stays one sketch under 150 lines that makes its look inline. The three demos that show loading keep their loaded files, and everything around those files is made in code.
 
 | Demo | What it shows now |
 | --- | --- |
@@ -248,7 +248,7 @@ The rules that these demos follow, and why:
 
 ### Frame rates of the rendering demos on the Mac
 
-The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026, at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, five readings a second apart.
+The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, five readings a second apart.
 
 | Demo | WebGPU, High | WebGL2, Medium |
 | --- | --- | --- |
@@ -261,4 +261,4 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026, a
 | environment | 120 fps, GPU 2.2 ms | 120 fps, GPU 4.9 ms |
 | post-effects | 120 fps, GPU 4.5 to 5.5 ms | 120 fps, GPU 11.7 to 13.5 ms |
 
-The two demos with depth of field read 10 to 13.5 ms of GPU time on WebGL2, more than one frame at 120 Hz, while the overlay still counted 120 fps. Other helpers loaded the Mac during the run, so the WebGL2 timer may count time that the GPU spent on their work. A phone or tablet check at Medium settles it. Depth of field draws nothing on Low.
+On WebGL2, the two demos with depth of field read 10 to 13.5 ms of GPU time, more than one frame at 120 Hz. The overlay still counted 120 fps. Other helpers loaded the Mac during the run, so the WebGL2 timer may count time that the GPU spent on their work. A phone or tablet check at Medium settles it. Depth of field draws nothing on Low.
