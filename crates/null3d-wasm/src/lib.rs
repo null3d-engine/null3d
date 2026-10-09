@@ -2942,11 +2942,12 @@ fn sky_of(values: &[f32]) -> Sky {
 
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
-// frames whenever the sky changes. Before the scene's first sky background, the maps show the sky
-// of the background's values, which TypeScript writes first. Fails for a texture that is not live.
+// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
+// sky background, the maps show the sky of the background's values, which TypeScript writes
+// first. Fails for a texture that is not live.
 /// Makes a generated cube texture a map of the scene's sky.
 #[wasm_bindgen(js_name = addSkyMap)]
-pub fn add_sky_map(texture: u32) -> u32 {
+pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
     with_engine(|e| {
         let sky = sky_of(&e.background_values[..]);
         let settings = e.renderer.settings_mut();
@@ -2961,7 +2962,7 @@ pub fn add_sky_map(texture: u32) -> u32 {
         if maps.sky().is_none() {
             maps.set_sky(sky);
         }
-        maps.add(texture);
+        maps.add(texture, stages);
         0
     })
 }

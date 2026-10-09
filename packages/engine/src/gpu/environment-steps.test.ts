@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { levelOffsets, SKY_FILTER, STEP_BYTES, skyRows, skySteps } from './environment-steps';
+import { SKY_MAP } from '../scene/builtin-environments';
+import {
+	levelOffsets,
+	SKY_FILTER,
+	STEP_BYTES,
+	skyRows,
+	skyStages,
+	skySteps,
+} from './environment-steps';
 
 describe("a sky map's draws", () => {
 	test('draw every level of the chain from the sky, one under another, then filter each level', () => {
@@ -46,6 +54,37 @@ describe("a sky map's draws", () => {
 			expect(floats[at + 5]).toBe(1);
 		});
 		expect(STEP_BYTES).toBeLessThanOrEqual(256);
+	});
+
+	test('split the chain by faces and pack the filter into stages of one face of level 1', () => {
+		const stages = skyStages(256, 6);
+		const [steps] = skySteps(256, 6, 256);
+		const at = (part: { step: number; first: number; faces: number }) =>
+			`${steps[part.step]?.pipeline} ${steps[part.step]?.level} ${part.first}+${part.faces}`;
+		expect(stages.map((parts) => parts.map(at).join(', '))).toEqual([
+			...[0, 1, 2, 3, 4, 5].map((face) =>
+				[0, 1, 2, 3, 4, 5, 6, 7, 8].map((level) => `sky ${level} ${face}+1`).join(', '),
+			),
+			...[0, 1, 2, 3, 4, 5].map((face) => `prefilter 1 ${face}+1`),
+			'prefilter 2 0+2',
+			'prefilter 2 2+2',
+			'prefilter 2 4+2',
+			'prefilter 3 0+4',
+			'prefilter 3 4+2, prefilter 4 0+4',
+			'prefilter 4 4+2, prefilter 5 0+6',
+			'',
+		]);
+		// The core counts the stages that the sketch's side tells it.
+		expect(stages.length).toBe(SKY_MAP.stages);
+		// Every face of every draw runs once.
+		const runs = stages
+			.flat()
+			.flatMap((part) =>
+				Array.from({ length: part.faces }, (_, k) => part.step * 6 + part.first + k),
+			);
+		expect(runs.sort((a, b) => a - b)).toEqual(
+			Array.from({ length: steps.length * 6 }, (_, k) => k),
+		);
 	});
 
 	test('lay each level out after the one before, rows of six faces', () => {

@@ -1,9 +1,10 @@
 // A mirror sphere and a rough white sphere, lit by the sky's environment, under a sky with no
 // clouds and a sun high in the sky. The page's 'move' message moves the sun low behind the camera,
-// where the mirror's middle and the rough sphere's front face it. Four small squares in the bottom left corner count the frames since the
-// move, from 0 to 15 in binary, white for 1 and black for 0, and stay at 15 after. Before the move,
-// a fifth square stays black; from the move's frame on it is white. So each captured frame tells
-// how many frames have passed since the move, and the test reads the spheres' light in it.
+// where the mirror's middle and the rough sphere's front face it. Five small squares in the bottom
+// left corner count the frames since the move, from 0 to 31 in binary, white for 1 and black for
+// 0, and stay at 31 after. Before the move, a sixth square stays black; from the move's frame on it
+// is white. So each captured frame tells how many frames have passed since the move, and the test
+// reads the spheres' light in it.
 import { defineSketch } from '@null3d/engine';
 
 const NOON: [number, number, number] = [0, 1, -0.3];
@@ -28,7 +29,7 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, p
 	const square = geometry.plane({ width: 0.12, height: 0.12 });
 	const black = materials.unlit({ color: '#000000' });
 	const white = materials.unlit({ color: '#ffffff' });
-	const bits = [0, 1, 2, 3, 4].map((k) =>
+	const bits = [0, 1, 2, 3, 4, 5].map((k) =>
 		scene.createMesh({ mesh: square, material: black, position: [-1.6 + 0.16 * k, -1.3, 2] }),
 	);
 	let since = -1;
@@ -42,9 +43,9 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, p
 				sky.sunPosition = SUNSET;
 				scene.setBackground(background);
 			}
-			const count = Math.min(since, 15);
-			for (let k = 0; k < 4; k++) bits[k]?.setMaterial((count >> k) & 1 ? white : black);
-			bits[4]?.setMaterial(white);
+			const count = Math.min(since, 31);
+			for (let k = 0; k < 5; k++) bits[k]?.setMaterial((count >> k) & 1 ? white : black);
+			bits[5]?.setMaterial(white);
 			since++;
 		},
 	};

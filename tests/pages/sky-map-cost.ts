@@ -15,11 +15,11 @@ import {
 import { ENVIRONMENT_SHADER as GLSL } from '../../packages/engine/src/generated/shaders-environment-glsl';
 import { ENVIRONMENT_SHADER as WGSL } from '../../packages/engine/src/generated/shaders-environment-wgsl';
 import { GpuMemory } from '../../packages/engine/src/gpu/memory';
+import { SKY_MAP } from '../../packages/engine/src/scene/builtin-environments';
 import { run, toBase64 } from './lib/result';
 
-/** A sky map: faces of 256 texels down to 8, as the engine makes it. */
-const SIZE = 256;
-const LEVELS = 6;
+/** A sky map: faces of 256 texels down to 8, as the engine makes it, and its stages. */
+const { size: SIZE, levels: LEVELS, stages: STAGES } = SKY_MAP;
 
 type Tier = 'webgpu' | 'compat' | 'webgl2';
 const params = new URLSearchParams(location.search);
@@ -133,15 +133,15 @@ async function timeWebGPU(): Promise<Timed> {
 	const sky = settings(0.6, 0);
 	let start = performance.now();
 	const encoder = device.createCommandEncoder();
-	for (let k = 0; k <= LEVELS; k++)
+	for (let k = 0; k < STAGES; k++)
 		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory);
 	device.queue.submit([encoder.finish()]);
 	await device.queue.onSubmittedWorkDone();
 	const fill = performance.now() - start;
-	const stages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const stages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (let r = 0; r < runs; r++) {
 		const moved = settings(0.6 - 0.05 * (r + 1), 0.1 * r);
-		for (let k = 0; k <= LEVELS; k++) stages[k]?.push(await stage(k, moved));
+		for (let k = 0; k < STAGES; k++) stages[k]?.push(await stage(k, moved));
 	}
 	// The last sky again, filtered as a file's map is, for the comparison.
 	const last = settings(0.6 - 0.05 * runs, 0.1 * (runs - 1));
@@ -151,7 +151,7 @@ async function timeWebGPU(): Promise<Timed> {
 	await fine.prepare(device);
 	const exact = cube();
 	const fineEncoder = device.createCommandEncoder();
-	for (let k = 0; k <= LEVELS; k++)
+	for (let k = 0; k < STAGES; k++)
 		fine.skyStage(device, fineEncoder, exact, ...command(k, last), 0, memory);
 	device.queue.submit([fineEncoder.finish()]);
 	const referenceLevels = await readLevels(device, exact);
@@ -211,13 +211,13 @@ async function timeWebGL2(): Promise<Timed> {
 		gl.deleteSync(fence);
 		return performance.now() - start;
 	};
-	const fill = await timed(0, LEVELS, settings(0.6, 0));
-	const stages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const fill = await timed(0, STAGES - 1, settings(0.6, 0));
+	const stages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (let r = 0; r < runs; r++) {
 		const moved = settings(0.6 - 0.05 * (r + 1), 0.1 * r);
-		for (let k = 0; k <= LEVELS; k++) stages[k]?.push(await timed(k, k, moved));
+		for (let k = 0; k < STAGES; k++) stages[k]?.push(await timed(k, k, moved));
 	}
-	const gpuStages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const gpuStages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (const [k, query] of queries) {
 		for (
 			let wait = 0;
