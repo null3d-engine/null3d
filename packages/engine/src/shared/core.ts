@@ -61,6 +61,8 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerCalls(index: number): number;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
+	/** Milliseconds the sketch thread spent in parallel loops it handed out since the last call. */
+	takeHandedMs(): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
@@ -748,6 +750,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'jobWorkerCallDone',
 	'jobWorkerCalls',
 	'takeJobBusyMs',
+	'takeHandedMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
 	'destroyEngine',
@@ -895,6 +898,37 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
+/**
+ * Stack size for each job worker. A job worker runs only the chunks of the core's parallel loops
+ * and background tasks: short loops over flat arrays, with no deep calls. The size must be a whole
+ * number of 64 KiB pages.
+ */
+export const JOB_STACK_BYTES = 1024 * 1024;
+
+/** The byte that a thread's unused stack holds while the stack probe watches it. */
+const STACK_PAINT = 0xa5;
+/** Bytes at the top of a stack that the probe leaves as they are, for the frames still on it. */
+const STACK_PAINT_MARGIN = 4096;
+
+/**
+ * Paints the unused part of this thread's stack, so the stack probe can find later how deep the
+ * thread's calls went. Returns the stack's lowest address, or 0 for the thread that took the
+ * core's static stack, whose place the core does not export.
+ */
+function paintStack(exports: Record<string, unknown>, memory: WebAssembly.Memory, size: number) {
+	const base = (exports.__stack_alloc as WebAssembly.Global | undefined)?.value as number;
+	if (!base) return 0;
+	new Uint8Array(memory.buffer, base, size - STACK_PAINT_MARGIN).fill(STACK_PAINT);
+	return base;
+}
+
+/** The deepest that a painted stack was used, in bytes. */
+export function stackUse(memory: WebAssembly.Memory, base: number, size: number): number {
+	const bytes = new Uint8Array(memory.buffer, base, size);
+	let k = 0;
+	while (k < size && bytes[k] === STACK_PAINT) k++;
+	return size - k;
+}
 
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */
@@ -953,12 +987,18 @@ export async function startCore(
 	module: WebAssembly.Module,
 	memory?: WebAssembly.Memory,
 	step?: (name: string) => void,
+	stackBytes = THREAD_STACK_BYTES,
+	stackProbe = false,
 ): Promise<StartedCore> {
 	const glue = await loadGlue(build);
 	step?.('glue loaded');
 	const exports = glue.initSync(
-		build === 'threaded' ? { module, memory, thread_stack_size: THREAD_STACK_BYTES } : { module },
+		build === 'threaded' ? { module, memory, thread_stack_size: stackBytes } : { module },
 	);
 	step?.('core started');
+	if (stackProbe && memory) {
+		const base = paintStack(exports as unknown as Record<string, unknown>, memory, stackBytes);
+		if (base) step?.(`stack ${base} ${stackBytes}`);
+	}
 	return { glue, memory: memory ?? exports.memory };
 }

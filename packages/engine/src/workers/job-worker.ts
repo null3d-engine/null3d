@@ -26,7 +26,7 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 	const message = event.data;
 	let core: CoreGlue | undefined;
 	try {
-		const glue = (await startWorkerCore(message, step)).glue;
+		const glue = (await startWorkerCore(message, step, 'job')).glue;
 		core = glue;
 		const { index } = message;
 		const tasks = serveTasks(message.taskPort, () => glue.jobWorkerCallDone(index));

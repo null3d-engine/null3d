@@ -214,6 +214,9 @@ pub struct JobSystem {
     panicked: AtomicBool,
     /// True once a loop handed chunks to the job workers, until [`JobSystem::prepare_frame`] reads it.
     dispatched: AtomicBool,
+    /// Nanoseconds that the calling thread spent in loops that it handed out, since the host last
+    /// took the total: how much parallel work the frames have, whatever the job workers that run.
+    handed_ns: AtomicU64,
     sleepers: AtomicU32,
     shutdown: AtomicBool,
     workers: u32,
@@ -265,6 +268,7 @@ impl JobSystem {
             busy: AtomicBool::new(false),
             panicked: AtomicBool::new(false),
             dispatched: AtomicBool::new(false),
+            handed_ns: AtomicU64::new(0),
             sleepers: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
             workers,
@@ -343,6 +347,7 @@ impl JobSystem {
         self.ticket
             .0
             .store(u64::from(chunks) << 32, Ordering::SeqCst);
+        let handed_at = self.clock.map(|now| now());
         self.dispatched.store(true, Ordering::Relaxed);
         self.wake_workers(true);
 
@@ -351,6 +356,10 @@ impl JobSystem {
         }
         while self.done.0.load(Ordering::Acquire) < chunks {
             spin_loop();
+        }
+        if let (Some(now), Some(at)) = (self.clock, handed_at) {
+            let ns = ((now() - at) * 1e6).max(0.0) as u64;
+            self.handed_ns.fetch_add(ns, Ordering::Relaxed);
         }
         let panicked = self.panicked.swap(false, Ordering::Relaxed);
         self.busy.store(false, Ordering::Release);
@@ -408,6 +417,13 @@ impl JobSystem {
     /// The number of queued background tasks, as a snapshot that may be stale at once.
     pub fn pending_background(&self) -> u32 {
         self.background.len()
+    }
+
+    /// The milliseconds that the calling thread spent in loops it handed out to the job workers
+    /// since the last call, which starts the total again from zero. A host that starts job workers
+    /// as the work grows reads it. Without a clock it is always 0.
+    pub fn take_handed_ms(&self) -> f64 {
+        self.handed_ns.swap(0, Ordering::Relaxed) as f64 / 1e6
     }
 
     /// The milliseconds job worker `worker_index` spent on frame chunks and background tasks

@@ -144,8 +144,10 @@ class Runners {
 	private start(error: WasmError): Runner[] {
 		const host = this.host;
 		if (host) {
-			// With two or more job workers, the first stays in the job loop for the frames.
-			const ports = host.ports.length > 1 ? host.ports.slice(1) : host.ports;
+			// With two or more job workers, the first stays in the job loop for the frames. Where the
+			// page starts them as the work grows, the tasks take the ones it was asked for.
+			const usable = host.ensure ? host.ports.slice(0, host.ensure(2)) : host.ports;
+			const ports = usable.length > 1 ? usable.slice(1) : usable;
 			return ports.map((port) => {
 				const index = host.ports.indexOf(port);
 				port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);

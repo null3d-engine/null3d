@@ -33,18 +33,31 @@ export interface CoreHandoff {
 	 * `Atomics.waitAsync` or ?wake=message acts that out.
 	 */
 	wakeByMessage: boolean;
+	/** The stack size of each job worker's thread, in bytes. */
+	jobStackBytes: number;
+	/** True when ?stack-probe asks each thread to paint its stack, so the page can read its depth. */
+	stackProbe: boolean;
 }
 
 /**
  * Starts the engine core in a worker from what the page handed it. The worker takes the page's
- * error fixes first, so every error it raises from then on carries its full message.
+ * error fixes first, so every error it raises from then on carries its full message. A job worker
+ * takes the smaller stack of its role.
  */
 export function startWorkerCore(
 	handoff: CoreHandoff,
 	step: (name: string) => void,
+	role: 'sketch' | 'render' | 'job' = 'sketch',
 ): Promise<StartedCore> {
 	setErrorFixes(handoff.errorFixes);
-	return startCore(handoff.build, handoff.module, handoff.memory, step);
+	return startCore(
+		handoff.build,
+		handoff.module,
+		handoff.memory,
+		step,
+		role === 'job' ? handoff.jobStackBytes : undefined,
+		handoff.stackProbe,
+	);
 }
 
 /** A frame read back from the GPU: its pixels as RGBA8 rows, top row first. */
@@ -80,6 +93,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	keyCodes: readonly string[];
 	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
+	/** True when the page starts the job workers only as the sketch thread asks for them. */
+	lazyJobs: boolean;
 	/** The GPU path the engine chose, and what it offers, for the sketch's `engine.capabilities`. */
 	capabilities: EngineCapabilities;
 	/**
@@ -147,7 +162,8 @@ export type WorkerReply =
 			role: 'sketch' | 'render' | 'job';
 			index?: number;
 			threaded: boolean;
-			version: string;
+			/** The core's version, from each thread that runs a copy of the core. */
+			version?: string;
 			tier?: Tier;
 	  }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
@@ -179,6 +195,8 @@ export type WorkerReply =
 	| { type: 'stats'; show: StatsRequest }
 	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
 	| { type: 'label'; id: string; slot: number; generation: number }
+	/** The sketch worker asks the page to start job workers up to `count`, as its parallel work grew. */
+	| { type: 'jobs-wanted'; count: number }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
@@ -236,8 +254,9 @@ export function startWorker<Message>(
 	if (thread[started]) return;
 	thread[started] = true;
 	// Workers run only the threaded build. The page starts them before the core has compiled, so
-	// each imports the core's loader now, and finds it ready when the core arrives.
-	void awaitLater(loadGlue('threaded'));
+	// each that runs a copy of the core imports the core's loader now, and finds it ready when the
+	// core arrives. The render worker reads the shared memory without a copy of the core.
+	if (role !== 'render') void awaitLater(loadGlue('threaded'));
 	step('loaded');
 	self.onmessage = handle;
 }

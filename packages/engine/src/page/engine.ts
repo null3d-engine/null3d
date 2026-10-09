@@ -34,7 +34,22 @@ import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
+import {
+	type Build,
+	type CoreGlue,
+	JOB_STACK_BYTES,
+	loadGlue,
+	stackUse,
+	startCore,
+} from '../shared/core';
+
+/** A thread's painted stack, which ?stack-probe records for a measure of its depth. */
+interface StackRecord {
+	role: string;
+	base: number;
+	size: number;
+}
+
 import { URL_SWITCHES } from '../shared/dev';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
@@ -677,6 +692,8 @@ interface WorkerEvents {
 	stats(show: StatsRequest): void;
 	/** The slot in the label table of a label's id, or -1 once it has none. */
 	labelSlot: LabelSlotSender;
+	/** The sketch thread asked for this many job workers, as its parallel work grew. */
+	jobsWanted(count: number): void;
 }
 
 /**
@@ -746,6 +763,9 @@ export class EngineWorker {
 				case 'label':
 					events.labelSlot(reply.id, reply.slot, reply.generation);
 					return;
+				case 'jobs-wanted':
+					events.jobsWanted(reply.count);
+					return;
 				case 'lost':
 					forgetWorkerProbe();
 					events.failure(
@@ -764,6 +784,12 @@ export class EngineWorker {
 					failed(reply.message);
 					return;
 				case 'progress':
+					if (reply.step.startsWith('stack ')) {
+						const [, base, size] = reply.step.split(' ');
+						const probe = globalThis as { __null3dStacks?: StackRecord[] };
+						probe.__null3dStacks ??= [];
+						probe.__null3dStacks.push({ role, base: Number(base), size: Number(size) });
+					}
 					return;
 				case 'stopped':
 					this.stoppedCleanly = true;
@@ -877,6 +903,39 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 }
 
 /**
+ * Starts job worker `index`. It joins the job system once it is ready: until then the sketch thread
+ * and the job workers already running take every chunk, so no frame waits for it. A job worker that
+ * fails to start is reported as a failure of the running engine, and never holds up the start.
+ */
+function startJobWorker(
+	index: number,
+	slots: Int32Array,
+	events: WorkerEvents,
+	spawn: (start: () => Worker) => Worker = (start) =>
+		spawnWorker(start, (code, message) => new EngineError(code, message)),
+): EngineWorker {
+	const job = new EngineWorker(
+		spawn(
+			() =>
+				new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+					type: 'module',
+					name: `null3d-job-${index}`,
+				}),
+		),
+		`job ${index}`,
+		events,
+	);
+	job.ready().catch((error: unknown) => {
+		if (Atomics.load(slots, Slot.Running) !== 0)
+			events.failure(
+				error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+				false,
+			);
+	});
+	return job;
+}
+
+/**
  * Starts the engine's workers: the sketch worker unless the page runs the sketch, the render worker
  * when it draws, and the job workers. The page starts them before the core has compiled, so their
  * scripts and the core's loader download while the core does. Each worker waits for its start
@@ -930,29 +989,9 @@ function startWorkers(
 					events,
 				)
 			: undefined;
-		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
-			const job = new EngineWorker(
-				kept(
-					() =>
-						new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-							type: 'module',
-							name: `null3d-job-${index}`,
-						}),
-				),
-				`job ${index}`,
-				events,
-			);
-			// Job workers join the job system as each becomes ready: until then the sketch thread and
-			// the job workers already running take every chunk, so no frame waits for them.
-			job.ready().catch((error: unknown) => {
-				if (Atomics.load(slots, Slot.Running) !== 0)
-					events.failure(
-						error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
-						false,
-					);
-			});
-			return job;
-		});
+		const jobs = Array.from({ length: jobWorkers }, (_, index) =>
+			startJobWorker(index, slots, events, kept),
+		);
 		return { sketch, render, jobs };
 	} catch (thrown) {
 		// A browser that refuses a worker at once, such as for a script address it cannot read.
@@ -1217,7 +1256,10 @@ async function startEngine(
 		},
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
+		jobsWanted: (count) => growJobs?.(count),
 	};
+	/** Starts job workers up to a count, once the start has handed the first ones the core. */
+	let growJobs: ((count: number) => void) | undefined;
 	/** The page's labels, once the page knows which thread draws. */
 	let pageLabels: PageLabels | undefined;
 
@@ -1288,11 +1330,14 @@ async function startEngine(
 	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
 	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
 	// into the browser's cache, and still runs the module only after it has started the core.
+	// With ?jobs-lazy, a sketch worker starts with no job workers, and the page starts them as the
+	// sketch thread's parallel work grows. A sketch on the page gets them all at once.
+	const lazyJobs = switches.lazyJobs && !sketchOnPage;
 	const threads = threaded
 		? startWorkers(
 				!sketchOnPage,
 				renderThread === 'render-worker',
-				jobWorkers,
+				lazyJobs ? 0 : jobWorkers,
 				slots,
 				events,
 				keptWorker && movedTo && { worker: keptWorker, role: movedTo },
@@ -1605,7 +1650,18 @@ async function startEngine(
 			device,
 			errorFixes: ERROR_FIXES,
 			wakeByMessage,
+			jobStackBytes: (switches.jobStackKiB ?? JOB_STACK_BYTES / 1024) * 1024,
+			stackProbe: switches.stackProbe,
 		};
+		if (switches.stackProbe && core.memory) {
+			const memory = core.memory;
+			const probe = globalThis as {
+				__null3dStacks?: StackRecord[];
+				__null3dStackUse?: () => (StackRecord & { used: number })[];
+			};
+			probe.__null3dStackUse = () =>
+				(probe.__null3dStacks ?? []).map((s) => ({ ...s, used: stackUse(memory, s.base, s.size) }));
+		}
 		// Only a canvas that no engine used before may need its CSS size fixed: the fix resizes the
 		// canvas, which a canvas in a worker refuses.
 		const watch = watchCanvas(
@@ -1675,7 +1731,7 @@ async function startEngine(
 			});
 		};
 
-		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (threads && jobWorkers > 0) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
 		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
@@ -1683,15 +1739,32 @@ async function startEngine(
 		 * waits until each job worker reports that it left the job system, which one without the core
 		 * never does. Returns the other end of each port, for the thread that runs the sketch.
 		 */
-		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
+		const startJobs = (jobs: EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
-			return jobs.map((job, index) => {
+			const ports: MessagePort[] = [];
+			for (let index = 0; index < jobWorkers; index++) {
 				const tasks = channel();
-				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
-					tasks.port1,
-				]);
-				return tasks.port2;
-			});
+				jobTaskPorts[index] = tasks.port1;
+				ports.push(tasks.port2);
+				const job = jobs[index];
+				if (job) handJob(job, index);
+			}
+			// Job workers that start later get the core and their port from here.
+			growJobs = (count) => {
+				if (Atomics.load(slots, Slot.Running) === 0) return;
+				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
+					const job = startJobWorker(index, slots, events);
+					jobs.push(job);
+					handJob(job, index);
+				}
+			};
+			return ports;
+		};
+		/** Each job worker's end of its port for the loader's tasks, until the worker gets it. */
+		const jobTaskPorts: MessagePort[] = [];
+		const handJob = (job: EngineWorker, index: number) => {
+			const port = jobTaskPorts[index] as MessagePort;
+			job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
 		};
 		/**
 		 * Moves the canvas to the worker that draws, unless that worker kept it from an engine before.
@@ -1827,6 +1900,7 @@ async function startEngine(
 				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
+				lazyJobs,
 				capabilities,
 				hold,
 				quality,

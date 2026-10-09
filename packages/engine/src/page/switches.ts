@@ -242,6 +242,12 @@ export interface Switches {
 	 * frame's list, or undefined for no wait. The sketch thread then steps the next frame first.
 	 */
 	replayDelay: number | undefined;
+	/** The job workers' stack size in KiB from ?job-stack=, a whole number of 64 KiB pages. */
+	jobStackKiB: number | undefined;
+	/** True when ?stack-probe asks each thread to paint its stack, for a measure of its depth. */
+	stackProbe: boolean;
+	/** True when ?jobs-lazy starts the job workers only as the sketch thread's parallel work grows. */
+	lazyJobs: boolean;
 }
 
 /** The longest wait that ?replay-delay= gives, in ms: longer would stall the frames for good. */
@@ -355,5 +361,10 @@ export function parseSwitches(search: string): Switches {
 				? 'sync'
 				: 'calls',
 		replayDelay: whole(params.get('replay-delay'), MAX_REPLAY_DELAY_MS),
+		jobStackKiB: ((kib) => (kib !== undefined && kib % 64 === 0 ? kib : undefined))(
+			whole(params.get('job-stack'), 1024),
+		),
+		stackProbe: params.has('stack-probe'),
+		lazyJobs: params.has('jobs-lazy'),
 	};
 }

@@ -11,6 +11,11 @@ export interface JobTaskHost {
 	ports: readonly MessagePort[];
 	/** Asks job worker `index` to leave the job loop for one more task, once no frame work waits. */
 	call(index: number): void;
+	/**
+	 * Where the page starts the job workers as the work grows: asks for at least `count` of them and
+	 * returns how many the page has been asked for, which the loader's tasks may use.
+	 */
+	ensure?(count: number): number;
 }
 
 const HOST = Symbol.for('null3d.jobTasks');

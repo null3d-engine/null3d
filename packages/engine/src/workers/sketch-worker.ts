@@ -63,7 +63,23 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const started = await startWorkerCore(message, step);
 			const glue = started.glue;
 			core = glue;
-			jobTaskHost = { ports: message.taskPorts, call: (index) => glue.callJobWorker(index) };
+			// With lazy job workers, the page starts them as this thread asks: for the loader's tasks,
+			// and as the frames' parallel work grows.
+			let jobsAsked = message.lazyJobs ? 0 : message.jobWorkers;
+			const askJobs = (count: number) => {
+				const wanted = Math.min(count, message.jobWorkers);
+				if (wanted > jobsAsked) {
+					jobsAsked = wanted;
+					replyToPage({ type: 'jobs-wanted', count: wanted });
+				}
+				return jobsAsked;
+			};
+			const wantJobs = message.lazyJobs ? askJobs : undefined;
+			jobTaskHost = {
+				ports: message.taskPorts,
+				call: (index) => glue.callJobWorker(index),
+				ensure: wantJobs,
+			};
 			setJobTasks(jobTaskHost);
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
@@ -88,6 +104,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					fps: message.fps,
 					threads: message.threads,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
+					wantJobs,
 					sendLabelSlot: (id, slot, generation) =>
 						replyToPage({ type: 'label', id, slot, generation }),
 				},

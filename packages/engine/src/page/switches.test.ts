@@ -39,7 +39,20 @@ describe('parseSwitches', () => {
 			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
+			jobStackKiB: undefined,
+			stackProbe: false,
+			lazyJobs: false,
 		});
+	});
+
+	it("reads the job workers' stack size in whole 64 KiB pages, the stack probe and lazy job workers", () => {
+		expect(parseSwitches('?job-stack=256&stack-probe&jobs-lazy')).toMatchObject({
+			jobStackKiB: 256,
+			stackProbe: true,
+			lazyJobs: true,
+		});
+		expect(parseSwitches('?job-stack=100').jobStackKiB).toBeUndefined();
+		expect(parseSwitches('?job-stack=2048').jobStackKiB).toBeUndefined();
 	});
 
 	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
