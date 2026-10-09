@@ -104,7 +104,7 @@ The rules:
 - A demo with something to lead names a plane: `groundY` for a level plane, or `planeZ` for an upright plane that faces the camera. The `bounds` option keeps the point in a box. The `surfaces` option points at the scene's surfaces through a raycast first. A mouse steers by hovering with no button held, since a drag turns the camera. A finger steers by a tap, since a one-finger drag turns the camera. A click steers too.
 - `steer(value)` moves the demo's scripted value toward the point, by a weight that eases from 0 to 1. The engine has no signal for a pointer that leaves the canvas. So after 3 seconds with no pointer movement, the weight eases back to 0, and the object goes back to its scripted path.
 - Hold mode draws the same frame. No input reaches a held frame, and the helper then moves nothing. The controls turn the camera toward their target as they start, so the helper puts the camera back where the sketch had it. The controls' update runs only after the hand-over, or while they turn the camera by themselves. A weight of 0 gives the scripted value bit for bit. `examples/lib/interact.test.ts` checks these points, and the demos' image tests check the held frames.
-- The user can look at a demo from any side. So a flat or open surface that the camera can get behind or below draws both faces, with `doubleSided: true`. These are the flat generator shapes, the height field, and the grounds of the character and security camera demos. A pan can take the camera under a ground even when the orbit limits keep it above the target.
+- The user can look at a demo from any side. So a flat or open surface that the camera can get behind or below draws both faces, with `doubleSided: true`. These are the flat generator shapes and the island of the mesh arrays demo. They are also the grounds of the character, security camera, objects, render layers, hold mode, input and far-from-origin demos. A pan can take the camera under a ground even when the orbit limits keep it above the target.
 - No two faces that point the same way share a plane, or they flicker as the view moves. A wall stands on its floor, not beside its edge, and a back wall fits between its side walls. The render layers demo's walls and the post effects demo's side wall had such faces, and the owner saw them shimmer on 8 October 2026.
 - A demo imports only the engine, `@null3d/controls`, `../lib/interact` and `../lib/samples`. Scripted motion reads `time.now`, as [Image tests](image-tests.md#the-feature-demos) asks. A camera that follows a moving object moves in `onLateUpdate`.
 
@@ -176,6 +176,47 @@ The figures come from Chrome 155 on a Mac with an Apple M5 Max, on 9 October 202
 | generators | 120 fps, GPU 3.9 to 4.7 ms | 120 fps, GPU 4.1 to 5.2 ms |
 
 Before the change, all three held 120 fps on both paths too. The instances demo had 10,000 rows then. On a phone, a loop over all 100,489 rows should take about four times as long as on the Mac. The phone and tablet checks of the three demos are still to run.
+
+## The look of six more feature demos
+
+On 9 October 2026 six more feature demos got the richer look, after the math, instances and generators demos (M2-EX9). The owner wants every demo to look as good as the reworked generators demo. Each demo is still one sketch of under 150 lines. It shows the same feature, and takes the same input. Each `scene` field names the new scene, as [Groups and titles](#groups-and-titles-owner-9-october-2026) says.
+
+| Demo and scene | What it shows now |
+| --- | --- |
+| mesh-arrays: Crystal island | An island under an afternoon sky. Each vertex has a color from its height and its slope: sand at the shore, then grass, and rock. A reflection pass mirrors the island and the sky in rippled water. The crystal glows violet and casts a shadow |
+| objects: Turntable stage | A studio stage: a dark turntable with a ring of light that blooms. Six crates share one panel texture in six materials: wood, brushed steel, copper, gold, red paint and blue lacquer. A warm spot light casts their shadows, and a cool light shines from behind |
+| layers: Cottage street | Five brick cottages with pitched tile roofs in the low sun of late afternoon, with trees, a cobbled street and lamps that bloom. The roofs and the pins are still on layers of their own |
+| hold-mode: Bouncing balls | 400 balls in five finishes: chrome, gold, and glossy red, blue and pearl. Each ball casts a shadow. The pen has stone walls and corner posts, on a paved yard |
+| input: Walking robot | A small robot of generator shapes replaces the box. Its legs and arms hang from joints that swing as it walks. It turns toward where it walks, and raises its arms in a jump |
+| far-from-origin: Keys and brass wheel | A walnut desk, a dark metal tray, pale and dark keys, a brass wheel on a steel axle, and a green light that blooms. A label over the wheel gives the camera's distance from the origin to the millimeter |
+
+The rules that these demos follow, and why:
+
+- The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
+- The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
+- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Scene passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task)). So the crystal's glow comes from bloom, not from a lamp.
+- The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
+- The hold mode demo draws 400 meshes, not one instance batch, because batches cast no shadows yet. Its physics moved into `onFixedUpdate`, at 120 steps a second. At the default 60, a 120 Hz display would show the balls stand still in every other frame. Hold mode runs the same steps on every run, so the held frame stays the same.
+- The objects demo turned the table and the crates by adding up the frame steps. Now each turn comes from the sketch time. A crate on the stage spins at its own speed plus the table's, so its spin goes on with no jump when it steps off.
+- The input robot's walk comes from the distance it walks, which the input sets. Its sway while it stands comes from the sketch time. Its camera still moves in `onLateUpdate`.
+- Each ground draws both faces and sits 1 cm under the objects that stand on it. So no face that points down shares a plane with the ground's lower face.
+- The far-from-origin label changes 4 times a second, so the sketch makes a few strings a second, not one in every frame. The sketch adds the camera's place under the site to the site's place in JavaScript's 64-bit numbers.
+- All six demos make an environment, which takes time on a software GPU. On SwiftShader on the Mac their held frames took 8 to 17 s each, four tests at once. They took up to 38 s while other runs loaded the Mac. So their image tests take 60 s, as the demos that make the room do.
+
+### Frame rates of the six demos on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026, with a display at 120 Hz. Each demo ran at the preset that the engine chose, with the governor on. Each figure is the stats overlay's reading, 15 seconds after the start, over 5 seconds.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| mesh arrays | 120 fps, GPU 4.0 to 5.5 ms | 120 fps, GPU 2.9 to 5.8 ms |
+| objects | 120 fps, GPU 5.3 to 5.5 ms | 120 fps, GPU 3.8 to 4.8 ms |
+| render layers | 120 fps, GPU 4.1 to 5.3 ms | 120 fps, GPU 5.3 to 5.9 ms |
+| hold mode | 119 to 120 fps, GPU 4.0 to 4.9 ms, 560,000 triangles | 120 fps, GPU 4.0 to 5.6 ms |
+| input | 120 fps, GPU 2.7 to 5.0 ms | 120 fps, GPU 4.8 to 6.7 ms |
+| far from the origin | 120 fps, GPU 4.5 to 5.3 ms | 120 fps, GPU 4.5 to 6.3 ms |
+
+The six demos held 120 fps on both paths before the change too. No phone or tablet has run the new look yet. The hold mode demo's 400 shadowed balls are the likeliest cost on a phone.
 
 ## Comparisons with three.js
 
