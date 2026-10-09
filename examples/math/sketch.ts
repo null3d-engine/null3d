@@ -1,99 +1,148 @@
-// Math helpers: 300 drones chase a light that loops through the air. In each frame, each drone
-// eases toward its own place near the light with vec3.lerp, and turns toward the way it moves with
-// quat.lookAt and quat.slerp. The helpers write into arrays made once in the setup, so the frame
-// loop allocates nothing. A seeded math.random places the drones the same way on every run. The
-// pointer can lead the light over the floor.
+// Math helpers: a flock of 300 drones chases a lamp over a landing pad at dusk. Each drone flies
+// the lamp's path at its own lag and circles it at its own speed, so the flock streams after the
+// lamp's turns. Place, lean, bank and rotor spin come from time.now alone, through vec3 and quat
+// helpers that write into arrays made once. While the pointer leads the lamp, each drone eases
+// after it at its own rate. Drones keep clear of the lamp and out of the camera's line of sight to
+// it. Each carries a small point light; the lamp's light casts the crates' shadows on High.
+import type { InstanceBatch, Material, MeshGeometry, Vec3 } from '@null3d/engine';
 import { defineSketch, math, quat, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
 const DRONES = 300;
+/** The point that the camera looks at, and the box that the pointer leads the lamp in. */
+const TARGET = [0, 1.5, 0] as const;
+const PAD = [-7, 0, -7, 7, 5, 7] as const;
+/** A point toward the sun: just over the horizon, to the camera's left. */
+const SUN = [-0.95, 0.05, 0.3] as const;
+const GOLD = '#ffd166';
+/** How close to the lamp a drone may come, and how close across the view in front of it. */
+const [GAP, CLEAR] = [1.6, 1.3];
+/** The parts' places on a drone: the middle, a rotor at the end of each arm, the tail light. */
+const MIDDLE = [0, 0, 0] as const;
+const ROTORS = [-0.2, 0.2].flatMap((x) => [-0.2, 0.2].map((z) => [x, 0.045, z] as const));
+const TAIL = [0, 0, -0.16] as const;
 
-export default defineSketch((ctx) => {
-	const { scene, geometry, materials, time } = ctx;
-	scene.setBackground('#10131a');
-	const camera = scene.createPerspectiveCamera({
-		fov: 55,
-		position: [0, 5, 11],
-		target: [0, 1.5, 0],
-	});
+export default defineSketch(async (ctx) => {
+	const { scene, assets, geometry, materials, textures, post, time } = ctx;
+	scene.setBackground({ sky: { sunPosition: SUN, turbidity: 6, cloudCoverage: 0.45 } });
+	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.15 });
+	scene.setFog({ color: '#3a3028', density: 0.015, heightFalloff: 0.3, sunGlow: 1 });
+	post.set({ bloom: { intensity: 0.3, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
+	const camera = scene.createPerspectiveCamera({ far: 5e3, position: [0, 5, 11], target: TARGET });
 	scene.setActiveCamera(camera);
-	// The pointer leads the light over the floor, at the light's mean height.
-	const view = interact(ctx, camera, {
-		target: [0, 1.5, 0],
-		groundY: 2.5,
-		bounds: [-7, 0, -7, 7, 5, 7],
-	});
-	scene.createDirectionalLight({ direction: [-0.5, -2, -1], intensity: 2.5 });
-	scene.createAmbientLight({ intensity: 0.5 });
-
-	const light = scene.createMesh({
-		mesh: geometry.sphere({ radius: 0.35 }),
-		material: materials.unlit({ color: '#ffd166' }),
-		dynamic: true,
-	});
-	const drones = scene.createInstances(
-		geometry.box({ width: 0.4, height: 0.1, depth: 0.8 }),
-		DRONES,
-		{ material: materials.standard({ color: '#9aa7b8' }), dynamic: true },
-	);
-	scene.createMesh({
-		mesh: geometry.box({ width: 16, height: 0.2, depth: 16 }),
-		material: materials.standard({ color: '#2a3140' }),
-		position: [0, -1, 0],
-	});
-
-	// Each drone keeps an offset from the light and a speed, from the seeded generator.
+	// The pointer leads the lamp over the pad, at the lamp's mean height.
+	const view = interact(ctx, camera, { target: TARGET, groundY: 2, bounds: PAD });
+	const sun = { direction: [-SUN[0], -SUN[1], -SUN[2]], color: '#ff9a62', intensity: 1.2 } as const;
+	scene.createDirectionalLight({ ...sun, castShadows: true, shadow: { distance: 40 } });
+	scene.createAmbientLight({ color: '#8090c0', intensity: 0.08 });
+	// Light that a surface gives off itself, above white, so that bloom spreads it.
+	const glow = (emissive: string, emissiveIntensity: number) =>
+		materials.standard({ color: '#000000', emissive, emissiveIntensity });
+	const ball = geometry.sphere({ radius: 0.3 });
+	const orb = scene.createMesh({ mesh: ball, material: glow(GOLD, 16), dynamic: true });
+	scene.createPointLight({ parent: orb, color: GOLD, intensity: 99, range: 20, castShadows: true });
+	// The floor: concrete grain with a painted line along two edges, a grid of lines as it repeats.
 	math.seed(7);
-	const offsets = new Float32Array(DRONES * 3);
-	const speeds = new Float32Array(DRONES);
-	for (let i = 0; i < DRONES; i++) {
-		offsets[i * 3] = math.randFloatSpread(5);
-		offsets[i * 3 + 1] = math.randFloatSpread(2);
-		offsets[i * 3 + 2] = math.randFloatSpread(5);
-		speeds[i] = math.randFloat(0.8, 3);
+	const data = new Uint8Array(64 * 64 * 4);
+	for (let i = 0; i < 64 * 64; i++) {
+		const [shade, paint] = [math.randFloat(120, 150), i % 64 === 0 || i < 64];
+		data.set(paint ? [150, 120, 45, 255] : [shade, shade, shade * 1.06, 255], i * 4);
 	}
-
+	const look = { colorSpace: 'srgb', wrap: 'repeat', mipmaps: true, anisotropy: 8 } as const;
+	const map = textures.fromData({ width: 64, height: 64, data, ...look });
+	const box = geometry.box();
+	const solid = { castShadows: true, receiveShadows: true };
+	const block = (material: Material, position: Vec3, scale: Vec3) =>
+		scene.createMesh({ mesh: box, material, position, scale, ...solid });
+	const concrete = materials.standard({ map, roughness: 0.6, uvTransform: { repeat: [2e3, 2e3] } });
+	block(concrete, [0, -1.1, 0], [1e4, 0.2, 1e4]);
+	// Crates around the pad, whose shadows the lamp casts.
+	const wood = materials.standard({ color: '#8a6f4e', roughness: 0.8 });
+	for (let k = 0; k < 6; k++) {
+		const [x, z, size] = [Math.sin(k + 0.5) * 11, Math.cos(k + 0.5) * 11, 0.6 + 0.12 * k];
+		block(wood, [x, size / 2 - 1, z], [size, size, size]);
+	}
+	// A drone: a body, two crossed arms, four rotors and a tail light, one instance batch per part.
+	const batch = (mesh: MeshGeometry, rows: number, material: Material) =>
+		scene.createInstances(mesh, rows, { material, dynamic: true });
+	const metal = materials.standard({ color: '#aab4c2', metalness: 0.8, roughness: 0.3 });
+	const dark = materials.standard({ color: '#2a2e35', roughness: 0.5 });
+	const cyan = glow('#4fd8ff', 8);
+	const bodies = batch(geometry.box({ width: 0.2, height: 0.07, depth: 0.26 }), DRONES, metal);
+	const arms = batch(geometry.box({ width: 0.56, height: 0.025, depth: 0.04 }), DRONES * 2, dark);
+	const rotors = batch(geometry.box({ width: 0.22, height: 0.01, depth: 0.03 }), DRONES * 4, dark);
+	const tails = batch(geometry.box({ width: 0.1, height: 0.03, depth: 0.03 }), DRONES, cyan);
+	const torch = { color: '#7fdcff', intensity: 1, range: 2, dynamic: true };
+	const torches = Array.from({ length: DRONES }, () => scene.createPointLight(torch));
+	// Each drone's lag and orbit speed, and an angle, a distance and a height spread over its ring.
+	const slots = Array.from({ length: DRONES }, (_, i) => ({
+		lag: math.randFloat(0, 1.6),
+		spin: math.randFloat(0.2, 0.9),
+		angle: i * 2.4,
+		far: 1.8 + 2.4 * Math.sqrt((i + 0.5) / DRONES),
+		height: math.randFloat(-0.4, 1.4),
+	}));
+	// Each drone's own steering, which eases slower the more it lags: its weight and its point.
+	const weights = new Float32Array(DRONES);
+	const points = Array.from({ length: DRONES }, vec3.create);
 	// Scratch arrays: made once, reused in every frame.
-	const lightAt = vec3.create();
-	const goal = vec3.create();
-	const from = vec3.create();
-	const to = vec3.create();
-	const facing = quat.create();
-	const turn = quat.create();
-
+	const [lampAt, before, here, after] = Array.from({ length: 4 }, vec3.create);
+	const [offset, side, toEye, at] = Array.from({ length: 4 }, vec3.create);
+	const [facing, part, blade, none] = Array.from({ length: 4 }, quat.create);
+	const crossed = [Math.PI / 4, -Math.PI / 4].map((a) => quat.rotateY(quat.create(), none, a));
+	/** Writes the lamp's scripted place at time t into out. */
+	const path = (out: typeof here, t: number) =>
+		vec3.set(out, Math.sin(t * 0.7) * 4.5, 2 + Math.sin(t * 1.3), Math.sin(t * 1.4) * 3);
+	/** Writes drone i's place at time t into out: its slot around its lagged or led center. */
+	const drone = (out: typeof here, i: number, t: number) => {
+		const { lag, spin, angle, far, height } = slots[i];
+		const turn = angle + spin * t + 0.3 * Math.sin(t * 0.8 + i);
+		vec3.lerp(out, path(out, t - lag), points[i], weights[i]);
+		const bob = height + Math.sin(t * 1.7 + i) * 0.15;
+		vec3.set(offset, Math.cos(turn) * far, bob - out[1], Math.sin(turn) * far);
+		vec3.sub(offset, vec3.add(offset, offset, out), lampAt);
+		if (vec3.length(offset) < GAP) vec3.scale(offset, vec3.normalize(offset, offset), GAP);
+		// In front of the lamp, keep out of the cylinder between the lamp and the camera.
+		const front = vec3.dot(offset, toEye);
+		const across = vec3.length(vec3.scaleAndAdd(side, offset, toEye, -front));
+		if (front > 0 && across < CLEAR) {
+			vec3.scale(side, side, CLEAR / Math.max(across, 1e-3));
+			vec3.scaleAndAdd(offset, side, toEye, front);
+		}
+		return vec3.add(out, lampAt, offset);
+	};
+	/** Writes one part of the drone at `here`, facing `facing`, into a row of its batch. */
+	const put = (parts: InstanceBatch, row: number, place: Vec3, turn: typeof none) => {
+		parts.positions.set(vec3.add(at, vec3.transformQuat(at, place, facing), here), row * 3);
+		parts.rotations.set(quat.multiply(part, facing, turn), row * 4);
+	};
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			vec3.set(
-				lightAt,
-				Math.sin(t * 0.7) * 4.5,
-				2.5 + Math.sin(t * 1.3) * 1.5,
-				Math.sin(t * 1.4) * 3,
-			);
 			view.update(dt);
-			view.steer(lightAt);
-			light.setPosition(lightAt[0], lightAt[1], lightAt[2]);
-			// Read the arrays in each frame: they are views of engine memory, which moves when it grows.
-			const positions = drones.positions;
-			const rotations = drones.rotations;
+			view.steer(path(lampAt, t));
+			orb.setPosition(lampAt[0], lampAt[1], lampAt[2]);
+			camera.getPosition(toEye);
+			vec3.normalize(toEye, vec3.sub(toEye, toEye, lampAt));
 			for (let i = 0; i < DRONES; i++) {
-				vec3.set(goal, offsets[i * 3], offsets[i * 3 + 1], offsets[i * 3 + 2]);
-				vec3.add(goal, goal, lightAt);
-				vec3.set(from, positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
-				// Close a share of the gap that suits the frame's step, as math.damp does for one number.
-				vec3.lerp(to, from, goal, 1 - Math.exp(-speeds[i] * dt));
-				positions.set(to, i * 3);
-				if (vec3.squaredDistance(from, to) < 1e-8) continue;
-				quat.lookAt(turn, from, to);
-				quat.set(
-					facing,
-					rotations[i * 4],
-					rotations[i * 4 + 1],
-					rotations[i * 4 + 2],
-					rotations[i * 4 + 3],
-				);
-				quat.slerp(facing, facing, turn, math.clamp(8 * dt, 0, 1));
-				rotations.set(facing, i * 4);
+				const pace = 6 - 3 * slots[i].lag;
+				weights[i] = math.damp(weights[i], view.steering, pace, dt);
+				vec3.lerp(points[i], points[i], view.point, 1 - Math.exp(-pace * dt));
+				// From its places a moment apart: it faces its way, leans with speed, banks into turns.
+				vec3.sub(before, drone(here, i, t), drone(before, i, t - 0.1));
+				vec3.sub(after, drone(after, i, t + 0.1), here);
+				const [a, b] = [vec3.length(before), vec3.length(after)];
+				const turn = vec3.cross(at, before, after)[1] / (a * b + 1e-6);
+				const yaw = Math.atan2(before[0] + after[0], before[2] + after[2]);
+				const bank = math.clamp(-8 * turn, -0.6, 0.6);
+				quat.fromEuler(facing, math.clamp((a + b) * 0.25, 0, 0.35), yaw, bank, 'YXZ');
+				put(bodies, i, MIDDLE, none);
+				put(tails, i, TAIL, none);
+				put(arms, i * 2, MIDDLE, crossed[0]);
+				put(arms, i * 2 + 1, MIDDLE, crossed[1]);
+				for (let k = 0; k < 4; k++)
+					put(rotors, i * 4 + k, ROTORS[k], quat.rotateY(blade, none, t * 30 + k));
+				torches[i].setPosition(here[0], here[1] - 0.15, here[2]);
 			}
 		},
 	};
