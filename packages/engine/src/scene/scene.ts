@@ -3282,7 +3282,8 @@ export class Scene {
 		...lens: A
 	): T {
 		const node = { dynamic: true, ...options };
-		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, 0, call, ...lens);
+		// A view reads its camera's world transform even below a hidden object.
+		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, C.FLAG_TRACKED, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;

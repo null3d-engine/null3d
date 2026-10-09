@@ -570,6 +570,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
                 ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
+                ("TRACKED", flags::TRACKED),
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),

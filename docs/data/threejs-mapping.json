@@ -363,7 +363,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "obj.setVisible(false)",
-      "notes": "Cheap: it uploads the object's matrix and draw entry and never rebuilds the draw tables, so use it instead of removing and adding objects during play.",
+      "notes": "Cheap: it uploads the object's matrix and draw entry and never rebuilds the draw tables, so use it instead of removing and adding objects during play. The objects under a hidden object, dynamic ones too, stop updating until it shows again, where three.js updates their matrices anyway. So hide a pool of spare objects under one parent.",
       "docs": "api/objects",
       "detect": "\\.visible\\s*="
     },

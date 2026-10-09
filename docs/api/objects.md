@@ -89,7 +89,7 @@ A parent loop puts an object under itself, or under an object below it, so it ca
 
 ## Visibility, kind and removal
 
-- `setVisible(false)` hides the object and everything under it. `setVisible(true)` shows it again.
+- `setVisible(false)` hides the object and everything under it. `setVisible(true)` shows it again. Objects under a hidden object cost almost nothing per frame, dynamic ones too: the engine stops recomputing them two frames after they hide. They take their place again in the frame that shows them. Their world getters still give their place, from their local transforms. A camera under a hidden object keeps moving with it.
 - `setDynamic(true)` makes the engine recompute the object in every frame, and `setDynamic(false)` makes it static again. [Static and dynamic objects](../concepts/static-dynamic.md) explains when each kind costs less.
 - `destroy()` removes the object. Its children become root objects and keep their own transforms.
 

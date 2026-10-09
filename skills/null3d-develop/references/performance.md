@@ -211,6 +211,7 @@ Some calls rebuild the scene's draw tables in the frame they take effect: the bu
 - Cheap: moving objects, writing batch arrays, `setVisible`, and `setActiveCount`.
 - Rebuilds: creating or destroying objects and batches, `setMaterial`, `setParent` and `setDynamic`.
 - Create everything a level needs during setup. Hide with `setVisible` instead of destroying.
+- Hide spare objects under a hidden parent. Objects under a hidden object stop updating, dynamic ones too, so a pool of hidden moving parts costs almost nothing per frame (`api/objects`).
 - Pool bullets, particles and pickups in a batch sized for its most rows. Show the live ones with `setActiveCount`, and keep them at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility.
 - Check `engine.measure()`: `rebuilds` above zero during play means one of the rebuilding calls ran.
