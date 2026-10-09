@@ -1,12 +1,14 @@
 // A sun that moves refreshes the sky's environment within a fixed number of frames, and no frame
 // draws a half-made map. The sky refresh sketch moves the sun from high in the sky to low behind
 // the camera, and counts the frames since the move in squares that each capture shows. The engine
-// core runs one stage of the map a frame: the sky in the move's frame, one filtered level in each
-// of the next five, and the copy of every level into the map in the sixth. So the mirror sphere's
-// reflection and the rough sphere's diffuse light keep the old sky's light for the first six
-// frames, and both show the new sky's light from the seventh, the sixth after the move. On every
-// GPU tier, with the drawing held to 20 frames a second so back-to-back captures miss few frames.
+// core runs one stage of the map a frame, from the move's frame on: the sky into the chain a face
+// at a time, the filtered levels a few faces at a time, and last the copy of every level into the
+// map. So the mirror sphere's reflection and the rough sphere's diffuse light keep the old sky's
+// light until the frame of the copy, and both show the new sky's light from that frame on. On
+// every GPU tier, with the drawing held to 20 frames a second so back-to-back captures miss few
+// frames.
 import { expect, test } from '@playwright/test';
+import { SKY_MAP } from '../../packages/engine/src/scene/builtin-environments.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 interface Frame {
@@ -16,7 +18,9 @@ interface Frame {
 }
 
 /** The frames from the move to the frame that draws with the new map: the map's stages. */
-const STAGES = 7;
+const STAGES = SKY_MAP.stages;
+/** The count that the sketch's squares stop at. */
+const LAST = 31;
 /** How far a color may stray from the old or the new sky's, in levels of 255. */
 const NEAR = 4;
 /** How far the old and the new sky's colors must lie apart, in levels of 255. */
@@ -46,7 +50,7 @@ for (const gpu of Object.keys(TIERS) as (keyof typeof TIERS)[])
 		const report = result.frames
 			.map((f) => `${f.since}: ${f.mirror.map(Math.round)} ${f.rough.map(Math.round)}`)
 			.join('; ');
-		expect(last?.since, report).toBe(15);
+		expect(last?.since, report).toBe(LAST);
 		expect(distance(old.mirror, last.mirror), report).toBeGreaterThan(APART);
 		expect(distance(old.rough, last.rough), report).toBeGreaterThan(APART);
 		expect(
