@@ -828,13 +828,13 @@ export interface StandardValues extends MaterialOptions {
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
 	/**
-	 * How much of the light behind the surface passes through it, from 0 to 1, as three.js's
-	 * `MeshPhysicalMaterial.transmission`, for glass and clear water. It takes that share of the
-	 * diffuse light, and the reflections stay. Roughness blurs what shows through. Give it when you
-	 * create the material, even as 0, to change it later: a material created without it lets no
-	 * light through. Such a material draws after the opaque objects, with the blended ones, and
-	 * shows only opaque objects through it. It takes the `opaque` or `blend` alpha mode. The
-	 * default is 0.
+	 * How much of the light behind the surface passes through it, from 0 to 1, for glass and clear
+	 * water, as three.js's `MeshPhysicalMaterial.transmission`. That share of the diffuse light
+	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
+	 * Give it when you create the material, even as 0, to change it later. A material created
+	 * without it lets no light through. Such a material draws after the opaque objects, with the
+	 * blended ones, and only opaque objects show through it. It takes the `opaque` or `blend` alpha
+	 * mode. The default is 0.
 	 */
 	transmission?: number;
 	/**
@@ -1602,6 +1602,9 @@ export class Materials {
 		}
 		const opacity = options.opacity ?? 1;
 		const features = featureBits(options);
+		// The shaders that let light through load on first use: the download starts with the
+		// material, before any object draws with it.
+		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(

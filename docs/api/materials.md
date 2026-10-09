@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, and the specular and index of refraction values in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -59,9 +59,13 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `specularIntensity` | 0 to 1 | 1 | The strength of the non-metallic part's specular reflection, at every angle |
 | `specularColor` | A [color](#color), or linear components of 0 or more | White | Tints the non-metallic part's specular reflection head on |
 | `envIntensity` | 0 or more | 1 | The factor of the scene environment's light on the surface, as three.js's `envMapIntensity` |
+| `transmission` | 0 to 1 | 0 | How much of the light behind the surface passes through it, for glass and clear water. See "Transmission" |
+| `thickness` | 0 or more | 0 | The thickness of the volume under a surface that lets light through, in the mesh's own units |
+| `attenuationColor` | A [color](#color) | White | The color that white light takes inside the volume over `attenuationDistance` |
+| `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity` and `specularColor` have those of three.js's `MeshPhysicalMaterial`, as the next section explains. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor` and the four transmission values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
 ## Specular reflection and index of refraction
 
@@ -81,6 +85,45 @@ Light that the surface reflects does not reach its diffuse color, so a stronger 
 const paint = materials.standard({ color: '#8a1020', roughness: 0.25, ior: 1.8 });
 const cloth = materials.standard({ color: '#4a5a70', roughness: 0.8, specularIntensity: 0.3 });
 ```
+
+## Transmission
+
+A surface with `transmission` lets the light behind it through, as three.js's `MeshPhysicalMaterial` does. Use it for glass, ice, gems and clear water. The `blend` alpha mode only mixes the surface's color over what lies behind it. Light that passes through a surface bends, blurs and takes the color of the volume under it:
+
+| Value | What it does |
+| --- | --- |
+| `transmission` | How much light passes through. That share of the surface's diffuse light becomes the light from behind it, times the base color. The surface's reflections stay, so glass still shows its highlights and the environment |
+| `ior` | How far the light bends where it enters the volume. Glass is 1.5, water 1.33 |
+| `thickness` | How deep the volume is. The light leaves it this far along the bent direction, so a thicker volume shows what lies behind it farther away. 0 is a thin wall, such as a window pane, which bends nothing |
+| `roughness` | How much the light from behind blurs: none at 0, and very blurred at 1. An `ior` of 1 blurs nothing |
+| `attenuationColor`, `attenuationDistance` | The color of the volume. White light takes `attenuationColor` after `attenuationDistance` inside it, and a deeper color farther in. The default absorbs nothing |
+
+```ts
+// sketch.ts: a smooth glass ball, a frosted one, and a ball of blue tinted glass.
+const glass = materials.standard({ transmission: 1, roughness: 0, thickness: 1.4 });
+const frosted = materials.standard({ transmission: 1, roughness: 0.4, thickness: 1.4 });
+const tinted = materials.standard({
+  transmission: 1, roughness: 0.05, thickness: 1.4,
+  attenuationColor: '#3d9be0', attenuationDistance: 0.8,
+});
+```
+
+Give `transmission` when you create the material, even as 0, to change it later with `set`. The option picks the shader that samples what lies behind the surface. A material created without it lets no light through.
+
+### How it draws
+
+After the camera's view draws its opaque objects, the engine copies their colors into a texture with a chain of smaller, blurred copies. Surfaces that let light through then draw with the blended objects, farthest first. Each one samples the copy where its bent light ray leaves the volume, at a blur that its roughness picks. three.js draws its transmission the same way.
+
+- Only opaque objects show through. Another surface that lets light through, or a blended one, does not show through glass in front of it.
+- The volume is a model, not a ray through the real shape. A ball with `thickness` set to its diameter looks right through its middle. three.js uses the same model.
+- `thickness` is in the mesh's own units, and the object's scale multiplies it.
+- Such a surface takes the `opaque` or `blend` alpha mode. `mask` and `hash` throw E1217.
+- Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), have no copy. There the surface shows the environment's light along the bent ray.
+- `transmissionMap` and `thicknessMap` are not built yet. The values apply to the whole surface.
+
+### Cost of transmission
+
+Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
 
 ## Texture maps
 
@@ -157,6 +200,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
+| `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
@@ -307,7 +351,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness` and `aoMapIntensity` go from 0 to 1, and `emissiveIntensity` and `lightMapIntensity` take 0 or more. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

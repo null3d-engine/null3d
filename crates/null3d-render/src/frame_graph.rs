@@ -916,9 +916,15 @@ impl FrameGraph {
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
-    /// pass does.
+    /// pass does. The resolve pass resolves the scene color into the canvas alone, so the copy
+    /// for surfaces that let light through, which reads it before the transparent pass, needs the
+    /// final pass.
     fn final_runs(&self) -> bool {
-        !self.resolves || self.scales || self.grades || self.outline_draws()
+        !self.resolves
+            || self.scales
+            || self.grades
+            || self.outline_draws()
+            || self.transmission_declared
     }
 
     /// Says whether the render scale may drop below the whole canvas. Where the scene could
@@ -4031,6 +4037,142 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    /// Turns transmission on in `frames` and builds the copy's pipeline, as a builder's frames do:
+    /// the first frame asks for it, and a later one finds it built.
+    fn build_transmission(frames: &mut FrameGraph, pipelines: &mut PipelineCache) {
+        let mut list = DrawList::with_capacity(1024);
+        frames.set_transmission(true);
+        frames.request_pipelines(pipelines, 1);
+        assert!(
+            !frames.transmission_draws(),
+            "the copy waits for its pipeline"
+        );
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(pipelines, 2);
+        assert!(frames.transmission_draws());
+    }
+
+    #[test]
+    fn transmission_copies_the_opaque_color_between_the_camera_passes_only_while_it_is_used() {
+        // On the 8-bit path the final pass takes the scene color to the canvas while the copy
+        // draws, as the resolve pass resolves it into the canvas alone.
+        for format in [format::RGBA16_FLOAT, format::CANVAS] {
+            let canvas = (320, 180);
+            let mut frames = frame_graph(format, Antialias::Msaa, true, false);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let textures = frames.graph().plan().unwrap().textures().len();
+            let keys = pipelines.keys().len();
+
+            // Unused, the frame declares, asks for and binds nothing of the copy.
+            frames.set_transmission(false);
+            frames.request_pipelines(&mut pipelines, 1);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert_eq!(pipelines.keys().len(), keys);
+            assert!(!frames.transmission_copied());
+            assert_eq!(frames.transmission_texture(), IDS.transmission.blank);
+
+            build_transmission(&mut frames, &mut pipelines);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert!(frames.transmission_copied());
+            let with = steps(&frames);
+            let copy_step = with
+                .iter()
+                .position(|step| step == &[TRANSMISSION_PASS])
+                .expect("the copy draws in a render pass of its own");
+            assert_eq!(
+                (&with[copy_step - 1][0], &with[copy_step + 1][0]),
+                (&"Opaque".to_owned(), &"Transparent".to_owned()),
+                "the copy comes between the camera's opaque and transparent passes"
+            );
+            assert!(
+                with[copy_step + 1..]
+                    .iter()
+                    .flatten()
+                    .any(|name| name == "Final")
+            );
+            // Other views keep one render pass for their opaque and transparent passes.
+            assert!(with.contains(&vec!["Opaque1".to_owned(), "Transparent1".to_owned()]));
+            // The copy's target has a whole chain of mip levels, and frame groups bind it.
+            let plan = frames.graph().plan().unwrap();
+            assert_eq!(plan.textures().len(), textures + 1);
+            let copy = frames.transmission_texture();
+            assert_ne!(copy, IDS.transmission.blank);
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            assert!(
+                operands(&list, Op::CreateBindGroup)
+                    .iter()
+                    .any(|group| group[0] == IDS.transmission.group
+                        && group[1] == bind_layout::VIEW_COPY)
+            );
+
+            // The opaque pass resolves the multisampled scene color, the copy draws it into the
+            // first level, and the frame makes the other levels before the transparent pass.
+            list.clear();
+            frames
+                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let commands: Vec<_> = null3d_gpu::drawlist::decode(list.words())
+                .map(Result::unwrap)
+                .filter(|c| matches!(c.op, Op::BeginRenderPass | Op::GenerateMipmaps))
+                .map(|c| (c.op, c.operands.to_vec()))
+                .collect();
+            let made = commands
+                .iter()
+                .position(|(op, _)| *op == Op::GenerateMipmaps)
+                .expect("the frame makes the copy's levels");
+            assert_eq!(commands[made].1, [copy, 0]);
+            let (_, into_copy) = &commands[made - 1];
+            assert_eq!(
+                into_copy[1],
+                null3d_gpu::drawlist::NO_TARGET,
+                "the copy draws one sample into the first level"
+            );
+            let (_, opaque) = &commands[made - 2];
+            assert_ne!(
+                opaque[1],
+                null3d_gpu::drawlist::NO_TARGET,
+                "the camera's opaque pass resolves the scene color that the copy reads"
+            );
+            assert_eq!(
+                commands[made + 1..]
+                    .iter()
+                    .filter(|(op, _)| *op == Op::GenerateMipmaps)
+                    .count(),
+                0
+            );
+
+            // Unused again, the copy and its target are gone.
+            frames.set_transmission(false);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+            assert_eq!(frames.transmission_texture(), IDS.transmission.blank);
         }
     }
 

@@ -36,7 +36,9 @@
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
-// view into in every frame. `--prepass` turns the depth prepass on, in any scene.
+// view into in every frame. `--transmission` puts clear water that lets light through under S1,
+// which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
+// frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -73,6 +75,7 @@
 //   bun run bench:allocation --sky --gpu webgl2
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
+//   bun run bench:allocation --transmission --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
@@ -338,10 +341,12 @@ async function main(): Promise<void> {
 		if (sky && scene !== 's1') throw new Error('--sky and --sky-environment draw behind S1 only');
 		const reflection = args.includes('--reflection') ? '&reflection' : '';
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
+		const transmission = args.includes('--transmission') ? '&transmission' : '';
+		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${statsQuery}`;
+		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
