@@ -504,4 +504,5 @@ The renderers draw the same commands with the same shaders. `bun run bench:gpu-c
 
 - `DOWNLOADS` in `tools/lib/size-report.ts` holds each thread mode on each GPU path, and `drawingParts` names the files that each thread that draws loads on demand.
 - A file that loads on demand must not keep code of the start's files alive through a development check. It reads the development constant itself.
+- The offline file list (`null3d-files.json`, D-102) puts both paths' renderers and the shared file in `start`. So a cached game also starts offline on the path that its first visit did not draw with. A unit test of `offline.ts` checks the list, and `bun run test:packages` starts the fresh project offline on both paths. A page that switches paths, such as a benchmark page, runs each path in a load of its own. It downloads each path's renderers the first time it draws with that path.
 - An engine test checks that a page downloads its own GPU path's renderers and not the other path's. It is the test "a page that uses no feature that loads on first use downloads none of their files".
