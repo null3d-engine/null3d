@@ -1,6 +1,6 @@
 // The demos take the user's input at any moment. Playwright drives the mouse over two live demos,
 // and the probe sketch reports where each demo's camera and moving objects are, with the sketch time
-// of the frame that answered. A hover leads the math demo's light and leaves its camera alone. In
+// of the frame that answered. A hover leads the math demo's lamp and leaves its camera alone. In
 // the instances demo, a drag hands the scripted camera over to the user with no jump, the script
 // then stops moving it, and the wheel zooms.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
@@ -19,7 +19,9 @@ async function open(page: Page, demo: string): Promise<string[]> {
 		if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
 			errors.push(message.text());
 	});
-	await page.goto(`demo-probe.html?demo=${demo}`);
+	// The interaction does not depend on the look. The Low preset draws the light version of each
+	// demo, as on a phone, which CI's software GPU draws several times faster than the full look.
+	await page.goto(`demo-probe.html?demo=${demo}&preset=low`);
 	const result = await pageResult<{ error?: string }>(page, 30_000);
 	expect(result.error).toBeUndefined();
 	return errors;
@@ -53,10 +55,10 @@ async function probeAt(page: Page, time: number): Promise<DemoProbe> {
 	return report;
 }
 
-/** The math demo's light: the first dynamic mesh it makes. */
+/** The math demo's lamp: the first dynamic mesh it makes, the lamp's bulb. */
 const lightX = (report: DemoProbe) => (report.objects[0] as number[])[0] as number;
 
-test('a hover leads the math demo light, and leaves its camera alone', async ({ page }) => {
+test('a hover leads the math demo lamp, and leaves its camera alone', async ({ page }) => {
 	const errors = await open(page, 'math');
 	const start = await probe(page);
 	// The left of the canvas points over the left of the floor, and the right over the right.
@@ -89,10 +91,10 @@ test('a drag takes the instances demo camera from its script with no jump, and t
 	page,
 }) => {
 	const errors = await open(page, 'instances');
-	// The script circles the camera 34 m from the middle and 20 m up, at 0.2 radians a second.
-	const radius = Math.hypot(34, 20);
-	const scriptSpeed = 0.2 * 34;
-	// Half a second of sketch time moves the scripted camera about 3.4 m.
+	// The script circles the camera 40 m from the middle and 11 m up, at 0.1 radians a second.
+	const radius = Math.hypot(40, 11);
+	const scriptSpeed = 0.1 * 40;
+	// Half a second of sketch time moves the scripted camera about 2 m.
 	const first = await probe(page);
 	const before = await probeAt(page, first.time + 0.5);
 	expect(apart(first.camera, before.camera)).toBeGreaterThan(1);
@@ -123,13 +125,13 @@ test('a drag takes the instances demo camera from its script with no jump, and t
 	const taken = last;
 	// The camera stays on the script's circle: a jump to another pose would leave it.
 	expect(Math.hypot(...taken.camera)).toBeCloseTo(radius, 1);
-	expect(taken.camera[1]).toBeCloseTo(20, 1);
+	expect(taken.camera[1]).toBeCloseTo(11, 1);
 	// From the script's place at the press: the script's motion until the release, the drag's turn
 	// of 6 pixels (a turn of 2π for the canvas's 360 pixels of height), and one frame to spare.
-	const dragTurn = ((2 * Math.PI * 6) / 360) * 34;
+	const dragTurn = ((2 * Math.PI * 6) / 360) * 40;
 	const allowed = scriptSpeed * (released.time - pressed.time + 0.25) + dragTurn;
 	expect(apart(taken.camera, pressed.camera)).toBeLessThan(allowed);
-	// The script, which would move the camera 7 m in a second, no longer moves it.
+	// The script, which would move the camera 4 m in a second, no longer moves it.
 	const later = await probeAt(page, taken.time + 1);
 	expect(apart(later.camera, taken.camera)).toBeLessThan(0.05);
 
