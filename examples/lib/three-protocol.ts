@@ -56,7 +56,16 @@ export type ToThree =
 export type FromThree =
 	| { type: 'started'; renderer: string; version: string; gpuTimer: boolean }
 	| { type: 'failed'; message: string }
-	| { type: 'measured'; id: number; fps: number; cpuMs: number | null; frames: number }
+	| {
+			type: 'measured';
+			id: number;
+			fps: number;
+			cpuMs: number | null;
+			/** The scene's own code and the render calls, the two parts of `cpuMs`. */
+			codeMs: number | null;
+			renderMs: number | null;
+			frames: number;
+	  }
 	/** The frame rate, a few times a second, which the panel's header shows. */
 	| { type: 'rate'; frames: number; fps: number }
 	| { type: 'figures'; figures: ThreeFigures }

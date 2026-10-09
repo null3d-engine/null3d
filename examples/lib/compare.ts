@@ -64,6 +64,11 @@ export interface ComparisonOptions {
 	/** Draw one frame at this simulation time and keep it, for image tests. */
 	hold?: number;
 	/**
+	 * The most the count reaches, in place of the device class's ramp maximum. Both engines make
+	 * room for this many at their start, so a measurement at a fixed count can hold no more.
+	 */
+	maxCount?: number;
+	/**
 	 * The stats panel: false leaves it off, and 'open' starts it open. It starts collapsed by
 	 * default, as on every demo.
 	 */
@@ -76,6 +81,8 @@ export interface ComparisonMeasurement {
 	fps: number;
 	/** CPU time per frame on the engine's busiest thread, in milliseconds. */
 	cpuMs: number | null;
+	/** The engine's own figures, for a closer look: per thread and phase, draws, uploads, memory. */
+	detail?: Record<string, unknown>;
 }
 
 /** A comparison that runs, with one engine. */
@@ -183,7 +190,8 @@ export const FASTER_THREE_RENDERER: ThreeRenderer = 'webgl';
 export async function startComparison(options: ComparisonOptions): Promise<ComparisonRun> {
 	const { canvas, comparison } = options;
 	const cls = thisDeviceClass();
-	const plan = comparison.ramps[cls];
+	const classPlan = comparison.ramps[cls];
+	const plan = options.maxCount ? { ...classPlan, max: options.maxCount } : classPlan;
 	const count = Math.min(plan.max, options.count ?? plan.start);
 	const effects = options.effects ?? allEffects();
 	const pixelRatio = renderPixelRatio(cls, devicePixelRatio);
@@ -249,7 +257,30 @@ async function startNull3d(
 		},
 		async measure(seconds) {
 			const metrics = await engine.measure(seconds);
-			return { fps: metrics.presentedFps, cpuMs: metrics.cpuMs.mean };
+			const threads = Object.fromEntries(
+				Object.entries(metrics.threads).map(([name, { busyMs, phases }]) => [
+					name,
+					{
+						busyMs: busyMs.mean,
+						phases: Object.fromEntries(
+							Object.entries(phases).map(([phase, ms]) => [phase, ms?.mean]),
+						),
+					},
+				]),
+			);
+			return {
+				fps: metrics.presentedFps,
+				cpuMs: metrics.cpuMs.mean,
+				detail: {
+					threads,
+					cpuMsAllThreads: metrics.cpuMsAllThreads.mean,
+					gpuMs: metrics.gpuMs?.mean ?? null,
+					drawCalls: metrics.drawCalls.mean,
+					uploadBytes: metrics.uploadBytes.mean,
+					wasmBytes: metrics.memory.wasmBytes,
+					jsHeap: metrics.memory.jsHeap,
+				},
+			};
 		},
 		async measureMemory() {
 			// A short measurement gives the size of the engine's memory, which its threads share.
@@ -331,7 +362,11 @@ async function startThree(
 				meter?.figures(data.figures);
 				return;
 			case 'measured':
-				measurements.get(data.id)?.({ fps: data.fps, cpuMs: data.cpuMs });
+				measurements.get(data.id)?.({
+					fps: data.fps,
+					cpuMs: data.cpuMs,
+					detail: { codeMs: data.codeMs, renderMs: data.renderMs },
+				});
 				measurements.delete(data.id);
 				return;
 		}

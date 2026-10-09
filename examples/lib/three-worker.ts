@@ -481,6 +481,8 @@ class ThreeRuntime {
 				frames: means[0] as number,
 				fps: means[1] as number,
 				cpuMs: means[0] ? (means[2] as number) : null,
+				codeMs: means[0] ? (means[3] as number) : null,
+				renderMs: means[0] ? (means[4] as number) : null,
 			});
 		}, seconds * 1000);
 	}
