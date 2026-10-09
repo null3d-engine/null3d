@@ -11,6 +11,7 @@
 // - three.js on the renderer that the GPU path names, in one worker with an OffscreenCanvas.
 
 import { createEngine, type Engine } from '@null3d/engine';
+import { type PageMemory, PageMemorySampler } from '@null3d/engine/stats';
 import type { Comparison } from '../compare/comparisons';
 import { allEffects, type Effects, effectsToText } from './compare-scene';
 import {
@@ -93,6 +94,11 @@ export interface ComparisonRun {
 	setCount(count: number): void;
 	/** Measures the next `seconds` of frames. */
 	measure(seconds: number): Promise<ComparisonMeasurement>;
+	/**
+	 * Measures the memory of the whole page and its workers once, with null3D's shared memory
+	 * counted once. It gives null where the browser offers no measurement or refuses it.
+	 */
+	measureMemory(): Promise<PageMemory | null>;
 	/** Opens or closes the stats panel's card; the ramp runs with it closed. */
 	collapseStats(collapsed: boolean): void;
 	/** The held frame, RGBA8 rows from the top, for a run started with `hold`. */
@@ -118,6 +124,28 @@ export function measureDisplayHz(frames = 40): Promise<number> {
 			resolve(Math.round(1000 / median));
 		};
 		requestAnimationFrame(tick);
+	});
+}
+
+/** One measurement of the whole page's memory, with a memory of `sharedBytes` counted once. */
+function pageMemoryOnce(sharedBytes: number): Promise<PageMemory | null> {
+	if (!PageMemorySampler.supported) return Promise.resolve(null);
+	return new Promise((resolve) => {
+		const done = (memory: PageMemory | null) => {
+			clearInterval(refused);
+			sampler.stop();
+			resolve(memory);
+		};
+		const sampler = new PageMemorySampler(
+			() => sharedBytes,
+			() => done(sampler.page),
+		);
+		// The sampler hears of a refusal, or of a browser that never answers, without a call, so the
+		// wait looks for either.
+		const refused = setInterval(() => {
+			if (sampler.failure || !sampler.page) done(null);
+		}, 1000);
+		sampler.start();
 	});
 }
 
@@ -222,6 +250,11 @@ async function startNull3d(
 		async measure(seconds) {
 			const metrics = await engine.measure(seconds);
 			return { fps: metrics.presentedFps, cpuMs: metrics.cpuMs.mean };
+		},
+		async measureMemory() {
+			// A short measurement gives the size of the engine's memory, which its threads share.
+			const { memory } = await engine.measure(0.25);
+			return pageMemoryOnce(memory.wasmBytes ?? 0);
 		},
 		collapseStats(collapsed) {
 			if (stats !== false) engine.stats({ collapsed });
@@ -340,6 +373,8 @@ async function startThree(
 				send({ type: 'measure', id, seconds });
 			});
 		},
+		// three.js shares no memory between threads.
+		measureMemory: () => pageMemoryOnce(0),
 		collapseStats(collapsed) {
 			meter?.setCollapsed(collapsed);
 		},

@@ -40,3 +40,27 @@ for (const engine of ['null3d', 'threejs'] as const)
 			expect(ramp.held).toBeLessThanOrEqual(400);
 			expect(errors).toEqual([]);
 		});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	test(`Factory measures ${engine}'s frames and the whole page's memory at a fixed count`, async ({
+		page,
+	}) => {
+		await page.goto(
+			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&measure=400&seconds=1`,
+		);
+		const result = await pageResult<{
+			error?: string;
+			measured: {
+				count: number;
+				fps: number;
+				memory: { bytes: number | null; browserBytes: number | null } | null;
+			};
+		}>(page, 100_000);
+		expect(result.error).toBeUndefined();
+		const { measured } = result;
+		expect(measured.count).toBe(400);
+		expect(measured.fps).toBeGreaterThan(0);
+		// The test pages are cross-origin isolated, so Chrome measures the whole page's memory.
+		expect(measured.memory?.bytes).toBeGreaterThan(0);
+		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
+	});

@@ -3,8 +3,9 @@
 // held frame at its hold count and the page publishes the frame, as the image tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
-// WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?size=` sets the
-// canvas's size in CSS pixels.
+// WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
+// runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
+// and then the whole page's memory. `?size=` sets the canvas's size in CSS pixels.
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { run, toBase64 } from './lib/result';
@@ -28,13 +29,14 @@ run('compare', async () => {
 	const gpu = params.get('gpu') === 'webgl2' ? 'webgl2' : 'webgpu';
 	const hold = params.has('hold') ? Number(params.get('hold')) : undefined;
 	const full = params.get('ramp') === 'full';
+	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
 	// The image tests and the short ramp draw three.js with the renderer of the tier; the full ramp
-	// takes the faster one unless the address names one.
+	// and a measurement take the faster one unless the address names one.
 	const named = params.get('renderer');
 	const threeRenderer =
 		named === 'webgpu' || named === 'webgl'
 			? named
-			: full
+			: full || fixed !== undefined
 				? undefined
 				: gpu === 'webgpu'
 					? 'webgpu'
@@ -44,7 +46,7 @@ run('compare', async () => {
 		comparison,
 		engine,
 		gpu,
-		count: hold === undefined ? SHORT_RAMP.start : comparison.hold.count,
+		count: hold === undefined ? (fixed ?? SHORT_RAMP.start) : comparison.hold.count,
 		hold,
 		threeRenderer,
 		stats: hold === undefined,
@@ -54,6 +56,14 @@ run('compare', async () => {
 		const { width, height, pixels } = started.held;
 		await started.destroy();
 		return { ...report, width, height, pixels: toBase64(pixels) };
+	}
+	if (fixed !== undefined) {
+		started.collapseStats(true);
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+		const frames = await started.measure(Number(params.get('seconds') ?? 5));
+		const memory = await started.measureMemory();
+		await started.destroy();
+		return { ...report, measured: { count: started.count, ...frames, memory } };
 	}
 	const ramp = await rampComparison(
 		started,
