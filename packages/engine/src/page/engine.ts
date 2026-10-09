@@ -29,7 +29,7 @@ import {
 	type QualityPreset,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule, preloadShaders } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -1566,12 +1566,12 @@ async function startEngine(
 			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
-		// The GPU path and the device's fixed bits choose the shader file that the renderer loads
-		// first, so the thread that draws starts its download now, while the core downloads.
+		// The GPU path and the device's fixed bits choose the renderers and the shader file that the
+		// thread that draws loads first, so it starts their downloads now, while the core downloads.
 		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
 		if (renderThread === 'render-worker') threads?.render?.worker.postMessage(shaderPreload);
 		else if (renderThread === 'sketch-worker') threads?.sketch?.worker.postMessage(shaderPreload);
-		else if (drawModule) preloadShaders(drawModule, tier, device.shaderBits);
+		else if (drawModule) preloadDeviceFiles(drawModule, tier, device.shaderBits);
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;

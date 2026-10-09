@@ -8,9 +8,10 @@
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the
-// page must start the threaded engine again with the server stopped. Then the project builds a page
-// of its own layout around a copy of this repository's examples folder, as a website that holds the
-// repository as a submodule does, and two demos must start from that build. Run
+// page must start the threaded engine again with the server stopped, on both GPU paths. Then the
+// project builds a page of its own layout around a copy of this repository's examples folder, as a
+// website that holds the repository as a submodule does, and two demos must start from that build.
+// Run
 // `bun run build` first, for the WebAssembly files. Run from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
@@ -102,7 +103,7 @@ type Page = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPag
 
 /** The page's globals that the checks read, typed, as this file's Node settings lack them. */
 type PageGlobals = {
-	document: { documentElement: { dataset: { start?: string; demo?: string } } };
+	document: { documentElement: { dataset: { start?: string; demo?: string; tier?: string } } };
 	crossOriginIsolated: boolean;
 	navigator: { serviceWorker: { ready: Promise<unknown> } };
 	caches: {
@@ -137,7 +138,9 @@ function serveBuild(dist: string, strict = true) {
  * Waits for the page's start, and returns how it ended: the build that started, or the error.
  * Functions, not text: Playwright evaluates text with eval, which the strict policy blocks.
  */
-async function startOf(page: Page): Promise<{ start: string | undefined; isolated: boolean }> {
+async function startOf(
+	page: Page,
+): Promise<{ start: string | undefined; isolated: boolean; tier: string | undefined }> {
 	const start = await page
 		.waitForFunction(
 			() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
@@ -148,7 +151,10 @@ async function startOf(page: Page): Promise<{ start: string | undefined; isolate
 	const isolated = await page.evaluate(
 		() => (globalThis as unknown as PageGlobals).crossOriginIsolated,
 	);
-	return { start, isolated };
+	const tier = await page.evaluate(
+		() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.tier,
+	);
+	return { start, isolated, tier };
 }
 
 /**
@@ -182,7 +188,8 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
  * visit. Then the server stops, and the page must load again from the cache alone: isolated, with
  * the threaded engine and the sprite shaders that it preloads, and with no failed request but the
  * worker's own check of the list. The cache must hold the page, the start's files and the sprite
- * feature's, and no other feature's.
+ * feature's, and no other feature's. The start holds the renderers of both GPU paths, and the
+ * page must also start offline on the path that its first visit did not draw with.
  */
 async function playsOffline(dist: string): Promise<void> {
 	console.log('\nPlay offline after the first visit');
@@ -190,6 +197,9 @@ async function playsOffline(dist: string): Promise<void> {
 	const sprites = list.features.sprites ?? [];
 	if (sprites.length === 0 || list.start.some((file) => /shaders-sprites-/.test(file)))
 		throw new Error(`${FILES_LIST} does not list the sprite shaders as a feature of their own`);
+	for (const path of ['webgpu', 'webgl2'])
+		if (!list.start.some((file) => new RegExp(`/${path}-renderers-[\\w-]+\\.js$`).test(file)))
+			throw new Error(`${FILES_LIST} leaves the ${path} renderers out of the start`);
 	const server = serveBuild(dist);
 	const browser = await launchBrowser(defaultEnvironment());
 	try {
@@ -222,6 +232,19 @@ async function playsOffline(dist: string): Promise<void> {
 			throw new Error(
 				`offline, the page did not start the threaded engine from the cache alone: start ${offline.start}, isolated ${offline.isolated}, failed requests ${JSON.stringify(failed)}`,
 			);
+		// The first visit drew with one GPU path. The cache must also start the other, which a
+		// device that changes its GPU or browser between visits takes.
+		if (first.tier === 'webgl2') {
+			console.log('  this browser has no WebGPU, so the offline start on WebGPU is not checked');
+			return;
+		}
+		await page.goto(`${server.url.href}?path=webgl2`);
+		const other = await startOf(page);
+		if (other.start !== 'threaded' || other.tier !== 'webgl2' || failed.length > 0)
+			throw new Error(
+				`offline, the page did not start on the GPU path that its first visit did not draw with: start ${other.start}, path ${other.tier}, failed requests ${JSON.stringify(failed)}`,
+			);
+		console.log(`  started offline on ${first.tier} and on webgl2`);
 	} finally {
 		await browser.close();
 		server.stop(true);
