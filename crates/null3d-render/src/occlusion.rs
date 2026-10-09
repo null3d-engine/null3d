@@ -11,11 +11,11 @@
 //!
 //! A mesh's blocker, its welded corners and its edges, is built the first time an object with
 //! that mesh blocks the view, and kept, as meshes never change. The blocker splits into its
-//! connected parts, and each part takes its place in the frame by its own bounding sphere, so a
-//! mesh that merges parts spread far apart blocks with its near parts first. A blocker of one
-//! part takes the object's bounding sphere, as it costs nothing more. A mesh from a model file
-//! can come with a simplified blocker of its own, which the asset tool made and checked to lie
-//! inside the mesh; objects with that mesh draw it instead.
+//! connected parts, and from the next frame on each part takes its place by its own bounding
+//! sphere, so a mesh that merges parts spread far apart blocks with its near parts first. A
+//! blocker of one part takes the object's bounding sphere, as it costs nothing more. A mesh
+//! from a model file can come with a simplified blocker of its own, which the asset tool made
+//! and checked to lie inside the mesh; objects with that mesh draw it instead.
 
 use std::collections::TryReserveError;
 
@@ -36,6 +36,8 @@ const MIN_BLOCKER_PIXELS: f32 = 2.0;
 const UNBUILT: u32 = 0;
 /// A mesh that never blocks: it has no triangles or too many.
 const NOT_BLOCKER: u32 = u32::MAX;
+/// The part of a frame candidate whose mesh's blocker was not built yet.
+const UNBUILT_PART: u32 = u32::MAX;
 
 /// The material features whose surfaces leave gaps or skip the depth buffer.
 const SEE_THROUGH: u32 =
@@ -109,7 +111,7 @@ impl Occluders {
         }
         let [width, height, ..] = frame.uniform.target_size;
         self.buffer.resize(width as u32, height as u32)?;
-        self.pick(input, frame, offsets, meshes, materials)?;
+        self.pick(input, frame, offsets, materials)?;
         if self.candidates.is_empty() {
             return Ok(None);
         }
@@ -129,29 +131,41 @@ impl Occluders {
             &mut slots[..n],
         );
         self.blockers.clear();
-        if self.blockers.capacity() < self.candidates.len() {
-            self.blockers
-                .try_reserve(self.candidates.len() - self.blockers.len())?;
-        }
         let (scene, parity) = (input.scene, input.parity());
         let world = scene.world(parity);
         let view_proj = &frame.uniform.view_proj;
         let mut triangles = 0;
-        for &candidate in &self.candidates {
-            let [slot, part] = self.picked[candidate as usize];
+        'frame: for k in 0..n {
+            let [slot, part] = self.picked[self.candidates[k] as usize];
             let s = slot as usize;
-            let count = self.meshes[part as usize].triangle_count();
-            if triangles + count > MAX_FRAME_TRIANGLES {
-                break;
-            }
-            triangles += count;
+            // A mesh whose blocker builds now draws all its parts in this frame.
+            let group;
+            let parts = if part == UNBUILT_PART {
+                let Some(built) = self.parts_of(scene.meshes()[s], meshes)? else {
+                    continue;
+                };
+                group = built;
+                &self.parts[group][..]
+            } else {
+                std::slice::from_ref(&part)
+            };
+            self.blockers.try_reserve(parts.len())?;
             let [x, y, z, _] = offsets[scene.cells()[s] as usize];
+            let clip = clip_matrix(view_proj, world.matrix(s), [x, y, z]);
             let material = scene.materials()[s];
-            self.blockers.push(Blocker {
-                mesh: part,
-                clip: clip_matrix(view_proj, world.matrix(s), [x, y, z]),
-                double_sided: materials.features(material - 1) & feature::DOUBLE_SIDED != 0,
-            });
+            let double_sided = materials.features(material - 1) & feature::DOUBLE_SIDED != 0;
+            for &part in parts {
+                let count = self.meshes[part as usize].triangle_count();
+                if triangles + count > MAX_FRAME_TRIANGLES {
+                    break 'frame;
+                }
+                triangles += count;
+                self.blockers.push(Blocker {
+                    mesh: part,
+                    clip,
+                    double_sided,
+                });
+            }
         }
         self.buffer
             .draw(input.jobs, view_proj, &self.meshes, &self.blockers)?;
@@ -162,13 +176,13 @@ impl Occluders {
     /// distance along the view to its bounding sphere's nearest point. An object that merges
     /// parts spread over a large space, such as a city's buildings of one material, would
     /// otherwise count as near by its farthest part, and fill the budget before the objects
-    /// that stand nearer.
+    /// that stand nearer. An object whose mesh's blocker was not built yet counts whole, by its
+    /// own sphere, which lies no farther than any of its parts.
     fn pick(
         &mut self,
         input: &FrameInput<'_>,
         frame: &ViewFrame,
         offsets: &[[f32; 4]],
-        meshes: &MeshStorage,
         materials: &MaterialTable,
     ) -> Result<(), TryReserveError> {
         let (scene, parity) = (input.scene, input.parity());
@@ -221,8 +235,13 @@ impl Occluders {
             let Some(distance) = nearest(cx, cy, cz, radius) else {
                 continue;
             };
-            let Some(group) = self.parts_of(scene.meshes()[s], meshes)? else {
-                continue;
+            let group = match self.by_mesh.get(scene.meshes()[s] as usize) {
+                None | Some(&UNBUILT) => {
+                    self.push_candidate(distance, s as u32, UNBUILT_PART)?;
+                    continue;
+                }
+                Some(&NOT_BLOCKER) => continue,
+                Some(&index) => index as usize - 1,
             };
             // A blocker of one part takes the object's own sphere.
             if let [part] = self.parts[group][..] {

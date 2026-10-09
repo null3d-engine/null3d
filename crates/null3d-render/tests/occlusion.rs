@@ -213,9 +213,10 @@ fn merged_boxes(count: u32, columns: u32, size: f64, centre: [f32; 3]) -> Geomet
 fn a_merged_mesh_blocks_with_its_near_parts_first() {
     // Five objects of one mesh whose boxes stand far behind everything, spread so wide that each
     // object's sphere holds the camera. Their 1,700 boxes take more triangles than a frame's
-    // budget. The wall in front of the world's objects must still draw: by each part's own
-    // sphere it is the nearest blocker, where by the objects' spheres it would wait behind them
-    // and miss the budget.
+    // budget. Their blockers build in the first frame, which draws them whole. From the next
+    // frame on, the wall in front of the world's objects must draw: by each part's own sphere it
+    // is the nearest blocker, where by the objects' spheres it would wait behind them and miss
+    // the budget.
     let (mut world, _) = walled();
     world
         .scene
