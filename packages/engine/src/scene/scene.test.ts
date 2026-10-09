@@ -537,6 +537,26 @@ describe('development checks', () => {
 		camera.destroy();
 		expect(thrown(() => camera.setFov(40)).code).toBe('E1101');
 		expect(thrown(() => camera.setNearFar(0.5, 50)).code).toBe('E1101');
+		expect(thrown(() => camera.setFocalLength(50)).code).toBe('E1101');
+	});
+
+	test("a focal length sets the field of view of a full-frame sensor, as three.js's setFocalLength does on a 24 mm film", () => {
+		const { scene } = fakeCore();
+		const camera = scene.createPerspectiveCamera();
+		// three.js's film gauge covers the canvas's longer side; on a square canvas it is the height.
+		const theirs = new ThreePerspectiveCamera(50, 1);
+		theirs.filmGauge = 24;
+		for (const millimetres of [14, 24, 50, 85, 200]) {
+			camera.setFocalLength(millimetres);
+			theirs.setFocalLength(millimetres);
+			expect(camera.fov).toBeCloseTo(theirs.fov, 9);
+			expect(camera.focalLength).toBeCloseTo(millimetres, 9);
+		}
+		// A 50 mm lens sees 27 degrees up and down.
+		camera.setFocalLength(50);
+		expect(camera.fov).toBeCloseTo(26.99, 2);
+		expect(thrown(() => camera.setFocalLength(0)).code).toBe('E1108');
+		expect(thrown(() => camera.setFocalLength(Number.NaN)).code).toBe('E1203');
 	});
 
 	test('a parent must live, belong to this engine and differ from the object', () => {
