@@ -211,7 +211,14 @@ export type Check =
 	| { kind: 'stats'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
+	| {
+			kind: 'bench';
+			tier: Tier;
+			scene: BenchScene;
+			page: BenchPageKind;
+			jobs?: number;
+			reflection?: ReflectionSize;
+	  }
 	/** The visual page of a benchmark scene: its shadow figures and frames, on one GPU path. */
 	| { kind: 'visual'; tier: Tier; scene: BenchScene }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
@@ -224,6 +231,10 @@ export type Check =
 	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
+	| { kind: 'sky-map'; tier: Tier }
+	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
+	| { kind: 'sky-refresh'; tier: Tier }
 	/**
 	 * The room light page: an environment asked for during play, the built-in room or an HDR file,
 	 * whose every frame must show its light; it times the load.
@@ -366,7 +377,12 @@ export interface BenchSwitches {
 	jobs?: number;
 	/** True makes a null3D page capture a PNG file of its frame after the measured seconds. */
 	capture?: boolean;
+	/** S1's water with a reflection pass of this share of the render size, or undefined for none. */
+	reflection?: ReflectionSize;
 }
+
+/** The reflection pass's sizes that S1's `reflection` switch takes. */
+export type ReflectionSize = 'quarter' | 'half' | 'full';
 
 /**
  * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
@@ -376,11 +392,11 @@ export interface BenchSwitches {
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	{ seconds, n, jobs, capture }: BenchSwitches = {},
+	{ seconds, n, jobs, capture, reflection }: BenchSwitches = {},
 	scene: BenchScene = 's1',
 ): PlanItem<Check> {
 	const switches = [
-		...Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
+		...Object.entries({ seconds, n, jobs, reflection }).flatMap(([name, value]) =>
 			value === undefined ? [] : [`${name}=${value}`],
 		),
 		...(capture ? ['capture'] : []),
@@ -390,7 +406,14 @@ export function benchItem(
 		id,
 		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
-		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
+		check: {
+			kind: 'bench',
+			tier,
+			scene,
+			page,
+			...(jobs !== undefined && { jobs }),
+			...(reflection && { reflection }),
+		},
 	};
 }
 
@@ -1036,6 +1059,65 @@ export function environmentPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** The GPU paths of the sky plan's pages, with the tier each draws on. */
+const SKY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a sky map's refresh costs on each GPU path, for D-118: each of its stages, timed from its
+ * call until the GPU has finished it, and the frames from a sun move until the sky's light follows
+ * it. The capabilities page comes first, so a device without WebGPU skips those pages.
+ */
+export function skyPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-map-cost-${path}`,
+				'sky-map-cost',
+				{ kind: 'sky-map', tier },
+				{ switches: [`gpu=${path}`, 'runs=8'], timeoutSeconds: 240 },
+			),
+		),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-refresh-${path}`,
+				'sky-refresh',
+				{ kind: 'sky-refresh', tier },
+				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 90 },
+			),
+		),
+	];
+}
+
+/** The reflection plan's sizes of S1's reflection pass, with none first. */
+const REFLECTION_SIZES = [undefined, 'quarter', 'half'] as const;
+/** The reflection plan's rounds, and each benchmark page's warm-up and measured seconds. */
+const REFLECTION_ROUNDS = 3;
+const REFLECTION_SECONDS = 10;
+
+/**
+ * What a reflection pass costs, for D-120: S1 with water under the swarm, whose reflection pass
+ * draws at a quarter and at half the render size, against S1 with no reflection, on each of
+ * null3D's GPU paths. The sizes take turns round by round in one session, so a device that slows
+ * as it warms slows each size alike. A device without WebGPU skips those pages.
+ */
+export function reflectionPlan(): PlanItem<Check>[] {
+	return Array.from({ length: REFLECTION_ROUNDS }, (_, round) =>
+		(['null3d-webgpu', 'null3d-webgl2'] as const).flatMap((page) =>
+			REFLECTION_SIZES.map((reflection) =>
+				benchItem(`reflection-${page}-${reflection ?? 'none'}-${round + 1}`, page, {
+					seconds: REFLECTION_SECONDS,
+					reflection,
+				}),
+			),
+		),
+	).flat();
+}
+
 /** The environments that the load plan asks for: the built-in room, and HDR files of each kind. */
 const LOAD_SOURCES = [
 	['room', undefined],
@@ -1456,6 +1538,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
+	sky: skyPlan,
+	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
 	'occlusion-s6': occlusionS6Plan,
@@ -1494,6 +1578,64 @@ function environmentLoadProblems(result: ItemResult): string[] {
 			? []
 			: ["the environment's light did not brighten the sphere"]),
 	];
+}
+
+/** What the sky map cost page reports: each stage's times over the refreshes, by stage. */
+interface SkyMapResult {
+	fill: number;
+	stages: number[][];
+	gpuStages: number[][];
+	errors: string[];
+}
+
+/** The median of some times, or 0 for none. */
+const medianOf = (times: readonly number[]) =>
+	[...times].sort((a, b) => a - b)[Math.floor(times.length / 2)] ?? 0;
+
+/** The sky map cost page's figures, as lines of the report, and its GPU errors. */
+function skyMapReport(result: SkyMapResult): { lines: string[]; problems: string[] } {
+	const stages = (times: readonly number[][]) =>
+		times.map((t) => medianOf(t).toFixed(2)).join(', ');
+	const lines = [
+		`the whole map at once ${result.fill.toFixed(2)} ms`,
+		`each stage's median ${stages(result.stages)} ms`,
+		`each stage's longest ${result.stages.map((t) => Math.max(...t).toFixed(2)).join(', ')} ms`,
+		...(result.gpuStages.some((t) => t.length > 0)
+			? [`each stage's median by timer queries ${stages(result.gpuStages)} ms`]
+			: []),
+	];
+	return { lines, problems: result.errors.map((error) => `GPU error: ${error}`) };
+}
+
+/** What the sky refresh page reports: each capture's frames since the move and its two colors. */
+interface SkyRefreshResult {
+	frames: { since: number; mirror: number[]; rough: number[] }[];
+}
+
+/** How far a color may stray from the new sky's, in levels of 255, to count as the new light. */
+const SKY_NEAR = 4;
+
+/**
+ * The frames from a sun move until both spheres show the new sky's light: the first capture after
+ * the move from which every later capture matches the last one.
+ */
+function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: string[] } {
+	const after = result.frames.filter((frame) => frame.since >= 0);
+	const last = after.at(-1);
+	if (!last) return { line: '', problems: ['no capture after the sun moved'] };
+	const near = (a: number[], b: number[]) =>
+		a.every((value, c) => Math.abs(value - (b[c] as number)) <= SKY_NEAR);
+	let first = after.length - 1;
+	while (first > 0) {
+		const frame = after[first - 1] as (typeof after)[number];
+		if (!near(frame.mirror, last.mirror) || !near(frame.rough, last.rough)) break;
+		first -= 1;
+	}
+	const since = (after[first] as (typeof after)[number]).since;
+	return {
+		line: `the new sky's light shows ${since} frames after the move, over ${after.length} captures`,
+		problems: last.since === 15 ? [] : [`the last capture shows frame ${last.since}, not 15`],
+	};
 }
 
 /**
@@ -2105,6 +2247,16 @@ export function judge(
 		}
 		case 'environment-load':
 			return environmentLoadProblems(result);
+		case 'sky-map': {
+			const { lines, problems } = skyMapReport(result as ItemResult & SkyMapResult);
+			if (problems.length === 0) context?.note?.(`the sky map: ${lines.join('; ')}`);
+			return problems;
+		}
+		case 'sky-refresh': {
+			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
+			if (problems.length === 0) context?.note?.(line);
+			return problems;
+		}
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {
 				failures?: string[];
@@ -2227,11 +2379,12 @@ export function benchRows(
 				visual.set(visualName(check), result as unknown as VisualResult);
 		}
 		if (check.kind !== 'bench') continue;
-		const { scene, page, jobs } = check;
-		const key = `${scene} ${page} ${jobs ?? ''}`;
+		const { scene, page, jobs, reflection } = check;
+		const kind = reflection ? `${page} reflection=${reflection}` : page;
+		const key = `${scene} ${kind} ${jobs ?? ''}`;
 		const group = groups.get(key) ?? {
 			scene,
-			kind: page,
+			kind,
 			jobs,
 			results: [],
 			...(isNull3dPage(page) && { visualKey: visualName(check) }),
