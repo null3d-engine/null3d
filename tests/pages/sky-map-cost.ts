@@ -3,7 +3,8 @@
 // the pipelines in the background, as the engine does, fills the map once whole, as at load, then
 // refreshes it ?runs= times with a sun that moves, one stage at a time, as frames do. Each stage's
 // time runs from its call until the GPU has finished it, on a queue with no other work; WebGL2
-// also gives its timer queries' GPU times. On WebGPU the page then reads the map back, and makes
+// also gives its timer queries' GPU times, and reads the map after the last stage, as a frame
+// does. On WebGPU the page then reads the map back, and makes
 // the same sky again with ?reference=<directions> filter directions and 16 x 16 chain directions,
 // as a file's map would take, so the test can compare the two.
 import {
@@ -167,6 +168,48 @@ interface TimerQuery {
 	readonly GPU_DISJOINT_EXT: number;
 }
 
+/**
+ * A draw of one pixel of the canvas that reads every level of cube texture `map`, as a frame does.
+ * A browser may put off the upload of a texture from a pixel buffer until a draw reads the texture
+ * or a later call writes the buffer. A frame reads the map just after the last stage, so the last
+ * stage's time includes this draw, and the next refresh's first stage does not take the upload.
+ */
+function mapReader(gl: WebGL2RenderingContext, map: WebGLTexture): () => void {
+	const program = gl.createProgram() as WebGLProgram;
+	const sources: [number, string][] = [
+		[
+			gl.VERTEX_SHADER,
+			'void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); gl_PointSize = 1.0; }',
+		],
+		[
+			gl.FRAGMENT_SHADER,
+			`precision highp float; uniform highp samplerCube map; out vec4 color;
+			void main() {
+				color = vec4(0.0);
+				for (int level = 0; level < ${LEVELS}; level++)
+					color += textureLod(map, vec3(1.0, 0.0, 0.0), float(level));
+			}`,
+		],
+	];
+	for (const [type, source] of sources) {
+		const shader = gl.createShader(type) as WebGLShader;
+		gl.shaderSource(shader, `#version 300 es\n${source}`);
+		gl.compileShader(shader);
+		gl.attachShader(program, shader);
+	}
+	gl.linkProgram(program);
+	return () => {
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, 1, 1);
+		gl.useProgram(program);
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindSampler(0, null);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, map);
+		gl.drawArrays(gl.POINTS, 0, 1);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+	};
+}
+
 async function timeWebGL2(): Promise<Timed> {
 	const canvas = new OffscreenCanvas(1, 1);
 	const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false });
@@ -182,6 +225,7 @@ async function timeWebGL2(): Promise<Timed> {
 		DEPTH_SETUPS.reversed,
 		gl.getExtension('KHR_parallel_shader_compile'),
 	);
+	const read = mapReader(gl, target);
 	const memory = new GpuMemory();
 	const started = performance.now();
 	await generator.prepare(host);
@@ -204,6 +248,7 @@ async function timeWebGL2(): Promise<Timed> {
 		const start = performance.now();
 		for (let k = first; k <= last; k++)
 			generator.skyStage(host, target, SIZE, LEVELS, ...command(k, sky), 0, memory);
+		if (last === STAGES - 1) read();
 		if (timer) gl.endQuery(timer.TIME_ELAPSED_EXT);
 		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 		gl.flush();
