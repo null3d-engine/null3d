@@ -12,9 +12,10 @@
 //! A mesh's blocker, its welded corners and its edges, is built the first time an object with
 //! that mesh blocks the view, and kept, as meshes never change. The blocker splits into its
 //! connected parts, and each part takes its place in the frame by its own bounding sphere, so a
-//! mesh that merges parts spread far apart blocks with its near parts first. A mesh from a model file can come
-//! with a simplified blocker of its own, which the asset tool made and checked to lie inside the
-//! mesh; objects with that mesh draw it instead.
+//! mesh that merges parts spread far apart blocks with its near parts first. A blocker of one
+//! part takes the object's bounding sphere, as it costs nothing more. A mesh from a model file
+//! can come with a simplified blocker of its own, which the asset tool made and checked to lie
+//! inside the mesh; objects with that mesh draw it instead.
 
 use std::collections::TryReserveError;
 
@@ -217,12 +218,17 @@ impl Occluders {
             }
             let [x, y, z, _] = offsets[scene.cells()[s] as usize];
             let (cx, cy, cz) = (xs[s] + x, ys[s] + y, zs[s] + z);
-            if nearest(cx, cy, cz, radius).is_none() {
+            let Some(distance) = nearest(cx, cy, cz, radius) else {
                 continue;
-            }
+            };
             let Some(group) = self.parts_of(scene.meshes()[s], meshes)? else {
                 continue;
             };
+            // A blocker of one part takes the object's own sphere.
+            if let [part] = self.parts[group][..] {
+                self.push_candidate(distance, s as u32, part)?;
+                continue;
+            }
             // Each part's sphere in the view's space: the object's matrix moves its centre, and
             // its largest scale grows its radius.
             let a = world.matrix(s);
@@ -233,25 +239,35 @@ impl Occluders {
             for p in 0..self.parts[group].len() {
                 let part = self.parts[group][p];
                 let [px, py, pz, pr] = self.meshes[part as usize].sphere();
-                let Some(distance) = nearest(
+                if let Some(distance) = nearest(
                     a[0] * px + a[1] * py + a[2] * pz + a[3] + x,
                     a[4] * px + a[5] * py + a[6] * pz + a[7] + y,
                     a[8] * px + a[9] * py + a[10] * pz + a[11] + z,
                     pr * grow,
-                ) else {
-                    continue;
-                };
-                if self.candidates.len() == self.candidates.capacity() {
-                    let more = self.candidates.len().max(16);
-                    self.candidates.try_reserve(more)?;
-                    self.distances.try_reserve(more)?;
-                    self.picked.try_reserve(more)?;
+                ) {
+                    self.push_candidate(distance, s as u32, part)?;
                 }
-                self.distances.push(distance.to_bits());
-                self.candidates.push(self.picked.len() as u32);
-                self.picked.push([s as u32, part]);
             }
         }
+        Ok(())
+    }
+
+    /// Adds a frame candidate: a part of the object in `slot`, at `distance` along the view.
+    fn push_candidate(
+        &mut self,
+        distance: f32,
+        slot: u32,
+        part: u32,
+    ) -> Result<(), TryReserveError> {
+        if self.candidates.len() == self.candidates.capacity() {
+            let more = self.candidates.len().max(16);
+            self.candidates.try_reserve(more)?;
+            self.distances.try_reserve(more)?;
+            self.picked.try_reserve(more)?;
+        }
+        self.distances.push(distance.to_bits());
+        self.candidates.push(self.picked.len() as u32);
+        self.picked.push([slot, part]);
         Ok(())
     }
 
@@ -364,4 +380,44 @@ fn solid(materials: &MaterialTable, material: u32) -> bool {
         Ok(Shading::Lit | Shading::Unlit | Shading::UnlitMap | Shading::StandardMaps)
     );
     built_in && materials.features(id) & SEE_THROUGH == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use null3d_core::bvh::mesh::TriangleSoup;
+
+    use super::*;
+
+    /// A blocker of `parts` triangles that share no corners, a metre apart along x.
+    fn apart(parts: usize) -> BlockerMesh {
+        let soup: Vec<f32> = (0..parts)
+            .flat_map(|p| {
+                let x = p as f32 * 2.0;
+                [x, 0.0, 0.0, x + 1.0, 0.0, 0.0, x, 1.0, 0.0]
+            })
+            .collect();
+        BlockerMesh::build(&TriangleSoup { positions: &soup }).unwrap()
+    }
+
+    #[test]
+    fn a_mesh_keeps_one_place_per_part_and_gives_them_back() {
+        let mut occluders = Occluders::default();
+        occluders.set_blocker(1, apart(3)).unwrap();
+        occluders.set_blocker(2, apart(1)).unwrap();
+        assert_eq!(occluders.meshes.len(), 4);
+        assert_eq!(occluders.parts[0].len(), 3);
+        assert_eq!(occluders.parts[1].len(), 1);
+        // A new blocker for a mesh replaces its parts in the places they held.
+        occluders.set_blocker(1, apart(2)).unwrap();
+        assert_eq!(occluders.meshes.len(), 4);
+        assert_eq!(occluders.free.len(), 1);
+        // A removed mesh gives its places to later blockers.
+        occluders.forget(&[0]);
+        assert_eq!((occluders.by_mesh[1], occluders.free.len()), (UNBUILT, 3));
+        occluders.set_blocker(3, apart(3)).unwrap();
+        assert_eq!((occluders.meshes.len(), occluders.parts.len()), (4, 2));
+        assert!(occluders.free.is_empty());
+        let sphere = occluders.meshes[occluders.parts[0][2] as usize].sphere();
+        assert_eq!(sphere[..3], [4.5, 0.5, 0.0]);
+    }
 }
