@@ -8,7 +8,7 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Three parts are not built yet: drawing each row in its own color, shadows of batch rows, and custom per-instance attributes. Coding agents must not use them.
+> Ships in null3D 0.1, with shadows of batch rows in 0.2. The API is experimental, so it can still change between versions. Two parts are not built yet: drawing each row in its own color, and custom per-instance attributes. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -167,7 +167,7 @@ Each row has its own bounding sphere. The sphere's center is the row's position,
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects that receive shadows draw with other pipelines than batch rows, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
 
 The difference is the sketch's own work on the CPU:
 
@@ -177,7 +177,7 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change, apart from a batch's `setCastShadows` and `setReceiveShadows`. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 

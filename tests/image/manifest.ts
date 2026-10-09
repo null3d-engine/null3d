@@ -1183,6 +1183,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with the objects on the ground as rows of instance batches: rows cast into and
+	// receive the lights' tiles as objects do, so they borrow the spot shadows test's references.
+	{
+		name: 'spot-shadows-batches',
+		sketch: 'tests/pages/sketches/spot-shadows-sketch.ts?batches',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+		reference: 'spot-shadows',
+	},
 	// Point light shadows: one point light among casters on every side, whose shadows fall across
 	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
 	// on, as the presets of WebGL2 and compatibility mode leave them off.

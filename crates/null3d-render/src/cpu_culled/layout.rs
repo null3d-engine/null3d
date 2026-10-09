@@ -49,7 +49,7 @@ pub(super) enum Drawn {
     /// them.
     #[default]
     Scene,
-    /// The scene objects that cast shadows, as the shadow cascades draw their depth.
+    /// The objects and instance rows that cast shadows, as the shadow cascades draw their depth.
     Casters,
     /// The scene objects that the sketch outlines, as the outline view draws them into the outline
     /// mask.

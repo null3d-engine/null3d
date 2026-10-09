@@ -115,6 +115,9 @@ pub const FILTER_REACH: u32 = 3;
 /// the High preset's sixteen tiles and the Ultra preset's twenty-four take two frames at most.
 pub const MAX_REDRAWS: usize = 12;
 
+/// The moved rows of a casting batch between two checks of whether every tile must draw already.
+const MARKED_CHECK_ROWS: usize = 64;
+
 /// How the shadow atlas is set up: the start values of the quality preset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TileSettings {
@@ -283,17 +286,9 @@ struct Caster {
 }
 
 impl Caster {
-    /// True when the caster draws into the tile of `light` whose view is `shape`: it shows, shares
-    /// a layer with the light, and its sphere reaches into the light's range and the tile's view.
-    fn casts_into(&self, light: &LightShadow, shape: &TileShape) -> bool {
-        let Some(center) = self.center_from(light) else {
-            return false;
-        };
-        shape.touches(center, self.sphere[3])
-    }
-
     /// Where the caster's sphere center lies from `light`, when the caster shows, shares a layer
-    /// with the light and its sphere reaches into the light's range.
+    /// with the light and its sphere reaches into the light's range. The caster then draws into
+    /// each tile of the light whose view its sphere touches.
     fn center_from(&self, light: &LightShadow) -> Option<[f32; 3]> {
         let [x, y, z, radius] = self.sphere;
         if radius == HIDDEN_RADIUS || light.layers & self.layers == 0 {
@@ -849,14 +844,16 @@ impl ShadowTiles {
 
     /// Marks the tiles whose views a row of a casting batch touches, before or after its move, as
     /// tiles that must draw, for each row that the batch's update changed in this frame. A batch
-    /// whose active count or layers changed marks every tile.
+    /// whose active count or layers changed marks every tile. The row scan stops once every tile of
+    /// the frame's lights must draw, so a large batch that moves costs little more than one that
+    /// stands still; later batches still record their active count and layers.
     fn mark_moved_batches(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
         if !self.casters_known {
             return;
         }
         let parity = input.parity();
         let table = input.scene.cell_table();
-        let mut all = false;
+        let (mut all, mut full) = (false, false);
         for k in 0..self.batches.len() {
             let known = self.batches[k];
             let Ok(batch) = input.batches.get(known.id) else {
@@ -873,17 +870,21 @@ impl ShadowTiles {
                 all = true;
                 continue;
             }
-            if batch.frame() != input.frame {
+            if all || full || batch.frame() != input.frame {
                 continue;
             }
             let (now, before) = (batch.world(parity), batch.world(parity ^ 1));
             let cells = batch.cells();
-            for range in batch.changed_ranges() {
+            'rows: for range in batch.changed_ranges() {
                 let (start, end) = (
                     range.start as usize,
                     (range.start + range.count).min(active),
                 );
                 for (row, &cell) in cells.iter().enumerate().take(end as usize).skip(start) {
+                    if (row - start) % MARKED_CHECK_ROWS == 0 && self.all_marked() {
+                        full = true;
+                        break 'rows;
+                    }
                     let (before, now) = (before.sphere(row), now.sphere(row));
                     if before == now {
                         continue;
@@ -937,13 +938,29 @@ impl ShadowTiles {
     fn mark(&mut self, shadows: &[LightShadow], before: &Caster, now: &Caster) {
         for lit in &self.lit {
             let light = &shadows[lit.shadow as usize];
+            let (from_before, from_now) = (before.center_from(light), now.center_from(light));
+            if from_before.is_none() && from_now.is_none() {
+                continue;
+            }
             for tile in lit.first as usize..(lit.first + lit.faces) as usize {
                 let shape = &self.shapes[tile];
-                if before.casts_into(light, shape) || now.casts_into(light, shape) {
+                let touches = |center: Option<[f32; 3]>, caster: &Caster| {
+                    center.is_some_and(|center| shape.touches(center, caster.sphere[3]))
+                };
+                if touches(from_before, before) || touches(from_now, now) {
                     self.slots[tile].clean = false;
                 }
             }
         }
+    }
+
+    /// True when every tile of the frame's lights must draw already, so no caster can mark more.
+    fn all_marked(&self) -> bool {
+        self.lit.iter().all(|lit| {
+            self.slots[lit.first as usize..(lit.first + lit.faces) as usize]
+                .iter()
+                .all(|slot| !slot.clean)
+        })
     }
 }
 

@@ -31,24 +31,33 @@
 // the switch alone takes the preset's.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
+// The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
+// switch makes the swarm's rows cast and receive them, for the cost of a large batch in the shadow
+// passes and for the allocation sample of its rows as moving casters.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
-import { S1_BOB_HEIGHT, S1_EXTENT, s1Camera } from '../../scenes/spec';
+import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
-import { followPath, readCount, setUpView } from './sketch-common';
+import { followPath, readCount, readShadows, setUpView } from './sketch-common';
 import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
-	const moveCamera = followPath(setUpView(context), s1Camera);
+	const cascades = readShadows(import.meta.url);
+	const moveCamera = followPath(
+		setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades }),
+		s1Camera,
+	);
 	const switches = new URL(import.meta.url).searchParams;
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)
 		: switches.has('lines')
 			? await createLineSwarm(context, count)
-			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
+			: createSwarm(context, count, true, undefined, switches.has('blend'), {
+					shadows: switches.has('batchShadows'),
+				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));

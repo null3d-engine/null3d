@@ -198,6 +198,7 @@ rocks.attributes.tint;  // (0.2)
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
+rocks.setCastShadows(true);  rocks.setReceiveShadows(true);  // (0.2) every row; a change rebuilds the draw tables
 rocks.markDirty(start, count);  // static batches: upload these rows
 rocks.destroy();
 ```
