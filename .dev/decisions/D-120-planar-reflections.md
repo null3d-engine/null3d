@@ -92,7 +92,22 @@ The runs of one page spread by about 0.15 ms, so on WebGL2 half and full size co
 
 A first run of these figures was void: the benchmark page passed only a fixed list of switches to its sketch, and `reflection` was not on it. The draw calls showed it, as they did not change. The harness now passes the switch.
 
-Cloud phone check, for the coordinator, on BrowserStack's Galaxy S25 (WebGPU and WebGL2) and Pixel 9 (WebGL2). Run the reflection image tests through `bun run devices:cloud --only <runner>`. Then time the S1 page's GPU work per frame with `?reflection=quarter` and `?reflection=half`, against no reflection. If half size costs more than 2 ms on the S25, Medium moves to a quarter.
+**Cloud phone check, a rough guide.** The rule set beforehand: if half size costs more than 2 ms on the S25, Medium moves to a quarter. On 9 October 2026, at ea5cb60eb, BrowserStack Automate ran it on the Galaxy S25 and the Pixel 9. They ran the reflection image tests and the device runner's `reflection` plan. The plan plays S1 with 100,000 boxes, with no water and with the water's reflection at a quarter and at half size. It runs 3 rounds of 10 measured seconds, in turns within one session. Both phones chose Low. The runs: `20261009-031016-checks` and `20261009-032055-reflection`.
+
+- The 9 reflection image tests passed on both phones, on WebGPU, compatibility mode and WebGL2.
+- WebGPU GPU time per frame, the median of the 3 runs' medians:
+
+| Phone | No reflection | A quarter | Half |
+| --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 152 | 13.14 ms | 21.92 ms (+8.78) | 22.02 ms (+8.88) |
+| Pixel 9 (Mali-G715), Chrome 152 | 11.30 ms | 13.96 ms (+2.66) | 14.09 ms (+2.79) |
+
+- On the S25, the reflection's own passes took about 3.4 ms at either size. The second culling took 0.59 ms more and the mirrored scene 2.69 ms. The copy that turns the image upright took 0.07 ms at a quarter and 0.13 ms at half. The rest of the change, 5.4 ms, came in the main pass, which grew from 8.39 to 13.76 ms. That is the water's own material over much of the screen, which every size pays.
+- On the Pixel 9, the mirrored scene took about 1.25 ms at a quarter and 2.3 ms at half. Mali's passes overlap, so the passes' times do not add up to the frame's.
+- One S25 run at a quarter size measured 15.37 ms, with every pass faster: the GPU's clock changed during it. The median of the three runs leaves it out.
+- WebGL2 has no GPU timer on either phone. Every WebGL2 page drew a frame each 33.3 ms, with and without the reflection. That is the S25's 30 Hz display and half the Pixel 9's 60 Hz. The draw calls went from 3 to 7.
+
+So by the rule's test, half size costs more than 2 ms on the S25. It costs 8.9 ms against no reflection, and about 3.4 ms in the reflection's own passes. But a quarter costs within 0.1 ms of half on both phones. In S1, the reflection's cost follows the swarm's 100,000 boxes and the water's shading, not the reflection's pixels. So a quarter would save almost nothing in this scene. A scene with fewer, larger objects would show more of the pixels' share. The owner rules on Medium; the presets stay as they are until then.
 
 Allocation, `bun run bench:allocation --reflection`, S1 with 100,000 boxes and the reflection under them, the camera orbiting, on 9 October 2026 on the Mac (Chrome): every place within its budget on both paths. On WebGPU the sketch worker took 318 bytes per frame and the render worker 708. The replay took 335 bytes, 137 more than without the reflection. The browser returns an encoder object for each of the reflection's three passes, about 46 bytes each: its culling, its scene, and the copy that turns its image upright. The check now allows 64 bytes per pass with `--reflection`, as it allows bloom's and the custom effects' passes. On WebGL2 the sketch worker took 403 bytes per frame and the render worker 150, within their budgets with no allowance.
 
@@ -104,7 +119,7 @@ Image tests: `reflection-mirror`, `reflection-water` and `reflection-quarter` on
 
 ## Decision
 
-Options A throughout: a reflection pass, an oblique near plane, and the surface's `reflection` read through `reflection_uv`. Presets: Low draws the reflection at a quarter of the render size each way, a sixteenth of its pixels, since phones start on Low and their fill rate is low. Medium and High draw it at half size, as the task asked. Ultra, which only desktops start with, draws it whole: on the Mac it cost 0.1 ms more than half size. The cloud phone check confirms Low and Medium.
+Options A throughout: a reflection pass, an oblique near plane, and the surface's `reflection` read through `reflection_uv`. Presets: Low draws the reflection at a quarter of the render size each way, a sixteenth of its pixels, since phones start on Low and their fill rate is low. Medium and High draw it at half size, as the task asked. Ultra, which only desktops start with, draws it whole: on the Mac it cost 0.1 ms more than half size. The cloud phone check of 9 October 2026 (above) waits on the owner's ruling for Medium.
 
 ## Consequences
 

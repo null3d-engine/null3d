@@ -79,14 +79,26 @@
     },
     {
       "id": 6,
-      "prompt": "Use null3d to add depth of field to my cinematic camera.",
-      "expected_output": "The answer says depth of field is not in null3d 1.0, offers a workaround (a custom effect with post.addEffect that reads the scene depth through effectDepth or effectDistance, which needs engine 0.2, or skipping it), and does not invent a post.set option for it.",
+      "prompt": "Use null3d to add motion blur to my racing game.",
+      "expected_output": "The answer says motion blur is not in null3d, does not invent a post.set option for it, and explains that a custom effect cannot read the frame before, so it offers to skip it or to fake speed another way, such as a radial blur effect toward the screen's center with post.addEffect, which needs engine 0.2.",
       "files": [],
       "expectations": [
-        "States that depth of field is not part of null3d 1.0 or that its docs status must be checked",
-        "Does not use a nonexistent option such as post.set({ dof })",
-        "Offers a workaround using post.addEffect with effectDepth or effectDistance, marked as engine 0.2, or explains the trade-off of skipping it",
+        "States that motion blur is not part of null3d or that its docs status must be checked",
+        "Does not use a nonexistent option such as post.set({ motionBlur })",
+        "Offers a workaround using post.addEffect, marked as engine 0.2, or explains the trade-off of skipping it",
         "Mentions the cost of wide blurs on phones"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Use null3d to add depth of field to my cinematic camera, like an 85 mm lens wide open, focused on the hero.",
+      "expected_output": "The answer sets the camera's lens with camera.setFocalLength(85) and turns depth of field on with post.set({ dof: { aperture, focusPoint } }), both marked as engine 0.2. It passes the hero's position as the focus point each frame from an array changed in place, and says that depth of field draws where the quality setting dofSamples is above 0, which is 0 on Low.",
+      "files": [],
+      "expectations": [
+        "Uses camera.setFocalLength(85) for the lens, marked as engine 0.2",
+        "Uses post.set({ dof: { ... } }) with an f-number aperture such as 1.4 or 1.8, marked as engine 0.2",
+        "Focuses with focusPoint on the hero's position, passed again each frame without allocating, or with focusDistance",
+        "Mentions that the Low preset draws no depth of field unless quality.set({ dofSamples }) turns it on"
       ]
     }
   ]
