@@ -156,6 +156,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUnifo
 use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
+use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
@@ -322,8 +323,11 @@ mod ids {
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
     pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The texel that frame groups bind in place of the copy of the camera's opaque color while
+    /// nothing lets light through.
+    pub const BLANK_TRANSMISSION: u32 = CELL_OFFSETS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = CELL_OFFSETS + 1;
+    pub const TARGETS: u32 = BLANK_TRANSMISSION + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -399,8 +403,10 @@ mod ids {
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of each step of depth of field, after the copies'.
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
-    /// The bind groups of materials' maps, after depth of field's.
-    pub const TEXTURE_GROUPS: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind group of the copy of the camera's opaque color, after depth of field's.
+    pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind groups of materials' maps, after the copy's.
+    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -597,6 +603,10 @@ impl GpuDrivenRenderer {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
+                        },
+                        transmission: TransmissionIds {
+                            group: ids::TRANSMISSION_GROUP,
+                            blank: ids::BLANK_TRANSMISSION,
                         },
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
@@ -903,6 +913,7 @@ impl GpuDrivenRenderer {
         self.graph.set_skinning(self.skinning.dispatches());
         self.settings.pace_views();
         self.settings.mark_shown_views();
+        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.set_debug_lines(!input.lines.is_empty());
@@ -923,6 +934,15 @@ impl GpuDrivenRenderer {
         let first_new = self.views_made;
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
+        // Only the camera's view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
+        let transmission = |view: ViewId| {
+            if view == ViewId::CAMERA {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            }
+        };
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
@@ -942,6 +962,7 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     self.bound_environment,
+                    transmission(view),
                 )?;
             }
         }
@@ -1045,11 +1066,22 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                opaque::bind_frame(list, view, shadow_map, atlas, ao_texture, environment)?;
+                opaque::bind_frame(
+                    list,
+                    view,
+                    shadow_map,
+                    atlas,
+                    ao_texture,
+                    environment,
+                    transmission(view),
+                )?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
             frame.uniform.environment = lit;
+        }
+        if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
+            frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
         }
         self.graph.upload(
             list,
@@ -1433,6 +1465,7 @@ impl GpuDrivenRenderer {
         dfg::create(list, ids::DFG)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
+        transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;

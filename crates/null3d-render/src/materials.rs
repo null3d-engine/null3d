@@ -3,8 +3,10 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, nine `vec4f`s, which the WGSL struct
-//! `Material` in `null3d::globals` mirrors field for field. The [`param`] module names where each
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, eleven `vec4f`s, which the WGSL struct
+//! `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine into a
+//! `Material`, and only the builds that let light through read the last two, the transmission's
+//! values. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
 //! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -90,6 +92,9 @@ pub struct CustomShading {
     pub base_color: bool,
     /// The textures that its WGSL declares, which take its first map slots.
     pub textures: u32,
+    /// True when its WGSL has the builds that let light through, which it draws with when its
+    /// material has [`feature::TRANSMISSION`].
+    pub transmission: bool,
 }
 
 impl CustomShading {
@@ -101,6 +106,7 @@ impl CustomShading {
             attributes: vertex::UV0,
             base_color: true,
             textures: 0,
+            transmission: false,
         })
     }
 }
@@ -133,6 +139,16 @@ impl Shading {
             | Shading::Sprite
             | Shading::SpriteMap => vertex::UV0,
             Shading::Custom(custom) => custom.attributes,
+        }
+    }
+
+    /// True when its shader has the builds that let light through: the standard material's, with
+    /// or without maps, and a custom material's whose WGSL has them.
+    pub const fn transmits(self) -> bool {
+        match self {
+            Shading::Lit | Shading::StandardMaps => true,
+            Shading::Custom(custom) => custom.transmission,
+            _ => false,
         }
     }
 
@@ -184,6 +200,12 @@ pub mod feature {
     /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
     /// back faces first, then its front faces.
     pub const SINGLE_PASS: u32 = 4096;
+    /// The surface lets light through, as three.js's `transmission` does: it draws in the
+    /// transparent pass, after the opaque objects, and samples a copy of their color behind it,
+    /// bent by its index of refraction and its thickness and blurred by its roughness. The
+    /// material's transmission value sets how much light passes. It takes no mask, so it wins over
+    /// [`ALPHA_MASK`].
+    pub const TRANSMISSION: u32 = 8192;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -197,12 +219,13 @@ pub mod feature {
         | ALPHA_TO_COVERAGE
         | NO_FOG
         | ALPHA_HASH
-        | SINGLE_PASS;
+        | SINGLE_PASS
+        | TRANSMISSION;
 
-    /// True for features that test alpha with the masked shader variant: a mask that does not
-    /// blend.
+    /// True for features that test alpha with the masked shader variant: a mask that neither
+    /// blends nor lets light through.
     pub const fn masks(features: u32) -> bool {
-        features & ALPHA_MASK != 0 && features & BLEND == 0
+        features & ALPHA_MASK != 0 && features & (BLEND | TRANSMISSION) == 0
     }
 }
 
@@ -255,7 +278,7 @@ const fn row_flags(features: u32) -> u32 {
     flags
 }
 
-/// Floats in each material's row: nine `vec4f`s.
+/// Floats in each material's row: eleven `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -305,16 +328,30 @@ pub mod param {
     pub const SPECULAR_COLOR: usize = 32;
     /// The strength of the dielectric specular reflection, from 0 to 1.
     pub const SPECULAR_INTENSITY: usize = 35;
+    /// How much light passes through the surface, from 0 to 1, in materials with the
+    /// transmission feature.
+    pub const TRANSMISSION: usize = 36;
+    /// The thickness of the volume under the surface, in the mesh's own units: 0 for a thin wall,
+    /// which bends no light.
+    pub const THICKNESS: usize = 37;
+    /// The index of refraction, 1 or more, which bends the light that passes through.
+    pub const IOR: usize = 38;
+    /// The color that white light takes after it travels [`ATTENUATION_DISTANCE`] through the
+    /// volume: 3 floats, linear.
+    pub const ATTENUATION_COLOR: usize = 40;
+    /// The distance through the volume over which light takes [`ATTENUATION_COLOR`], in world
+    /// units, or 0 for light that the volume does not absorb.
+    pub const ATTENUATION_DISTANCE: usize = 43;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR => Some(3),
+            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR => Some(3),
             NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
             | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
-            | SPECULAR_INTENSITY => Some(1),
+            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE => Some(1),
             _ => None,
         }
     }
@@ -411,8 +448,9 @@ impl MapSlot {
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, a white specular color at full intensity with glTF's
-/// index of refraction, and no maps. The metalness and roughness are three.js's
-/// `MeshStandardMaterial` defaults; the alpha cutoff and the index of refraction are glTF's.
+/// index of refraction, no maps, and no transmission through a thin wall that absorbs nothing. The
+/// metalness and roughness are three.js's `MeshStandardMaterial` defaults; the alpha cutoff, the
+/// index of refraction and the volume's values are glTF's.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -440,6 +478,12 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     while slot < MAP_SLOTS {
         row[param::MAP_LAYERS + slot] = NO_MAP;
         slot += 1;
+    }
+    row[param::IOR] = 1.5;
+    let mut k = 0;
+    while k < 3 {
+        row[param::ATTENUATION_COLOR + k] = 1.0;
+        k += 1;
     }
     row
 };

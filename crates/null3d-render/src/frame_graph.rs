@@ -43,7 +43,16 @@
 //!
 //! Each view has a transparent pass too, which draws the view's blended objects back to front
 //! (see [`crate::sorted`]) over its opaque objects and the debug lines, in the same render pass.
-//! The transparent passes are on only while some object blends.
+//! The transparent passes are on only while some object blends or lets light through.
+//!
+//! While some object lets light through, the transmission copy pass comes between the camera's
+//! opaque pass and its transparent pass (see [`crate::transmission`]). It reads the scene color as
+//! the opaque pass and the debug lines leave it, and draws it into the first level of a target
+//! with a whole chain of mip levels. After its render pass the frame makes the other levels, and
+//! the camera's transparent pass reads the target. The opaque pass and the transparent pass then
+//! draw in two render passes, so the scene's targets leave tile memory between them, and a
+//! multisampled scene color resolves at the end of each. Nothing of it runs while no object lets
+//! light through.
 //!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
@@ -135,6 +144,7 @@ use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
+use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
 
@@ -153,6 +163,8 @@ pub(crate) struct GraphIds {
     pub(crate) dof: DofIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
+    /// The copy of the camera's opaque color that surfaces which let light through sample.
+    pub(crate) transmission: TransmissionIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -257,6 +269,10 @@ const OUTLINE_MASK: &str = "outlineMask";
 /// the denoise, whose target the camera's opaque pass reads.
 const AO_PASSES: [&str; ao::STEPS] = ["AoDepth", "AoHorizon", "AoDenoise"];
 const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
+/// The copy of the camera's opaque color for surfaces that let light through, and the target with
+/// a mip chain that it creates, which the camera's transparent pass reads.
+const TRANSMISSION_PASS: &str = "Transmission";
+const TRANSMISSION_COLOR: &str = "transmissionColor";
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
 /// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
 /// pipelines draw into, so each render pass ends without storing it, and it can share a texture
@@ -342,6 +358,9 @@ pub(crate) enum Role {
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
+    /// Copies the camera's opaque color into the first level of the target that surfaces which
+    /// let light through sample. The graph records it, and the mip levels after its render pass.
+    TransmissionCopy,
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -526,6 +545,17 @@ pub(crate) struct FrameGraph {
     transparent: Vec<PassId>,
     /// True while the transparent passes are on.
     transparent_on: bool,
+    /// The copy of the camera's opaque color for surfaces that let light through.
+    transmission: TransmissionCopy,
+    /// True while some object lets light through.
+    transmission_wanted: bool,
+    /// True once the copy's pipeline is built, after the frame whose list created it.
+    transmission_built: bool,
+    /// True when the declared passes hold the copy.
+    transmission_declared: bool,
+    /// The textures that the copy reads and draws into, found once for each compile of the graph,
+    /// which the count says.
+    transmission_target: Option<(u32, u32, u32)>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -642,6 +672,11 @@ impl FrameGraph {
             debug_lines: None,
             transparent: Vec::new(),
             transparent_on: false,
+            transmission: TransmissionCopy::new(ids.transmission),
+            transmission_wanted: false,
+            transmission_built: false,
+            transmission_declared: false,
+            transmission_target: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -688,6 +723,8 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
+        // The copy's target takes the scene color's format, which its pipeline draws into.
+        self.transmission_built = false;
         self.declared = false;
     }
 
@@ -1164,11 +1201,45 @@ impl FrameGraph {
         }
     }
 
-    /// Switches the views' transparent passes on while some object blends, and off otherwise. The
-    /// graph compiles again only when that changes.
+    /// Switches the views' transparent passes on while some object blends or lets light through,
+    /// and off otherwise. The graph compiles again only when that changes.
     pub(crate) fn set_transparent(&mut self, on: bool) {
         self.transparent_on = on;
         self.enable_views();
+    }
+
+    /// Turns the copy of the camera's opaque color on while some object lets light through, and
+    /// off otherwise, for the next frames. The passes are declared again only when it starts or
+    /// stops drawing. Call it before [`FrameGraph::sync_views`], which declares them.
+    pub(crate) fn set_transmission(&mut self, on: bool) {
+        let was = self.transmission_draws();
+        self.transmission_wanted = on;
+        if self.transmission_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the copy of the camera's opaque color draws: some object lets light through,
+    /// and the copy's pipeline is built. Until then such objects draw nothing either, as their
+    /// pipelines load from the same shader file.
+    pub(crate) fn transmission_draws(&self) -> bool {
+        self.transmission_wanted && self.transmission_built
+    }
+
+    /// True while the frame copies the camera's opaque color for surfaces that let light through,
+    /// which the camera's frame values then say.
+    pub(crate) fn transmission_copied(&self) -> bool {
+        self.transmission_declared
+    }
+
+    /// The draw list's id of the texture that the camera's frame group binds for surfaces that
+    /// let light through: the copy's target while it draws, else a blank texel. Valid once the
+    /// frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn transmission_texture(&self) -> u32 {
+        self.transmission_declared
+            .then(|| self.sampled_id(TRANSMISSION_COLOR))
+            .flatten()
+            .unwrap_or_else(|| self.transmission.blank())
     }
 
     /// Switches each view's passes on or off with the view, and its transparent pass only while
@@ -1394,6 +1465,18 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
+        self.transmission_declared = self.transmission_draws() && !views.is_empty();
+        if self.transmission_declared {
+            // The copy reads the scene color as the opaque pass and the debug lines leave it,
+            // before the transparent pass draws into it.
+            let target = Target::color(self.view_target_format()).mipmapped();
+            let copy = Pass::new(TRANSMISSION_PASS, PassKind::Fullscreen)
+                .optional()
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads_so_far(SCENE_COLOR)
+                .creates(TRANSMISSION_COLOR, target);
+            self.add(copy, Role::TransmissionCopy);
+        }
         for (index, view) in views.iter().enumerate() {
             let names = &named[index];
             let drawn = if copies && index != ViewId::CAMERA.index() {
@@ -1401,10 +1484,13 @@ impl FrameGraph {
             } else {
                 &names.color
             };
-            let pass = Pass::new(names.transparent.clone(), PassKind::Scene)
+            let mut pass = Pass::new(names.transparent.clone(), PassKind::Scene)
                 .size(view_size(view))
                 .writes(drawn.clone())
                 .writes(names.depth.clone());
+            if self.transmission_declared && index == ViewId::CAMERA.index() {
+                pass = pass.reads(TRANSMISSION_COLOR);
+            }
             let pass = reads_targets(pass, views, &named, index);
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
@@ -1800,6 +1886,19 @@ impl FrameGraph {
             }
         }
         let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
+        let transmission_built = self.transmission_wanted && {
+            let id = self
+                .transmission
+                .request_pipeline(pipelines, format, permutation);
+            pipelines.built(id, pipelines_built)
+        };
+        if transmission_built != self.transmission_built {
+            let was = self.transmission_draws();
+            self.transmission_built = transmission_built;
+            if self.transmission_draws() != was {
+                self.declared = false;
+            }
+        }
         let views = self.view_colors.len() > 1;
         self.view_copy_built = match self.view_copies.as_mut() {
             Some(copies) if views => {
@@ -1865,6 +1964,7 @@ impl FrameGraph {
         self.upload_effects(list, arena)?;
         self.upload_dof(list, arena)?;
         self.bind_view_copies(list)?;
+        self.bind_transmission(list)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -2055,6 +2155,44 @@ impl FrameGraph {
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
+    /// Binds the copy of the camera's opaque color to the scene color that it reads while it is
+    /// declared, and finds the texture of its target, once for each compile of the graph.
+    fn bind_transmission(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.transmission_declared {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let source = match self.transmission_target {
+            Some((at, source, _)) if at == compiles => source,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("the transmission copy reads and writes planned textures")
+                };
+                let (source, target) = (id(SCENE_COLOR), id(TRANSMISSION_COLOR));
+                self.transmission_target = Some((compiles, source, target));
+                source
+            }
+        };
+        self.transmission.prepare(list, source, self.textures_made)
+    }
+
+    /// Records the making of the mip levels of the copy of the camera's opaque color, after the
+    /// render pass of `passes` when the copy drew in it.
+    fn make_transmission_levels(
+        &self,
+        list: &mut DrawList,
+        passes: &[PassId],
+    ) -> Result<(), RecordError> {
+        let copied = passes
+            .iter()
+            .any(|&pass| self.roles[pass.index()] == Role::TransmissionCopy);
+        if let (true, Some((_, _, target))) = (copied, self.transmission_target) {
+            list.push(Op::GenerateMipmaps, &[target, 0])?;
+        }
+        Ok(())
+    }
+
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
     /// textures it reads.
     fn upload_ao(
@@ -2237,10 +2375,12 @@ impl FrameGraph {
                                     copies.record(list, view.index())?;
                                 }
                             }
+                            Role::TransmissionCopy => self.transmission.record(list)?,
                             role => record(list, role)?,
                         }
                     }
                     list.push(Op::EndRenderPass, &[])?;
+                    self.make_transmission_levels(list, passes)?;
                 }
             }
         }
@@ -2434,6 +2574,7 @@ impl FrameGraph {
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
         }
+        self.transmission.reset_gpu();
     }
 }
 
@@ -2555,7 +2696,8 @@ fn reads_targets(mut pass: Pass, views: &[View], named: &[ViewPassNames], index:
 }
 
 /// Records the creation of a plan's texture under `id`, with its shape and the size it takes,
-/// `made`. Bind groups see an array target as an array, whatever its layer count.
+/// `made`. Bind groups see an array target as an array, whatever its layer count. A mipmapped
+/// target has the whole chain of levels that its size takes.
 fn create_texture(
     list: &mut DrawList,
     id: u32,
@@ -2567,6 +2709,11 @@ fn create_texture(
     } else {
         view::D2
     };
+    let mips = if target.mipmapped {
+        format::full_chain(width, height)
+    } else {
+        1
+    };
     list.push(
         Op::CreateTexture,
         &[
@@ -2577,7 +2724,7 @@ fn create_texture(
             target.format,
             texture.usage,
             target.samples,
-            1,
+            mips,
             binding,
         ],
     )?;
@@ -2671,6 +2818,10 @@ mod tests {
             first_group: 50,
         },
         view_copy: Some(ViewCopyIds { first_group: 40 }),
+        transmission: TransmissionIds {
+            group: 60,
+            blank: 903,
+        },
     };
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling

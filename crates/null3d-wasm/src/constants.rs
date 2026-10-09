@@ -94,6 +94,9 @@ pub mod shading {
     /// Where a custom shading holds the number of textures that its WGSL declares, from 0 to the
     /// map slots of a row, in 3 bits.
     pub const CUSTOM_TEXTURE_SHIFT: u32 = 25;
+    /// The bit of a custom shading whose WGSL has the builds that let light through, which a
+    /// material with the transmission feature draws with.
+    pub const CUSTOM_TRANSMISSION: u32 = 1 << 28;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -787,6 +790,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
                 ("CUSTOM_TEXTURE_SHIFT", shading::CUSTOM_TEXTURE_SHIFT),
+                ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -806,6 +810,7 @@ pub fn typescript() -> String {
                 ("ALPHA_TO_COVERAGE", feature::ALPHA_TO_COVERAGE),
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
+                ("TRANSMISSION", feature::TRANSMISSION),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -863,6 +868,11 @@ pub fn typescript() -> String {
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
+                ("TRANSMISSION", param::TRANSMISSION as u32),
+                ("THICKNESS", param::THICKNESS as u32),
+                ("IOR", param::IOR as u32),
+                ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
+                ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
