@@ -240,11 +240,12 @@ export interface SkyPart {
 /**
  * The stages of a sky map with faces `size` texels wide and `levels` mip levels, as the parts of
  * `skySteps`' draws that each one runs. Each of the first six draws one face of every level of the
- * chain. The filter's stages then take the filtered levels' faces in order, as many as the work of
- * one face of level 1 holds. A texel's directions double at each level as its level's texels fall
- * to a quarter, so a face of level `k` weighs `(size >> k)² × 2^k`. The last stage runs no draw: it
- * copies the finished levels into the map. So no stage does more than a sixth of the sky's draw
- * into the chain, or of the filter of level 1, whichever weighs more on a GPU.
+ * chain. Then each filtered level splits into as few stages of whole faces as keep each stage
+ * within the work of one face of level 1. A texel's directions double at each level as its
+ * level's texels fall to a quarter, so a face of level `k` weighs `(size >> k)² × 2^k`. A stage
+ * never mixes two filtered levels: a small level has too few texels to fill a GPU, so its time
+ * follows its directions per texel, and two such draws in a row add up. The last stage runs no
+ * draw: it copies the finished levels into the map.
  */
 export function skyStages(size: number, levels: number): SkyPart[][] {
 	const chained = chainLevels(size);
@@ -252,22 +253,12 @@ export function skyStages(size: number, levels: number): SkyPart[][] {
 	for (let face = 0; face < 6; face++)
 		stages.push(Array.from({ length: chained }, (_, step) => ({ step, first: face, faces: 1 })));
 	const weight = (level: number) => (size >> level) ** 2 * 2 ** level;
-	const most = weight(1);
-	let stage: { step: number; first: number; faces: number }[] = [];
-	let held = most;
 	for (let level = 1; level < levels; level++) {
 		const step = chained + level - 1;
-		for (let face = 0; face < 6; face++) {
-			if (held + weight(level) > most) {
-				stage = [];
-				stages.push(stage);
-				held = 0;
-			}
-			const last = stage.at(-1);
-			if (last?.step === step) last.faces++;
-			else stage.push({ step, first: face, faces: 1 });
-			held += weight(level);
-		}
+		const count = Math.ceil((6 * weight(level)) / weight(1));
+		const faces = Math.ceil(6 / count);
+		for (let first = 0; first < 6; first += faces)
+			stages.push([{ step, first, faces: Math.min(faces, 6 - first) }]);
 	}
 	stages.push([]);
 	return stages;

@@ -56,7 +56,7 @@ describe("a sky map's draws", () => {
 		expect(STEP_BYTES).toBeLessThanOrEqual(256);
 	});
 
-	test('split the chain by faces and pack the filter into stages of one face of level 1', () => {
+	test('split the chain by faces, and each filtered level into stages of one face of level 1 at most', () => {
 		const stages = skyStages(256, 6);
 		const [steps] = skySteps(256, 6, 256);
 		const at = (part: { step: number; first: number; faces: number }) =>
@@ -69,9 +69,10 @@ describe("a sky map's draws", () => {
 			'prefilter 2 0+2',
 			'prefilter 2 2+2',
 			'prefilter 2 4+2',
-			'prefilter 3 0+4',
-			'prefilter 3 4+2, prefilter 4 0+4',
-			'prefilter 4 4+2, prefilter 5 0+6',
+			'prefilter 3 0+3',
+			'prefilter 3 3+3',
+			'prefilter 4 0+6',
+			'prefilter 5 0+6',
 			'',
 		]);
 		// The core counts the stages that the sketch's side tells it.

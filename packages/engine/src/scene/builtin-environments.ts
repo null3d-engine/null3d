@@ -45,6 +45,6 @@ export const BUILTIN_ENVIRONMENTS = {
 export const SKY_MAP = {
 	size: 256,
 	levels: 6,
-	stages: 19,
+	stages: 20,
 	sh: new Float32Array(27),
 } as const satisfies BuiltinEnvironment & { stages: number };
