@@ -15,7 +15,14 @@ import {
 } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { onEngineStop } from '../shared/helper-workers';
-import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
+import {
+	createMetricsBuffer,
+	FrameRecorder,
+	MemoryFigure,
+	memoryFigures,
+	Role,
+	sampleFrames,
+} from '../shared/metrics';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
 import { runPipelined, SketchRunner } from './runner';
@@ -48,6 +55,9 @@ const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
 
+/** The GPU bytes of every mesh, as the fake core reports them. */
+const MESH_BYTES = 4096;
+
 /** The calls whose arguments the fake core keeps. */
 const KEPT_ARGUMENTS = new Set([
 	'recordFrame',
@@ -61,11 +71,11 @@ const textureOption = (option: number, value: number) => `setTextureOption ${opt
 
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
- * frame step it takes and each texture setting it gets. It keeps the arguments of some calls in
- * `calls`. Its transform updates clear the dirty bits, as the core's do. With `grows`, each frame
- * step grows the memory, which detaches the views of a memory that is not shared, as the
- * single-threaded build's is. `cellsRefused` gives the core's count of refused grid cells. Its
- * other calls do nothing.
+ * frame step it takes and each texture setting it gets. It reports `MESH_BYTES` of meshes. It
+ * keeps the arguments of some calls in `calls`. Its transform updates clear the dirty bits, as the
+ * core's do. With `grows`, each frame step grows the memory, which detaches the views of a memory
+ * that is not shared, as the single-threaded build's is. `cellsRefused` gives the core's count of
+ * refused grid cells. Its other calls do nothing.
  */
 function fakeGlue(
 	log: string[],
@@ -83,6 +93,7 @@ function fakeGlue(
 		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
 		cellsRefused,
+		meshMemoryBytes: () => MESH_BYTES,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -276,7 +287,16 @@ async function start(
 		stopDrawing();
 		throw error;
 	}
-	return { runner, log, calls, control, updates, stopDrawing, context: context as SketchContext };
+	return {
+		runner,
+		log,
+		calls,
+		control,
+		metrics,
+		updates,
+		stopDrawing,
+		context: context as SketchContext,
+	};
 }
 
 describe('SketchRunner', () => {
@@ -857,6 +877,39 @@ describe('SketchRunner and quality presets', () => {
 		} finally {
 			stopDrawing();
 		}
+	});
+
+	it('publishes the memory figures from the first frame that samples, then one frame in eight', async () => {
+		const { runner, metrics } = await start(() => ({}));
+		const figures = memoryFigures(metrics);
+		const meshBytes = () => figures[MemoryFigure.MeshBytes];
+		let time = 0;
+		const step = () => {
+			time += 16;
+			return runner.step(time);
+		};
+		// Sampling starts on a frame whose number is not a multiple of eight.
+		let frame = step();
+		while (frame % 8 !== 2) frame = step();
+		expect(meshBytes()).toBe(0);
+		sampleFrames(metrics, true);
+		step();
+		expect(meshBytes()).toBe(MESH_BYTES);
+		// The figures stay current: the eighth frame after the first publishes them again.
+		const published: number[] = [];
+		for (let k = 1; k <= 16; k++) {
+			figures[MemoryFigure.MeshBytes] = 0;
+			step();
+			if (meshBytes() === MESH_BYTES) published.push(k);
+		}
+		expect(published).toEqual([8, 16]);
+		// A reader that samples again after a pause gets the figures in its first frame.
+		sampleFrames(metrics, false);
+		step();
+		figures[MemoryFigure.MeshBytes] = 0;
+		sampleFrames(metrics, true);
+		step();
+		expect(meshBytes()).toBe(MESH_BYTES);
 	});
 
 	it('checks the preset after the setup, and keeps a preset that holds the target', async () => {
