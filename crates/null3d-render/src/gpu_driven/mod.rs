@@ -136,6 +136,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
@@ -206,6 +207,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
@@ -292,8 +294,10 @@ mod ids {
 
     /// The uniform buffer of the custom effects' blocks.
     pub const EFFECTS: u32 = NO_PYRAMID + 1;
+    /// The uniform buffer of depth of field's steps.
+    pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EFFECTS + 1;
+    pub const PAGES: u32 = DOF + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -334,8 +338,10 @@ mod ids {
     pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
     /// The linear sampler of the custom effects.
     pub const EFFECT_SAMPLER: u32 = 6;
+    /// The linear sampler of depth of field's steps.
+    pub const DOF_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -391,8 +397,10 @@ mod ids {
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind group of the copy of each view's image into its target, after the effects'.
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
-    /// The bind groups of materials' maps, after the copies'.
-    pub const TEXTURE_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of depth of field, after the copies'.
+    pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after depth of field's.
+    pub const TEXTURE_GROUPS: u32 = DOF_GROUPS + DOF_STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -584,6 +592,11 @@ impl GpuDrivenRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
+                        dof: DofIds {
+                            buffer: ids::DOF,
+                            sampler: ids::DOF_SAMPLER,
+                            first_group: ids::DOF_GROUPS,
                         },
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
@@ -857,6 +870,8 @@ impl GpuDrivenRenderer {
             self.settings.clock_seconds(),
             self.settings.camera_projection(input.canvas),
         );
+        self.graph
+            .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph

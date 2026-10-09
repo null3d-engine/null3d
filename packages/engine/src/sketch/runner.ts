@@ -117,10 +117,10 @@ export interface SketchCore {
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
 /**
- * While a reader shows the frame figures, the frames whose number has none of these bits publish
- * the memory figures.
+ * While a reader shows the frame figures, the first frame that samples publishes the memory
+ * figures, and then one frame in every this many.
  */
-const MEMORY_EVERY_MASK = 7;
+const MEMORY_EVERY = 8;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -205,6 +205,11 @@ export class SketchRunner {
 	/** The page's count of canvas size changes when the viewport last read them. */
 	private viewportSerial = -1;
 	private gpuEpoch = 0;
+	/**
+	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
+	 * 0 while nobody samples, so the first frame that samples publishes them.
+	 */
+	private memoryWait = 0;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -683,6 +688,7 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
@@ -1012,8 +1018,16 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
-		// The memory figures change slowly, so a few times a window is enough.
-		if ((frame & MEMORY_EVERY_MASK) === 0 && this.record.figures) this.publishMemory();
+		// The memory figures change slowly, so a few times a window is enough. They start with the
+		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
+		// memory of the last time a reader sampled.
+		if (this.record.figures) {
+			if (this.memoryWait === 0) {
+				this.publishMemory();
+				this.memoryWait = MEMORY_EVERY;
+			}
+			this.memoryWait--;
+		} else this.memoryWait = 0;
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;

@@ -23,6 +23,10 @@ import {
 	TEMPLATE_BLOOM,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DOF_BLUR,
+	TEMPLATE_DOF_COMPOSITE,
+	TEMPLATE_DOF_FILTER,
+	TEMPLATE_DOF_SETUP,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -237,6 +241,11 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
 	templates[TEMPLATE_AO] = { shader: shaders.ao, pipeline: 'horizon' };
 	templates[TEMPLATE_AO_DENOISE] = { shader: shaders.ao, pipeline: 'denoise' };
+	// Depth of field's steps read the same one-sample copy of the depth.
+	templates[TEMPLATE_DOF_SETUP] = { shader: shaders.dof, pipeline: 'setup' };
+	templates[TEMPLATE_DOF_BLUR] = { shader: shaders.dof, pipeline: 'gather' };
+	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
+	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

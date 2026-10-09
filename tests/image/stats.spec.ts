@@ -35,10 +35,13 @@ const show = (on: boolean) =>
 /** Runs in the page: asks the page to show or hide the overlay, or to change its options. */
 const showFromPage = (request: boolean | { collapsed?: boolean }) =>
 	(globalThis as { showPageStats?: (show: unknown) => void }).showPageStats?.(request);
-/** Opens the stats page and waits for its result. */
+/**
+ * Opens the stats page and waits for its result. The page itself waits up to 20 s for the figures
+ * after the engine starts, then reports what it has, so this wait is longer.
+ */
 async function openStats(page: Page, query: string): Promise<StatsResult & { error?: string }> {
 	await page.goto(`stats.html?${query}`);
-	const result = await pageResult<StatsResult & { error?: string }>(page, 30_000);
+	const result = await pageResult<StatsResult & { error?: string }>(page, 45_000);
 	expect(result.error).toBeUndefined();
 	return result;
 }

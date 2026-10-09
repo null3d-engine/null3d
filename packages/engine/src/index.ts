@@ -123,6 +123,7 @@ export type {
 	AoSettings,
 	BloomBlend,
 	BloomSettings,
+	DofSettings,
 	OutlineSettings,
 	Post,
 	PostSettings,

@@ -897,8 +897,11 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
-/** The effects that the effect cost page measures: bloom, ambient occlusion, or 4 custom effects. */
-export type CostedEffect = 'bloom' | 'ao' | 'effects';
+/**
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
+ * custom effects.
+ */
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -911,11 +914,14 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
- * one effect's pass. D-21 records the results of the bloom plan and the ao plan, and D-71 those of
- * the effects plan.
+ * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
+ * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
+ * D-119 those of the dof plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
+	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -930,22 +936,25 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 			: [];
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
-			prepass.map((on) =>
-				pageItem(
-					`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}`,
-					'effect-cost',
-					{ kind: 'effect', effect, tier, scale },
-					{
-						switches: [
-							`gpu=${tier}`,
-							`scale=${scale}`,
-							`effect=${effect}`,
-							...(on ? ['prepass=on'] : []),
-							// One pass for each effect, so a quarter of the difference is one pass.
-							...(effect === 'effects' ? ['join=off'] : []),
-						],
-						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-					},
+			prepass.flatMap((on) =>
+				tapCounts.map((taps) =>
+					pageItem(
+						`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}`,
+						'effect-cost',
+						{ kind: 'effect', effect, tier, scale },
+						{
+							switches: [
+								`gpu=${tier}`,
+								`scale=${scale}`,
+								`effect=${effect}`,
+								...(on ? ['prepass=on'] : []),
+								...(taps ? [`taps=${taps}`] : []),
+								// One pass for each effect, so a quarter of the difference is one pass.
+								...(effect === 'effects' ? ['join=off'] : []),
+							],
+							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						},
+					),
 				),
 			),
 		),
@@ -1442,6 +1451,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	dof: () => effectPlan('dof'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,

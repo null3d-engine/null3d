@@ -523,6 +523,10 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
+	setDof(on: boolean): number;
+	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
+	setDofTaps(taps: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -838,6 +842,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setDof',
+	'setDofTaps',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',

@@ -121,6 +121,7 @@ use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
+use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
@@ -149,6 +150,7 @@ pub(crate) struct GraphIds {
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
+    pub(crate) dof: DofIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
 }
@@ -234,6 +236,11 @@ const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
     "effectColor6",
     "effectColor7",
 ];
+/// Depth of field's steps and the targets they create: the setup, the gather and the tent at half
+/// the render size, then the composite at the render size, whose target bloom and the final pass
+/// read.
+const DOF_PASSES: [&str; dof::STEPS] = ["DofSetup", "DofGather", "DofTent", "DofComposite"];
+const DOF_TARGETS: [&str; dof::STEPS] = ["dofHalf0", "dofHalf1", "dofHalf2", "dofColor"];
 /// An effect slot that holds no effect.
 const NO_EFFECT: Effect = Effect {
     template: 0,
@@ -330,6 +337,8 @@ pub(crate) enum Role {
     /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
     /// passes. The graph records it itself.
     Effect(u8),
+    /// A step of depth of field, by its place. The graph records it itself.
+    Dof(u8),
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
@@ -486,6 +495,19 @@ pub(crate) struct FrameGraph {
     /// The inverse of the camera's projection, which effects that read depth use, or `None`
     /// without a camera.
     inverse_projection: Option<Mat4>,
+    /// Depth of field's steps and their GPU objects, once the sketch first turns it on.
+    dof_pass: Option<DofPass>,
+    /// The GPU objects that depth of field's steps take.
+    dof_ids: DofIds,
+    /// What depth of field draws with in the frame, while the sketch turns it on.
+    dof: Option<DofFrame>,
+    /// True once depth of field's pipelines draw: built, after the frame whose list created them.
+    dof_built: bool,
+    /// True when the declared passes hold depth of field's steps.
+    dof_declared: bool,
+    /// The textures that depth of field's steps read, found once for each compile of the graph,
+    /// which the count says.
+    dof_textures: Option<(u32, DofSources)>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -605,6 +627,12 @@ impl FrameGraph {
             effect_textures: None,
             effect_clock: [0.0; 2],
             inverse_projection: None,
+            dof_pass: None,
+            dof_ids: ids.dof,
+            dof: None,
+            dof_built: false,
+            dof_declared: false,
+            dof_textures: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -655,8 +683,11 @@ impl FrameGraph {
         self.unit_count = 0;
         self.folded = None;
         self.effect_textures = None;
-        // The depth step reads the depth's samples, which the new mode may change.
+        // The depth step reads the depth's samples, which the new mode may change, as depth of
+        // field's steps do.
         self.ao_pass = None;
+        self.dof_pass = None;
+        self.dof_built = false;
         self.declared = false;
     }
 
@@ -839,7 +870,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects
+        let dof = if self.dof.is_some() {
+            DofPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -970,13 +1006,49 @@ impl FrameGraph {
     }
 
     /// The resource that holds the scene's color after the custom effects' passes: the last unit's
-    /// target, or the scene color without one. Bloom and the final pass read it, and the effects
-    /// that fold into the final pass.
-    fn color_output(&self) -> &'static str {
+    /// target, or the scene color without one. Depth of field reads it.
+    fn effects_output(&self) -> &'static str {
         match self.unit_count {
             0 => SCENE_COLOR,
             count => EFFECT_TARGETS[count - 1],
         }
+    }
+
+    /// The resource that holds the scene's color before bloom and the final pass: depth of field's
+    /// target while its steps are declared, or else the custom effects' output. Bloom and the final
+    /// pass read it, and the effects that fold into the final pass.
+    fn color_output(&self) -> &'static str {
+        if self.dof_declared {
+            DOF_TARGETS[dof::STEPS - 1]
+        } else {
+            self.effects_output()
+        }
+    }
+
+    /// Turns depth of field on with what the frame draws it with, or off with `None`, for the next
+    /// frames. The passes are declared again only when it starts or stops drawing, so a moving
+    /// focus or a new lens changes only the steps' blocks. The 8-bit path draws no depth of field.
+    pub(crate) fn set_dof(&mut self, dof: Option<DofFrame>) {
+        let was = self.dof_draws();
+        self.dof = dof.filter(|_| self.scene_color.is_hdr());
+        if self.dof_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while depth of field draws: the sketch turned it on on the HDR path, and its pipelines
+    /// are built. Until then the frames draw without it.
+    pub(crate) fn dof_draws(&self) -> bool {
+        self.dof.is_some() && self.dof_built
+    }
+
+    /// Depth of field's steps, made for the scene depth's samples when first asked for. WebGL2 has
+    /// no multisampled textures: its backend gives the steps a copy of one sample.
+    fn dof_steps(&mut self) -> &mut DofPass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let rows_from_bottom = !self.gpu_culling;
+        self.dof_pass
+            .get_or_insert_with(|| DofPass::new(self.dof_ids, samples, rows_from_bottom))
     }
 
     /// Plans the effects' passes: the units of the effects before `fold`, with each group whose
@@ -1003,6 +1075,7 @@ impl FrameGraph {
     /// reads the image between them, and the final pass reads one texel for each pixel.
     fn may_fold(&self) -> bool {
         !self.bloom_wanted()
+            && self.dof.is_none()
             && !self.final_pass.fxaa()
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
@@ -1360,6 +1433,10 @@ impl FrameGraph {
         self.enable_views();
         self.declare_outline(color.samples);
         self.declare_effects();
+        self.dof_declared = self.dof_draws();
+        if self.dof_declared {
+            self.declare_dof();
+        }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -1485,6 +1562,34 @@ impl FrameGraph {
             }
             self.add(pass, Role::Effect(index as u8));
             input = EFFECT_TARGETS[index];
+        }
+    }
+
+    /// Declares depth of field's steps: the setup reads the custom effects' output and the scene
+    /// depth as every pass leaves them, the gather and the tent each read the target before them,
+    /// and the composite reads the setup's inputs and the tent's target.
+    fn declare_dof(&mut self) {
+        let input = self.effects_output();
+        let half = Target::color(dof::HALF_FORMAT);
+        for step in 0..dof::STEPS {
+            let pass = Pass::new(DOF_PASSES[step], PassKind::Fullscreen);
+            let pass = match step {
+                0 => pass
+                    .size(dof::HALF)
+                    .reads(input)
+                    .reads(SCENE_DEPTH)
+                    .creates(DOF_TARGETS[0], half),
+                1 | 2 => pass
+                    .size(dof::HALF)
+                    .reads(DOF_TARGETS[step - 1])
+                    .creates(DOF_TARGETS[step], half),
+                _ => pass
+                    .reads(input)
+                    .reads(SCENE_DEPTH)
+                    .reads(DOF_TARGETS[2])
+                    .creates(DOF_TARGETS[3], Target::color(dof::FORMAT)),
+            };
+            self.add(pass, Role::Dof(step as u8));
         }
     }
 
@@ -1663,6 +1768,18 @@ impl FrameGraph {
             }
             _ => false,
         };
+        let dof_built = self.dof.is_some() && {
+            let steps = self.dof_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if dof_built != self.dof_built {
+            let was = self.dof_draws();
+            self.dof_built = dof_built;
+            if self.dof_draws() != was {
+                self.declared = false;
+            }
+        }
         let ao_built = self.ao.is_some() && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
@@ -1746,6 +1863,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_effects(list, arena)?;
+        self.upload_dof(list, arena)?;
         self.bind_view_copies(list)?;
         if !self.final_runs() {
             return Ok(());
@@ -1903,6 +2021,38 @@ impl FrameGraph {
         }
         self.effect_textures = Some((compiles, colors, depth));
         (colors, depth)
+    }
+
+    /// Records depth of field's objects and blocks while its steps are declared, and binds each step
+    /// to the textures it reads, found by name once for each compile of the graph.
+    fn upload_dof(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.dof.filter(|_| self.dof_declared) else {
+            return Ok(());
+        };
+        let compiles = self.graph.compiles();
+        let sources = match self.dof_textures {
+            Some((at, sources)) if at == compiles => sources,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("each step of depth of field reads a planned texture")
+                };
+                let sources = DofSources {
+                    color: id(self.effects_output()),
+                    depth: id(SCENE_DEPTH),
+                    halves: std::array::from_fn(|k| id(DOF_TARGETS[k])),
+                };
+                self.dof_textures = Some((compiles, sources));
+                sources
+            }
+        };
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.dof_steps()
+            .prepare(list, arena, frame_size, frame, sources, made)
     }
 
     /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
@@ -2077,6 +2227,11 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("effects run only on the HDR path")
                                 .record(list, self.effect_units[usize::from(index)])?,
+                            Role::Dof(step) => self
+                                .dof_pass
+                                .as_ref()
+                                .expect("depth of field's steps run once they are declared")
+                                .record(list, usize::from(step))?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -2272,6 +2427,9 @@ impl FrameGraph {
         }
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
+        }
+        if let Some(dof) = self.dof_pass.as_mut() {
+            dof.reset_gpu();
         }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
@@ -2506,6 +2664,11 @@ mod tests {
             sampler: 12,
             first_group: 30,
             blank_depth: 902,
+        },
+        dof: DofIds {
+            buffer: 13,
+            sampler: 13,
+            first_group: 50,
         },
         view_copy: Some(ViewCopyIds { first_group: 40 }),
     };
@@ -3206,6 +3369,141 @@ mod tests {
             .unwrap();
         assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
         assert!(frames.graph().find_pass(EFFECT_PASSES[0]).is_none());
+    }
+
+    /// What a frame draws depth of field with: the default lens, its camera's planes, and no
+    /// inverse projection, which the graph does not read.
+    fn dof_frame() -> DofFrame {
+        DofFrame {
+            dof: dof::Dof::default(),
+            lens: dof::Lens::new(50.0, 2.8, 10.0),
+            near: 0.1,
+            far: 100.0,
+            inverse_projection: [0.0; 16],
+            taps: 22,
+        }
+    }
+
+    #[test]
+    fn depth_of_field_runs_between_the_effects_and_bloom_and_costs_nothing_while_off() {
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let without = steps(&frames);
+        let textures = frames.graph().plan().unwrap().textures().len();
+        let keys = pipelines.keys().len();
+        let bound = frames.upload_bound();
+
+        // Off, the frame declares, asks for and uploads nothing of depth of field.
+        frames.set_dof(None);
+        frames.request_pipelines(&mut pipelines, 1);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames), without);
+        assert_eq!(pipelines.keys().len(), keys);
+        assert_eq!(frames.upload_bound(), bound);
+
+        let effect = Effect {
+            template: 64,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        frames.set_dof(Some(dof_frame()));
+        frames.sync(&[View::default()]);
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(
+            !frames.dof_draws(),
+            "depth of field waits for its pipelines"
+        );
+        pipelines.create_new(&mut list, 2).unwrap();
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.dof_draws());
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+        let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+        assert!(place("Effect0") < place(DOF_PASSES[0]));
+        for step in 1..dof::STEPS {
+            assert!(place(DOF_PASSES[step - 1]) < place(DOF_PASSES[step]));
+        }
+        assert!(place(DOF_PASSES[3]) < place(BLOOM_DOWN[0]));
+        // Bloom and the final pass read the composite's target. The three half-size targets live
+        // one after another, so the steps add at most three textures.
+        assert_eq!(frames.color_output(), DOF_TARGETS[3]);
+        assert_eq!(frames.effects_output(), EFFECT_TARGETS[0]);
+        let graph = frames.graph();
+        let with_bloom = textures + LEVELS + 1;
+        let with = graph.plan().unwrap().textures().len();
+        assert!(with <= with_bloom + 3, "{with} textures");
+        // The setup and the composite read the multisampled depth through their layouts.
+        let mut arena = UploadArena::default();
+        arena.reset(frames.upload_bound());
+        list.clear();
+        frames
+            .upload(&mut list, &mut arena, Output::default(), Grading::default())
+            .unwrap();
+        let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+            .iter()
+            .filter(|group| (50..50 + dof::STEPS as u32).contains(&group[0]))
+            .map(|group| group[1])
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                bind_layout::EFFECT_DEPTH_MS,
+                bind_layout::BLOOM,
+                bind_layout::BLOOM,
+                bind_layout::DOF_COMPOSITE_MS
+            ]
+        );
+        // A moving focus uploads the blocks again and declares nothing.
+        let compiles = frames.graph().compiles();
+        let mut moved = dof_frame();
+        moved.lens = dof::Lens::new(50.0, 2.8, 3.0);
+        frames.set_dof(Some(moved));
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(frames.graph().compiles(), compiles);
+
+        // Off again, the plan loses every step and target.
+        frames.set_effects(&[], &EffectJoins::default(), [0.0; 2], None);
+        frames.set_bloom(None, ChainFrame::default());
+        frames.set_dof(None);
+        frames.sync(&[View::default()]);
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames), without);
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+    }
+
+    #[test]
+    fn the_8_bit_path_draws_no_depth_of_field() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
+        frames.sync(&[View::default()]);
+        frames.set_dof(Some(dof_frame()));
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        assert!(!frames.dof_draws());
+        assert!(
+            pipelines
+                .keys()
+                .iter()
+                .all(|key| key.template != null3d_gpu::drawlist::template::DOF_SETUP)
+        );
     }
 
     #[test]
