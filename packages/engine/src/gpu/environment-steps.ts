@@ -5,10 +5,11 @@
 // and one filtered level for each roughness. A backend runs every step in one submit, so the map
 // is whole before any frame reads it (D-66).
 //
-// A sky map runs in stages instead (D-118), which the engine core spreads over frames: its first
-// stage draws the sky into every level of the chain, each level from the sky itself, so no draw
-// waits for another's texels. Each later stage filters one level of the map, and the last copies
-// the finished levels into the map.
+// A sky map runs in stages instead (D-118), which the engine core spreads over frames. The first
+// stages draw the sky into every level of the chain, one face of the cube each, and each level
+// comes from the sky itself, so no draw waits for another's texels. The next stages filter the
+// map's levels, a few faces each, so that no stage outweighs one face of the largest filtered
+// level. The last stage copies the finished levels into the map.
 
 /** The blur of three.js's examples' `pmremGenerator.fromScene(room, 0.04)`, in radians. */
 const ROOM_SIGMA = 0.04;
@@ -224,6 +225,43 @@ export function skySteps(
 			into: ['target'],
 		});
 	return [steps, stepValues(steps, size, stride)];
+}
+
+/**
+ * A part of a sky map's stage: the faces from `first` on, `faces` of them, of draw `step` in the
+ * order of `skySteps`. The faces lie side by side in the draw's rows, so a part is one rectangle.
+ */
+export interface SkyPart {
+	readonly step: number;
+	readonly first: number;
+	readonly faces: number;
+}
+
+/**
+ * The stages of a sky map with faces `size` texels wide and `levels` mip levels, as the parts of
+ * `skySteps`' draws that each one runs. Each of the first six draws one face of every level of the
+ * chain. Then each filtered level splits into as few stages of whole faces as keep each stage
+ * within the work of one face of level 1. A texel's directions double at each level as its
+ * level's texels fall to a quarter, so a face of level `k` weighs `(size >> k)² × 2^k`. A stage
+ * never mixes two filtered levels: a small level has too few texels to fill a GPU, so its time
+ * follows its directions per texel, and two such draws in a row add up. The last stage runs no
+ * draw: it copies the finished levels into the map.
+ */
+export function skyStages(size: number, levels: number): SkyPart[][] {
+	const chained = chainLevels(size);
+	const stages: SkyPart[][] = [];
+	for (let face = 0; face < 6; face++)
+		stages.push(Array.from({ length: chained }, (_, step) => ({ step, first: face, faces: 1 })));
+	const weight = (level: number) => (size >> level) ** 2 * 2 ** level;
+	for (let level = 1; level < levels; level++) {
+		const step = chained + level - 1;
+		const count = Math.ceil((6 * weight(level)) / weight(1));
+		const faces = Math.ceil(6 / count);
+		for (let first = 0; first < 6; first += faces)
+			stages.push([{ step, first, faces: Math.min(faces, 6 - first) }]);
+	}
+	stages.push([]);
+	return stages;
 }
 
 /** The rows of the target that a sky map's draws fill: every level of its chain, one under another. */

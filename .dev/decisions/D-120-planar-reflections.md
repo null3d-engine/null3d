@@ -107,7 +107,11 @@ A first run of these figures was void: the benchmark page passed only a fixed li
 - One S25 run at a quarter size measured 15.37 ms, with every pass faster: the GPU's clock changed during it. The median of the three runs leaves it out.
 - WebGL2 has no GPU timer on either phone. Every WebGL2 page drew a frame each 33.3 ms, with and without the reflection. That is the S25's 30 Hz display and half the Pixel 9's 60 Hz. The draw calls went from 3 to 7.
 
-So by the rule's test, half size costs more than 2 ms on the S25. It costs 8.9 ms against no reflection, and about 3.4 ms in the reflection's own passes. But a quarter costs within 0.1 ms of half on both phones. In S1, the reflection's cost follows the swarm's 100,000 boxes and the water's shading, not the reflection's pixels. So a quarter would save almost nothing in this scene. A scene with fewer, larger objects would show more of the pixels' share. The owner rules on Medium; the presets stay as they are until then.
+So by the rule's test, half size costs more than 2 ms on the S25. It costs 8.9 ms against no reflection, and about 3.4 ms in the reflection's own passes. But a quarter costs within 0.1 ms of half on both phones. In S1, the reflection's cost follows the swarm's 100,000 boxes and the water's shading, not the reflection's pixels. So a quarter would save almost nothing in this scene. A scene with fewer, larger objects would show more of the pixels' share.
+
+**The owner's ruling, 9 October 2026.** Medium keeps the reflection at half size, against the rule set beforehand. A quarter saved only 0.1 ms on both phones: 22.0 against 21.9 ms on the S25, and 14.1 against 14.0 ms on the Pixel 9. On the S25 most of the cost is the water's own shading, about 5.4 ms, not the reflection's passes, about 3.4 ms. A smaller reflection does not touch the shading. So the rule changes: a preset draws the reflection smaller only where a quarter size saves at least 1 ms on a phone.
+
+The water's shading cost on phones is a known item for the Creek scene. Its water covers much of the screen, as S1's does, so the shading, not the reflection, sets its cost there.
 
 Allocation, `bun run bench:allocation --reflection`, S1 with 100,000 boxes and the reflection under them, the camera orbiting, on 9 October 2026 on the Mac (Chrome): every place within its budget on both paths. On WebGPU the sketch worker took 318 bytes per frame and the render worker 708. The replay took 335 bytes, 137 more than without the reflection. The browser returns an encoder object for each of the reflection's three passes, about 46 bytes each: its culling, its scene, and the copy that turns its image upright. The check now allows 64 bytes per pass with `--reflection`, as it allows bloom's and the custom effects' passes. On WebGL2 the sketch worker took 403 bytes per frame and the render worker 150, within their budgets with no allowance.
 
@@ -119,7 +123,7 @@ Image tests: `reflection-mirror`, `reflection-water` and `reflection-quarter` on
 
 ## Decision
 
-Options A throughout: a reflection pass, an oblique near plane, and the surface's `reflection` read through `reflection_uv`. Presets: Low draws the reflection at a quarter of the render size each way, a sixteenth of its pixels, since phones start on Low and their fill rate is low. Medium and High draw it at half size, as the task asked. Ultra, which only desktops start with, draws it whole: on the Mac it cost 0.1 ms more than half size. The cloud phone check of 9 October 2026 (above) waits on the owner's ruling for Medium.
+Options A throughout: a reflection pass, an oblique near plane, and the surface's `reflection` read through `reflection_uv`. Presets: Low draws the reflection at a quarter of the render size each way, a sixteenth of its pixels, since phones start on Low and their fill rate is low. Medium and High draw it at half size, as the task asked. Ultra, which only desktops start with, draws it whole: on the Mac it cost 0.1 ms more than half size. After the cloud phone check of 9 October 2026, the owner kept Medium at half size (above): a preset drops the size only where a quarter saves at least 1 ms on a phone.
 
 ## Consequences
 
@@ -127,3 +131,4 @@ Options A throughout: a reflection pass, an oblique near plane, and the surface'
 - Docs: `api/render` (reflection passes), `shaders/surface-functions` (reflections), `api/materials`, `guides/custom-passes` (reflections and the water recipe), the shader library, the quality preset tables, and the mapping entries `reflector` and `ssr`.
 - Skills: the develop skill's recipe 19, quick reference, shaders reference and task table, and the port skill's materials and post-processing notes.
 - Tests: `mirror.rs` and `view.rs` unit tests, the reflection image tests and spec, the library test of `reflection_uv`, and `--reflection` in `bench:allocation`.
+- Known item: the water's shading costs about 5.4 ms of GPU time per frame on the S25 in S1, more than the reflection's passes. The Creek scene's water must be measured and made cheaper on phones.

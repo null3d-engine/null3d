@@ -8,9 +8,9 @@
 // (D-66). The textures and buffers of such a map go once that work has run, and the pipelines stay
 // for the next map on the device.
 //
-// A sky map runs in stages that the frame's own command encoder records (D-118). Its filtered
-// levels gather in a buffer, and the last stage copies them all into the map, so frames draw with
-// the old levels until then. The map keeps its chain, its buffers and its bind groups between
+// A sky map runs in stages that the frame's own command encoder records (D-118), each a few faces
+// of its draws, as `skyStages` plans them. Its filtered levels gather in a buffer, and the last
+// stage copies them all into the map, so frames draw with the old levels until then. The map keeps its chain, its buffers and its bind groups between
 // stages and refreshes, and every stage reuses its descriptors, so a refresh allocates nothing of
 // its own.
 
@@ -23,11 +23,13 @@ import {
 	SKY_BYTES,
 	SKY_FILTER,
 	type SkyFilter,
+	type SkyPart,
 	STEP_BYTES,
 	type Step,
 	type StepSource,
 	type StepTexture,
 	skyRows,
+	skyStages,
 	skySteps,
 } from '../environment-steps';
 import type { GpuMemory } from '../memory';
@@ -49,10 +51,10 @@ export interface CubeGenerator {
 	run(device: GPUDevice, target: GPUTexture, source: GeneratorSource): void;
 	/**
 	 * Records a stage of the sky map in `target` into `encoder`, as the draw list's `SkyMapStep`
-	 * command at `at` of `words` (and of `floats`, the same memory) names it: 0 draws the sky of its
-	 * settings into the chain, each stage from 1 to the map's last level filters that level, and the
-	 * one after copies every level into the map. The map's first stage makes what it keeps between
-	 * stages, and counts its bytes in `memory`.
+	 * command at `at` of `words` (and of `floats`, the same memory) names it, as `skyStages` plans
+	 * them: the first ones draw the sky of stage 0's settings into the chain, the next ones filter
+	 * the map's levels, and the last copies every level into the map. The map's first stage makes
+	 * what it keeps between stages, and counts its bytes in `memory`.
 	 */
 	skyStage(
 		device: GPUDevice,
@@ -343,6 +345,7 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const size = target.width;
 	const levels = target.mipLevelCount;
 	const [steps, values] = skySteps(size, levels, ALIGNMENT, filter);
+	const stages = skyStages(size, levels);
 	const chained = chainLevels(size);
 	const chain = device.createTexture({
 		label: 'sky chain',
@@ -396,13 +399,18 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 	const toCube: GPUTexelCopyTextureInfo = { texture: chain, mipLevel: 0, origin };
 	const stripSize: GPUExtent3DDict = { width: 0, height: 0, depthOrArrayLayers: 1 };
 	const faceSize: GPUExtent3DDict = { width: 0, height: 0, depthOrArrayLayers: 1 };
-	/** Copies each face of a level's rows in `from` at `start` into the level of `into`. */
+	/**
+	 * Copies faces `first` to `first + faces - 1` of a level's rows in `from` at `start` into the
+	 * level of `into`.
+	 */
 	const copyFaces = (
 		encoder: GPUCommandEncoder,
 		from: GPUBuffer,
 		start: number,
 		into: GPUTexture,
 		level: number,
+		first: number,
+		faces: number,
 	) => {
 		const side = size >> level;
 		fromBuffer.buffer = from;
@@ -411,39 +419,44 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		toCube.mipLevel = level;
 		faceSize.width = side;
 		faceSize.height = side;
-		for (let face = 0; face < 6; face++) {
+		for (let face = first; face < first + faces; face++) {
 			fromBuffer.offset = start + face * side * 4;
 			origin.z = face;
 			encoder.copyBufferToTexture(fromBuffer, toCube, faceSize);
 		}
 	};
-	/** Draws steps `first` to `last` in one render pass, each into its own rows, then copies each. */
-	const draw = (encoder: GPUCommandEncoder, first: number, last: number) => {
+	/** Draws a stage's parts in one render pass, each into its own rectangle, then copies each. */
+	const draw = (encoder: GPUCommandEncoder, parts: readonly SkyPart[]) => {
 		const render = encoder.beginRenderPass(pass);
-		for (let k = first; k <= last; k++) {
+		for (let p = 0; p < parts.length; p++) {
+			const { step: k, first, faces } = parts[p] as SkyPart;
 			const step = steps[k] as Step;
-			render.setViewport(0, step.row, 6 * step.size, step.size, 0, 1);
+			render.setViewport(first * step.size, step.row, faces * step.size, step.size, 0, 1);
 			render.setPipeline(pipelines[step.pipeline]);
 			dynamicOffset[0] = k * ALIGNMENT;
 			render.setBindGroup(0, groups[step.source] as GPUBindGroup, dynamicOffset, 0, 1);
 			render.draw(3);
 		}
 		render.end();
-		for (let k = first; k <= last; k++) copyOut(encoder, steps[k] as Step);
+		for (let p = 0; p < parts.length; p++) copyOut(encoder, parts[p] as SkyPart);
 	};
-	/** Copies a step's texels into the chain and into the finished levels. */
-	const copyOut = (encoder: GPUCommandEncoder, step: Step) => {
+	/** Copies a part's texels into the chain and into the finished levels. */
+	const copyOut = (encoder: GPUCommandEncoder, { step: k, first, faces }: SkyPart) => {
+		const step = steps[k] as Step;
 		const side = step.size;
+		// Each face's texels lie at the same place in the buffer's rows as in the drawn rows.
+		const across = first * side * 4;
+		stagingOrigin.x = first * side;
 		stagingOrigin.y = step.row;
-		stripSize.width = 6 * side;
+		stripSize.width = faces * side;
 		stripSize.height = side;
 		toBuffer.bytesPerRow = rowBytes(side);
-		for (let k = 0; k < step.into.length; k++) {
-			const chaining = step.into[k] === 'chain';
+		for (let i = 0; i < step.into.length; i++) {
+			const chaining = step.into[i] === 'chain';
 			toBuffer.buffer = chaining ? strip : finished;
-			toBuffer.offset = chaining ? 0 : (offsets[step.level] as number);
+			toBuffer.offset = (chaining ? 0 : (offsets[step.level] as number)) + across;
 			encoder.copyTextureToBuffer(fromStaging, toBuffer, stripSize);
-			if (chaining) copyFaces(encoder, strip, 0, chain, step.level);
+			if (chaining) copyFaces(encoder, strip, 0, chain, step.level, first, faces);
 		}
 	};
 	let texels = 0;
@@ -452,13 +465,12 @@ function makeSkyMap(device: GPUDevice, kept: Kept, target: GPUTexture, filter: S
 		textureBytes: 4 * (texels + 6 * size * skyRows(size)),
 		bufferBytes: strip.size + finished.size + uniforms.size + sky.size,
 		stage(encoder, stage, settings, at) {
-			if (stage === 0) {
-				device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
-				draw(encoder, 0, chained - 1);
-			} else if (stage < levels) draw(encoder, chained + stage - 1, chained + stage - 1);
+			const parts = stages[stage] as readonly SkyPart[];
+			if (stage === 0) device.queue.writeBuffer(sky, 0, settings, at, SKY_BYTES / 4);
+			if (parts.length > 0) draw(encoder, parts);
 			else
 				for (let level = 0; level < levels; level++)
-					copyFaces(encoder, finished, offsets[level] as number, target, level);
+					copyFaces(encoder, finished, offsets[level] as number, target, level, 0, 6);
 		},
 		destroy() {
 			for (const resource of [chain, staging, strip, finished, uniforms, sky]) resource.destroy();

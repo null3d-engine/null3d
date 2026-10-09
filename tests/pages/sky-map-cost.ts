@@ -3,7 +3,8 @@
 // the pipelines in the background, as the engine does, fills the map once whole, as at load, then
 // refreshes it ?runs= times with a sun that moves, one stage at a time, as frames do. Each stage's
 // time runs from its call until the GPU has finished it, on a queue with no other work; WebGL2
-// also gives its timer queries' GPU times. On WebGPU the page then reads the map back, and makes
+// also gives its timer queries' GPU times, and reads the map after the last stage, as a frame
+// does. On WebGPU the page then reads the map back, and makes
 // the same sky again with ?reference=<directions> filter directions and 16 x 16 chain directions,
 // as a file's map would take, so the test can compare the two.
 import {
@@ -15,11 +16,11 @@ import {
 import { ENVIRONMENT_SHADER as GLSL } from '../../packages/engine/src/generated/shaders-environment-glsl';
 import { ENVIRONMENT_SHADER as WGSL } from '../../packages/engine/src/generated/shaders-environment-wgsl';
 import { GpuMemory } from '../../packages/engine/src/gpu/memory';
+import { SKY_MAP } from '../../packages/engine/src/scene/builtin-environments';
 import { run, toBase64 } from './lib/result';
 
-/** A sky map: faces of 256 texels down to 8, as the engine makes it. */
-const SIZE = 256;
-const LEVELS = 6;
+/** A sky map: faces of 256 texels down to 8, as the engine makes it, and its stages. */
+const { size: SIZE, levels: LEVELS, stages: STAGES } = SKY_MAP;
 
 type Tier = 'webgpu' | 'compat' | 'webgl2';
 const params = new URLSearchParams(location.search);
@@ -133,15 +134,15 @@ async function timeWebGPU(): Promise<Timed> {
 	const sky = settings(0.6, 0);
 	let start = performance.now();
 	const encoder = device.createCommandEncoder();
-	for (let k = 0; k <= LEVELS; k++)
+	for (let k = 0; k < STAGES; k++)
 		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory);
 	device.queue.submit([encoder.finish()]);
 	await device.queue.onSubmittedWorkDone();
 	const fill = performance.now() - start;
-	const stages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const stages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (let r = 0; r < runs; r++) {
 		const moved = settings(0.6 - 0.05 * (r + 1), 0.1 * r);
-		for (let k = 0; k <= LEVELS; k++) stages[k]?.push(await stage(k, moved));
+		for (let k = 0; k < STAGES; k++) stages[k]?.push(await stage(k, moved));
 	}
 	// The last sky again, filtered as a file's map is, for the comparison.
 	const last = settings(0.6 - 0.05 * runs, 0.1 * (runs - 1));
@@ -151,7 +152,7 @@ async function timeWebGPU(): Promise<Timed> {
 	await fine.prepare(device);
 	const exact = cube();
 	const fineEncoder = device.createCommandEncoder();
-	for (let k = 0; k <= LEVELS; k++)
+	for (let k = 0; k < STAGES; k++)
 		fine.skyStage(device, fineEncoder, exact, ...command(k, last), 0, memory);
 	device.queue.submit([fineEncoder.finish()]);
 	const referenceLevels = await readLevels(device, exact);
@@ -165,6 +166,48 @@ async function timeWebGPU(): Promise<Timed> {
 interface TimerQuery {
 	readonly TIME_ELAPSED_EXT: number;
 	readonly GPU_DISJOINT_EXT: number;
+}
+
+/**
+ * A draw of one pixel of the canvas that reads every level of cube texture `map`, as a frame does.
+ * A browser may put off the upload of a texture from a pixel buffer until a draw reads the texture
+ * or a later call writes the buffer. A frame reads the map just after the last stage, so the last
+ * stage's time includes this draw, and the next refresh's first stage does not take the upload.
+ */
+function mapReader(gl: WebGL2RenderingContext, map: WebGLTexture): () => void {
+	const program = gl.createProgram() as WebGLProgram;
+	const sources: [number, string][] = [
+		[
+			gl.VERTEX_SHADER,
+			'void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); gl_PointSize = 1.0; }',
+		],
+		[
+			gl.FRAGMENT_SHADER,
+			`precision highp float; uniform highp samplerCube map; out vec4 color;
+			void main() {
+				color = vec4(0.0);
+				for (int level = 0; level < ${LEVELS}; level++)
+					color += textureLod(map, vec3(1.0, 0.0, 0.0), float(level));
+			}`,
+		],
+	];
+	for (const [type, source] of sources) {
+		const shader = gl.createShader(type) as WebGLShader;
+		gl.shaderSource(shader, `#version 300 es\n${source}`);
+		gl.compileShader(shader);
+		gl.attachShader(program, shader);
+	}
+	gl.linkProgram(program);
+	return () => {
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, 1, 1);
+		gl.useProgram(program);
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindSampler(0, null);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, map);
+		gl.drawArrays(gl.POINTS, 0, 1);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+	};
 }
 
 async function timeWebGL2(): Promise<Timed> {
@@ -182,6 +225,7 @@ async function timeWebGL2(): Promise<Timed> {
 		DEPTH_SETUPS.reversed,
 		gl.getExtension('KHR_parallel_shader_compile'),
 	);
+	const read = mapReader(gl, target);
 	const memory = new GpuMemory();
 	const started = performance.now();
 	await generator.prepare(host);
@@ -204,6 +248,7 @@ async function timeWebGL2(): Promise<Timed> {
 		const start = performance.now();
 		for (let k = first; k <= last; k++)
 			generator.skyStage(host, target, SIZE, LEVELS, ...command(k, sky), 0, memory);
+		if (last === STAGES - 1) read();
 		if (timer) gl.endQuery(timer.TIME_ELAPSED_EXT);
 		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 		gl.flush();
@@ -211,13 +256,13 @@ async function timeWebGL2(): Promise<Timed> {
 		gl.deleteSync(fence);
 		return performance.now() - start;
 	};
-	const fill = await timed(0, LEVELS, settings(0.6, 0));
-	const stages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const fill = await timed(0, STAGES - 1, settings(0.6, 0));
+	const stages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (let r = 0; r < runs; r++) {
 		const moved = settings(0.6 - 0.05 * (r + 1), 0.1 * r);
-		for (let k = 0; k <= LEVELS; k++) stages[k]?.push(await timed(k, k, moved));
+		for (let k = 0; k < STAGES; k++) stages[k]?.push(await timed(k, k, moved));
 	}
-	const gpuStages: number[][] = Array.from({ length: LEVELS + 1 }, () => []);
+	const gpuStages: number[][] = Array.from({ length: STAGES }, () => []);
 	for (const [k, query] of queries) {
 		for (
 			let wait = 0;
