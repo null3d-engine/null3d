@@ -132,6 +132,8 @@ export const LAYOUT_EFFECT_DEPTH_MS = 22;
 export const LAYOUT_FINAL_EFFECTS = 23;
 export const LAYOUT_FINAL_EFFECTS_DEPTH_MS = 24;
 export const LAYOUT_VIEW_COPY = 25;
+export const LAYOUT_DOF_COMPOSITE = 27;
+export const LAYOUT_DOF_COMPOSITE_MS = 28;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -224,6 +226,12 @@ export const TEMPLATE_BACKGROUND_SKY = 36;
 export const TEMPLATE_SHADOW_CUTOUT = 37;
 export const TEMPLATE_SHADOW_CUTOUT_MAP = 38;
 export const TEMPLATE_VIEW_COPY = 39;
+export const TEMPLATE_DOF_SETUP = 41;
+export const TEMPLATE_DOF_SETUP_MS = 42;
+export const TEMPLATE_DOF_BLUR = 43;
+export const TEMPLATE_DOF_FILTER = 44;
+export const TEMPLATE_DOF_COMPOSITE = 45;
+export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

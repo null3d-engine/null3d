@@ -722,6 +722,12 @@ pub mod layout {
     /// Group 0 of the copy of a view's image into its target: the image, which it reads with
     /// `textureLoad`, as plain floats. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
+    /// blurred image at half the render size, which the step reads with the linear sampler.
+    pub const DOF_COMPOSITE: u32 = 27;
+    /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
+    /// WebGPU has it.
+    pub const DOF_COMPOSITE_MS: u32 = 28;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1478,6 +1484,23 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// Depth of field's first step: one triangle over a target at half the render size, which
+    /// reads four pixels of the scene's color and depth for each texel and writes their color with
+    /// the blur's signed size. It binds as a custom effect that reads depth does.
+    pub const DOF_SETUP: u32 = 41;
+    /// [`DOF_SETUP`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_SETUP_MS: u32 = 42;
+    /// Depth of field's gather: a disk or polygon of taps around each texel, which splits what it
+    /// reads into the near and the far field. It binds as a step of bloom does.
+    pub const DOF_BLUR: u32 = 43;
+    /// Depth of field's small tent filter over the gather's result. It binds as a step of bloom
+    /// does.
+    pub const DOF_FILTER: u32 = 44;
+    /// Depth of field's last step: one triangle over a target of the render size, which mixes the
+    /// blurred image into the scene's color by each pixel's own blur size.
+    pub const DOF_COMPOSITE: u32 = 45;
+    /// [`DOF_COMPOSITE`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_COMPOSITE_MS: u32 = 46;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1764,6 +1787,8 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1850,6 +1875,12 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),
+                ("DOF_SETUP", template::DOF_SETUP),
+                ("DOF_SETUP_MS", template::DOF_SETUP_MS),
+                ("DOF_BLUR", template::DOF_BLUR),
+                ("DOF_FILTER", template::DOF_FILTER),
+                ("DOF_COMPOSITE", template::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

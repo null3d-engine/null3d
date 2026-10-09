@@ -15,6 +15,8 @@
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
 //!   material's
+//! - `dof`: depth of field, a camera lens's blur by distance from the focus, with the near and far
+//!   fields apart, as three.js's BokehPass draws it in intent
 //! - `environment`: the scene's environment map, which standard materials reflect and take
 //!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
@@ -58,6 +60,7 @@ pub mod cpu_culled;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod dof;
 pub mod effects;
 pub mod environment;
 mod final_pass;
