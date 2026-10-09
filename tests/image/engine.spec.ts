@@ -289,8 +289,9 @@ function isFirstUseShaderFile(path: string): boolean {
 }
 
 // A page that uses no feature that loads on first use downloads none of their files, on either GPU
-// path and in every thread mode: neither their code nor their shader builds. The engine test page
-// uses none, and the startup benchmark times it.
+// path and in every thread mode: neither their code nor their shader builds. Nor does it download
+// the renderers of the GPU path that it does not draw with. The engine test page uses no such
+// feature, and the startup benchmark times it.
 for (const gpu of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES)
 		test(`a page that uses no feature that loads on first use downloads none of their files, ${mode.name} on ${gpu}`, async ({
@@ -308,6 +309,10 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 					(path) => FIRST_USE_FILES.some((file) => file.test(path)) || isFirstUseShaderFile(path),
 				),
 			).toEqual([]);
+			const renderers = (path: string) => new RegExp(`/${path}-renderers(\\.ts|-[\\w-]{8}\\.js)$`);
+			const other = gpu === 'webgpu' ? 'webgl2' : 'webgpu';
+			expect(requests.some((path) => renderers(gpu).test(path))).toBe(true);
+			expect(requests.filter((path) => renderers(other).test(path))).toEqual([]);
 		});
 
 /** Sketches of the image tests, each of which uses one feature whose shader builds load on first use. */

@@ -1,7 +1,8 @@
 // What a thread needs to draw: the renderer, the GPU layer beneath it and the frame loops. The
 // render worker always draws. The page draws in single-threaded mode and with ?render=main, and the
 // sketch worker in low-latency mode, so those two load this module only when they draw
-// (load-draw.ts). A page then downloads the GPU layer once, for the thread that draws.
+// (load-draw.ts). A page then downloads the GPU layer once, for the thread that draws, and only the
+// renderers of the GPU path that it draws with (renderer.ts).
 
 import { controlViews, Slot } from '../shared/control';
 import { encodeFrame } from '../shared/frame-image';
@@ -13,7 +14,7 @@ import { emptySceneInput, type FramePacing, HoldLoop, type LoopFault, runRenderL
 import { Drawing } from './recovery';
 import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
 
-export { preloadDeviceShaders } from './renderer';
+export { preloadDeviceFiles } from './renderer';
 
 export interface DrawingSetup extends RendererOptions, FramePacing {
 	/** The canvas that this thread owns. */

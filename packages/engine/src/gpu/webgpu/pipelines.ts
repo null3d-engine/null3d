@@ -109,7 +109,6 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
-import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
@@ -120,6 +119,16 @@ import {
 	vertexAttribute,
 	vertexStride,
 } from '../vertex-format';
+
+declare const __NULL3D_DEV__: boolean | undefined;
+
+/**
+ * True in development builds, which add the debug views' templates. This file reads the constant
+ * itself, as the files that load on first use do. It loads with its GPU path's renderers, apart from
+ * the start's files, so a check through the shared constant would keep the debug views' shaders in
+ * the start's files of a production build. A check that folds within this file drops them.
+ */
+const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
