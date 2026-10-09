@@ -149,10 +149,10 @@ The engine's shader text compresses well with Brotli, which finds text that repe
 
 | The host sends | The engine's JavaScript at the start |
 | --- | --- |
-| Brotli | 118 KB |
-| gzip at level 9 | 153 KB |
-| gzip at level 6, a common setting for compression on the fly | about 155 KB |
-| Files as they are | 0.7 MB |
+| Brotli | 130 KB |
+| gzip at level 9 | 165 KB |
+| gzip at level 6, a common setting for compression on the fly | about 167 KB |
+| Files as they are | 0.6 MB |
 
 Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, and send the compressed files with `brotli_static on;`.
 
@@ -200,6 +200,7 @@ A game can play with no network after its first visit. Its own service worker ca
 ```
 
 - `start` holds every file that a page may need to start. These are the pages and their scripts, the engine's workers, both engine builds and each GPU path's shaders.
+- The start holds the renderers of both GPU paths. A page downloads only its own path's renderers. But a cached game also starts offline on the other path, as on a device whose GPU or browser changed since its first visit. A page that switches paths, such as a benchmark page, downloads each path's renderers the first time it draws with that path. Later loads take them from the browser's cache.
 - `features` holds the files that each feature downloads on its first use, by the feature's name. A page that does not use a feature never downloads its files, so a game caches only the features that it uses.
 - `version` changes whenever a file of the build changes. Each address is relative to the list.
 
