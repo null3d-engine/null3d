@@ -1,11 +1,12 @@
-// Instance batches: a field of 100,000 columns in one dynamic batch, at dusk. Each frame the sketch
-// writes the height of every row straight into the batch's arrays, with no call per row. The engine
-// then computes, culls and draws the rows in bulk. A row's place across the field never changes, so
-// the setup writes it once, in square rings from the middle out. The Low preset of phones then draws
-// only the first rows, the middle of the field. A lamp hovers over the center of the wave, which
-// drifts by itself and follows the pointer, and lights the columns around it. Batches cast no
-// shadows yet, so the low sun, the environment, the lamp, ambient occlusion and fog give depth.
-import { defineSketch, vec3 } from '@null3d/engine';
+// Instance batches: a field of 100,000 columns in one dynamic batch, at golden hour. Each frame the
+// sketch writes the height of every row straight into the batch's arrays, with no call per row. The
+// engine then computes, culls and draws the rows in bulk. A row's place across the field never
+// changes, so the setup writes it once, in square rings from the middle out. The Low preset of
+// phones then draws only the first rows, the middle of the field. A lamp hovers over the center of
+// the wave, which drifts by itself and follows the pointer, and lights the columns around it.
+// Batches cast no shadows yet, so the low sun, the sky's light, the lamp, ambient occlusion and fog
+// give the field its depth.
+import { defineSketch, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
 /** Columns along each side of the field at each preset: 100,489 in all above Low. */
@@ -18,16 +19,24 @@ const SPACING = 0.3;
 const HALF = MID * SPACING;
 /** The point that the camera looks at, above the field's middle. */
 const TARGET = [0, 2, 0] as const;
-/** A point toward the sun: low, beyond the field. */
-const SUN = [0.7, 0.04, -0.7] as const;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, quality, time } = ctx;
-	const sky = { sky: { sunPosition: SUN, turbidity: 4, rayleigh: 3, cloudCoverage: 0.3, time: 0 } };
-	scene.setBackground(sky);
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.4 });
-	scene.setFog({ color: '#5e4440', density: 0.012, heightFalloff: 0.2, sunGlow: 1 });
-	post.set({ bloom: { intensity: 0.25, threshold: 1 }, ao: { radius: 0.4 }, vignette: {} });
+	// Golden hour, with the sun low beyond the field. The sky's own light lights the columns and
+	// shows in their metal. Clouds that drifted would make that light again in every frame.
+	const day = timeOfDay('goldenHour', { heading: -2.4 });
+	const intensity = day.skyIntensity;
+	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity });
+	scene.setEnvironment(await assets.skyEnvironment(), { intensity });
+	// The fog takes an amber between the sky's rim across the view and its glow toward the sun.
+	const haze = { color: [0.4, 0.22, 0.14], density: 0.012, heightFalloff: 0.2 } as const;
+	scene.setFog({ ...haze, sunGlow: day.fog.sunGlow });
+	post.set({
+		exposure: day.exposure * 1.3,
+		bloom: { intensity: 0.25, threshold: 1 },
+		vignette: {},
+	});
+	post.set({ ao: { radius: 0.4 } });
 	const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 5000 });
 	scene.setActiveCamera(camera);
 	// The pointer points at the columns' mean height.
@@ -36,19 +45,15 @@ export default defineSketch(async (ctx) => {
 		groundY: 1.6,
 		bounds: [-HALF, 0, -HALF, HALF, 2, HALF],
 	});
-	scene.createDirectionalLight({
-		direction: [-SUN[0], -SUN[1], -SUN[2]],
-		color: '#ffb98a',
-		intensity: 3,
-	});
-	scene.createAmbientLight({ color: '#8a9cd0', intensity: 0.15 });
+	scene.createDirectionalLight(day.light);
+	scene.createAmbientLight(day.ambient);
 
 	scene.createMesh({
 		mesh: geometry.box({ width: 10_000, height: 0.2, depth: 10_000 }),
 		material: materials.standard({ color: '#2a2624', roughness: 0.9 }),
 		position: [0, -0.1, 0],
 	});
-	const steel = materials.standard({ color: '#6a7fa6', metalness: 0.75, roughness: 0.3 });
+	const steel = materials.standard({ color: '#8fa3c8', metalness: 0.5, roughness: 0.35 });
 	const column = geometry.box({ width: 0.22, depth: 0.22 });
 	const field = scene.createInstances(column, SIDES.high ** 2, { material: steel, dynamic: true });
 	// Each row's place across the field, ring by ring from the middle out, so that the first rows
@@ -92,9 +97,6 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			view.steer(vec3.set(center, Math.sin(t * 0.3) * 12, 0, Math.sin(t * 0.23) * 9));
 			bulb.setPosition(center[0], 5, center[2]);
-			// The clouds drift with the sketch's time.
-			sky.sky.time = t;
-			scene.setBackground(sky);
 			for (let i = 0; i < SIDES.high; i++)
 				ripple[i] = 1.6 + 0.4 * Math.sin((i - MID) * SPACING * 0.3 + t);
 			// Read the arrays in each frame: they are views of engine memory, which moves when it grows.

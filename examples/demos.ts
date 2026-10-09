@@ -58,7 +58,7 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./instances/sketch.ts', import.meta.url),
 		title: 'Instance batches',
 		summary:
-			'100,000 columns in one batch at dusk, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
+			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the center of the wave.`,
 		hold: 2,
 		timeoutSeconds: 60,
@@ -90,7 +90,7 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./math/sketch.ts', import.meta.url),
 		title: 'Math helpers',
 		summary:
-			'300 drones chase a lamp over a landing pad at dusk. vec3 and quat helpers place and turn each drone from the time with no allocation, and a seeded math.random spreads them.',
+			'A flock of 300 drones, each with its own light, circles a lamp over a landing pad at dusk. vec3 and quat helpers place, turn and bank each drone from the time, with no allocation.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the lamp.`,
 		hold: 8,
 		timeoutSeconds: 60,
