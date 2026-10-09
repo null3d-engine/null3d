@@ -145,7 +145,7 @@ Each figure is the median of 8 refreshes. The longest single stages were 7.97 ms
 
 **Memory.** Beside its 2 MB map, a sky map keeps its chain of 9 levels (2.1 MB) and the texture that the stages draw into (1,536 x 511 texels, 3.1 MB). It also keeps its levels on their way into the map: on WebGPU a buffer of 2.1 MB and a strip of 1.6 MB, on WebGL2 two pixel pack buffers of 2.1 MB. That is about 9 MB in all. The engine counts them in its GPU memory figures, and frees them with the map.
 
-**Allocation.** `bun run bench:allocation --sky-environment` lights S1 with the sky's environment and moves the sun in every frame. So a stage that draws runs in 19 of every 20 frames. Both paths passed. Each stage makes one object that the browser returns: on WebGPU its render pass's encoder, 12 bytes per frame on average, and on WebGL2 its fence, 17 bytes per frame. Three places allocated before their fixes:
+**Allocation.** `bun run bench:allocation --sky-environment` lights S1 with the sky's environment and moves the sun in every frame. So a stage that draws runs in 19 of every 20 frames. The sky map's places stayed within their budgets on both paths. Each stage makes one object that the browser returns: on WebGPU its render pass's encoder, 15 bytes per frame on average, and on WebGL2 its fence, 15 bytes per frame. With 7 stages, they were 12 and 17 bytes. Three places allocated before their fixes:
 
 - The image table's `generator()` returns a new pair. The stage command reads the code with `generatorCodeFor()`, which makes none.
 - A `for...of` loop over a step's targets allocated in the render worker's stage. An index loop does not.
