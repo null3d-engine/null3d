@@ -309,12 +309,13 @@ async function buildsExamples(project: string): Promise<void> {
 	try {
 		const page = await browser.newPage();
 		for (const demo of BUILT_DEMOS) {
-			await page.goto(`${server.url.href}?demo=${demo}`);
+			// The Low preset keeps a demo's start short on a software GPU; the check is that it starts.
+			await page.goto(`${server.url.href}?demo=${demo}&preset=low`);
 			const state = await page
 				.waitForFunction(
 					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.demo,
 					undefined,
-					{ timeout: 30_000 },
+					{ timeout: 60_000 },
 				)
 				.then((handle) => handle.jsonValue());
 			if (state !== 'running')
