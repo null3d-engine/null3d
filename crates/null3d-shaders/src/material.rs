@@ -337,6 +337,14 @@ fn built_inputs(built: &BTreeMap<String, VariantOutput>, entry: &str) -> (Vec<u3
         .map_or((Vec::new(), 0), |wgsl| mesh_inputs(&wgsl.source, entry))
 }
 
+/// True when a custom material's WGSL sets or reads the surface's `transmission`, so the material
+/// can let light through.
+fn sets_transmission(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -402,6 +410,7 @@ impl Compiler {
             return Err(problems.into_iter().collect());
         }
 
+        let transmits = sets_transmission(&tokens);
         let variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
@@ -422,6 +431,8 @@ impl Compiler {
                 // instances from the culling shader's copies on every path, so they have no
                 // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
+                // Only WGSL that sets the surface's transmission has the builds that let light
+                // through, so other materials keep their builds as few as before.
                 let skins = !variant.targets.contains(&Target::Wgsl);
                 let left_out = [
                     "HALF",
@@ -435,6 +446,7 @@ impl Compiler {
                     .permutations
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
+                    .filter(|bit| transmits || *bit != "TRANSMISSION")
                     .cloned()
                     .collect();
                 let variant = Variant {

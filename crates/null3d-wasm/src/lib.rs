@@ -1840,8 +1840,9 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
 /// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
-/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, and the number of textures
-/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`. Its features
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, the number of textures
+/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`, and
+/// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
 /// `bias_slope`, whose positive values push the surface away.
@@ -1869,6 +1870,7 @@ pub fn create_material(
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
             textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
+            transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
         }),
         _ => Shading::Lit,
     };

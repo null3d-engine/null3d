@@ -39,9 +39,12 @@ const NOT_BLOCKER: u32 = u32::MAX;
 /// The part of a frame candidate whose mesh's blocker was not built yet.
 const UNBUILT_PART: u32 = u32::MAX;
 
-/// The material features whose surfaces leave gaps or skip the depth buffer.
-const SEE_THROUGH: u32 =
-    feature::BLEND | feature::ALPHA_MASK | feature::NO_DEPTH_WRITE | feature::NO_DEPTH_TEST;
+/// The material features whose surfaces leave gaps, let light through or skip the depth buffer.
+const SEE_THROUGH: u32 = feature::BLEND
+    | feature::ALPHA_MASK
+    | feature::NO_DEPTH_WRITE
+    | feature::NO_DEPTH_TEST
+    | feature::TRANSMISSION;
 
 /// The blockers of the camera's view, and the buffer they draw into.
 #[derive(Debug, Default)]

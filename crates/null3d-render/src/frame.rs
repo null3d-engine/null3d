@@ -1803,6 +1803,8 @@ impl SceneSettings {
     /// draws with the shader variant that discards fragments, with alpha to coverage where the
     /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
+    /// A material that lets light through draws with the shader variant that samples the copy of
+    /// the opaque objects behind it, in the transparent pass too, where its shading has one.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
@@ -1834,13 +1836,15 @@ impl SceneSettings {
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
+        let transmits = has(feature::TRANSMISSION) && shading.transmits();
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
                 | bit(masked, permutation::ALPHA_MASK)
                 | bit(hashed, permutation::ALPHA_HASH)
-                | bit(tangents, permutation::VERTEX_TANGENT),
+                | bit(tangents, permutation::VERTEX_TANGENT)
+                | bit(transmits, permutation::TRANSMISSION),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)

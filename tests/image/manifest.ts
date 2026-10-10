@@ -39,6 +39,7 @@ import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { SPRITE_IMAGE } from '../../bench/scenes/sprites.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
+import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
@@ -530,6 +531,11 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-quarter', '?quarter'),
 	];
 }
+
+/** The sketch of the glass scene, which three.js's transmission draws too. */
+const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
+/** The sketch of clear water over a bed of stones. */
+const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1771,6 +1777,34 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
 	},
+	// A smooth, a rough and a tinted glass ball let the striped wall behind them through, from the
+	// copy of the opaque objects' color. The parity test compares it with three.js's
+	// MeshPhysicalMaterial transmission, and the transmission spec checks how each ball bends and
+	// blurs the stripes.
+	{
+		name: 'transmission',
+		sketch: TRANSMISSION_SKETCH,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// The same balls with a custom material whose surface function sets the transmission: they
+	// draw as the standard material does, so the references are copies of the transmission test's.
+	{
+		name: 'transmission-custom',
+		sketch: `${TRANSMISSION_SKETCH}?custom`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		reference: 'transmission',
+	},
+	// A blended pane in front of the balls draws over them in the same pass, sorted back to front.
+	{
+		name: 'transmission-blend',
+		sketch: `${TRANSMISSION_SKETCH}?blend`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
+	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

@@ -132,12 +132,12 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // its own, which resolves for the copy into its target. The textures: the color and depth
     // targets, the side view's image and target, the shadow map and the shadow atlas, one texel
     // each while no light casts shadows, the table of specular terms, the materials' custom
-    // values, the environment's blank cube, the blank texture that stands in for ambient
-    // occlusion, the views' cell offsets, and the white texel that the side view's texture shows
-    // until it draws.
+    // values, the environment's blank cube, the blank textures that stand in for ambient
+    // occlusion and for the copy that surfaces which let light through sample, the views' cell
+    // offsets, and the white texel that the side view's texture shows until it draws.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 12);
+    assert_eq!(count(&commands, Op::CreateTexture), 13);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -259,9 +259,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
-    // environment's blank cube, the blank texture that stands in for ambient occlusion, and the
-    // views' cell offsets.
-    assert_eq!(count(&commands, Op::CreateTexture), 9);
+    // environment's blank cube, the blank textures that stand in for ambient occlusion and for
+    // the copy that surfaces which let light through sample, and the views' cell offsets.
+    assert_eq!(count(&commands, Op::CreateTexture), 10);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -1202,6 +1202,7 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             attributes: vertex::UV0,
             base_color: true,
             textures: 0,
+            transmission: false,
         });
         world.add_object(&common::grid(1, 1), custom);
         let mut mock = MockBackend::default();

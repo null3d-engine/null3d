@@ -37,7 +37,9 @@ pub struct FrameUniform {
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare: what custom materials read as `frame`.
     pub clock: [f32; 4],
-    /// The camera's position in the world, absolute rather than relative to it, and a spare.
+    /// The camera's position in the world, absolute rather than relative to it, then 1 while the
+    /// view's surfaces that let light through sample the copy of its opaque color, else 0 (see
+    /// [`crate::transmission`]).
     pub camera_world: [f32; 4],
     /// The size of the render target in pixels, and one over each.
     pub target_size: [f32; 4],

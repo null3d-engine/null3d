@@ -123,7 +123,7 @@ It comes in M3, with the porting skill and the port tool, after custom effects a
 - Base BRDF: keep it. It is the most complete in the sources. It has exact correlated Smith, energy compensation, and a (1 − F) diffuse weight that Filament still lists as a to-do. Floor 0.045, as r187 and Filament have.
 - Environment lookup: today a table fitted to three.js r186's atlas maps roughness to a level. That atlas blurred each level less than its own GGX lobe. So a rough metal reflects a sharper sky than its own sun highlight. Reading the cube at `lod = (n − 1) r (2 − r)` makes the two lobes agree, as Filament does. three.js r187 makes the same change with the same formula. Its first version subtracted the base level's own blur, and [three.js PR #34645](https://github.com/mrdoob/three.js/pull/34645) removed that offset.
 - Diffuse environment light: the roughest level times π, if L2 shows it costs under 1%. r187 reads the roughest level too. Filament filters its last level extra smooth for that reason.
-- Material extensions: `KHR_materials_specular` and `KHR_materials_ior` now. Clearcoat and sheen come later, in first-use shader files. Transmission comes after 1.0. It reads a copy of the opaque color (S-06). r187's EON rough diffuse (`diffuseRoughness`) is Lambert at its default of 0, so default materials still compare strictly.
+- Material extensions: `KHR_materials_specular` and `KHR_materials_ior` now. Clearcoat and sheen come later, in first-use shader files. Transmission moved before 1.0 and reads a copy of the opaque color (S-06, [D-122](decisions/D-122-transmission.md)). r187's EON rough diffuse (`diffuseRoughness`) is Lambert at its default of 0, so default materials still compare strictly.
 - Falloff: keep three.js's formulas. No engine derives a light's range from its intensity.
 - Clustered lights: keep. Measure the WebGL2 listing time in S3 before any redesign.
 - Specular occlusion: Lagarde's formula plus horizon fading, always on. Cone occlusion from GTAO's bent normal needs a bent normal, which the bitmask variant does not give.
@@ -171,7 +171,7 @@ Review finding R7-01: color above 65,504, the largest 16-bit float, becomes infi
 
 ### WebGL2 texture units
 
-The lit shader's fragment stage reads 13 of the 16 units once environment light lands, and AO makes 14. Area lights, a probe grid, reflection probes, transmission, decals and light maps would take it to 18 or more. Rules for every new per-pixel input:
+The lit shader's fragment stage reads 13 of the 16 units once environment light lands, and AO makes 14. Transmission's copy of the opaque color makes 15 in the builds that let light through ([D-122](decisions/D-122-transmission.md)). Area lights, a probe grid, reflection probes, decals and light maps would take it to 18 or more. Rules for every new per-pixel input:
 
 1. AO and any other screen-space result share one RG8 texture. Contact shadows run inline and need none.
 2. All probe grids share one 3D texture.
@@ -338,7 +338,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 20 | Shape casts and closest-point queries | three-mesh-bvh | M | M3, with physics |
 | 21 | Probe grid | three.js, Bevy, Unity, Godot | M to L | M3 |
 | 22 | Area lights | three.js, Babylon.js, Bevy, PlayCanvas, Godot | M | After 1.0 |
-| 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
+| 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md), [D-122](decisions/D-122-transmission.md)) |
 | 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | After 1.0 |
 | 25 | Automatic exposure | Godot, Unity, Filament | M | After 1.0 |
 | 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur after 1.0 |

@@ -29,6 +29,9 @@
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
 // time. `reflection=full`, `half` and `quarter` give the pass that share of the render size, and
 // the switch alone takes the preset's.
+// The `transmission` switch puts clear water that lets light through under the swarm, for the
+// allocation sample and the cost of the copy of the opaque colors that it samples, and of its
+// shading.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
@@ -58,6 +61,7 @@ export default defineSketch(async (context) => {
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
+	if (switches.has('transmission')) createClearWater(context);
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -260,6 +264,23 @@ function createWater(
 	const water = scene.createMesh({
 		mesh: geometry.plane({ width: 1200, height: 1200 }),
 		material,
+		position: [0, WATER_HEIGHT, 0],
+	});
+	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */
+function createClearWater({ scene, geometry, materials }: SketchContext) {
+	const water = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({
+			roughness: 0.05,
+			ior: 1.33,
+			transmission: 1,
+			thickness: 4,
+			attenuationColor: '#3a8a90',
+			attenuationDistance: 20,
+		}),
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
