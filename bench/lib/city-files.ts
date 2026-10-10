@@ -7,9 +7,12 @@
 // - The kit file: one node per part of each model the layout uses, named `k<model>-<part>`, with the
 //   part's place inside its model and the kit's own material and colour map. A page puts copies of
 //   each part where the layout's rows say.
-// - The tower file: one node per box of the layout, named `b<row>`, at the box's base, with a mesh of
-//   its own. Its texture coordinates count metres over the material's metres per repeat, so a
-//   stretched box keeps the texel size of a small one, and its walls line up across tiers.
+// - The tower file: one node per material of the layout's boxes, named `t<material>`, whose mesh holds
+//   every box in that material. So each material draws in one draw, as an asset pipeline that
+//   merges static meshes ships a city. The texture coordinates count metres over the material's
+//   metres per repeat, so a stretched box keeps the texel size of a small one, and its walls line
+//   up across tiers. Each mesh blocks the view with its own boxes, which are closed and solid, and
+//   keeps its positions as floats, so the corners of boxes that meet stay exact.
 // - The tower materials: the layout's 200, each a texture set of ambientCG in a tint. Occlusion,
 //   roughness and metalness go into one image per set, in glTF's red, green and blue channels.
 //
@@ -103,7 +106,7 @@ export interface GltfJson {
 	scene?: number;
 	scenes?: { nodes: number[] }[];
 	nodes?: GltfNode[];
-	meshes?: { name?: string; primitives: GltfPrimitive[] }[];
+	meshes?: { name?: string; primitives: GltfPrimitive[]; extras?: Record<string, unknown> }[];
 	accessors?: GltfAccessor[];
 	bufferViews?: GltfBufferView[];
 	buffers?: { byteLength: number; uri?: string }[];
@@ -265,8 +268,8 @@ const kitOf = (path: string) => /kenney-([a-z]+)\//.exec(path)?.[1] ?? path;
 /** The node name of a part of a kit model, in the kit file. */
 export const kitPartName = (model: number, part: number) => `k${model}-${part}`;
 
-/** The node name of a box of the layout, in the tower file. */
-export const towerName = (row: number) => `b${row}`;
+/** The node name of the boxes of one material of the layout, in the tower file. */
+export const towerName = (material: number) => `t${material}`;
 
 /** The parts of each kit model, as the kit file names them: the part count per model. */
 export interface KitParts {
@@ -550,8 +553,9 @@ export interface SetImages {
 }
 
 /**
- * Builds the tower file: a node and a mesh for each box of the layout, and the layout's materials.
- * `imagesOf` gives the image files of a material's texture set.
+ * Builds the tower file: for each material of the layout's boxes, a node and a mesh that holds all
+ * of that material's boxes, and the layout's materials. The node stands at the centre of its boxes'
+ * base. `imagesOf` gives the image files of a material's texture set.
  */
 export function buildTowers(
 	layout: Pick<S6Layout, 'materials' | 'objects'>,
@@ -630,69 +634,105 @@ export function buildTowers(
 			byteLength: bytes.byteLength,
 			target,
 		}) - 1;
-	const floats = (array: Float32Array, type: string, size: number, bounds: boolean) => {
+	const accessor = (
+		array: Float32Array | Uint16Array,
+		type: string,
+		size: number,
+		bounds = false,
+	) => {
 		const a: GltfAccessor = {
 			bufferView: view(
 				new Uint8Array(array.buffer, array.byteOffset, array.byteLength),
-				ARRAY_BUFFER,
+				array instanceof Uint16Array ? ELEMENT_ARRAY_BUFFER : ARRAY_BUFFER,
 			),
-			componentType: FLOAT,
+			componentType: array instanceof Uint16Array ? UNSIGNED_SHORT : FLOAT,
 			count: array.length / size,
 			type,
 		};
 		if (bounds) {
-			a.min = Array.from({ length: size }, () => Infinity);
-			a.max = Array.from({ length: size }, () => -Infinity);
+			a.min = [Infinity, Infinity, Infinity];
+			a.max = [-Infinity, -Infinity, -Infinity];
 			for (let i = 0; i < array.length; i++) {
-				const k = i % size;
+				const k = i % 3;
 				a.min[k] = Math.min(a.min[k] as number, array[i] as number);
 				a.max[k] = Math.max(a.max[k] as number, array[i] as number);
 			}
 		}
 		return json.accessors.push(a) - 1;
 	};
-	// Every box shares one index list: its faces have the same vertex order.
-	let indices = -1;
-	let boxes = 0;
+
+	// Each material's boxes, in the layout's order.
+	const boxesOf = new Map<number, number[]>();
 	rows.forEach((row, r) => {
 		if (row[f.model] !== -1) return;
-		const material = layout.materials[row[f.material] as number];
-		if (!material) throw new Error(`the box of row ${r} has no material`);
-		const base = [row[f.x], row[f.y], row[f.z]] as [number, number, number];
-		const box = boxVertices(
-			base,
-			[row[f.sx], row[f.sy], row[f.sz]] as [number, number, number],
-			material.metresPerRepeat,
-		);
-		if (indices < 0) {
-			const bytes = new Uint8Array(box.indices.buffer);
-			indices =
-				json.accessors.push({
-					bufferView: view(bytes, ELEMENT_ARRAY_BUFFER),
-					componentType: UNSIGNED_SHORT,
-					count: box.indices.length,
-					type: 'SCALAR',
-				}) - 1;
+		const material = row[f.material] as number;
+		if (!layout.materials[material]) throw new Error(`the box of row ${r} has no material`);
+		const list = boxesOf.get(material);
+		if (list) list.push(r);
+		else boxesOf.set(material, [r]);
+	});
+	let boxes = 0;
+	for (const [material, list] of [...boxesOf].sort(([a], [b]) => a - b)) {
+		const { metresPerRepeat } = layout.materials[material] as S6Material;
+		const sizeOf = (r: number) =>
+			[f.sx, f.sy, f.sz].map((k) => (rows[r] as number[])[k] as number) as [number, number, number];
+		const baseOf = (r: number) =>
+			[f.x, f.y, f.z].map((k) => (rows[r] as number[])[k] as number) as [number, number, number];
+		// The node stands at the centre of the boxes' base, so the positions stay near zero.
+		const lo = [Infinity, Infinity, Infinity];
+		const hi = [-Infinity, -Infinity, -Infinity];
+		for (const r of list) {
+			const [x, y, z] = baseOf(r);
+			const [sx, , sz] = sizeOf(r);
+			lo[0] = Math.min(lo[0] as number, x - sx / 2);
+			hi[0] = Math.max(hi[0] as number, x + sx / 2);
+			lo[1] = Math.min(lo[1] as number, y);
+			lo[2] = Math.min(lo[2] as number, z - sz / 2);
+			hi[2] = Math.max(hi[2] as number, z + sz / 2);
 		}
+		const origin = [
+			((lo[0] as number) + (hi[0] as number)) / 2,
+			lo[1] as number,
+			((lo[2] as number) + (hi[2] as number)) / 2,
+		] as const;
+		const positions = new Float32Array(list.length * 24 * 3);
+		const normals = new Float32Array(list.length * 24 * 3);
+		const uvs = new Float32Array(list.length * 24 * 2);
+		const indices = new Uint16Array(list.length * 36);
+		list.forEach((r, b) => {
+			const base = baseOf(r);
+			const box = boxVertices(base, sizeOf(r), metresPerRepeat);
+			for (let i = 0; i < 24 * 3; i++)
+				positions[b * 72 + i] =
+					(box.positions[i] as number) + (base[i % 3] as number) - (origin[i % 3] as number);
+			normals.set(box.normals, b * 72);
+			uvs.set(box.uvs, b * 48);
+			for (let i = 0; i < 36; i++) indices[b * 36 + i] = (box.indices[i] as number) + b * 24;
+		});
 		const mesh =
 			json.meshes.push({
-				name: towerName(r),
+				name: towerName(material),
 				primitives: [
 					{
 						attributes: {
-							POSITION: floats(box.positions, 'VEC3', 3, true),
-							NORMAL: floats(box.normals, 'VEC3', 3, false),
-							TEXCOORD_0: floats(box.uvs, 'VEC2', 2, false),
+							POSITION: accessor(positions, 'VEC3', 3, true),
+							NORMAL: accessor(normals, 'VEC3', 3),
+							TEXCOORD_0: accessor(uvs, 'VEC2', 2),
 						},
-						indices,
-						material: row[f.material] as number,
+						indices: accessor(indices, 'SCALAR', 1),
+						material,
 					},
 				],
+				// The asset tool's blocker of one or two boxes inside the mesh's bounds fits no mesh
+				// of boxes spread over the city, so each mesh blocks with its own boxes. Its steps
+				// for positions across hundreds of metres would move the boxes' corners by
+				// centimetres, so the positions stay floats, and boxes that meet keep meeting exactly.
+				extras: { occluder: true, quantizePositions: false },
 			}) - 1;
-		const node = json.nodes.push({ name: towerName(r), mesh, translation: base }) - 1;
+		const node = json.nodes.push({ name: towerName(material), mesh, translation: [...origin] }) - 1;
 		json.scenes?.[0]?.nodes.push(node);
-		boxes++;
-	});
+		boxes += list.length;
+	}
 	const bin = out.bytes();
 	json.buffers = [{ byteLength: bin.byteLength }];
 	return { json, bin, boxes };

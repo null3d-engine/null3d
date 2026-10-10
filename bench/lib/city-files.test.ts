@@ -113,12 +113,13 @@ describe('the kit file', () => {
 	});
 
 	test("the whole city's objects fit the room that S6's page asks the engine for", () => {
-		let meshes = 0;
+		// One mesh for each material of the boxes.
+		let meshes = layout.materials.length;
 		for (const row of layout.objects.rows)
-			meshes += (row[0] as number) < 0 ? 1 : (kit.parts[row[0] as number] as number);
+			if ((row[0] as number) >= 0) meshes += kit.parts[row[0] as number] as number;
 		// The sun, the ambient light, the camera, the label's marker and the street lights.
 		const others = 4 + layout.lights.length;
-		expect(meshes + others).toBe(20_738);
+		expect(meshes + others).toBe(19_089);
 		expect(meshes + others).toBeLessThanOrEqual(S6_ENGINE_OBJECTS);
 	});
 
@@ -145,13 +146,53 @@ describe('the tower file', () => {
 	}));
 	const boxes = layout.objects.rows.filter((r) => r[0] === -1).length;
 
-	test('has a node and a mesh per box, named for its row, at its base', () => {
+	test('has a node and a mesh per material, named for it, that hold every box', () => {
 		expect(towers.boxes).toBe(boxes);
-		expect(towers.json.nodes).toHaveLength(boxes);
+		expect(towers.json.nodes).toHaveLength(layout.materials.length);
+		expect(towers.json.nodes?.map((n) => n.name)).toEqual(
+			layout.materials.map((_, m) => towerName(m)),
+		);
+		let vertices = 0;
+		towers.json.meshes?.forEach((mesh, m) => {
+			const [primitive] = mesh.primitives;
+			expect(primitive?.material).toBe(m);
+			expect(mesh.extras).toEqual({ occluder: true, quantizePositions: false });
+			const count = towers.json.accessors?.[primitive?.attributes.POSITION as number]?.count ?? 0;
+			const indices = towers.json.accessors?.[primitive?.indices as number]?.count ?? 0;
+			expect(indices).toBe((count / 24) * 36);
+			vertices += count;
+		});
+		expect(vertices).toBe(boxes * 24);
+	});
+
+	test("puts each box where its row stands, around its node at the boxes' base", () => {
 		const first = layout.objects.rows.findIndex((r) => r[0] === -1);
-		const node = towers.json.nodes?.[0];
-		expect(node?.name).toBe(towerName(first));
-		expect(node?.translation).toEqual(layout.objects.rows[first]?.slice(3, 6) as number[]);
+		const row = layout.objects.rows[first] as number[];
+		const m = row[layout.objects.fields.indexOf('material')] as number;
+		const node = towers.json.nodes?.[m];
+		const position =
+			towers.json.accessors?.[
+				towers.json.meshes?.[m]?.primitives[0]?.attributes.POSITION as number
+			];
+		// The material's first box comes first in its mesh.
+		const at = (position?.bufferView !== undefined &&
+			towers.json.bufferViews?.[position.bufferView]) as { byteOffset: number };
+		const xyz = new Float32Array(towers.bin.buffer, towers.bin.byteOffset + at.byteOffset, 72);
+		const world = (k: number, i: number) =>
+			(xyz[i * 3 + k] as number) + (node?.translation?.[k] as number);
+		const [x, y, z, sx, sy, sz] = ['x', 'y', 'z', 'sx', 'sy', 'sz'].map(
+			(name) => row[layout.objects.fields.indexOf(name)] as number,
+		);
+		const xs = Array.from({ length: 24 }, (_, i) => world(0, i));
+		const ys = Array.from({ length: 24 }, (_, i) => world(1, i));
+		const zs = Array.from({ length: 24 }, (_, i) => world(2, i));
+		expect(Math.min(...xs)).toBeCloseTo((x as number) - (sx as number) / 2, 3);
+		expect(Math.max(...xs)).toBeCloseTo((x as number) + (sx as number) / 2, 3);
+		expect(Math.min(...ys)).toBeCloseTo(y as number, 3);
+		expect(Math.max(...ys)).toBeCloseTo((y as number) + (sy as number), 3);
+		expect(Math.min(...zs)).toBeCloseTo((z as number) - (sz as number) / 2, 3);
+		expect(Math.max(...zs)).toBeCloseTo((z as number) + (sz as number) / 2, 3);
+		expect(position?.min?.[1]).toBe(0);
 	});
 
 	test("has the layout's materials, with each texture set's images once", () => {
