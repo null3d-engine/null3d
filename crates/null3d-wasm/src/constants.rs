@@ -48,6 +48,8 @@ pub mod batch_field {
     pub const FRAMES: u32 = 5;
     /// The rows marked dirty since the last batch update, one bit a row, in 64-bit words.
     pub const DIRTY_WORDS: u32 = 6;
+    /// An instance batch's own values, 4 floats a row, which shaders read.
+    pub const VALUES: u32 = 7;
 }
 
 /// Fields of `debugLineArrays`.
@@ -99,6 +101,12 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has the builds that let light through, which a
     /// material with the transmission feature draws with.
     pub const CUSTOM_TRANSMISSION: u32 = 1 << 28;
+    /// The bit of a custom shading built from the standard material's template, which has the
+    /// builds that draw the rows of instance batches with row values.
+    pub const CUSTOM_ROW_VALUES: u32 = 1 << 29;
+    /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
+    /// shadow caster that moves by it.
+    pub const CUSTOM_CASTER: u32 = 1 << 30;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -634,6 +642,7 @@ pub fn typescript() -> String {
                 ("SIZES", batch_field::SIZES),
                 ("FRAMES", batch_field::FRAMES),
                 ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
+                ("VALUES", batch_field::VALUES),
             ],
         ),
         (
@@ -798,6 +807,8 @@ pub fn typescript() -> String {
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
                 ("CUSTOM_TEXTURE_SHIFT", shading::CUSTOM_TEXTURE_SHIFT),
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
+                ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
+                ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.

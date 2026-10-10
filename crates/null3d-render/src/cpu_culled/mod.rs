@@ -90,6 +90,7 @@ use std::collections::TryReserveError;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{BucketedCull, NO_BUCKET};
 use null3d_core::handle::Handle;
+use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
@@ -125,8 +126,8 @@ use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
-use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
-use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
+use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
+use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
 use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
 use skin::Skins;
@@ -215,8 +216,12 @@ mod ids {
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The row values of instance batches at the resident texture's rows, two texels per row.
+    pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// The ring of row values at the streamed textures' rows, one per ring slot.
+    pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_TRANSMISSION + 1;
+    pub const TARGETS: u32 = STREAMED_VALUES + RING;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -919,8 +924,9 @@ impl CpuCulledRenderer {
     }
 
     /// Uploads changed world matrices of the scene and of static batches into the resident
-    /// texture, straight from the core's world buffers of this parity, or every one of them after
-    /// the layout changed.
+    /// texture, and the changed row values of static batches that have them into the resident row
+    /// values texture, straight from the core's world buffers of this parity, or every one of them
+    /// after the layout changed.
     fn upload_resident(
         &self,
         list: &mut DrawList,
@@ -937,6 +943,21 @@ impl CpuCulledRenderer {
                 matrices_of(matrices, start, count),
             )
         };
+        let upload_rows =
+            |list: &mut DrawList, slot: &BatchSlot, batch: &InstanceBatch, start, count| {
+                upload(
+                    list,
+                    slot.base,
+                    batch.world(parity).matrices(),
+                    start,
+                    count,
+                )?;
+                if slot.values {
+                    let values = batch.world(parity).row_values();
+                    write_row_values(list, ids::RESIDENT_VALUES, slot.base, values, start, count)?;
+                }
+                Ok::<(), RecordError>(())
+            };
         if everything || input.snapshot.overflowed() {
             // Slots past the highest one ever used, and rows past a batch's active count, draw
             // nothing; they upload when they change.
@@ -947,13 +968,7 @@ impl CpuCulledRenderer {
                     .batches
                     .get(slot.id)
                     .expect("the layout names live batches");
-                upload(
-                    list,
-                    slot.base,
-                    batch.world(parity).matrices(),
-                    0,
-                    batch.frame_active_count(parity),
-                )?;
+                upload_rows(list, slot, batch, 0, batch.frame_active_count(parity))?;
             }
             return Ok(());
         }
@@ -985,13 +1000,7 @@ impl CpuCulledRenderer {
             let Ok(batch) = input.batches.get(slot.id) else {
                 continue;
             };
-            upload(
-                list,
-                slot.base,
-                batch.world(parity).matrices(),
-                range.start,
-                range.count,
-            )?;
+            upload_rows(list, slot, batch, range.start, range.count)?;
         }
         if let Some((first, rows)) = span {
             upload(list, 0, scene, first, rows)?;
@@ -1012,7 +1021,9 @@ impl CpuCulledRenderer {
         })
     }
 
-    /// Writes the active rows of every dynamic batch into the streamed texture of slot `streamed`.
+    /// Writes the active rows of every dynamic batch into the streamed texture of slot `streamed`,
+    /// and the row values of those that have them into the streamed row values texture of the
+    /// same slot.
     fn upload_streamed(
         &self,
         list: &mut DrawList,
@@ -1027,6 +1038,11 @@ impl CpuCulledRenderer {
             let active = batch.frame_active_count(parity);
             let matrices = matrices_of(batch.world(parity).matrices(), 0, active);
             write_matrices(list, ids::STREAMED + streamed, slot.base, matrices)?;
+            if slot.values {
+                let values = batch.world(parity).row_values();
+                let texture = ids::STREAMED_VALUES + streamed;
+                write_row_values(list, texture, slot.base, values, 0, active)?;
+            }
         }
         Ok(())
     }
@@ -1459,8 +1475,10 @@ impl FrameBuilder for CpuCulledRenderer {
             .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
+        let settings = &self.settings;
+        let sways = |material| settings.sways(material);
         self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref());
+            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();

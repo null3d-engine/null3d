@@ -818,9 +818,18 @@ pub mod permutation {
     /// The surface lets light through: it samples the copy of the opaque objects' color behind it,
     /// bent by its index of refraction and blurred by its roughness, as three.js's transmission.
     pub const TRANSMISSION: u32 = 1 << 23;
+    /// The rows of an instance batch bring a color and values of their own. The vertex shader reads
+    /// them from the row values texture: the color multiplies the base color as a vertex color
+    /// does, and custom materials read the values as `object.values`.
+    pub const ROW_VALUES: u32 = 1 << 24;
+    /// A custom material's template draws a shadow caster's depth: the vertex shader moves each
+    /// vertex by the material's vertex offset, then places it as the depth template places a
+    /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
+    /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
+    pub const CASTER: u32 = 1 << 25;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 23] = [
+    pub const NAMES: [(&str, u32); 25] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -844,6 +853,8 @@ pub mod permutation {
         ("ALPHA_COVERAGE", ALPHA_COVERAGE),
         ("ALPHA_HASH", ALPHA_HASH),
         ("TRANSMISSION", TRANSMISSION),
+        ("ROW_VALUES", ROW_VALUES),
+        ("CASTER", CASTER),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -865,12 +876,28 @@ pub mod permutation {
     /// vertex shader reads the culling shader's copies, so the builds that read their instances by
     /// index never skin: those builds would load with the skinning feature and double its WebGPU
     /// files. A surface that lets light through tests no mask, and draws in the transparent pass,
-    /// which never reads instances by index.
-    pub const APART: [(u32, u32); 4] = [
+    /// which never reads instances by index. Row values come from instance batches, which neither
+    /// skin nor morph, read their instances from the culling shader's copies, and test a mask
+    /// against its cutoff; a surface that lets light through draws its rows without their values.
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    pub const APART: [(u32, u32); 17] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
         (TRANSMISSION, INSTANCE_INDEX),
+        (ROW_VALUES, SKIN),
+        (ROW_VALUES, MORPH),
+        (ROW_VALUES, INSTANCE_INDEX),
+        (ROW_VALUES, ALPHA_COVERAGE),
+        (ROW_VALUES, ALPHA_HASH),
+        (ROW_VALUES, TRANSMISSION),
+        (CASTER, TONE_MAP),
+        (CASTER, VERTEX_COLOR),
+        (CASTER, ALPHA_MASK),
+        (CASTER, RECEIVE_SHADOWS),
+        (CASTER, TRANSMISSION),
+        (CASTER, PREPASS),
+        (CASTER, INSTANCE_INDEX),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1340,6 +1367,11 @@ pub mod sizes {
     pub const MATRICES_PER_TEXTURE_ROW: u32 = 512;
     /// Indices per row of an index list texture: WebGL2's smallest allowed texture width.
     pub const INDICES_PER_TEXTURE_ROW: u32 = 2048;
+    /// Texels of an `RGBA32_FLOAT` data texture per row of an instance batch's row values: its
+    /// color, then its own values.
+    pub const ROW_VALUE_TEXELS: u32 = 2;
+    /// Row values per row of their data texture, which is 2,048 texels wide.
+    pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
@@ -2056,6 +2088,12 @@ mod tests {
         let shift = |per_row: u32| per_row.trailing_zeros();
         assert!(sizes::MATRICES_PER_TEXTURE_ROW.is_power_of_two());
         assert!(sizes::INDICES_PER_TEXTURE_ROW.is_power_of_two());
+        assert!(sizes::ROW_VALUES_PER_TEXTURE_ROW.is_power_of_two());
+        assert_eq!(
+            sizes::ROW_VALUE_TEXELS,
+            2,
+            "the shader reads two texels per row's values"
+        );
         assert_eq!(
             sizes::MATRIX_TEXELS,
             3,
@@ -2069,6 +2107,10 @@ mod tests {
             format!(
                 "const INDEX_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::INDICES_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const VALUES_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.

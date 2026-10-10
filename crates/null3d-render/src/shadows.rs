@@ -653,8 +653,10 @@ impl CascadeSchedule {
 }
 
 /// The casters that move in every frame: each dynamic object, and each object under a dynamic
-/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. The
-/// list follows the scene's structure, so it changes only in frames where the structure changed.
+/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. A
+/// caster whose material moves its vertices by a vertex offset of its own counts too, as its
+/// shadow may sway in every frame. The list follows the scene's structure, so it changes only in
+/// frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
@@ -665,8 +667,15 @@ pub struct MovingCasters {
 
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
-    /// never built. Allocates only when the list grows past its largest size so far.
-    pub fn update(&mut self, scene: &SceneStorage, batches: &BatchTable, structure_changed: bool) {
+    /// never built. `sways` says whether a material, by engine id, moves its vertices by a vertex
+    /// offset. Allocates only when the list grows past its largest size so far.
+    pub fn update(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        structure_changed: bool,
+        sways: impl Fn(u32) -> bool,
+    ) {
         if self.built && !structure_changed {
             return;
         }
@@ -674,11 +683,13 @@ impl MovingCasters {
         self.slots.clear();
         self.batches.clear();
         for (id, batch) in batches.iter() {
-            if batch.is_dynamic() && batch.shadows() & flags::CAST_SHADOWS != 0 {
+            let moving = batch.is_dynamic() || sways(batch.material());
+            if moving && batch.shadows() & flags::CAST_SHADOWS != 0 {
                 self.batches.push(id);
             }
         }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
+        let materials = scene.materials();
         let moves = |slot: usize| {
             let mut at = slot;
             loop {
@@ -693,7 +704,8 @@ impl MovingCasters {
         };
         let high = scene.slots().high_water() as usize;
         for slot in 0..high {
-            if meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0 && moves(slot) {
+            let casts = meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0;
+            if casts && (moves(slot) || sways(materials[slot])) {
                 self.slots.push(slot as u32);
             }
         }
@@ -766,6 +778,9 @@ pub struct ShadowFrame {
     pub drawn: u32,
     /// How the shadow map stores depth.
     pub depth: CascadeDepth,
+    /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
+    /// materials' casters read.
+    pub clock: [f32; 4],
 }
 
 impl ShadowFrame {
@@ -797,6 +812,8 @@ impl ShadowFrame {
                 view_proj: cascade.view_proj,
                 camera_position: [x, y, z, 0.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
+                clock: self.clock,
+                camera_world: camera_world(self.camera),
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -810,6 +827,13 @@ impl ShadowFrame {
     pub fn uniform(&self) -> ShadowUniform {
         ShadowUniform::new(&self.cascades, &self.settings, self.depth)
     }
+}
+
+/// The world position of the camera that a shadow view's sources are relative to, as a view's
+/// uniform block holds it, which the built-in values of custom materials' casters read.
+pub(crate) fn camera_world(camera: CellPosition) -> [f32; 4] {
+    let [x, y, z] = camera.absolute().map(|v| v as f32);
+    [x, y, z, 0.0]
 }
 
 /// How the cascades' shadow map stores depth. Each cascade's depth runs from 0 to 1 over its box,
@@ -1392,10 +1416,13 @@ mod tests {
             layers: 1,
             drawn: 0b111,
             depth: CascadeDepth::default(),
+            clock: [2.5, 0.016, 0.0, 0.0],
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {
             let uniform = frame.view_frame(k).uniform;
+            // Custom materials' casters read the frame's clock, as the camera's view has it.
+            assert_eq!(uniform.clock, frame.clock);
             // The direction toward the light, as an orthographic camera's position gives it.
             let [x, y, z, w] = uniform.camera_position;
             let toward = DOWN_AND_ACROSS.map(|v| -v);
