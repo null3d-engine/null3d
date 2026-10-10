@@ -864,6 +864,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'texture-background',
 		expect: { hdr: false },
 	},
+	// A KTX2 file as the background, in the compressed format the device takes, and as RGBA8 where
+	// the device has no compressed format, as ?compression=none makes it. Both draw the same image,
+	// so the second borrows the first's references.
+	{
+		name: 'ktx2-background',
+		sketch: 'tests/pages/sketches/ktx2-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'ktx2-background-rgba8',
+		sketch: 'tests/pages/sketches/ktx2-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+		switches: ['compression=none'],
+		reference: 'ktx2-background',
+	},
 	// The other backgrounds: three.js's sky with clouds, an environment that blurs, dims and turns
 	// behind spheres it lights, and a cube map of six pictures. The parity test compares each with
 	// three.js.
