@@ -51,6 +51,11 @@ pub struct FrameUniform {
     pub occlusion: [f32; 4],
     /// The scene's environment: see [`crate::environment`].
     pub environment: EnvironmentUniform,
+    /// The light that the hemisphere lights add along each world axis, x, y and z, each in the
+    /// first three floats: a surface with unit normal `n` gets `ambient` plus `n.x` times the
+    /// first, `n.y` times the second and `n.z` times the third (see
+    /// [`null3d_core::lights::FrameLights::hemisphere`]).
+    pub hemisphere: [[f32; 4]; 3],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);
