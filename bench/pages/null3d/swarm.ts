@@ -14,7 +14,8 @@ const BLENDED_OPACITY = 0.6;
 
 /**
  * Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default.
- * With `blend`, the boxes see through, so each frame sorts every visible row back to front.
+ * With `blend`, the boxes see through, so each frame sorts every visible row back to front. With
+ * `shadows`, every row casts and receives shadows.
  */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
@@ -22,6 +23,7 @@ export function createSwarm(
 	dynamic: boolean,
 	instanceAt = s1InstanceAt,
 	blend = false,
+	{ shadows = false }: { shadows?: boolean } = {},
 ): Swarm {
 	const data = createS1(count);
 	const material = blend
@@ -30,7 +32,7 @@ export function createSwarm(
 	const batch = scene.createInstances(
 		geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE }),
 		count,
-		{ material, dynamic },
+		{ material, dynamic, castShadows: shadows, receiveShadows: shadows },
 	);
 	const position = new Float64Array(3);
 	const rotation = new Float64Array(4);

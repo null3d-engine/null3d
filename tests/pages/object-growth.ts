@@ -92,15 +92,21 @@ run('object-growth', async () => {
 		while (done === undefined) during.push(toBase64((await engine.captureFrame()).pixels));
 		await after;
 		const picture = toBase64((await engine.captureFrame()).pixels);
+		// Each odd picture gets a number, so a failure shows whether the odd frames agree.
+		const odd: string[] = [];
+		const label = (each: string) => {
+			if (each === before) return 'B';
+			if (each === picture) return 'A';
+			if (!odd.includes(each)) odd.push(each);
+			return String(odd.indexOf(each) + 1);
+		};
 		pictures[mode] = {
 			before,
 			after: picture,
 			objects: done.objects,
 			during: during.length,
 			odd: during.filter((each) => each !== before && each !== picture).length,
-			sequence: during
-				.map((each) => (each === before ? 'B' : each === picture ? 'A' : 'X'))
-				.join(''),
+			sequence: during.map(label).join(','),
 			latency: engine.mode.latency,
 			failures,
 		};

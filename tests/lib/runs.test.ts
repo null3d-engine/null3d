@@ -622,7 +622,9 @@ describe('the checks plan', () => {
 				figures: {
 					heading: 'webgpu  high  scale 1.00',
 					fps: '60 fps',
-					target: 'Target 60 fps · 16.7 ms',
+					'target-note': '',
+					display: '120 Hz',
+					target: '≥60 fps · 16.7 ms',
 					'mode:pipelined': '',
 					sketch: '1.5 ms',
 					drawing: '1.5 ms',

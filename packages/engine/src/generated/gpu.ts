@@ -157,6 +157,7 @@ export const PERMUTATION_DEPTH_MULTISAMPLED = 262144;
 export const PERMUTATION_SAMPLE_MASK = 1048576;
 export const PERMUTATION_ALPHA_COVERAGE = 2097152;
 export const PERMUTATION_ALPHA_HASH = 4194304;
+export const PERMUTATION_TRANSMISSION = 8388608;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -232,6 +233,7 @@ export const TEMPLATE_DOF_BLUR = 43;
 export const TEMPLATE_DOF_FILTER = 44;
 export const TEMPLATE_DOF_COMPOSITE = 45;
 export const TEMPLATE_DOF_COMPOSITE_MS = 46;
+export const TEMPLATE_TRANSMISSION_COPY = 47;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -266,7 +268,7 @@ export const SIZE_GRID_WORDS_PER_TEXTURE_ROW = 4096;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
-export const SIZE_MATERIAL_BYTES = 144;
+export const SIZE_MATERIAL_BYTES = 176;
 export const SIZE_MAP_SLOTS = 8;
 export const SIZE_SHARED_MAP_UNITS = 6;
 export const SIZE_MAX_CELLS = 512;

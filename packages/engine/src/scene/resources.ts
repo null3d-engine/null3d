@@ -24,12 +24,16 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_ATTENUATION_COLOR,
+	MATERIAL_PARAM_ATTENUATION_DISTANCE,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
+	MATERIAL_PARAM_IOR,
 	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_NORMAL_SCALE,
@@ -39,11 +43,14 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
+	MATERIAL_PARAM_THICKNESS,
+	MATERIAL_PARAM_TRANSMISSION,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
+	SHADING_CUSTOM_TRANSMISSION,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -57,6 +64,7 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
+import { PERMUTATION_TRANSMISSION } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -819,6 +827,34 @@ export interface StandardValues extends MaterialOptions {
 	envIntensity?: number;
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
 	uvTransform?: UvTransform;
+	/**
+	 * How much of the light behind the surface passes through it, from 0 to 1, for glass and clear
+	 * water, as three.js's `MeshPhysicalMaterial.transmission`. That share of the diffuse light
+	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
+	 * Give it when you create the material, even as 0, to change it later. A material created
+	 * without it lets no light through. Such a material draws after the opaque objects, with the
+	 * blended ones, and only opaque objects show through it. It takes the `opaque` or `blend` alpha
+	 * mode. The default is 0.
+	 */
+	transmission?: number;
+	/**
+	 * The thickness of the volume under the surface, in the mesh's own units, 0 or more, as
+	 * three.js's `thickness`. Light that passes through bends by `ior` over this distance, and the
+	 * volume's color absorbs part of it. 0 is a thin wall, which bends no light. The default is 0.
+	 */
+	thickness?: number;
+	/**
+	 * The color that white light takes after it travels `attenuationDistance` through the
+	 * volume, as three.js's `attenuationColor`, in the forms that `color` takes. The default is
+	 * white, which absorbs nothing.
+	 */
+	attenuationColor?: ColorInput;
+	/**
+	 * The distance in world units over which light in the volume takes `attenuationColor`, above
+	 * 0, as three.js's `attenuationDistance`. `Infinity` absorbs nothing. The default is
+	 * `Infinity`.
+	 */
+	attenuationDistance?: number;
 }
 
 /**
@@ -1059,6 +1095,11 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 	};
 }
 
+/** True when a custom material's WGSL has the builds that let light through. */
+function lets(compiled: CompiledMaterial): boolean {
+	return Object.values(compiled.variants).some((v) => v.permutation & PERMUTATION_TRANSMISSION);
+}
+
 /** Every value of either material, which `set` writes. */
 type AnyValues = StandardValues & UnlitValues;
 
@@ -1072,7 +1113,9 @@ type Ranged =
 	| 'aoMapIntensity'
 	| 'lightMapIntensity'
 	| 'specularIntensity'
-	| 'envIntensity';
+	| 'envIntensity'
+	| 'transmission'
+	| 'thickness';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -1095,6 +1138,8 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 	],
 	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
+	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
+	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
 ];
 
 /** The core's slot of each map option. */
@@ -1128,9 +1173,14 @@ function checkNumbers(values: AnyValues, call: string): void {
 /** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
-	const { ior } = values;
+	const { ior, attenuationDistance: distance } = values;
 	if (ior !== undefined && !(ior >= 1 && ior < Number.POSITIVE_INFINITY))
 		throw new EngineError('E1108', `${call}() got the ior ${ior}; it takes a finite 1 or more.`);
+	if (distance !== undefined && !(distance > 0))
+		throw new EngineError(
+			'E1108',
+			`${call}() got the attenuationDistance ${distance}; it takes more than 0, or Infinity.`,
+		);
 	for (const [key, , most, name] of RANGED) {
 		const value = values[key];
 		if (value === undefined) continue;
@@ -1157,6 +1207,7 @@ function writeValues(
 	color: readonly number[] | undefined,
 	emissive: readonly number[] | undefined,
 	specular: readonly number[] | undefined,
+	attenuation: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -1176,12 +1227,25 @@ function writeValues(
 			specular[1] as number,
 			specular[2] as number,
 		);
+	if (attenuation)
+		write(
+			MATERIAL_PARAM_ATTENUATION_COLOR,
+			attenuation[0] as number,
+			attenuation[1] as number,
+			attenuation[2] as number,
+		);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
 	}
-	const { normalScale, uvTransform, ior } = values;
-	if (ior !== undefined) write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
+	const { normalScale, uvTransform, ior, attenuationDistance: distance } = values;
+	if (ior !== undefined) {
+		write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
+		write(MATERIAL_PARAM_IOR, ior, 0, 0);
+	}
+	// The core keeps 0 for a volume that absorbs nothing.
+	if (distance !== undefined)
+		write(MATERIAL_PARAM_ATTENUATION_DISTANCE, distance < Infinity ? distance : 0, 0, 0);
 	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
 	if (uvTransform) {
 		// three.js's texture matrix with its center at the origin, by rows.
@@ -1240,7 +1304,12 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
  * E1203 for a depth bias that is not a finite number. Call it inside `if (DEV)`.
  */
 function checkFeatures(options: StandardOptions, call: string): void {
-	const { alphaMode, blending, depthBias } = options;
+	const { alphaMode, blending, depthBias, transmission } = options;
+	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
+		throw new EngineError(
+			'E1217',
+			`${call}() got transmission with the alpha mode '${alphaMode}'; a material that lets light through takes 'opaque' or 'blend'.`,
+		);
 	if (alphaMode !== undefined && !Object.hasOwn(ALPHA_MODES, alphaMode))
 		throw new EngineError(
 			'E1217',
@@ -1272,7 +1341,8 @@ function featureBits(options: StandardOptions): number {
 		(options.alphaMode === 'mask' && options.alphaToCoverage !== false
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
 			: 0) |
-		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0)
+		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0) |
+		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0)
 	);
 }
 
@@ -1292,6 +1362,8 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'emissive',
 	'specularColor',
 	'ior',
+	'attenuationColor',
+	'attenuationDistance',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1436,7 +1508,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const color = linearOrNone(values.color, call);
 		const emissive = linearOrNone(values.emissive, call);
 		const specular = specularOrNone(values.specularColor, call);
-		writeValues(core, id, call, values, color, emissive, specular);
+		const attenuation = linearOrNone(values.attenuationColor, call);
+		writeValues(core, id, call, values, color, emissive, specular, attenuation);
 	}
 
 	/**
@@ -1522,12 +1595,16 @@ export class Materials {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
 		const specular = specularOrNone(options.specularColor, call);
+		const attenuation = linearOrNone(options.attenuationColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
 		}
 		const opacity = options.opacity ?? 1;
 		const features = featureBits(options);
+		// The shaders that let light through load on first use: the download starts with the
+		// material, before any object draws with it.
+		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
@@ -1535,7 +1612,7 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive, specular);
+		writeValues(core, id, call, values, undefined, emissive, specular, attenuation);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			if (!map) continue;
@@ -1578,7 +1655,9 @@ export class Materials {
 	 * Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
 	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
-	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take.
+	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take,
+	 * and for `transmission` where the WGSL never sets the surface's `transmission`: only WGSL that
+	 * sets it has the builds that let light through.
 	 * When
 	 * TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type
 	 * check.
@@ -1593,6 +1672,11 @@ export class Materials {
 				`${call}() got ${options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'}; a custom material takes 'opaque', 'mask' or 'blend', and tests its alpha against alphaCutoff.`,
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
+		if (DEV && options.transmission !== undefined && !lets(compiled))
+			throw new EngineError(
+				'E1217',
+				`${call}() got transmission, but its WGSL never sets the surface's transmission, so it has no builds that let light through. Set it in fn surface, such as s.transmission = 1.0.`,
+			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
 			if (STANDARD_VALUES.has(name))
@@ -1607,7 +1691,8 @@ export class Materials {
 			this.templateOf(compiled) |
 			(compiled.attributes << SHADING_CUSTOM_ATTRIBUTE_SHIFT) |
 			(compiled.baseColor ? SHADING_CUSTOM_BASE_COLOR : 0) |
-			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT);
+			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT) |
+			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);

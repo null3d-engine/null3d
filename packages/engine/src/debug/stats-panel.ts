@@ -4,7 +4,7 @@
 // figures of its own. So both pages show the same figures in the same look. overlay-look.ts holds
 // the look; this file holds the place on the page, the shadow root and the button's toggle.
 
-import { targetFps } from './frame-target';
+import { CHECK_MAX_FPS, checkTargetFps } from '../quality/check';
 import { addStyles, buildPanel, keepKeys, StatsCard, StatsHeader } from './overlay-look';
 import type { StatsFigures } from './stats-text';
 
@@ -51,11 +51,14 @@ export type StatsFrameMode = 'pipelined' | 'low' | 'single' | 'one-thread';
 export interface StatsPanelFrame {
 	/**
 	 * The display's refresh rate in hertz, or 0 before it is measured. The panel judges the figures
-	 * against null3D's target: this rate, at most 60 frames a second, or `fpsCap` where it is lower.
+	 * against null3D's target: this rate, at most `maxTargetFps`.
 	 */
 	readonly refreshHz: number;
-	/** A frame rate cap below the display's rate, or undefined for none. */
-	readonly fpsCap?: number;
+	/**
+	 * The highest target frame rate, as null3D's `targetFps` setting and a frame rate cap allow.
+	 * The default is null3D's own highest target without a setting.
+	 */
+	readonly maxTargetFps?: number;
 	/** True where the GPU path can time the GPU's work. The GPU bar otherwise says "not measured". */
 	readonly gpuTimer: boolean;
 	/** How the threads share each frame's work. */
@@ -126,19 +129,22 @@ export class StatsPanel {
 
 	/**
 	 * Shows the frame rate in the header: `frames` is 0 before the first window of frames ended.
-	 * The rate is judged against null3D's target for the display's refresh rate.
+	 * The rate is judged against null3D's target for the display's refresh rate, at most
+	 * `maxTargetFps`.
 	 */
-	showRate(frames: number, fps: number, refreshHz: number, fpsCap?: number): void {
-		this.header.update(frames, fps, targetFps(refreshHz, fpsCap));
+	showRate(frames: number, fps: number, refreshHz: number, maxTargetFps = CHECK_MAX_FPS): void {
+		this.header.update(frames, fps, checkTargetFps(refreshHz, maxTargetFps));
 	}
 
 	/** Shows a set of figures in the card. It does nothing while the panel is collapsed. */
 	update(figures: StatsFigures, frame: StatsPanelFrame): void {
-		this.showRate(figures.frames, figures.presentedFps, frame.refreshHz, frame.fpsCap);
+		const { refreshHz, maxTargetFps = CHECK_MAX_FPS } = frame;
+		this.showRate(figures.frames, figures.presentedFps, refreshHz, maxTargetFps);
 		if (this.isCollapsed) return;
 		this.card.update(
 			figures,
-			targetFps(frame.refreshHz, frame.fpsCap),
+			checkTargetFps(refreshHz, maxTargetFps),
+			refreshHz,
 			frame.gpuTimer,
 			frame.bothSteps,
 			frame.mode,

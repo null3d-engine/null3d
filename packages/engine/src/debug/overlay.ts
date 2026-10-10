@@ -35,8 +35,8 @@ export interface OverlaySetup {
 	sources: StatsSources;
 	/** True when the engine's threads share its WebAssembly memory: the threaded build. */
 	sharedMemory: boolean;
-	/** The frame rate that `?fps=` holds, or undefined where the display's rate sets it. */
-	fpsCap: number | undefined;
+	/** The highest target frame rate, from the page's `targetFps` setting and the `?fps=` cap. */
+	maxTargetFps: number;
 	/** The GPU features or WebGL2 extensions that the engine found. */
 	gpuFeatures: readonly string[];
 	/** The threads that run the sketch and draw, as `engine.mode` gives them. */
@@ -145,7 +145,7 @@ export class StatsOverlay {
 		if (!this.window.update()) return;
 		if (this.panel.collapsed) {
 			const { frames, presentedFps } = this.window.stats;
-			this.panel.showRate(frames, presentedFps, this.refreshHz(), this.setup.fpsCap);
+			this.panel.showRate(frames, presentedFps, this.refreshHz(), this.setup.maxTargetFps);
 		} else this.updateCard();
 	}
 
@@ -161,7 +161,7 @@ export class StatsOverlay {
 		});
 		this.panel.update(figures, {
 			refreshHz: this.refreshHz(),
-			fpsCap: this.setup.fpsCap,
+			maxTargetFps: this.setup.maxTargetFps,
 			gpuTimer: this.gpuTimer,
 			mode: this.frameMode,
 			bothSteps: this.bothSteps,

@@ -8,7 +8,7 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Three parts are not built yet: drawing each row in its own color, shadows of batch rows, and custom per-instance attributes. Coding agents must not use them.
+> Ships in null3D 0.1, with shadows of batch rows in 0.2. The API is experimental, so it can still change between versions. Two parts are not built yet: drawing each row in its own color, and custom per-instance attributes. Coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -125,7 +125,7 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 8,192 drawn rows of each static batch with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
 ## Pools: draw only the rows in use
 
@@ -167,7 +167,7 @@ Each row has its own bounding sphere. The sphere's center is the row's position,
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects that receive shadows draw with other pipelines than batch rows, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
 
 The difference is the sketch's own work on the CPU:
 
@@ -177,11 +177,11 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change, apart from a batch's `setCastShadows` and `setReceiveShadows`. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 
-- Batch rows neither cast nor receive shadows in this version. Use separate objects from `scene.createMesh` for copies that need shadows.
+- Every row of a batch casts and receives shadows alike: give `castShadows` and `receiveShadows` to `createInstances`, or call `batch.setCastShadows(true)` and `batch.setReceiveShadows(true)`. Both are false by default. [Shadows](shadows.md) explains them. Sprite, point and line batches take no shadows.
 - An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
 - Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The places in the scene's object tables count toward it too, used or not. They start at 1,024 and double as the scene grows. So the batches of a scene hold at most the limit less those places. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
 - Each row takes about 210 bytes of engine memory, or about 260 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).

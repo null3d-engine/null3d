@@ -50,7 +50,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
+| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `targetFps`, `maxPixelRatio`, `antialias`, the shadow options, `depthPrepass` or `maxLabels`. The options table gives each range. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
@@ -58,7 +58,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 45 seconds of tries. |
-| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
+| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. On null3D's own dev server, they also check that the core was built from the checkout's Rust sources. |
 | [E1410](../errors/E1410.md) | The sketch module did not load, at the first import or the second: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
@@ -81,6 +81,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | Option | Default | What it does |
 | --- | --- | --- |
 | `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md). The `?preset=` switch wins over it. |
+| `targetFps` | The display's rate, at most 60 | The frame rate that the engine defends. `'display'` defends the display's full rate, such as 120 or 144 for a game. A whole number caps the target at that rate: [Quality presets](../concepts/quality-presets.md#the-target-frame-rate). The `?target-fps=` switch wins over it. Another value fails with [E1213](../errors/E1213.md). |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
@@ -131,7 +132,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 ## What the engine reports
 
 - `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine

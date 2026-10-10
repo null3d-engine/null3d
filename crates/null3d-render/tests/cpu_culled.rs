@@ -144,7 +144,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         // The side view's target and the texture it resolves into, and the white texel that
         // its texture shows until the target exists, come on top of the camera's textures.
-        assert_eq!(count(&commands, Op::CreateTexture), 18 + 3 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 19 + 3 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -322,9 +322,10 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // The color and depth targets, the shadow map and the shadow atlas (one texel each while
         // no light casts shadows), the resident texture, the two rings of three, the cluster
         // texture, the material table, which holds the table of specular terms too, the blank
-        // cube of the environment, the ring of three light data textures, and the blank texture
-        // that stands in for ambient occlusion.
-        assert_eq!(count(&commands, Op::CreateTexture), 18);
+        // cube of the environment, the ring of three light data textures, and the blank textures
+        // that stand in for ambient occlusion and for the copy that surfaces which let light
+        // through sample.
+        assert_eq!(count(&commands, Op::CreateTexture), 19);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.

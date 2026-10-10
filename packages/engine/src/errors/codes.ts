@@ -88,7 +88,7 @@ const DOCS = {
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. A row of a static instance, sprite or point batch that changed without markDirty() raises it too: the engine updates only the marked rows, and development builds check the drawn rows before each batch update, a share of a large batch in each frame. Release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},
@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -255,7 +255,7 @@ const DOCS = {
 	E1402: {
 		title: 'Engine core out of date',
 		cause:
-			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads.',
+			"The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. When null3D's own dev server serves the engine from a checkout of its repository, the check also compares the stamp of the Rust sources that the core was built from with the stamp of the checkout's sources. A core built before a merge or an edit of those sources then fails at once, before it can run with code that expects another core.",
 		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 		since: '0.1',
 	},

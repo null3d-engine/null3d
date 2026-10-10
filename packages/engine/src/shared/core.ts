@@ -6,6 +6,7 @@
 import { DEV } from '../errors/checks';
 import type { CoreErrors } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
+import { CORE_SOURCES } from './core-sources';
 
 export type Build = 'threaded' | 'single';
 
@@ -59,8 +60,12 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerCallDone(index: number): void;
 	/** The task calls of a job worker that it has not finished. */
 	jobWorkerCalls(index: number): number;
-	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
-	takeJobBusyMs(index: number): number;
+	/** Whole microseconds a job worker spent on work since the last call for it; resets its total. */
+	takeJobBusyUs(index: number): number;
+	/** Whole microseconds the sketch thread spent in parallel loops it handed out since the last call. */
+	takeHandedUs(): number;
+	/** Starts or stops the timing of the parallel loops that the sketch thread hands out. */
+	timeHandedLoops(on: boolean): void;
 	/** The address of the job system's wake word, or 0 before it exists. */
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
@@ -210,6 +215,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
+	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
+	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
@@ -747,7 +754,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'callJobWorker',
 	'jobWorkerCallDone',
 	'jobWorkerCalls',
-	'takeJobBusyMs',
+	'takeJobBusyUs',
+	'takeHandedUs',
+	'timeHandedLoops',
 	'jobsWakeAddress',
 	'jobsStopAddress',
 	'destroyEngine',
@@ -784,6 +793,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchLayers',
+	'setBatchShadows',
 	'markBatchDirty',
 	'memoryEpoch',
 	'queryArrays',
@@ -922,18 +932,42 @@ export function coreUrls(build: Build): CoreFiles {
 			};
 }
 
+/** A generated module as it loads, before the checks: the build writes in its sources' stamp. */
+export type LoadedGlue = Partial<CoreGlue> & { readonly coreSources?: string };
+
 /**
- * Imports the generated module for a build. Development builds also check that it has every
- * function the engine calls. A release build bundles this code and the core from one install, so
- * only a development setup can pair a core with code from another build, and release builds drop
- * the check and its list of names.
+ * E1402 when a generated module does not belong with this code: when `sources`, the stamp of the
+ * Rust sources that a dev server gives, differs from the stamp that the build wrote in, or when
+ * the module lacks a function that the engine calls.
+ */
+export function glueMismatch(
+	build: Build,
+	glue: LoadedGlue,
+	sources: string | undefined,
+): EngineError | undefined {
+	if (sources !== undefined && glue.coreSources !== sources)
+		return new EngineError(
+			'E1402',
+			`the ${build} engine core was built from other Rust sources than this checkout holds.`,
+		);
+	const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
+	if (missing.length > 0)
+		return new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+	return undefined;
+}
+
+/**
+ * Imports the generated module for a build. Development builds also check that it comes from the
+ * Rust sources of the checkout that the dev server serves, and that it has every function the
+ * engine calls. A release build bundles this code and the core from one install, so only a
+ * development setup can pair a core with code from another build, and release builds drop the
+ * check and its list of names.
  */
 export async function loadGlue(build: Build): Promise<CoreGlue> {
-	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as Partial<CoreGlue>;
+	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as LoadedGlue;
 	if (DEV) {
-		const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
-		if (missing.length > 0)
-			throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+		const mismatch = glueMismatch(build, glue, CORE_SOURCES);
+		if (mismatch) throw mismatch;
 	}
 	return glue as CoreGlue;
 }

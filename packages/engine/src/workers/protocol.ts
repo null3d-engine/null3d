@@ -91,8 +91,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	hold?: number;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
+	/** The highest target frame rate, as the sketch runner's options give it. */
+	maxTargetFps: number;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
 	/** One port to each job worker, by index, for the on-demand loader's tasks. */
@@ -147,7 +147,8 @@ export type WorkerReply =
 			role: 'sketch' | 'render' | 'job';
 			index?: number;
 			threaded: boolean;
-			version: string;
+			/** The core's version, from each thread that runs a copy of the core. */
+			version?: string;
 			tier?: Tier;
 	  }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
@@ -179,6 +180,8 @@ export type WorkerReply =
 	| { type: 'stats'; show: StatsRequest }
 	/** The slot in the label table of a label's id and its generation, or -1 once it has none. */
 	| { type: 'label'; id: string; slot: number; generation: number }
+	/** The sketch worker asks the page to start job workers up to `count`, as its parallel work grew. */
+	| { type: 'jobs-wanted'; count: number }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
@@ -236,8 +239,9 @@ export function startWorker<Message>(
 	if (thread[started]) return;
 	thread[started] = true;
 	// Workers run only the threaded build. The page starts them before the core has compiled, so
-	// each imports the core's loader now, and finds it ready when the core arrives.
-	void awaitLater(loadGlue('threaded'));
+	// each that runs a copy of the core imports the core's loader now, and finds it ready when the
+	// core arrives. The render worker reads the shared memory without a copy of the core.
+	if (role !== 'render') void awaitLater(loadGlue('threaded'));
 	step('loaded');
 	self.onmessage = handle;
 }

@@ -90,6 +90,7 @@ import {
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
@@ -425,8 +426,9 @@ export class Pipelines {
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
-		// textureLoad, the environment's cube map with its filtering sampler, and the sampler that
-		// reads four texels of the shadow map at once.
+		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
+		// four texels of the shadow map at once, and the copy of the opaque color that surfaces which
+		// let light through sample with the environment's sampler.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -455,6 +457,7 @@ export class Pipelines {
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
+			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -730,6 +733,13 @@ export class Pipelines {
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TRANSMISSION_COPY, {
+			label: 'transmission copy',
+			shader: shaders.transmission_copy,
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
