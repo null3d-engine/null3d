@@ -217,6 +217,10 @@ pub struct JobSystem {
     /// Nanoseconds that the calling thread spent in loops that it handed out, since the host last
     /// took the total: how much parallel work the frames have, whatever the job workers that run.
     handed_ns: AtomicU64,
+    /// True while the calling thread times the loops that it hands out. Each reading of the
+    /// browser's clock allocates a number, so the host times them only while it may want more
+    /// job workers.
+    time_handed: AtomicBool,
     sleepers: AtomicU32,
     shutdown: AtomicBool,
     workers: u32,
@@ -269,6 +273,7 @@ impl JobSystem {
             panicked: AtomicBool::new(false),
             dispatched: AtomicBool::new(false),
             handed_ns: AtomicU64::new(0),
+            time_handed: AtomicBool::new(true),
             sleepers: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
             workers,
@@ -347,7 +352,10 @@ impl JobSystem {
         self.ticket
             .0
             .store(u64::from(chunks) << 32, Ordering::SeqCst);
-        let handed_at = self.clock.map(|now| now());
+        let handed_at = self
+            .clock
+            .filter(|_| self.time_handed.load(Ordering::Relaxed))
+            .map(|now| now());
         self.dispatched.store(true, Ordering::Relaxed);
         self.wake_workers(true);
 
@@ -424,6 +432,11 @@ impl JobSystem {
     /// as the work grows reads it. Without a clock it is always 0.
     pub fn take_handed_ms(&self) -> f64 {
         self.handed_ns.swap(0, Ordering::Relaxed) as f64 / 1e6
+    }
+
+    /// Starts or stops the timing of the loops that the calling thread hands out. It starts on.
+    pub fn time_handed_loops(&self, on: bool) {
+        self.time_handed.store(on, Ordering::Relaxed);
     }
 
     /// The milliseconds job worker `worker_index` spent on frame chunks and background tasks

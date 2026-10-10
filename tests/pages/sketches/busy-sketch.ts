@@ -1,5 +1,7 @@
 // A scene with enough parallel work for the job workers: groups of many boxes that turn in every
 // frame, so the engine updates the transforms of every box in every frame. ?boxes= sets the count.
+// Like the empty sketch, it counts its updates and its largest step, reports them when the page
+// asks, sends a message during setup, and keeps the whole canvas.
 import { defineSketch } from '@null3d/engine';
 
 /** The boxes, from the sketch module's ?boxes= switch. */
@@ -9,7 +11,15 @@ const BOXES_PER_FRAME = 16000;
 /** Groups that the boxes share, each turning on its own. */
 const GROUPS = 16;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, page, time, quality }) => {
+	quality.set({ minRenderScale: 1 });
+	let updates = 0;
+	let largestStep = 0;
+	page.post('setup');
+	page.onMessage((name) => {
+		if (name === 'count')
+			page.post('count', { updates, largestStep, frame: time.frame, now: time.now });
+	});
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,
@@ -33,6 +43,8 @@ export default defineSketch(({ scene, materials, geometry }) => {
 	let angle = 0;
 	return {
 		onUpdate(dt) {
+			updates++;
+			largestStep = Math.max(largestStep, dt);
 			for (const end = Math.min(BOXES, made + BOXES_PER_FRAME); made < end; made++)
 				scene.createMesh({
 					mesh: box,

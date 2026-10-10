@@ -133,6 +133,11 @@ const JOB_WINDOW = 30;
  * asks for more job workers: twice as many, and at least 2.
  */
 const JOB_GROW_MS = 0.2;
+/**
+ * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
+ * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ */
+const JOB_PAUSE = 270;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -225,11 +230,13 @@ export class SketchRunner {
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
-	/** The job workers that the page has been asked to start. */
-	private jobsAsked = 0;
 	/** The parallel work of the frames in the current window, in ms, and the window's frames. */
 	private jobWindowMs = 0;
 	private jobWindowFrames = 0;
+	/** The frames left before the sketch thread times its parallel loops again. */
+	private jobPause = 0;
+	/** Whether the core times the parallel loops that the sketch thread hands out. */
+	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
@@ -669,15 +676,37 @@ export class SketchRunner {
 
 	/**
 	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
-	 * the job workers, and at least 2, when the frames handed out enough work to share.
+	 * the `asked` job workers, and at least 2, when the frames handed out enough work to share.
+	 * After a window with less, the loops go untimed for a while; once every job worker has been
+	 * asked for, for good.
 	 */
-	private growJobs(handedMs: number): void {
-		this.jobWindowMs += handedMs;
+	private growJobs(glue: CoreGlue, asked: number): void {
+		if (asked >= this.jobRecords.length) {
+			this.timeHandedLoops(glue, false);
+			return;
+		}
+		if (this.jobPause > 0) {
+			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+			return;
+		}
+		this.jobWindowMs += glue.takeHandedMs();
 		if (++this.jobWindowFrames < JOB_WINDOW) return;
 		const mean = this.jobWindowMs / this.jobWindowFrames;
 		this.jobWindowMs = 0;
 		this.jobWindowFrames = 0;
-		if (mean >= JOB_GROW_MS) this.jobsAsked = this.sketch.wantJobs(Math.max(2, this.jobsAsked * 2));
+		if (mean >= JOB_GROW_MS) {
+			this.sketch.wantJobs(Math.max(2, asked * 2));
+		} else {
+			this.jobPause = JOB_PAUSE;
+			this.timeHandedLoops(glue, false);
+		}
+	}
+
+	/** Starts or stops the core's timing of the parallel loops that this thread hands out. */
+	private timeHandedLoops(glue: CoreGlue, on: boolean): void {
+		if (this.timingHanded === on) return;
+		this.timingHanded = on;
+		glue.timeHandedLoops(on);
 	}
 
 	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
@@ -1078,7 +1107,7 @@ export class SketchRunner {
 			jobRecord.begin(frame);
 			jobRecord.commit(glue.takeJobBusyMs(k));
 		}
-		if (asked < this.jobRecords.length) this.growJobs(glue.takeHandedMs());
+		this.growJobs(glue, asked);
 		return frame;
 	}
 }

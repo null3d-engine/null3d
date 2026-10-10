@@ -119,6 +119,14 @@ fn the_caller_times_the_loops_it_hands_out_even_before_any_job_worker_joins() {
     jobs.parallel_for(1, 1, &|_, _| spin_for(Duration::from_micros(200)));
     assert_eq!(jobs.take_handed_ms(), 0.0, "an inline loop");
 
+    // Stopped, the timing reads no clock; started again, it times the next loop.
+    jobs.time_handed_loops(false);
+    jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert_eq!(jobs.take_handed_ms(), 0.0, "timing stopped");
+    jobs.time_handed_loops(true);
+    jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert!(jobs.take_handed_ms() > 0.0, "timing started again");
+
     let untimed = JobSystem::with_config(JobConfig {
         workers: 4,
         ..JobConfig::default()

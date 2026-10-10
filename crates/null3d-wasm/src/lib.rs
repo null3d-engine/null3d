@@ -701,6 +701,16 @@ pub fn take_handed_ms() -> f64 {
     JOBS.get().map_or(0.0, JobSystem::take_handed_ms)
 }
 
+/// Starts or stops the timing of the parallel loops that the sketch thread hands out. Each timing
+/// reads the browser's clock, which allocates, so the sketch thread times them only while it may
+/// ask for more job workers.
+#[wasm_bindgen(js_name = timeHandedLoops)]
+pub fn time_handed_loops(on: bool) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.time_handed_loops(on);
+    }
+}
+
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
 /// its total again from zero. The sketch thread reads it once per frame.
 #[wasm_bindgen(js_name = takeJobBusyMs)]

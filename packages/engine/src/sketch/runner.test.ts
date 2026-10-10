@@ -84,7 +84,7 @@ function fakeGlue(
 	calls: unknown[][] = [],
 	grows = false,
 	cellsRefused = () => 0,
-	handedMs = 0,
+	handed: { handedMs: number; timing?: boolean[] } = { handedMs: 0 },
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
@@ -96,7 +96,9 @@ function fakeGlue(
 		reserveObject: () => ++slots,
 		cellsRefused,
 		meshMemoryBytes: () => MESH_BYTES,
-		takeHandedMs: () => handedMs,
+		takeHandedMs: () => (handed.timing?.at(-1) === false ? 0 : handed.handedMs),
+		// The fake takes numbers, so the flag arrives as one.
+		timeHandedLoops: (on) => handed.timing?.push(Boolean(on)) ?? 0,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -217,7 +219,7 @@ async function start(
 		 * The most job workers, the parallel work each frame hands out in ms, and where the counts
 		 * of job workers that the runner asks for go.
 		 */
-		jobs?: { most: number; handedMs: number; asked: number[] };
+		jobs?: { most: number; handedMs: number; asked: number[]; timing?: boolean[] };
 	} = {},
 ) {
 	const log: string[] = [];
@@ -234,7 +236,7 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs.handedMs),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs),
 			memory,
 			control,
 			keyCodes: [],
@@ -337,17 +339,27 @@ describe('SketchRunner', () => {
 	});
 
 	it('asks for twice the job workers, up to the most, after each 30 frames that hand out 0.2 ms or more of parallel work', async () => {
-		const busy = { most: 6, handedMs: 0.25, asked: [] as number[] };
+		const busy = { most: 6, handedMs: 0.25, asked: [] as number[], timing: [] as boolean[] };
 		const { runner } = await start(() => ({}), undefined, { jobs: busy });
 		for (let frame = 0; frame < 29; frame++) runner.step(frame * 16);
 		expect(busy.asked).toEqual([]);
 		for (let frame = 29; frame < 200; frame++) runner.step(frame * 16);
 		expect(busy.asked).toEqual([2, 4, 6]);
 
-		const light = { most: 6, handedMs: 0.15, asked: [] as number[] };
+		// With every job worker asked for, the loops go untimed.
+		expect(busy.timing).toEqual([false]);
+
+		const light = { most: 6, handedMs: 0.15, asked: [] as number[], timing: [] as boolean[] };
 		const quiet = await start(() => ({}), undefined, { jobs: light });
 		for (let frame = 0; frame < 200; frame++) quiet.runner.step(frame * 16);
 		expect(light.asked).toEqual([]);
+		// A window with too little work stops the timing for 270 frames, then it times again.
+		expect(light.timing).toEqual([false]);
+		for (let frame = 200; frame < 301; frame++) quiet.runner.step(frame * 16);
+		expect(light.timing).toEqual([false, true]);
+		light.handedMs = 0.3;
+		for (let frame = 301; frame < 331; frame++) quiet.runner.step(frame * 16);
+		expect(light.asked).toEqual([2]);
 	});
 
 	it('updates no transforms a second time for a sketch without a late update', async () => {
