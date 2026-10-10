@@ -5,15 +5,7 @@
 import { defineSketch, type TimeOfDayPreset, timeOfDay } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
-const raw = params.get('time') ?? 'afternoon';
-const time = params.has('minute')
-	? Number(params.get('minute')) / 60
-	: raw.startsWith('h')
-		? Number(raw.slice(1)) / 100
-		: (raw as TimeOfDayPreset);
-const preview = globalThis as { __null3dNightfall?: string; __null3dNightSky?: number };
-preview.__null3dNightfall = params.get('nightfall') ?? 'phases';
-preview.__null3dNightSky = Number(params.get('nightsky') ?? 1);
+const time = (params.get('time') ?? 'afternoon') as TimeOfDayPreset;
 
 export default defineSketch(async ({ scene, assets, geometry, materials, post }) => {
 	const day = timeOfDay(time, { heading: 2.2 });

@@ -1513,15 +1513,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
-	...[18.6, 18.72, 18.8, 18.82, 18.84, 18.86, 18.9, 19, 21, 4.5].map(
-		(hours): ImageTest => ({
-			name: `time-of-day-strip-${Math.round(hours * 100)}`,
-			sketch: `tests/pages/sketches/time-of-day-sketch.ts?time=h${Math.round(hours * 100)}`,
-			hold: 0,
-			size: [480, 270],
-			timeoutSeconds: 60,
-		}),
-	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
