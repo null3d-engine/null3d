@@ -667,7 +667,6 @@ export class SketchRunner {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
 
-	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
 	/**
 	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
 	 * the job workers, and at least 2, when the frames handed out enough work to share.
@@ -681,6 +680,7 @@ export class SketchRunner {
 		if (mean >= JOB_GROW_MS) this.jobsAsked = wantJobs(Math.max(2, this.jobsAsked * 2));
 	}
 
+	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
 	private publishMemory(): void {
 		const { record } = this;
 		const textures = this.textures.memory;
