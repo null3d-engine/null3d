@@ -94,6 +94,30 @@ pub struct Sky {
     pub time: f32,
     /// True where the sky shows the sun's disc.
     pub sun_disc: bool,
+    /// A second sky's sun, whose light adds to this sky's at `second_weight`, with the same air.
+    pub second_sun: [f32; 3],
+    pub second_weight: f32,
+}
+
+impl Sky {
+    /// The second sun's heading and elevation in radians, as the shaders' spare values carry it.
+    pub(crate) fn second_angles(&self) -> [f32; 2] {
+        if self.second_weight <= 0.0 {
+            return [0.0, 0.0];
+        }
+        let [x, y, z] = self.second_sun;
+        let length = (x * x + y * y + z * z).sqrt().max(1e-9);
+        [z.atan2(x), (y / length).clamp(-1.0, 1.0).asin()]
+    }
+
+    /// The sky of the second sun alone.
+    pub(crate) fn second(&self) -> Self {
+        Self {
+            sun_position: self.second_sun,
+            second_weight: 0.0,
+            ..*self
+        }
+    }
 }
 
 impl Default for Sky {
@@ -112,6 +136,8 @@ impl Default for Sky {
             cloud_elevation: 0.5,
             time: 0.0,
             sun_disc: true,
+            second_sun: [0.0, 1.0, 0.0],
+            second_weight: 0.0,
         }
     }
 }
@@ -174,7 +200,9 @@ impl BackdropUniform {
                     sky.cloud_coverage,
                     sky.cloud_density,
                 ];
-                uniform.cloud_place = [sky.cloud_elevation, sky.time, 0.0, 0.0];
+                let [heading, elevation] = sky.second_angles();
+                uniform.cloud_place = [sky.cloud_elevation, sky.time, heading, elevation];
+                uniform.params[3] = sky.second_weight;
             }
             BackgroundSource::Texture(_) => {}
         }

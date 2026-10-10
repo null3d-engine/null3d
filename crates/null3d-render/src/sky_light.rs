@@ -228,7 +228,16 @@ fn face_direction(face: usize, s: f32, t: f32) -> Vec3 {
 
 /// The nine coefficients of the sky's diffuse light: red, green and blue for each.
 pub(crate) fn sky_sh(sky: &Sky) -> [[f32; 3]; 9] {
-    integrate(sky, GRID, FINER)
+    let mut sh = integrate(sky, GRID, FINER);
+    if sky.second_weight > 0.0 {
+        let second = integrate(&sky.second(), GRID, FINER);
+        for (sum, add) in sh.iter_mut().zip(second) {
+            for c in 0..3 {
+                sum[c] += sky.second_weight * add[c];
+            }
+        }
+    }
+    sh
 }
 
 /// The squares near the sun that the projection splits into `FINER` x `FINER` smaller ones: those

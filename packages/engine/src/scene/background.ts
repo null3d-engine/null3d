@@ -23,6 +23,8 @@ import {
 	BACKGROUND_VALUE_MIE_DIRECTIONAL_G,
 	BACKGROUND_VALUE_RAYLEIGH,
 	BACKGROUND_VALUE_ROTATION,
+	BACKGROUND_VALUE_SECOND_SUN,
+	BACKGROUND_VALUE_SECOND_WEIGHT,
 	BACKGROUND_VALUE_SUN_DISC,
 	BACKGROUND_VALUE_SUN_POSITION,
 	BACKGROUND_VALUE_TIME,
@@ -103,6 +105,13 @@ export interface SkyOptions {
 	time?: number;
 	/** Whether the sky shows the sun's disc. The default is true. */
 	showSunDisc?: boolean;
+	/**
+	 * A second sky's sun, whose light adds to this sky's at `secondWeight`, with the same air. The
+	 * default is no second sky.
+	 */
+	secondSun?: readonly [number, number, number];
+	/** The weight of the second sky's light, 0 or more. The default is 0. */
+	secondWeight?: number;
 }
 
 /**
@@ -153,10 +162,12 @@ const SKY_DEFAULTS = {
 	cloudScale: 0.0002,
 	cloudSpeed: 0.00002,
 	time: 0,
+	secondSun: [0, 1, 0],
+	secondWeight: 0,
 } as const;
 
 /** The sky's settings that take one number. */
-type SkyNumber = Exclude<keyof SkyOptions, 'sunPosition' | 'showSunDisc'>;
+type SkyNumber = Exclude<keyof SkyOptions, 'sunPosition' | 'showSunDisc' | 'secondSun'>;
 
 /** The lowest value of each of the sky's numbers, and the highest where it has one. */
 const SKY_RANGES: Readonly<Record<SkyNumber, readonly [number, number]>> = {
@@ -170,6 +181,7 @@ const SKY_RANGES: Readonly<Record<SkyNumber, readonly [number, number]>> = {
 	cloudScale: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],
 	cloudSpeed: [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY],
 	time: [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY],
+	secondWeight: [0, Number.POSITIVE_INFINITY],
 };
 
 /**
@@ -266,6 +278,11 @@ function writeSky(values: Float32Array, sky: SkyOptions): void {
 	values[BACKGROUND_VALUE_CLOUD_SPEED] = sky.cloudSpeed ?? d.cloudSpeed;
 	values[BACKGROUND_VALUE_TIME] = sky.time ?? d.time;
 	values[BACKGROUND_VALUE_SUN_DISC] = sky.showSunDisc === false ? 0 : 1;
+	const second = sky.secondSun ?? d.secondSun;
+	values[BACKGROUND_VALUE_SECOND_SUN] = second[0];
+	values[BACKGROUND_VALUE_SECOND_SUN + 1] = second[1];
+	values[BACKGROUND_VALUE_SECOND_SUN + 2] = second[2];
+	values[BACKGROUND_VALUE_SECOND_WEIGHT] = sky.secondWeight ?? d.secondWeight;
 }
 
 /**

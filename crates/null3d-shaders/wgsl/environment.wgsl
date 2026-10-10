@@ -24,7 +24,7 @@
 // face's level of a shared-exponent cube texture, which the next draws sample with a linear
 // filter.
 
-#import null3d::atmosphere::{SkySettings, sky_light, sky_whole}
+#import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
 
 struct Step {
     /// The texels across a side of each face at the level that the draw fills.
@@ -482,6 +482,9 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let at = face_texel(position.xy);
     let texel = at.texel;
     let whole = sky_whole(sky_settings.sun.xyz, sky_settings.scattering);
+    // A second sky, of a second sun, adds its light at the weight in the sun's fourth value.
+    let second_weight = sky_settings.sun.w;
+    let second = sky_whole(second_sun(sky_settings.cloud_place), sky_settings.scattering);
     let count = params.samples;
     let spacing = 2.0 / (f32(params.size) * f32(count));
     var sum = vec3f(0.0);
@@ -491,6 +494,9 @@ fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
             let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
             let d = normalize(face_direction(at.face, sc, tc));
             sum += sky_light(d, whole, sky_settings, 0.0);
+            if second_weight > 0.0 {
+                sum += second_weight * sky_light(d, second, sky_settings, 0.0);
+            }
         }
     }
     return pack(sum * (params.gain / f32(count * count)));

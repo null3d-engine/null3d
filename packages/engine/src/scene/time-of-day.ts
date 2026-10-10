@@ -51,6 +51,8 @@ export interface TimeOfDay {
 		rayleigh: number;
 		mieCoefficient: number;
 		mieDirectionalG: number;
+		secondSun: [number, number, number];
+		secondWeight: number;
 	};
 	/**
 	 * The factor of the sky's light for the background's and the environment's `intensity`. It
@@ -110,6 +112,16 @@ const NIGHT_SUN = -3;
  * drawn as the moon.
  */
 const NIGHTFALL = [-6, -9, -10, -12] as const;
+
+/**
+ * Preview switches, read from the global object: the nightfall's kind, the phases above or a
+ * straight cross-fade from the finished sunset sky to the moon's sky, and a factor of the night
+ * sky's brightness.
+ */
+interface NightPreview {
+	__null3dNightfall?: 'phases' | 'crossfade';
+	__null3dNightSky?: number;
+}
 
 /**
  * The sky's intensity by day. three.js's sky is about 5 at the horizon. Lights and fog take
@@ -176,6 +188,12 @@ export function timeOfDay(
 			`timeOfDay() got ${String(time)}, which takes an hour from 0 to 24 or 'afternoon', 'goldenHour', 'blueHour' or 'night'.`,
 		);
 	const { heading = 0, noonElevation = Math.PI / 3 } = options;
+	const preview = globalThis as NightPreview;
+	const nightScale = preview.__null3dNightSky ?? 1;
+	const duskTable =
+		nightScale === 1
+			? DUSK
+			: DUSK.map(([e, v], k) => [e, k === DUSK.length - 1 ? v * nightScale : v] as const);
 	const hour = ((hours % 24) + 24) % 24;
 	// The sun's path: a tilted circle that rises toward +X at 6 and stands toward -Z at noon.
 	const angle = ((hour - 6) / 12) * Math.PI;
@@ -205,6 +223,8 @@ export function timeOfDay(
 		rayleigh: mix(2, 1.2, air),
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.8,
+		secondSun: [0, 1, 0] as Vec3,
+		secondWeight: 0,
 	};
 	const model = skyModel(skySun, sky.turbidity, sky.rayleigh, sky.mieCoefficient);
 
@@ -214,7 +234,7 @@ export function timeOfDay(
 	if (elevation < top) {
 		const air = { turbidity: sky.turbidity, rayleigh: sky.rayleigh, mie: sky.mieCoefficient };
 		const high = skyModel(atElevation(sun, top), air.turbidity, air.rayleigh, air.mie);
-		const target = between(DUSK, elevation, DAY_SKY * luminance(high.average()), true);
+		const target = between(duskTable, elevation, DAY_SKY * luminance(high.average()), true);
 		skyIntensity = target / Math.max(luminance(model.average()), 1e-9);
 		if (elevation < dark && elevation > night) {
 			// While the moon's sky rises it keeps the scale of the risen sky, so its glow fades in
@@ -258,7 +278,30 @@ export function timeOfDay(
 	const fogPeak = Math.max(...fogColor);
 	if (fogPeak > 1) fogColor = scale(fogColor, 1 / fogPeak);
 	// An ambient light of intensity 1 and color L lights a surface as a whole sky of light L / π.
-	const ambient = scale(average, skyIntensity);
+	let ambient = scale(average, skyIntensity);
+	if (preview.__null3dNightfall === 'crossfade' && elevation < fade && elevation > night) {
+		// The finished sunset sky, whose sun stays at its dusk height, fades into the moon's sky,
+		// each scaled to the dusk table's luminance, and the air clears as the moon's sky comes in.
+		const w = smoothstep(fade, night, elevation);
+		const sunset = atElevation(sun, DUSK_SUN);
+		sky.sunPosition = sunset;
+		sky.turbidity = mix(4, 2.5, w);
+		sky.rayleigh = mix(2, 1.2, w);
+		const air = [sky.turbidity, sky.rayleigh, sky.mieCoefficient] as const;
+		const first = skyModel(sunset, ...air).average();
+		const second = skyModel(moon, ...air).average();
+		const high = skyModel(atElevation(sun, DUSK[0]?.[0] ?? 8), ...air).average();
+		const target = between(duskTable, elevation, DAY_SKY * luminance(high), true);
+		const firstScale = ((1 - w) * target) / luminance(first);
+		const secondScale = (w * target) / luminance(second);
+		skyIntensity = firstScale;
+		sky.secondSun = moon;
+		sky.secondWeight = secondScale / firstScale;
+		ambient = [0, 1, 2].map(
+			(c) => (first[c] as number) * firstScale + (second[c] as number) * secondScale,
+		) as Vec3;
+		fogColor = [...ambient];
+	}
 	const brightest = Math.max(...ambient, 1e-9);
 	return {
 		hours: hour,

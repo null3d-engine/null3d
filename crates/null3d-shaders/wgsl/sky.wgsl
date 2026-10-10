@@ -9,7 +9,7 @@
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::{Backdrop, box_corner}
-#import null3d::atmosphere::{SkySettings, SkyWhole, sky_light, sky_whole}
+#import null3d::atmosphere::{SkySettings, SkyWhole, second_sun, sky_light, sky_whole}
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var<uniform> backdrop: Backdrop;
@@ -45,7 +45,14 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
     let whole = SkyWhole(in.sun_direction, in.beta_r, in.beta_m, in.sun);
     let settings =
         SkySettings(backdrop.sun, backdrop.scattering, backdrop.clouds, backdrop.cloud_place);
-    let color = sky_light(normalize(in.direction), whole, settings, backdrop.sun.w);
+    let direction = normalize(in.direction);
+    var color = sky_light(direction, whole, settings, backdrop.sun.w);
+    // A second sky, of a second sun, adds its light at its weight.
+    let second_weight = backdrop.params.w;
+    if second_weight > 0.0 {
+        let second = sky_whole(second_sun(backdrop.cloud_place), backdrop.scattering);
+        color += second_weight * sky_light(direction, second, settings, backdrop.sun.w);
+    }
     let scale = backdrop.params.x * frame.output.exposure;
     return null3d::tonemap::finish(color * scale, in.clip.xy, frame.output);
 }

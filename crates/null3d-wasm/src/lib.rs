@@ -2980,6 +2980,8 @@ fn sky_of(values: &[f32]) -> Sky {
         cloud_elevation: value(at::CLOUD_ELEVATION),
         time: value(at::TIME),
         sun_disc: value(at::SUN_DISC) > 0.0,
+        second_sun: std::array::from_fn(|k| value(at::SECOND_SUN + k as u32)),
+        second_weight: value(at::SECOND_WEIGHT),
     }
 }
 

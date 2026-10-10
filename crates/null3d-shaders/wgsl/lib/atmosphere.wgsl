@@ -47,6 +47,14 @@ struct SkyWhole {
     sun: vec3f,
 }
 
+/// The second sky's sun, from its heading and elevation in radians in the spare values of the
+/// clouds' place.
+fn second_sun(cloud_place: vec4f) -> vec3f {
+    let heading = cloud_place.z;
+    let elevation = cloud_place.w;
+    return vec3f(cos(elevation) * cos(heading), sin(elevation), cos(elevation) * sin(heading));
+}
+
 /// `x` to the power 1.5, without the logarithm and exponential of `pow`.
 fn pow_three_halves(x: vec3f) -> vec3f {
     return x * sqrt(x);
