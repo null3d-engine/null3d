@@ -255,11 +255,21 @@ export function imageRuns(tests: readonly ImageTest[]): ImageRun[] {
 	});
 }
 
-/** A run as an environment draws it: on SwiftShader, with its SwiftShader switches after the others. */
+/**
+ * A run as an environment draws it: on SwiftShader, with its SwiftShader switches. A switch that the
+ * page already has, such as the references' preset, takes its new value; the others go after the rest.
+ */
 export const runIn = (run: ImageRun, environment: Environment): ImageRun =>
 	environment === 'chromium-swiftshader' && run.swiftShaderSwitches
-		? { ...run, path: `${run.path}&${run.swiftShaderSwitches.join('&')}` }
+		? { ...run, path: run.swiftShaderSwitches.reduce(withSwitch, run.path) }
 		: run;
+
+/** A page's address with a switch set: in place when the address has it, and else added at the end. */
+function withSwitch(path: string, entry: string): string {
+	const name = entry.split('=')[0] as string;
+	const existing = new RegExp(`([?&])${name}(=[^&]*)?(?=&|$)`);
+	return existing.test(path) ? path.replace(existing, `$1${entry}`) : `${path}&${entry}`;
+}
 
 /** Names that become folders and files: lowercase words joined by dashes. */
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;

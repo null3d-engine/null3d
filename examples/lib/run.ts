@@ -28,6 +28,11 @@ export interface StartOptions {
 	 * and a held frame never shows it.
 	 */
 	stats?: boolean;
+	/**
+	 * The element that holds the buttons of the demo's choices, such as a time of day, for a demo
+	 * that has some. Without it, the demo runs with its own first options.
+	 */
+	choices?: HTMLElement;
 }
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
@@ -36,6 +41,7 @@ export async function startDemo({
 	demo,
 	labels,
 	stats = true,
+	choices,
 }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
@@ -48,7 +54,39 @@ export async function startDemo({
 		stats: stats && { collapsed: true },
 	});
 	if (labels) showLabels(engine, labels);
+	if (choices) showChoices(engine, demo, choices);
 	return engine;
+}
+
+/**
+ * Shows each of the demo's choices as a group of buttons, and sends each pick to the sketch as a
+ * message named by the choice. Each group is a `div` with the class `choice`, which holds a label
+ * and a button for each option. The picked button has `aria-pressed="true"`, and the first option
+ * starts picked, as the sketch starts with it.
+ */
+function showChoices(engine: Engine, demo: Demo, element: HTMLElement): void {
+	for (const choice of demo.choices ?? []) {
+		const group = document.createElement('div');
+		group.className = 'choice';
+		group.setAttribute('role', 'group');
+		const label = document.createElement('span');
+		label.textContent = choice.label;
+		group.append(label);
+		const buttons = choice.options.map((option, index) => {
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = option;
+			button.setAttribute('aria-pressed', String(index === 0));
+			button.addEventListener('click', () => {
+				for (const other of buttons) other.setAttribute('aria-pressed', String(other === button));
+				engine.postToSketch(choice.name, option);
+			});
+			return button;
+		});
+		group.setAttribute('aria-label', choice.label);
+		group.append(...buttons);
+		element.append(group);
+	}
 }
 
 /** Shows the labels that the demo posts, each in an element that follows the label's object. */

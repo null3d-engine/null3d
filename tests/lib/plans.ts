@@ -53,7 +53,7 @@ import {
 	soakRow,
 } from '../../bench/pages/lib/device-soak.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
-import { DEMOS } from '../../examples/demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
@@ -1406,7 +1406,7 @@ function warmUpSketches(): { scene: string; sketch: string }[] {
 		})),
 		...DEMOS.map((demo) => ({
 			scene: `demo-${demo.name}`,
-			sketch: `/examples/${demo.name}/sketch.ts`,
+			sketch: `/examples/${sketchPath(demo)}`,
 		})),
 	];
 }

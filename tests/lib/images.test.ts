@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { DEMOS } from '../../examples/demos.ts';
+import { dirname, join } from 'node:path';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import { IMAGE_RUNS, IMAGE_TESTS, manifestRun } from '../image/manifest.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
@@ -133,24 +133,45 @@ describe('the manifest', () => {
 		expect(new Set(IMAGE_RUNS.map((r) => r.id)).size).toBe(IMAGE_RUNS.length);
 	});
 
-	it('draws every demo in examples/, each a sketch of under 150 lines', () => {
+	it('draws every demo in examples/, each feature demo a sketch of under 150 lines', () => {
 		const examples = join(REPO_ROOT, 'examples');
-		const sketchOf = (name: string) => join(examples, name, 'sketch.ts');
-		const folders = readdirSync(examples).filter((name) => existsSync(sketchOf(name)));
-		expect(DEMOS.map((demo) => demo.name).sort()).toEqual(folders.sort());
+		// Feature demos sit one folder down, and showcase scenes two, under examples/showcase/.
+		const sketches = (folder: string): string[] =>
+			readdirSync(join(examples, folder), { withFileTypes: true })
+				.filter(
+					(entry) => entry.isDirectory() && entry.name !== 'lib' && entry.name !== 'node_modules',
+				)
+				.flatMap((entry) => {
+					const path = folder ? `${folder}/${entry.name}` : entry.name;
+					if (existsSync(join(examples, path, 'sketch.ts'))) return [`${path}/sketch.ts`];
+					return folder ? [] : sketches(path);
+				});
+		expect(DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
 		const tests = new Set(IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch : '')));
-		expect(DEMOS.filter((demo) => !tests.has(`examples/${demo.name}/sketch.ts`))).toEqual([]);
+		expect(DEMOS.filter((demo) => !tests.has(`examples/${sketchPath(demo)}`))).toEqual([]);
 		const long = DEMOS.filter(
-			(demo) => readFileSync(sketchOf(demo.name), 'utf8').trimEnd().split('\n').length >= 150,
+			(demo) =>
+				demo.group !== 'Showcase' &&
+				readFileSync(join(examples, sketchPath(demo)), 'utf8')
+					.trimEnd()
+					.split('\n').length >= 150,
 		);
 		expect(long.map((demo) => demo.name)).toEqual([]);
 	});
 
 	it('loads files only in the demos that say why', () => {
+		// A demo of several files loads a file when any of its modules does.
+		const sources = (demo: (typeof DEMOS)[number]) => {
+			const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
+			if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
+			const folder = dirname(sketch);
+			return readdirSync(folder)
+				.filter((file) => file.endsWith('.ts'))
+				.map((file) => readFileSync(join(folder, file), 'utf8'))
+				.join('\n');
+		};
 		const loads = (demo: (typeof DEMOS)[number]) =>
-			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(
-				readFileSync(join(REPO_ROOT, 'examples', demo.name, 'sketch.ts'), 'utf8'),
-			);
+			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(sources(demo));
 		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
 	});
 
@@ -216,6 +237,22 @@ describe('the runs of a test', () => {
 		expect(runIn(run('boxes-webgpu-pipelined'), 'chromium-swiftshader')).toBe(
 			run('boxes-webgpu-pipelined'),
 		);
+	});
+
+	it('gives a switch that the page has its SwiftShader value, in place', () => {
+		const [low] = imageRuns([
+			{
+				name: 'scene',
+				sketch: 'sketches/s.ts?x=1',
+				hold: 1,
+				swiftShaderSwitches: ['preset=low', 'far'],
+			},
+		]);
+		const path = runIn(low as ImageRun, 'chromium-swiftshader').path;
+		expect(path).toContain('&preset=low&');
+		expect(path).not.toContain('preset=high');
+		expect(path.endsWith('&far')).toBe(true);
+		expect(path).toContain('sketch=/sketches/s.ts%3Fx%3D1');
 	});
 
 	it('names the first mode, which every later mode on the tier must match', () => {

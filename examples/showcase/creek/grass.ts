@@ -1,0 +1,165 @@
+// The creek's grass: tufts of curved blades in instance batches, which cast and receive the sun's
+// shadows. A vertex offset bends each blade in the wind: gusts that roll across the banks, and a
+// flutter of each tuft's own. The surface function tints each tuft. Both read the tuft's traits from
+// its place in the world. Per-row values in instance batches can carry them instead: `tuftTraits`
+// is the one place that reads them. The tufts don't turn, so that the wind blows one way.
+import type { InstanceBatch, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
+import { random } from '../../lib/procedural';
+import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
+
+/** Tufts of grass at each preset, over the three tuft shapes. */
+export const TUFTS: Record<QualityPreset, number> = {
+	low: 3000,
+	medium: 9000,
+	high: 18000,
+	ultra: 27000,
+};
+/** The shapes of tuft, each one batch. */
+const SHAPES = 3;
+/** Blades in each tuft, and the segments of each blade. */
+const BLADES = 13;
+const SEGMENTS = 3;
+
+const wgsl = /* wgsl */ `
+struct Uniforms { wind: vec2f, sway: f32 }
+
+/// A tuft's own traits: x is its phase in the wind, from 0 to 2 pi, and y a value from 0 to 1 that
+/// picks its tint. They come from the tuft's place in the world.
+fn tuftTraits() -> vec2f {
+    let p = floor(object.position.xz * 37.0);
+    let h = fract(sin(vec2f(dot(p, vec2f(12.9898, 78.233)), dot(p, vec2f(39.346, 11.135)))) * 43758.5453);
+    return vec2f(h.x * 6.2831853, h.y);
+}
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let traits = tuftTraits();
+    let p = object.position.xz;
+    // Gusts: broad waves of wind that roll across the banks, and a flutter of each tuft's own.
+    let gust = 0.5 + 0.5 * sin(dot(p, material.wind) * 0.35 - frame.time * 1.6);
+    let flutter = sin(frame.time * 2.7 + traits.x + input.position.x * 7.0);
+    let bend = input.uv.y * input.uv.y * material.sway * (0.4 + 0.8 * gust + 0.25 * flutter);
+    let along = normalize(material.wind);
+    return vec3f(along.x * bend, -0.4 * bend * bend, along.y * bend);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let traits = tuftTraits();
+    // A share of the tufts dry toward their tips, and each tuft's green differs a little.
+    let dry = smoothstep(0.62, 1.0, traits.y) * input.uv.y;
+    s.baseColor *= mix(vec3f(0.8 + 0.4 * traits.y), vec3f(1.7, 1.3, 0.45), dry);
+    // Both faces light as the upper face, since the blades' normals lean up.
+    s.normal = select(input.normal, -input.normal, input.normal.y < 0.0);
+    return s;
+}
+`;
+
+/**
+ * One tuft: blades that lean out from its middle and curve over. Each blade is a strip that narrows
+ * to a point. Its normals lean up, so a blade lights like the ground under it, and its colors run
+ * from a dark root to a lighter tip.
+ */
+function tuft(seed: number): MeshArrays {
+	const next = random(seed);
+	const perBlade = SEGMENTS * 2 + 1;
+	const positions = new Float32Array(BLADES * perBlade * 3);
+	const normals = new Float32Array(BLADES * perBlade * 3);
+	const colors = new Float32Array(BLADES * perBlade * 3);
+	const uvs = new Float32Array(BLADES * perBlade * 2);
+	const indices: number[] = [];
+	for (let b = 0; b < BLADES; b++) {
+		const angle = next() * Math.PI * 2;
+		const [ox, oz] = [Math.cos(angle), Math.sin(angle)];
+		const root = 0.015 + 0.11 * next();
+		const height = 0.12 + 0.22 * next() ** 1.5;
+		const lean = (0.1 + 0.25 * next()) * height;
+		const width = 0.016 + 0.012 * next();
+		const twist = angle + Math.PI / 2 + (next() - 0.5) * 0.8;
+		const [sx, sz] = [Math.cos(twist), Math.sin(twist)];
+		// The face's normal, across the strip, leaned up by two thirds.
+		const [fx, fz] = [-sz, sx];
+		const length = Math.hypot(fx * 0.35, 1, fz * 0.35);
+		const first = b * perBlade;
+		for (let j = 0; j <= SEGMENTS; j++) {
+			const t = j / SEGMENTS;
+			const cx = ox * (root + lean * t * t);
+			const cz = oz * (root + lean * t * t);
+			const cy = height * (t - 0.15 * t * t);
+			const half = (width / 2) * (1 - t) ** 0.9;
+			const sides = j === SEGMENTS ? [0] : [-1, 1];
+			for (const side of sides) {
+				const v = first + (j === SEGMENTS ? SEGMENTS * 2 : j * 2 + (side + 1) / 2);
+				positions.set([cx + sx * half * side, cy, cz + sz * half * side], v * 3);
+				normals.set([(fx * 0.35) / length, 1 / length, (fz * 0.35) / length], v * 3);
+				const shade = 0.3 + 0.7 * t;
+				colors.set([shade * (0.9 + 0.25 * t), shade, shade * (0.85 - 0.2 * t)], v * 3);
+				uvs.set([(side + 1) / 2, t], v * 2);
+			}
+		}
+		for (let j = 0; j < SEGMENTS - 1; j++) {
+			const a = first + j * 2;
+			indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+		}
+		indices.push(first + SEGMENTS * 2 - 2, first + SEGMENTS * 2 - 1, first + SEGMENTS * 2);
+	}
+	return { positions, normals, colors, uvs, indices };
+}
+
+/** The grass's batches, which `fit` sizes to a preset. */
+export interface Grass {
+	batches: InstanceBatch[];
+	/** Draws the preset's share of the tufts. */
+	fit(preset: QualityPreset): void;
+}
+
+/**
+ * Makes the tufts. They grow on the banks, densest near the water, in patches, and not on steep
+ * ground or where `clear` keeps a place bare.
+ */
+export function createGrass(
+	{ scene, geometry, materials }: SketchContext,
+	clear: (x: number, z: number) => boolean,
+): Grass {
+	const material = materials.shader({
+		wgsl,
+		color: '#5f9a2a',
+		vertexColors: true,
+		roughness: 0.75,
+		specularIntensity: 0.4,
+		doubleSided: true,
+		uniforms: { wind: [0.8, 0.6], sway: 0.12 },
+	});
+	const capacity = Math.ceil(TUFTS.ultra / SHAPES);
+	const next = random(23);
+	const batches = Array.from({ length: SHAPES }, (_, shape) => {
+		const batch = scene.createInstances(geometry.fromArrays(tuft(101 + shape)), capacity, {
+			material,
+			castShadows: true,
+			receiveShadows: true,
+		});
+		// Places in a random order, so that the first rows of any count spread over the banks.
+		const { positions, scales } = batch;
+		for (let row = 0; row < capacity; ) {
+			const x = (next() * 2 - 1) * 22;
+			const side = next() < 0.5 ? -1 : 1;
+			const z = streamZ(x) + side * (streamHalf(x) * 0.97 + 11 * next() ** 1.5);
+			const y = groundHeight(x, z);
+			const slope = Math.abs(groundHeight(x + 0.2, z) - y) + Math.abs(groundHeight(x, z + 0.2) - y);
+			const patch = Math.sin(x * 0.7 + Math.sin(z * 0.9) * 2) + Math.sin(z * 0.5 - x * 0.3);
+			if (y < WATER + 0.03 || slope > 0.16 || clear(x, z)) continue;
+			if (patch < -0.9 && fromStream(x, z) > 1.6 && next() < 0.8) continue;
+			const size = 0.75 + 0.6 * next();
+			positions.set([x, y - 0.02, z], row * 3);
+			scales.set([size * (0.85 + 0.3 * next()), size, size * (0.85 + 0.3 * next())], row * 3);
+			row++;
+		}
+		batch.markDirty();
+		return batch;
+	});
+	return {
+		batches,
+		fit(preset) {
+			for (const batch of batches) batch.setActiveCount(Math.ceil(TUFTS[preset] / SHAPES));
+		},
+	};
+}

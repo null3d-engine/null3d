@@ -96,6 +96,39 @@
 			.caption .controls { color: var(--muted); }
 			.caption .quiet { font-size: 12px; }
 			.caption .quiet a { color: var(--muted); }
+			.choices {
+				position: absolute;
+				bottom: 0.75rem;
+				left: 0.75rem;
+				right: 0.75rem;
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: center;
+				gap: 0.5rem;
+				pointer-events: none;
+			}
+			.choice {
+				display: flex;
+				align-items: center;
+				gap: 0.25rem;
+				padding: 0.25rem 0.4rem;
+				font-size: 13px;
+				background: rgb(13 17 23 / 0.8);
+				border-radius: 6px;
+				pointer-events: auto;
+			}
+			.choice span { color: var(--muted); margin: 0 0.3rem; }
+			.choice button {
+				font: inherit;
+				color: var(--text);
+				background: none;
+				border: 1px solid transparent;
+				border-radius: 4px;
+				padding: 0.2rem 0.5rem;
+				cursor: pointer;
+			}
+			.choice button:hover { background: var(--pick); }
+			.choice button[aria-pressed='true'] { background: var(--pick); border-color: var(--link); }
 			.welcome { max-width: 36rem; padding: 2rem 1.5rem; }
 			.welcome h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
 			.error { color: #ff8a80; white-space: pre-wrap; }

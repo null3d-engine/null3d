@@ -1,5 +1,6 @@
-// The feature demos. Each demo is a sketch of under 150 lines in a folder of its own, such as
-// instances/sketch.ts. The examples page lists the demos by group and runs each one live, and the image test
+// The demos. Each feature demo is a sketch of under 150 lines in a folder of its own, such as
+// instances/sketch.ts. A showcase scene has no line limit, and its folder, such as
+// showcase/creek/, holds its sketch.ts and the modules that it imports. The examples page lists the demos by group and runs each one live, and the image test
 // manifest draws each one in hold mode at its hold time. Each entry names its sketch with a literal
 // `new URL('./<name>/sketch.ts', import.meta.url)`, so a production build of the page ships every
 // sketch, under any address prefix.
@@ -56,13 +57,53 @@ export interface Demo {
 	 * in code, and loads files only when loading them is what it shows.
 	 */
 	assets?: string;
+	/**
+	 * Choices that the page offers as buttons, such as a time of day. The page sends each pick to the
+	 * sketch as a message named by the choice, with the option's text as its value.
+	 */
+	choices?: readonly DemoChoice[];
 }
+
+/** A choice that a page offers for a demo: one button for each option. */
+export interface DemoChoice {
+	/** The name of the message that the page sends to the sketch. */
+	name: string;
+	/** The choice's label, such as "Time of day". */
+	label: string;
+	/** The options, as the buttons show them. The first is the sketch's own at its start. */
+	options: readonly string[];
+}
+
+/** The demo's sketch module, from the examples folder. */
+export const sketchPath = (demo: Demo) =>
+	demo.code?.endsWith('/') ? `${demo.code}sketch.ts` : `${demo.name}/sketch.ts`;
 
 /** How every demo's camera moves: the first sentence of most demos' controls. */
 const CAMERA =
 	'Drag to turn the camera, scroll or pinch to zoom, and right-drag or drag two fingers to pan.';
 
 export const DEMOS: readonly Demo[] = [
+	{
+		name: 'creek',
+		group: 'Showcase',
+		sketch: new URL('./showcase/creek/sketch.ts', import.meta.url),
+		code: 'showcase/creek/',
+		title: 'Creek',
+		scene: 'A stream in a grassy valley',
+		summary:
+			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current. Every part is made in code, under the sky of the time of day.',
+		controls: `${CAMERA} Pick a time of day, and turn on the DSLR lens to focus on the middle of the view.`,
+		hold: 4,
+		timeoutSeconds: 60,
+		choices: [
+			{
+				name: 'mood',
+				label: 'Time of day',
+				options: ['Afternoon', 'Golden', 'Blue', 'Night', 'Studio'],
+			},
+			{ name: 'dslr', label: 'DSLR', options: ['Off', 'On'] },
+		],
+	},
 	{
 		name: 'generators',
 		group: 'Building scenes',

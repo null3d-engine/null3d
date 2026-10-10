@@ -146,8 +146,14 @@ async function runDemo(demo: Demo): Promise<void> {
 	);
 	caption.append(links);
 	stage.append(canvas, labels, caption);
+	// A showcase scene's choices, such as its time of day, sit in a bar at the bottom of the panel.
+	const choices = demo.choices && !params.has('hold') ? element('div') : undefined;
+	if (choices) {
+		choices.className = 'choices';
+		stage.append(choices);
+	}
 	try {
-		await startDemo({ canvas, demo, labels });
+		await startDemo({ canvas, demo, labels, choices });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';
