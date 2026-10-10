@@ -70,9 +70,12 @@ Measured on 10 October 2026 on the Mac (Apple M-series GPU, Chrome), and on Swif
 | Start, pipelined WebGPU, after Brotli | 130.7 KB on main, 131.2 KB with the branch, of 140 KB |
 | Core WebAssembly, after Brotli | 359.8 KB on main, 362.1 KB with the branch (+0.6%) |
 | First-use row values builds | 12 files, one per GPU path and device bits, 16.6 to 20.0 KB each after Brotli, of 32 KB |
-| 100,000 swaying blades, frame interval and GPU time, still against swaying | (to come, from `tests/pages/grass-cost.html` on a quiet Mac) |
+| 100,000 grass blades under the sun's shadows, still against swaying, on the Mac's GPU at 120 Hz | Every side kept 8.33 ms per frame. GPU time 4.16 to 4.49 ms on WebGPU, 4.06 to 4.42 ms in compatibility mode, 4.56 to 4.26 ms on WebGL2 (within noise). CPU time below 0.25 ms per frame on every thread |
+| GPU time against main, `bun run bench:gpu-check` | No page slower. S4 medium 1.29 to 1.24 ms, S6 medium 6.64 to 6.45 ms, S4 high 3.91 to 3.90 ms, S6 high 4.76 to 4.80 ms |
 
-How the data was produced: `bun run test:images -g 'row-|custom-|instances|shadow|transparent|alpha-mask|blending|batch'`, with and without `CI=1`; `CI=1 bun run bench:allocation --gpu webgpu --row-values`, and the same on WebGL2 and with `--batch-shadows`; `bun run build:check-size`.
+How the data was produced: `bun run test:images -g 'row-|custom-|instances|shadow|transparent|alpha-mask|blending|batch'`, with and without `CI=1`; `CI=1 bun run bench:allocation --gpu webgpu --row-values`, and the same on WebGL2 and with `--batch-shadows`; `bun run build:check-size`; `tests/pages/grass-cost.html` on each GPU path in a parked Chrome window, with the load below 4; `bun run bench:gpu-check`.
+
+The S24+ and the iPad still need the `grass` plan ([Device sessions](../devices.md#the-grass-plan)), for the task's exit rule on those devices.
 
 ## Decision
 
