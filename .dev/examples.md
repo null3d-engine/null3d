@@ -232,14 +232,28 @@ Five demos show public features that no demo showed. Before them, every demo hel
 The rules that these demos follow, and why:
 
 - `timeOfDay` makes a new object on each call. So the time of day demo calls it only when the hour moves on by three minutes: 4 to 20 calls a second, fewest at dawn and dusk. Its clouds hold still. The sky's light refreshes after each change of the sky, one step a frame, so drifting clouds would cost a step in every frame.
-- The lighthouse's beams are open cones with a custom material: added light that fades from the lamp outward and toward the cone's edges. The material's base color is black, so the sun lights nothing on them. Its reflection is black too, and it takes no fog. Additive blending adds everything that a surface shows, so a cone that reflected the sky, or took the fog's color, showed as a faint disc when it pointed at the camera, even with the lamp off.
+- The lighthouse's beams are open cones with a custom material: added light that fades from the lamp outward and toward the cone's edges. The material's base color is black, so the sun lights nothing on them. Its reflection is black too, and it takes no fog. Additive blending adds everything that a surface shows. So a cone that reflected the sky or took the fog's color showed as a faint disc. That happened when it pointed at the camera, even with the lamp off.
 - The depth of field demo works at the real size of a chess board, in metres, because the blur follows a real lens. At f/1.8 and 85 mm, a few centimetres out of focus blur well. Low draws no depth of field, so the demo sets `dofSamples` to 16 there, again after each change of preset. Its aperture has six blades, so the string lights' discs show soft hexagon corners. Their blur reaches about 12 texels of the half-size image, so the gather's soft edge rounds the corners off. A largest blur of 0.05, not 0.03, made sharper corners, but spread the taps so far apart that the discs and the near pieces turned grainy.
 - A points batch has no transform, so the galaxy turns by writing its positions. It splits the stars into 48 rings, works out one cosine and one sine per ring, and turns each star by its ring's pair. The rings sway ahead and back around a slow turn of the whole galaxy. A turn that differed by ring for ever would wind the arms up into rings within a minute. The batch is dynamic, so it uploads every star in every frame.
-- The time of day demo's sun sets about 30 degrees right of the island, so the island is lit from the side, not only from behind. A hemisphere light in the fog's color, at a few times the sky's intensity, lifts the side away from a low sun. The sky's environment alone left the island a dark shape at sunset.
+- The time of day demo's sun sets about 30 degrees right of the island. So the island is lit from the side, not only from behind. A hemisphere light in the fog's color lifts the side away from a low sun. It grows with the exposure at dusk, up to a cap, so it adds little by day. The sky's environment alone left the island a dark shape at sunset. The sea is a little rough, so its foreground takes the warm glow near the horizon, not only the dark sky above.
 - The tulip bed's camera stands low enough to show the morning sky above a low hedge. From higher up, the frame showed only the far lawn through the fog, which read as a flat green wall.
 - The tulips' normals come from each petal's slopes, worked out from nearby points in both poses. The morph target holds the change of each normal, as it holds the change of each position and color.
 - The walk and fly demo has no orbit controls: its controls are the feature it shows ([Always-on interaction](#always-on-interaction)).
 - The demos' sketches stay under 150 lines with plain number arrays for their tables, such as each chess piece's parts. The formatter puts each array of arrays on many lines.
+
+### Frame rates of the five demos on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, five readings a second apart.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| time-of-day | 120 fps, GPU 3.7 to 5.4 ms | 120 fps, GPU 3.0 to 4.0 ms |
+| walk-and-fly | 120 fps, GPU 2.3 to 4.2 ms | 120 fps, GPU 2.7 to 5.5 ms |
+| camera-lens | 120 fps, GPU 4.9 to 5.2 ms | 120 fps, GPU 5.2 to 8.3 ms |
+| galaxy | 120 fps, GPU 3.7 to 4.6 ms, sketch 1.6 to 1.8 ms, 120,000 stars | 120 fps, GPU 3.3 to 4.7 ms, sketch 1.1 to 1.2 ms |
+| morph-flowers | 120 fps, GPU 2.4 to 5.3 ms, before the leafy hedge | 120 fps, GPU 4.9 to 6.1 ms, before the leafy hedge |
+
+The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
 ## Showcase scenes
 

@@ -1,8 +1,7 @@
-// Morph targets: a bed of tulips that open in a wave in the morning sun. Each tulip's head is a
-// mesh made with geometry.fromArrays: six cupped petals, closed into a bud. One morph target,
-// "Open", holds how far each vertex moves, how its normal turns, and how its color changes as the
-// petals open and bend out, from a green-tinted bud to the full color. Every tulip of a color
-// shares one mesh, and each has its own weight, which setMorphWeight sets in each frame.
+// Morph targets: a bed of tulips that open in a wave in the morning sun. Each head is a mesh made
+// with geometry.fromArrays: six cupped petals, closed into a bud. One morph target, "Open", holds
+// how each vertex moves, how its normal turns and how its color changes from a green-tinted bud to
+// the full color. The tulips of a color share one mesh, and setMorphWeight sets each one's weight.
 import { defineSketch, type MeshOptions, math, timeOfDay, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
@@ -26,12 +25,8 @@ function petal(out: Vec3, p: number, u: number, v: number, open: number): Vec3 {
 	const width = WIDTH * Math.sin(Math.PI * (0.1 + 0.82 * v)) ** 0.7;
 	r += (1 - u * u) * width * math.lerp(0.25, 0.1, open);
 	const [x, phi] = [u * width * 0.5, (p / PETALS) * 2 * Math.PI];
-	return vec3.set(
-		out,
-		r * Math.cos(phi) - x * Math.sin(phi),
-		y,
-		r * Math.sin(phi) + x * Math.cos(phi),
-	);
+	const [cos, sin] = [Math.cos(phi), Math.sin(phi)];
+	return vec3.set(out, r * cos - x * sin, y, r * sin + x * cos);
 }
 
 export default defineSketch(async (ctx) => {
@@ -50,8 +45,7 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target: [0, 0.3, -0.2], groundY: 0.35 });
 
-	// The head: each vertex in the bud and in the open flower. Each normal comes from the petal's
-	// slopes across and along, worked out from nearby points.
+	// The head in the bud and in the open flower, with normals from each petal's nearby points.
 	const count = PETALS * (ACROSS + 1) * (ALONG + 1);
 	const [closed, opened, normals, turned] = [0, 1, 2, 3].map(() => new Float32Array(count * 3));
 	const [a, b, c, n] = [vec3.create(), vec3.create(), vec3.create(), vec3.create()];
@@ -74,16 +68,14 @@ export default defineSketch(async (ctx) => {
 	// One mesh per color: the bud is green at the base and tinted toward its color at the tip.
 	const heads = [0, 3, 6, 9, 12].map((hue) => {
 		const tip = (i: number) => closed[i - (i % 3) + 1] / LENGTH;
-		const colors = closed.map((_, i) =>
-			math.lerp(BUD[i % 3], HUES[hue + (i % 3)], 0.3 + 0.4 * tip(i)),
-		);
-		const full = colors.map((value, i) => HUES[hue + (i % 3)] * (0.75 + 0.25 * tip(i)) - value);
+		const own = (i: number) => HUES[hue + (i % 3)];
+		const colors = closed.map((_, i) => math.lerp(BUD[i % 3], own(i), 0.3 + 0.4 * tip(i)));
+		const full = colors.map((value, i) => own(i) * (0.75 + 0.25 * tip(i)) - value);
 		const morphTargets = { positions: [moved], normals: [bent], colors: [full], names: ['Open'] };
 		return geometry.fromArrays({ positions: closed, normals, colors, indices, morphTargets });
 	});
 
-	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn, before
-	// a low hedge of clipped mounds.
+	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn.
 	const data = new Uint8Array(64 * 64 * 4).fill(255);
 	for (let i = 0, w = Math.PI / 32; i < 64 * 64; i++) {
 		const [x, y, r] = [i % 64, i >> 6, Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1)];
@@ -105,14 +97,11 @@ export default defineSketch(async (ctx) => {
 		part({ material: plank, position: [0, 0.09, side * 0.72], scale: [2.8, 0.18, 0.08] });
 		part({ material: plank, position: [side * 1.36, 0.09, 0], scale: [0.08, 0.18, 1.36] });
 	}
-	const leaf = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
-	const hedge = materials.standard({ color: '#2f5a24', roughness: 0.9, flatShading: true });
-	const shrub = { mesh: leaf, material: hedge, scale: [0.24, 0.3, 0.22] } as const;
-	for (let i = 0; i < 21; i++) part({ ...shrub, position: [i * 0.29 - 2.9, 0.2, -1.45] });
 
 	// The tulips: a stem, two leaves and a head, in a group that sways in the breeze.
 	const petals = materials.standard({ vertexColors: true, roughness: 0.55, doubleSided: true });
 	const green = materials.standard({ color: '#3f7a2a', roughness: 0.6 });
+	const leaf = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
 	math.seed(9);
 	const tulips = Array.from({ length: ROWS * COLUMNS }, (_, t) => {
 		const x = ((t % COLUMNS) - (COLUMNS - 1) / 2) * 0.2 + math.randFloat(-0.04, 0.04);
@@ -129,12 +118,21 @@ export default defineSketch(async (ctx) => {
 		const head = part({ mesh: heads[t % 5], material: petals, parent, position: [0, height, 0] });
 		return { parent, head, x, z };
 	});
+	// A clipped hedge behind the bed: a dark core under leaves at random turns, in three greens.
+	const greens = ['#1d3816', '#33612a', '#4f8034'].map((color) => materials.standard({ color }));
+	part({ material: greens[0], position: [0, 0.2, -1.45], scale: [6, 0.4, 0.4] });
+	const sprig = geometry.sphere({ widthSegments: 6, heightSegments: 4 });
+	for (let k = 0, r = math.randFloat; k < 2400; k++) {
+		const [x, y, z] = [r(-3, 3), r(0.01, 0.41), k % 4 ? -1.24 : r(-1.65, -1.25)];
+		const leafy = { mesh: sprig, material: greens[k % 3], scale: [0.025, 0.004, 0.015] } as const;
+		const placed = part({ ...leafy, position: [x, z < -1.24 ? 0.41 : y, z], castShadows: false });
+		placed.setRotationEuler(r(0, 6), r(0, 6), r(0, 6));
+	}
 
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			const { point, steering } = view;
-			const now = time.now;
+			const [{ point, steering }, now] = [view, time.now];
 			for (let i = 0; i < tulips.length; i++) {
 				const { parent, head, x, z } = tulips[i];
 				// A wave of opening crosses the bed, and the tulips near the pointer open too.

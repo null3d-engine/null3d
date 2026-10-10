@@ -44,7 +44,7 @@ export default defineSketch(async (ctx) => {
 	const environment = await assets.skyEnvironment();
 	post.set({ bloom: { intensity: 0.25, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
 	const sun = scene.createDirectionalLight({ castShadows: true, shadow: { distance: 60 } });
-	// A fill light in the sky's horizon color, so the side away from a low sun keeps its shapes.
+	// A fill light in the horizon's color that grows at dusk, so the island keeps its mid-tones.
 	const fill = scene.createHemisphereLight({ groundColor: '#0c1a20' });
 	const camera = scene.createPerspectiveCamera({ fov: 40, far: 5000, position: [22, 8, 30] });
 	camera.lookAt(...TARGET);
@@ -63,7 +63,7 @@ export default defineSketch(async (ctx) => {
 	const [windows, lantern, needles] = [glow('#ffb35c'), glow('#ffc66b'), paint('#2c5532')];
 
 	// A calm sea that mirrors the sky's light, and a headland of rock and grass, with boulders.
-	const sea = materials.standard({ color: '#134456', roughness: 0.12, doubleSided: true });
+	const sea = materials.standard({ color: '#134456', roughness: 0.3, doubleSided: true });
 	const plane = geometry.plane({ width: 1e4, height: 1e4 });
 	part(sea, { mesh: plane, rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], castShadows: false });
 	const cliff = { radiusTop: 7, radiusBottom: 9, height: 4, radialSegments: 11 };
@@ -138,7 +138,7 @@ export default defineSketch(async (ctx) => {
 				sun.setColor(day.light.color);
 				sun.setIntensity(day.light.intensity);
 				fill.setColor(day.fog.color);
-				fill.setIntensity(6 * day.skyIntensity);
+				fill.setIntensity(4 * day.skyIntensity + Math.min(3, 6 * (day.exposure - 1)));
 				scene.setEnvironment(environment, { intensity: day.skyIntensity });
 				scene.setFog({ ...day.fog, density: 0.003, height: 0, heightFalloff: 0.1 });
 				post.set({ exposure: day.exposure });
