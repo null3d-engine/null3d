@@ -72,14 +72,14 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with sixteen. Group 1 has three slots, group 2 eight (the instance textures, then the two
- * textures that skinned meshes read and the two that morphed meshes read) and group 3 the last
- * sixteen: the eight map textures, then their samplers, of which the standard material's shared
+ * first, with sixteen. Group 1 has three slots, group 2 ten (the instance textures, then the two
+ * textures that skinned meshes read, the two that morphed meshes read, and the two textures of the
+ * row values of instance batches) and group 3 the last sixteen: the eight map textures, then their samplers, of which the standard material's shared
  * map units take the first six of each. Slots are no texture units: each program
  * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
  * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 19, 27);
+const GROUP_BASES = Uint8Array.of(0, 16, 19, 29);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;

@@ -231,6 +231,8 @@ export type Check =
 	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/** The grass cost page: a field of blades still and swaying by their row values, in turns. */
+	| { kind: 'grass'; tier: Tier }
 	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
 	| { kind: 'sky-map'; tier: Tier }
 	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
@@ -1059,6 +1061,22 @@ export function environmentPlan(): PlanItem<Check>[] {
 	);
 }
 
+/**
+ * What row values cost on each GPU path: a field of 100,000 grass blades under the sun's shadows,
+ * still in the standard material and swaying out of step with a tint each, from their rows'
+ * values, in turns. D-127 records the results.
+ */
+export function grassPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`grass-${tier}`,
+			'grass-cost',
+			{ kind: 'grass', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+		),
+	);
+}
+
 /** The GPU paths of the sky plan's pages, with the tier each draws on. */
 const SKY_PATHS = [
 	['webgpu', 'webgpu'],
@@ -1538,6 +1556,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
+	grass: grassPlan,
 	sky: skyPlan,
 	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
@@ -2223,9 +2242,15 @@ export function judge(
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
 		case 'effect':
-		case 'environment': {
+		case 'environment':
+		case 'grass': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
-			const feature = check.kind === 'effect' ? check.effect : 'the environment';
+			const feature =
+				check.kind === 'effect'
+					? check.effect
+					: check.kind === 'grass'
+						? 'the grass swaying'
+						: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),

@@ -95,6 +95,12 @@ pub struct CustomShading {
     /// True when its WGSL has the builds that let light through, which it draws with when its
     /// material has [`feature::TRANSMISSION`].
     pub transmission: bool,
+    /// True when it has the builds that draw the rows of instance batches with row values: a
+    /// material built from the standard material's template, not a whole shader of the sketch's.
+    pub row_values: bool,
+    /// True when it has the builds of a shadow caster that moves by its vertex offset, which its
+    /// shadows draw with.
+    pub caster: bool,
 }
 
 impl CustomShading {
@@ -107,6 +113,8 @@ impl CustomShading {
             base_color: true,
             textures: 0,
             transmission: false,
+            row_values: true,
+            caster: false,
         })
     }
 }
@@ -160,6 +168,23 @@ impl Shading {
             Shading::Custom(custom) => custom.base_color,
             _ => true,
         }
+    }
+
+    /// True when its shader has the builds that draw the rows of instance batches with row
+    /// values: the standard and unlit materials', with or without maps, and a custom material's
+    /// built from the standard material's template.
+    pub const fn reads_row_values(self) -> bool {
+        match self {
+            Shading::Lit | Shading::StandardMaps | Shading::Unlit | Shading::UnlitMap => true,
+            Shading::Custom(custom) => custom.row_values,
+            _ => false,
+        }
+    }
+
+    /// True when its shadows draw with its own caster builds, which move each vertex by its
+    /// vertex offset: a custom material's whose WGSL has one.
+    pub const fn casts_its_own_way(self) -> bool {
+        matches!(self, Shading::Custom(custom) if custom.caster)
     }
 }
 

@@ -95,13 +95,15 @@ pub(super) struct Draw {
     pub(super) first_index: u32,
 }
 
-/// A batch's place in the layout: its data texture, its first row there, its bucket of rows
-/// (the bucket after it takes its clusters), and, for a static batch, its first cluster in the
-/// cluster texture.
+/// A batch's place in the layout: its data texture, its first row there, whether its rows have
+/// row values, which the row values texture beside its data texture holds at the same rows, its
+/// bucket of rows (the bucket after it takes its clusters), and, for a static batch, its first
+/// cluster in the cluster texture.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BatchSlot {
     pub(super) id: Handle,
     pub(super) dynamic: bool,
+    pub(super) values: bool,
     pub(super) base: u32,
     pub(super) bucket: u32,
     pub(super) first_cluster: u32,
@@ -134,6 +136,10 @@ pub(super) struct Layout {
     pub(super) scene_rows: u32,
     pub(super) resident_rows: u32,
     pub(super) streamed_rows: u32,
+    /// The rows of the resident and the streamed textures up to the last row of a batch with row
+    /// values, which the row values textures hold, or 0 for a texture without such rows.
+    pub(super) resident_value_rows: u32,
+    pub(super) streamed_value_rows: u32,
     /// Entries of the cluster texture: each static batch's room for clusters inside cells, whole
     /// clusters each.
     pub(super) cluster_rows: u32,
@@ -233,6 +239,7 @@ impl Layout {
         self.batches.clear();
         let (mut resident, mut streamed, mut clusters) = (self.scene_rows, 0u32, 0u32);
         let mut largest_static = 0;
+        let mut value_rows = [0u32; 2];
         for (id, batch) in batches.iter() {
             let dynamic = batch.is_dynamic();
             let rows = if dynamic {
@@ -240,14 +247,19 @@ impl Layout {
             } else {
                 &mut resident
             };
+            let values = batch.has_row_values();
             self.batches.push(BatchSlot {
                 id,
                 dynamic,
+                values,
                 base: *rows,
                 bucket: NO_BUCKET,
                 first_cluster: clusters,
             });
             *rows = rows.saturating_add(batch.capacity());
+            if values {
+                value_rows[usize::from(dynamic)] = *rows;
+            }
             if !dynamic {
                 clusters = clusters.saturating_add(cluster_room(batch.capacity()));
                 largest_static = largest_static.max(batch.capacity());
@@ -258,6 +270,7 @@ impl Layout {
         }
         self.resident_rows = resident;
         self.streamed_rows = streamed;
+        [self.resident_value_rows, self.streamed_value_rows] = value_rows;
         self.cluster_rows = clusters.saturating_mul(CLUSTER_ROWS);
         self.largest_static = largest_static;
 
@@ -266,8 +279,13 @@ impl Layout {
         let skin = |key: DrawKey, slot: Option<usize>| {
             slot.and_then(|slot| skins.key(slot, key)).unwrap_or(key)
         };
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: Option<usize>| {
-            let pipeline = settings.pipeline_of(mesh, material)?;
+        let key_of = |pipeline: Option<DrawKey>,
+                      mesh: u32,
+                      material: u32,
+                      group: u32,
+                      object: u32,
+                      skinned: Option<usize>| {
+            let pipeline = pipeline?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
                 Drawn::Casters => {
@@ -323,9 +341,11 @@ impl Layout {
             if left_out {
                 return None;
             }
+            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
             key_of(
-                scene.meshes()[slot],
-                scene.materials()[slot],
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
                 RESIDENT,
                 object,
                 Some(slot),
@@ -345,7 +365,9 @@ impl Layout {
             match drawn {
                 Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
                 Drawn::Scene | Drawn::Casters => {
-                    key_of(batch.mesh(), batch.material(), group_of(batch), bits, None)
+                    let pipeline = settings.batch_pipeline_of(batch);
+                    let (mesh, material) = (batch.mesh(), batch.material());
+                    key_of(pipeline, mesh, material, group_of(batch), bits, None)
                 }
                 Drawn::Outlined => None,
             }

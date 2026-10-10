@@ -185,9 +185,9 @@ mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such a
 const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
   material: materials.standard({ color: '#888888' }),
   dynamic: true,              // uploads every row every frame; false = upload marked rows only
-  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); stored now, drawn in 0.2
+  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); drawn from 0.2: multiplies the base color
+  values: true,               // (0.2) adds batch.values (4 floats per row), read as object.values in custom WGSL
   layers: 1 << 2,             // every row is on layer 2; the default, 1, is layer 0
-  attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
   origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
 });
 
@@ -195,7 +195,7 @@ rocks.positions;   // Float32Array, 3 floats per row
 rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
 rocks.scales;      // Float32Array, 3 floats per row
 rocks.colors;      // Float32Array, 4 floats per row, when colors: true
-rocks.attributes.tint;  // (0.2)
+rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
