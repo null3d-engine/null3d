@@ -778,6 +778,9 @@ pub struct ShadowFrame {
     pub drawn: u32,
     /// How the shadow map stores depth.
     pub depth: CascadeDepth,
+    /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
+    /// materials' casters read.
+    pub clock: [f32; 4],
 }
 
 impl ShadowFrame {
@@ -809,6 +812,8 @@ impl ShadowFrame {
                 view_proj: cascade.view_proj,
                 camera_position: [x, y, z, 0.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
+                clock: self.clock,
+                camera_world: camera_world(self.camera),
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -822,6 +827,13 @@ impl ShadowFrame {
     pub fn uniform(&self) -> ShadowUniform {
         ShadowUniform::new(&self.cascades, &self.settings, self.depth)
     }
+}
+
+/// The world position of the camera that a shadow view's sources are relative to, as a view's
+/// uniform block holds it, which the built-in values of custom materials' casters read.
+pub(crate) fn camera_world(camera: CellPosition) -> [f32; 4] {
+    let [x, y, z] = camera.absolute().map(|v| v as f32);
+    [x, y, z, 0.0]
 }
 
 /// How the cascades' shadow map stores depth. Each cascade's depth runs from 0 to 1 over its box,
@@ -1404,10 +1416,13 @@ mod tests {
             layers: 1,
             drawn: 0b111,
             depth: CascadeDepth::default(),
+            clock: [2.5, 0.016, 0.0, 0.0],
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {
             let uniform = frame.view_frame(k).uniform;
+            // Custom materials' casters read the frame's clock, as the camera's view has it.
+            assert_eq!(uniform.clock, frame.clock);
             // The direction toward the light, as an orthographic camera's position gives it.
             let [x, y, z, w] = uniform.camera_position;
             let toward = DOWN_AND_ACROSS.map(|v| -v);

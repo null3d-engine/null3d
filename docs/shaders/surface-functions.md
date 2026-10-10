@@ -3,12 +3,12 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; vertex-offset functions; per-instance attributes."
+summary: "The surface record; uniforms and textures; reflections; transmission; vertex-offset functions; values per row of a batch."
 ---
 
 # Surface functions
 
-> Ships in null3D 0.1, with typed uniforms and textures in 0.2. The API is experimental, so it can still change between versions. Per-instance attributes are not built yet. Coding agents must not use them in a custom material.
+> Ships in null3D 0.1, with typed uniforms, textures and values per row of a batch in 0.2. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -250,11 +250,11 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 - One WGSL can hold a vertex offset and a surface function. They share the uniforms, and functions of your own that both call.
 - The engine keeps the mesh's normals, so a moved surface lights as the unmoved one did. Give the material `flatShading: true` to light each face by its moved position, or bend `s.normal` in a surface function.
 - Culling tests the mesh's bounding sphere. Vertices that move out of it can make the object vanish at the edge of the view. Give the object a sphere that holds them with `setBounds(center, radius)`, at setup, as [Objects and transforms](../api/objects.md) describes.
-- Shadows follow the mesh's own vertices, not the moved ones.
+- Shadows follow the moved vertices. The material's shadow casters run the vertex offset too, with the same `frame`, `object` and `material` values, so a swaying surface casts a swaying shadow. Such casters draw again in every frame that a shadow map draws, as moving objects do.
 
 ## Built-in values
 
-Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. [Built-in shader inputs](builtins.md) lists every field.
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of an instance batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase of the wind or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). [Built-in shader inputs](builtins.md) lists every field.
 
 ## Library functions
 

@@ -80,6 +80,7 @@ use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
 use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::PassTargets;
+use crate::shadows::camera_world;
 use crate::view::ViewFrame;
 
 /// The most tiles of the shadow atlas.
@@ -483,7 +484,9 @@ impl ShadowTiles {
                     continue;
                 }
                 fresh += usize::from(!slot.held);
-                self.frames[tile] = Some(view.frame(camera.camera, light.layers));
+                let mut frame = view.frame(camera.camera, light.layers);
+                frame.uniform.clock = camera.uniform.clock;
+                self.frames[tile] = Some(frame);
             }
         }
         self.cap_redraws(fresh);
@@ -1194,6 +1197,7 @@ impl TileView {
                 view_proj: self.view_proj,
                 camera_position: [x, y, z, 1.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
+                camera_world: camera_world(camera),
                 ..FrameUniform::default()
             },
             camera,

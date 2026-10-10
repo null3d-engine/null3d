@@ -1699,6 +1699,7 @@ impl SceneSettings {
             layers: shadow.layers,
             drawn,
             depth: self.cascade_depth,
+            clock: self.clock,
         })
     }
 
