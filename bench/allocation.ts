@@ -34,7 +34,8 @@
 // cast and receive them, so a moving batch tests the far cascades and the tiles each frame.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
+// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// one of them tilted, and changes their intensities every frame. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
@@ -76,6 +77,7 @@
 //   bun run bench:allocation --labels 256 --gpu webgl2
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
+//   bun run bench:allocation --hemisphere --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
 //   bun run bench:allocation --stats --gpu webgl2
 //   bun run bench:allocation --sky --gpu webgl2
@@ -455,6 +457,8 @@ async function main(): Promise<void> {
 			throw new Error('--batch-shadows makes the rows of S1 cast shadows only');
 		const environment = args.includes('--environment') ? '&environment' : '';
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
+		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
+		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
 		const skyLight = args.includes('--sky-environment');
@@ -469,7 +473,7 @@ async function main(): Promise<void> {
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts

@@ -73,7 +73,7 @@ enable draw_index;
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
-#import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
@@ -606,9 +606,11 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
-/// `extra` irradiance such as a light map's, and the environment's light times the material's
-/// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
+/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// hemisphere lights, `extra` irradiance such as a light map's, and the environment's light times
+/// the material's factor of it. The environment's light adds to the ambient and hemisphere lights,
+/// as three.js adds it, and neither its intensity nor the material's factor scales them.
+/// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
 /// position relative to the camera, `to_view` points from the surface toward the camera, and
 /// `dfg` holds the split-sum terms at the surface's roughness and view angle. In custom materials,
@@ -645,7 +647,7 @@ fn light_surface(
         compensation,
     );
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
-    let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
+    let ambient = indirect_diffuse(m, ambient_light(normal) + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     var indirect = ambient * occlusion;
 #ifdef TRANSMISSION

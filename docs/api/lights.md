@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1, with the light from the sky from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with the light from the sky and the light of hemisphere lights from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -47,7 +47,7 @@ Every light takes `color` and `intensity`, except the hemisphere light, which ta
 
 Directional and spot lights send their light along their -Z axis, the way a camera looks. The `direction` option and `setDirection` turn that axis to a direction relative to the light's parent. `lookAt` turns it toward a point. A spot light's `target` option does the same when you create the light. The default points straight down, (0, -1, 0). Parents turn a light with them, as they turn any object.
 
-A directional light's position does not matter: only its direction does. The sky of a hemisphere light lies along its +Y axis, which points straight up until you turn the light.
+A directional light's position does not matter: only its direction does. The sky of a hemisphere light lies along its +Y axis, which points straight up until you turn the light. Its position does not matter either.
 
 A light's scale changes neither its range nor its cone.
 
@@ -89,10 +89,38 @@ In this version:
 - Surfaces show one directional light: the first one you created that is visible and shares a layer with the camera.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
 - Point and spot lights light the surfaces that their ranges reach. Each frame the engine finds the ones whose ranges reach into the camera's view. It lists each one in the clusters of the view that it reaches. The camera lists up to 1,024 of them, the nearest, and up to 128 in each cluster. [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains clusters.
-- Hemisphere lights are stored. They do not light surfaces yet.
+- Every hemisphere light that is visible and shares a layer with the camera adds its light. [Hemisphere lights](#hemisphere-lights) says how.
 - Without lights, standard materials draw black.
 
 To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks.
+
+## Hemisphere lights
+
+A hemisphere light gives a cheap fill light from the sky and the ground. A surface that faces up gets the sky color, and a surface that faces down gets the ground color. A surface between them gets a blend. The blend follows the angle between the surface's normal and the light's +Y axis, as three.js's `HemisphereLight` blends it. The light is diffuse only: it gives no highlights, as in three.js.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, time }) => {
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 2 });
+  const fill = scene.createHemisphereLight({ skyColor: '#9ec5ff', groundColor: '#5a4632', intensity: 0.8 });
+
+  return {
+    onUpdate() {
+      // The fill light swells and fades. setIntensity allocates nothing, so it can run every frame.
+      fill.setIntensity(0.6 + 0.2 * Math.sin(time.now));
+    },
+  };
+});
+```
+
+- Any number of hemisphere lights add up. The engine sums them on the CPU into the ambient light and one color per world axis. So each pixel pays three multiply-adds, however many lights there are, and the same with none.
+- `setIntensity`, `setColor` (the sky color) and `setGroundColor` take effect in the next frame. Turning the light turns its sky.
+- An environment's light adds to the hemisphere lights' light, as in three.js. The environment's `intensity` and a material's `envIntensity` scale only the environment's light, never a hemisphere light's. This holds for every environment: a file's, the built-in room and the sky's.
+- The occlusion map and ambient occlusion darken a hemisphere light's light, as they darken an ambient light's.
+- Scene passes and reflection passes draw with the hemisphere lights too.
+
+`timeOfDay` and the sky's environment already give the sky's light. A scene lit by the sky's environment needs no hemisphere light, or it gets the sky's light twice.
 
 ## Light from the sky
 
@@ -147,7 +175,7 @@ Point lights cast them where the quality preset's `pointLightShadows` is on, as 
 | `light.target = object`, which the light follows | Call `light.lookAt(x, y, z)` with the object's position when it moves |
 | `new PointLight(color, intensity, distance, decay)` | `createPointLight({ color, intensity, range: distance, decay })` |
 | `new SpotLight(color, intensity, distance, angle, penumbra, decay)` | `createSpotLight({ color, intensity, range: distance, angle, penumbra, decay, target: [x, y, z] })` |
-| `new HemisphereLight(skyColor, groundColor, intensity)` | `createHemisphereLight({ skyColor, groundColor, intensity })` |
+| `new HemisphereLight(skyColor, groundColor, intensity)` | `createHemisphereLight({ skyColor, groundColor, intensity })`. three.js points the sky from the light's position toward the origin, and null3D along the light's +Y axis, so turn the light where three.js moves it |
 | `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
 | `scene.environment = pmremGenerator.fromScene(skyScene).texture`, again after each change of the sky | `scene.setEnvironment(await assets.skyEnvironment())` once: the map follows `setBackground({ sky })` |
 | `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
