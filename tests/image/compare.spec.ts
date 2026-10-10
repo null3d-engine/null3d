@@ -15,12 +15,25 @@ test.describe.configure({ timeout: 120_000 });
  */
 const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
 
+/**
+ * The switches that keep a run short on the software GPU, where the tests check no frame rate: room
+ * for the short ramp's top count alone, no warmup, and quarter-second steps.
+ */
+const quick = () => (softwareGpu() ? '&max=400&warmup=0&step=0.25' : '');
+
 for (const mode of ['scene-graph', 'instanced'] as const)
 	for (const engine of ['null3d', 'threejs'] as const)
 		for (const gpu of ['webgpu', 'webgl2'] as const)
 			test(`Factory starts and draws with ${engine} on ${gpu} in the ${mode} mode, and the ramp runs`, async ({
 				page,
 			}) => {
+				// The image tests start each engine on each GPU path in each mode. So the software GPU
+				// runs the ramp once for each engine in each mode, on the two GPU paths in turn.
+				test.skip(
+					softwareGpu() &&
+						(gpu === 'webgpu') !== ((mode === 'scene-graph') === (engine === 'null3d')),
+					'the software GPU runs the ramp of this engine and mode on the other GPU path',
+				);
 				const errors: string[] = [];
 				page.on('pageerror', (error) => errors.push(error.message));
 				page.on('console', (message) => {
@@ -28,7 +41,7 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 						errors.push(message.text());
 				});
 				await page.goto(
-					`compare.html?compare=factory&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=`,
+					`compare.html?compare=factory&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quick()}`,
 				);
 				const result = await pageResult<{
 					error?: string;
@@ -57,8 +70,9 @@ for (const engine of ['null3d', 'threejs'] as const)
 	test(`Factory measures ${engine}'s frames and the whole page's memory at a fixed count`, async ({
 		page,
 	}) => {
+		const seconds = softwareGpu() ? 0.5 : 3;
 		await page.goto(
-			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=3`,
+			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=${seconds}${quick()}`,
 		);
 		const result = await pageResult<{
 			error?: string;

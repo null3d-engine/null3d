@@ -9,7 +9,8 @@
 // and then the whole page's memory. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
 // most the count reaches, in place of the device class's ramp maximum. `?warmup=` sets the seconds
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
-// frames has made them all.
+// frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
+// for 0.4 of each step and measures the rest.
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
@@ -69,7 +70,7 @@ run('compare', async () => {
 	const hold = params.has('hold') ? Number(params.get('hold')) : undefined;
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
-	const warmup = Number(params.get('warmup') ?? 2);
+	const warmup = params.has('warmup') ? Number(params.get('warmup')) : undefined;
 	// The image tests and the short ramp draw three.js with the renderer of the tier; the full ramp
 	// and a measurement take the faster one unless the address names one.
 	const named = params.get('renderer');
@@ -108,18 +109,24 @@ run('compare', async () => {
 	}
 	if (fixed !== undefined) {
 		started.collapseStats(true);
-		await new Promise((resolve) => setTimeout(resolve, warmup * 1000));
+		await new Promise((resolve) => setTimeout(resolve, (warmup ?? 2) * 1000));
 		const frames = await started.measure(Number(params.get('seconds') ?? 5));
 		const memory = await started.measureMemory();
 		const parts = await memoryParts();
 		await started.destroy();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
+	const step = Number(params.get('step') ?? 1);
 	const ramp = await rampComparison(
 		started,
 		full
 			? { warmupSeconds: warmup }
-			: { plan: SHORT_RAMP, warmupSeconds: 1, stepSeconds: 1, settleSeconds: 0.4 },
+			: {
+					plan: SHORT_RAMP,
+					warmupSeconds: warmup ?? 1,
+					stepSeconds: step,
+					settleSeconds: step * 0.4,
+				},
 	);
 	await started.destroy();
 	return { ...report, ramp };
