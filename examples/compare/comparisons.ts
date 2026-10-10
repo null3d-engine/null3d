@@ -5,6 +5,7 @@
 // comparison with `startComparison` from examples/lib/compare.ts.
 
 import type { DemoGroup } from '../demos';
+import type { CompareMode } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
 
@@ -30,10 +31,12 @@ export interface Comparison {
 	ramps: Readonly<Record<DeviceClass, RampPlan>>;
 	/** The frame that the image tests hold: its simulation time in seconds and its count. */
 	hold: { readonly seconds: number; readonly count: number };
-	/** Objects in the null3D scene at a count, which the engine makes room for at its start. */
-	objectsAt(count: number): number;
+	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
+	objectsAt(count: number, mode: CompareMode): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */
 	shadowTiles: number;
+	/** What each mode measures, for the "about this comparison" panel. */
+	modes: Readonly<Record<CompareMode, string>>;
 	/** How each engine draws the scene, for the "about this comparison" panel. */
 	notes: readonly string[];
 }
@@ -56,9 +59,13 @@ export const COMPARISONS: readonly Comparison[] = [
 		hold: FACTORY_HOLD,
 		objectsAt: factoryObjects,
 		shadowTiles: SPOT_COUNT,
+		modes: {
+			'scene-graph':
+				"Scene graph measures a scene built the usual way: each arm is a tree of objects, one per part, as each engine's own examples build jointed models. The code writes each joint that moved, and each engine works out the world transforms of the trees. null3D does it on its job workers and draws parts that share a mesh and a material together. three.js walks its scene graph and draws each part on its own.",
+			instanced:
+				'Instanced measures the most tuned build: each kind of part is one batch of copies, and one loop of code works out every moving part in closed form, with no tree. null3D uses its instance batches, and three.js its InstancedMesh. Both upload the copies in use.',
+		},
 		notes: [
-			'null3D draws each arm as a tree of scene objects. The sketch writes each joint, and the engine works out the world transforms on its job workers. Parts that share a mesh and a material draw together.',
-			'three.js draws each kind of part as one InstancedMesh. A loop of game code works out every moving part in closed form, without a walk of the scene graph, and uploads the copies in use.',
 			"Each engine draws each effect its own way: null3D's shadow atlas, height fog, bloom chain, ambient occlusion and grading table, and three.js's spot light shadow maps, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
 		],
 	},

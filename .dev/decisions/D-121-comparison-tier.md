@@ -1,8 +1,8 @@
 # D-121: The comparison tier with three.js, and Factory
 
-Status: built, 2026-10-09, from the owner's decisions of 8 October 2026 ([Examples](../examples.md#decisions-of-8-october-2026)). Task: M2-EX5. Factory does not go on the page until a device sitting shows that null3D holds the higher count on every device class.
+Status: built, 2026-10-09, from the owner's decisions of 8 October 2026 ([Examples](../examples.md#decisions-of-8-october-2026)). Two modes added 2026-10-10, from the owner's decision that day. Task: M2-EX5. Factory does not go on the page until a device sitting shows that null3D holds the higher count on every device class.
 
-Summary: The comparisons with three.js live in `examples/compare/`, one folder per scene, with one shared description that both engines draw. A shell in `examples/lib/` starts either engine on a canvas with the same settings, sets the count, measures and runs the ramp, so the website can draw its own controls. `@null3d/engine/stats` now exports the overlay's panel, so the three.js half shows its figures in the engine's own card. Factory is the first comparison. On the Mac in Chrome at 60 Hz, both engines held the ramp's top of 50,000 moving parts, and three.js's tuned version used less CPU time per frame than null3D.
+Summary: The comparisons with three.js live in `examples/compare/`, one folder per scene, with one shared description that both engines draw. A shell in `examples/lib/` starts either engine on a canvas with the same settings, sets the count, measures and runs the ramp, so the website can draw its own controls. `@null3d/engine/stats` now exports the overlay's panel, so the three.js half shows its figures in the engine's own card. Factory is the first comparison. Each comparison builds its scene in two modes, the same way in both engines: a scene graph of one object per part, the default, and batches of copies posed in closed form. The first Factory build set a null3D tree against three.js's batches, which was not a fair test.
 
 ## Question
 
@@ -14,6 +14,22 @@ The old `demos-vs-threejs` repository compared the engines in an app of its own.
 - The fairness rules of [Examples](../examples.md#fairness-rules): the same pixel ratio and MSAA, null3D's governor off with a fixed preset, three.js on its faster renderer in one worker, one engine at a time, one memory definition.
 - Each engine draws each effect with its own best technique for the same intent ([D-52](D-52-intent-parity.md)), and each effect is a switch.
 - The headline figure is the largest count that each engine holds at the display rate on the viewer's device.
+
+## Two modes
+
+The first Factory build set a null3D tree of objects against three.js's most tuned build: one `InstancedMesh` per part kind, posed by a closed-form loop with no scene graph. It also made room in null3D for the ramp's top count at every count, and ran on the development server. So it measured two different programs. On 10 October 2026 the owner decided that each comparison has two modes, and that both engines build the scene the same way in each:
+
+- **Scene graph**, the default. Each arm is a tree of one object per part, as each engine's own examples build jointed models. The code writes each joint that moved, and each engine works out the world transforms of the trees and draws the parts its own way. This is how most apps build such a scene, so it is the headline.
+- **Instanced.** Each part kind is one batch of copies: null3D's instance batches and three.js's `InstancedMesh`. One closed-form loop (`examples/compare/factory/pose.ts`) poses every moving part. three.js takes its results as matrices, and null3D as batch rows. A unit test checks both forms against the walk of each arm's tree.
+
+The rules of each mode:
+
+- In the scene graph mode, each engine holds only the objects of the cells that show. null3D makes cells as the count rises, and destroys them as it falls. Hidden objects cost null3D work in every frame when they are dynamic, so making room for the ramp's top would charge null3D for parts that never draw. The joints that turn in most frames are dynamic objects. The fingers, which move only at a grip, and the crates, which stand still on the pallet and wait on the belt, are static objects ([Static and dynamic objects](../../docs/concepts/static-dynamic.md)).
+- three.js turns off `matrixAutoUpdate` on every node and calls `updateMatrix` after a write, as its docs advise for objects that do not move in every frame. Its renderer's walk of the scene graph works out the world matrices, and it draws each part on its own. A held crate hangs under the wrist, since reparenting is cheap in three.js.
+- In the instanced mode, both engines make their batches for the ramp's maximum and draw the copies in use.
+- Both modes draw the same frame, so the instanced image tests borrow the scene graph's references.
+- The page's mode switch loads the page again, as the engine switch does, and the ramp keeps each engine's result per mode. `startComparison` takes `mode`, so the website can switch it too.
+- Figures come from production builds only. The development server keeps the engine's development checks in every setter, which three.js does not have.
 
 ## Decision
 

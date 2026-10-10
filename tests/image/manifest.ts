@@ -1803,21 +1803,32 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
 		}),
 	),
-	// Each comparison with three.js, held at its time and count, in each engine. Each engine draws
-	// its own references: the owner reviews the two frames side by side, as each draws each effect
-	// with its own technique for the same look.
+	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
+	// draws its own references: the owner reviews the two frames side by side, as each draws each
+	// effect with its own technique for the same look. The instanced mode builds the same scene with
+	// batches of copies, so it borrows the scene graph's references.
 	...COMPARISONS.flatMap((comparison) =>
-		(['null3d', 'threejs'] as const).map(
-			(engine): ImageTest => ({
-				name: `compare-${comparison.name}-${engine}`,
+		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
+			const name = `compare-${comparison.name}-${engine}`;
+			const test: ImageTest = {
+				name,
 				page: 'tests/pages/compare.html',
 				switches: [`compare=${comparison.name}`, `engine=${engine}`],
 				size: [640, 360],
 				hold: comparison.hold.seconds,
 				tiers: ['webgpu', 'webgl2'],
 				timeoutSeconds: 90,
-			}),
-		),
+			};
+			return [
+				test,
+				{
+					...test,
+					name: `${name}-instanced`,
+					switches: [...(test.switches ?? []), 'mode=instanced'],
+					reference: name,
+				},
+			];
+		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
 	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of

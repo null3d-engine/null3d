@@ -1,7 +1,8 @@
 // The comparison panel of the clone's examples page: `?compare=<name>` runs a comparison with one
-// engine, which `?engine=null3d` or `?engine=threejs` names. A caption over the canvas holds the
-// controls: the engine switch, the count slider, the effect switches, "Run the ramp", and the
-// "about this comparison" panel. Each engine runs on a page of its own, so the switch loads the
+// engine, which `?engine=null3d` or `?engine=threejs` names, in the mode that `?mode=scene-graph` or
+// `?mode=instanced` names. A caption over the canvas holds the controls: the engine and mode
+// switches, the count slider, the effect switches, "Run the ramp", and the "about this comparison"
+// panel. Each engine runs on a page of its own, so the switch loads the
 // page again, and the ramp does too: it runs on the engine that runs, keeps the result for the
 // session, loads the page with the other engine, runs there, and shows both results.
 
@@ -12,11 +13,20 @@ import {
 	type EngineName,
 	FAIRNESS_RULES,
 	type GpuChoice,
+	MODE_TITLES,
 	rampComparison,
 	startComparison,
 	thisDeviceClass,
 } from './lib/compare';
-import { EFFECT_NAMES, type Effects, effectsFromText, effectsToText } from './lib/compare-scene';
+import {
+	COMPARE_MODES,
+	type CompareMode,
+	EFFECT_NAMES,
+	type Effects,
+	effectsFromText,
+	effectsToText,
+	modeFromText,
+} from './lib/compare-scene';
 import {
 	countToSlider,
 	type RampResult,
@@ -41,19 +51,20 @@ interface KeptRamp {
 	result: RampResult;
 }
 
-const rampKey = (comparison: Comparison) => `null3d-compare-ramp:${comparison.name}`;
+const rampKey = (comparison: Comparison, mode: CompareMode) =>
+	`null3d-compare-ramp:${comparison.name}:${mode}`;
 
-function keptRamps(comparison: Comparison): KeptRamp[] {
+function keptRamps(comparison: Comparison, mode: CompareMode): KeptRamp[] {
 	try {
-		return JSON.parse(sessionStorage.getItem(rampKey(comparison)) ?? '[]') as KeptRamp[];
+		return JSON.parse(sessionStorage.getItem(rampKey(comparison, mode)) ?? '[]') as KeptRamp[];
 	} catch {
 		return [];
 	}
 }
 
-function keepRamps(comparison: Comparison, ramps: KeptRamp[]): void {
+function keepRamps(comparison: Comparison, mode: CompareMode, ramps: KeptRamp[]): void {
 	try {
-		sessionStorage.setItem(rampKey(comparison), JSON.stringify(ramps));
+		sessionStorage.setItem(rampKey(comparison, mode), JSON.stringify(ramps));
 	} catch {
 		// Without session storage, the page shows each engine's result on its own.
 	}
@@ -81,6 +92,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	const params = new URLSearchParams(location.search);
 	const engine: EngineName = params.get('engine') === 'threejs' ? 'threejs' : 'null3d';
 	const effects = effectsFromText(params.get('effects'));
+	const mode = modeFromText(params.get('mode'));
 	document.title = `${comparison.title}, null3D and three.js: null3D demos`;
 	const address = (changes: Record<string, string | null>) => {
 		const next = new URLSearchParams(params);
@@ -108,6 +120,16 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		switcher.append(link);
 	}
 	caption.append(switcher);
+
+	// The mode switch: both engines build the scene the same way in each mode.
+	const modes = element('p');
+	modes.className = 'switch';
+	for (const name of COMPARE_MODES) {
+		const link = element('a', MODE_TITLES[name], address({ mode: name, ramp: null }));
+		if (name === mode) link.setAttribute('aria-current', 'page');
+		modes.append(link);
+	}
+	caption.append(modes);
 
 	// The count slider, on a log scale.
 	const slider = element('input');
@@ -149,7 +171,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	about.className = 'about';
 	about.append(element('summary', 'About this comparison'));
 	const rules = element('ul');
-	for (const rule of [...FAIRNESS_RULES, ...comparison.notes]) rules.append(element('li', rule));
+	const modeNotes = COMPARE_MODES.map((name) => comparison.modes[name]);
+	for (const rule of [...modeNotes, ...FAIRNESS_RULES, ...comparison.notes])
+		rules.append(element('li', rule));
 	about.append(rules);
 	caption.append(about);
 
@@ -162,7 +186,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	caption.append(links);
 	stage.append(canvas, caption);
 
-	const kept = keptRamps(comparison);
+	const kept = keptRamps(comparison, mode);
 	if (kept.length > 0) result.textContent = rampLine(comparison, kept);
 
 	let run: ComparisonRun;
@@ -171,6 +195,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 			canvas,
 			comparison,
 			engine,
+			mode,
 			count: startCount(params.get('count'), comparison.ramps[thisDeviceClass()]),
 			effects,
 			gpu: (params.get('gpu') as GpuChoice | null) ?? 'auto',
@@ -208,9 +233,9 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 				result.textContent = `${ENGINE_TITLES[engine]}: ${count.toLocaleString('en-US')} ${comparison.countUnit} at ${fps.toFixed(0)} fps`;
 			},
 		});
-		const ramps = keptRamps(comparison).filter((kept) => kept.engine !== engine);
+		const ramps = keptRamps(comparison, mode).filter((kept) => kept.engine !== engine);
 		ramps.push({ engine, label: run.label, result: found });
-		keepRamps(comparison, ramps);
+		keepRamps(comparison, mode, ramps);
 		// The other engine's turn, on a page of its own, unless it has run already.
 		if (!ramps.some((kept) => kept.engine === other(engine))) {
 			location.search = address({ engine: other(engine), ramp: 'continue', count: null });
@@ -221,7 +246,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 		slider.disabled = false;
 	};
 	rampButton.addEventListener('click', () => {
-		keepRamps(comparison, []);
+		keepRamps(comparison, mode, []);
 		void ramp();
 	});
 	if (params.get('ramp') === 'continue') void ramp();

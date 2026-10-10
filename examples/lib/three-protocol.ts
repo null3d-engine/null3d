@@ -1,17 +1,19 @@
 // What a comparison page and its three.js worker say to each other. three.js runs in one worker
 // with an OffscreenCanvas, so the page starts, counts, measures and stops it with these messages.
 
-import type { Effects } from './compare-scene';
+import type { CompareMode, Effects } from './compare-scene';
 
 /** three.js's two renderers: WebGLRenderer, and WebGPURenderer on WebGPU. */
 export type ThreeRenderer = 'webgl' | 'webgpu';
 
 /** How the worker starts its scene. */
 export interface ThreeStart {
-	/** The largest count of this run: the worker makes every object up front. */
+	/** The largest count of this run, which the instanced mode makes room for up front. */
 	capacity: number;
 	/** The count to start at. */
 	count: number;
+	/** How the scene is built: a tree of objects per part, or a batch of copies per part kind. */
+	mode: CompareMode;
 	effects: Effects;
 	renderer: ThreeRenderer;
 	/** The canvas's size in CSS pixels, and the device pixels per CSS pixel to draw at. */

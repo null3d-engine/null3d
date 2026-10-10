@@ -669,3 +669,21 @@ export function effectsFromText(text: string | null): Effects {
 	}
 	return effects;
 }
+
+// How both engines build a comparison's scene.
+
+/**
+ * A comparison's two ways of building its scene, the same in both engines. 'scene-graph' makes one
+ * object per part in a tree of parents and children, as each engine's own examples build jointed
+ * models. 'instanced' makes one batch of copies per part kind, posed by the same closed-form loop.
+ */
+export const COMPARE_MODES = ['scene-graph', 'instanced'] as const;
+export type CompareMode = (typeof COMPARE_MODES)[number];
+
+/** Reads a mode from address text: null gives the scene graph, and an unknown name throws. */
+export function modeFromText(text: string | null): CompareMode {
+	if (text === null || text === '') return 'scene-graph';
+	if (!(COMPARE_MODES as readonly string[]).includes(text))
+		throw new RangeError(`"${text}" is not a mode. Use: ${COMPARE_MODES.join(', ')}.`);
+	return text as CompareMode;
+}

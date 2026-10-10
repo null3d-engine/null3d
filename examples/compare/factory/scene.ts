@@ -11,6 +11,7 @@
 import {
 	boxGeometry,
 	type CameraLoop,
+	type CompareMode,
 	cylinderGeometry,
 	type GradeLook,
 	type Hex,
@@ -45,6 +46,8 @@ export const STILL_PER_CELL = 5;
 export const SPOT_COUNT = 6;
 /** The hall's own objects: the floor, and a housing and a lens for each spot light. */
 export const HALL_OBJECTS = 1 + 2 * SPOT_COUNT;
+/** The kinds of part in a cell, each a batch in the instanced mode, and the sparks' batch. */
+const PART_KINDS = 12;
 /** The most cells a scene can hold. */
 export const MAX_CELLS = 20_000;
 
@@ -53,8 +56,12 @@ export function factoryCells(movingParts: number): number {
 	return Math.max(1, Math.min(MAX_CELLS, Math.ceil(movingParts / MOVING_PER_CELL)));
 }
 
-/** Objects in the scene for a count of moving parts. */
-export function factoryObjects(movingParts: number): number {
+/**
+ * Objects in the scene for a count of moving parts: an object per part in the scene graph mode, and
+ * a batch per part kind in the instanced mode.
+ */
+export function factoryObjects(movingParts: number, mode: CompareMode = 'scene-graph'): number {
+	if (mode === 'instanced') return PART_KINDS + HALL_OBJECTS;
 	return factoryCells(movingParts) * (MOVING_PER_CELL + STILL_PER_CELL) + HALL_OBJECTS;
 }
 

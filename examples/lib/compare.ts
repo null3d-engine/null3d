@@ -13,7 +13,7 @@
 import { createEngine, type Engine } from '@null3d/engine';
 import { type PageMemory, PageMemorySampler } from '@null3d/engine/stats';
 import type { Comparison } from '../compare/comparisons';
-import { allEffects, type Effects, effectsToText } from './compare-scene';
+import { allEffects, type CompareMode, type Effects, effectsToText } from './compare-scene';
 import {
 	type DeviceClass,
 	deviceClass,
@@ -34,9 +34,16 @@ export const ENGINE_TITLES: Readonly<Record<EngineName, string>> = {
 	threejs: 'three.js',
 };
 
+/** Each mode's name as a page shows it. */
+export const MODE_TITLES: Readonly<Record<CompareMode, string>> = {
+	'scene-graph': 'Scene graph',
+	instanced: 'Instanced',
+};
+
 /** The rules that keep a comparison fair, for a page's "about this comparison" panel. */
 export const FAIRNESS_RULES: readonly string[] = [
 	'Both engines run the same scene description: the same seed, layout, meshes, surfaces, lights, camera path and fixed-step simulation, so they show the same state at the same time.',
+	'Both engines build the scene the same way in each mode: the same tree of one object per part in the scene graph mode, and one batch of copies per part kind, posed by the same loop, in the instanced mode.',
 	"Both draw at the same pixel ratio, the device class's cap, with 4x MSAA, the same effects and the high-performance GPU.",
 	"null3D runs with its quality governor off and a fixed preset, High or WebGL2's Medium, and draws every pixel. Ambient occlusion draws at half the size in each direction in both engines.",
 	'three.js 0.186.1 runs on the faster of its two renderers for the GPU path, in one worker with an OffscreenCanvas, with its add-ons and the methods of its official examples.',
@@ -53,6 +60,8 @@ export interface ComparisonOptions {
 	canvas: HTMLCanvasElement;
 	comparison: Comparison;
 	engine: EngineName;
+	/** How both engines build the scene; the scene graph by default. */
+	mode?: CompareMode;
 	/** The count to start at; the ramp's start count by default. */
 	count?: number;
 	/** The effects to draw; every one by default. */
@@ -64,8 +73,8 @@ export interface ComparisonOptions {
 	/** Draw one frame at this simulation time and keep it, for image tests. */
 	hold?: number;
 	/**
-	 * The most the count reaches, in place of the device class's ramp maximum. Both engines make
-	 * room for this many at their start, so a measurement at a fixed count can hold no more.
+	 * The most the count reaches, in place of the device class's ramp maximum. The instanced mode
+	 * makes room for this many at its start, so a measurement at a fixed count can hold no more.
 	 */
 	maxCount?: number;
 	/**
@@ -88,6 +97,7 @@ export interface ComparisonMeasurement {
 /** A comparison that runs, with one engine. */
 export interface ComparisonRun {
 	engine: EngineName;
+	mode: CompareMode;
 	/** The engine, its version and its renderer, such as `three.js 0.186.1, WebGLRenderer`. */
 	label: string;
 	/** The GPU path that the engine draws with. */
@@ -198,7 +208,8 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 	const gpu = await gpuPath(options.gpu ?? 'auto');
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
-	const common = { comparison, count, effects, plan, pixelRatio, cls, gpu };
+	const mode = options.mode ?? 'scene-graph';
+	const common = { comparison, mode, count, effects, plan, pixelRatio, cls, gpu };
 	return options.engine === 'null3d'
 		? startNull3d(canvas, options, common)
 		: startThree(canvas, options, common, threeRendererFor(gpu, options.threeRenderer));
@@ -206,6 +217,7 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 
 interface Common {
 	comparison: Comparison;
+	mode: CompareMode;
 	count: number;
 	effects: Effects;
 	plan: RampPlan;
@@ -217,13 +229,14 @@ interface Common {
 async function startNull3d(
 	canvas: HTMLCanvasElement,
 	options: ComparisonOptions,
-	{ comparison, count, effects, plan, pixelRatio, cls, gpu }: Common,
+	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
 ): Promise<ComparisonRun> {
 	// The sketch reads its settings from its own address; the plugin ships it by the literal one.
 	const sketch = new URL(comparison.sketch);
 	const capacity = options.hold === undefined ? plan.max : count;
 	sketch.searchParams.set('capacity', String(capacity));
 	sketch.searchParams.set('count', String(count));
+	sketch.searchParams.set('mode', mode);
 	sketch.searchParams.set('effects', effectsToText(effects));
 	const stats = options.stats ?? true;
 	const engine: Engine = await createEngine({
@@ -236,13 +249,15 @@ async function startNull3d(
 		antialias: 'msaa',
 		shadowTiles: comparison.shadowTiles,
 		shadowTileSize: 1024,
-		expectedObjects: comparison.objectsAt(capacity) + 1024,
+		// Room for the objects at the start count: the scene grows with the count.
+		expectedObjects: comparison.objectsAt(count, mode) + 1024,
 		stats: stats !== false && { collapsed: stats !== 'open' },
 		hold: options.hold,
 	});
 	let shown = count;
 	const run: ComparisonRun = {
 		engine: 'null3d',
+		mode,
 		label: `null3D, ${engine.capabilities.tier}, ${engine.mode.preset}`,
 		gpu: engine.capabilities.tier === 'webgl2' ? 'webgl2' : 'webgpu',
 		deviceClass: cls,
@@ -300,7 +315,7 @@ async function startNull3d(
 async function startThree(
 	canvas: HTMLCanvasElement,
 	options: ComparisonOptions,
-	{ comparison, count, effects, plan, pixelRatio, cls, gpu }: Common,
+	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
 	renderer: ThreeRenderer,
 ): Promise<ComparisonRun> {
 	const worker = comparison.startThree();
@@ -322,6 +337,7 @@ async function startThree(
 	const start: ThreeStart = {
 		capacity: held ? count : plan.max,
 		count,
+		mode,
 		effects,
 		renderer,
 		width,
@@ -388,6 +404,7 @@ async function startThree(
 	let shown = count;
 	return {
 		engine: 'threejs',
+		mode,
 		label: result.label,
 		gpu,
 		deviceClass: cls,

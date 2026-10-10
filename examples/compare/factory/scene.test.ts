@@ -3,12 +3,21 @@ import {
 	effectsFromText,
 	effectsToText,
 	gradeTable,
+	modeFromText,
 	quatMultiply,
 	rotateVector,
 	stepsUntil,
 	surfaceMaps,
 	triangleCount,
 } from '../../lib/compare-scene';
+import {
+	type FactoryMatrices,
+	type FactoryRows,
+	poseFactory,
+	poseFactoryRows,
+	type Rows,
+	writeQuaternionMatrix,
+} from './pose';
 import {
 	ARM_PARENT,
 	ARM_PART,
@@ -40,7 +49,6 @@ import {
 	sparkPosition,
 	stepFactory,
 } from './scene';
-import { type FactoryMatrices, poseFactory, writeQuaternionMatrix } from './three-pose';
 
 /** A position and a rotation (x, y, z, w). */
 interface Pose {
@@ -101,6 +109,7 @@ describe('Factory layout and counts', () => {
 		expect(factoryCells(10_001)).toBe(1_001);
 		expect(factoryCells(0)).toBe(1);
 		expect(factoryObjects(10_000)).toBe(1_000 * 15 + 13);
+		expect(factoryObjects(10_000, 'instanced')).toBe(12 + 13);
 	});
 
 	test('the ramps top out between 20,000 and 50,000 moving parts', () => {
@@ -259,8 +268,8 @@ describe('Factory simulation', () => {
 	});
 });
 
-describe("the three.js half's poses", () => {
-	test("match the parent-first walk of each arm's tree, for every moving part and crate", () => {
+describe("the instanced mode's closed-form poses", () => {
+	test("three.js's matrices match the parent-first walk of each arm's tree, for every moving part and crate", () => {
 		const cells = 16;
 		const state = createFactory(cells);
 		const out: FactoryMatrices = {
@@ -295,6 +304,48 @@ describe("the three.js half's poses", () => {
 				expectSame(out.finger, c * 32 + 16, matrixOf(world[ARM_PART.fingerRight]!));
 				for (let k = 0; k < CRATES_PER_CELL; k++) {
 					expectSame(out.crate, (c * CRATES_PER_CELL + k) * 16, matrixOf(crateWorld(state, c, k)));
+					if (state.crateState[c * CRATES_PER_CELL + k] === CrateState.held) held++;
+				}
+			}
+		}
+		expect(held).toBeGreaterThan(20);
+	});
+
+	test("null3D's rows match the same walk, for every moving part and crate", () => {
+		const cells = 16;
+		const state = createFactory(cells);
+		const rows = (perCell: number): Rows => ({
+			positions: new Float32Array(cells * perCell * 3),
+			rotations: new Float32Array(cells * perCell * 4),
+		});
+		const out: FactoryRows = {
+			turntable: rows(1),
+			upperArm: rows(1),
+			forearm: rows(1),
+			wrist: rows(1),
+			finger: rows(2),
+			crate: rows(CRATES_PER_CELL),
+		};
+		const expectSame = (actual: Rows, row: number, expected: Pose) => {
+			for (let e = 0; e < 3; e++)
+				expect(actual.positions[row * 3 + e]!).toBeCloseTo(expected.position[e]!, 4);
+			const rotation = Array.from(actual.rotations.subarray(row * 4, row * 4 + 4));
+			expect(sameRotation(rotation, expected.rotation)).toBeCloseTo(1, 5);
+		};
+		let held = 0;
+		for (let moment = 0; moment < 40; moment++) {
+			run(state, stepsUntil(0.5));
+			poseFactoryRows(state, cells, out);
+			for (let c = 0; c < cells; c++) {
+				const world = armWorld(state, c);
+				expectSame(out.turntable, c, world[ARM_PART.turntable]!);
+				expectSame(out.upperArm, c, world[ARM_PART.upperArm]!);
+				expectSame(out.forearm, c, world[ARM_PART.forearm]!);
+				expectSame(out.wrist, c, world[ARM_PART.wrist]!);
+				expectSame(out.finger, c * 2, world[ARM_PART.fingerLeft]!);
+				expectSame(out.finger, c * 2 + 1, world[ARM_PART.fingerRight]!);
+				for (let k = 0; k < CRATES_PER_CELL; k++) {
+					expectSame(out.crate, c * CRATES_PER_CELL + k, crateWorld(state, c, k));
 					if (state.crateState[c * CRATES_PER_CELL + k] === CrateState.held) held++;
 				}
 			}
@@ -337,5 +388,11 @@ describe('surfaces, grade and effects', () => {
 			grade: false,
 		});
 		expect(() => effectsFromText('glow')).toThrow('"glow" is not an effect');
+	});
+
+	test('modes read as address text, with the scene graph by default', () => {
+		expect(modeFromText(null)).toBe('scene-graph');
+		expect(modeFromText('instanced')).toBe('instanced');
+		expect(() => modeFromText('batched')).toThrow('"batched" is not a mode');
 	});
 });

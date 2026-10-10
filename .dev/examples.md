@@ -225,10 +225,20 @@ A comparison draws one scene in null3D and in three.js, one engine at a time. It
 ### The parts
 
 - `scene.ts` holds everything that both engines draw: the seed, the layout, the fixed-step simulation, the meshes as arrays, the surfaces, the lights and the camera path. It also holds the ramp of each device class and the held frame. It imports no engine, so both halves run the same code.
-- `sketch.ts` is the null3D half. It reads its settings from its own address: `capacity`, the cells to make, `count`, the cells that move, and `effects`. The page's `count` message changes the count during play.
+- `sketch.ts` is the null3D half. It reads its settings from its own address: `mode`, `capacity`, the most cells of the run, `count`, the cells that move, and `effects`. The page's `count` message changes the count during play.
 - `three.ts` is the three.js half. It builds the scene with three.js 0.186.1 and hands it to `runThreeWorker`, which runs it in one worker with an OffscreenCanvas.
-- `startComparison({ canvas, comparison, engine })` starts one engine on a canvas. It returns the run: `setCount`, `measure`, `collapseStats` and `destroy`. `rampComparison(run)` runs the ramp. The website lays out its own controls over these calls, as the clone's page does.
-- The clone's page runs a comparison at `?compare=<name>&engine=null3d` or `&engine=threejs`. Its caption holds an engine switch, a count slider, the effect switches, "Run the ramp", and an "about this comparison" panel. Each engine runs on a page of its own, so the switch and the ramp load the page again. The ramp keeps each engine's result for the session, and shows "null3D held N, three.js held M" once both have run.
+- `pose.ts` holds the closed-form poses of the instanced mode, which both halves run: three.js takes them as matrices, and null3D as batch rows. It imports no engine, and a unit test checks both forms against the walk of each arm's tree.
+- `startComparison({ canvas, comparison, engine, mode })` starts one engine on a canvas. It returns the run: `setCount`, `measure`, `collapseStats` and `destroy`. `rampComparison(run)` runs the ramp. The website lays out its own controls over these calls, as the clone's page does.
+- The clone's page runs a comparison at `?compare=<name>&engine=null3d` or `&engine=threejs`, and `&mode=instanced` picks the instanced mode. Its caption holds an engine switch, a mode switch, a count slider, the effect switches, "Run the ramp", and an "about this comparison" panel. Each engine runs on a page of its own, so the switch and the ramp load the page again. The ramp keeps each engine's result in each mode for the session, and shows "null3D held N, three.js held M" once both have run.
+
+### The two modes
+
+Each comparison builds its scene two ways, and both engines build it the same way in each ([D-121](decisions/D-121-comparison-tier.md#two-modes)):
+
+- **Scene graph**, the default: one object per part, in a tree of parents and children, as each engine's own examples build jointed models. The code writes each joint that moved, and each engine works out the world transforms of the trees and draws them its own way. This is how most apps build such a scene.
+- **Instanced**: one batch of copies per part kind, null3D's instance batches and three.js's `InstancedMesh`. One loop of code works out every moving part in closed form, with no tree, and each engine uploads the copies in use. This is the most tuned build of the scene.
+
+In the scene graph mode, each engine holds only the objects of the cells that show. null3D makes cells as the count rises and destroys them as it falls, 250 a frame, within its queue of scene changes. Its joints that turn in most frames are dynamic objects, and the fingers and the crates are static ones, which the engine recomputes only in a frame that moves them. three.js turns off `matrixAutoUpdate` on every node and calls `updateMatrix` after a write, as its docs advise. In the instanced mode, each engine makes its batches for the ramp's maximum and draws the copies in use.
 
 ### The ramp
 
