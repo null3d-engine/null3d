@@ -75,29 +75,25 @@ fn job_workers_time_their_chunks_before_the_loop_returns() {
     });
     for k in 0..2u32 {
         let ran = chunks[k as usize + 1].load(Ordering::Relaxed);
-        let busy = jobs.take_busy_ms(k);
+        let busy = f64::from(jobs.take_busy_us(k)) / 1000.0;
         assert!(
             busy >= CHUNK_MS * f64::from(ran),
             "worker {k}: {busy} ms for {ran} chunks"
         );
         assert_eq!(
-            jobs.take_busy_ms(k),
-            0.0,
+            jobs.take_busy_us(k),
+            0,
             "worker {k}: the total starts again"
         );
     }
-    assert_eq!(jobs.take_busy_ms(2), 0.0, "an index past the worker count");
+    assert_eq!(jobs.take_busy_us(2), 0, "an index past the worker count");
     pool.stop();
 
     let untimed = Workers::start(2);
     untimed
         .jobs()
         .parallel_for(60, 1, &|_, _| spin_for(Duration::from_micros(100)));
-    assert_eq!(
-        untimed.jobs().take_busy_ms(0),
-        0.0,
-        "no clock, no busy time"
-    );
+    assert_eq!(untimed.jobs().take_busy_us(0), 0, "no clock, no busy time");
     untimed.stop();
 }
 
@@ -113,28 +109,28 @@ fn the_caller_times_the_loops_it_hands_out_even_before_any_job_worker_joins() {
     jobs.parallel_for(20, 1, &|_, _| {
         spin_for(Duration::from_secs_f64(CHUNK_MS / 1000.0));
     });
-    let handed = jobs.take_handed_ms();
+    let handed = f64::from(jobs.take_handed_us()) / 1000.0;
     assert!(handed >= CHUNK_MS * 20.0, "{handed} ms for 20 chunks");
-    assert_eq!(jobs.take_handed_ms(), 0.0, "the total starts again");
+    assert_eq!(jobs.take_handed_us(), 0, "the total starts again");
 
     // A loop of one chunk runs inline, and hands nothing out.
     jobs.parallel_for(1, 1, &|_, _| spin_for(Duration::from_micros(200)));
-    assert_eq!(jobs.take_handed_ms(), 0.0, "an inline loop");
+    assert_eq!(jobs.take_handed_us(), 0, "an inline loop");
 
     // Stopped, the timing reads no clock; started again, it times the next loop.
     jobs.time_handed_loops(false);
     jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
-    assert_eq!(jobs.take_handed_ms(), 0.0, "timing stopped");
+    assert_eq!(jobs.take_handed_us(), 0, "timing stopped");
     jobs.time_handed_loops(true);
     jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
-    assert!(jobs.take_handed_ms() > 0.0, "timing started again");
+    assert!(jobs.take_handed_us() > 0, "timing started again");
 
     let untimed = JobSystem::with_config(JobConfig {
         workers: 4,
         ..JobConfig::default()
     });
     untimed.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
-    assert_eq!(untimed.take_handed_ms(), 0.0, "no clock, no handed time");
+    assert_eq!(untimed.take_handed_us(), 0, "no clock, no handed time");
 }
 
 #[test]

@@ -96,7 +96,7 @@ function fakeGlue(
 		reserveObject: () => ++slots,
 		cellsRefused,
 		meshMemoryBytes: () => MESH_BYTES,
-		takeHandedMs: () => (handed.timing?.at(-1) === false ? 0 : handed.handedMs),
+		takeHandedUs: () => (handed.timing?.at(-1) === false ? 0 : Math.round(handed.handedMs * 1000)),
 		// The fake takes numbers, so the flag arrives as one.
 		timeHandedLoops: (on) => handed.timing?.push(Boolean(on)) ?? 0,
 	};
@@ -190,8 +190,8 @@ const MEDIUM: QualityStart = {
  * `quality` replaces the page's quality start. With `drawing`, a stand-in for the thread that
  * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in. With
  * `grows`, each frame step grows the memory. `cellsRefused` gives the core's count of refused grid
- * cells. `control` gives the page's control block, which the test can write. `fps` is the frame
- * rate that ?fps= holds. The log also shows the settings that the page got.
+ * cells. `control` gives the page's control block, which the test can write. `maxTargetFps` is the
+ * highest target that the page allows. The log also shows the settings that the page got.
  */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
@@ -204,7 +204,7 @@ async function start(
 		shared = false,
 		cellsRefused,
 		control = controlViews(createControlBuffer(shared)),
-		fps,
+		maxTargetFps = 60,
 		jobs = { most: 0, handedMs: 0, asked: [] },
 	}: {
 		quality?: QualityStart;
@@ -214,7 +214,7 @@ async function start(
 		shared?: boolean;
 		cellsRefused?: () => number;
 		control?: ReturnType<typeof controlViews>;
-		fps?: number;
+		maxTargetFps?: number;
 		/**
 		 * The most job workers, the parallel work each frame hands out in ms, and where the counts
 		 * of job workers that the runner asks for go.
@@ -279,7 +279,7 @@ async function start(
 			sendShader: () => {},
 			sendPreload: () => {},
 			pageUrl: 'http://localhost/',
-			fps,
+			maxTargetFps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
@@ -1005,10 +1005,10 @@ describe('SketchRunner and quality presets', () => {
 		]);
 	}, 10_000);
 
-	it('asks for no more than the frame rate that ?fps= holds', async () => {
+	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
 			quality: { ...MEDIUM, check: true },
-			fps: 30,
+			maxTargetFps: 30,
 			drawing: { presentedMs: 1000 / 30, completedMs: 1000 / 30 },
 		});
 		stopDrawing();

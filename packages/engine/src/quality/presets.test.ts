@@ -23,6 +23,7 @@ import {
 	type SettingValues,
 	SKETCH_SETTINGS,
 	takesValue,
+	targetFpsOption,
 } from './presets';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
@@ -465,6 +466,22 @@ describe('presetOption', () => {
 			`E1213: createEngine() got the preset "Ultra", which is not 'auto', 'low', 'medium', 'high' or 'ultra'.`,
 		);
 		for (const bad of ['epic', '', 2, null]) expect(() => presetOption(bad)).toThrow('E1213');
+	});
+});
+
+describe('targetFpsOption', () => {
+	it('takes display or a whole number from 1 up, and nothing for no setting', () => {
+		expect(targetFpsOption(undefined)).toBeUndefined();
+		expect(targetFpsOption('display')).toBe('display');
+		for (const fps of [1, 30, 120, 144]) expect(targetFpsOption(fps)).toBe(fps);
+	});
+
+	it('refuses any other value, with E1213', () => {
+		expect(() => targetFpsOption('max')).toThrow(
+			`E1213: createEngine() got "max" for targetFps, which is not 'display' or a whole number from 1 up.`,
+		);
+		for (const bad of [0, -60, 59.94, Number.POSITIVE_INFINITY, Number.NaN, '120', null])
+			expect(() => targetFpsOption(bad)).toThrow('E1213');
 	});
 });
 

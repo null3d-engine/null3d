@@ -272,8 +272,22 @@ export class FrameRecorder {
 
 	/** Finishes the record with the frame's total busy time on this thread. */
 	commit(busyMs: number): void {
-		const { header, words, floats } = this.views;
-		floats[this.at + BUSY] = busyMs;
+		this.views.floats[this.at + BUSY] = busyMs;
+		this.finish();
+	}
+
+	/**
+	 * Finishes the record with the frame's busy time in whole microseconds. A caller that the
+	 * browser does not inline this into passes a small integer, where a fraction would make a number
+	 * object at each call.
+	 */
+	commitMicros(busyUs: number): void {
+		this.views.floats[this.at + BUSY] = busyUs / 1000;
+		this.finish();
+	}
+
+	private finish(): void {
+		const { header, words } = this.views;
 		this.sequence++;
 		Atomics.store(words, this.at + SEQUENCE, this.sequence);
 		Atomics.store(header, WRITTEN + this.ring, this.sequence);

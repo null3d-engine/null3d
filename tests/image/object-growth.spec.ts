@@ -16,7 +16,10 @@ interface Picture {
 	/** Frames captured back to back while the tables grew, and those that showed neither picture. */
 	during: number;
 	odd: number;
-	/** Each of those frames as B (the picture before), A (the one after) or X (neither). */
+	/**
+	 * Each of those frames as B (the picture before), A (the one after) or, for neither, the number
+	 * of its picture among the odd ones.
+	 */
 	sequence: string;
 	latency: string;
 	failures: string[];
@@ -47,7 +50,11 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const)
 		// Pipelined, the thread that draws replays a frame while the next one steps.
 		expect(grow.latency).toBe('pipelined');
 		expect(grow.during).toBeGreaterThan(0);
-		expect(grow.odd, `frames during the growth: ${grow.sequence}`).toBe(0);
+		// The message tells odd frames from an odd last picture, which makes every frame odd.
+		expect(
+			grow.odd,
+			`frames during the growth: ${grow.sequence}; the last picture matches the reference's: ${grow.after === reference.after}`,
+		).toBe(0);
 		expect(grow.before === reference.before).toBe(true);
 		expect(grow.after === reference.after).toBe(true);
 		// The box that moved, and the one added after the growth, draw.

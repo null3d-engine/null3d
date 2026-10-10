@@ -4,8 +4,9 @@
 // preset that it measures, and the page's loading screen waits for it. A stored result applies only
 // to a start that would check the same preset with the same rules, on a GPU and display that report
 // the same facts, at a canvas size close to the measured one, within a week of the measurement. A
-// result measured against a target below the highest one, as on a display in a power-saving mode,
-// is not stored. Storage that cannot be read or written counts as empty. The GPU's names only tell
+// result measured against a target below the one that the engine starts from, as on a display in a
+// power-saving mode, is not stored. The highest target that the page allows is one of the facts, so
+// a result never applies to a start that defends another rate. Storage that cannot be read or written counts as empty. The GPU's names only tell
 // one GPU from another here; the engine never decides anything from what they say.
 
 import {
@@ -78,8 +79,8 @@ function parseStored(text: string | null): StoredCheck | undefined {
 
 /**
  * The facts that a check's result depends on, apart from the canvas size, as one text: the check's
- * rules, the GPU path and the preset that the check starts from, the frame rate cap, the device
- * hints and the screen's pixel ratio, and what the GPU path reported of the GPU. Two starts with the
+ * rules, the GPU path and the preset that the check starts from, the frame rate cap, the highest
+ * target (`maxTargetFps`), the device hints and the screen's pixel ratio, and what the GPU path reported of the GPU. Two starts with the
  * same text would run the same check on the same device and browser.
  */
 export function checkConditions(
@@ -87,6 +88,7 @@ export function checkConditions(
 	tier: Tier,
 	from: QualityPreset,
 	fps: number | undefined,
+	maxTargetFps: number,
 ): string {
 	const { webgpu, webgl2 } = report;
 	const gpu =
@@ -104,6 +106,7 @@ export function checkConditions(
 		tier,
 		from,
 		fps ?? null,
+		String(maxTargetFps),
 		report.coarsePointer,
 		report.screenMinEdge,
 		report.deviceMemoryGB,
@@ -166,11 +169,12 @@ export class CheckStore {
 	}
 
 	/**
-	 * Stores the result of a check that this start measured, when it measured against the highest
-	 * target that the frame rate cap `fps` allows.
+	 * Stores the result of a check that this start measured, when it measured against at least the
+	 * target that the check starts from under the highest target `maxTargetFps`.
 	 */
-	save(check: PresetCheck, fps: number | undefined, now = Date.now()): void {
-		if (check.reused || !(this.area > 0) || check.targetFps !== checkTargetFps(0, fps)) return;
+	save(check: PresetCheck, maxTargetFps: number, now = Date.now()): void {
+		if (check.reused || !(this.area > 0) || check.targetFps < checkTargetFps(0, maxTargetFps))
+			return;
 		const { from, targetFps, rounds } = check;
 		const stored: StoredCheck = {
 			conditions: this.conditions,

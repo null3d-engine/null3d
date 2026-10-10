@@ -12,11 +12,13 @@
 // ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
 // in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
 // each frame's list, for a test of memory that the sketch thread frees while the list may still
-// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, ?gl-timing times each WebGL call for
-// benchmark pages, and ?stats shows the stats overlay.
+// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
+// ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
+// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, and ?stats shows the
+// stats overlay.
 
 import type { StatsRequest } from '../debug/stats-options';
+import type { TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
@@ -198,6 +200,11 @@ export interface Switches {
 	 */
 	fps: number | undefined;
 	/**
+	 * The target frame rate setting from ?target-fps=: `display` or a whole number, which wins over
+	 * the page's `targetFps` option, or undefined without the switch or with another value.
+	 */
+	targetFps: TargetFps | undefined;
+	/**
 	 * The most job workers that ?jobs= lets the engine start, or undefined for the count from the
 	 * device's cores. The engine starts them as the work grows, and no more than the device has
 	 * logical cores (`jobWorkerCount`).
@@ -343,6 +350,7 @@ export function parseSwitches(search: string): Switches {
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
+		targetFps: params.get('target-fps') === 'display' ? 'display' : whole(params.get('target-fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),

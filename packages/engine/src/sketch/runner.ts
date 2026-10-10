@@ -104,8 +104,11 @@ export interface SketchCore {
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
+	/**
+	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
+	 * setting under the ?fps= cap, and infinity for the display's full rate.
+	 */
+	maxTargetFps: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
 	/** Asks the page to show or hide its stats overlay, or to change its options. */
@@ -129,10 +132,10 @@ const MEMORY_EVERY = 8;
 /** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
 const JOB_WINDOW = 30;
 /**
- * The mean time per frame that the sketch thread spends in loops it hands out, in ms, from which it
- * asks for more job workers: twice as many, and at least 2.
+ * The mean time per frame that the sketch thread spends in loops it hands out, in microseconds,
+ * from which it asks for more job workers: twice as many, and at least 2.
  */
-const JOB_GROW_MS = 0.2;
+const JOB_GROW_US = 200;
 /**
  * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
  * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
@@ -230,8 +233,11 @@ export class SketchRunner {
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
-	/** The parallel work of the frames in the current window, in ms, and the window's frames. */
-	private jobWindowMs = 0;
+	/**
+	 * The parallel work of the frames in the current window, in whole microseconds, and the
+	 * window's frames.
+	 */
+	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
 	/** The frames left before the sketch thread times its parallel loops again. */
 	private jobPause = 0;
@@ -373,7 +379,7 @@ export class SketchRunner {
 							shadowCasters: () => glue.shadowCasters(),
 							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 						},
-						sketch.fps,
+						sketch.maxTargetFps,
 					)
 				: undefined;
 		const { governor } = this;
@@ -533,7 +539,7 @@ export class SketchRunner {
 					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxFps: this.sketch.fps,
+					maxTargetFps: this.sketch.maxTargetFps,
 					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
@@ -689,12 +695,12 @@ export class SketchRunner {
 			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
 			return;
 		}
-		this.jobWindowMs += glue.takeHandedMs();
+		this.jobWindowUs += glue.takeHandedUs();
 		if (++this.jobWindowFrames < JOB_WINDOW) return;
-		const mean = this.jobWindowMs / this.jobWindowFrames;
-		this.jobWindowMs = 0;
+		const enough = this.jobWindowUs >= JOB_GROW_US * this.jobWindowFrames;
+		this.jobWindowUs = 0;
 		this.jobWindowFrames = 0;
-		if (mean >= JOB_GROW_MS) {
+		if (enough) {
 			this.sketch.wantJobs(Math.max(2, asked * 2));
 		} else {
 			this.jobPause = JOB_PAUSE;
@@ -1111,7 +1117,7 @@ export class SketchRunner {
 		for (let k = 0; k < asked; k++) {
 			const jobRecord = this.jobRecords[k] as FrameRecorder;
 			jobRecord.begin(frame);
-			jobRecord.commit(glue.takeJobBusyMs(k));
+			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		this.growJobs(glue, asked);
 		return frame;

@@ -58,7 +58,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer, and takes the index of refraction and specular options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` covers the base layer, and takes the index of refraction, specular and transmission options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -66,13 +66,13 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `reflectivity` | `ior` | Convert: `ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity)`, as three.js does |
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
+| `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
 
-glTF files with `KHR_materials_ior` and `KHR_materials_specular` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
 | `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `transmission`, `thickness`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2). Keep `ior` | No refraction or thickness color |
 | `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
@@ -109,7 +109,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
-| `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction have no port yet: list them |
+| `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction become transmission: give the water's custom material `transmission`, `thickness` and `ior: 1.33`, and set `s.transmission` with the rippled normal (`api/materials`) |
 
 ## 7. Texture settings
 

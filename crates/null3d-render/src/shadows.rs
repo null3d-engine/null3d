@@ -74,6 +74,8 @@
 
 use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::handle::Handle;
+use null3d_core::instances::BatchTable;
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
@@ -650,12 +652,13 @@ impl CascadeSchedule {
     }
 }
 
-/// The scene objects that cast shadows and move in every frame: each dynamic object, and each
-/// object under a dynamic one, that has a mesh and casts shadows. The list follows the scene's
-/// structure, so it changes only in frames where the structure changed.
+/// The casters that move in every frame: each dynamic object, and each object under a dynamic
+/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. The
+/// list follows the scene's structure, so it changes only in frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
+    batches: Vec<Handle>,
     /// True once the list matches the scene's structure.
     built: bool,
 }
@@ -663,12 +666,18 @@ pub struct MovingCasters {
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
     /// never built. Allocates only when the list grows past its largest size so far.
-    pub fn update(&mut self, scene: &SceneStorage, structure_changed: bool) {
+    pub fn update(&mut self, scene: &SceneStorage, batches: &BatchTable, structure_changed: bool) {
         if self.built && !structure_changed {
             return;
         }
         self.built = true;
         self.slots.clear();
+        self.batches.clear();
+        for (id, batch) in batches.iter() {
+            if batch.is_dynamic() && batch.shadows() & flags::CAST_SHADOWS != 0 {
+                self.batches.push(id);
+            }
+        }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
         let moves = |slot: usize| {
             let mut at = slot;
@@ -696,11 +705,12 @@ impl MovingCasters {
     }
 
     /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
-    /// output of frame parity `parity`. Casters beyond the box's face toward the light count, as
-    /// they draw into it flattened onto that face.
+    /// output of frame parity `parity`: a scene object, or an active row of a batch. Casters beyond
+    /// the box's face toward the light count, as they draw into it flattened onto that face.
     pub fn touch(
         &self,
         scene: &SceneStorage,
+        batches: &BatchTable,
         parity: usize,
         layers: u32,
         bounds: &CascadeBox,
@@ -709,16 +719,34 @@ impl MovingCasters {
         let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
         let table = scene.cell_table();
         let size = f64::from(CELL_SIZE);
-        self.slots.iter().any(|&slot| {
+        let touches = |cell: u32, center: [f32; 3], radius: f32| {
+            let cell = table.coords(cell);
+            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]));
+            bounds.touches(center, radius)
+        };
+        let objects = self.slots.iter().any(|&slot| {
             let s = slot as usize;
             if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
                 return false;
             }
-            let cell = table.coords(cells[s]);
-            let local = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
-            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(local[k]));
-            bounds.touches(center, spheres.radii[s])
-        })
+            let center = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
+            touches(cells[s], center, spheres.radii[s])
+        });
+        objects
+            || self.batches.iter().any(|&id| {
+                let Ok(batch) = batches.get(id) else {
+                    return false;
+                };
+                if batch.layers() & layers == 0 {
+                    return false;
+                }
+                let spheres = batch.world(parity).spheres();
+                let rows = batch.frame_active_count(parity) as usize;
+                (0..rows).any(|r| {
+                    let center = [spheres.xs[r], spheres.ys[r], spheres.zs[r]];
+                    touches(batch.cells()[r], center, spheres.radii[r])
+                })
+            })
     }
 }
 

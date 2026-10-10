@@ -56,7 +56,7 @@ pub(super) enum Drawn {
     /// them.
     #[default]
     Scene,
-    /// The objects that cast shadows, as the shadow cascades draw their depth.
+    /// The objects and instance rows that cast shadows, as the shadow cascades draw their depth.
     Casters,
     /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
     Outlined,
@@ -418,6 +418,7 @@ impl Layout {
         arena: &mut UploadArena,
         cells: &CellCulling,
         input: &FrameInput<'_>,
+        casters: &Layout,
     ) -> Result<(), RecordError> {
         if !cells.active() {
             return Ok(());
@@ -425,10 +426,19 @@ impl Layout {
         if self.order_build != Some(cells.builds()) {
             let (scene, batches) = (input.scene, input.batches);
             let (bases, rows) = (&self.batch_bases, &self.batch_rows);
+            // A blended batch that casts shadows has a bucket in the casters' layout alone, and the
+            // cascades cull with this order too.
+            let casts = |k: usize| {
+                casters
+                    .batch_rows
+                    .get(k)
+                    .is_some_and(|r| r.bucket != HIDDEN)
+            };
             self.order.build(&|visit| {
                 cells.visit_scene(scene, visit);
-                for (((_, batch), &(_, base)), batch_rows) in batches.iter().zip(bases).zip(rows) {
-                    if batch_rows.bucket == HIDDEN {
+                let listed = batches.iter().zip(bases).zip(rows).enumerate();
+                for (k, (((_, batch), &(_, base)), batch_rows)) in listed {
+                    if batch_rows.bucket == HIDDEN && !casts(k) {
                         continue;
                     }
                     let dynamic = batch.is_dynamic();
@@ -554,8 +564,9 @@ impl Layout {
                 };
                 return Some((skin(key, skinned), group, page, mesh, material, bounds));
             }
-            // Blended pairs draw in the transparent pass, which sorts them on the job workers.
-            if pipeline.blends() {
+            // Blended pairs, and pairs that let light through, draw in the transparent pass, which
+            // sorts them on the job workers.
+            if pipeline.sorts() {
                 return None;
             }
             let pipeline = if shadows.any() && object & flags::RECEIVE_SHADOWS != 0 {
@@ -593,18 +604,23 @@ impl Layout {
                 any_key(slot)
             }
         };
-        // Instance batches cast no shadows yet, and take no outlines. Sprites sized in pixels of the
-        // screen have no bounds in the world, so culling keeps them.
-        let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => {
-                let bounds = if batch.unculled() {
-                    UNCULLED_BOUNDS
-                } else {
-                    MESH_BOUNDS
-                };
-                key_of(batch.mesh(), batch.material(), bounds, 0, None)
+        // Instance batches cast and receive shadows as their shadow bits say, and take no
+        // outlines. Sprites sized in pixels of the screen have no bounds in the world, so culling
+        // keeps them; sprites cast no shadows.
+        let batch_key = |batch: &InstanceBatch| {
+            let bits = batch.shadows();
+            match drawn {
+                Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
+                Drawn::Scene | Drawn::Casters => {
+                    let bounds = if batch.unculled() {
+                        UNCULLED_BOUNDS
+                    } else {
+                        MESH_BOUNDS
+                    };
+                    key_of(batch.mesh(), batch.material(), bounds, bits, None)
+                }
+                Drawn::Outlined => None,
             }
-            Drawn::Casters | Drawn::Outlined => None,
         };
 
         collect_bucket_keys(
