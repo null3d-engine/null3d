@@ -46,6 +46,8 @@ pub mod batch_field {
     pub const SIZES: u32 = 4;
     /// A sprite batch's atlas frames, one 32-bit integer a row.
     pub const FRAMES: u32 = 5;
+    /// The rows marked dirty since the last batch update, one bit a row, in 64-bit words.
+    pub const DIRTY_WORDS: u32 = 6;
 }
 
 /// Fields of `debugLineArrays`.
@@ -624,6 +626,7 @@ pub fn typescript() -> String {
                 ("COLORS", batch_field::COLORS),
                 ("SIZES", batch_field::SIZES),
                 ("FRAMES", batch_field::FRAMES),
+                ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
             ],
         ),
         (

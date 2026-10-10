@@ -102,7 +102,7 @@ import type {
 	SpriteOptions,
 } from './sprites';
 import { Texture } from './textures';
-import { UnmarkedWrites } from './unmarked-writes';
+import { type RowField, UnmarkedRows, UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -1867,6 +1867,8 @@ export class InstanceBatch {
 	 * events name in its place.
 	 */
 	face: SpriteBatch | PointBatch | LineBatch | undefined = undefined;
+	/** @internal The rows that draw, from the first. */
+	activeRows: number;
 
 	/** @internal */
 	constructor(
@@ -1879,7 +1881,14 @@ export class InstanceBatch {
 		readonly parts: readonly number[] = [],
 		/** @internal The meshes and materials that the batch and its parts draw. */
 		readonly uses: BatchUses = NO_USES,
-	) {}
+	) {
+		this.activeRows = count;
+	}
+
+	/** @internal The batch, as error messages name it. */
+	describe(): string {
+		return `${this.face ? 'a sprite or point batch' : 'an instance batch'} of ${this.count} rows`;
+	}
 
 	/**
 	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so
@@ -1931,6 +1940,7 @@ export class InstanceBatch {
 	setActiveCount(count: number): void {
 		const { core } = this.scene;
 		core.check(core.glue.setBatchActiveCount(this.id, count), 'setActiveCount', undefined, true);
+		this.activeRows = count;
 	}
 
 	/**
@@ -2025,7 +2035,10 @@ export class InstanceBatch {
 		const { core } = this.scene;
 		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		for (const part of this.parts) core.glue.destroyBatch(part, this.scene.frame);
-		if (DEV) this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+		if (DEV) {
+			this.scene.countBatchRows(-this.count * (1 + this.parts.length));
+			this.scene.unmarkedRows?.forget(this);
+		}
 		this.scene.forgetListeners(this);
 		if (this.face) this.scene.forgetListeners(this.face);
 		this.destroyedFrame = this.scene.frame;
@@ -2042,6 +2055,24 @@ export interface BatchUses {
 }
 
 const NO_USES: BatchUses = { meshes: [], materials: [] };
+
+/** The row fields of an instance batch, which the check of unmarked row writes hashes. */
+const MESH_ROW_FIELDS: readonly RowField[] = [
+	[C.BATCH_FIELD_POSITIONS, 3],
+	[C.BATCH_FIELD_ROTATIONS, 4],
+	[C.BATCH_FIELD_SCALES, 3],
+];
+const MESH_COLOR_ROW_FIELDS: readonly RowField[] = [...MESH_ROW_FIELDS, [C.BATCH_FIELD_COLORS, 4]];
+const meshRowFields = (colors: boolean) => (colors ? MESH_COLOR_ROW_FIELDS : MESH_ROW_FIELDS);
+
+/** The row fields of a sprite or point batch. */
+const SPRITE_ROW_FIELDS: readonly RowField[] = [
+	[C.BATCH_FIELD_POSITIONS, 3],
+	[C.BATCH_FIELD_SIZES, 2],
+	[C.BATCH_FIELD_ROTATIONS, 1],
+	[C.BATCH_FIELD_COLORS, 4],
+	[C.BATCH_FIELD_FRAMES, 1],
+];
 
 /** The class of each kind of light that a model's node can create, by the core's light kind. */
 const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
@@ -2282,6 +2313,8 @@ export class Scene {
 	 * Declared without a value, so release builds hold no trace of it.
 	 */
 	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
+	/** @internal Development builds' check of static batch rows written without `markDirty`. */
+	declare readonly unmarkedRows: UnmarkedRows | undefined;
 	/** @internal The scene's animated objects, from the first model with animations on. */
 	animations: SceneAnimations | undefined;
 	/** @internal True once an object has morph weights, so each frame's animation step runs. */
@@ -2307,7 +2340,10 @@ export class Scene {
 		/** The input reader, whose pointer events reach objects' handlers. */
 		private readonly pointerInput?: PointerInput,
 	) {
-		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+		if (DEV) {
+			this.unmarkedWrites = new UnmarkedWrites(this);
+			this.unmarkedRows = new UnmarkedRows(core);
+		}
 	}
 
 	/** @internal The cameras of the last frames, for `screenToRay` and `worldToScreen`. */
@@ -3069,6 +3105,7 @@ export class Scene {
 		const uses = { meshes: parts.map((p) => p.mesh), materials: parts.map((p) => p.material) };
 		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
 		this.rememberBatch(batch);
+		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(colors));
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
@@ -3131,6 +3168,8 @@ export class Scene {
 			materials: [material],
 		});
 		this.rememberBatch(batch);
+		if (DEV && !options.dynamic)
+			this.unmarkedRows?.watch(batch, meshRowFields(options.colors ?? false));
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		if (options.castShadows) batch.setCastShadows(true);
@@ -3233,6 +3272,7 @@ export class Scene {
 			materials: [parts.material],
 		});
 		this.rememberBatch(instances);
+		if (DEV && !options.dynamic) this.unmarkedRows?.watch(instances, SPRITE_ROW_FIELDS);
 		if (options.origin) instances.setOrigin(options.origin, call);
 		const batch = new sprites.SpriteBatch(core, id, count, parts.material, instances);
 		instances.face = batch;
