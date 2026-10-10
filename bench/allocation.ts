@@ -30,7 +30,9 @@
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
 // line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
 // shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
-// frame. `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
+// frame. `--batch-shadows` gives the sun shadows in 3 cascades and makes S1's rows
+// cast and receive them, so a moving batch tests the far cascades and the tiles each frame.
+// `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
@@ -258,6 +260,13 @@ const OTHER_BUDGET = 4;
 const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
 
 /**
+ * What `--batch-shadows` adds to the WebGPU replay's budget: the browser's encoder of each sun
+ * cascade's culling pass and render pass, about 17 bytes each, for its 3 cascades. The rows move
+ * through every cascade, so each cascade draws again in every frame, not only on its turn.
+ */
+const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
  * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
  * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
@@ -441,6 +450,9 @@ async function main(): Promise<void> {
 		const tileShadows = args.includes('--tile-shadows') ? '&tileShadows' : '';
 		if (tileShadows && scene !== 's1')
 			throw new Error('--tile-shadows adds shadowed spot and point lights to S1 only');
+		const batchShadows = args.includes('--batch-shadows') ? '&shadows=3&batchShadows' : '';
+		if (batchShadows && scene !== 's1')
+			throw new Error('--batch-shadows makes the rows of S1 cast shadows only');
 		const environment = args.includes('--environment') ? '&environment' : '';
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
@@ -457,7 +469,7 @@ async function main(): Promise<void> {
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -570,7 +582,7 @@ async function main(): Promise<void> {
 		);
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${batchShadows ? ', its rows casting and receiving shadows' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
@@ -590,6 +602,7 @@ async function main(): Promise<void> {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
+					(replay && batchShadows ? BATCH_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +

@@ -154,5 +154,6 @@ Every array moves in a growth, but the memory need not grow, so the memory's buf
 | The old world buffers freed at once | 2 on WebGPU and compatibility mode, 3 on WebGL2, in each of 9 runs | fails |
 | Without the kept index lists, sorted entries and arenas | 2 on WebGPU; compatibility mode hung the page for over 30 minutes | fails |
 
+- On 10 October 2026 the test failed once in CI, on WebGL2 on SwiftShader, in the run of #472. Every frame after the first one differed from both pictures: `BXXXXXX`. That is not the pattern of buffers freed too early, which shows 2 or 3 odd frames during the growth and then the picture after. #472 changes nothing that this scene draws: it has no instance batches and no shadows. The test then passed 100 times in a row on SwiftShader on the Mac, 90 of them with 12 at once. So the cause is still open. The test now numbers each odd picture and says whether the last picture matches the reference's. A repeat then shows whether the frames or the last picture were odd.
 - The Rust unit tests check the rules themselves: the old world buffers' lifetime, and that `reserve_keeping` keeps the old buffer in place.
 - Docs: the scene's limits, the engine's options and memory, handles, and E1102's example. The skill's quick reference lists the option.

@@ -1215,7 +1215,8 @@ impl GpuDrivenRenderer {
             self.outlined.update_skinned(list, arena, input.scene)?;
         }
         self.skinning.begin_frame();
-        self.layout.update_order(list, arena, &self.cells, input)?;
+        self.layout
+            .update_order(list, arena, &self.cells, input, &self.casters)?;
         self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 

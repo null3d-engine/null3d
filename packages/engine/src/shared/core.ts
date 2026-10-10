@@ -60,8 +60,8 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerCallDone(index: number): void;
 	/** The task calls of a job worker that it has not finished. */
 	jobWorkerCalls(index: number): number;
-	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
-	takeJobBusyMs(index: number): number;
+	/** Whole microseconds a job worker spent on work since the last call for it; resets its total. */
+	takeJobBusyUs(index: number): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
@@ -211,6 +211,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
+	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
+	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
@@ -748,7 +750,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'callJobWorker',
 	'jobWorkerCallDone',
 	'jobWorkerCalls',
-	'takeJobBusyMs',
+	'takeJobBusyUs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
 	'destroyEngine',
@@ -785,6 +787,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchLayers',
+	'setBatchShadows',
 	'markBatchDirty',
 	'memoryEpoch',
 	'queryArrays',
