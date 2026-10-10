@@ -155,6 +155,16 @@ fn hemisphere_irradiance(normal: vec3f, up: vec3f, sky: vec3f, ground: vec3f) ->
     return mix(ground, sky, weight);
 }
 
+/// The irradiance at a unit `normal` from ambient and hemisphere lights, summed as the frame holds
+/// them. `ambient` reaches the surface from every direction. `x`, `y` and `z` are the light that
+/// the hemisphere lights add along each world axis. A hemisphere light's blend is half the sum of
+/// its colors plus `dot(normal, up)` times half their difference, so any number of them sum to a
+/// constant, which `ambient` holds, and one color per axis. The result equals the ambient light
+/// plus `hemisphere_irradiance` of each light.
+fn ambient_irradiance(normal: vec3f, ambient: vec3f, x: vec3f, y: vec3f, z: vec3f) -> vec3f {
+    return ambient + normal.x * x + normal.y * y + normal.z * z;
+}
+
 /// The irradiance at a unit `normal` from nine spherical harmonics coefficients in three.js's
 /// order, as three.js's `shGetIrradianceAt` computes it for light probes.
 fn sh_irradiance(normal: vec3f, sh: array<vec3f, 9>) -> vec3f {
