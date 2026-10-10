@@ -1,11 +1,12 @@
 //! Data textures: the world matrices of the sources and the index lists, as texels, with their
 //! uploads, and the rings that keep each frame's data apart from what the GPU may still read.
 
-use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::drawlist::{DrawList, Op, format, sizes, texture_usage, view};
+use null3d_core::world::{MATRIX_FLOATS, ROW_VALUE_FLOATS};
+use null3d_gpu::drawlist::{DrawList, format, sizes};
 
 use super::ids;
 use super::layout::Layout;
+pub(super) use crate::data_texture::{DataTexture, TextureRows, grown_rows, write_rows};
 use crate::frame::{RecordError, address, floats_as_bytes};
 
 /// Frames that the rings of streamed and index list textures cover: the frame being recorded and
@@ -89,31 +90,22 @@ pub(super) fn write_matrices(
     )
 }
 
-/// Items of a data texture: `count` items from item `first` on, `per_row` items to a texture row
-/// from texel `column` of the row, each `texels` texels and `bytes` bytes.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct TextureRows {
-    first: u32,
+/// Writes the row values of rows `start..start + count` of a batch, whose world output holds them
+/// as `values`, into a row values texture whose rows put the batch's first row at `base`.
+pub(super) fn write_row_values(
+    list: &mut DrawList,
+    texture: u32,
+    base: u32,
+    values: &[f32],
+    start: u32,
     count: u32,
-    column: u32,
-    per_row: u32,
-    texels: u32,
-    bytes: u32,
+) -> Result<(), RecordError> {
+    let floats = &values[start as usize * ROW_VALUE_FLOATS..][..count as usize * ROW_VALUE_FLOATS];
+    let rows = TextureRows::row_values(base + start, count);
+    write_rows(list, texture, rows, address(floats_as_bytes(floats)))
 }
 
 impl TextureRows {
-    /// `count` 32-bit indices of the index list or cluster textures, from index `first` on.
-    pub(super) fn indices(first: u32, count: u32) -> Self {
-        Self {
-            first,
-            count,
-            column: 0,
-            per_row: sizes::INDICES_PER_TEXTURE_ROW,
-            texels: 1,
-            bytes: 4,
-        }
-    }
-
     /// `count` light records of the light data textures, from record `first` on.
     pub(super) fn lights(first: u32, count: u32) -> Self {
         Self {
@@ -140,82 +132,7 @@ impl TextureRows {
     }
 }
 
-/// Writes tightly packed items from `source` into a data texture, as at most three rectangles:
-/// the end of the first texture row, the whole rows after it, and the start of the last row.
-pub(super) fn write_rows(
-    list: &mut DrawList,
-    texture: u32,
-    rows: TextureRows,
-    source: u32,
-) -> Result<(), RecordError> {
-    let end = rows.first + rows.count;
-    let (mut item, mut at) = (rows.first, source);
-    while item < end {
-        let column = item % rows.per_row;
-        let (width, height) = if column == 0 && end - item >= rows.per_row {
-            (rows.per_row, (end - item) / rows.per_row)
-        } else {
-            ((rows.per_row - column).min(end - item), 1)
-        };
-        let items = width * height;
-        list.push(
-            Op::WriteTexture,
-            &[
-                texture,
-                0,
-                rows.column + column * rows.texels,
-                item / rows.per_row,
-                0,
-                width * rows.texels,
-                height,
-                1,
-                at,
-                items * rows.bytes,
-            ],
-        )?;
-        item += items;
-        at += items * rows.bytes;
-    }
-    Ok(())
-}
-
-/// The rows to create a data texture with when it must hold `needed`: room to grow, so a slowly
-/// growing scene rarely recreates it, but never past `limit`.
-pub(super) fn grown_rows(needed: u32, limit: u32) -> u32 {
-    needed.saturating_add(needed / 2).min(limit).max(needed)
-}
-
-/// A kind of data texture: the ids of its textures, one per ring slot or just one, and its width
-/// and format.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct DataTexture {
-    pub(super) first_id: u32,
-    pub(super) count: u32,
-    pub(super) width: u32,
-    pub(super) format: u32,
-}
-
 impl DataTexture {
-    /// The textures of world matrices, three texels each.
-    pub(super) const fn matrices(first_id: u32, count: u32) -> Self {
-        Self {
-            first_id,
-            count,
-            width: sizes::MATRICES_PER_TEXTURE_ROW * sizes::MATRIX_TEXELS,
-            format: format::RGBA32_FLOAT,
-        }
-    }
-
-    /// The textures of 32-bit indices.
-    pub(super) const fn indices(first_id: u32, count: u32) -> Self {
-        Self {
-            first_id,
-            count,
-            width: sizes::INDICES_PER_TEXTURE_ROW,
-            format: format::R32_UINT,
-        }
-    }
-
     /// The light data textures: the light records, four texels each, then the light grid's
     /// words, four to a texel, all as 32-bit integers.
     pub(super) const fn light_data(first_id: u32, count: u32) -> Self {
@@ -226,53 +143,25 @@ impl DataTexture {
             format: format::RGBA32_UINT,
         }
     }
-
-    /// Makes the textures again when `rows`, the rows they hold, is fewer than `needed`, with room
-    /// to grow but at most `limit`. Returns true when it made them.
-    pub(super) fn grow(
-        self,
-        list: &mut DrawList,
-        rows: &mut u32,
-        needed: u32,
-        limit: u32,
-    ) -> Result<bool, RecordError> {
-        let needed = needed.max(1);
-        if *rows >= needed {
-            return Ok(false);
-        }
-        *rows = grown_rows(needed, limit);
-        for id in self.first_id..self.first_id + self.count {
-            list.push(
-                Op::CreateTexture,
-                &[
-                    id,
-                    self.width,
-                    *rows,
-                    1,
-                    self.format,
-                    texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
-                    1,
-                    1,
-                    view::D2,
-                ],
-            )?;
-        }
-        Ok(true)
-    }
 }
 
-/// What the resident, streamed and cluster textures hold, which every view reads.
-const SHARED: [DataTexture; 3] = [
+/// What the resident, streamed and cluster textures hold, which every view reads, and the row
+/// values textures beside the resident and the streamed ones.
+const SHARED: [DataTexture; 5] = [
     DataTexture::matrices(ids::RESIDENT, 1),
     DataTexture::matrices(ids::STREAMED, RING),
     DataTexture::indices(ids::CLUSTERS, 1),
+    DataTexture::row_values(ids::RESIDENT_VALUES, 1),
+    DataTexture::row_values(ids::STREAMED_VALUES, RING),
 ];
 
-/// The data textures that every view reads: the resident texture, the ring of streamed textures
-/// and the cluster texture, with the rows each holds, 0 before it exists.
+/// The data textures that every view reads: the resident texture, the ring of streamed textures,
+/// the cluster texture, and the row values textures of the resident and the streamed rows, with
+/// the rows each holds, 0 before it exists. A row values texture holds one texel row while no
+/// batch of its rows has row values, for the instance groups to bind.
 #[derive(Debug, Default)]
 pub(super) struct SharedTextures {
-    rows: [u32; 3],
+    rows: [u32; 5],
 }
 
 /// Which shared textures a resize made again.
@@ -280,6 +169,8 @@ pub(super) struct SharedTextures {
 pub(super) struct Remade {
     /// The resident texture, which then needs every row again.
     pub(super) resident: bool,
+    /// The resident row values texture, which then needs every row's values again.
+    pub(super) resident_values: bool,
     /// Any of them, which the views' instance groups bind.
     pub(super) any: bool,
 }
@@ -302,11 +193,14 @@ impl SharedTextures {
                 .streamed_rows
                 .div_ceil(sizes::MATRICES_PER_TEXTURE_ROW),
             layout.cluster_rows.div_ceil(sizes::INDICES_PER_TEXTURE_ROW),
+            (layout.resident_value_rows).div_ceil(sizes::ROW_VALUES_PER_TEXTURE_ROW),
+            (layout.streamed_value_rows).div_ceil(sizes::ROW_VALUES_PER_TEXTURE_ROW),
         ];
         let mut remade = Remade::default();
         for (k, texture) in SHARED.into_iter().enumerate() {
             let new = texture.grow(list, &mut self.rows[k], needed[k], limit)?;
             remade.resident |= new && k == 0;
+            remade.resident_values |= new && k == 3;
             remade.any |= new;
         }
         Ok(remade)
@@ -314,55 +208,6 @@ impl SharedTextures {
 
     /// Forgets the textures, so each is made again, after the thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
-        self.rows = [0; 3];
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn rectangles(first: u32, count: u32) -> Vec<Vec<u32>> {
-        let mut list = DrawList::with_capacity(64);
-        let rows = TextureRows {
-            first,
-            count,
-            column: 0,
-            per_row: 512,
-            texels: 3,
-            bytes: 48,
-        };
-        write_rows(&mut list, 9, rows, 1000).unwrap();
-        null3d_gpu::drawlist::decode(list.words())
-            .map(|c| c.unwrap().operands.to_vec())
-            .collect()
-    }
-
-    #[test]
-    fn rows_go_out_in_at_most_three_rectangles() {
-        // Each write is to mip level 0 and layer 0, one layer deep.
-        // Inside one texture row.
-        assert_eq!(
-            rectangles(10, 5),
-            vec![vec![9, 0, 30, 0, 0, 15, 1, 1, 1000, 240]]
-        );
-        // Whole rows only.
-        assert_eq!(
-            rectangles(512, 1024),
-            vec![vec![9, 0, 0, 1, 0, 1536, 2, 1, 1000, 1024 * 48]]
-        );
-        // The end of a row, whole rows, then the start of a row.
-        let parts = rectangles(500, 12 + 1024 + 7);
-        assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0], vec![9, 0, 1500, 0, 0, 36, 1, 1, 1000, 12 * 48]);
-        assert_eq!(
-            parts[1],
-            vec![9, 0, 0, 1, 0, 1536, 2, 1, 1000 + 12 * 48, 1024 * 48]
-        );
-        assert_eq!(
-            parts[2],
-            vec![9, 0, 0, 3, 0, 21, 1, 1, 1000 + 1036 * 48, 7 * 48]
-        );
-        assert!(rectangles(7, 0).is_empty());
+        self.rows = [0; 5];
     }
 }

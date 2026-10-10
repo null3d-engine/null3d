@@ -29,6 +29,7 @@ import {
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
+	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_PREPASS,
@@ -178,6 +179,12 @@ export interface RenderTemplate {
 	 */
 	readonly depthFragment?: boolean;
 }
+
+/**
+ * The binding of the row values texture of instance batches in the frame group and in the depth
+ * template's group, as the frame builder binds it and the mesh shaders declare it.
+ */
+const ROW_VALUES_BINDING = 16;
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
@@ -412,7 +419,9 @@ export class Pipelines {
 		shaders: DeviceShaders,
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
-		// The frame's constants and the material table, which depth-only pipelines read too.
+		// The frame's constants and the material table, which depth-only pipelines read too, then
+		// the materials' custom values and the row values of instance batches, which the vertex
+		// shaders of custom materials' shadow casters read too.
 		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
@@ -421,14 +430,28 @@ export class Pipelines {
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
-		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
+		const rowValues: GPUBindGroupLayoutEntry = {
+			binding: ROW_VALUES_BINDING,
+			visibility: GPUShaderStage.VERTEX,
+			texture: { sampleType: 'unfilterable-float' },
+		};
+		this.defineLayout(LAYOUT_DEPTH, 'depth', [
+			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+			rowValues,
+		]);
 		// The materials' custom values, the table of specular terms, then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
 		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
-		// four texels of the shadow map at once, and the copy of the opaque color that surfaces which
-		// let light through sample with the environment's sampler.
+		// four texels of the shadow map at once, the copy of the opaque color that surfaces which
+		// let light through sample with the environment's sampler, and the row values of instance
+		// batches, which only vertex shaders read.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -458,6 +481,7 @@ export class Pipelines {
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			rowValues,
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -948,11 +972,20 @@ export class Pipelines {
 		const byIndex = (permutation & PERMUTATION_INSTANCE_INDEX) !== 0;
 		const multisampled =
 			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
-		const key = template * 8 + (skins ? 1 : 0) + (byIndex ? 2 : 0) + (multisampled ? 4 : 0);
+		// A custom material's shadow caster draws in the shadow passes, whose views bind the depth
+		// template's group in place of the frame group.
+		const caster = (permutation & PERMUTATION_CASTER) !== 0;
+		const key =
+			template * 16 +
+			(skins ? 1 : 0) +
+			(byIndex ? 2 : 0) +
+			(multisampled ? 4 : 0) +
+			(caster ? 8 : 0);
 		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
+			const own = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
 			const groups = [
-				...(multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts),
+				...(caster ? [LAYOUT_DEPTH, ...own.slice(1)] : own),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];

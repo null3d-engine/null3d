@@ -1676,8 +1676,11 @@ impl SceneSettings {
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);
         }
+        let materials = &self.materials;
         self.moving_casters
-            .update(scene, input.batches, input.structure_changed);
+            .update(scene, input.batches, input.structure_changed, |material| {
+                sways(materials, material)
+            });
         let moving = &self.moving_casters;
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
@@ -1706,13 +1709,28 @@ impl SceneSettings {
     /// moves what the camera sees, so the caster draws without it. A masked material of the
     /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
     /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
-    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape.
+    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape. A
+    /// custom material with a vertex offset casts with its own template's caster builds
+    /// ([`permutation::CASTER`]), which move each vertex by the offset, read the rows' values where
+    /// the pair reads them, and bind the material's textures.
     pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
         let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
         } else {
             (state_flags::CULL_FRONT, permutation::CASTER_OFFSET)
         };
+        if self.sways(material) && pipeline.template >= template::CUSTOM_FIRST {
+            let key = DrawKey {
+                template: pipeline.template,
+                permutation: permutation
+                    | permutation::CASTER
+                    | (pipeline.permutation & permutation::ROW_VALUES),
+                vertex_format: pipeline.vertex_format,
+                state: faces,
+                bias: DepthBias::NONE,
+            };
+            return (key, self.texture_group(material, pipeline));
+        }
         let mut template = template::SHADOW_DEPTH;
         let mut group = 0;
         let masked = pipeline.permutation & permutation::ALPHA_MASK != 0;
@@ -1735,6 +1753,13 @@ impl SceneSettings {
             bias: DepthBias::NONE,
         };
         (key, group)
+    }
+
+    /// True when the material, by engine id, moves its vertices by a vertex offset of its own WGSL,
+    /// which its shadows follow: its casters draw again whenever their shadow maps draw, as moving
+    /// casters do.
+    pub fn sways(&self, material: u32) -> bool {
+        sways(&self.materials, material)
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
@@ -1811,6 +1836,20 @@ impl SceneSettings {
     /// the opaque objects behind it, in the transparent pass too, where its shading has one.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
+        self.rows_pipeline_of(mesh, material, false)
+    }
+
+    /// What the pair of an instance batch asks of the pipeline that draws its rows: as
+    /// [`Self::pipeline_of`] for its mesh and material, with the builds that read each row's color
+    /// and values ([`permutation::ROW_VALUES`]) where its rows have them and the shading has such
+    /// builds. Those builds test a mask against its cutoff, with neither alpha to coverage nor the
+    /// alpha hash, and a pair that lets light through draws its rows without their values.
+    pub fn batch_pipeline_of(&self, batch: &InstanceBatch) -> Option<DrawKey> {
+        self.rows_pipeline_of(batch.mesh(), batch.material(), batch.has_row_values())
+    }
+
+    /// As [`Self::pipeline_of`], with the builds that read row values when `row_values` is set.
+    fn rows_pipeline_of(&self, mesh: u32, material: u32, row_values: bool) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
@@ -1834,13 +1873,14 @@ impl SceneSettings {
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
-        let own_way = masked && tests_alpha_its_way(shading);
+        let transmits = has(feature::TRANSMISSION) && shading.transmits();
+        let rows = row_values && shading.reads_row_values() && !transmits;
+        let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
-        let transmits = has(feature::TRANSMISSION) && shading.transmits();
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
@@ -1848,7 +1888,8 @@ impl SceneSettings {
                 | bit(masked, permutation::ALPHA_MASK)
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
-                | bit(transmits, permutation::TRANSMISSION),
+                | bit(transmits, permutation::TRANSMISSION)
+                | bit(rows, permutation::ROW_VALUES),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
@@ -1926,6 +1967,15 @@ impl SceneSettings {
             view.layers(),
         ))
     }
+}
+
+/// True when the material of `materials` with engine id `material` moves its vertices by a vertex
+/// offset of its own WGSL, which its shadows follow.
+fn sways(materials: &MaterialTable, material: u32) -> bool {
+    material != NO_MATERIAL
+        && materials
+            .shading(material - 1)
+            .is_ok_and(Shading::casts_its_own_way)
 }
 
 /// Collects the bucket key of every scene slot, shown or hidden, with a count of one, and of every

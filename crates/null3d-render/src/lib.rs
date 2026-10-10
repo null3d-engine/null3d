@@ -60,6 +60,7 @@ pub mod bloom;
 pub mod camera;
 mod cells;
 pub mod cpu_culled;
+mod data_texture;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;

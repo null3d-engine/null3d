@@ -48,6 +48,10 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
     Ok(())
 }
 
+/// The binding of the row values texture in the frame group and in the depth template's group,
+/// which only vertex shaders read.
+pub(super) const ROW_VALUES_BINDING: u32 = 16;
+
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
 /// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
@@ -55,8 +59,9 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 /// atlas of point and spot lights, which is `atlas`, with its comparison sampler and its tiles,
 /// the texture of ambient occlusion, `occlusion`, the environment's cube texture, which is
 /// `environment`, with its sampler, and the copy of the opaque color that surfaces which let light
-/// through sample, `transmission`, which the environment's sampler reads too. A new shadow map,
-/// atlas, occlusion texture, environment or copy needs the group again.
+/// through sample, `transmission`, which the environment's sampler reads too, and the row values
+/// of instance batches. A new shadow map, atlas, occlusion texture, environment, copy or row values
+/// texture needs the group again.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn bind_frame(
     list: &mut DrawList,
@@ -83,11 +88,14 @@ pub(super) fn bind_frame(
         entry(11, resource_kind::TEXTURE, occlusion),
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
         entry(transmission::BINDING, resource_kind::TEXTURE, transmission),
+        entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
     ];
-    let mut words = [0u32; 3 + 5 * 14 + environment::ENTRY_WORDS];
-    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, 16]);
-    words[3..3 + 5 * 14].copy_from_slice(entries.as_flattened());
-    words[3 + 5 * 14..]
+    let listed = 5 * entries.len();
+    let mut words = [0u32; 3 + 5 * 15 + environment::ENTRY_WORDS];
+    let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
+    words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
+    words[3..3 + listed].copy_from_slice(entries.as_flattened());
+    words[3 + listed..]
         .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())

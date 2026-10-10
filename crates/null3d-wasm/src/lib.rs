@@ -1897,6 +1897,8 @@ pub fn create_material(
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
             textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
             transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
+            row_values: custom & shading::CUSTOM_ROW_VALUES != 0,
+            caster: custom & shading::CUSTOM_CASTER != 0,
         }),
         _ => Shading::Lit,
     };

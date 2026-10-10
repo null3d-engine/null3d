@@ -308,6 +308,9 @@ struct BatchCaster {
     id: Handle,
     layers: u32,
     active: u32,
+    /// True when the batch's material moves its vertices by a vertex offset, so its shadows may
+    /// change in every frame.
+    sways: bool,
 }
 
 /// A light that the frame gives tiles: its place in the shadow list, its first tile, its tiles,
@@ -407,14 +410,16 @@ impl ShadowTiles {
 
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
-    /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
-    /// frame before.
+    /// `sways` says whether a material, by engine id, moves its vertices by a vertex offset, which
+    /// its casters' shadows follow in every frame. Allocates only when more lights cast shadows, or
+    /// the scene holds more objects, than in any frame before.
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
         settings: TileSettings,
         filter: u32,
         camera: Option<&ViewFrame>,
+        sways: &dyn Fn(u32) -> bool,
     ) {
         self.frames = [None; MAX_TILES];
         self.waiting = 0;
@@ -437,8 +442,8 @@ impl ShadowTiles {
                 self.shapes[(lit.first + face) as usize] = TileShape::of(light, face, shape.size);
             }
         }
-        self.mark_moved_casters(input, shadows);
-        self.mark_posed_casters(input, shadows);
+        self.mark_moved_casters(input, shadows, sways);
+        self.mark_posed_casters(input, shadows, sways);
         self.mark_moved_batches(input, shadows);
         self.uniform = TileUniform::default();
         let size = shape.size as f32;
@@ -782,8 +787,14 @@ impl ShadowTiles {
     /// Marks the tiles whose views a caster that moved since the module last saw it touches,
     /// before or after the move, as tiles that must draw. Remembers every caster from scratch, and
     /// marks every tile, when it knows none yet, the upload list overflowed or the structure
-    /// changed.
-    fn mark_moved_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    /// changed. A skinned, morphed or swaying caster joins the casters whose poses the module
+    /// checks in every frame.
+    fn mark_moved_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        sways: &dyn Fn(u32) -> bool,
+    ) {
         let scene = input.scene;
         let slots = scene.slots().high_water() as usize + 1;
         if self.casters.len() < slots {
@@ -796,9 +807,10 @@ impl ShadowTiles {
         }
         if !self.casters_known || input.snapshot.overflowed() || input.structure_changed {
             self.posed.clear();
+            let materials = scene.materials();
             for (slot, caster) in self.casters[..slots].iter_mut().enumerate().skip(1) {
                 *caster = caster_of(input, slot);
-                if caster.pose != 0 {
+                if caster.pose != 0 || sways(materials[slot]) {
                     // Room for every slot is reserved above, so this never allocates.
                     self.posed.push(slot as u32);
                 }
@@ -820,6 +832,7 @@ impl ShadowTiles {
                     id,
                     layers: batch.layers(),
                     active: batch.frame_active_count(parity),
+                    sways: sways(batch.material()),
                 }));
             self.casters_known = true;
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
@@ -844,7 +857,8 @@ impl ShadowTiles {
 
     /// Marks the tiles whose views a row of a casting batch touches, before or after its move, as
     /// tiles that must draw, for each row that the batch's update changed in this frame. A batch
-    /// whose active count or layers changed marks every tile. The row scan stops once every tile of
+    /// whose active count or layers changed marks every tile, and so does a batch that sways, in
+    /// every frame, as its rows may cast anywhere. The row scan stops once every tile of
     /// the frame's lights must draw, so a large batch that moves costs little more than one that
     /// stands still; later batches still record their active count and layers.
     fn mark_moved_batches(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
@@ -861,6 +875,10 @@ impl ShadowTiles {
                 continue;
             };
             let (layers, active) = (batch.layers(), batch.frame_active_count(parity));
+            if known.sways {
+                all = true;
+                continue;
+            }
             if layers != known.layers || active != known.active {
                 self.batches[k] = BatchCaster {
                     layers,
@@ -906,9 +924,15 @@ impl ShadowTiles {
 
     /// Marks the tiles whose views a skinned or morphed caster touches as tiles that must draw,
     /// when its pose changed since the module last saw it. A pose can change while the caster's
-    /// sphere stays, as when an animated character moves its hands in front of its body. Only
-    /// casters within reach of a light that holds tiles stamp their pose.
-    fn mark_posed_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    /// sphere stays, as when an animated character moves its hands in front of its body. A
+    /// swaying caster marks its tiles in every frame. Only casters within reach of a light that
+    /// holds tiles stamp their pose.
+    fn mark_posed_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        sways: &dyn Fn(u32) -> bool,
+    ) {
         if !self.casters_known {
             return;
         }
@@ -925,7 +949,7 @@ impl ShadowTiles {
                 continue;
             }
             let pose = pose_of(input, slot);
-            if pose != before.pose {
+            if pose != before.pose || sways(input.scene.materials()[slot]) {
                 let now = Caster { pose, ..before };
                 self.casters[slot] = now;
                 self.mark(shadows, &before, &now);

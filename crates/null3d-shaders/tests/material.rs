@@ -299,12 +299,12 @@ fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
         .source;
     assert!(caster.contains("fn vertexOffset("), "{caster}");
     assert!(caster.contains("min("), "{caster}");
-    assert!(
-        !built
-            .variants
-            .keys()
-            .any(|name| name.contains("shadow") && !name.ends_with("caster"))
-    );
+    let odd: Vec<&String> = built
+        .variants
+        .keys()
+        .filter(|name| name.contains("_shadow_") && !name.ends_with("_caster"))
+        .collect();
+    assert!(odd.is_empty(), "{odd:?}");
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");

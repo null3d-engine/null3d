@@ -1367,6 +1367,11 @@ pub mod sizes {
     pub const MATRICES_PER_TEXTURE_ROW: u32 = 512;
     /// Indices per row of an index list texture: WebGL2's smallest allowed texture width.
     pub const INDICES_PER_TEXTURE_ROW: u32 = 2048;
+    /// Texels of an `RGBA32_FLOAT` data texture per row of an instance batch's row values: its
+    /// color, then its own values.
+    pub const ROW_VALUE_TEXELS: u32 = 2;
+    /// Row values per row of their data texture, which is 2,048 texels wide.
+    pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
@@ -2083,6 +2088,12 @@ mod tests {
         let shift = |per_row: u32| per_row.trailing_zeros();
         assert!(sizes::MATRICES_PER_TEXTURE_ROW.is_power_of_two());
         assert!(sizes::INDICES_PER_TEXTURE_ROW.is_power_of_two());
+        assert!(sizes::ROW_VALUES_PER_TEXTURE_ROW.is_power_of_two());
+        assert_eq!(
+            sizes::ROW_VALUE_TEXELS,
+            2,
+            "the shader reads two texels per row's values"
+        );
         assert_eq!(
             sizes::MATRIX_TEXELS,
             3,
@@ -2096,6 +2107,10 @@ mod tests {
             format!(
                 "const INDEX_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::INDICES_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const VALUES_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.

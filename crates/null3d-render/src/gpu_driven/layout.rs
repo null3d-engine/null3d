@@ -18,12 +18,13 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
+use null3d_core::world::{MATRIX_FLOATS, ROW_VALUE_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
+use crate::data_texture::{self, TextureRows};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
@@ -253,6 +254,9 @@ pub(super) struct Layout {
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
+    /// The sources up to the last row of a batch with row values, which the row values texture
+    /// holds, or 0 while no batch has them.
+    pub(super) value_sources: u32,
     pub(super) buckets: Vec<Bucket>,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
@@ -336,6 +340,11 @@ impl Layout {
     /// the scene's layout, none in the casters'.
     fn owned(&self, sources: u32) -> u32 {
         if self.owns_sources() { sources } else { 0 }
+    }
+
+    /// The first source of the rows of the batch at `index` in the batch table's order.
+    pub(super) fn batch_base(&self, index: usize) -> u32 {
+        self.batch_bases[index].1
     }
 
     fn base_of(&self, target: u32) -> Option<u32> {
@@ -522,10 +531,14 @@ impl Layout {
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
+        self.value_sources = 0;
         let mut sources = scene_rows;
         for (id, batch) in batches.iter() {
             self.batch_bases.push((id.raw(), sources));
             sources += batch.capacity();
+            if batch.has_row_values() {
+                self.value_sources = sources;
+            }
         }
         if sources > limit {
             return Err(RecordError::TooManySources { limit });
@@ -545,8 +558,8 @@ impl Layout {
             Some(object) => skinning.skinned_key(&object, key),
             None => key,
         };
-        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32, skinned| {
-            let pipeline = skin(settings.pipeline_of(mesh, material)?, skinned);
+        let key_of = |pipeline: Option<DrawKey>, mesh, material, bounds, object: u32, skinned| {
+            let pipeline = skin(pipeline?, skinned);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
@@ -589,9 +602,11 @@ impl Layout {
                 return None;
             }
             let bounds = bounds_of(scene, slot);
+            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
             key_of(
-                scene.meshes()[slot],
-                scene.materials()[slot],
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
                 bounds,
                 object,
                 skinning.object(slot as u32),
@@ -617,7 +632,8 @@ impl Layout {
                     } else {
                         MESH_BOUNDS
                     };
-                    key_of(batch.mesh(), batch.material(), bounds, bits, None)
+                    let pipeline = settings.batch_pipeline_of(batch);
+                    key_of(pipeline, batch.mesh(), batch.material(), bounds, bits, None)
                 }
                 Drawn::Outlined => None,
             }
@@ -970,6 +986,49 @@ impl Layout {
             self.batch_rows[index].active = now;
             let rows = base + low..base + high;
             write_rows(list, arena, entries, &self.instance_buckets, rows)?;
+        }
+        Ok(())
+    }
+
+    /// Uploads the changed row values of the batches that have them straight from the core's world
+    /// buffers of this parity, into the row values texture at each row's source, or every active
+    /// row's after the layout or the texture changed.
+    pub(super) fn upload_row_values(
+        &self,
+        list: &mut DrawList,
+        input: &FrameInput<'_>,
+        parity: usize,
+        everything: bool,
+    ) -> Result<(), RecordError> {
+        if self.value_sources == 0 {
+            return Ok(());
+        }
+        let mut upload = |base: u32, batch: &InstanceBatch, start: u32, count: u32| {
+            let values = batch.world(parity).row_values();
+            let floats =
+                &values[start as usize * ROW_VALUE_FLOATS..][..count as usize * ROW_VALUE_FLOATS];
+            let rows = TextureRows::row_values(base + start, count);
+            data_texture::write_rows(
+                list,
+                ids::ROW_VALUES,
+                rows,
+                address(floats_as_bytes(floats)),
+            )
+        };
+        let batches = input.batches.iter().zip(&self.batch_bases);
+        if everything || input.snapshot.overflowed() {
+            for ((_, batch), &(_, base)) in batches.filter(|((_, b), _)| b.has_row_values()) {
+                upload(base, batch, 0, batch.frame_active_count(parity))?;
+            }
+            return Ok(());
+        }
+        for range in input.snapshot.uploads() {
+            let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
+                continue;
+            };
+            if let (true, Some(base)) = (batch.has_row_values(), self.base_of(range.target)) {
+                upload(base, batch, range.start, range.count)?;
+            }
         }
         Ok(())
     }

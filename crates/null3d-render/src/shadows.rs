@@ -653,8 +653,10 @@ impl CascadeSchedule {
 }
 
 /// The casters that move in every frame: each dynamic object, and each object under a dynamic
-/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. The
-/// list follows the scene's structure, so it changes only in frames where the structure changed.
+/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. A
+/// caster whose material moves its vertices by a vertex offset of its own counts too, as its
+/// shadow may sway in every frame. The list follows the scene's structure, so it changes only in
+/// frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
@@ -665,8 +667,15 @@ pub struct MovingCasters {
 
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
-    /// never built. Allocates only when the list grows past its largest size so far.
-    pub fn update(&mut self, scene: &SceneStorage, batches: &BatchTable, structure_changed: bool) {
+    /// never built. `sways` says whether a material, by engine id, moves its vertices by a vertex
+    /// offset. Allocates only when the list grows past its largest size so far.
+    pub fn update(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        structure_changed: bool,
+        sways: impl Fn(u32) -> bool,
+    ) {
         if self.built && !structure_changed {
             return;
         }
@@ -674,11 +683,13 @@ impl MovingCasters {
         self.slots.clear();
         self.batches.clear();
         for (id, batch) in batches.iter() {
-            if batch.is_dynamic() && batch.shadows() & flags::CAST_SHADOWS != 0 {
+            let moving = batch.is_dynamic() || sways(batch.material());
+            if moving && batch.shadows() & flags::CAST_SHADOWS != 0 {
                 self.batches.push(id);
             }
         }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
+        let materials = scene.materials();
         let moves = |slot: usize| {
             let mut at = slot;
             loop {
@@ -693,7 +704,8 @@ impl MovingCasters {
         };
         let high = scene.slots().high_water() as usize;
         for slot in 0..high {
-            if meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0 && moves(slot) {
+            let casts = meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0;
+            if casts && (moves(slot) || sways(materials[slot])) {
                 self.slots.push(slot as u32);
             }
         }
