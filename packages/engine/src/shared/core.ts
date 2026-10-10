@@ -6,6 +6,7 @@
 import { DEV } from '../errors/checks';
 import type { CoreErrors } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
+import { CORE_SOURCES } from './core-sources';
 
 export type Build = 'threaded' | 'single';
 
@@ -922,18 +923,42 @@ export function coreUrls(build: Build): CoreFiles {
 			};
 }
 
+/** A generated module as it loads, before the checks: the build writes in its sources' stamp. */
+export type LoadedGlue = Partial<CoreGlue> & { readonly coreSources?: string };
+
 /**
- * Imports the generated module for a build. Development builds also check that it has every
- * function the engine calls. A release build bundles this code and the core from one install, so
- * only a development setup can pair a core with code from another build, and release builds drop
- * the check and its list of names.
+ * E1402 when a generated module does not belong with this code: when `sources`, the stamp of the
+ * Rust sources that a dev server gives, differs from the stamp that the build wrote in, or when
+ * the module lacks a function that the engine calls.
+ */
+export function glueMismatch(
+	build: Build,
+	glue: LoadedGlue,
+	sources: string | undefined,
+): EngineError | undefined {
+	if (sources !== undefined && glue.coreSources !== sources)
+		return new EngineError(
+			'E1402',
+			`the ${build} engine core was built from other Rust sources than this checkout holds.`,
+		);
+	const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
+	if (missing.length > 0)
+		return new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+	return undefined;
+}
+
+/**
+ * Imports the generated module for a build. Development builds also check that it comes from the
+ * Rust sources of the checkout that the dev server serves, and that it has every function the
+ * engine calls. A release build bundles this code and the core from one install, so only a
+ * development setup can pair a core with code from another build, and release builds drop the
+ * check and its list of names.
  */
 export async function loadGlue(build: Build): Promise<CoreGlue> {
-	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as Partial<CoreGlue>;
+	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as LoadedGlue;
 	if (DEV) {
-		const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
-		if (missing.length > 0)
-			throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+		const mismatch = glueMismatch(build, glue, CORE_SOURCES);
+		if (mismatch) throw mismatch;
 	}
 	return glue as CoreGlue;
 }
