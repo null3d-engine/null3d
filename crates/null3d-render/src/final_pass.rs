@@ -157,6 +157,9 @@ pub(crate) struct FinalPass {
     ids: FinalIds,
     /// True for the FXAA build of the pass.
     fxaa: bool,
+    /// True when the anti-aliasing mode is FXAA, so the pass runs FXAA whatever
+    /// [`FinalPass::force_fxaa`] says.
+    mode_fxaa: bool,
     /// The flags of the pass's settings: whether the scene color holds display color.
     flags: u32,
     /// The pipeline's id in the builder's cache, once the pass has asked for it.
@@ -195,6 +198,7 @@ impl FinalPass {
         Self {
             ids,
             fxaa: antialias == Antialias::Fxaa,
+            mode_fxaa: antialias == Antialias::Fxaa,
             flags: if scene_color.is_hdr() {
                 0
             } else {
@@ -231,6 +235,20 @@ impl FinalPass {
             self.pipeline = None;
             self.bloom_pipeline = None;
         }
+    }
+
+    /// Runs FXAA in every anti-aliasing mode with `on`, or only in the FXAA mode, from the next
+    /// frame on, and returns true when the build changed. The pass asks for its pipelines again.
+    pub(crate) fn force_fxaa(&mut self, on: bool) -> bool {
+        let fxaa = self.mode_fxaa || on;
+        if fxaa == self.fxaa {
+            return false;
+        }
+        self.fxaa = fxaa;
+        self.pipeline = None;
+        self.bloom_pipeline = None;
+        self.bound = None;
+        true
     }
 
     /// True for the FXAA build of the pass, which reads the pixels around each pixel.

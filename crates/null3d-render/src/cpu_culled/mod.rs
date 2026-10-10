@@ -122,6 +122,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
+use crate::taa::TaaIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
@@ -141,6 +142,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::taa::STEPS as TAA_STEPS;
     use crate::view::{MAX_VIEW_IDS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -171,8 +173,10 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// Temporal anti-aliasing's resolve block.
+    pub const TAA: u32 = DOF + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = DOF + 1;
+    pub const PAGES: u32 = TAA + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -236,8 +240,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The linear sampler of temporal anti-aliasing's history.
+    pub const TAA_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -271,8 +277,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each step of temporal anti-aliasing, after the copy's.
+    pub const TAA_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after temporal anti-aliasing's.
+    pub const TEXTURE_GROUPS: u32 = TAA_GROUPS + TAA_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -464,6 +472,11 @@ impl CpuCulledRenderer {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
+                        },
+                        taa: TaaIds {
+                            buffer: ids::TAA,
+                            sampler: ids::TAA_SAMPLER,
+                            first_group: ids::TAA_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -1073,6 +1086,13 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
+        self.graph.set_taa(self.settings.taa_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+            input.render_scale,
+        ));
+        self.graph.set_msaa_fxaa(self.settings.msaa_fxaa());
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),

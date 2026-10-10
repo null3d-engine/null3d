@@ -368,6 +368,37 @@ by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 
+# Temporal anti-aliasing's resolve, a prototype (see taa.wgsl): blends the scene's color into a
+# history that it reads where each pixel's surface lay in the last frame, limited to the colors of
+# its neighbors. The WebGL2 variant reads a copy of one depth sample that its backend keeps.
+[shaders.taa]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The resolve from a multisampled depth target, whose samples it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.taa_ms]
+file = "taa.wgsl"
+by_device = true
+pipelines.resolve = { vertex = "vs", fragment = "resolve" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# The copy of the resolve's target into the history, one texel per pixel.
+[shaders.taa_keep]
+file = "taa_keep.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# A page downloads temporal anti-aliasing's steps when the sketch first turns it on. The frames
+# draw without it until the steps' pipelines are built.
+[first_use.taa]
+shaders = ["taa", "taa_ms", "taa_keep"]
+
 # A page downloads the copy when the sketch first adds a scene pass. The pass's texture samples as
 # no texture until the copy's pipeline is built.
 [first_use.views]

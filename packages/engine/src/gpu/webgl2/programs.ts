@@ -42,6 +42,8 @@ import {
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_TAA_KEEP,
+	TEMPLATE_TAA_RESOLVE,
 	TEMPLATE_TRANSMISSION_COPY,
 } from '../../generated/gpu';
 import {
@@ -248,6 +250,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// Temporal anti-aliasing's resolve reads the same one-sample copy of the depth.
+	templates[TEMPLATE_TAA_RESOLVE] = { shader: shaders.taa, pipeline: 'resolve' };
+	templates[TEMPLATE_TAA_KEEP] = { shader: shaders.taa_keep, pipeline: 'main' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

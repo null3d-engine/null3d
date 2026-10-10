@@ -91,6 +91,9 @@ import {
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_TAA_KEEP,
+	TEMPLATE_TAA_RESOLVE,
+	TEMPLATE_TAA_RESOLVE_MS,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
@@ -757,6 +760,29 @@ export class Pipelines {
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		// Temporal anti-aliasing's resolve binds as depth of field's composite does, and its keep
+		// step as the copy of a view's image does.
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE, {
+			label: 'taa resolve',
+			shader: shaders.taa,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_DOF_COMPOSITE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_RESOLVE_MS, {
+			label: 'taa resolve ms',
+			shader: shaders.taa_ms,
+			pipeline: 'resolve',
+			layouts: [LAYOUT_DOF_COMPOSITE_MS],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TAA_KEEP, {
+			label: 'taa keep',
+			shader: shaders.taa_keep,
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],

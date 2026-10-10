@@ -539,6 +539,13 @@ export interface CoreGlue extends CoreErrors {
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * Temporal anti-aliasing, a prototype: the history's share in thousandths, 0 for off, and flags:
+	 * bit 0 for the Catmull-Rom history filter, bit 1 for the camera's offsets.
+	 */
+	setTaa(feedback: number, flags: number): number;
+	/** Runs FXAA over a scene drawn with MSAA too, a prototype switch. */
+	setMsaaFxaa(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -859,6 +866,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setAoScale',
 	'setDof',
 	'setDofTaps',
+	'setTaa',
+	'setMsaaFxaa',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',

@@ -34,6 +34,7 @@ const DSLR_FOCAL_LENGTH = 50;
 const TARGET = [1.5, 0, -0.4] as const;
 
 const params = new URL(import.meta.url).searchParams;
+const proto = taaPrototype(params);
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
@@ -97,6 +98,7 @@ export default defineSketch(async (ctx) => {
 		post.set(on ? lens : { dof: false });
 	};
 	if (params.has('dslr')) setLens(true);
+	proto.setup(ctx);
 	page.onMessage((name, value) => {
 		if (name === 'mood' && isMood(value)) choose(value);
 		if (name === 'dslr') setLens(value === 'On');
@@ -105,9 +107,10 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			proto.update(ctx);
 			if (!view.userCamera) {
-				// A slow drift along the near bank, low over the water.
-				const a = -2.6 + 0.18 * Math.sin(t * 0.06);
+				// A slow drift along the near bank, low over the water, or the prototype's orbit.
+				const a = proto.orbit === null ? -2.6 + 0.18 * Math.sin(t * 0.06) : -2.6 + proto.orbit * t;
 				camera.setPosition(
 					TARGET[0] + 10.5 * Math.cos(a),
 					WATER + 1.9 + 0.2 * Math.sin(t * 0.05),
@@ -121,3 +124,62 @@ export default defineSketch(async (ctx) => {
 		},
 	};
 });
+
+/**
+ * The switches of the temporal anti-aliasing prototype (M2-EX18), for its measurements only:
+ *
+ * - `?aa=msaa`, `fxaa` (FXAA over MSAA), `taa`, `taa-linear` or `taa-still`: what smooths edges.
+ * - `?fixed`: render scale 1 with the governor off. `?step`: each frame adds 1/60 s of sketch time.
+ * - `?orbit=<radians per second>`: the camera circles the target at that rate; 0 holds it still.
+ * - `?frames`: posts each frame's number to the page as 'frame'.
+ * - The page's 'taa' and 'msaafxaa' messages turn those on, posting 'settled' once they draw, and
+ *   the same names with '-off' turn them off.
+ */
+function taaPrototype(params: URLSearchParams) {
+	const orbit = params.get('orbit');
+	const frames = params.has('frames');
+	const modes: Record<
+		string,
+		{
+			taa: boolean | { filter?: 'linear'; jitter?: boolean; feedback?: number; depth?: 'light' };
+			msaaFxaa: boolean;
+		}
+	> = {
+		msaa: { taa: false, msaaFxaa: false },
+		fxaa: { taa: false, msaaFxaa: true },
+		taa: { taa: true, msaaFxaa: false },
+		'taa-linear': { taa: { filter: 'linear' }, msaaFxaa: false },
+		'taa-still': { taa: { jitter: false }, msaaFxaa: false },
+		'taa-80': { taa: { feedback: 0.8 }, msaaFxaa: false },
+		'taa-light': { taa: { depth: 'light' }, msaaFxaa: false },
+	};
+	type Ctx = Parameters<Parameters<typeof defineSketch>[0]>[0];
+	return {
+		orbit: orbit === null ? null : Number(orbit),
+		setup({ post, quality, page, scene, time }: Ctx) {
+			if (params.has('step'))
+				(globalThis as { __null3dFixedStep?: number }).__null3dFixedStep = 1 / 60;
+			if (params.has('fixed'))
+				quality.set({ minRenderScale: 1, maxRenderScale: 1, governor: false });
+			const aa = params.get('aa');
+			if (aa !== null && modes[aa]) post.set(modes[aa]);
+			page.onMessage((name) => {
+				const on = name === 'taa' || name === 'msaafxaa';
+				if (!on && name !== 'taa-off' && name !== 'msaafxaa-off') return;
+				if (name.startsWith('taa')) post.set({ taa: on });
+				else post.set({ msaaFxaa: on });
+				if (!on) return;
+				const frame = time.frame;
+				const start = performance.now();
+				void scene
+					.warmUp()
+					.then(() =>
+						page.post('settled', { frames: time.frame - frame, ms: performance.now() - start }),
+					);
+			});
+		},
+		update({ page, time }: Ctx) {
+			if (frames) page.post('frame', time.frame);
+		},
+	};
+}

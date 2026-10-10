@@ -1558,6 +1558,15 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// Temporal anti-aliasing's resolve, a prototype: one triangle over a target of the render
+    /// size, which blends the scene's color into the history that it reads where each pixel's
+    /// surface lay in the frame before. It binds as depth of field's composite does.
+    pub const TAA_RESOLVE: u32 = 48;
+    /// [`TAA_RESOLVE`] from a multisampled depth target. WebGPU only.
+    pub const TAA_RESOLVE_MS: u32 = 49;
+    /// Temporal anti-aliasing's copy of the resolve's target into the history, one texel per
+    /// pixel. It binds as the copy of a view's image does.
+    pub const TAA_KEEP: u32 = 50;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1939,6 +1948,9 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("TAA_RESOLVE", template::TAA_RESOLVE),
+                ("TAA_RESOLVE_MS", template::TAA_RESOLVE_MS),
+                ("TAA_KEEP", template::TAA_KEEP),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

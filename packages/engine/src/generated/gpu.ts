@@ -236,6 +236,9 @@ export const TEMPLATE_DOF_FILTER = 44;
 export const TEMPLATE_DOF_COMPOSITE = 45;
 export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_TRANSMISSION_COPY = 47;
+export const TEMPLATE_TAA_RESOLVE = 48;
+export const TEMPLATE_TAA_RESOLVE_MS = 49;
+export const TEMPLATE_TAA_KEEP = 50;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

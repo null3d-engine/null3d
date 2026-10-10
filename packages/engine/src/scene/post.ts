@@ -62,6 +62,8 @@ const SETTINGS = [
 	'vignette',
 	'outline',
 	'dof',
+	'taa',
+	'msaaFxaa',
 ] as const;
 /** Bloom's number settings, in the order of their places in the core's block from its intensity on. */
 const BLOOM_NUMBERS = ['intensity', 'threshold', 'knee'] as const;
@@ -369,6 +371,25 @@ export interface PostSettings {
 	 * `dofSamples` is above 0.
 	 */
 	dof?: DofSettings | false;
+	/**
+	 * @internal A prototype of temporal anti-aliasing (M2-EX18), for measuring only: `true` or
+	 * settings turn it on, `false` off.
+	 */
+	taa?: TaaPrototypeSettings | boolean;
+	/** @internal A prototype switch that runs FXAA over a scene drawn with MSAA too. */
+	msaaFxaa?: boolean;
+}
+
+/** @internal The prototype's settings of temporal anti-aliasing. */
+export interface TaaPrototypeSettings {
+	/** The history's share of each pixel, from 0 to 0.99. 0.9 by default. */
+	feedback?: number;
+	/** The history's filter: `'catmull-rom'` by default, or `'linear'`. */
+	filter?: 'catmull-rom' | 'linear';
+	/** False keeps the camera still, so the resolve only blends frames. True by default. */
+	jitter?: boolean;
+	/** `'light'` reads one depth sample per pixel in place of the nearest of its neighbors'. */
+	depth?: 'nearest' | 'light';
 }
 
 /**
@@ -430,6 +451,7 @@ export class Post {
 	private outline = false;
 	private dof = false;
 	private warnedNoDof = false;
+	private taa = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -521,6 +543,9 @@ export class Post {
 		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
 			settings;
 		const { core } = this;
+		if (settings.taa !== undefined) this.setTaa(settings.taa);
+		if (settings.msaaFxaa !== undefined)
+			core.check(core.glue.setMsaaFxaa(settings.msaaFxaa), 'post.set', undefined, true);
 		const { glue } = core;
 		const values = this.block();
 		const sketchExposure = exposure ?? this.exposure;
@@ -626,6 +651,24 @@ export class Post {
 		this.core.check(this.core.glue.setDof(this.dof), 'post.set', undefined, true);
 	}
 
+	/** Turns the prototype of temporal anti-aliasing on or off. */
+	private setTaa(taa: TaaPrototypeSettings | boolean): void {
+		this.taa = taa !== false;
+		const settings = typeof taa === 'object' ? taa : {};
+		const feedback = this.taa ? Math.round(Math.min(settings.feedback ?? 0.9, 0.99) * 1000) : 0;
+		const flags =
+			(settings.filter === 'linear' ? 0 : 1) |
+			(settings.jitter === false ? 0 : 2) |
+			(settings.depth === 'light' ? 4 : 0);
+		if (this.taa && this.hdrEffects) this.shaders.need('taa');
+		this.core.check(
+			this.core.glue.setTaa(Math.max(feedback, this.taa ? 1 : 0), flags),
+			'post.set',
+			undefined,
+			true,
+		);
+	}
+
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
 	private setAo(ao: AoSettings | false, values: Float32Array): void {
 		this.ao = ao !== false;
@@ -661,7 +704,7 @@ export class Post {
 	 * custom effect or a custom tone curve.
 	 */
 	get needsHdr(): boolean {
-		return this.bloom || this.dof || this.toneCurve !== undefined || this.effects.any;
+		return this.bloom || this.dof || this.taa || this.toneCurve !== undefined || this.effects.any;
 	}
 
 	/**

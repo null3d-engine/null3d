@@ -53,6 +53,7 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::sky_maps::SkyMaps;
+use crate::taa::{self, LastView, Taa, TaaFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -666,6 +667,14 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// Temporal anti-aliasing's settings while the sketch turns it on (a prototype).
+    taa: Option<Taa>,
+    /// What the camera saw in the last frame that temporal anti-aliasing drew.
+    taa_last: Option<LastView>,
+    /// The camera's offset in this frame, in pixels, while temporal anti-aliasing draws.
+    taa_jitter: [f32; 2],
+    /// True to run the final pass's FXAA over a scene drawn with MSAA (a prototype switch).
+    msaa_fxaa: bool,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -742,6 +751,10 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            taa: None,
+            taa_last: None,
+            taa_jitter: [0.0; 2],
+            msaa_fxaa: false,
             lut: None,
             vignette: None,
             environment: None,
@@ -1037,6 +1050,76 @@ impl SceneSettings {
             far: camera.depth.far,
             inverse_projection,
             taps: self.dof_taps,
+        })
+    }
+
+    /// Temporal anti-aliasing's settings while it is on and no debug view draws.
+    pub fn taa(&self) -> Option<Taa> {
+        self.taa.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns temporal anti-aliasing on with its settings, or off with `None`, from the next
+    /// recorded frame on. Its history starts again.
+    pub fn set_taa(&mut self, taa: Option<Taa>) {
+        if taa.is_none() {
+            self.taa_last = None;
+            self.taa_jitter = [0.0; 2];
+        }
+        self.taa = taa;
+    }
+
+    /// True when the final pass runs FXAA over a scene drawn with MSAA.
+    pub fn msaa_fxaa(&self) -> bool {
+        self.msaa_fxaa
+    }
+
+    /// Runs the final pass's FXAA over a scene drawn with MSAA too, or not, from the next recorded
+    /// frame on.
+    pub fn set_msaa_fxaa(&mut self, on: bool) {
+        self.msaa_fxaa = on;
+    }
+
+    /// What temporal anti-aliasing resolves with in this frame of `scene`'s positions of `parity`,
+    /// on a canvas of `canvas` pixels at render scale `scale`, or `None` while it is off or without
+    /// a camera. It takes the camera's offset for this frame, which the camera's view then draws
+    /// with, and keeps what the camera sees for the next frame. Call it once per recorded frame.
+    pub(crate) fn taa_frame(
+        &mut self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+        scale: RenderScale,
+    ) -> Option<TaaFrame> {
+        let Some(settings) = self.taa() else {
+            self.taa_last = None;
+            self.taa_jitter = [0.0; 2];
+            return None;
+        };
+        let view = self.views.first()?;
+        let size = view.draw_size(canvas, scale);
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        self.taa_jitter = if settings.jitter {
+            taa::jitter(self.clock[2].to_bits())
+        } else {
+            [0.0; 2]
+        };
+        let moved = taa::jittered(&camera.view_proj, self.taa_jitter, size);
+        let at = camera.cell.absolute();
+        let previous = self.taa_last.replace(LastView {
+            view_proj: camera.view_proj,
+            at,
+        });
+        let reproject = previous.and_then(|last| taa::reprojection(&moved, at, &last));
+        let mut identity = [0.0; 16];
+        for k in 0..4 {
+            identity[k * 5] = 1.0;
+        }
+        Some(TaaFrame {
+            taa: settings,
+            reset: reproject.is_none(),
+            reproject: reproject.unwrap_or(identity),
+            parity: (self.clock[2].to_bits() & 1) as u8,
         })
     }
 
@@ -1946,10 +2029,15 @@ impl SceneSettings {
             None => view.transform(scene, parity, aspect)?,
         };
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
+        let view_proj = if view_id == ViewId::CAMERA && self.taa().is_some() {
+            taa::jittered(&camera.view_proj, self.taa_jitter, (width, height))
+        } else {
+            camera.view_proj
+        };
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();
         let uniform = FrameUniform {
-            view_proj: camera.view_proj,
+            view_proj,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,

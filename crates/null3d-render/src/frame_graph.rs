@@ -144,6 +144,7 @@ use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
+use crate::taa::{self, TaaFrame, TaaIds, TaaPass, TaaSources};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
@@ -161,6 +162,8 @@ pub(crate) struct GraphIds {
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
     pub(crate) dof: DofIds,
+    /// Temporal anti-aliasing's objects (a prototype).
+    pub(crate) taa: TaaIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
@@ -253,6 +256,11 @@ const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
 /// read.
 const DOF_PASSES: [&str; dof::STEPS] = ["DofSetup", "DofGather", "DofTent", "DofComposite"];
 const DOF_TARGETS: [&str; dof::STEPS] = ["dofHalf0", "dofHalf1", "dofHalf2", "dofColor"];
+const TAA_PASSES: [&str; taa::STEPS] = ["TaaResolve", "TaaKeep0", "TaaKeep1"];
+/// The resolve's target, which the chain after it reads in place of the scene color.
+const TAA_COLOR: &str = "taaColor";
+/// The kept targets that hold the resolved color of the last frame of each parity.
+const TAA_HISTORIES: [&str; 2] = ["taaHistory0", "taaHistory1"];
 /// An effect slot that holds no effect.
 const NO_EFFECT: Effect = Effect {
     template: 0,
@@ -355,6 +363,8 @@ pub(crate) enum Role {
     Effect(u8),
     /// A step of depth of field, by its place. The graph records it itself.
     Dof(u8),
+    /// A step of temporal anti-aliasing, by its place. The graph records it itself.
+    Taa(u8),
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
@@ -527,6 +537,17 @@ pub(crate) struct FrameGraph {
     /// The textures that depth of field's steps read, found once for each compile of the graph,
     /// which the count says.
     dof_textures: Option<(u32, DofSources)>,
+    /// Temporal anti-aliasing's steps and their GPU objects, once the sketch first turns it on.
+    taa_pass: Option<TaaPass>,
+    taa_ids: TaaIds,
+    /// What temporal anti-aliasing resolves with in the frame, while the sketch turns it on.
+    taa: Option<TaaFrame>,
+    /// True once temporal anti-aliasing's pipelines draw.
+    taa_built: bool,
+    /// True when the declared passes hold temporal anti-aliasing's steps.
+    taa_declared: bool,
+    /// The textures that its steps read, found once for each compile of the graph.
+    taa_textures: Option<(u32, TaaSources)>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -663,6 +684,12 @@ impl FrameGraph {
             dof_built: false,
             dof_declared: false,
             dof_textures: None,
+            taa_pass: None,
+            taa_ids: ids.taa,
+            taa: None,
+            taa_built: false,
+            taa_declared: false,
+            taa_textures: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -723,6 +750,8 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
+        self.taa_pass = None;
+        self.taa_built = false;
         // The copy's target takes the scene color's format, which its pipeline draws into.
         self.transmission_built = false;
         self.declared = false;
@@ -912,7 +941,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof
+        let taa = if self.taa.is_some() {
+            TaaPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + taa
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1052,9 +1086,50 @@ impl FrameGraph {
     /// target, or the scene color without one. Depth of field reads it.
     fn effects_output(&self) -> &'static str {
         match self.unit_count {
-            0 => SCENE_COLOR,
+            0 => self.scene_output(),
             count => EFFECT_TARGETS[count - 1],
         }
+    }
+
+    /// The resource that holds the scene's color after temporal anti-aliasing: its resolve's target
+    /// while its steps are declared, or else the scene color. The custom effects read it first.
+    fn scene_output(&self) -> &'static str {
+        if self.taa_declared {
+            TAA_COLOR
+        } else {
+            SCENE_COLOR
+        }
+    }
+
+    /// Turns temporal anti-aliasing on with what the frame resolves with, or off with `None`, for
+    /// the next frames. The passes are declared again only when it starts or stops drawing. The
+    /// 8-bit path draws none.
+    pub(crate) fn set_taa(&mut self, taa: Option<TaaFrame>) {
+        let was = self.taa_draws();
+        self.taa = taa.filter(|_| self.scene_color.is_hdr());
+        if self.taa_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while temporal anti-aliasing draws: on, on the HDR path, with its pipelines built.
+    pub(crate) fn taa_draws(&self) -> bool {
+        self.taa.is_some() && self.taa_built
+    }
+
+    /// Runs the final pass's FXAA over a scene drawn with MSAA too, or not.
+    pub(crate) fn set_msaa_fxaa(&mut self, on: bool) {
+        if self.final_pass.force_fxaa(on) {
+            self.declared = false;
+        }
+    }
+
+    /// Temporal anti-aliasing's steps, made for the scene depth's samples when first asked for.
+    fn taa_steps(&mut self) -> &mut TaaPass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let rows_from_bottom = !self.gpu_culling;
+        self.taa_pass
+            .get_or_insert_with(|| TaaPass::new(self.taa_ids, samples, rows_from_bottom))
     }
 
     /// The resource that holds the scene's color before bloom and the final pass: depth of field's
@@ -1525,6 +1600,10 @@ impl FrameGraph {
             .extend(views.iter().map(|view| view.target().draws()));
         self.enable_views();
         self.declare_outline(color.samples);
+        self.taa_declared = self.taa_draws();
+        if self.taa_declared {
+            self.declare_taa();
+        }
         self.declare_effects();
         self.dof_declared = self.dof_draws();
         if self.dof_declared {
@@ -1641,7 +1720,7 @@ impl FrameGraph {
     /// before it left, and the scene's depth as every pass leaves it when one of its effects reads
     /// depth, and creates a target of its own.
     fn declare_effects(&mut self) {
-        let mut input = SCENE_COLOR;
+        let mut input = self.scene_output();
         for index in 0..self.unit_count {
             let unit = self.effect_units[index];
             let mut pass = Pass::new(EFFECT_PASSES[index], PassKind::Fullscreen)
@@ -1655,6 +1734,30 @@ impl FrameGraph {
             }
             self.add(pass, Role::Effect(index as u8));
             input = EFFECT_TARGETS[index];
+        }
+    }
+
+    /// Declares temporal anti-aliasing's steps: the resolve reads the scene's color and depth as
+    /// every pass leaves them and both histories as the last frames left them, and creates its
+    /// target; a keep step for each history then copies that target into it. Each frame records
+    /// only the keep step of its parity (see [`FrameGraph::draws`]).
+    fn declare_taa(&mut self) {
+        for name in TAA_HISTORIES {
+            self.graph
+                .keep(name, Target::color(taa::FORMAT), Size::Full);
+        }
+        let resolve = Pass::new(TAA_PASSES[0], PassKind::Fullscreen)
+            .reads(SCENE_COLOR)
+            .reads(SCENE_DEPTH)
+            .reads_so_far(TAA_HISTORIES[0])
+            .reads_so_far(TAA_HISTORIES[1])
+            .creates(TAA_COLOR, Target::color(taa::FORMAT));
+        self.add(resolve, Role::Taa(0));
+        for (index, name) in TAA_HISTORIES.into_iter().enumerate() {
+            let keep = Pass::new(TAA_PASSES[1 + index], PassKind::Fullscreen)
+                .reads(TAA_COLOR)
+                .writes(name);
+            self.add(keep, Role::Taa(1 + index as u8));
         }
     }
 
@@ -1873,6 +1976,18 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        let taa_built = self.taa.is_some() && {
+            let steps = self.taa_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if taa_built != self.taa_built {
+            let was = self.taa_draws();
+            self.taa_built = taa_built;
+            if self.taa_draws() != was {
+                self.declared = false;
+            }
+        }
         let ao_built = self.ao.is_some() && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
@@ -1970,6 +2085,7 @@ impl FrameGraph {
         self.upload_ao(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_dof(list, arena)?;
+        self.upload_taa(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
         if !self.final_runs() {
@@ -2118,7 +2234,7 @@ impl FrameGraph {
         let mut colors = [0; MAX_EFFECTS];
         for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
             let input = if index == 0 {
-                SCENE_COLOR
+                self.scene_output()
             } else {
                 EFFECT_TARGETS[index - 1]
             };
@@ -2159,6 +2275,39 @@ impl FrameGraph {
         };
         let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
         self.dof_steps()
+            .prepare(list, arena, frame_size, frame, sources, made)
+    }
+
+    /// Records temporal anti-aliasing's objects and block while its steps are declared, and binds
+    /// each step to the textures it reads, found by name once for each compile of the graph.
+    fn upload_taa(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.taa.filter(|_| self.taa_declared) else {
+            return Ok(());
+        };
+        let compiles = self.graph.compiles();
+        let sources = match self.taa_textures {
+            Some((at, sources)) if at == compiles => sources,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("each step of temporal anti-aliasing reads a planned texture")
+                };
+                let sources = TaaSources {
+                    color: id(SCENE_COLOR),
+                    depth: id(SCENE_DEPTH),
+                    histories: TAA_HISTORIES.map(id),
+                    resolved: id(TAA_COLOR),
+                };
+                self.taa_textures = Some((compiles, sources));
+                sources
+            }
+        };
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.taa_steps()
             .prepare(list, arena, frame_size, frame, sources, made)
     }
 
@@ -2377,6 +2526,11 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("depth of field's steps run once they are declared")
                                 .record(list, usize::from(step))?,
+                            Role::Taa(step) => self
+                                .taa_pass
+                                .as_ref()
+                                .expect("temporal anti-aliasing's steps run once they are declared")
+                                .record(list, usize::from(step))?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -2400,6 +2554,7 @@ impl FrameGraph {
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
+            (Role::Taa(step @ 1..), _) => self.taa.is_some_and(|f| f.parity + 1 == step),
             _ => true,
         }
     }
@@ -2577,6 +2732,9 @@ impl FrameGraph {
         }
         if let Some(dof) = self.dof_pass.as_mut() {
             dof.reset_gpu();
+        }
+        if let Some(taa) = self.taa_pass.as_mut() {
+            taa.reset_gpu();
         }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
@@ -2823,6 +2981,11 @@ mod tests {
             buffer: 13,
             sampler: 13,
             first_group: 50,
+        },
+        taa: TaaIds {
+            buffer: 14,
+            sampler: 14,
+            first_group: 70,
         },
         view_copy: Some(ViewCopyIds { first_group: 40 }),
         transmission: TransmissionIds {
@@ -3646,6 +3809,64 @@ mod tests {
             .unwrap();
         assert_eq!(steps(&frames), without);
         assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+    }
+
+    #[test]
+    fn temporal_anti_aliasing_resolves_before_the_effects_and_keeps_its_history() {
+        let canvas = (1280, 720);
+        for gpu_culling in [true, false] {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, gpu_culling, false);
+            frames.sync(&[View::default()]);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            let effect = Effect {
+                template: 64,
+                depth: false,
+                values: [0.0; effects::EFFECT_FLOATS],
+            };
+            frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+            frames.set_taa(Some(TaaFrame {
+                taa: taa::Taa::default(),
+                reproject: [0.0; 16],
+                reset: true,
+                parity: 1,
+            }));
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.taa_draws(), "it waits for its pipelines");
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.taa_draws());
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let names: Vec<String> = steps(&frames).into_iter().flatten().collect();
+            let place = |name: &str| names.iter().position(|n| n == name).unwrap();
+            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[1]), "{names:?}");
+            assert!(place(TAA_PASSES[0]) < place(TAA_PASSES[2]), "{names:?}");
+            assert!(place(TAA_PASSES[2]) < place("Final"), "{names:?}");
+            assert!(place(TAA_PASSES[0]) < place(EFFECT_PASSES[0]), "{names:?}");
+            assert_eq!(frames.scene_output(), TAA_COLOR);
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let layouts: Vec<u32> = operands(&list, Op::CreateBindGroup)
+                .iter()
+                .filter(|group| (70..73).contains(&group[0]))
+                .map(|group| group[1])
+                .collect();
+            let resolve = if gpu_culling {
+                bind_layout::DOF_COMPOSITE_MS
+            } else {
+                bind_layout::DOF_COMPOSITE
+            };
+            assert_eq!(layouts, [resolve, resolve, bind_layout::VIEW_COPY]);
+            // A frame of parity 1 draws only the keep step into the second history.
+            assert!(!frames.draws(Role::Taa(1)) && frames.draws(Role::Taa(2)));
+        }
     }
 
     #[test]

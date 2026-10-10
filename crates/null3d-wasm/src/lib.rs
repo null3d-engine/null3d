@@ -2795,6 +2795,34 @@ pub fn set_dof(on: bool) -> u32 {
     })
 }
 
+/// Turns temporal anti-aliasing on, a prototype, or off with a `feedback` of 0, from the next
+/// frame on. `feedback` is the history's share in thousandths. Bit 0 of `flags` reads the history
+/// with the Catmull-Rom filter, bit 1 moves the camera by the sequence's offsets, and bit 2 reads
+/// one depth sample per pixel.
+#[wasm_bindgen(js_name = setTaa)]
+pub fn set_taa(feedback: u32, flags: u32) -> u32 {
+    with_engine(|e| {
+        let taa = (feedback > 0).then(|| null3d_render::taa::Taa {
+            feedback: feedback.min(990) as f32 / 1000.0,
+            sharp_history: flags & 1 != 0,
+            jitter: flags & 2 != 0,
+            light_depth: flags & 4 != 0,
+        });
+        e.renderer.settings_mut().set_taa(taa);
+        0
+    })
+}
+
+/// Runs the final pass's FXAA over a scene drawn with MSAA too, or not, from the next frame on: a
+/// prototype switch for measuring.
+#[wasm_bindgen(js_name = setMsaaFxaa)]
+pub fn set_msaa_fxaa(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_msaa_fxaa(on);
+        0
+    })
+}
+
 /// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
 /// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
 /// count up, at most 71.

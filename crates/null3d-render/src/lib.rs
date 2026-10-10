@@ -93,6 +93,7 @@ pub mod skinning;
 mod sky_light;
 pub mod sky_maps;
 pub mod sorted;
+pub mod taa;
 pub mod textures;
 mod transmission;
 pub mod view;

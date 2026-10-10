@@ -51,7 +51,11 @@ export class FrameClock {
 	advance(timestamp: number, resumes: number): void {
 		const resumed = resumes !== this.resumes;
 		this.resumes = resumes;
-		const raw = this.last < 0 || resumed ? 0 : (timestamp - this.last) / 1000;
+		// A prototype switch for measuring (M2-EX18): a sketch that sets a fixed step on the global
+		// object gets that step in every frame after the first, whatever the frames' timestamps.
+		const fixed = (globalThis as { __null3dFixedStep?: number }).__null3dFixedStep;
+		const measured = fixed ?? (timestamp - this.last) / 1000;
+		const raw = this.last < 0 || resumed ? 0 : measured;
 		this.last = timestamp;
 		this.dt = Math.min(Math.max(raw, 0), MAX_STEP_SECONDS);
 		this.now += this.dt;

@@ -39,6 +39,10 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	// The temporal anti-aliasing prototype (M2-EX18) and FXAA over MSAA, in the Creek showcase, or
+	// in the thin geometry scene with ?scene=thin.
+	taa: '../../examples/showcase/creek/sketch.ts',
+	msaafxaa: '../../examples/showcase/creek/sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -66,8 +70,13 @@ if (glTiming && !params.has('gl-timing')) {
 run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
-	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}`;
+	const scene = params.get('scene') ?? '';
+	const thin = scene.startsWith('thin') && (effect === 'taa' || effect === 'msaafxaa');
+	const sketch = new URL(
+		thin ? './sketches/taa-thin-sketch.ts' : SKETCHES[effect],
+		import.meta.url,
+	);
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${thin && scene === 'thin-hdr' ? '&bloom' : ''}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
