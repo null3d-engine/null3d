@@ -5,7 +5,8 @@
 import { defineSketch, type TimeOfDayPreset, timeOfDay } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
-const time = (params.get('time') ?? 'afternoon') as TimeOfDayPreset;
+const raw = params.get('time') ?? 'afternoon';
+const time = raw.startsWith('h') ? Number(raw.slice(1)) / 100 : (raw as TimeOfDayPreset);
 
 export default defineSketch(async ({ scene, assets, geometry, materials, post }) => {
 	const day = timeOfDay(time, { heading: 2.2 });
