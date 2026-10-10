@@ -1,10 +1,17 @@
 // The creek's grass: tufts of curved blades in instance batches, which cast and receive the sun's
 // shadows. A vertex offset bends each blade in the wind: gusts that roll across the banks, and a
-// flutter of each tuft's own. The surface function tints each tuft. Both read the tuft's traits from
-// its place in the world. Per-row values in instance batches can carry them instead: `tuftTraits`
-// is the one place that reads them. The tufts don't turn, so that the wind blows one way. Only the
-// tufts near the water cast shadows and show in its reflection.
-import type { InstanceBatch, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
+// flutter of each tuft's own. The surface function tints each tuft. Each row's values carry its
+// tuft's traits: its phase in the wind, its tint, and its turn about y, which the vertex offset
+// undoes for the wind, so the wind blows one way over every tuft. The shadow passes run the same
+// vertex offset, so the shadows sway with the grass. Only the tufts near the water cast shadows and
+// show in its reflection.
+import {
+	type InstanceBatch,
+	type MeshArrays,
+	type QualityPreset,
+	quat,
+	type SketchContext,
+} from '@null3d/engine';
 import { random } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
 
@@ -24,28 +31,25 @@ const SEGMENTS = 3;
 const wgsl = /* wgsl */ `
 struct Uniforms { wind: vec2f, sway: f32 }
 
-/// A tuft's own traits: x is its phase in the wind, from 0 to 2 pi, and y a value from 0 to 1 that
-/// picks its tint. They come from the tuft's place in the world.
-fn tuftTraits() -> vec2f {
-    let p = floor(object.position.xz * 37.0);
-    let h = fract(sin(vec2f(dot(p, vec2f(12.9898, 78.233)), dot(p, vec2f(39.346, 11.135)))) * 43758.5453);
-    return vec2f(h.x * 6.2831853, h.y);
-}
+// A tuft's row values: x is its phase in the wind, from 0 to 2 pi, y a value from 0 to 1 that picks
+// its tint, and z and w the cosine and sine of its turn about y.
 
 fn vertexOffset(input: VertexInput) -> vec3f {
-    let traits = tuftTraits();
+    let traits = object.values;
     let p = object.position.xz;
     // Gusts: broad waves of wind that roll across the banks, and a flutter of each tuft's own.
     let gust = 0.5 + 0.5 * sin(dot(p, material.wind) * 0.35 - frame.time * 1.6);
     let flutter = sin(frame.time * 2.7 + traits.x + input.position.x * 7.0);
     let bend = input.uv.y * input.uv.y * material.sway * (0.4 + 0.8 * gust + 0.25 * flutter);
-    let along = normalize(material.wind);
+    // The wind's direction in the tuft's own space, against its turn.
+    let w = normalize(material.wind);
+    let along = vec2f(w.x * traits.z - w.y * traits.w, w.x * traits.w + w.y * traits.z);
     return vec3f(along.x * bend, -0.4 * bend * bend, along.y * bend);
 }
 
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
-    let traits = tuftTraits();
+    let traits = object.values;
     // A share of the tufts dry toward their tips, and each tuft's green differs a little.
     let dry = smoothstep(0.62, 1.0, traits.y) * input.uv.y;
     s.baseColor *= mix(vec3f(0.8 + 0.4 * traits.y), vec3f(1.7, 1.3, 0.45), dry);
@@ -105,6 +109,9 @@ function tuft(seed: number): MeshArrays {
 	}
 	return { positions, normals, colors, uvs, indices };
 }
+
+/** A scratch quaternion for each tuft's turn. */
+const spin = quat.create();
 
 /** The layer of the grass far from the water, which the camera draws and the reflection does not. */
 export const INLAND_LAYER = 2;
@@ -199,10 +206,16 @@ export function createGrass(
 				castShadows: near,
 				receiveShadows: true,
 				layers: near ? 1 : INLAND_LAYER,
+				values: true,
 			});
+			// A batch made with values has its array.
+			const values = batch.values as Float32Array;
 			ordered(tufts).forEach((t, row) => {
+				const turn = next() * Math.PI * 2;
 				batch.positions.set([t[0], t[1], t[2]], row * 3);
+				batch.rotations.set(quat.fromEuler(spin, 0, turn, 0), row * 4);
 				batch.scales.set([t[3], t[4], t[5]], row * 3);
+				values.set([next() * Math.PI * 2, next(), Math.cos(turn), Math.sin(turn)], row * 4);
 			});
 			batch.markDirty();
 			batches.push(batch);

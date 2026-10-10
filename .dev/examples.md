@@ -279,21 +279,26 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 ### Creek
 
-Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, builds everything that code makes, and simple stand-ins for the organic models. The owner reviews its look before its pull request opens.
+Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, built everything that code makes, with stand-ins for the organic models. The second phase, on 11 October 2026, put in the trees, the plants and the cave mouth, built by script in Blender. The owner reviews its look before its pull request opens.
 
 | Part | How it is made |
 | --- | --- |
 | Land (`land.ts`) | A grid of 160 m whose quads pack toward the middle, where the camera looks. A height function cuts the stream's bed, the low banks and the valley's sides. Each vertex takes a color from its height and slope: wet bed, mud, soil, dry patches, meadow and bare rock. A tiled texture set from `textures.fromData` adds clods and grit |
 | Water (`water.ts`) | A grid at the water's height. Its vertex offset moves it with long waves that the current carries downstream. Its surface function adds finer ripples, which catch the sun as glints. A reflection pass mirrors the banks and the sky, and transmission shows the bed through the water. The water is clear and foamy where it is shallow |
-| Grass (`grass.ts`) | Tufts of 13 curved blades, in three shapes, as instance batches. A vertex offset bends each blade in gusts that roll across the banks. The tufts near the water cast shadows and show in the reflection; the others only receive shadows |
-| Stones (`stones.ts`) | Rocks of noise-shaped spheres with moss where they face up, and pebbles on the bed, as instance batches with shadows |
-| Leaves and plants (`flora.ts`) | Fallen leaves that float down the current, and fireflies at blue hour and at night. Stand-ins mark the leafy plants and the trees |
+| Grass (`grass.ts`) | Tufts of 13 curved blades, in three shapes, as instance batches. A vertex offset bends each blade in gusts that roll across the banks. Each row's values give its tuft a phase in the wind, a tint and a turn. The tufts near the water cast shadows and show in the reflection; the others only receive shadows |
+| Stones (`stones.ts`) | Rocks of noise-shaped spheres with moss where they face up, and pebbles on the bed, as instance batches with shadows. The cave mouth is a model |
+| Trees, plants and leaves (`flora.ts`) | Seven trees of three kinds, hostas at the water's edge, ferns over the banks and at the cave's mouth, and shrubs at the trees' feet. Each plant kind is one instance batch. Fallen leaves float down the current, and fireflies glow at blue hour and at night |
+| Models (`models.ts`) | Loads the three model files of the trees, the plants and the cave mouth, and places their parts. [Sample content](sample-content.md#models-built-in-blender) says how a script builds them |
 | Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room |
 
 The choices, and why:
 
-- **Grass sways and tints by its place.** A tuft's phase in the wind and its tint come from `object.position`, the row's place in the world. One WGSL function, `tuftTraits`, reads them. Per-row values in instance batches (M2-EX13) will carry them. Then the sketch writes each tuft's traits into its row, and that function reads `object.values`. Then each tuft can also turn, with its turn in its values, so the wind still blows one way. Until then, the tufts do not turn. A vertex offset moves a vertex in the mesh's own space, so a turned tuft would bend another way.
-- **Shadows follow the unmoved grass.** A vertex offset does not reach the shadow passes yet. The per-row values work gives custom materials with a vertex offset shadow builds of their own.
+- **Each tuft's traits are its row's values.** The sketch writes four numbers into each row. They are the tuft's phase in the wind, its tint, and the cosine and sine of its turn about y. The material reads them as `object.values` ([D-127](decisions/D-127-row-values.md)). A vertex offset moves a vertex in the mesh's own space, so a turned tuft would bend another way. So the vertex offset turns the wind back by the tuft's turn, and the wind blows one way over every tuft. Before the row values, the phase and the tint came from the row's place, and the tufts did not turn.
+- **The shadows sway with the grass.** A custom material with a vertex offset now casts with its offset ([D-127](decisions/D-127-row-values.md)). The shadow passes read the same values and clock, so the grass's shadows move with it.
+- **The organic models load from files.** A script builds them in Blender, and the asset tool optimizes them. They load with `sampleUrl`, as the other demos' files do, so a website's build copies them. The website's build has no server for the sample files, so an import with `?optimized` would not resolve there. So the models go into the sample-assets repository already optimized, each with its KTX2 textures in its own file.
+- **The models are light.** The scene draws the cave, seven trees and about 40 plants: about 80,000 triangles in all, beside 3.4 million of grass. Each tree is a wood part and a part of leaf cards. Each card holds a cluster of leaves, and its alpha cuts their outline.
+- **The cave mouth turns toward the camera's usual view.** The model opens toward +z. Turned 0.9 radians to the left, its opening faces down the valley, so the drifting camera sees into it. Ferns flank the opening.
+- **The trees stand at 72 to 90% of their model's size.** At full size, their crowns rose out of the frame, and the view showed bare trunks.
 - **Only the grass near the water is in the reflection and casts shadows.** At first every tuft drew in the camera's view, the reflection and each shadow cascade. The Mac's GPU then drew about 5.1 million triangles a frame on WebGPU, and 7.5 million on WebGL2. Grass far from the water shows in no reflection, and its shadows fall in grass. So those tufts sit on a layer that the reflection pass leaves out, and cast no shadows.
 - **Each preset draws an even spread of the tufts, grouped by place.** The rows come in a random order, so any count spreads over the banks. Then each preset's added rows sort by 4 m squares. WebGL2 culls a static batch in groups of 64 nearby rows, and a random order puts the whole field in every group.
 - **The water's depth is a WGSL copy of the land's shape.** The water needs its depth for its thickness, its tint and its foam. No depth texture reaches a surface function, so the shader repeats the bends and widths of the stream from `land.ts`. A change to the stream's shape changes both.
@@ -315,7 +320,6 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
 
-What phase 2 needs: the trees, the leafy plants and the cave mouth as models built by script in Blender. They go into the sample-assets repository as glTF, and the entry's `assets` field then gives the reason. The stand-ins in `flora.ts` and `stones.ts` mark their places.
 
 ## Groups and titles (owner, 9 October 2026)
 

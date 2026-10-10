@@ -1,5 +1,5 @@
 // The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, pebbles on
-// the bed, and a stand-in for the cave mouth. Each kind of rock is an instance batch whose rows cast
+// the bed, and the cave mouth, a model built in Blender. Each kind of rock is an instance batch whose rows cast
 // and receive the sun's shadows. The rocks are noise-shaped spheres with a texture made in code, and
 // moss on the parts that face up. The pebbles are small and lie under the water, so they cast none.
 import {
@@ -11,13 +11,17 @@ import {
 } from '@null3d/engine';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ } from './land';
+import { type Part, placed } from './models';
 
 /** Pebbles at each preset, over all their batches. */
 const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 4800, ultra: 6000 };
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
-/** The cave mouth's stand-in: its place and its size. Organic models replace it later. */
-export const CAVE = { x: 11, z: streamZ(11) - 6.2, size: [3.4, 2.6, 2.8] as const };
+/**
+ * The cave mouth: the middle of its foot, the reach of its rock around it, and its turn about y.
+ * The model opens toward +z; the turn faces it down the valley, toward the camera's usual view.
+ */
+export const CAVE = { x: 11, z: streamZ(11) - 6.2, reach: 3.8, yaw: -0.9 };
 
 const noise = new Noise(31);
 const { smoothstep } = math;
@@ -83,6 +87,7 @@ export function createStones(
 	{ scene, geometry, materials, textures }: SketchContext,
 	detail: number,
 	textureSize: number,
+	cave: Part,
 ): { clear(x: number, z: number): boolean; fit(preset: QualityPreset): void } {
 	const maps = textureSet(textures, textureSize, rockTexel);
 	const stone = materials.standard({
@@ -110,22 +115,16 @@ export function createStones(
 		batch.markDirty();
 	}
 
-	// The cave mouth's stand-in: a large rock with a dark hollow that faces the stream.
-	const cliff = geometry.fromArrays(mossy(rock(77, detail, [1, 0.8, 0.9]), 78));
-	const caveY = groundHeight(CAVE.x, CAVE.z);
+	// The cave mouth: the floor of its tunnel meets the ground at the opening, and the back of the
+	// rock sinks into the rising bank.
+	const mouth = groundHeight(CAVE.x + 2.4 * Math.sin(CAVE.yaw), CAVE.z + 2.4 * Math.cos(CAVE.yaw));
 	scene.createMesh({
-		mesh: cliff,
-		material: stone,
-		position: [CAVE.x, caveY + 0.6, CAVE.z],
-		scale: CAVE.size,
+		mesh: cave.mesh,
+		material: cave.material,
+		...placed(cave, [CAVE.x, mouth - 0.15, CAVE.z], CAVE.yaw, 1),
+		occluder: cave.occluder,
 		castShadows: true,
 		receiveShadows: true,
-	});
-	scene.createMesh({
-		mesh: geometry.sphere({ radius: 1, widthSegments: 24, heightSegments: 12 }),
-		material: materials.standard({ color: '#060504', roughness: 1 }),
-		position: [CAVE.x - 0.3, caveY + 0.35, CAVE.z + CAVE.size[2] * 0.72],
-		scale: [1.15, 1.05, 0.55],
 	});
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
@@ -155,7 +154,7 @@ export function createStones(
 
 	const footprints = [
 		...places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 })),
-		{ x: CAVE.x, z: CAVE.z, r: 3.4 },
+		{ x: CAVE.x, z: CAVE.z, r: CAVE.reach },
 	];
 	return {
 		clear: within(footprints),

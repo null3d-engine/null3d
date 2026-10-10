@@ -1,7 +1,7 @@
-// The creek's leaves and plants. Fallen leaves float down the stream on its current, each one an
-// instance batch row that turns slowly as it drifts. Simple stand-ins mark where the organic models
-// go: leafy plants of large leaves at the water's edge, and trees on the banks. Fireflies hover over
-// the banks at night.
+// The creek's trees, plants and leaves. Trees stand on the banks, hostas at the water's edge,
+// ferns over the banks and shrubs at the trees' feet: models built in Blender, which cast and
+// receive the sun's shadows. Fallen leaves float down the stream on its current, each one an
+// instance batch row that turns slowly as it drifts. Fireflies hover over the banks at night.
 import {
 	type InstanceBatch,
 	type MeshArrays,
@@ -11,6 +11,8 @@ import {
 } from '@null3d/engine';
 import { random, within } from '../../lib/procedural';
 import { groundHeight, streamHalf, streamZ, WATER } from './land';
+import { type Models, PLANT_KINDS, type PlantKind, placed, type TreeKind } from './models';
+import { CAVE } from './stones';
 
 /** Floating leaves in each of the three colors. */
 const FLOATING = 24;
@@ -18,6 +20,28 @@ const FLOATING = 24;
 const RUN = 56;
 /** Fireflies at night. */
 const FIREFLIES = 90;
+/** Ferns over the banks, before the ones at the cave's mouth. */
+const FERNS = 18;
+/** How far each plant's leaves reach from its middle, in meters at its own size: grass stays out. */
+const PLANT_REACH: Record<PlantKind, number> = { fern: 0.45, hosta: 0.55, shrub: 0.6 };
+/** The trees: each one's place along the stream, its distance from the stream's middle, and its kind. */
+const TREES: readonly (readonly [number, number, TreeKind])[] = [
+	[-3, -8.5, 'oak'],
+	[5.5, -10, 'beech'],
+	[15, -7.5, 'birch'],
+	[-16, -9, 'beech'],
+	[13, 8.5, 'oak'],
+	[-9, -12, 'birch'],
+	[21, -10, 'oak'],
+];
+
+/** A plant's place, its turn about y and its size. */
+interface Spot {
+	x: number;
+	z: number;
+	yaw: number;
+	size: number;
+}
 
 /**
  * A leaf about a meter long, along +z, with its stem at the origin: a fold along the midrib, and
@@ -56,12 +80,10 @@ function yawTilt(yaw: number, tilt: number, out: Float32Array, at: number): void
 }
 
 /** The leaves, plants, trees and fireflies, with what moves them in each frame. */
-export async function createFlora({
-	scene,
-	geometry,
-	materials,
-	textures,
-}: SketchContext): Promise<{
+export async function createFlora(
+	{ scene, geometry, materials, textures }: SketchContext,
+	models: Models,
+): Promise<{
 	update(t: number): void;
 	nightLights(on: boolean): void;
 	clear(x: number, z: number): boolean;
@@ -82,62 +104,69 @@ export async function createFlora({
 	);
 	const drift = Float32Array.from({ length: FLOATING * 3 * 4 }, () => next());
 
-	// Leafy plants at the water's edge: seven large leaves around a stem, each tilted up and out.
-	const plantSpots = [-11, -6.5, -1.5, 4, 8.5, 15].map((x, k) => {
-		const side = k % 2 === 0 ? 1 : -1;
-		return { x, z: streamZ(x) + side * streamHalf(x) * 1.18 };
-	});
-	const plants = scene.createInstances(leafMesh, plantSpots.length * 7, {
-		material: leafLook('#3f7a2a'),
-		castShadows: true,
-		receiveShadows: true,
-	});
-	plantSpots.forEach(({ x, z }, p) => {
-		const y = groundHeight(x, z);
-		for (let k = 0; k < 7; k++) {
-			const row = p * 7 + k;
-			const size = 0.45 + 0.2 * next();
-			plants.positions.set([x, y + 0.02, z], row * 3);
-			yawTilt((k / 7) * Math.PI * 2 + next() * 0.4, -0.5 - 0.4 * next(), plants.rotations, row * 4);
-			plants.scales.set([size, size, size], row * 3);
-		}
-	});
-	plants.markDirty();
-
-	// Trees: a trunk and a canopy of three blobs each, on both banks, away from the water.
-	const bark = materials.standard({ color: '#4a3a2c', roughness: 0.9 });
-	const foliage = materials.standard({ color: '#2f5a24', roughness: 0.8 });
-	const trunk = geometry.cylinder({
-		radiusTop: 0.14,
-		radiusBottom: 0.24,
-		height: 4,
-		radialSegments: 10,
-	});
-	const blob = geometry.sphere({ radius: 1, widthSegments: 16, heightSegments: 10 });
-	const treeSpots = [
-		[-3, -8.5],
-		[5.5, -10],
-		[15, -7.5],
-		[-16, -9],
-		[13, 8.5],
-	] as const;
-	for (const [x, dz] of treeSpots) {
+	const shadow = { castShadows: true, receiveShadows: true };
+	// Trees on the banks, away from the water, each turned and sized a little differently.
+	const treeSpots = TREES.map(([x, dz, kind]) => {
 		const z = streamZ(x) + dz;
-		const y = groundHeight(x, z);
-		const shadow = { castShadows: true, receiveShadows: true };
-		scene.createMesh({ mesh: trunk, material: bark, position: [x, y + 2, z], ...shadow });
-		for (const [ox, oy, oz, r] of [
-			[0, 4.6, 0, 1.6],
-			[0.9, 4.0, 0.4, 1.2],
-			[-0.8, 4.2, -0.5, 1.3],
-		] as const)
+		const at = [x, groundHeight(x, z) - 0.1, z] as const;
+		const yaw = next() * Math.PI * 2;
+		const size = 0.72 + 0.18 * next();
+		const { wood, leaves } = models.trees[kind];
+		for (const part of [wood, leaves])
 			scene.createMesh({
-				mesh: blob,
-				material: foliage,
-				position: [x + ox, y + oy, z + oz],
-				scale: [r, r * 0.85, r],
+				mesh: part.mesh,
+				material: part.material,
+				...placed(part, at, yaw, size),
 				...shadow,
 			});
+		return { x, z };
+	});
+
+	// Plants: hostas at the water's edge, ferns over the banks and at the cave's mouth, and shrubs
+	// at the trees' feet. Each kind is one instance batch.
+	const plantSpots: Record<PlantKind, Spot[]> = { fern: [], hosta: [], shrub: [] };
+	const add = (kind: PlantKind, x: number, z: number, size: number) => {
+		if (groundHeight(x, z) > WATER + 0.05)
+			plantSpots[kind].push({ x, z, yaw: next() * Math.PI * 2, size });
+	};
+	[-11, -6.5, -1.5, 4, 8.5, 15].forEach((x, k) => {
+		const side = k % 2 === 0 ? 1 : -1;
+		add('hosta', x, streamZ(x) + side * streamHalf(x) * 1.4, 0.9 + 0.4 * next());
+	});
+	for (let k = 0; k < FERNS; k++) {
+		const x = -20 + 40 * next();
+		const side = next() < 0.5 ? -1 : 1;
+		add('fern', x, streamZ(x) + side * streamHalf(x) * (1.3 + 2.4 * next()), 0.8 + 0.5 * next());
+	}
+	// Ferns flank the cave's mouth, on either side of its opening.
+	const [ax, az] = [Math.sin(CAVE.yaw), Math.cos(CAVE.yaw)];
+	for (const across of [-3.4, -2.6, 2.5, 3.3])
+		add('fern', CAVE.x + 2.6 * ax + across * az, CAVE.z + 2.6 * az - across * ax, 1 + 0.3 * next());
+	for (const { x, z } of treeSpots)
+		for (let k = 0; k < 2; k++) {
+			const a = next() * Math.PI * 2;
+			const r = 1.3 + 1.2 * next();
+			add('shrub', x + r * Math.cos(a), z + r * Math.sin(a), 0.8 + 0.5 * next());
+		}
+	for (const kind of PLANT_KINDS) {
+		const spots = plantSpots[kind];
+		const part = models.plants[kind];
+		const batch = scene.createInstances(part.mesh, spots.length, {
+			material: part.material,
+			...shadow,
+		});
+		spots.forEach(({ x, z, yaw, size }, row) => {
+			const { position, rotation, scale } = placed(
+				part,
+				[x, groundHeight(x, z) - 0.03, z],
+				yaw,
+				size,
+			);
+			batch.positions.set(position, row * 3);
+			batch.rotations.set(rotation, row * 4);
+			batch.scales.set(scale, row * 3);
+		});
+		batch.markDirty();
 	}
 
 	// Fireflies: soft dots of light, made in code, which glow through bloom.
@@ -161,9 +190,12 @@ export async function createFlora({
 	fireflies.setActiveCount(0);
 	let lit = false;
 
-	const treeFootprints = treeSpots.map(([x, dz]) => ({ x, z: streamZ(x) + dz, r: 0.6 }));
-	const plantFootprints = plantSpots.map(({ x, z }) => ({ x, z, r: 0.5 }));
-	const footprints = [...treeFootprints, ...plantFootprints];
+	const footprints = [
+		...treeSpots.map(({ x, z }) => ({ x, z, r: 0.7 })),
+		...PLANT_KINDS.flatMap((kind) =>
+			plantSpots[kind].map(({ x, z, size }) => ({ x, z, r: PLANT_REACH[kind] * size })),
+		),
+	];
 	return {
 		clear: within(footprints),
 		nightLights(on) {

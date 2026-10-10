@@ -1,9 +1,9 @@
 // Creek: a showcase scene of a small stream in a grassy valley. Clear water runs over a stony bed:
 // a reflection pass mirrors the banks and the sky in it, and the bed shows through it, bent by its
 // ripples. Dense grass sways in the wind, and fallen leaves float on the current. Rocks, pebbles,
-// grass and leaves are instance batches that cast and receive the sun's shadows. Everything is
-// made in code: the land, its textures, the rocks, the grass and the water. Simple stand-ins mark
-// the trees, the leafy plants and the cave mouth, for models made in Blender.
+// grass and leaves are instance batches that cast and receive the sun's shadows. The land, its
+// textures, the rocks, the grass and the water are made in code. The trees, the plants and the
+// cave mouth are models that a script builds in Blender, loaded from files.
 //
 // The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
 // depth of field, which focuses on the point that the camera orbits. For held frames, the sketch's
@@ -14,6 +14,7 @@ import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createFlora } from './flora';
 import { createGrass, INLAND_LAYER } from './grass';
 import { createLand, WATER } from './land';
+import { loadModels } from './models';
 import { createStones } from './stones';
 import { createWater } from './water';
 
@@ -63,8 +64,9 @@ export default defineSketch(async (ctx) => {
 
 	createLand(ctx, detail.land, detail.texture);
 	createWater(ctx, detail.water);
-	const stones = createStones(ctx, detail.rock, detail.texture);
-	const flora = await createFlora(ctx);
+	const models = await loadModels(ctx);
+	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
+	const flora = await createFlora(ctx, models);
 	const grass = createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z));
 	const fit = () => {
 		grass.fit(quality.preset);
