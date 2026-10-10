@@ -218,14 +218,18 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/bun-install
       # S5's pages import their character from the sample content, so each build of the pages needs
-      # it, even while the comparison leaves S5 out.
+      # it, even while the comparison leaves S5 out. This restores the checked-out commit's pin from
+      # the Actions cache; the setup step below fetches each build's own pin.
       - uses: ./.github/actions/samples
       - uses: actions/download-artifact@v4
         with:
           pattern: bench-build-*
           path: ${{ runner.temp }}/builds
 
-      # Each build gets a worktree of its own, with its own packages and the files its build made.
+      # Each build gets a worktree of its own, with its own packages, the files its build made and
+      # the sample content that its own lock pins. Each pin has its own folder in the shared cache, so
+      # a build whose pin matches the checked-out commit's finds its files ready, and a build with
+      # another pin downloads that pin's files once.
       - name: Set up the baseline and the new build
         run: |
           git fetch --quiet --no-tags origin "$BASELINE" "$NEW"
@@ -235,6 +239,7 @@ jobs:
             dir="$RUNNER_TEMP/$build"
             git worktree add --detach "$dir" "$commit"
             (cd "$dir" && bun install --frozen-lockfile && tar -xzf "$RUNNER_TEMP/builds/bench-build-$build/build.tgz")
+            if [ -f "$dir/tools/samples/lock.json" ]; then (cd "$dir" && bun run samples:fetch); fi
           done
 
       # S6's city files take minutes to build and optimize, and each build of the pages needs them.
