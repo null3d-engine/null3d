@@ -31,6 +31,8 @@ Gaps found and closed:
 
 Image tests: `shadows-batches` and `shadows-batches-dynamic` draw the shadows test's objects as batch rows, grouped by mesh, material and options, and compare with the shadows test's references. `spot-shadows-batches` does the same for the spot light's tile with the spot shadows test's references. Rust tests check, on both paths, that a moved row of a casting batch draws its light's tile once within the light's reach and none beyond it.
 
+Allocation: `bench:allocation --batch-shadows` passes on both GPU paths, alone and with `--tile-shadows`. The sun's 3 cascades then draw in every frame, so the WebGPU replay's budget grows by their pass encoders, 102 bytes per frame. These runs also found that the job workers' busy time made a number object per busy worker in each frame, now fixed ([benchmarks guide](../benchmarks.md)).
+
 How the data was produced: <filled after the runs>.
 
 ## Decision
