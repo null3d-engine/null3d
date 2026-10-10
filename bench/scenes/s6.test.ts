@@ -11,6 +11,7 @@ import {
 	S6_SUN_POSITION,
 	S6_TILE_STEP,
 	type S6Layout,
+	s6BuildingAt,
 	s6Camera,
 	s6LoopSeconds,
 	s6PartTransform,
@@ -124,6 +125,44 @@ describe('S6', () => {
 			}
 		}
 		expect(pairs).toBeGreaterThan(1000);
+	});
+
+	test('lists each material of the created boxes once, in the order of its first box', () => {
+		expect(data.towerOrder).toHaveLength(layout.counts.materials);
+		const firsts = Array.from(data.towerOrder, (m) =>
+			data.boxOrder.findIndex((row) => data.material[row] === m),
+		);
+		expect(firsts).toEqual([...firsts].sort((a, b) => a - b));
+		const few = createS6(layout, 500);
+		expect(new Set(few.towerOrder)).toEqual(
+			new Set(Array.from(few.boxOrder, (row) => few.material[row] as number)),
+		);
+	});
+
+	test("finds the building of a point on a box's face, and none for a box of no building", () => {
+		let checked = 0;
+		for (const row of data.boxOrder) {
+			const k = row * 3;
+			const top = [
+				data.position[k] as number,
+				(data.position[k + 1] as number) + (data.scale[k + 1] as number),
+				(data.position[k + 2] as number) + (data.scale[k + 2] as number) / 4,
+			];
+			const found = s6BuildingAt(data, data.material[row] as number, top);
+			// A box that another box of its material stands on shares its top with that box.
+			if (found !== data.building[row]) continue;
+			checked++;
+		}
+		expect(checked).toBeGreaterThan(data.boxOrder.length * 0.9);
+		const label = data.labels[0];
+		if (!label) throw new Error('S6 has no labels');
+		const k = label.row * 3;
+		const wall = [
+			(data.position[k] as number) + (data.scale[k] as number) / 2 + 0.02,
+			(data.position[k + 1] as number) + 1,
+			data.position[k + 2] as number,
+		];
+		expect(s6BuildingAt(data, data.material[label.row] as number, wall)).toBe(label.building);
 	});
 
 	test('labels sit on the tops of their towers', () => {
