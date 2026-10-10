@@ -252,7 +252,7 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 | walk-and-fly | 120 fps, GPU 2.3 to 4.2 ms | 120 fps, GPU 2.7 to 5.5 ms |
 | camera-lens | 120 fps, GPU 4.9 to 5.2 ms | 120 fps, GPU 5.2 to 8.3 ms |
 | galaxy | 120 fps, GPU 3.7 to 4.6 ms, sketch 1.6 to 1.8 ms, 120,000 stars | 120 fps, GPU 3.3 to 4.7 ms, sketch 1.1 to 1.2 ms |
-| morph-flowers | 120 fps, GPU 2.4 to 5.3 ms, before the leafy hedge | 120 fps, GPU 4.9 to 6.1 ms, before the leafy hedge |
+| morph-flowers | 116 to 120 fps, GPU 4.4 to 5.1 ms | 118 to 120 fps, GPU 5.2 to 5.8 ms |
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
