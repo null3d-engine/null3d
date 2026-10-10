@@ -1,8 +1,9 @@
-// The demos take the user's input at any moment. Playwright drives the mouse over two live demos,
-// and the probe sketch reports where each demo's camera and moving objects are, with the sketch time
-// of the frame that answered. A hover leads the math demo's lamp and leaves its camera alone. In
-// the instances demo, a drag hands the scripted camera over to the user with no jump, the script
-// then stops moving it, and the wheel zooms.
+// The demos take the user's input at any moment. Playwright drives the mouse and the keys over three
+// live demos, and the probe sketch reports where each demo's camera and moving objects are, with the
+// sketch time of the frame that answered. A hover leads the math demo's lamp and leaves its camera
+// alone. In the instances demo, a drag hands the scripted camera over to the user with no jump, the
+// script then stops moving it, and the wheel zooms. In the walk and fly demo, a key hands the
+// scripted walk over to first-person controls, and Space switches to fly controls.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
@@ -53,6 +54,23 @@ async function probeAt(page: Page, time: number): Promise<DemoProbe> {
 		)
 		.toBeGreaterThanOrEqual(time);
 	return report;
+}
+
+/** Waits until the camera rests: two probes at least a fifth of a second apart move it under 2 cm. */
+async function rest(page: Page, from: DemoProbe): Promise<DemoProbe> {
+	let last = from;
+	await expect
+		.poll(
+			async () => {
+				const next = await probeAt(page, last.time + 0.2);
+				const moved = apart(next.camera, last.camera);
+				last = next;
+				return moved;
+			},
+			{ timeout: PATIENCE },
+		)
+		.toBeLessThan(0.02);
+	return last;
 }
 
 /** The math demo's lamp: the first dynamic mesh it makes, the lamp's bulb. */
@@ -108,21 +126,8 @@ test('a drag takes the instances demo camera from its script with no jump, and t
 	await page.mouse.move(326, 180, { steps: 3 });
 	await page.mouse.up();
 	const released = await probe(page);
-	// The controls' damping lets the camera coast after the drag. Wait until it rests: two probes at
-	// least a fifth of a second of sketch time apart move it less than 2 cm.
-	let last = released;
-	await expect
-		.poll(
-			async () => {
-				const next = await probeAt(page, last.time + 0.2);
-				const moved = apart(next.camera, last.camera);
-				last = next;
-				return moved;
-			},
-			{ timeout: PATIENCE },
-		)
-		.toBeLessThan(0.02);
-	const taken = last;
+	// The controls' damping lets the camera coast after the drag. Wait until it rests.
+	const taken = await rest(page, released);
 	// The camera stays on the script's circle: a jump to another pose would leave it.
 	expect(Math.hypot(...taken.camera)).toBeCloseTo(radius, 1);
 	expect(taken.camera[1]).toBeCloseTo(11, 1);
@@ -139,5 +144,33 @@ test('a drag takes the instances demo camera from its script with no jump, and t
 	await expect
 		.poll(async () => Math.hypot(...(await probe(page)).camera), { timeout: PATIENCE })
 		.toBeLessThan(radius * 0.9);
+	expect(errors).toEqual([]);
+});
+
+test('a key hands the walk and fly demo to first-person controls, and Space to fly controls', async ({
+	page,
+}) => {
+	const errors = await open(page, 'walk-and-fly');
+	// The scripted walk moves the camera up the aisle, with the eye 2.6 m over the ground.
+	const first = await probe(page);
+	const before = await probeAt(page, first.time + 0.5);
+	expect(apart(first.camera, before.camera)).toBeGreaterThan(0.1);
+	// W takes the camera from the script and walks it forward, at the eye's height.
+	await page.keyboard.down('KeyW');
+	const pressed = await probe(page);
+	const walked = await probeAt(page, pressed.time + 1);
+	await page.keyboard.up('KeyW');
+	expect(apart(walked.camera, pressed.camera)).toBeGreaterThan(0.5);
+	expect(walked.camera[1]).toBeCloseTo(2.6, 1);
+	// Once the walk eases to a stop, the script no longer moves the camera.
+	const stopped = await rest(page, walked);
+	const later = await probeAt(page, stopped.time + 1);
+	expect(apart(later.camera, stopped.camera)).toBeLessThan(0.05);
+	// Space switches to fly controls, whose R key lifts the camera off the floor.
+	await page.keyboard.press('Space');
+	await page.keyboard.down('KeyR');
+	const flown = await probeAt(page, later.time + 1.5);
+	await page.keyboard.up('KeyR');
+	expect(flown.camera[1]).toBeGreaterThan(3.5);
 	expect(errors).toEqual([]);
 });

@@ -115,12 +115,17 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
+| camera-lens | The focus, on the point of a piece or the board that a raycast finds |
+| morph-flowers | The tulips near the pointed point, which open |
 | input | Nothing: the keys, a gamepad and the camera gestures drive it. The right stick turns the camera before and after the hand-over |
+| walk-and-fly | Nothing: the keys, the drag and the locked mouse drive first-person and fly controls |
 | The others | Nothing: the camera only. Picking keeps its hover and its click, and the engine gives no click after a drag of more than 2 CSS pixels |
 
-Two demos need more than the shared rules:
+Three demos need more than the shared rules:
 
 - In far-from-origin, orbit controls work in the camera's parent space, and assume a parent that does not turn, as `lookAt` does. The camera used to ride a turning rig. Now the script turns the camera itself, with the same position and the same turn that the rig gave it. The controls' target is the point on the tray where the camera's view meets it.
+- In walk-and-fly, first-person and fly controls take the place of orbit controls, since the demo shows them. Until the first key, button, drag or touch, a scripted walk moves the camera. At the hand-over, the first-person controls take the direction that the walk looked in, so the view does not jump. Its entry sets `pointerLock`, so `startDemo` asks the browser for the pointer lock on a click. A page can ask for it only right after the user acts, and a sketch cannot ask at all. Fly controls steer by the pointer's place, which the lock holds still. So while the pointer is locked in fly mode, the sketch turns the camera by the mouse's movement.
 - In large-world, the user's camera orbits a point 12 m ahead of the car. The point is on the car's line of sight, so the hand-over keeps the view. That point drives on, and the helper's `shift` moves the camera with it. The target is a plain array, which keeps 64-bit precision 6,378 km from the origin.
 
 Why it works this way:
@@ -212,6 +217,45 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026, w
 
 The six demos held 120 fps on both paths before the change too. No phone or tablet has run the new look yet. The hold mode demo's 400 shadowed balls are the likeliest cost on a phone.
 
+## New feature demos (M2-EX10, 10 October 2026)
+
+Five demos show public features that no demo showed. Before them, every demo held one hour of the day, and two demos turned on a fixed depth of field. No demo used points, morph targets made in code, or fly and first-person controls. Planar reflections, grading tables from numbers and the stats overlay needed no new demo: four demos, the post effects demo and every demo show them.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| time-of-day: Lighthouse point | A day passes over a lighthouse on a headland in 40 seconds. `timeOfDay(hour)` gives the sky, the sun or the moon, the fog's color and glow, the sky's intensity and the exposure. The clock runs slowly through dawn and dusk. At dusk the windows and the lamp light up, and two beams sweep the sea |
+| walk-and-fly: Temple ruins | A walk through ruined columns at golden hour, with braziers that flicker. First-person controls walk and look, a click locks the pointer, and Space switches to fly controls |
+| camera-lens: Chess endgame | A low shot across a chess board at its real size. The focus racks from a near pawn to the far king with `focusPoint`, and a dolly zoom takes the lens from 35 to 85 mm, so string lights behind the board swell into wide discs |
+| galaxy: Spiral galaxy | 120,000 stars in one points batch, 30,000 on Low, in additive light with bloom. Each ring of stars turns by its own angle, so the arms swirl |
+| morph-flowers: Tulip bed | Tulips made with `geometry.fromArrays`. One morph target opens the petals, turns their normals and changes their color from a green bud to the full color. Each tulip has a weight of its own |
+
+The rules that these demos follow, and why:
+
+- `timeOfDay` makes a new object on each call. So the time of day demo calls it only when the hour moves on by three minutes: 4 to 20 calls a second, fewest at dawn and dusk. Its clouds hold still. The sky's light refreshes after each change of the sky, one step a frame, so drifting clouds would cost a step in every frame.
+- The lighthouse's beams are open cones with a custom material: added light that fades from the lamp outward and toward the cone's edges. The material's base color is black, so the sun lights nothing on them. Its reflection is black too, and it takes no fog. Additive blending adds everything that a surface shows. So a cone that reflected the sky or took the fog's color showed as a faint disc. That happened when it pointed at the camera, even with the lamp off.
+- The depth of field demo works at the real size of a chess board, in metres, because the blur follows a real lens. At f/1.8 and 85 mm, a few centimetres out of focus blur well. Low draws no depth of field, so the demo sets `dofSamples` to 16 there, again after each change of preset. Its aperture has six blades, so the string lights' discs show soft hexagon corners. Their blur reaches about 12 texels of the half-size image, so the gather's soft edge rounds the corners off. A largest blur of 0.05, not 0.03, made sharper corners, but spread the taps so far apart that the discs and the near pieces turned grainy.
+- A points batch has no transform, so the galaxy turns by writing its positions. It splits the stars into 48 rings, works out one cosine and one sine per ring, and turns each star by its ring's pair. The rings sway ahead and back around a slow turn of the whole galaxy. A turn that differed by ring for ever would wind the arms up into rings within a minute. The batch is dynamic, so it uploads every star in every frame.
+- The time of day demo's sun sets about 30 degrees right of the island. So the island is lit from the side, not only from behind. An ambient light in the fog's color lifts the side away from a low sun. It grows with the exposure at dusk, up to a cap, so it adds little by day. The fill is an ambient light, not a hemisphere light. It must light the side of the island in shadow and the lower cliffs as much as the tops, in one color. A hemisphere light with a darker ground color would darken those cliffs. The sky's environment alone left the island a dark shape at sunset. The sea is a little rough, so its foreground takes the warm glow near the horizon, not only the dark sky above.
+- The tulip bed's camera stands low enough to show the morning sky above a low hedge. From higher up, the frame showed only the far lawn through the fog, which read as a flat green wall.
+- The hedge behind the tulip bed is a dark core under 2,400 small leaves in three greens. The leaves draw as three instance batches, one per green. As 2,400 meshes, each SwiftShader image test took about 24 s on a busy Mac. As batches, each took 9 to 10 s.
+- The tulips' normals come from each petal's slopes, worked out from nearby points in both poses. The morph target holds the change of each normal, as it holds the change of each position and color.
+- The walk and fly demo has no orbit controls: its controls are the feature it shows ([Always-on interaction](#always-on-interaction)).
+- The demos' sketches stay under 150 lines with plain number arrays for their tables, such as each chess piece's parts. The formatter puts each array of arrays on many lines.
+
+### Frame rates of the five demos on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, five readings a second apart.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| time-of-day | 120 fps, GPU 3.7 to 5.4 ms | 120 fps, GPU 3.0 to 4.0 ms |
+| walk-and-fly | 120 fps, GPU 2.3 to 4.2 ms | 120 fps, GPU 2.7 to 5.5 ms |
+| camera-lens | 120 fps, GPU 4.9 to 5.2 ms | 120 fps, GPU 5.2 to 8.3 ms |
+| galaxy | 120 fps, GPU 3.7 to 4.6 ms, sketch 1.6 to 1.8 ms, 120,000 stars | 120 fps, GPU 3.3 to 4.7 ms, sketch 1.1 to 1.2 ms |
+| morph-flowers | 116 to 120 fps, GPU 4.4 to 5.1 ms | 118 to 120 fps, GPU 5.2 to 5.8 ms |
+
+The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
@@ -236,9 +280,9 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Group | Demos |
 | --- | --- |
 | Building scenes | generators, mesh-arrays, objects, layers |
-| Light, materials and effects | environment, gltf-model, post-effects, sprites-lines, security-camera |
-| Motion and interaction | character, input, picking, math |
-| Scale | instances, far-from-origin, large-world |
+| Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
+| Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
+| Scale | galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
 
 - Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.

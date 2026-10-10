@@ -216,6 +216,8 @@ return {
 };
 ```
 
+The [first-person and fly controls demo](https://github.com/null3d-engine/null3d/tree/main/examples/walk-and-fly) walks through a ruined temple. A click asks for the pointer lock, and Space switches between first-person and fly controls.
+
 ## Differences from three.js
 
 - The controls take the sketch context and the camera: `createOrbitControls(ctx, camera, options)`. They need no DOM element, and have no `connect`, `disconnect`, `dispose` or `listenToKeyEvents`.

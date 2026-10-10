@@ -52,7 +52,7 @@ camera.setFocalLength(85);
 post.set({ dof: { aperture: 1.8, focusDistance: 4 } });
 ```
 
-[Depth of field](post.md#depth-of-field) takes the active camera's focal length unless its settings give one, so the blur matches the framing. The aperture and the focus distance live in `post.set`'s `dof` settings, because they change only the blur.
+[Depth of field](post.md#depth-of-field) takes the active camera's focal length unless its settings give one, so the blur matches the framing. The aperture and the focus distance live in `post.set`'s `dof` settings, because they change only the blur. The [depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens) runs a dolly zoom. Its lens goes from 35 to 85 mm while the camera backs away, so the board keeps its size.
 
 three.js's `setFocalLength` measures its film gauge, 35 mm by default, along the canvas's longer side. null3D measures the sensor's 24 mm along the height, so the field of view stays the same on every canvas shape. The two agree on a square canvas with three.js's `filmGauge` set to 24. A focal length that is not above 0 throws E1108 in development builds.
 

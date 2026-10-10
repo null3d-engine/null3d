@@ -256,8 +256,21 @@ export interface InstanceOptions {
 	material: Material;
 	/** Every row updates and uploads every frame; a static batch updates rows marked dirty only. */
 	dynamic?: boolean;
-	/** Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. */
+	/**
+	 * Adds a color per row (RGBA, linear) in `batch.colors`, white at first. It multiplies the
+	 * material's base color and opacity, as a mesh's vertex colors do, and as three.js's
+	 * `InstancedMesh.setColorAt` does. A material that lets light through draws its rows without
+	 * it.
+	 */
 	colors?: boolean;
+	/**
+	 * Adds four numbers per row of the sketch's own in `batch.values`, 0 at first, such as a wind
+	 * phase, an age or a tint. A custom material's `surface` and `vertexOffset` functions read the
+	 * row's as `object.values`, as three.js's instanced attributes give a shader values per
+	 * instance. With values, a masked material tests its alpha against its cutoff, without alpha to
+	 * coverage or the alpha hash.
+	 */
+	values?: boolean;
 	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
 	layers?: number;
 	/**
@@ -1857,6 +1870,7 @@ export class InstanceBatch {
 		rotations: Float32Array;
 		scales: Float32Array;
 		colors: Float32Array | undefined;
+		values: Float32Array | undefined;
 	};
 	/** @internal */
 	destroyedFrame = -1;
@@ -1876,7 +1890,7 @@ export class InstanceBatch {
 		/** @internal */ readonly id: number,
 		/** The number of rows: the batch's capacity. */
 		readonly count: number,
-		private readonly hasColors: boolean,
+		private readonly own: RowValueArrays = NO_ROW_VALUES,
 		/** @internal The batches of a model's other meshes, which read this batch's rows. */
 		readonly parts: readonly number[] = [],
 		/** @internal The meshes and materials that the batch and its parts draw. */
@@ -1908,7 +1922,8 @@ export class InstanceBatch {
 			positions: core.f32(address(C.BATCH_FIELD_POSITIONS), this.count * 3),
 			rotations: core.f32(address(C.BATCH_FIELD_ROTATIONS), this.count * 4),
 			scales: core.f32(address(C.BATCH_FIELD_SCALES), this.count * 3),
-			colors: this.hasColors ? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4) : undefined,
+			colors: this.own.colors ? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4) : undefined,
+			values: this.own.values ? core.f32(address(C.BATCH_FIELD_VALUES), this.count * 4) : undefined,
 		};
 		this.generation = core.generation;
 	}
@@ -1929,11 +1944,19 @@ export class InstanceBatch {
 	}
 
 	/**
-	 * Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version
-	 * stores them but does not draw them yet.
+	 * Linear RGBA colors, 4 floats per row, when the batch was created with `colors`. Each multiplies
+	 * its row's base color and opacity.
 	 */
 	get colors(): Float32Array | undefined {
 		return this.views().colors;
+	}
+
+	/**
+	 * The rows' own values, 4 floats per row, when the batch was created with `values`. A custom
+	 * material's WGSL reads its row's as `object.values`.
+	 */
+	get values(): Float32Array | undefined {
+		return this.views().values;
 	}
 
 	/** Draws only the first `count` rows. */
@@ -2048,6 +2071,22 @@ export class InstanceBatch {
 	}
 }
 
+/** @internal The row arrays of an instance batch besides its transforms, as its options ask. */
+export interface RowValueArrays {
+	readonly colors: boolean;
+	readonly values: boolean;
+}
+
+/** @internal An instance batch with neither colors nor values. */
+export const NO_ROW_VALUES: RowValueArrays = { colors: false, values: false };
+
+/** The row arrays that an instance batch's options ask for. */
+function rowValueArrays(options: Partial<InstanceOptions>): RowValueArrays {
+	const colors = options.colors ?? false;
+	const values = options.values ?? false;
+	return colors || values ? { colors, values } : NO_ROW_VALUES;
+}
+
 /** @internal The meshes and materials that an instance batch draws, which their destroy checks. */
 export interface BatchUses {
 	readonly meshes: readonly MeshGeometry[];
@@ -2062,8 +2101,12 @@ const MESH_ROW_FIELDS: readonly RowField[] = [
 	[C.BATCH_FIELD_ROTATIONS, 4],
 	[C.BATCH_FIELD_SCALES, 3],
 ];
-const MESH_COLOR_ROW_FIELDS: readonly RowField[] = [...MESH_ROW_FIELDS, [C.BATCH_FIELD_COLORS, 4]];
-const meshRowFields = (colors: boolean) => (colors ? MESH_COLOR_ROW_FIELDS : MESH_ROW_FIELDS);
+/** The row fields of an instance batch with the row arrays of `own`. */
+const meshRowFields = (own: RowValueArrays): readonly RowField[] => [
+	...MESH_ROW_FIELDS,
+	...(own.colors ? [[C.BATCH_FIELD_COLORS, 4] as RowField] : []),
+	...(own.values ? [[C.BATCH_FIELD_VALUES, 4] as RowField] : []),
+];
 
 /** The row fields of a sprite or point batch. */
 const SPRITE_ROW_FIELDS: readonly RowField[] = [
@@ -3079,7 +3122,7 @@ export class Scene {
 		call: string,
 	): InstanceBatch {
 		const { core } = this;
-		const colors = options.colors ?? false;
+		const own = rowValueArrays(options);
 		const ids: number[] = [];
 		try {
 			for (const part of parts)
@@ -3089,7 +3132,7 @@ export class Scene {
 							ids[0] ?? 0,
 							count,
 							options.dynamic ?? false,
-							colors,
+							own !== NO_ROW_VALUES,
 							part.mesh.id,
 							part.material.id,
 							part.matrix,
@@ -3103,9 +3146,9 @@ export class Scene {
 		}
 		if (DEV) this.countBatchRows(count * ids.length);
 		const uses = { meshes: parts.map((p) => p.mesh), materials: parts.map((p) => p.material) };
-		const batch = new InstanceBatch(this, ids[0] as number, count, colors, ids.slice(1), uses);
+		const batch = new InstanceBatch(this, ids[0] as number, count, own, ids.slice(1), uses);
 		this.rememberBatch(batch);
-		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(colors));
+		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(own));
 		if (options.layers !== undefined) batch.setLayers(options.layers);
 		if (options.castShadows) batch.setCastShadows(true);
 		if (options.receiveShadows) batch.setReceiveShadows(true);
@@ -3152,24 +3195,24 @@ export class Scene {
 		}
 		const mesh = source;
 		const material = options.material as Material;
+		const own = rowValueArrays(options);
 		const id = core.checkGrowth(
 			core.glue.createBatch(
 				count,
 				options.dynamic ?? false,
-				options.colors ?? false,
+				own !== NO_ROW_VALUES,
 				mesh.id,
 				material.id,
 			),
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const batch = new InstanceBatch(this, id, count, options.colors ?? false, [], {
+		const batch = new InstanceBatch(this, id, count, own, [], {
 			meshes: [mesh],
 			materials: [material],
 		});
 		this.rememberBatch(batch);
-		if (DEV && !options.dynamic)
-			this.unmarkedRows?.watch(batch, meshRowFields(options.colors ?? false));
+		if (DEV && !options.dynamic) this.unmarkedRows?.watch(batch, meshRowFields(own));
 		batch.setActiveCount(count);
 		if (layers !== undefined) batch.setLayers(layers);
 		if (options.castShadows) batch.setCastShadows(true);
@@ -3267,7 +3310,7 @@ export class Scene {
 			call,
 		);
 		if (DEV) this.countBatchRows(count);
-		const instances = new InstanceBatch(this, id, count, false, [], {
+		const instances = new InstanceBatch(this, id, count, NO_ROW_VALUES, [], {
 			meshes: [parts.mesh],
 			materials: [parts.material],
 		});
@@ -3318,7 +3361,7 @@ export class Scene {
 		);
 		const rows = LINE_SEGMENTS[mode](points);
 		if (DEV) this.countBatchRows(rows);
-		const instances = new InstanceBatch(this, id, rows, false, [], {
+		const instances = new InstanceBatch(this, id, rows, NO_ROW_VALUES, [], {
 			meshes: [parts.mesh],
 			materials: [],
 		});

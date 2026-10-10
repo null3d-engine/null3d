@@ -26,6 +26,8 @@ fn custom(textures: u32) -> Shading {
         base_color: true,
         textures,
         transmission: false,
+        row_values: false,
+        caster: false,
     })
 }
 
