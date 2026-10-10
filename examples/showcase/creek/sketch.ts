@@ -27,6 +27,9 @@ const DETAIL: Record<
 	high: { land: 320, texture: 512, rock: 3, water: 400 },
 	ultra: { land: 384, texture: 1024, rock: 3, water: 400 },
 };
+/** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
+const FOV = 45;
+const DSLR_FOCAL_LENGTH = 50;
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
 
@@ -44,7 +47,7 @@ export default defineSketch(async (ctx) => {
 		shadow: { distance: 40, normalBias: 0.04 },
 	});
 	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
-	const camera = scene.createPerspectiveCamera({ fov: 45, near: 0.05, far: 2000 });
+	const camera = scene.createPerspectiveCamera({ fov: FOV, near: 0.05, far: 2000 });
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, {
 		target: [...TARGET],
@@ -73,16 +76,20 @@ export default defineSketch(async (ctx) => {
 	};
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
-	// The lens focuses on the point that the camera orbits, in every frame.
-	const lens = { dof: { aperture: 1.4, maxBlur: 0.025, focusPoint: view.controls.target } };
-	let dslr = params.has('dslr');
-	if (dslr) post.set(lens);
+	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera orbits in
+	// every frame. Off, the camera keeps its wider view and everything stays sharp.
+	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: view.controls.target } };
+	let dslr = false;
+	const setLens = (on: boolean) => {
+		dslr = on;
+		if (on) camera.setFocalLength(DSLR_FOCAL_LENGTH);
+		else camera.setFov(FOV);
+		post.set(on ? lens : { dof: false });
+	};
+	if (params.has('dslr')) setLens(true);
 	page.onMessage((name, value) => {
 		if (name === 'mood' && isMood(value)) choose(value);
-		if (name === 'dslr') {
-			dslr = value === 'On';
-			post.set(dslr ? lens : { dof: false });
-		}
+		if (name === 'dslr') setLens(value === 'On');
 	});
 
 	return {
