@@ -391,11 +391,9 @@ const WEBGL_ONLY_MODELS: ReadonlySet<(typeof MODEL_NAMES)[number]> = new Set([
 
 /**
  * Each feature scene that the exit gate's parity covers: standard materials, the light types
- * (point and spot lights, and the directional and ambient lights of the material scenes), fog, tone
- * mapping, the orthographic camera, glTF sample models through the loader, and shadows at their
- * own limit. The engine stores hemisphere
- * lights but does not draw them yet; the lights twin draws `?scene=hemisphere` already, so the pull
- * request that draws them adds that scene's image test here. The tone mappings compare without
+ * (point, spot and hemisphere lights, and the directional and ambient lights of the material
+ * scenes), fog, tone mapping, the orthographic camera, glTF sample models through the loader, and
+ * shadows at their own limit. The tone mappings compare without
  * anti-aliasing: null3D resolves the samples of an edge before it tone maps them, and three.js's
  * WebGLRenderer after, so a bright edge differs by design. The tone mapping spec compares each
  * tile's color with anti-aliasing on.
@@ -418,6 +416,12 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	{
 		test: 'environment-venice-hdr',
 		twin: `${TWINS}/environment.html?env=venice`,
+		sketchSwitches: NO_TONE,
+	},
+	// The room with a hemisphere light, whose light adds to the environment's in both engines.
+	{
+		test: 'environment-room-hemisphere',
+		twin: `${TWINS}/environment.html?env=room&hemisphere`,
 		sketchSwitches: NO_TONE,
 	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
@@ -472,6 +476,11 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	),
 	{ test: 'lights-16', twin: `${TWINS}/lights.html?lights=16`, sketchSwitches: NO_TONE },
 	{ test: 'lights-spot', twin: `${TWINS}/lights.html?scene=spot`, sketchSwitches: NO_TONE },
+	{
+		test: 'lights-hemisphere',
+		twin: `${TWINS}/lights.html?scene=hemisphere`,
+		sketchSwitches: NO_TONE,
+	},
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
 	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
 	...TONE_MAPPINGS.flatMap((tone) =>

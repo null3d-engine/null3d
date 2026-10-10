@@ -61,7 +61,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a scene pass draws
 
-A scene pass draws the scene's objects with their materials, the sun, its shadows where the camera's shadow cascades reach, the ambient light, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background, and it culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
+A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background, and it culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
 
 ## Reflection passes
 
@@ -138,7 +138,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a reflection draws
 
-A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient light, the environment's light and the fog. In this version a reflection draws no point or spot lights and no ambient occlusion, as scene passes do not. A lamp's glowing material still shows in the reflection. The light that the lamp casts on the objects around it does not. Development builds warn once when the scene has point or spot lights.
+A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient and hemisphere lights, the environment's light and the fog. In this version a reflection draws no point or spot lights and no ambient occlusion, as scene passes do not. A lamp's glowing material still shows in the reflection. The light that the lamp casts on the objects around it does not. Development builds warn once when the scene has point or spot lights.
 
 Devices that draw 8-bit color apply the tone curve twice to a reflection, as to a scene pass's texture. The reflected sky looks a little grayer there.
 

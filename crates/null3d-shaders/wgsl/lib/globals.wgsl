@@ -46,6 +46,13 @@ struct Frame {
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
+    /// The light that the hemisphere lights add along each world axis, each in `xyz`. A surface
+    /// with unit normal n gets `ambient` plus n.x times the first, n.y times the second and n.z
+    /// times the third (see null3d::lighting::ambient_irradiance). All zero without hemisphere
+    /// lights.
+    hemisphere_x: vec4f,
+    hemisphere_y: vec4f,
+    hemisphere_z: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every
