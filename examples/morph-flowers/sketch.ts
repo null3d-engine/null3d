@@ -11,8 +11,7 @@ const [PETALS, ACROSS, ALONG, LENGTH, WIDTH] = [6, 6, 10, 0.085, 0.06];
 /** The petals' colors as linear values, three at a time: red, yellow, white, purple and orange. */
 const HUES = [0.8, 0.03, 0.06, 0.95, 0.65, 0.04, 0.9, 0.88, 0.82, 0.45, 0.05, 0.6, 1, 0.25, 0.02];
 /** The bud's green, and the tulips along and across the bed. */
-const BUD = [0.1, 0.3, 0.05];
-const [ROWS, COLUMNS] = [6, 12];
+const [BUD, ROWS, COLUMNS] = [[0.1, 0.3, 0.05], 6, 12] as const;
 
 /** The point of petal `p` at (u, v), with u across it from -1 to 1 and v from its base to its tip. */
 function petal(out: Vec3, p: number, u: number, v: number, open: number): Vec3 {
@@ -36,10 +35,9 @@ function petal(out: Vec3, p: number, u: number, v: number, open: number): Vec3 {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, time } = ctx;
 	const day = timeOfDay(8.6, { heading: -2.2 });
-	const sky = { ...day.sky, cloudCoverage: 0.3 };
-	scene.setBackground({ sky }, { intensity: day.skyIntensity });
+	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
 	scene.setFog({ color: day.fog.color, density: 0.03, sunGlow: day.fog.sunGlow });
 	post.set({
@@ -88,16 +86,24 @@ export default defineSketch(async (ctx) => {
 		return geometry.fromArrays({ positions: closed, normals, colors, indices, morphTargets });
 	});
 
-	// The raised bed: dark soil inside a frame of planks, on a lawn.
+	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn.
+	const data = new Uint8Array(64 * 64 * 4).fill(255);
+	for (let i = 0, w = Math.PI / 32; i < 64 * 64; i++) {
+		const [x, y, r] = [i % 64, i >> 6, Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1)];
+		const clod = (0.6 + 0.5 * r) * (0.85 + 0.2 * Math.sin(6 * w * x) * Math.sin(7 * w * y));
+		data.set(r > 0.97 ? [140, 128, 112] : [92 * clod, 62 * clod, 42 * clod], i * 4);
+	}
+	const look = { colorSpace: 'srgb', wrap: 'repeat', mipmaps: true, anisotropy: 8 } as const;
+	const earth = textures.fromData({ width: 64, height: 64, data, ...look });
 	const box = geometry.box();
 	const part = (options: Partial<MeshOptions> & Pick<MeshOptions, 'material'>) =>
 		scene.createMesh({ mesh: box, castShadows: true, receiveShadows: true, ...options });
-	const paint = (color: string, roughness = 0.8) => materials.standard({ color, roughness });
 	const lawn = materials.standard({ color: '#4c7a2e', roughness: 1, doubleSided: true });
 	const flat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 	part({ mesh: geometry.plane({ width: 1e4, height: 1e4 }), material: lawn, rotation: flat });
-	part({ material: paint('#3a2618', 1), position: [0, 0.06, 0], scale: [2.6, 0.12, 1.4] });
-	const plank = paint('#8a6a48');
+	const soil = materials.standard({ map: earth, roughness: 1, uvTransform: { repeat: [13, 7] } });
+	part({ material: soil, position: [0, 0.06, 0], scale: [2.6, 0.12, 1.4] });
+	const plank = materials.standard({ color: '#8a6a48', roughness: 0.8 });
 	for (const side of [-1, 1]) {
 		part({ material: plank, position: [0, 0.09, side * 0.72], scale: [2.8, 0.18, 0.08] });
 		part({ material: plank, position: [side * 1.36, 0.09, 0], scale: [0.08, 0.18, 1.36] });
@@ -105,7 +111,7 @@ export default defineSketch(async (ctx) => {
 
 	// The tulips: a stem, two leaves and a head, in a group that sways in the breeze.
 	const petals = materials.standard({ vertexColors: true, roughness: 0.55, doubleSided: true });
-	const green = paint('#3f7a2a', 0.6);
+	const green = materials.standard({ color: '#3f7a2a', roughness: 0.6 });
 	const leaf = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
 	math.seed(9);
 	const tulips = Array.from({ length: ROWS * COLUMNS }, (_, t) => {

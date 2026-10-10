@@ -138,7 +138,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			"A day passes over a lighthouse in 40 seconds. timeOfDay gives each hour's sky, sun or moon, fog and exposure, and the sky's light follows the sun. At dusk the windows light up and the lighthouse beams sweep the sea.",
 		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
-		hold: 4.5,
+		hold: 6,
 		timeoutSeconds: 60,
 	},
 	{

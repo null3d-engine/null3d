@@ -35,7 +35,7 @@ export default defineSketch(async (ctx) => {
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.35 });
 	scene.setFog({ color: '#0a0807', density: 0.25 });
 	post.set({ bloom: { intensity: 0.3, threshold: 1 }, ao: { radius: 0.05 }, vignette: {} });
-	post.set({ dof: { aperture: 1.8, maxBlur: 0.03 } });
+	post.set({ dof: { aperture: 1.8, maxBlur: 0.03, blades: 6 } });
 	// Low draws no depth of field by default: ask for a few taps there.
 	const taps = () => quality.settings.dofSamples === 0 && quality.set({ dofSamples: 16 });
 	taps();
