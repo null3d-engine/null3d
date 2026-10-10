@@ -230,6 +230,12 @@ Run it on the phone and the iPad, rested, with other tabs closed: `bun tests/rea
 - The plan runs the page on each GPU path: 3 pages. `?layers=` and `?scale=` change the layers and the render scale.
 - Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan environment --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool. The iPad gives GPU time. The phone gives none, so its figure is the frame interval. Raise `?layers=` until the frames miss the display's rate without the room: the GPU then sets the pace.
 
+## The grass plan
+
+- The `grass` plan measures what row values cost, for [D-127](decisions/D-127-row-values.md). Its page (`tests/pages/grass-cost.html`) draws a field of 100,000 grass blades under the sun's shadows. One side draws them still, in the standard material. The other side sways each blade out of step and tints it, from its row's values, with a custom material that casts swaying shadows.
+- After 2 seconds of play, the page measures each side for 2 seconds, three times each, as the environment plan does. It reports the medians of each side's frame interval, CPU time and busy time per thread, and the GPU time per frame where the browser has a GPU timer. `?count=` changes the number of blades.
+- The plan runs the page on each GPU path: 3 pages. Run it on the Mac while it is quiet: `bun tests/real-browsers.ts --plan grass "Google Chrome"`. Run it on the iPad and the phone: `bun tests/real-browsers.ts --plan grass --android chrome --lan ipad-safari`. Turn on Limit Frame Rate on the iPad first, and start the phone cool.
+
 ## The environment load plan
 
 - The `environment-load` plan times an environment that a sketch asks for during play, for [D-19](decisions/D-19-environment-maps.md). Its page (`tests/pages/room-light.html`) draws a metal sphere with no light. The sketch then asks for the built-in room, or with `?source=` loads an HDR file, and sets it with a blue background in the same step.
