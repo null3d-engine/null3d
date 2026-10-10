@@ -36,11 +36,11 @@ How the data was produced: pending.
 
 ## Decision
 
-Option 1. The hidden radius in both buffers is the signal: the renderer has seen the row hidden in both frame parities, so a row that stops changing needs no more uploads. The object that is hidden itself has a shown parent, so it keeps updating, and its children read its fresh hidden row.
+Option 1. The hidden radius in both buffers is the signal. The renderer has then seen the row hidden in both frame parities, so the row needs no more uploads. The object that is hidden itself has a shown parent, so it keeps updating, and its children read its fresh hidden row.
 
-A new flag, `TRACKED`, marks the objects whose world transform the frame reads while hidden: the views read their camera's, and the shadow fit and the mirror pass read one too. TypeScript sets it on every camera. The hierarchy order's rebuild marks each tracked object and its ancestors in a bitset, which costs one bit per object. The create command now carries 16 bits of flags, since the 8 it carried were all in use.
+A new flag, `TRACKED`, marks the objects whose world transform the frame reads while hidden. The views read their camera's, and so do the shadow fit and the mirror pass. TypeScript sets it on every camera. The hierarchy order's rebuild marks each tracked object and its ancestors in a bitset, which costs one bit per object. The create command now carries 16 bits of flags, since the 8 it carried were all in use.
 
-`absolute_world_matrix`, which the world getters, the label projection and the debug drawing read, composes an untracked object's matrix from the local transforms when its parent's row is hidden. The row can be old there. It reads the local transforms as they are when the call comes, not as the last frame left them. For a shown object nothing changes.
+The world getters, the label projection and the debug drawing read `absolute_world_matrix`. When a parent's row is hidden, it composes an untracked object's matrix from the local transforms. The row can be old there. It reads the local transforms as they are when the call comes, not as the last frame left them. For a shown object nothing changes.
 
 ## Consequences
 
