@@ -202,7 +202,10 @@ export function presetSettingsTable(): string {
 /** The preset check's rules, from its constants. */
 export function presetCheckTable(): string {
 	const rows = [
-		['Target frame rate', `The display's refresh rate, at most ${CHECK_MAX_FPS} frames per second`],
+		[
+			'Target frame rate',
+			`The display's refresh rate, at most ${CHECK_MAX_FPS} frames per second unless \`targetFps\` asks for more`,
+		],
 		['A preset holds its target', `At ${CHECK_HOLD_SHARE * 100}% of the target or more`],
 		[
 			'Frames drawn before each measurement',

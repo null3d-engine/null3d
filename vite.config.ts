@@ -5,6 +5,7 @@ import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { tunnelServer } from './tests/lib/tunnel-server.ts';
+import { coreSourcesServer } from './tools/lib/core-sources.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
 import { sampleTexturesServer } from './tools/lib/sample-textures.ts';
 import { samplesServer } from './tools/lib/samples.ts';
@@ -20,7 +21,8 @@ import { sourceResolve } from './tools/lib/source-condition.ts';
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
 // images under /sample-textures/, and S6's model files, built from the sample content's city
 // layout, to modules that import them. Requests that come through BrowserStack Local's tunnel get
-// cache times and compression.
+// cache times and compression. The dev server gives the engine the stamp of the core's Rust
+// sources, so a page whose WebAssembly core is older than the checkout fails with E1402.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -73,6 +75,7 @@ const config: UserConfig = {
 		samplesServer(import.meta.dirname),
 		sampleEnvironmentsServer(import.meta.dirname),
 		sampleTexturesServer(import.meta.dirname),
+		coreSourcesServer(import.meta.dirname),
 		cityServer(import.meta.dirname),
 		indexRedirect,
 	],

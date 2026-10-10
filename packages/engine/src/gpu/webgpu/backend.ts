@@ -99,6 +99,16 @@ function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
 	return value;
 }
 
+/** The views, bind groups and pass descriptors that make the mip levels of one layer of a texture. */
+interface MipChain {
+	readonly layer: number;
+	readonly pipeline: GPURenderPipeline;
+	/** Each level's group, which reads the level before it, from level 1. */
+	readonly groups: GPUBindGroup[];
+	/** Each level's render pass, which draws into it, from level 1. */
+	readonly passes: GPURenderPassDescriptor[];
+}
+
 export class WebGPUBackend {
 	private readonly buffers: (GPUBuffer | undefined)[] = [];
 	private readonly textures: (GPUTexture | undefined)[] = [];
@@ -120,6 +130,8 @@ export class WebGPUBackend {
 	private readonly ownsImages: boolean;
 	/** The sampler that mip levels read the level before them with. */
 	private mipSampler: GPUSampler | undefined;
+	/** What making each texture's mip levels draws with, by texture id, once it made them. */
+	private readonly mipChains: (MipChain | undefined)[] = [];
 	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
 	/** True for each render pipeline, by id, that draws lines rather than triangles. */
@@ -389,6 +401,7 @@ export class WebGPUBackend {
 		this.textures[id] = undefined;
 		this.bindingViews[id] = undefined;
 		this.targetViews[id] = undefined;
+		this.mipChains[id] = undefined;
 	}
 
 	/**
@@ -440,13 +453,30 @@ export class WebGPUBackend {
 	/**
 	 * Makes mip levels 1 and up of one layer of a texture array, a render pass per level. Each pass
 	 * draws into its level of the layer, and reads the level before it through a view of every
-	 * layer, as compatibility mode binds whole arrays only.
+	 * layer, as compatibility mode binds whole arrays only. The views, bind groups and pass
+	 * descriptors stay with the texture, so a render target whose levels a frame makes in every
+	 * frame makes none of them again.
 	 */
 	private generateMipmaps(id: number, layer: number): void {
 		const texture = this.need(this.textures, id, 'texture');
 		const pipeline = this.pipelines.mipmaps(texture.format);
-		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		let chain = this.mipChains[id];
+		if (!chain || chain.layer !== layer || chain.pipeline !== pipeline)
+			chain = this.mipChains[id] = this.mipChain(texture, pipeline, layer);
 		const encoder = this.commandEncoder();
+		for (let level = 1; level < texture.mipLevelCount; level++) {
+			const pass = encoder.beginRenderPass(chain.passes[level - 1] as GPURenderPassDescriptor);
+			pass.setPipeline(pipeline);
+			pass.setBindGroup(0, chain.groups[level - 1] as GPUBindGroup);
+			pass.draw(3, 1, 0, layer);
+			pass.end();
+		}
+	}
+
+	/** What making the levels of one layer of a texture with `pipeline` draws with, level by level. */
+	private mipChain(texture: GPUTexture, pipeline: GPURenderPipeline, layer: number): MipChain {
+		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		const chain: MipChain = { layer, pipeline, groups: [], passes: [] };
 		for (let level = 1; level < texture.mipLevelCount; level++) {
 			const source = texture.createView({
 				dimension: '2d-array',
@@ -454,13 +484,15 @@ export class WebGPUBackend {
 				mipLevelCount: 1,
 				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
 			});
-			const group = this.device.createBindGroup({
-				layout: pipeline.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: source },
-					{ binding: 1, resource: this.mipSampler },
-				],
-			});
+			chain.groups.push(
+				this.device.createBindGroup({
+					layout: pipeline.getBindGroupLayout(0),
+					entries: [
+						{ binding: 0, resource: source },
+						{ binding: 1, resource: this.mipSampler },
+					],
+				}),
+			);
 			const target = texture.createView({
 				dimension: '2d',
 				baseMipLevel: level,
@@ -469,14 +501,11 @@ export class WebGPUBackend {
 				arrayLayerCount: 1,
 				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
 			});
-			const pass = encoder.beginRenderPass({
+			chain.passes.push({
 				colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }],
 			});
-			pass.setPipeline(pipeline);
-			pass.setBindGroup(0, group);
-			pass.draw(3, 1, 0, layer);
-			pass.end();
 		}
+		return chain;
 	}
 
 	/** The generators' code once a generator ran, which frees a sky map with its texture. */

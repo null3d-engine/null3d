@@ -374,7 +374,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. Instance batches neither cast nor receive them yet.",
+      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. An instance batch takes castShadows and receiveShadows in createInstances, or batch.setCastShadows(true) / setReceiveShadows(true), for every row (since 0.2).",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -780,8 +780,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas. Clearcoat, transmission, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps, and transmission",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, and transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry). Clearcoat, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -795,6 +795,17 @@
       "notes": "Same names, ranges and formulas, so the values carry over, and glTF's KHR_materials_ior and KHR_materials_specular load into them. specularColor takes linear components above 1, as three.js's Color does. reflectivity has no option: set ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity), as three.js converts it.",
       "docs": "api/materials",
       "detect": "\\bspecular(Intensity|Color)(Map)?\\b|\\.ior\\b|\\bior\\s*:"
+    },
+    {
+      "id": "mat-transmission",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial transmission / thickness / attenuationColor / attenuationDistance",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ transmission, thickness, ior, roughness, attenuationColor, attenuationDistance })",
+      "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet, and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
     },
     {
       "id": "mat-basic",
@@ -1298,7 +1309,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2.",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1617,7 +1628,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
-      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction have no port yet.",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
       "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },

@@ -32,6 +32,7 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
+use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
@@ -55,6 +56,9 @@ pub(super) struct LitTextures {
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    /// The copy of the opaque color that surfaces which let light through sample: the camera's,
+    /// or a blank texel for other views.
+    pub(super) transmission: u32,
 }
 
 /// The ring slots a view's frame draws from.
@@ -249,8 +253,9 @@ impl Opaque {
     /// split-sum terms of specular light. A camera's view has one group for each slot of the light
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
     /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
-    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, and the
-    /// environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
+    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, the environment's
+    /// cube texture of `lit` with its sampler, and the copy of the opaque color of `lit`, which
+    /// the environment's sampler reads too. A shadow cascade's or a shadow tile's
     /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
@@ -283,6 +288,7 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            transmission: copy,
         }) = lit
         else {
             let mut words = [0; 18];
@@ -291,7 +297,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 53 + environment::ENTRY_WORDS];
+        let mut words = [0; 58 + environment::ENTRY_WORDS];
         words[3..18].copy_from_slice(&common);
         words[18..43].copy_from_slice(&[
             4,
@@ -321,7 +327,7 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 12]);
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 13]);
             words[43..48].copy_from_slice(&[
                 7,
                 resource_kind::TEXTURE,
@@ -330,7 +336,14 @@ impl Opaque {
                 0,
             ]);
             words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[53..]
+            words[53..58].copy_from_slice(&[
+                transmission::BINDING,
+                resource_kind::TEXTURE,
+                copy,
+                0,
+                0,
+            ]);
+            words[58..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }

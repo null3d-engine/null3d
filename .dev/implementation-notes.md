@@ -286,7 +286,7 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - The repository's Vite configs turn the option on, because the production build tests and the benchmarks set the switches in the address. The `null3d` command defines the same constant for its production runs, so it works with a project's own config.
 - Without the option, the plugin leaves the constant undefined, and the engine follows its development flag. A build that defines the constant itself, as the `null3d` command does, keeps its value.
 - `?replay-delay=` makes the thread that draws busy-wait before it replays each frame's list, from 1 to 1,000 ms. The sketch thread then steps the next frame first. Engine tests use it to find memory that a step moves or frees while the list being replayed still points at it ([D-103](decisions/D-103-growing-object-tables.md#the-thread-that-draws)). The page's main thread writes it to a slot of the control block at the start, so it works on every thread that draws.
-- `?jobs=` starts at most one job worker for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
+- `?jobs=` sets the most job workers, at most one for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
 - The development flag and this one live in one module. It holds constants only, so the bundler folds them into each file that reads them. The files that load on first use still share no module with the start's files (review R8, R8-11).
 
 ## Public type declarations
@@ -493,6 +493,13 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - The counting and writing steps test each tile only against the lights that reach the workgroup's slice. On the Mac's GPU that cut the three dispatches for S3's 256 lights from about 0.31 ms to 0.23 ms.
 - WebGPU's first frame builds the pass's three pipelines whether or not the scene has lights, so play builds none.
 - The render crate's tests write a fixture of light grids for the `light-clusters` page. Linux's math library rounds tangents, logarithms and powers in its own way. So the fixture's parameters may differ from the Mac's by a millionth of their size. The counts, lights and grids must match exactly.
+
+## Writes that skip a mark
+
+- Development builds report E1110 for a static object whose position, rotation, scale or bounding sphere changed without a setter. They check before each transform update, the late one included (M1-B5, #93, #84, #164).
+- They also report a row of a static instance, sprite or point batch that changed without `markDirty` (M2-R6). The core's update of the batches clears their marks, so the check runs right before it, after the late update. It reads the marks through the batch field `DIRTY_WORDS` of `batchArrays`.
+- The check of objects reads every static object in each frame. Rows can number hundreds of thousands, so the row check takes turns: it hashes at most 8,192 rows of each batch per frame (`ROWS_PER_CHECK`). In Bun on the MacBook Pro, a check of every row of a batch of 100,000 rows took 1.4 to 1.5 ms. The slice took 0.18 ms. A cheaper hash did not change the time. A row's hash may change between its turns, after the core has cleared a mark. So in each frame the check adds the core's marks to marks of its own, one bit a row, and clears a row's bit only when it hashes that row. A row marked and then written again without a mark before its turn goes unreported. That is the price of the bounded time.
+- Line batches are left out. Their `markDirty` counts points, while the core marks segments, and the row arrays hold points. A check of them would need its own map from points to segments.
 
 ## Raycasts and overlap queries
 

@@ -12,6 +12,11 @@
 // beside them, so each has its own bar. The job workers share one bar with the slowest worker's
 // time, since they share one step of the frame and the frame waits for the slowest.
 //
+// Above the bars, a display symbol leads the display's refresh rate and the target, which can be
+// lower: the engine draws at the display's rate and defends the target. Each bar's dark mark sits
+// at the target's interval, and a faint mark at the display's shorter interval. The symbols carry
+// tooltips with the full words, so the card stays short.
+//
 // The first update builds the card, and later updates change text, bar widths and levels only.
 // Bar widths come from a table of widths made once, so a bar that moves allocates nothing. A
 // level, ok, warn or bad, is a data attribute that the style sheet colors.
@@ -110,6 +115,7 @@ h3 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .bar { position: relative; height: 8px; border-radius: 4px; background: #e6eaef; overflow: hidden; }
 .part { position: absolute; top: 0; bottom: 0; left: 0; width: 0; }
 .mark { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; margin-left: -1px; background: #10141a; }
+.mark.display { opacity: 0.3; }
 .key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: #3b4450; }
 .key > span { display: inline-flex; align-items: center; }
 .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; }
@@ -358,22 +364,22 @@ const MODE_NOTES: Readonly<
 };
 
 /**
- * The symbol of the engine's frame mode before the target: a button whose tooltip explains the
- * mode. The tooltip shows while the pointer is on the button or the button has the keyboard's
- * focus, and a click or a tap shows or hides it, since touch screens have no hover.
+ * A symbol button whose tooltip explains a figure. The tooltip shows while the pointer is on the
+ * button or the button has the keyboard's focus, and a click or a tap shows or hides it, since
+ * touch screens have no hover.
  */
-class ModeNote {
-	private readonly button: HTMLButtonElement;
+class Note {
+	readonly button: HTMLButtonElement;
 	private readonly tip: HTMLSpanElement;
-	private mode: FrameMode | undefined;
 
-	constructor(parent: Node) {
+	/** `id` names the tooltip, which the button points at. */
+	constructor(parent: Node, id: string) {
 		const note = element('span', 'note', parent);
 		const button = element('button', '', note);
 		button.type = 'button';
-		button.setAttribute('aria-describedby', 'mode-tip');
+		button.setAttribute('aria-describedby', id);
 		const tip = element('span', 'tip', note);
-		tip.id = 'mode-tip';
+		tip.id = id;
 		tip.setAttribute('role', 'tooltip');
 		button.addEventListener('click', (event) => {
 			note.dataset.open = note.dataset.open === 'true' ? 'false' : 'true';
@@ -385,21 +391,43 @@ class ModeNote {
 		this.tip = tip;
 	}
 
+	/** Sets the button's label and the tooltip's words. */
+	words(label: string, tip: string): void {
+		this.button.setAttribute('aria-label', label);
+		this.tip.textContent = tip;
+	}
+
+	/** Empties the button and gives it a new icon of 16 by 16 units to draw in. */
+	icon(): SVGSVGElement {
+		this.button.replaceChildren();
+		return svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, this.button);
+	}
+}
+
+/** The stroke of a line icon. */
+const LINE = { fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6' } as const;
+
+/** The symbol of the engine's frame mode before the target, with words that explain the mode. */
+class ModeNote {
+	private readonly note: Note;
+	private mode: FrameMode | undefined;
+
+	constructor(parent: Node) {
+		this.note = new Note(parent, 'mode-tip');
+	}
+
 	/** Shows the symbol and the words of a mode. */
 	set(mode: FrameMode): void {
 		if (mode === this.mode) return;
 		this.mode = mode;
 		const { symbol, label, tip } = MODE_NOTES[mode];
-		const { button } = this;
-		button.dataset.figure = `mode:${mode}`;
-		button.setAttribute('aria-label', label);
-		this.tip.textContent = tip;
-		button.replaceChildren();
-		const icon = svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, button);
+		const { note } = this;
+		note.button.dataset.figure = `mode:${mode}`;
+		note.words(label, tip);
+		const icon = note.icon();
 		if (symbol === 'clock') {
-			const line = { fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6' };
-			svg('circle', { ...line, cx: '8', cy: '9', r: '5.5' }, icon);
-			svg('path', { ...line, d: 'M8 6v3.2l2 1.3M6.5 2h3', 'stroke-linecap': 'round' }, icon);
+			svg('circle', { ...LINE, cx: '8', cy: '9', r: '5.5' }, icon);
+			svg('path', { ...LINE, d: 'M8 6v3.2l2 1.3M6.5 2h3', 'stroke-linecap': 'round' }, icon);
 			return;
 		}
 		for (const [x, y, opacity] of [
@@ -412,6 +440,66 @@ class ModeNote {
 				{ x, y, width: '8', height: '2.4', rx: '1.2', fill: 'currentColor', opacity },
 				icon,
 			);
+	}
+}
+
+/** The words that say what the quality does below the target. */
+const BELOW_TARGET =
+	'The preset check and the quality governor lower the quality when frames fall below it.';
+
+/**
+ * The words of the target's symbol, for a target frame rate and the display's refresh rate, 0
+ * before it is measured.
+ */
+export function targetTip(target: number, refreshHz: number): string {
+	const fps = `${Math.round(target)} fps`;
+	if (refreshHz <= 0)
+		return `The display's rate is not measured yet, so the engine defends ${fps} for now.`;
+	if (refreshHz <= target)
+		return `The engine defends the display's full rate, ${fps}. ${BELOW_TARGET} Each bar's mark is ${ms(1000 / target)}.`;
+	return `The display runs at ${Math.round(refreshHz)} Hz, and the engine draws up to that rate. It defends ${fps}. ${BELOW_TARGET} Each bar's dark mark is ${ms(1000 / target)}, and its faint mark is ${ms(1000 / refreshHz)}. The targetFps option raises the target.`;
+}
+
+/**
+ * The target's symbol, a display, and its figures: the display's refresh rate where it is above
+ * the target, then the target and its interval. A target below the display's rate is a floor, which
+ * a sign marks. Each bar then gets a faint second mark at the display's interval.
+ */
+class TargetFigures {
+	private readonly note: Note;
+	private readonly display: { element: HTMLElement; text: Text };
+	private readonly target: Text;
+	/** The target and the refresh rate that the figures show, or -1 before any. */
+	private shownTarget = -1;
+	private shownRefresh = -1;
+
+	constructor(parent: Node) {
+		this.note = new Note(parent, 'target-tip');
+		this.note.button.dataset.figure = 'target-note';
+		const icon = this.note.icon();
+		svg('rect', { ...LINE, x: '1.5', y: '2.5', width: '13', height: '8.5', rx: '1.5' }, icon);
+		svg('path', { ...LINE, d: 'M8 11v3M5 14h6', 'stroke-linecap': 'round' }, icon);
+		this.display = figure('span', 'display', parent, 'muted');
+		this.target = figure('span', 'target', parent).text;
+	}
+
+	/**
+	 * Shows a target against the display's refresh rate, 0 before it is measured, and places the
+	 * display's mark on each of `lanes`. The figures change only when either rate changes.
+	 */
+	update(target: number, refreshHz: number, lanes: readonly Lane[]): void {
+		if (target === this.shownTarget && refreshHz === this.shownRefresh) return;
+		this.shownTarget = target;
+		this.shownRefresh = refreshHz;
+		const above = refreshHz > target;
+		this.display.element.hidden = !above;
+		if (above) setText(this.display.text, `${Math.round(refreshHz)} Hz`);
+		setText(this.target, `${above ? '≥' : ''}${Math.round(target)} fps · ${ms(1000 / target)}`);
+		this.note.words('Target frame rate: what it means', targetTip(target, refreshHz));
+		// Each bar spans twice the target's interval, so the display's shorter interval sits at this
+		// share of it.
+		const mark = above ? target / (2 * refreshHz) : 0;
+		for (const lane of lanes) lane.displayMark(mark);
 	}
 }
 
@@ -518,6 +606,7 @@ class Lane {
 	private readonly work: Part;
 	private readonly drawing: Part | undefined;
 	private readonly count: Text | undefined;
+	private readonly display: HTMLSpanElement;
 
 	constructor(parent: Node, name: string, label: string, kind: 'thread' | 'both' | 'jobs' | 'gpu') {
 		const lane = element('div', 'lane', parent);
@@ -532,8 +621,16 @@ class Lane {
 		this.work = new Part(bar, kind === 'gpu' ? 'part gpu' : 'part engine');
 		if (kind === 'both') this.drawing = new Part(bar, 'part drawing');
 		element('span', 'mark', bar);
+		this.display = element('span', 'mark display', bar);
+		this.display.hidden = true;
 		this.value = figure('span', name, lane, 'value').text;
 		this.element = lane;
+	}
+
+	/** Places the display's mark at a share of the bar, or hides it for 0. */
+	displayMark(share: number): void {
+		this.display.hidden = share <= 0;
+		if (share > 0) this.display.style.left = WIDTHS[widthStep(share)] as string;
 	}
 
 	/**
@@ -592,7 +689,7 @@ class LegendItem {
 /** The figures under the header, which `update` fills. */
 export class StatsCard {
 	readonly element: HTMLDivElement;
-	private readonly target: Text;
+	private readonly target: TargetFigures;
 	private readonly mode: ModeNote;
 	private readonly both: Lane;
 	private readonly sketch: Lane;
@@ -600,6 +697,7 @@ export class StatsCard {
 	private readonly jobs: Lane;
 	private readonly page: Lane;
 	private readonly gpu: Lane;
+	private readonly lanes: readonly Lane[];
 	private readonly heldBack: { element: HTMLElement; text: Text };
 	private readonly memoryTotal: Text;
 	private readonly memoryParts: Part[] = [];
@@ -620,7 +718,7 @@ export class StatsCard {
 		title.append('Frame work');
 		const aside = element('span', 'aside', title);
 		this.mode = new ModeNote(aside);
-		this.target = figure('span', 'target', aside).text;
+		this.target = new TargetFigures(aside);
 		const key = element('div', 'key', work);
 		for (const [className, label] of [
 			['code', 'Your code'],
@@ -638,6 +736,7 @@ export class StatsCard {
 		this.jobs = new Lane(lanes, 'jobs', 'Jobs', 'jobs');
 		this.page = new Lane(lanes, 'page', 'Page', 'thread');
 		this.gpu = new Lane(lanes, 'gpu', 'GPU', 'gpu');
+		this.lanes = [this.both, this.sketch, this.drawing, this.jobs, this.page, this.gpu];
 		this.heldBack = figure('div', 'held-back', work, 'held');
 		const memory = element('div', '', card);
 		const heading = element('h3', '', memory);
@@ -659,14 +758,16 @@ export class StatsCard {
 	}
 
 	/**
-	 * Shows a set of figures against the target frame rate. `gpuTimer` is false where the GPU path
-	 * cannot time its work, and the GPU lane then says that it is not measured. `bothSteps` names
-	 * the thread that runs the sketch and then draws, where one thread does both: its bar holds both
-	 * steps. `mode` picks the symbol before the target that explains how the threads share a frame.
+	 * Shows a set of figures against the target frame rate, beside the display's refresh rate
+	 * `refreshHz`, 0 before it is measured. `gpuTimer` is false where the GPU path cannot time its
+	 * work, and the GPU lane then says that it is not measured. `bothSteps` names the thread that
+	 * runs the sketch and then draws, where one thread does both: its bar holds both steps. `mode`
+	 * picks the symbol before the target that explains how the threads share a frame.
 	 */
 	update(
 		figures: StatsFigures,
 		target: number,
+		refreshHz: number,
 		gpuTimer: boolean,
 		bothSteps: string | undefined,
 		mode: FrameMode,
@@ -675,7 +776,7 @@ export class StatsCard {
 		const targetMs = 1000 / target;
 		// Each bar spans twice the target's interval, so the target's mark is in its middle.
 		const scale = targetMs * 2;
-		setText(this.target, `Target ${Math.round(target)} fps · ${ms(targetMs)}`);
+		this.target.update(target, refreshHz, this.lanes);
 		setText(this.heading, figures.heading);
 		const waiting = figures.frames === 0;
 		const { threads } = this;
