@@ -48,6 +48,8 @@ pub mod batch_field {
     pub const FRAMES: u32 = 5;
     /// The rows marked dirty since the last batch update, one bit a row, in 64-bit words.
     pub const DIRTY_WORDS: u32 = 6;
+    /// An instance batch's own values, 4 floats a row, which shaders read.
+    pub const VALUES: u32 = 7;
 }
 
 /// Fields of `debugLineArrays`.

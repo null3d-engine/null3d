@@ -109,10 +109,13 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
         .iter()
         .filter(|name| name.starts_with("webgl2"))
         .map(|name| format!("{name}_skin"));
+    // Rows with row values never skin, so the builds that read them have no twin that skins.
+    let rows = plain.iter().map(|name| format!("{name}_row_values"));
     let mut expected: Vec<String> = plain
         .iter()
         .map(|&name| name.to_owned())
         .chain(skinned)
+        .chain(rows)
         .collect();
     expected.sort();
     let names: Vec<&String> = built.variants.keys().collect();
@@ -147,7 +150,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 80, "{problem}");
+    assert_eq!(problem.variants.len(), 128, "{problem}");
 }
 
 #[test]
@@ -285,8 +288,23 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    // 16 WebGPU builds, and 32 WebGL2 builds, each with a twin that skins.
-    assert_eq!(built.variants.len(), 80);
+    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values, and on WebGL2
+    // one that skins. Then the shadow caster's builds: with and without the caster offset and row
+    // values, on WebGL2 with and without the draw index and skins.
+    assert_eq!(built.variants.len(), 128 + 4 + 12);
+    let caster = &built.variants["webgpu_shadow_caster_offset_row_values_caster"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(caster.contains("fn vertexOffset("), "{caster}");
+    assert!(caster.contains("min("), "{caster}");
+    assert!(
+        !built
+            .variants
+            .keys()
+            .any(|name| name.contains("shadow") && !name.ends_with("caster"))
+    );
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");

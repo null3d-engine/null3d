@@ -28,6 +28,15 @@ enable draw_index;
 // Custom materials' surfaces have the transmission and the thickness in every build, and the
 // builds that let light through only where their WGSL sets the surface's transmission.
 //
+// The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
+// color multiplies the vertex color, so it tints the base color and the alpha as three.js's
+// instance colors do, and custom materials read the row's own values as `object.values` in both
+// stages. The CASTER builds, which only custom materials with a vertex offset have, draw a shadow
+// caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
+// depth template places a caster's, flattened onto the near face of the light's box. Their
+// pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
+// that the pass keeps.
+//
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
 // a sampler. A map reads
@@ -75,6 +84,12 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#ifdef ROW_VALUES
+#import null3d::mesh::{row_values_of}
+#endif
+#ifdef CASTER
+#import null3d::mesh::{caster_clip}
+#endif
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
@@ -331,6 +346,14 @@ struct VertexOut {
     /// units.
     @location(9) @interpolate(flat, either) scale: vec3f,
 #endif
+#ifdef ROW_VALUES
+    /// The color of the instance's row.
+    @location(10) @interpolate(flat, either) row_color: vec4f,
+#ifdef CUSTOM
+    /// The values of the instance's row.
+    @location(11) @interpolate(flat, either) row_values: vec4f,
+#endif
+#endif
 }
 
 #ifdef CUSTOM
@@ -362,7 +385,7 @@ struct SurfaceInput {
     /// The unit direction from the surface toward the camera.
     viewDirection: vec3f,
     /// The mesh's vertex color when the material takes vertex colors and the mesh has them, else
-    /// white.
+    /// white, times the row's color for a row of an instance batch with row values.
     vertexColor: vec4f,
 #ifdef MAPS
     /// The mesh's first texture coordinates.
@@ -518,9 +541,15 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef ROW_VALUES
+    let row = row_values_of(found);
+#endif
 #ifdef CUSTOM
     let origin = relative_position(found, vec3f(0.0));
     fill_builtins(origin);
+#ifdef ROW_VALUES
+    object.values = row.values;
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
@@ -562,7 +591,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #else
     out.relative = relative_position(found, position);
 #endif
+#ifdef CASTER
+    var clip = caster_clip(found, out.relative, normal);
+    clip.z = min(clip.z, clip.w);
+    out.clip = clip;
+#else
     out.clip = clip_of(found, out.relative);
+#endif
     out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
@@ -594,6 +629,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef CUSTOM
     out.origin = origin;
+#endif
+#ifdef ROW_VALUES
+    out.row_color = row.color;
+#ifdef CUSTOM
+    out.row_values = row.values;
+#endif
 #endif
 #ifdef TRANSMISSION
     out.scale = vec3f(
@@ -785,6 +826,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
+#ifdef CASTER
+    return vec4f(0.0);
+#else
     material_row = material_of(in.material);
 #ifdef TRANSMISSION
     transmission_row = material_transmission(in.material);
@@ -795,6 +839,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef CUSTOM
     fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
@@ -821,6 +868,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
 #ifdef CUSTOM
     input.worldPosition = in.relative + engine_frame.camera_world.xyz;
 #endif
@@ -844,5 +894,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return masked_fragment(shade(s, input, in.clip));
 #else
     return shade(s, input, in.clip);
+#endif
 #endif
 }
