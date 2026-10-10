@@ -382,10 +382,12 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 
 # A page downloads the copy and the builds of the mesh templates that let light through when its
 # first material that lets light through draws. The copy waits for its pipeline, and the frames
-# draw without it until then.
+# draw without it until then. It takes the builds that it shares with skinning and morph targets,
+# so the skinning and morph files do not grow.
 [first_use.transmission]
 shaders = ["transmission_copy"]
 bits = ["TRANSMISSION"]
+claims_shared_builds = true
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays

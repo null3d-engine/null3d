@@ -85,9 +85,9 @@ In compatibility mode the 8-bit path averages the edge samples of the tinted bal
 
 **Cost.** TBD.
 
-**Allocation.** TBD.
+**Allocation.** `bun run bench:allocation --transmission` on the Mac's GPU on 10 October 2026, S1 with the clear water. Both paths pass. On WebGL2 the sketch worker allocated 376.6 bytes per frame and the render worker 148.6. On WebGPU they allocated 314.1 and 885.4. Most of WebGPU's share is the browser's encoder objects, which the check allows per pass. The replay allocated 333.3 bytes per frame, 13 more than its budget without the water, so the copy's render pass takes 64 bytes on top, as each of bloom's passes does. The mip levels allocated 174.4 bytes per frame, about 17 per level's pass, and may allocate 32 per pass for up to 11 levels.
 
-**Size.** `bun run build:check-size` against main at 3b6cd82b, after Brotli. The pipelined start grew from 129.8 to 130.3 KB on WebGPU, and from 127.1 to 127.4 KB on WebGL2. The material options, the copy's pipeline and binding, and the WebGPU backend's cached mip chains make most of it. Two files that load later grew by 2.1%. The renderer that the sketch worker loads in its own thread modes holds the copy and the mip chains, and the glTF worker reads the two extensions. The WebAssembly files grew 0.5%. Each shader file of the `transmission` feature takes 16.4 to 19.2 KB of its 32 KB budget, and loads only with the first material that lets light through.
+**Size.** `bun run build:check-size` against main at c93bbaf5, after Brotli, on 10 October 2026. The pipelined start grew from 129.8 to 130.4 KB on WebGPU, and from 127.1 to 127.6 KB on WebGL2. The material options, the copy's pipeline and binding, and the WebGPU backend's cached mip chains make most of it. The glTF worker grew by 2.1%, since it reads the two extensions, and the renderer that the sketch worker loads in its own thread modes by 1.4%. The WebAssembly files grew 0.5% and 0.6%. Each shader file of the `transmission` feature takes 18.3 to 22.4 KB of its 32 KB budget, and loads only with the first material that lets light through. The feature claims the builds that it shares with skinning and morph targets. Without that claim, a skinned or morphed mesh's builds that let light through went into the skinning and morph files, and those grew by 16% to 20%.
 
 **GPU check.** TBD.
 
