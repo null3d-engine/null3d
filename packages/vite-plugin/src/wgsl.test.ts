@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, createServer, type Rollup } from 'vite';
@@ -16,6 +16,10 @@ import {
 	type WgslCompile,
 	wgslError,
 } from './wgsl';
+
+// A custom surface function builds into every variant of the standard material, which takes seconds
+// on a CI runner of four cores.
+setDefaultTimeout(30_000);
 
 /** The hint that the tests' compiles end their message about a missing entry point with. */
 const HINT = 'HINT';
