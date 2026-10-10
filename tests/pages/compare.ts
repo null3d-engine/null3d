@@ -1,5 +1,6 @@
 // Runs a comparison with three.js through the shared shell, with one engine: `?compare=` names the
-// comparison, `?engine=` the engine and `?mode=` the mode, the scene graph by default. With `?hold=<seconds>`, the engine draws the comparison's
+// comparison, `?engine=` the engine, `?mode=` the mode, the scene graph by default, and `?effects=`
+// the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
 // held frame at its hold count and the page publishes the frame, as the image tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
@@ -11,7 +12,7 @@
 // frames has made them all.
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
-import { modeFromText } from '../../examples/lib/compare-scene';
+import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
 
 /** A ramp of three steps, which shows that the shell raises the count and measures each step. */
@@ -80,6 +81,7 @@ run('compare', async () => {
 		comparison,
 		engine,
 		mode: modeFromText(params.get('mode')),
+		effects: effectsFromText(params.get('effects')),
 		gpu,
 		count: hold === undefined ? (fixed ?? SHORT_RAMP.start) : comparison.hold.count,
 		hold,

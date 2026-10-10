@@ -703,7 +703,20 @@ export const FACTORY_LOOK = {
 	lamp: { intensity: 6 },
 	/** Height fog: exponential with distance, thinning with height above the floor. */
 	fog: { color: '#141921' as Hex, density: 0.018, height: 0, heightFalloff: 0.12 },
+	/**
+	 * Bloom, as UnrealBloomPass's settings. Each engine's bloom spreads light in its own steps, so
+	 * the others take the same glow through the port skill's bloom mapping (`map-bloom.mjs`).
+	 */
 	bloom: { threshold: 1, strength: 0.35, radius: 0.3 },
+	/**
+	 * null3D's chain for that glow, mapped at a canvas 720 pixels high, the ramps' size. The glow
+	 * keeps its share of the screen, so it looks a little wider on a larger canvas.
+	 */
+	bloomChain: {
+		intensity: 3.07,
+		knee: 0.01,
+		weights: [0, 0.0916, 0.2194, 0.1308, 0.1398, 0.1492, 0.1058, 0.149, 0.0145],
+	},
 	ao: { radius: 0.6, intensity: 1, scale: 0.5 },
 	/** A cool shadow and warm highlight grade with a little more contrast. */
 	grade: {

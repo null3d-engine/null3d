@@ -134,7 +134,7 @@ export default defineSketch(
 			toneMapping: look.toneMapping,
 			exposure: look.exposure,
 			bloom: effects.bloom && {
-				intensity: look.bloom.strength,
+				...look.bloomChain,
 				threshold: look.bloom.threshold,
 				blend: 'add',
 			},

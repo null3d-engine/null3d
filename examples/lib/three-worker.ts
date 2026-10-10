@@ -30,6 +30,7 @@ export interface ThreeLook {
 	exposure: number;
 	environmentIntensity: number;
 	fog: { color: Hex; density: number; height: number; heightFalloff: number };
+	/** UnrealBloomPass's settings. */
 	bloom: { threshold: number; strength: number; radius: number };
 	/** Ambient occlusion's search radius in meters, and its targets' share of the render size. */
 	ao: { radius: number; scale: number };
@@ -63,6 +64,11 @@ export type ThreeBuilder = (
 
 /** Samples per pixel: what `antialias: true` gives a canvas, and what null3D's MSAA draws. */
 const MSAA_SAMPLES = 4;
+/**
+ * The bloom node spreads a third of UnrealBloomPass's light at the same strength, with the same
+ * spread (the port skill's bloom mapping), so it takes this many times the strength.
+ */
+const BLOOM_NODE_STRENGTH = 3;
 /** Frames that the rings keep: over 30 seconds at 240 frames per second. */
 const RING = 8192;
 /** How often the page gets the frame rate, and the panel's figures while it is open. */
@@ -559,26 +565,35 @@ async function makeDrawer(
 	if (options.renderer === 'webgpu') {
 		const webgpu = three as unknown as typeof import('three/webgpu');
 		const tsl = await import('three/tsl');
-		// The GTAO node reads depth with textureGather, which takes no multisampled texture, so the
-		// scene pass draws without MSAA when it feeds ambient occlusion, as three.js's example does.
-		const scenePass = tsl.pass(scene, camera, effects.ao ? { samples: 0 } : {});
+		// The scene pass keeps the renderer's MSAA. The GTAO node cannot read a multisampled depth
+		// buffer, so ambient occlusion reads a depth and normal pass of its own without MSAA, and
+		// its denoised result darkens the ambient light inside the scene pass, as three.js's own
+		// ambient occlusion example does. GTAOPass on WebGLRenderer also draws such a pass.
+		const scenePass = tsl.pass(scene, camera);
 		let color = scenePass.getTextureNode('output') as unknown as ReturnType<typeof tsl.vec4>;
 		if (effects.ao) {
 			const { ao } = await import('three/addons/tsl/display/GTAONode.js');
-			scenePass.setMRT(tsl.mrt({ output: tsl.output, normal: tsl.normalView }));
-			const occlusion = ao(
-				scenePass.getTextureNode('depth'),
-				scenePass.getTextureNode('normal'),
-				camera,
-			);
+			const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js');
+			const prePass = tsl.pass(scene, camera, { samples: 0 });
+			prePass.transparent = false;
+			prePass.setMRT(tsl.mrt({ output: tsl.packNormalToRGB(tsl.normalView) }));
+			prePass.getTexture('output').type = three.UnsignedByteType;
+			const depth = prePass.getTextureNode('depth');
+			const normal = tsl.sample((uv) => tsl.unpackRGBToNormal(prePass.getTextureNode().sample(uv)));
+			const occlusion = ao(depth, normal, camera);
 			occlusion.resolutionScale = look.ao.scale;
 			occlusion.radius.value = look.ao.radius;
-			color = tsl.vec4(color.rgb.mul(occlusion.getTextureNode().r), color.a);
+			const smooth = tsl.convertToTexture(
+				denoise(occlusion.getTextureNode(), depth, normal, camera),
+			);
+			scenePass.contextNode = tsl.builtinAOContext(smooth.sample(tsl.screenUV).r);
 		}
 		if (effects.bloom) {
 			const { bloom } = await import('three/addons/tsl/display/BloomNode.js');
 			const { strength, radius, threshold } = look.bloom;
-			color = color.add(bloom(color, strength, radius, threshold)) as typeof color;
+			color = color.add(
+				bloom(color, strength * BLOOM_NODE_STRENGTH, radius, threshold),
+			) as typeof color;
 		}
 		const pipeline = new webgpu.RenderPipeline(renderer as never);
 		if (effects.grade) {
