@@ -49,6 +49,28 @@ The rules of each mode:
 - **One page that swaps engines in place.** Safari reserves address space for each engine's memory, and frees a dropped memory late.
 - **An effect only where both engines draw it pixel for pixel**, the old repository's rule. The owner replaced it on 8 October 2026 with intent parity and a review of both engines' held frames.
 
+## The look match
+
+On 10 October 2026 the owner saw a brighter floor and a shimmer in three.js's held frames. The fix made the setups mean the same, and kept each engine's own technique where the techniques differ.
+
+- **Bloom.** The look gave the same strength to UnrealBloomPass, the bloom node and null3D's chain. Each spreads its light in its own steps, so the same number made different glows. The port skill's mapping (`skills/null3d-port-threejs/scripts/map-bloom.mjs`) puts UnrealBloomPass at strength 0.35 equal to null3D's intensity 3.07, and the bloom node at 0.35 equal to 1.02. So null3D drew about a ninth of WebGLRenderer's glow and a third of WebGPURenderer's. Now the look sets bloom once, as UnrealBloomPass's settings. The bloom node takes three times the strength. null3D takes the mapped intensity, knee and level weights for a canvas 720 pixels high, the ramps' size. On a larger canvas, null3D's glow looks a little wider, because it keeps its share of the screen.
+- **Ambient occlusion and MSAA on WebGPURenderer.** The GTAO node cannot read a multisampled depth buffer, so the scene pass drew without MSAA whenever ambient occlusion was on. Edges then shimmered as the camera moved. Now a depth and normal pass of its own, without MSAA, feeds the GTAO node, and the denoise node smooths the result. It darkens only the ambient light inside the scene pass, which keeps 4x MSAA. three.js's own ambient occlusion example builds it this way. GTAOPass on WebGLRenderer draws such a pass too.
+- **A technique difference that stays.** null3D and the GTAO node darken only the ambient light, as ambient occlusion means. GTAOPass darkens the whole image, so WebGLRenderer looks a little darker where parts meet. The page's notes say so.
+- **The test page.** The comparison's test page passed no effect switches, so every held frame drew every effect. It passes them now, so a frame can show one effect alone.
+
+Held frames at 640 x 360, scene graph mode, in Chrome on the Mac's GPU. The figure is the mean brightness (0 to 255, sRGB) of the lower 45% of the frame, mostly the floor:
+
+| Effects | null3D WebGPU | null3D WebGL2 | three.js WebGLRenderer | three.js WebGPURenderer |
+| --- | --- | --- | --- | --- |
+| None | 97.9 | 98.1 | 95.3 | 95.4 |
+| Bloom alone, before | 100.1 | 100.4 | 116.0 | 104.0 |
+| Bloom alone, after | 117.0 | 117.4 | 116.0 | 116.2 |
+| All, before | 88.3 | 88.5 | 101.3 | 93.3 |
+| All, after | 103.5 | 103.2 | 101.3 | 102.9 |
+
+- Shadows, fog and the grade each moved the engines' floors by the same amount, within 1 step. Ambient occlusion darkened null3D's floor by 3.3 steps and three.js's by 1.0 to 1.6. With no effects, null3D's floor is about 3 steps brighter, under 3%. This run did not trace that small gap.
+- A measure of fine detail, the mean step between neighbouring pixels, shows the MSAA. With ambient occlusion alone, WebGPURenderer's frame measured 5.48 before and 5.07 after, against 5.06 for WebGLRenderer.
+
 ## First figures
 
 All runs are from 9 October 2026, in Chrome 155 on the owner's Mac (Apple M5 Max), in a window that Playwright opened at 1280 x 720 CSS pixels, at pixel ratio 1, with every effect on. The window presented 60 frames a second, not the display's 120. The [run's record](../tested-devices/macbook-pro-chrome/20261009-125644-factory-ramp.md) has the details.
