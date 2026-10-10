@@ -33,7 +33,16 @@ Image tests: `shadows-batches` and `shadows-batches-dynamic` draw the shadows te
 
 Allocation: `bench:allocation --batch-shadows` passes on both GPU paths, alone and with `--tile-shadows`. The sun's 3 cascades then draw in every frame, so the WebGPU replay's budget grows by their pass encoders, 102 bytes per frame. These runs also found that the job workers' busy time made a number object per busy worker in each frame, now fixed ([benchmarks guide](../benchmarks.md)).
 
-How the data was produced: <filled after the runs>.
+How the data was produced: on 10 October 2026, on the Mac at a load below 3, `bench:run --scenes s1,s1-static --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`. The first run used `--switches shadows=3`, and the second `shadows=3&batchShadows`. Each scene has 100,000 rows, which then cast and receive the sun's shadows in 3 cascades. Each figure is the median of 3 runs, without and then with the rows in the shadows.
+
+| Scene | Page | CPU ms per frame | All threads, ms | GPU ms | Draw calls |
+| --- | --- | --- | --- | --- | --- |
+| S1 | WebGPU | 1.62 to 1.62 | 2.18 to 2.19 | 2.86 to 3.49 | 2 to 5 |
+| S1 | WebGL2 | 2.39 to 2.51 | 3.36 to 3.96 | 4.31 to 4.57 | 3 to 6 |
+| S1-static | WebGPU | 0.04 to 0.04 | 0.06 to 0.07 | 1.44 to 4.07 | 2 to 4 |
+| S1-static | WebGL2 | 0.10 to 0.12 | 0.15 to 0.19 | 3.09 to 4.22 | 3 to 5 |
+
+The CPU cost is small. On WebGPU the GPU culls the rows for each cascade, and the busiest thread's time did not change. On WebGL2 the job workers cull them, so all threads together took 0.6 ms more on S1. Most of the cost is the GPU's, which draws the 100,000 boxes into the cascades: up to 2.6 ms more per frame. Every page held 120 frames a second.
 
 ## Decision
 
