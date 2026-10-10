@@ -112,7 +112,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | A KTX2 file, 4 to 8 times smaller on the GPU |
 | Same texture as ASTC, BC7 or ETC2 | about 3 to 6 MB | Encode with `basisu -mipmap`, or `bunx @null3d/cli assets optimize` (0.2) |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
-| One instance row | About 210 bytes of engine memory, 260 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
+| One instance row | About 210 bytes of engine memory, 300 with per-row colors or values (0.2: plus 32 bytes of GPU memory), plus your own arrays | Only the columns you need; colors and values only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
 | Directional light shadows: one map per cascade, 2048 x 2048 at 4 bytes per texel by default | about 16 MB per cascade, 48 MB for the default 3 cascades | Fewer cascades and a smaller `mapSize` in the light's `shadow` option on phones |
 | Spot and point light shadows: one atlas tile per spot light, six per point light | 1 MB per 512 x 512 tile, 4 MB per 1024 x 1024 tile | The preset sets the tile count and size; fewer shadowed lights |

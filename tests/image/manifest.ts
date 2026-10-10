@@ -1526,6 +1526,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The room's light with a hemisphere light added, which the parity test compares with three.js:
+	// the hemisphere light adds to the environment's light, and the environment's intensity does
+	// not scale it.
+	{
+		name: 'environment-room-hemisphere',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=room&hemisphere',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
 	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
 	// references: the scene lights the same from either source. The studio's OpenEXR file has its
@@ -1563,8 +1573,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
-	// lights with three.js.
+	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
+	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -1572,6 +1582,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			['lights-256', 'lights=256'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
+			['lights-hemisphere', 'scene=hemisphere'],
 		] as const
 	).map(([name, query]) => ({
 		name,
@@ -1579,6 +1590,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
+	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
+	// their intensities and colors in every frame. The frame sums them to the single light, so the
+	// test borrows its references.
+	{
+		name: 'lights-hemisphere-split',
+		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=hemisphere-split',
+		hold: 0.1,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
+		reference: 'lights-hemisphere',
+	},
 	// Custom materials with surface functions: pairs of a standard material and a surface function
 	// that keeps its look, which must match, then surface functions that change the look. Each
 	// thread mode sends the shaders to the thread that draws in its own way.
@@ -1605,6 +1626,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Instance batches whose rows bring colors: lit, unlit, mapped, masked and blended rows, from
+	// static and dynamic batches, beside rows of the same pairs without colors.
+	{
+		name: 'row-colors',
+		sketch: 'tests/pages/sketches/row-colors-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Instance batches whose rows bring values: grass that sways out of step and takes a tint per
+	// blade, from a static and a dynamic batch, with shadows that sway with it, at two moments of
+	// the wind.
+	...(
+		[
+			['row-values', 1],
+			['row-values-later', 1.4],
+		] as const
+	).map(([name, hold]) => ({
+		name,
+		sketch: 'tests/pages/sketches/row-values-sketch.ts',
+		hold,
+		size: [480, 270] as const,
+	})),
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a

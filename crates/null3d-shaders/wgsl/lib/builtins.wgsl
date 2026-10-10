@@ -31,6 +31,9 @@ struct CameraValues {
 struct ObjectValues {
     /// The position of the object's origin in the world.
     position: vec3f,
+    /// The values of the instance's row, for a row of an instance batch with values; zero
+    /// elsewhere.
+    values: vec4f,
 }
 
 /// The frame's values, once `fill_builtins` has filled them.
@@ -41,7 +44,7 @@ var<private> camera: CameraValues;
 var<private> object: ObjectValues;
 
 /// Fills `frame`, `camera` and `object` from the frame's uniform block and the object's origin,
-/// relative to the camera. In a vertex shader, the origin is
+/// relative to the camera, with no row values. In a vertex shader, the origin is
 /// `relative_position(find_instance(i), vec3f(0.0))` from `null3d::mesh`; a fragment shader gets it
 /// from the vertex shader as a flat value.
 fn fill_builtins(origin: vec3f) {
@@ -50,5 +53,5 @@ fn fill_builtins(origin: vec3f) {
     let size = null3d::mesh::frame.target_size.xy;
     frame = FrameValues(clock.x, clock.y, bitcast<u32>(clock.z), size);
     camera = CameraValues(world, null3d::mesh::frame.view_proj);
-    object = ObjectValues(world + origin);
+    object = ObjectValues(world + origin, vec4f(0.0));
 }

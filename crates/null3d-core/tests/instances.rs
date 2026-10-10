@@ -13,7 +13,7 @@ use null3d_core::jobs::JobSystem;
 /// Writes random values to `rows` of a batch.
 fn randomize(table: &mut BatchTable, id: Handle, rows: impl Iterator<Item = u32>, rng: &mut Rng) {
     let batch = table.get_mut(id).unwrap();
-    let colors = batch.has_colors();
+    let row_values = batch.has_row_values();
     for row in rows {
         let r = row as usize;
         let p = [
@@ -30,9 +30,11 @@ fn randomize(table: &mut BatchTable, id: Handle, rows: impl Iterator<Item = u32>
         batch.positions_mut()[r * 3..r * 3 + 3].copy_from_slice(&p);
         batch.rotations_mut()[r * 4..r * 4 + 4].copy_from_slice(&q);
         batch.scales_mut()[r * 3..r * 3 + 3].copy_from_slice(&s);
-        if colors {
+        if row_values {
             let c = [rng.range(0.0, 1.0), 0.5, 0.25, 1.0];
             batch.colors_mut()[r * 4..r * 4 + 4].copy_from_slice(&c);
+            let v = [rng.range(-1.0, 1.0), 2.0, 3.0, row as f32];
+            batch.values_mut()[r * 4..r * 4 + 4].copy_from_slice(&v);
         }
     }
 }
@@ -59,11 +61,10 @@ fn check_rows(table: &BatchTable, id: Handle, frame: u32) {
         }
         let radius = f64::from(batch.local_radius()) * max_axis_scale64(&expected);
         assert!((f64::from(world.radii()[row]) - radius).abs() <= 1e-5 * (1.0 + radius));
-        if batch.has_colors() {
-            assert_eq!(
-                &world.colors()[row * 4..row * 4 + 4],
-                &batch.colors()[row * 4..row * 4 + 4]
-            );
+        if batch.has_row_values() {
+            let out = &world.row_values()[row * 8..row * 8 + 8];
+            assert_eq!(&out[..4], &batch.colors()[row * 4..row * 4 + 4]);
+            assert_eq!(&out[4..], &batch.values()[row * 4..row * 4 + 4]);
         }
     }
 }

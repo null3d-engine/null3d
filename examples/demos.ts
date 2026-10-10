@@ -48,6 +48,11 @@ export interface Demo {
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
+	 * True for a demo whose mouse look wants the pointer lock: a click on the canvas asks the
+	 * browser for it, and Esc gives the pointer back.
+	 */
+	pointerLock?: boolean;
+	/**
 	 * How long the demo's image test may take, in seconds, for a demo that loads large files or
 	 * makes the room environment.
 	 */
@@ -166,6 +171,30 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'time-of-day',
+		group: 'Light, materials and effects',
+		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),
+		title: 'Time of day',
+		scene: 'Lighthouse point',
+		summary:
+			"A day passes over a lighthouse in 40 seconds. timeOfDay gives each hour's sky, sun or moon, fog and exposure, and the sky's light follows the sun. At dusk the windows light up and the lighthouse beams sweep the sea.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
+		hold: 6,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'camera-lens',
+		group: 'Light, materials and effects',
+		sketch: new URL('./camera-lens/sketch.ts', import.meta.url),
+		title: 'Depth of field and focal length',
+		scene: 'Chess endgame',
+		summary:
+			'A low shot across a chess board. The focus racks from a near pawn to the far king, and a dolly zoom takes the lens from 35 to 85 mm, so the string lights behind swell into wide discs of light.',
+		controls: `${CAMERA} Point at a piece, or tap it, to focus on it.`,
+		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'gltf-model',
 		group: 'Light, materials and effects',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),
@@ -240,6 +269,32 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'walk-and-fly',
+		group: 'Motion and interaction',
+		sketch: new URL('./walk-and-fly/sketch.ts', import.meta.url),
+		title: 'First-person and fly controls',
+		scene: 'Temple ruins',
+		summary:
+			'A walk through a ruined temple at golden hour. First-person controls walk and look, the pointer lock turns the view with the mouse as in a game, and fly controls soar over the columns.',
+		controls:
+			'Walk with WASD or the arrow keys, and drag to look. Click to lock the pointer, so the mouse looks, and press Esc to free it. Press Space to fly: W and S move along the view, Q and E roll, R and F rise and sink. On a touch screen, drag one finger to look and walk.',
+		hold: 3,
+		timeoutSeconds: 60,
+		pointerLock: true,
+	},
+	{
+		name: 'morph-flowers',
+		group: 'Motion and interaction',
+		sketch: new URL('./morph-flowers/sketch.ts', import.meta.url),
+		title: 'Morph targets',
+		scene: 'Tulip bed',
+		summary:
+			'A bed of tulips made in code opens in a wave in the morning sun. Each head has one morph target that moves its petals, turns their normals and changes their color, and each tulip has a weight of its own.',
+		controls: `${CAMERA} Move the mouse, or tap, and the tulips near it open.`,
+		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'picking',
 		group: 'Motion and interaction',
 		sketch: new URL('./picking/sketch.ts', import.meta.url),
@@ -262,6 +317,17 @@ export const DEMOS: readonly Demo[] = [
 		controls: `${CAMERA} Move the mouse, or tap, to lead the lamp.`,
 		hold: 8,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'galaxy',
+		group: 'Scale',
+		sketch: new URL('./galaxy/sketch.ts', import.meta.url),
+		title: 'Points',
+		scene: 'Spiral galaxy',
+		summary:
+			'A spiral galaxy of 120,000 stars in one points batch, and 30,000 on phones. Each star is a soft point with a color of its own, the light adds up into a glowing core, and each ring of stars turns at its own speed, so the arms swirl.',
+		controls: CAMERA,
+		hold: 4,
 	},
 	{
 		name: 'instances',

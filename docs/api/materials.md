@@ -343,6 +343,29 @@ const leaves = materials.shader({ wgsl: masked, alphaMode: 'mask', textures: { m
 
 A texture samples as white until its image is on the GPU. [Textures](../shaders/surface-functions.md#textures) on the Surface functions page gives the rules.
 
+### Values per row of a batch
+
+The WGSL reads values of each draw through `frame`, `camera` and `object` ([Built-in values](../shaders/builtins.md)). On the rows of an instance batch made with `values: true`, `object.values` holds the row's four numbers from the batch's `values` array. So one material can sway each blade of grass in its own phase, and tint each one:
+
+```ts
+const sway = /* wgsl */ `
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return vec3f(sin(frame.time + object.values.x) * 0.2 * input.uv.y, 0.0, 0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= mix(vec3f(0.3, 0.6, 0.1), vec3f(0.8, 0.7, 0.2), object.values.y);
+    return s;
+}
+`;
+const grass = materials.shader({ wgsl: sway, doubleSided: true });
+```
+
+A batch made with `colors: true` tints each row by its color in every material, as vertex colors do: `defaultSurface` takes it in `input.vertexColor`. [Instances and batching](../concepts/instances.md#per-row-values) shows a whole sketch.
+
+A material with a vertex offset moves its shadows too: its casters draw with the offset, so the shadows of swaying grass sway with it. Such casters draw again in every frame that a shadow map draws, as moving objects do.
+
 ### Mirrors, polished floors and water
 
 A custom material can reflect a [reflection pass](render.md#reflection-passes). Its surface function reads the pass's texture where the surface shows on the screen, and sets the surface's `reflection`. The engine lights that color as the light from the mirror direction. The material's Fresnel, metalness and specular values weigh it as they weigh the environment's reflection. [Surface functions](../shaders/surface-functions.md#reflections) shows the WGSL, and [Custom passes](../guides/custom-passes.md#a-water-recipe) a water recipe. Standard materials take no reflection in this version: give a polished floor a custom material with the floor's values.

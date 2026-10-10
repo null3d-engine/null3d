@@ -185,9 +185,9 @@ mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such a
 const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
   material: materials.standard({ color: '#888888' }),
   dynamic: true,              // uploads every row every frame; false = upload marked rows only
-  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); stored now, drawn in 0.2
+  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row); drawn from 0.2: multiplies the base color
+  values: true,               // (0.2) adds batch.values (4 floats per row), read as object.values in custom WGSL
   layers: 1 << 2,             // every row is on layer 2; the default, 1, is layer 0
-  attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
   origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
 });
 
@@ -195,7 +195,7 @@ rocks.positions;   // Float32Array, 3 floats per row
 rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
 rocks.scales;      // Float32Array, 3 floats per row
 rocks.colors;      // Float32Array, 4 floats per row, when colors: true
-rocks.attributes.tint;  // (0.2)
+rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
@@ -234,7 +234,7 @@ scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   // range is required
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
-scene.createHemisphereLight({ skyColor, groundColor, intensity });  // stored, but does not light surfaces yet
+scene.createHemisphereLight({ skyColor, groundColor, intensity });  // (0.2) lights surfaces: sky from +Y, ground from below
 const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
@@ -255,7 +255,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela, the others in lux. The same colors and intensities give the same light as in three.js. For real units, give point and spot lights `intensityUnit: 'lumen'` (0.2), and set the camera with `post.set({ ev100: 15 })` (0.2) for a sunny day (`concepts/lighting`).
-- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, and the point and spot lights. Hemisphere lights do not light surfaces yet: use an ambient light for fill.
+- Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, every hemisphere light (0.2), and the point and spot lights. Hemisphere lights are diffuse only and add to an environment's light; the environment's `intensity` and a material's `envIntensity` do not scale them. A scene lit by the sky's environment needs no hemisphere light.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, 200 m, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. The map stores 16-bit depth, so in far cascades a smaller `bias` acts as 1.5 depth steps, about 2 cm 200 m out. Unlit materials show no shadows. Both GPU paths draw them. Instance batches take `castShadows` and `receiveShadows` in `createInstances`, or `batch.setCastShadows(true)` / `setReceiveShadows(true)`, for every row (0.2); sprite, point and line batches take none (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light moves, or a caster in its view moves, changes its layers or changes its pose. So still scenes cost nothing per frame, and at most 12 tiles draw again in a frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
 
