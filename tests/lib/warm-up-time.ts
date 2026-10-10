@@ -10,9 +10,9 @@ export interface WarmUpTimeResult {
 	/** WebGL2: whether the browser builds programs in the background; null on WebGPU. */
 	backgroundCompile: boolean | null;
 	freshShaders: boolean;
-	/** Time createEngine took. */
+	/** Time createEngine took. On a first visit it holds the preset check, after the first frame. */
 	engineStartMs: number;
-	/** Time from the call of createEngine until the first frame was on screen. */
+	/** Time from the call of createEngine until the GPU finished the first frame. */
 	firstFrameShownMs: number;
 	/** Time from the first frame's first pipeline build until none was building. */
 	warmUpMs: number | null;
@@ -57,10 +57,11 @@ export function warmUpTimeRow({ scene, tier, fresh, cached }: WarmUpLoads): stri
 				: 'no';
 	const figures = (loads: readonly WarmUpTimeResult[]) =>
 		loads.length === 0
-			? ['-', '-']
+			? ['-', '-', '-']
 			: [
 					ms(median(loads.map(pipelineWaitMs))),
 					ms(median(loads.map((load) => load.firstFrameShownMs))),
+					ms(median(loads.map((load) => load.engineStartMs))),
 				];
 	const cells = [
 		scene,
@@ -76,8 +77,8 @@ export function warmUpTimeRow({ scene, tier, fresh, cached }: WarmUpLoads): stri
 
 /** The header and legend of the table. */
 export const WARM_UP_TABLE_HEAD = [
-	'Pipeline wait: the warm-up plus the first draw, which waits for compiles a browser cannot do in the background. Shown: from createEngine until the first frame was on screen. Medians in ms; fresh loads compile every shader again.',
+	'Pipeline wait: the warm-up plus the first draw, which waits for compiles a browser cannot do in the background. Shown: from createEngine until the GPU finished the first frame. Started: until createEngine resolved, which on a first visit waits for the preset check after the first frame. Medians in ms; fresh loads compile every shader again.',
 	'',
-	'| Scene | Path | Preset | Background compile | Pipelines | Fresh: pipeline wait | Fresh: shown | Cached: pipeline wait | Cached: shown |',
-	'| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+	'| Scene | Path | Preset | Background compile | Pipelines | Fresh: pipeline wait | Fresh: shown | Fresh: started | Cached: pipeline wait | Cached: shown | Cached: started |',
+	'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 ];
