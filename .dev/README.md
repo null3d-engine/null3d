@@ -13,7 +13,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 | [Examples](examples.md) | The demos in `examples/`: how one folder builds from a clone and on the website, which files a demo may load, and the owner's decisions on the examples and the comparisons with three.js |
 | [Image tests](image-tests.md) | The image test manifest, its references in each environment and on each device, the review step, and CI's shards |
 | [Implementation notes](implementation-notes.md) | Habits that keep the hot paths fast, and the browser faults that shaped the code |
-| [Pull requests and parallel work](pull-requests.md) | Merging main into a branch and its generated files, commit messages and pushes, merging a pull request, what CI runs where, CI's jobs, and several copies of the repository on one machine |
+| [Pull requests and parallel work](pull-requests.md) | Merging main into a branch and its generated files, commit messages and pushes, merging a pull request, what CI runs where, CI's jobs, several copies of the repository on one machine, and coordinating helper agents |
 | [Releases](releases.md) | How a release is made, versions, and the one-time setup |
 | [Sample content](sample-content.md) | The large models, textures and environments that tests and benchmarks load: where they live, how to fetch and use them, how to add one, and why they are not in this repository |
 | [Technique review, October 2026](technique-review-2026-10.md) | The comparison of null3D's techniques with eight engines' source: the ranked changes, the porting verdicts, the `three-compat` add-on, the prototypes and their pass rules, the gaps, the web search results with their sources, and where earlier reports were wrong |
