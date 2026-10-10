@@ -1,7 +1,7 @@
 // The creek's land: a stream that winds along x through a valley, with a stony bed, low banks and
 // slopes that rise to the valley's sides. Everything that stands on the ground asks this module for
 // its height, so the grass, the stones and the water meet the ground where it is.
-import type { SketchContext } from '@null3d/engine';
+import { math, type SketchContext } from '@null3d/engine';
 import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedural';
 
 /** The height of the water's surface. */
@@ -10,10 +10,7 @@ export const WATER = 0;
 export const LAND = 160;
 
 const noise = new Noise(11);
-const smoothstep = (x: number, a: number, b: number) => {
-	const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
-	return t * t * (3 - 2 * t);
-};
+const { smoothstep } = math;
 
 /** The z of the stream's middle at x: two gentle bends. */
 export const streamZ = (x: number) => 1.4 * Math.sin(x * 0.11 + 0.6) + 0.5 * Math.sin(x * 0.27);
@@ -50,8 +47,8 @@ const MEADOW = [0.07, 0.15, 0.03];
 
 /** The ground's color at a point, from its height and its slope, with patches from noise. */
 function groundColor(x: number, z: number, y: number, slope: number, out: number[]): void {
-	const wet = smoothstep(y, WATER + 0.18, WATER - 0.05);
-	const under = smoothstep(y, WATER - 0.08, WATER - 0.3);
+	const wet = 1 - smoothstep(y, WATER - 0.05, WATER + 0.18);
+	const under = 1 - smoothstep(y, WATER - 0.3, WATER - 0.08);
 	const dry = smoothstep(noise.fbm2(x * 0.15, z * 0.15 + 9, 3), -0.05, 0.3);
 	const rocky = smoothstep(slope, 0.55, 0.95);
 	const shade = 0.85 + 0.3 * noise.value2(x * 2.3, z * 2.3);

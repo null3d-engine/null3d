@@ -2,7 +2,8 @@
 // shadows. A vertex offset bends each blade in the wind: gusts that roll across the banks, and a
 // flutter of each tuft's own. The surface function tints each tuft. Both read the tuft's traits from
 // its place in the world. Per-row values in instance batches can carry them instead: `tuftTraits`
-// is the one place that reads them. The tufts don't turn, so that the wind blows one way.
+// is the one place that reads them. The tufts don't turn, so that the wind blows one way. Only the
+// tufts near the water cast shadows and show in its reflection.
 import type { InstanceBatch, MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
 import { random } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
@@ -105,6 +106,17 @@ function tuft(seed: number): MeshArrays {
 	return { positions, normals, colors, uvs, indices };
 }
 
+/** The layer of the grass far from the water, which the camera draws and the reflection does not. */
+export const INLAND_LAYER = 2;
+/** Tufts nearer the water than this many half widths of the stream show in its reflection. */
+const EDGE = 1.7;
+/** The width of the squares that group nearby rows, in meters. */
+const CELL = 4;
+const PRESETS: readonly QualityPreset[] = ['low', 'medium', 'high', 'ultra'];
+
+/** A tuft's place and size: x, y, z, then its scales along x, y and z. */
+type Tuft = [number, number, number, number, number, number];
+
 /** The grass's batches, which `fit` sizes to a preset. */
 export interface Grass {
 	batches: InstanceBatch[];
@@ -112,9 +124,32 @@ export interface Grass {
 	fit(preset: QualityPreset): void;
 }
 
+/** The rows of a list of tufts that a preset draws: its share of them, from the first. */
+const share = (count: number, preset: QualityPreset) =>
+	Math.ceil((count * TUFTS[preset]) / TUFTS.ultra);
+
+/**
+ * Orders tufts so that each preset draws an even spread of them, and nearby rows sit together. The
+ * tufts come in a random order, so the first rows of any count spread over the banks. Then each
+ * preset's added rows are sorted by square, so the GPU path that culls rows in groups skips the
+ * groups out of view.
+ */
+function ordered(tufts: Tuft[]): Tuft[] {
+	const key = (t: Tuft) => Math.floor(t[0] / CELL) * 1000 + Math.floor(t[2] / CELL);
+	let from = 0;
+	return PRESETS.flatMap((preset) => {
+		const to = share(tufts.length, preset);
+		const band = tufts.slice(from, to).sort((a, b) => key(a) - key(b));
+		from = to;
+		return band;
+	});
+}
+
 /**
  * Makes the tufts. They grow on the banks, densest near the water, in patches, and not on steep
- * ground or where `clear` keeps a place bare.
+ * ground or where `clear` keeps a place bare. The tufts near the water show in its reflection and
+ * cast shadows. The others only receive shadows, which costs the shadow and reflection passes far
+ * fewer triangles.
  */
 export function createGrass(
 	{ scene, geometry, materials }: SketchContext,
@@ -129,17 +164,12 @@ export function createGrass(
 		doubleSided: true,
 		uniforms: { wind: [0.8, 0.6], sway: 0.12 },
 	});
-	const capacity = Math.ceil(TUFTS.ultra / SHAPES);
 	const next = random(23);
-	const batches = Array.from({ length: SHAPES }, (_, shape) => {
-		const batch = scene.createInstances(geometry.fromArrays(tuft(101 + shape)), capacity, {
-			material,
-			castShadows: true,
-			receiveShadows: true,
-		});
-		// Places in a random order, so that the first rows of any count spread over the banks.
-		const { positions, scales } = batch;
-		for (let row = 0; row < capacity; ) {
+	const batches: InstanceBatch[] = [];
+	for (let shape = 0; shape < SHAPES; shape++) {
+		const edge: Tuft[] = [];
+		const inland: Tuft[] = [];
+		while (edge.length + inland.length < TUFTS.ultra / SHAPES) {
 			const x = (next() * 2 - 1) * 22;
 			const side = next() < 0.5 ? -1 : 1;
 			const z = streamZ(x) + side * (streamHalf(x) * 0.97 + 11 * next() ** 1.5);
@@ -149,17 +179,39 @@ export function createGrass(
 			if (y < WATER + 0.03 || slope > 0.16 || clear(x, z)) continue;
 			if (patch < -0.9 && fromStream(x, z) > 1.6 && next() < 0.8) continue;
 			const size = 0.75 + 0.6 * next();
-			positions.set([x, y - 0.02, z], row * 3);
-			scales.set([size * (0.85 + 0.3 * next()), size, size * (0.85 + 0.3 * next())], row * 3);
-			row++;
+			const place: Tuft = [
+				x,
+				y - 0.02,
+				z,
+				size * (0.85 + 0.3 * next()),
+				size,
+				size * (0.85 + 0.3 * next()),
+			];
+			(fromStream(x, z) < EDGE ? edge : inland).push(place);
 		}
-		batch.markDirty();
-		return batch;
-	});
+		const mesh = geometry.fromArrays(tuft(101 + shape));
+		for (const [tufts, near] of [
+			[edge, true],
+			[inland, false],
+		] as const) {
+			const batch = scene.createInstances(mesh, tufts.length, {
+				material,
+				castShadows: near,
+				receiveShadows: true,
+				layers: near ? 1 : INLAND_LAYER,
+			});
+			ordered(tufts).forEach((t, row) => {
+				batch.positions.set([t[0], t[1], t[2]], row * 3);
+				batch.scales.set([t[3], t[4], t[5]], row * 3);
+			});
+			batch.markDirty();
+			batches.push(batch);
+		}
+	}
 	return {
 		batches,
 		fit(preset) {
-			for (const batch of batches) batch.setActiveCount(Math.ceil(TUFTS[preset] / SHAPES));
+			for (const batch of batches) batch.setActiveCount(share(batch.count, preset));
 		},
 	};
 }

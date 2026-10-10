@@ -93,13 +93,18 @@ function waterGrid(length: number, width: number, quadsX: number, quadsZ: number
 	return { positions, normals, uvs, indices };
 }
 
-/** Makes the water and the reflection pass that mirrors the creek's banks in it. */
+/**
+ * Makes the water and the reflection pass that mirrors the creek's banks in it. The pass draws layer
+ * 0 alone, which leaves out the grass far from the water.
+ */
 export function createWater(
 	{ scene, geometry, materials, textures, render }: SketchContext,
 	quadsX: number,
 ): void {
 	const plane = { point: [0, WATER, 0] } as const;
-	const mirror = textures.fromPass(render.addPass({ kind: 'reflection', writes: 'creek', plane }));
+	const mirror = textures.fromPass(
+		render.addPass({ kind: 'reflection', writes: 'creek', plane, layers: 1 }),
+	);
 	scene.createMesh({
 		mesh: geometry.fromArrays(waterGrid(140, 2 * STREAM_REACH + 2, quadsX, 48)),
 		material: materials.shader({

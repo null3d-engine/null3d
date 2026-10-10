@@ -2,8 +2,14 @@
 // the bed, and a stand-in for the cave mouth. Each kind of rock is an instance batch whose rows cast
 // and receive the sun's shadows. The rocks are noise-shaped spheres with a texture made in code, and
 // moss on the parts that face up. The pebbles are small and lie under the water, so they cast none.
-import type { MeshArrays, QualityPreset, SketchContext } from '@null3d/engine';
-import { Noise, random, rock, type TexelSample, textureSet } from '../../lib/procedural';
+import {
+	type MeshArrays,
+	math,
+	type QualityPreset,
+	quat,
+	type SketchContext,
+} from '@null3d/engine';
+import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ } from './land';
 
 /** Pebbles at each preset, over all their batches. */
@@ -14,10 +20,7 @@ const ROCK_SHAPES = 4;
 export const CAVE = { x: 11, z: streamZ(11) - 6.2, size: [3.4, 2.6, 2.8] as const };
 
 const noise = new Noise(31);
-const smoothstep = (x: number, a: number, b: number) => {
-	const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
-	return t * t * (3 - 2 * t);
-};
+const { smoothstep } = math;
 
 /** The rock's texel: gray stone with darker cracks and light grains, in a near-white tone. */
 function rockTexel(u: number, v: number, out: TexelSample): void {
@@ -55,8 +58,8 @@ function mossy(arrays: MeshArrays, seed: number): MeshArrays {
 	return { ...arrays, colors };
 }
 
-/** A quarter turn about y by an angle, as the four numbers of a quaternion. */
-const yaw = (angle: number) => [0, Math.sin(angle / 2), 0, Math.cos(angle / 2)];
+/** A turn about y by an angle, as the four numbers of a quaternion. */
+const yaw = (angle: number) => quat.fromEuler(quat.create(), 0, angle, 0);
 
 /** Where rocks stand: a few in the stream, a line along each edge, and some on the banks. */
 function rockPlaces(): { x: number; z: number; size: number }[] {
@@ -155,7 +158,7 @@ export function createStones(
 		{ x: CAVE.x, z: CAVE.z, r: 3.4 },
 	];
 	return {
-		clear: (x, z) => footprints.some((f) => (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r),
+		clear: within(footprints),
 		fit(preset) {
 			for (const batch of pebbleBatches) batch.setActiveCount(Math.ceil(PEBBLES[preset] / 6));
 		},

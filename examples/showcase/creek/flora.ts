@@ -2,8 +2,14 @@
 // instance batch row that turns slowly as it drifts. Simple stand-ins mark where the organic models
 // go: leafy plants of large leaves at the water's edge, and trees on the banks. Fireflies hover over
 // the banks at night.
-import type { InstanceBatch, MeshArrays, SketchContext, SpriteBatch } from '@null3d/engine';
-import { random } from '../../lib/procedural';
+import {
+	type InstanceBatch,
+	type MeshArrays,
+	quat,
+	type SketchContext,
+	type SpriteBatch,
+} from '@null3d/engine';
+import { random, within } from '../../lib/procedural';
 import { groundHeight, streamHalf, streamZ, WATER } from './land';
 
 /** Floating leaves in each of the three colors. */
@@ -43,14 +49,10 @@ function leaf(): MeshArrays {
 	return { positions, colors, uvs, indices, computeNormals: true };
 }
 
-/** A turn about y, then a tilt about x, as the four numbers of a quaternion. */
+/** A turn about y, then a tilt about x, written into a batch's rotations at a row's place. */
+const turn = quat.create();
 function yawTilt(yaw: number, tilt: number, out: Float32Array, at: number): void {
-	const [sy, cy] = [Math.sin(yaw / 2), Math.cos(yaw / 2)];
-	const [sx, cx] = [Math.sin(tilt / 2), Math.cos(tilt / 2)];
-	out[at] = cy * sx;
-	out[at + 1] = sy * cx;
-	out[at + 2] = -sy * sx;
-	out[at + 3] = cy * cx;
+	out.set(quat.fromEuler(turn, tilt, yaw, 0, 'YXZ'), at);
 }
 
 /** The leaves, plants, trees and fireflies, with what moves them in each frame. */
@@ -163,7 +165,7 @@ export async function createFlora({
 	const plantFootprints = plantSpots.map(({ x, z }) => ({ x, z, r: 0.5 }));
 	const footprints = [...treeFootprints, ...plantFootprints];
 	return {
-		clear: (x, z) => footprints.some((f) => (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r),
+		clear: within(footprints),
 		nightLights(on) {
 			lit = on;
 			fireflies.setActiveCount(on ? FIREFLIES : 0);

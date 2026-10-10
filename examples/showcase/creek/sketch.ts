@@ -10,10 +10,10 @@
 // address takes them too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { interact } from '../../lib/interact';
+import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createFlora } from './flora';
-import { createGrass } from './grass';
+import { createGrass, INLAND_LAYER } from './grass';
 import { createLand, WATER } from './land';
-import { createMoods, isMood, type Mood } from './moods';
 import { createStones } from './stones';
 import { createWater } from './water';
 
@@ -47,7 +47,12 @@ export default defineSketch(async (ctx) => {
 		shadow: { distance: 40, normalBias: 0.04 },
 	});
 	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
-	const camera = scene.createPerspectiveCamera({ fov: FOV, near: 0.05, far: 2000 });
+	const camera = scene.createPerspectiveCamera({
+		fov: FOV,
+		near: 0.05,
+		far: 2000,
+		layers: 1 | INLAND_LAYER,
+	});
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, {
 		target: [...TARGET],
@@ -69,7 +74,12 @@ export default defineSketch(async (ctx) => {
 	quality.onChange(fit);
 
 	// The mood and the lens: from the address at the start, then from the page's buttons.
-	const setMood = createMoods(ctx, sun, sky, room);
+	// The sun sets low over the stream, ahead of the camera.
+	const setMood = createMoods(ctx, sun, sky, room, {
+		heading: Math.PI + 0.5,
+		fogDensity: 0.006,
+		cloudCoverage: 0.3,
+	});
 	const choose = (mood: Mood) => {
 		setMood(mood);
 		flora.nightLights(mood === 'Night' || mood === 'Blue');

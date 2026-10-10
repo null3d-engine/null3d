@@ -15,6 +15,19 @@ export function random(seed: number): () => number {
 	};
 }
 
+/** A circle on the ground: its middle's x and z, and its radius. */
+export interface Footprint {
+	x: number;
+	z: number;
+	r: number;
+}
+
+/** A test of whether a point of the ground lies inside any of the footprints. */
+export const within =
+	(footprints: readonly Footprint[]) =>
+	(x: number, z: number): boolean =>
+		footprints.some((f) => (x - f.x) ** 2 + (z - f.z) ** 2 < f.r * f.r);
+
 const smooth = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 

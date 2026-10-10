@@ -10,12 +10,14 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
-| `examples/<name>/sketch.ts` | One demo, under 150 lines |
+| `examples/<name>/sketch.ts` | One feature demo, under 150 lines |
+| `examples/showcase/<name>/` | One showcase scene: its `sketch.ts` and the modules that it imports, with no line limit ([Showcase scenes](#showcase-scenes)) |
+| `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 
-The image tests, the device plans and the page tests read `examples/demos.ts` and the `examples/<name>/sketch.ts` paths ([Image tests](image-tests.md)). A folder under `examples/` that holds a `sketch.ts` must be a demo in the list.
+The image tests, the device plans and the page tests read `examples/demos.ts`, and find each demo's sketch with `sketchPath` from it ([Image tests](image-tests.md)). A folder under `examples/` or `examples/showcase/` that holds a `sketch.ts` must be a demo in the list.
 
 ## Two builds from one folder
 
@@ -217,7 +219,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
-- **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain, rocks, grass).
+- **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0 ([D-117](decisions/D-117-showcase-features-before-1-0.md)):
@@ -227,14 +229,57 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
   - a temporal anti-aliasing prototype.
 
   Batch shadows come from M2-R6.
+- **Choices:** a showcase scene's entry can list `choices`, such as a time of day. The page's `startDemo` shows a row of buttons for each, in an element that the page gives it. Each pick goes to the sketch as a message. A held frame has no buttons. So a sketch also reads its first choices from its own address: `?mood=Night&dslr`.
+- **Image tests:** a showcase scene's image test draws its full look on the Mac's GPU. On SwiftShader it draws the Low preset, through the test's SwiftShader switch `preset=low`, which takes the place of the references' preset. The full look took the software GPU too long for CI.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+
+### Creek
+
+Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, builds everything that code makes, and simple stand-ins for the organic models. The owner reviews its look before its pull request opens.
+
+| Part | How it is made |
+| --- | --- |
+| Land (`land.ts`) | A grid of 160 m whose quads pack toward the middle, where the camera looks. A height function cuts the stream's bed, the low banks and the valley's sides. Each vertex takes a color from its height and slope: wet bed, mud, soil, dry patches, meadow and bare rock. A tiled texture set from `textures.fromData` adds clods and grit |
+| Water (`water.ts`) | A grid at the water's height. Its vertex offset moves it with long waves that the current carries downstream. Its surface function adds finer ripples, which catch the sun as glints. A reflection pass mirrors the banks and the sky, and transmission shows the bed through the water. The water is clear and foamy where it is shallow |
+| Grass (`grass.ts`) | Tufts of 13 curved blades, in three shapes, as instance batches. A vertex offset bends each blade in gusts that roll across the banks. The tufts near the water cast shadows and show in the reflection; the others only receive shadows |
+| Stones (`stones.ts`) | Rocks of noise-shaped spheres with moss where they face up, and pebbles on the bed, as instance batches with shadows |
+| Leaves and plants (`flora.ts`) | Fallen leaves that float down the current, and fireflies at blue hour and at night. Stand-ins mark the leafy plants and the trees |
+| Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room |
+
+The choices, and why:
+
+- **Grass sways and tints by its place.** A tuft's phase in the wind and its tint come from `object.position`, the row's place in the world. One WGSL function, `tuftTraits`, reads them. Per-row values in instance batches (M2-EX13) will carry them. Then the sketch writes each tuft's traits into its row, and that function reads `object.values`. Then each tuft can also turn, with its turn in its values, so the wind still blows one way. Until then, the tufts do not turn. A vertex offset moves a vertex in the mesh's own space, so a turned tuft would bend another way.
+- **Shadows follow the unmoved grass.** A vertex offset does not reach the shadow passes yet. The per-row values work gives custom materials with a vertex offset shadow builds of their own.
+- **Only the grass near the water is in the reflection and casts shadows.** At first every tuft drew in the camera's view, the reflection and each shadow cascade. The Mac's GPU then drew about 5.1 million triangles a frame on WebGPU, and 7.5 million on WebGL2. Grass far from the water shows in no reflection, and its shadows fall in grass. So those tufts sit on a layer that the reflection pass leaves out, and cast no shadows.
+- **Each preset draws an even spread of the tufts, grouped by place.** The rows come in a random order, so any count spreads over the banks. Then each preset's added rows sort by 4 m squares. WebGL2 culls a static batch in groups of 64 nearby rows, and a random order puts the whole field in every group.
+- **The water's depth is a WGSL copy of the land's shape.** The water needs its depth for its thickness, its tint and its foam. No depth texture reaches a surface function, so the shader repeats the bends and widths of the stream from `land.ts`. A change to the stream's shape changes both.
+- **The DSLR switch sets a 50 mm lens at f/1.8.** At the scene's view of 45 degrees, a 29 mm lens, the blur of the near grass was a few pixels. The lens focuses on the point that the camera orbits, so the focus follows the user's camera.
+- **The night is darker than the preset's exposure.** At the `night` preset's exposure, the grass showed as green as by day under the moon. The night takes 0.55 of it.
+- **Blue hour and night have fireflies,** a sprite batch whose colors are above white, so bloom gives them halos.
+
+#### Frame rates of the Creek on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. The display ran at 120 Hz, and the load was 3 to 7. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 5.5 to 5.8 ms | 111 to 120 fps, GPU 7.1 to 13.4 ms |
+| Golden hour | 120 fps, GPU 4.8 to 5.4 ms | 120 fps, GPU 6.7 to 7.1 ms |
+| Blue hour | 120 fps, GPU 4.8 to 5.9 ms | 96 to 120 fps, GPU 7.7 to 15.2 ms |
+| Night | 119 to 120 fps, GPU 6.9 to 7.1 ms | 102 to 116 fps, GPU 9.4 to 13.4 ms |
+| Studio | 120 fps, GPU 5.7 to 6.9 ms | 120 fps, GPU 7.0 to 7.8 ms |
+
+WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
+
+What phase 2 needs: the trees, the leafy plants and the cave mouth as models built by script in Blender. They go into the sample-assets repository as glTF, and the entry's `assets` field then gives the reason. The stand-ins in `flora.ts` and `stones.ts` mark their places.
 
 ## Groups and titles (owner, 9 October 2026)
 
-The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos, so the first two wait for their scenes.
+The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos, so Compare with three.js waits for its scenes.
 
 | Group | Demos |
 | --- | --- |
+| Showcase | creek |
 | Building scenes | generators, mesh-arrays, objects, layers |
 | Light, materials and effects | environment, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, picking, math |
