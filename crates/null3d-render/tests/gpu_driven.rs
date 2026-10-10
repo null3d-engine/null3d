@@ -134,10 +134,11 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // each while no light casts shadows, the table of specular terms, the materials' custom
     // values, the environment's blank cube, the blank textures that stand in for ambient
     // occlusion and for the copy that surfaces which let light through sample, the views' cell
-    // offsets, and the white texel that the side view's texture shows until it draws.
+    // offsets, the white texel that the side view's texture shows until it draws, and the row
+    // values texture of instance batches, one texel row while no batch has row values.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 13);
+    assert_eq!(count(&commands, Op::CreateTexture), 14);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -260,8 +261,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
     // environment's blank cube, the blank textures that stand in for ambient occlusion and for
-    // the copy that surfaces which let light through sample, and the views' cell offsets.
-    assert_eq!(count(&commands, Op::CreateTexture), 10);
+    // the copy that surfaces which let light through sample, the views' cell offsets, and the row
+    // values texture of instance batches.
+    assert_eq!(count(&commands, Op::CreateTexture), 11);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);

@@ -372,30 +372,48 @@ impl Opaque {
             let [joints, first_joints, deltas, weights] = skins.unwrap_or_default();
             let entry = |binding: u32, id: u32| [binding, resource_kind::TEXTURE, id, 0, 0];
             // The streamed textures' and the index list's entries take each group's own slots.
-            let entries = [
-                entry(0, ids::RESIDENT),
-                entry(1, 0),
-                entry(2, 0),
-                entry(3, ids::CLUSTERS),
-                entry(ROW_VALUES_BINDING, ids::RESIDENT_VALUES),
-                entry(ROW_VALUES_BINDING + 1, 0),
+            let skin_entries = [
                 entry(4, joints),
                 entry(5, first_joints),
                 entry(6, deltas),
                 entry(7, weights),
             ];
-            let bindings = if skins.is_some() { 10 } else { 6 };
+            let values = [
+                entry(ROW_VALUES_BINDING, ids::RESIDENT_VALUES),
+                entry(ROW_VALUES_BINDING + 1, 0),
+            ];
+            // The entries in binding order: the instance textures, the textures of skins and
+            // morph targets where the groups bind them, then the row values textures.
+            let skinned = if skins.is_some() {
+                &skin_entries[..]
+            } else {
+                &[]
+            };
             let mut words = [0u32; 3 + 5 * 10];
-            words[1..3].copy_from_slice(&[bind_layout::INSTANCES, bindings]);
-            words[3..].copy_from_slice(entries.as_flattened());
-            let used = 3 + bindings as usize * 5;
-            let id_of = |binding: usize| 3 + binding * 5 + 2;
+            let mut used = 3;
+            for item in [
+                entry(0, ids::RESIDENT),
+                entry(1, 0),
+                entry(2, 0),
+                entry(3, ids::CLUSTERS),
+            ]
+            .iter()
+            .chain(skinned)
+            .chain(&values)
+            {
+                words[used..used + 5].copy_from_slice(item);
+                used += 5;
+            }
+            words[1..3].copy_from_slice(&[bind_layout::INSTANCES, (used as u32 - 3) / 5]);
+            // Where an entry's id lies among the words, by its place in the list.
+            let id_of = |place: usize| 3 + place * 5 + 2;
+            let streamed_values = (used - 3) / 5 - 1;
             for streamed in 0..RING {
                 for listed in 0..RING {
                     words[0] = ids::instances_group(view) + streamed * RING + listed;
                     words[id_of(1)] = ids::STREAMED + streamed;
                     words[id_of(2)] = ids::visible(view) + listed;
-                    words[id_of(5)] = ids::STREAMED_VALUES + streamed;
+                    words[id_of(streamed_values)] = ids::STREAMED_VALUES + streamed;
                     list.push(Op::CreateBindGroup, &words[..used])?;
                 }
             }
