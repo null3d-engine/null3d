@@ -293,12 +293,12 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 
 `new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. `collapsed: true` starts it closed. `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
 
-- `showRate(frames, fps, refreshHz)` shows the frame rate in the header.
+- `showRate(frames, fps, refreshHz, maxTargetFps?)` shows the frame rate in the header.
 - `update(figures, frame)` shows a set of figures in the card. `frame` gives the display's refresh rate, whether the GPU's work is timed, and how the threads share each frame. A renderer that prepares and draws each frame on one thread passes `mode: 'one-thread'`. It names that thread in `bothSteps`.
 - `follow()` keeps the panel on the canvas's corner. Call it as the figures come.
 - `setCollapsed(collapsed)` opens or closes the card from code, and `remove()` takes the panel off the page.
 
-The panel judges the figures against the engine's own target: the display's refresh rate, at most 60 frames a second. A figure that the page does not know is `null`, and the card leaves it out.
+The panel judges the figures against the engine's own target: the display's refresh rate, at most 60 frames a second. A page that sets null3D's `targetFps` to a higher rate passes the same highest target as `maxTargetFps`, in `showRate` and in `frame`. A figure that the page does not know is `null`, and the card leaves it out.
 
 ```ts
 import {
