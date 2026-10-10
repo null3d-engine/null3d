@@ -42,6 +42,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - Uploads from 64 KiB to 4 MiB take the route that the render worker measures as faster on the device: `queue.writeBuffer` or the staging ring.
 - In Chrome on a Mac the ring is 3 to 6 times faster in that range, as `writeBuffer` takes up to 0.8 ms per MB. In Safari `writeBuffer` wins at every size, because unmapping a staging buffer costs time in proportion to its size. Outside that range `writeBuffer` wins in every browser measured.
+- Each frame lists the runs of changed rows, with room for 4,096 runs. A frame with more scene runs widens its last run to cover the rest, rows between runs included. Both world buffers hold the latest matrix of every row that draws, so those rows upload unchanged.
+- The list once overflowed instead. The frame then uploaded every row up to the highest slot ever used, and the shadow tiles forgot every caster and drew again. Moving objects that take turns with still ones make one run each. So the Factory comparison overflowed at about 2,100 moving cells, about 4,300 runs. With room for 200,000 parts and 21,399 shown, the frame uploaded all 300,000 rows, 14.4 MB. Figures before and after: pending.
+- The scene's runs leave room for each instance batch's, so only batch runs past the room still overflow the list.
 
 ## Download size
 
