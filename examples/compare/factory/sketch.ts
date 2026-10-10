@@ -442,6 +442,7 @@ export default defineSketch(
 				const made = scene.createInstances(part(name).mesh, capacity * perCell, {
 					material: part(name).material,
 					dynamic,
+					...shadows(name),
 				});
 				batches.push({ batch: made, perCell });
 				return made;
