@@ -19,7 +19,9 @@
 // allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
-// light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
+// light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
+// changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
@@ -135,6 +137,7 @@ export default defineSketch(async (context) => {
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
 		});
+	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -144,6 +147,10 @@ export default defineSketch(async (context) => {
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
+		}
+		if (hemispheres) {
+			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
+			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
 		}
 		if (room) {
 			turn[1] = 0.5 * t;
@@ -207,6 +214,22 @@ fn effect(input: EffectInput) -> vec4f {
     return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
 }
 `;
+
+/**
+ * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
+ * warm one tilted an eighth of a turn about X.
+ */
+function createHemispheres({ scene }: SketchContext) {
+	const tilt = Math.sin(Math.PI / 8);
+	return [
+		scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' }),
+		scene.createHemisphereLight({
+			skyColor: '#ffd9a8',
+			groundColor: '#202830',
+			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
+		}),
+	] as const;
+}
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
 const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';

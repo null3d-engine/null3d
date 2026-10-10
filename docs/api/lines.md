@@ -138,7 +138,7 @@ The engine keeps each segment's distance along the line. When a point of a stati
 
 ## Lit lines
 
-`lit: true` shades the lines as a [standard material](materials.md) shades a surface that faces the camera, with the line's color as its base color. The sun, the point and spot lights near each segment and the ambient light light it, and `emissive` adds light of its own. Lines without `lit` draw their color as it is, as three.js's line materials do. Both kinds take the scene's fog.
+`lit: true` shades the lines as a [standard material](materials.md) shades a surface that faces the camera, with the line's color as its base color. The sun, the point and spot lights near each segment and the ambient and hemisphere lights light it, and `emissive` adds light of its own. Lines without `lit` draw their color as it is, as three.js's line materials do. Both kinds take the scene's fog.
 
 ## Blending, sorting and depth
 

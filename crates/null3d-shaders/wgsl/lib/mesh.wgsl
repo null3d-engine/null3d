@@ -3,6 +3,7 @@ enable draw_index;
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
+#import null3d::lighting::{ambient_irradiance}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -512,6 +513,18 @@ fn relative_position(found: Instance, position: vec3f) -> vec3f {
 /// stays at right angles to its surface under uneven scale.
 fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
+}
+
+/// The exposed light that reaches a surface with unit `normal` from the frame's ambient and
+/// hemisphere lights.
+fn ambient_light(normal: vec3f) -> vec3f {
+    return ambient_irradiance(
+        normal,
+        frame.ambient.rgb,
+        frame.hemisphere_x.xyz,
+        frame.hemisphere_y.xyz,
+        frame.hemisphere_z.xyz,
+    );
 }
 
 /// Linear color in the scene's units, such as an unlit material's color or its emissive light,

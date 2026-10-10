@@ -598,6 +598,9 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     ambient: [f32; 4],
+    /// The light that the hemisphere lights add along each world axis, as the frame's uniform
+    /// holds it.
+    hemisphere: [[f32; 4]; 3],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
     shadow_quality: ShadowQuality,
@@ -721,6 +724,7 @@ impl SceneSettings {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
+                hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
@@ -1577,11 +1581,18 @@ impl SceneSettings {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
 
+    /// The exposed light that the hemisphere lights add along each world axis, x, y and z (see
+    /// [`null3d_core::lights::FrameLights::hemisphere`]). Their part that every direction gets
+    /// belongs in the ambient light.
+    pub fn set_hemisphere(&mut self, axes: [[f32; 3]; 3]) {
+        self.lighting.hemisphere = axes.map(|[r, g, b]| [r, g, b, 0.0]);
+    }
+
     /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
-    /// main directional light and the ambient lights become the light the shaders read, and the
-    /// light table's visible list holds the point and spot lights the camera sees. Every light's
-    /// color takes the exposure that frames draw with.
+    /// main directional light, the ambient lights and the hemisphere lights become the light the
+    /// shaders read, and the light table's visible list holds the point and spot lights the camera
+    /// sees. Every light's color takes the exposure that frames draw with.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
@@ -1599,6 +1610,7 @@ impl SceneSettings {
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
+        self.set_hemisphere(lit.hemisphere);
         self.set_sun_shadow(lit.sun_shadow);
     }
 
@@ -1942,6 +1954,7 @@ impl SceneSettings {
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
             fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
