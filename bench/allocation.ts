@@ -241,6 +241,21 @@ const EFFECTS_REPLAY_BUDGET = 2 * 64;
  */
 const REFLECTION_REPLAY_BUDGET = 3 * 64;
 
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with
+ * `--transmission`: the encoder of the render pass that copies the opaque color, at bloom's
+ * allowance per pass.
+ */
+const TRANSMISSION_REPLAY_BUDGET = 64;
+
+/**
+ * The bytes per frame that the WebGPU backend's mip levels may allocate with `--transmission`: the
+ * encoders of the render passes that make the copy's levels, one per level after the first, for a
+ * render size of up to 4096 pixels. On the Mac the page's ten such passes allocated about 17 bytes
+ * per pass, 173 per frame.
+ */
+const TRANSMISSION_MIPS_BUDGET = 11 * 32;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -447,6 +462,10 @@ async function main(): Promise<void> {
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
+					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(name === 'generateMipmaps webgpu/backend.ts' && transmission
+						? TRANSMISSION_MIPS_BUDGET
+						: 0) +
 					(statsBudgets[name] ?? 0) +
 					(skyBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
