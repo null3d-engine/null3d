@@ -64,6 +64,7 @@ export const BATCH_FIELD_SCALES = 2;
 export const BATCH_FIELD_COLORS = 3;
 export const BATCH_FIELD_SIZES = 4;
 export const BATCH_FIELD_FRAMES = 5;
+export const BATCH_FIELD_DIRTY_WORDS = 6;
 
 export const SPRITE_MAX_ATLAS_SIDE = 2048;
 

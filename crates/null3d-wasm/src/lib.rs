@@ -1272,7 +1272,8 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 /// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
 /// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
 /// (one 32-bit integer a row), and 0 for scales. A line batch has positions (3 floats a point) and
-/// colors (3 floats a point), and 0 for the others.
+/// colors (3 floats a point), and 0 for the others. Every batch also has the words of its dirty
+/// rows' bitset, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -1280,6 +1281,9 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             .batches
             .get(Handle::from_raw(batch))
             .map_err(core_failure)?;
+        if field == batch_field::DIRTY_WORDS {
+            return Ok(address(batch.dirty().words()));
+        }
         if batch.sprite_look().is_some() {
             let (sizes, rotations, colors, frames) = batch.sprite_rows();
             return Ok(match field {
