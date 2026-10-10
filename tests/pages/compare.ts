@@ -35,7 +35,12 @@ async function memoryParts(): Promise<Record<string, number> | null> {
 		}
 	).measureUserAgentSpecificMemory;
 	if (!measure) return null;
-	const { breakdown } = await measure.call(performance);
+	// Chromium's headless shell throws in place of measuring, and the page then reports no parts.
+	const measured = await Promise.resolve()
+		.then(() => measure.call(performance))
+		.catch(() => null);
+	if (!measured) return null;
+	const { breakdown } = measured;
 	const parts: Record<string, number> = {};
 	for (const { bytes, types, attribution } of breakdown) {
 		const where =

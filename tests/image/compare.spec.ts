@@ -48,8 +48,10 @@ for (const engine of ['null3d', 'threejs'] as const)
 	test(`Factory measures ${engine}'s frames and the whole page's memory at a fixed count`, async ({
 		page,
 	}) => {
+		// A frame rate needs two frames or more in the window. CI's software GPU draws three.js's
+		// effects at a few frames a second at best, so the page draws none of them.
 		await page.goto(
-			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&measure=400&seconds=1`,
+			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=3`,
 		);
 		const result = await pageResult<{
 			error?: string;
