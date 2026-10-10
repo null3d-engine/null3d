@@ -56,6 +56,8 @@ struct Surface {
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
+  transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
+  thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -317,6 +319,8 @@ fn surface(input: SurfaceInput) -> Surface {
 
 - The engine lights `s.reflection.rgb` as the light from the mirror direction, in place of that share of the environment's reflection, so Fresnel and metalness weigh it. A tilted normal times a small factor as `reflection_uv`'s offset makes water ripple.
 - Roughness does not blur it. Docs: `api/render`, `shaders/surface-functions`, and the water recipe in `guides/custom-passes`.
+
+Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
 
 ## 8. Portable WGSL rules
 

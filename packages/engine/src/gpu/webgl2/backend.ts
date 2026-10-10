@@ -133,6 +133,8 @@ interface GlTexture {
 	readonly format: GlFormat;
 	/** The mip levels of the texture. */
 	readonly mips: number;
+	/** True when GL's own `generateMipmap` makes its levels: see `linearMips`. */
+	readonly nativeMips: boolean;
 	/** The mip level and the layer that a render pass draws into. */
 	readonly level: number;
 	readonly layer: number;
@@ -297,6 +299,29 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	return formats;
 }
 
+/** The linear color formats that WebGL2 both renders into and filters, so `generateMipmap` takes them. */
+const NATIVE_MIP_FORMATS: ReadonlySet<number> = new Set([
+	G.FORMAT_RGBA8_UNORM,
+	G.FORMAT_RGBA16_FLOAT,
+	G.FORMAT_RG11B10_UFLOAT,
+]);
+
+/**
+ * True when GL's own `generateMipmap` makes a texture's levels: a render target of the frame, which
+ * takes no uploads, with one layer and more levels, in a linear format that WebGL2 renders into and
+ * filters. The engine's own draws make the levels of other textures, such as uploaded images
+ * (`generateMipmaps` in the backend says why).
+ */
+function linearMips(format: number, usage: number, layers: number, mips: number): boolean {
+	const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_COPY_DST;
+	return (
+		mips > 1 &&
+		layers === 1 &&
+		(usage & target) === G.TEXTURE_USAGE_RENDER_ATTACHMENT &&
+		NATIVE_MIP_FORMATS.has(format)
+	);
+}
+
 function glTexture(
 	texture: WebGLTexture | null,
 	renderbuffer: WebGLRenderbuffer | null,
@@ -309,6 +334,7 @@ function glTexture(
 	layer: number,
 	view: boolean,
 	bytes: number,
+	nativeMips = false,
 ): GlTexture {
 	return {
 		texture,
@@ -318,6 +344,7 @@ function glTexture(
 		height,
 		format,
 		mips,
+		nativeMips,
 		level,
 		layer,
 		view,
@@ -1332,6 +1359,7 @@ export class WebGL2Backend {
 			0,
 			false,
 			bytes,
+			linearMips(format.code, usage, layers, mips),
 		);
 	}
 
@@ -1612,10 +1640,17 @@ export class WebGL2Backend {
 	 * reads. Chrome on Adreno 830 refuses a draw into one level of a texture that the draw samples
 	 * at another level, although WebGL allows it. A blit per level fails there too, and in Firefox
 	 * it averages the stored bytes of sRGB texels, not their linear values. `generateMipmap` would
-	 * remake every layer.
+	 * remake every layer. A frame's render target of one layer in a linear format takes
+	 * `generateMipmap` instead. Its levels are made in every frame, as the copy behind glass is, and
+	 * a draw and a copy per level cost far more GPU time than the levels' own work.
 	 */
 	private generateMipmaps(id: number, layer: number): void {
 		const texture = this.textureOf(id);
+		if (texture.nativeMips) {
+			this.editTexture(MIP_UNIT, texture.target, texture.texture);
+			this.gl.generateMipmap(texture.target);
+			return;
+		}
 		const program = this.beginSpareDraws(MIP_PROGRAM, texture, texture.width, texture.height);
 		for (let level = 1; level < texture.mips; level++) {
 			const width = Math.max(1, texture.width >> level);

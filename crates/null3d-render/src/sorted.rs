@@ -1,6 +1,6 @@
 //! The sources of the transparent pass, which both frame builders share: the scene objects and
-//! the batch rows whose material blends. They leave the opaque buckets, and each frame the job
-//! workers cull them and sort them back to front for each view (see
+//! the batch rows whose material blends or lets light through. They leave the opaque buckets,
+//! and each frame the job workers cull them and sort them back to front for each view (see
 //! [`null3d_core::depth_sort`]).
 //!
 //! # Buckets
@@ -207,6 +207,9 @@ pub(crate) struct SortedLayout {
     orders: Vec<f32>,
     /// The mask of every blended scene object in this frame, when they all share one.
     common_layers: Option<u32>,
+    /// True when some bucket's pairs let light through, so the camera's view copies its opaque
+    /// color for them.
+    transmits: bool,
 }
 
 impl SortedLayout {
@@ -216,9 +219,16 @@ impl SortedLayout {
         &self.waiting
     }
 
-    /// True when some mesh and material pair blends, so the transparent pass has work.
+    /// True when no mesh and material pair blends or lets light through, so the transparent pass
+    /// has no work.
     pub(crate) fn is_empty(&self) -> bool {
         self.buckets.is_empty()
+    }
+
+    /// True when some mesh and material pair lets light through, so the camera's view needs the
+    /// copy of its opaque color that such pairs sample.
+    pub(crate) fn transmits(&self) -> bool {
+        self.transmits
     }
 
     /// The rows that can draw in the transparent pass.
@@ -242,7 +252,8 @@ impl SortedLayout {
         self.most_parts
     }
 
-    /// Finds every scene object and batch whose mesh and material pair blends, and gives each
+    /// Finds every scene object and batch whose mesh and material pair blends or lets light
+    /// through, and gives each
     /// key a bucket, with its pipeline id from `pipelines` for a pass that draws into `targets`.
     /// `place` gives a batch's first row in the builder's data and its data texture. While
     /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
@@ -265,7 +276,7 @@ impl SortedLayout {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
-            if !pipeline.blends() {
+            if !pipeline.sorts() {
                 return None;
             }
             let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
@@ -297,9 +308,14 @@ impl SortedLayout {
                 SkinnedPipeline::Waiting(_) => None,
             }
         };
-        // Instance batches receive no shadows yet.
+        // Instance batches receive shadows as their shadow bits say.
         let batch_key = |index: usize, batch: &InstanceBatch| {
-            key_of(batch.mesh(), batch.material(), place(index, batch).1, 0)
+            key_of(
+                batch.mesh(),
+                batch.material(),
+                place(index, batch).1,
+                batch.shadows(),
+            )
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
 
@@ -326,6 +342,10 @@ impl SortedLayout {
         }
 
         self.buckets.clear();
+        self.transmits = self
+            .key_counts
+            .iter()
+            .any(|&((pipeline, ..), _)| pipeline.transmits());
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
         for &((pipeline, textures, _, mesh, material, group), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");

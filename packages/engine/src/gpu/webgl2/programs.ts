@@ -42,6 +42,7 @@ import {
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_TRANSMISSION_COPY,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -71,14 +72,14 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with fourteen. Group 1 has three slots, group 2 eight (the instance textures, then the two
+ * first, with sixteen. Group 1 has three slots, group 2 eight (the instance textures, then the two
  * textures that skinned meshes read and the two that morphed meshes read) and group 3 the last
  * sixteen: the eight map textures, then their samplers, of which the standard material's shared
  * map units take the first six of each. Slots are no texture units: each program
  * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
  * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 14, 17, 25);
+const GROUP_BASES = Uint8Array.of(0, 16, 19, 27);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -246,6 +247,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_BLUR] = { shader: shaders.dof, pipeline: 'gather' };
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
+	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

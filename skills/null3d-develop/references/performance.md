@@ -148,7 +148,7 @@ The table marks its other rows as planned, such as the light caps. A light's own
 
 ### The governor
 
-The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
+The frame-budget governor keeps the frame rate when the scene is too heavy for the device. It aims for the display's refresh rate, up to 60 frames per second. A game on a 120 or 144 Hz display can defend the full rate with `createEngine({ targetFps: 'display' })` (0.2), at the cost of lighter presets (`concepts/quality-presets`). It judges the frames four times a second, by the slower of the presented and the completed rates. So it also sees a GPU that falls behind while the renderer keeps presenting.
 
 The governor steps down when a second of frames averages under 95% of the target rate, such as 57 at 60. It takes one step at a time, in this order:
 

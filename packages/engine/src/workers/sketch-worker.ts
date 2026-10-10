@@ -85,7 +85,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					capabilities: message.capabilities,
 					...senders,
 					pageUrl: message.pageUrl,
-					fps: message.fps,
+					maxTargetFps: message.maxTargetFps,
 					threads: message.threads,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
 					sendLabelSlot: (id, slot, generation) =>

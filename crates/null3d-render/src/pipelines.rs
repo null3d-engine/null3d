@@ -178,9 +178,21 @@ pub struct DrawKey {
 }
 
 impl DrawKey {
-    /// True when the pair blends, so it draws back to front in the transparent pass.
+    /// True when the pair blends over what lies behind it.
     pub const fn blends(self) -> bool {
         self.state & state_flags::BLEND != 0
+    }
+
+    /// True when the pair lets light through: its shader samples the copy of the opaque objects'
+    /// color behind it.
+    pub const fn transmits(self) -> bool {
+        self.permutation & permutation::TRANSMISSION != 0
+    }
+
+    /// True when the pair draws back to front in the transparent pass, after the opaque objects:
+    /// it blends, or it lets light through.
+    pub const fn sorts(self) -> bool {
+        self.blends() || self.transmits()
     }
 
     /// True when the pair writes depth wherever it draws, so a background drawn after the opaque
@@ -193,7 +205,7 @@ impl DrawKey {
     /// template ([`Prepass::DepthTemplate`]), or `None` when the pair stays out of the prepass. The
     /// depth template places the vertices of the engine's templates as they do, with the same faces
     /// and depth bias. The prepass cannot follow a pair that blends, discards fragments by their
-    /// alpha, skips the depth test or depth writes, or has a line material, whose fragment shader
+    /// alpha, lets light through, skips the depth test or depth writes, or has a line material, whose fragment shader
     /// cuts out round ends and dashes. A pair whose template places its own vertices
     /// ([`DrawKey::places_own_vertices`]) takes only the key's faces and state, and draws with its
     /// own vertex shader.
@@ -203,7 +215,7 @@ impl DrawKey {
             | state_flags::NO_DEPTH_WRITE
             | state_flags::NO_DEPTH_TEST;
         if self.state & unfit != 0
-            || self.permutation & permutation::ALPHA_MASK != 0
+            || self.permutation & (permutation::ALPHA_MASK | permutation::TRANSMISSION) != 0
             || self.template == template::LINE
             || self.template == template::LINE_LIT
         {

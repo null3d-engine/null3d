@@ -128,26 +128,28 @@
 # WebGPU target without alpha, which cannot turn alpha into coverage. A bit builds only beside the
 # bits it needs, and ALPHA_COVERAGE and ALPHA_HASH never build together (drawlist.rs, NEEDS and
 # APART). Custom materials build none of the three.
-# RECEIVE_SHADOWS reads the main directional light's shadow maps. Custom materials build this
-# template.
+# RECEIVE_SHADOWS reads the main directional light's shadow maps. TRANSMISSION lets light through
+# the surface from the copy of the camera's opaque color (null3d::refraction); it builds without a
+# mask or index-read instances, and loads on first use. Custom materials build this template, with
+# TRANSMISSION only where their WGSL sets the surface's transmission.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
-# VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK
-# and RECEIVE_SHADOWS act as for the standard material.
+# VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
+# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -366,6 +368,26 @@ variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 # no texture until the copy's pipeline is built.
 [first_use.views]
 shaders = ["view_copy"]
+
+# The copy of the camera's opaque color into the first level of the target with a mip chain that
+# surfaces which let light through sample, one texel per pixel. The TONE_MAP build decodes the
+# 8-bit path's display color into an sRGB target. Both paths copy: the target keeps the scene
+# color's rows in their order.
+[shaders.transmission_copy]
+file = "transmission_copy.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the copy and the builds of the mesh templates that let light through when its
+# first material that lets light through draws. The copy waits for its pipeline, and the frames
+# draw without it until then. It takes the builds that it shares with skinning and morph targets,
+# so the skinning and morph files do not grow.
+[first_use.transmission]
+shaders = ["transmission_copy"]
+bits = ["TRANSMISSION"]
+claims_shared_builds = true
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays

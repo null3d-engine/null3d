@@ -2,7 +2,7 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material}
+#import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -122,7 +122,7 @@ struct CellOffsets {
 @group(2) @binding(7) var morph_weights: texture_2d<f32>;
 #endif
 #else
-@group(0) @binding(1) var<storage, read> materials: array<Material>;
+@group(0) @binding(1) var<storage, read> materials: array<MaterialRow>;
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
 /// shaders read them too, and read no storage buffers, so they have a data texture of their own.
 @group(0) @binding(2) var custom_values: texture_2d<f32>;
@@ -236,9 +236,34 @@ fn material_of(id: u32) -> Material {
     m.specular = textureLoad(materials, vec2u(8u, id), 0);
     return m;
 #else
-    return materials[id];
+    return Material(
+        materials[id].color,
+        materials[id].emissive,
+        materials[id].surface,
+        materials[id].strengths,
+        materials[id].uv_u,
+        materials[id].uv_v,
+        materials[id].maps,
+        materials[id].more_maps,
+        materials[id].specular,
+    );
 #endif
 }
+
+#ifdef TRANSMISSION
+/// The values of material `id` that let light through, which only the builds that let light
+/// through read.
+fn material_transmission(id: u32) -> MaterialTransmission {
+#ifdef WEBGL2
+    return MaterialTransmission(
+        textureLoad(materials, vec2u(9u, id), 0),
+        textureLoad(materials, vec2u(10u, id), 0),
+    );
+#else
+    return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
+#endif
+}
+#endif
 
 /// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
 /// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the

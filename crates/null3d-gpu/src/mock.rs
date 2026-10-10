@@ -730,9 +730,9 @@ impl MockBackend {
             "mip levels are made for 2d-array textures of one sample",
         )?;
         check(
-            format::makes_mipmaps(texture.format),
+            format::draws_mipmaps(texture.format),
             op,
-            "mip levels are made for RGBA8 and sRGB RGBA8 textures",
+            "mip levels are made for RGBA8, sRGB RGBA8 and the HDR targets' textures",
         )?;
         check(
             texture.mips > 1,
