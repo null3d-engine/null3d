@@ -318,3 +318,46 @@ The owner decided these points about the examples:
 - Each comparison's headline figure is the largest count that each engine holds at the display rate on the viewer's device. A ramp finds it by raising the count. At a fixed count, both engines often hold the display rate, which hides the gap. Before a comparison ships, a device sitting runs its ramp on the Mac, the S24+, a Pixel, the iPad and a WebGL-only iPhone. null3D must hold the higher count on every device class.
 - The comparisons have a high-fidelity look: shadows, environment light, fog, bloom, ambient occlusion and grading. Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)). The owner reviews both engines' held frames before a scene ships. This replaces the old repository's rule that an effect stays off until both engines draw it pixel for pixel. Each effect stays a switch, and each device class gets one effect level that both engines use.
 - Every demo runs by itself and is always interactive, with no switch. Later in the day, the owner asked for the camera hand-over and the pointer steering that [Always-on interaction](#always-on-interaction) describes.
+
+## The look of the rendering demos
+
+The owner's bar for every feature demo is the reworked generators demo. Eight more demos took a new look on 9 October 2026 (M2-EX9). They are picking, sprites and lines, the large world, the security camera, the glTF model, the character, environment light and post effects. Each stays one sketch under 150 lines that makes its look inline. The three demos that show loading keep their loaded files, and everything around those files is made in code.
+
+| Demo | What it shows now |
+| --- | --- |
+| picking | Six pieces in glazed, chrome, gold, lacquer, satin and gloss finishes stand on pedestals on a turning plinth in a dark gallery. Three spotlights light them, two of which cast shadows, and the built-in room environment gives the reflections. Hover, click, outline and labels work as before |
+| sprites-lines | A fountain of sparks at nightfall over a dark pool, inside a stone rim. A reflection pass draws the sparks, the neon helix and the dashed loop in the water, and ripples bend the reflection. The sparks and the lines have colors above white, so bloom spreads them |
+| large-world | The drive at golden hour from `timeOfDay`, lit by the sky's environment, with fog that thickens with distance and glows toward the sun. The asphalt, with a white line along each edge, and the grass are textures made in code. Each stretch has its own batch of low hills, 250 to 900 m from the road |
+| security-camera | A wet yard at nightfall under a floodlight. The monitor shows the feed as a night camera does: gray, brightened, with scan lines and a band that rolls down. Puddles are dark, smooth patches from a texture made in code |
+| gltf-model | The BoomBox turns on a turntable in a dark studio. The turntable's polished top mirrors it through a reflection pass. A key light casts its shadow, the room environment gives its reflections, the neutral tone curve keeps its colors true, and depth of field blurs the floor beyond it |
+| character | The Knight walks in a courtyard of cobblestones under the afternoon sun. A color map and a normal map made in code shape the stones. Plaster walls stand on three sides, with a stone pillar at each corner |
+| environment | The spheres stand over a polished floor that reflects them and the background. The cycle is the sunset from the HDR file, the studio from the EXR file, and the light of the generated sky, in place of the built-in room |
+| post-effects | The crates stand at the dead end of a neon alley at night, on wet asphalt. Depth of field focuses on the outlined crate, and an amber bar joins the pink and cyan neon |
+
+The rules that these demos follow, and why:
+
+- Scene passes and reflection passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
+- A glowing material, a sprite and a line all draw in a reflection pass. The pool in the sprites demo reflects the sparks, the helix and the dashes.
+- The `'night'` preset of `timeOfDay` gives a black sky: three.js's sky model goes dark once its sun is 2 degrees under the horizon. So the two night scenes take `'blueHour'`, which gives a deep blue sky and the moon as the main light. They keep their exposure low, 2 and 1.4, below the preset's 2.9. At the preset's exposure, the neon of the sprites demo turned white and lost its colors.
+- Fog that thins with height measures its height from the world's origin. The large world's road is 6,378 km above it, so fog with a height falloff would be clear there. The large world uses plain fog, which thickens with distance alone.
+- The cobblestones' normal map comes from the slope of each stone's height in closed form, in the same loop as the color. A pass of finite differences over a height array took more lines than the 150-line limit left.
+- Picking turns its plinth and its pieces from `time.now`. It used to add `dt` each frame, which made the held frame depend on the frame rate.
+- Depth of field draws nothing on the Low preset, which phones start on, as [Post-processing](../docs/api/post.md#depth-of-field) says. The two demos look right without it.
+- Some demos make the room or the sky environment, or load large files. Their image tests may take 60 s, as the reworked math, instances and generators demos do.
+
+### Frame rates of the rendering demos on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, on 9 October 2026. Each demo ran at the preset that the engine chose, with the governor on. The display runs at 120 Hz. Each figure is the stats overlay's reading, 15 seconds after the start, five readings a second apart.
+
+| Demo | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| picking | 120 fps, GPU 4.9 to 5.4 ms | 120 fps, GPU 3.2 to 6.1 ms |
+| sprites-lines | 120 fps, GPU 3.8 ms | 120 fps, GPU 3.9 ms |
+| large-world | 120 fps, GPU 2.7 ms | 120 fps, GPU 4.7 ms |
+| security-camera | 120 fps, GPU 3.3 ms | 120 fps, GPU 4.0 ms |
+| gltf-model | 120 fps, GPU 3.6 to 5.3 ms | 120 fps, GPU 4.8 to 12.5 ms |
+| character | 120 fps, GPU 4.4 ms | 120 fps, GPU 4.4 ms |
+| environment | 120 fps, GPU 2.2 ms | 120 fps, GPU 4.9 ms |
+| post-effects | 120 fps, GPU 4.5 to 5.5 ms | 120 fps, GPU 11.7 to 13.5 ms |
+
+On WebGL2, the two demos with depth of field read 10 to 13.5 ms of GPU time, more than one frame at 120 Hz. The overlay still counted 120 fps. Other helpers loaded the Mac during the run, so the WebGL2 timer may count time that the GPU spent on their work. A phone or tablet check at Medium settles it. Depth of field draws nothing on Low.

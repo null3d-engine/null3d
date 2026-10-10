@@ -23,7 +23,7 @@ import type { GlTiming } from '../lib/gl-timing';
 import { pageReport, readRunOptions } from '../lib/options';
 import { twinSettings } from '../lib/preset';
 import { engineTrace, QualityLog } from '../lib/trace';
-import { QUALITY_MESSAGE } from './sketch-common';
+import { FRAMES_MESSAGE, QUALITY_MESSAGE } from './sketch-common';
 
 /** How a scene's page runs, where it differs from the protocol's page. */
 export interface Null3dPageOptions {
@@ -67,7 +67,8 @@ export interface Null3dPageOptions {
  * that a reflection pass mirrors S1 into under the swarm, `sides` draws S2's boxes
  * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
  * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
- * share of S5's knights stand still in one pose, as waiting characters do.
+ * share of S5's knights stand still in one pose, as waiting characters do, and `frames` makes S1
+ * count the frames it steps, which the page publishes for the allocation check.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -92,6 +93,7 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'still',
+	'frames',
 ] as const;
 
 /**
@@ -159,7 +161,12 @@ export function runNull3dPage(
 		bindLabels(engine, Number(params.get('labels') ?? 0));
 		const whole = pageOptions.started?.(engine);
 		const log = pageOptions.trace ? new QualityLog() : undefined;
-		if (log) engine.onSketchMessage((name, data) => name === QUALITY_MESSAGE && log.add(data));
+		// One handler, since only the first handler hears the messages that came before it.
+		engine.onSketchMessage((name, data) => {
+			if (name === QUALITY_MESSAGE) log?.add(data);
+			else if (name === FRAMES_MESSAGE)
+				(globalThis as { __null3dFrames?: unknown }).__null3dFrames = data;
+		});
 		if (!filled) fitToWindow(canvas, size.width, size.height);
 		const report = {
 			scene: sceneName,
