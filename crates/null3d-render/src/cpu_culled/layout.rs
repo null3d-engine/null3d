@@ -286,8 +286,9 @@ impl Layout {
                 }
                 Drawn::Scene => {}
             }
-            // Blended pairs draw in the transparent pass, which sorts them on the job workers.
-            if pipeline.blends() {
+            // Blended pairs, and pairs that let light through, draw in the transparent pass, which
+            // sorts them on the job workers.
+            if pipeline.sorts() {
                 return None;
             }
             let pipeline = if shadows.any() && object & flags::RECEIVE_SHADOWS != 0 {

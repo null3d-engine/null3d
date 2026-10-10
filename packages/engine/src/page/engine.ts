@@ -10,7 +10,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
-import type { PresetCheck } from '../quality/check';
+import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
@@ -27,6 +27,7 @@ import {
 	presetOption,
 	presetValue,
 	type QualityPreset,
+	targetFpsOption,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
@@ -132,6 +133,15 @@ export interface EngineOptions {
 	 * a preset lower. Another value fails with E1213. The `?preset=` switch wins over it.
 	 */
 	preset?: 'auto' | QualityPreset;
+	/**
+	 * The frame rate that the engine defends: the preset check and the quality governor lower the
+	 * quality when frames fall below it. Without it, the target is the display's refresh rate, at
+	 * most 60. `display` targets the display's full rate, such as 120 or 144 for a game on a fast
+	 * display. A whole number from 1 up caps the target at that rate. The engine draws at the
+	 * display's rate in every case. The `?target-fps=` switch wins over it. Another value fails with
+	 * E1213.
+	 */
+	targetFps?: TargetFps;
 	/**
 	 * Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the
 	 * cap. `ctx.quality.set` changes it during play.
@@ -312,7 +322,8 @@ export interface EngineOptions {
 	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
-	 * until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * until its shaders are built, `'transmission'` with the first material that lets light
+	 * through, and `'occlusion'` with the first object that `setOccluder(true)`
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
@@ -1112,6 +1123,9 @@ async function startEngine(
 		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
+	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
+	const optionTarget = targetFpsOption(options.targetFps);
+	const maxTarget = maxTargetFps(switches.targetFps ?? optionTarget, switches.fps);
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
@@ -1213,7 +1227,7 @@ async function startEngine(
 			mode.preset = update.preset;
 			if (!update.check) return;
 			mode.presetCheck = update.check;
-			checkStore?.save(update.check, switches.fps);
+			checkStore?.save(update.check, maxTarget);
 		},
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
@@ -1242,7 +1256,7 @@ async function startEngine(
 			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
 		sharedMemory: threaded,
-		fpsCap: switches.fps,
+		maxTargetFps: maxTarget,
 		gpuFeatures,
 		mode,
 	}));
@@ -1505,7 +1519,7 @@ async function startEngine(
 			chosen !== 'low';
 		if (checks && history.crashed === 0) {
 			const { width, height } = options.canvas.getBoundingClientRect();
-			const conditions = checkConditions(report, tier, chosen, switches.fps);
+			const conditions = checkConditions(report, tier, chosen, switches.fps, maxTarget);
 			checkStore = new CheckStore(sketchUrl, conditions, width * height);
 		}
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
@@ -1778,7 +1792,7 @@ async function startEngine(
 					capabilities,
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
-					fps: switches.fps,
+					maxTargetFps: maxTarget,
 					threads: engineThreads,
 					showStats: events.stats,
 					sendLabelSlot: events.labelSlot,
@@ -1830,7 +1844,7 @@ async function startEngine(
 				capabilities,
 				hold,
 				quality,
-				fps: switches.fps,
+				maxTargetFps: maxTarget,
 				threads: engineThreads,
 			};
 			withCore.add(sketch);

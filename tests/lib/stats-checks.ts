@@ -157,7 +157,12 @@ export function statsProblems(result: StatsResult): string[] {
 	};
 	expect('heading', new RegExp(`^${tier}  ${mode.preset}  scale 1\\.00$`));
 	expect('fps', /^\d+ fps$/);
-	expect('target', /^Target \d+ fps · \d+\.\d ms$/);
+	// The display's rate shows beside the target only where it is above it, and the target is then
+	// a floor that the engine defends.
+	const below = 'display' in shown;
+	if (below) expect('display', /^\d+ Hz$/);
+	expect('target', below ? /^≥\d+ fps · \d+\.\d ms$/ : /^\d+ fps · \d+\.\d ms$/);
+	if (!('target-note' in shown)) problems.push('the overlay shows no symbol before the target');
 	const bars = workBars(mode);
 	for (const bar of bars) expect(bar, /^\d+\.\d ms$/);
 	for (const bar of ['sketch-drawing', 'sketch', 'drawing', 'jobs', 'page'])

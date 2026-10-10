@@ -38,7 +38,9 @@
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
-// view into in every frame. `--prepass` turns the depth prepass on, in any scene.
+// view into in every frame. `--transmission` puts clear water that lets light through under S1,
+// which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
+// frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -79,6 +81,7 @@
 //   bun run bench:allocation --sky --gpu webgl2
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
+//   bun run bench:allocation --transmission --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { defaultEnvironment, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
@@ -291,6 +294,21 @@ const EFFECTS_REPLAY_BUDGET = 2 * 64;
  */
 const REFLECTION_REPLAY_BUDGET = 3 * 64;
 
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with
+ * `--transmission`: the encoder of the render pass that copies the opaque color, at bloom's
+ * allowance per pass.
+ */
+const TRANSMISSION_REPLAY_BUDGET = 64;
+
+/**
+ * The bytes per frame that the WebGPU backend's mip levels may allocate with `--transmission`: the
+ * encoders of the render passes that make the copy's levels, one per level after the first, for a
+ * render size of up to 4096 pixels. On the Mac the page's ten such passes allocated about 17 bytes
+ * per pass, 173 per frame.
+ */
+const TRANSMISSION_MIPS_BUDGET = 11 * 32;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -444,12 +462,14 @@ async function main(): Promise<void> {
 		if (sky && scene !== 's1') throw new Error('--sky and --sky-environment draw behind S1 only');
 		const reflection = args.includes('--reflection') ? '&reflection' : '';
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
+		const transmission = args.includes('--transmission') ? '&transmission' : '';
+		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${effects}${sky}${reflection}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -587,6 +607,10 @@ async function main(): Promise<void> {
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
+					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(name === 'generateMipmaps webgpu/backend.ts' && transmission
+						? TRANSMISSION_MIPS_BUDGET
+						: 0) +
 					(statsBudgets[name] ?? 0) +
 					(skyBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;

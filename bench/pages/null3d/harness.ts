@@ -64,8 +64,9 @@ export interface Null3dPageOptions {
  * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
- * that a reflection pass mirrors S1 into under the swarm, `batchShadows` makes the rows of S1 and
- * S1-static cast and receive the sun's shadows, `sides` draws S2's boxes
+ * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
+ * lets light through under it, `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * the sun's shadows, `sides` draws S2's boxes
  * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
  * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
  * share of S5's knights stand still in one pose, as waiting characters do, and `frames` makes S1
@@ -93,6 +94,7 @@ const SKETCH_SWITCHES = [
 	'backgroundFirst',
 	'extraBox',
 	'reflection',
+	'transmission',
 	'still',
 	'batchShadows',
 	'frames',
