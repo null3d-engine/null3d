@@ -39,7 +39,7 @@ import { GRADING_LUTS } from '../../scenes/grading';
 import { S1_BOB_HEIGHT, S1_EXTENT, s1Camera } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
-import { followPath, readCount, setUpView } from './sketch-common';
+import { followPath, frameCount, readCount, setUpView } from './sketch-common';
 import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
 export default defineSketch(async (context) => {
@@ -168,9 +168,11 @@ export default defineSketch(async (context) => {
 		context.post.set(settings);
 	};
 	pose(time.now);
+	const frames = frameCount(context, import.meta.url);
 	return {
 		onUpdate() {
 			pose(time.now);
+			if (frames) Atomics.add(frames, 0, 1);
 		},
 	};
 });
