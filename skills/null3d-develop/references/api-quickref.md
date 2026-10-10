@@ -34,6 +34,7 @@ const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
+  targetFps: 'display',  // (0.2) the frame rate that the preset check and governor defend: 'display' for 120 or 144 Hz games, or a whole number; default the display's rate, at most 60
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU

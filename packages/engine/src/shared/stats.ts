@@ -1,7 +1,10 @@
 // Percentiles and rates of per-frame samples. Every engine's benchmark report uses these functions,
 // so the figures of null3d and of the engines it is compared with are computed the same way.
 
-/** The highest frame rate that the engine aims for and that benchmark reports hold it to, in hertz. */
+/**
+ * The highest frame rate that the engine aims for by default, and that benchmark reports hold it
+ * to, in hertz.
+ */
 export const TARGET_CAP_HZ = 60;
 
 /**

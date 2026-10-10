@@ -12,8 +12,8 @@
 // overlay-look.ts holds the look.
 
 import type { EngineMode } from '../page/engine';
+import { checkTargetFps } from '../quality/check';
 import { refreshRate, sampleFrames } from '../shared/metrics';
-import { targetFps } from './frame-target';
 import { addStyles, buildPanel, keepKeys, StatsCard, StatsHeader } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
 import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
@@ -32,8 +32,8 @@ export interface OverlaySetup {
 	sources: StatsSources;
 	/** True when the engine's threads share its WebAssembly memory: the threaded build. */
 	sharedMemory: boolean;
-	/** The frame rate that `?fps=` holds, or undefined where the display's rate sets it. */
-	fpsCap: number | undefined;
+	/** The highest target frame rate, from the page's `targetFps` setting and the `?fps=` cap. */
+	maxTargetFps: number;
 	/** The GPU features or WebGL2 extensions that the engine found. */
 	gpuFeatures: readonly string[];
 	/** The threads that run the sketch and draw, as `engine.mode` gives them. */
@@ -188,23 +188,22 @@ export class StatsOverlay {
 		this.follow();
 		if (!this.window.update()) return;
 		const { frames, presentedFps } = this.window.stats;
-		this.header.update(frames, presentedFps, this.target());
+		const refreshHz = refreshRate(this.setup.metrics);
+		this.header.update(frames, presentedFps, checkTargetFps(refreshHz, this.setup.maxTargetFps));
 		if (!this.collapsed) this.updateCard();
 	}
 
-	/** The engine's target frame rate now, which follows the display's measured rate. */
-	private target(): number {
-		return targetFps(refreshRate(this.setup.metrics), this.setup.fpsCap);
-	}
-
+	/** Shows the card's figures against the engine's target, which follows the display's rate. */
 	private updateCard(): void {
+		const refreshHz = refreshRate(this.setup.metrics);
 		const figures: StatsFigures = overlayFigures(this.window.stats, {
 			jsHeapBytes: pageHeapBytes(),
 			page: this.pageMemory.page,
 		});
 		this.card.update(
 			figures,
-			this.target(),
+			checkTargetFps(refreshHz, this.setup.maxTargetFps),
+			refreshHz,
 			this.gpuTimer,
 			this.bothSteps,
 			this.setup.mode.latency,
