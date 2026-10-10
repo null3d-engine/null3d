@@ -20,6 +20,10 @@ On the owner's Mac, with its 120 Hz display, the stats overlay's header showed `
 
 The owner's report, 10 October 2026, from the Mac's 120 Hz display with the overlay open: the header read 120 fps, and the card read `Target 60 fps · 16.7 ms`. Every work bar's mark sat at 16.7 ms. [D-116](D-116-stats-overlay-figures.md#cost-and-size) records the same pages holding 120 frames a second in every run on that Mac.
 
+Size after Brotli against main's build comes from `bun run build:check-size` on 10 October 2026. The overlay's own file, `page-stats-overlay.js`, grows from 6,385 to 6,883 bytes (+7.8%), within its 16 KB budget. `page.js` grows by 92 bytes (+0.3%) for the option's check, and `sketch-worker.js` by 27 bytes. The pipelined start on WebGPU takes 130.0 KB of its 140 KB.
+
+Before the merge, the owner got screenshots of the open card on the Mac's 120 Hz screen and on a 144 Hz screen. Each screen had one with the option and one without. On 120 Hz the card read `120 Hz ≥60 fps · 16.7 ms`, with the faint marks at a quarter of each bar. With `?target-fps=display` it read `120 fps · 8.3 ms`, and on the 144 Hz screen `144 fps · 6.9 ms`.
+
 
 ## Options
 
