@@ -1,5 +1,6 @@
 // A scene with enough parallel work for the job workers: a batch of many boxes that all move in
 // every frame, so the engine updates every row of the batch in every frame. ?rows= sets the count.
+// The camera looks away from the boxes, so the frames stay quick on a software GPU too.
 // Like the empty sketch, it counts its updates and its largest step, reports them when the page
 // asks, sends a message during setup, and keeps the whole canvas.
 import { defineSketch } from '@null3d/engine';
@@ -24,7 +25,7 @@ export default defineSketch(({ scene, materials, geometry, page, time, quality }
 		near: 0.1,
 		far: 400,
 		position: [0, 120, 160],
-		target: [0, 0, 0],
+		target: [0, 240, 480],
 	});
 	scene.setActiveCamera(camera);
 	scene.createAmbientLight({ color: '#ffffff', intensity: 1 });
