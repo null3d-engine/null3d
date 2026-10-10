@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ flowchart LR
     sketch --> env["Environment<br/>cube map and diffuse light"]
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
-    frame --> main["The first directional light,<br/>and the ambient lights"]
+    frame --> main["The first directional light,<br/>the ambient and hemisphere lights"]
     frame --> list["Point and spot lights<br/>whose ranges reach the view"]
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
@@ -30,7 +30,7 @@ Every light is a scene object with a row in the engine's light table. The object
 Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
-2. The first directional light created that remains, the sum of the ambient lights, and the scene's environment become the light that standard materials reflect.
+2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
@@ -132,6 +132,12 @@ Because each light is an object, it moves, turns, hides and has a parent the way
 Point and spot lights that move in most frames should be dynamic, with `dynamic: true`, as any object that moves in most frames should be. [Static and dynamic objects](static-dynamic.md) explains the choice.
 
 A glTF file's lights (`KHR_lights_punctual`) become directional, point and spot lights in each copy of the model, in the same units. A light on a node that a clip moves is left out ([Animation](../api/animation.md#models-from-gltf-files)).
+
+## Ambient and hemisphere lights
+
+An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis, as three.js's `HemisphereLight` does. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
+
+Both lights are diffuse only, as in three.js: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
 
 ## Lights far from the origin
 
@@ -348,7 +354,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient light, the environment and the fog. It draws the sun's shadows where the camera's cascades reach. It draws no point or spot lights and no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach. It draws no point or spot lights and no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
 
 ## Related pages
 
