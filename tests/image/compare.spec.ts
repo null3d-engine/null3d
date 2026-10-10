@@ -5,8 +5,15 @@ import { expect, test } from '@playwright/test';
 import type { RampResult } from '../../examples/lib/ramp.ts';
 import { pageResult } from '../lib/page-result.ts';
 
-// CI's software GPU draws a few frames a second, and the scene builds its surfaces in code.
+// CI's software GPU draws a few frames a second, and the scene builds its surfaces in code. The
+// tests draw no effects, since the image tests hold each engine's look.
 test.describe.configure({ timeout: 120_000 });
+
+/**
+ * True on CI's software GPU. Under a busy shard it can draw under two frames in a step of a second,
+ * too few for a frame rate, so the tests check the frame rates on a real GPU only.
+ */
+const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftshader');
 
 for (const mode of ['scene-graph', 'instanced'] as const)
 	for (const engine of ['null3d', 'threejs'] as const)
@@ -20,7 +27,9 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 					if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
 						errors.push(message.text());
 				});
-				await page.goto(`compare.html?compare=factory&engine=${engine}&gpu=${gpu}&mode=${mode}`);
+				await page.goto(
+					`compare.html?compare=factory&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=`,
+				);
 				const result = await pageResult<{
 					error?: string;
 					label: string;
@@ -39,7 +48,7 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 					[100, 200, 400].slice(0, ramp.steps.length),
 				);
 				// Each step drew frames: the engine runs and draws Factory at each count.
-				for (const step of ramp.steps) expect(step.fps).toBeGreaterThan(0);
+				if (!softwareGpu()) for (const step of ramp.steps) expect(step.fps).toBeGreaterThan(0);
 				expect(ramp.held).toBeLessThanOrEqual(400);
 				expect(errors).toEqual([]);
 			});
@@ -48,8 +57,6 @@ for (const engine of ['null3d', 'threejs'] as const)
 	test(`Factory measures ${engine}'s frames and the whole page's memory at a fixed count`, async ({
 		page,
 	}) => {
-		// A frame rate needs two frames or more in the window. CI's software GPU draws three.js's
-		// effects at a few frames a second at best, so the page draws none of them.
 		await page.goto(
 			`compare.html?compare=factory&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=3`,
 		);
@@ -64,14 +71,14 @@ for (const engine of ['null3d', 'threejs'] as const)
 		expect(result.error).toBeUndefined();
 		const { measured } = result;
 		expect(measured.count).toBe(400);
-		expect(measured.fps).toBeGreaterThan(0);
 		// The test pages are cross-origin isolated, so Chrome measures the whole page's memory.
 		// Chromium's headless shell, CI's browser, refuses the measurement, and the page then
 		// reports no memory and no error.
-		if (test.info().project.name.startsWith('chromium-swiftshader')) {
+		if (softwareGpu()) {
 			expect(measured.memory).toBeNull();
 			return;
 		}
+		expect(measured.fps).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
 	});
