@@ -13,7 +13,7 @@ import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
-import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
+import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
@@ -63,7 +63,16 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const started = await startWorkerCore(message, step);
 			const glue = started.glue;
 			core = glue;
-			jobTaskHost = { ports: message.taskPorts, call: (index) => glue.callJobWorker(index) };
+			// The page starts the job workers as this thread asks for them: for the loader's tasks, and
+			// as the frames' parallel work grows.
+			const wantJobs = jobAsker(message.jobWorkers, (count) =>
+				replyToPage({ type: 'jobs-wanted', count }),
+			);
+			jobTaskHost = {
+				ports: message.taskPorts,
+				call: (index) => glue.callJobWorker(index),
+				want: wantJobs,
+			};
 			setJobTasks(jobTaskHost);
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images and custom materials' shaders go to the thread that draws: another
@@ -88,6 +97,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					fps: message.fps,
 					threads: message.threads,
 					showStats: (show) => replyToPage({ type: 'stats', show }),
+					wantJobs,
 					sendLabelSlot: (id, slot, generation) =>
 						replyToPage({ type: 'label', id, slot, generation }),
 				},

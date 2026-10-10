@@ -110,6 +110,11 @@ export interface SketchCore {
 	threads: readonly (readonly [string, readonly number[]])[];
 	/** Asks the page to show or hide its stats overlay, or to change its options. */
 	showStats(show: StatsRequest): void;
+	/**
+	 * Asks the page for at least `count` job workers, which it starts as the work grows, and
+	 * returns how many it has been asked for.
+	 */
+	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
@@ -121,6 +126,13 @@ const SLOT_POLL_MS = 4;
  * figures, and then one frame in every this many.
  */
 const MEMORY_EVERY = 8;
+/** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
+const JOB_WINDOW = 30;
+/**
+ * The mean time per frame that the sketch thread spends in loops it hands out, in ms, from which it
+ * asks for more job workers: twice as many, and at least 2.
+ */
+const JOB_GROW_MS = 0.2;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -213,6 +225,11 @@ export class SketchRunner {
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
+	/** The job workers that the page has been asked to start. */
+	private jobsAsked = 0;
+	/** The parallel work of the frames in the current window, in ms, and the window's frames. */
+	private jobWindowMs = 0;
+	private jobWindowFrames = 0;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
@@ -650,6 +667,19 @@ export class SketchRunner {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
 
+	/**
+	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
+	 * the job workers, and at least 2, when the frames handed out enough work to share.
+	 */
+	private growJobs(handedMs: number): void {
+		this.jobWindowMs += handedMs;
+		if (++this.jobWindowFrames < JOB_WINDOW) return;
+		const mean = this.jobWindowMs / this.jobWindowFrames;
+		this.jobWindowMs = 0;
+		this.jobWindowFrames = 0;
+		if (mean >= JOB_GROW_MS) this.jobsAsked = this.sketch.wantJobs(Math.max(2, this.jobsAsked * 2));
+	}
+
 	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
 	private publishMemory(): void {
 		const { record } = this;
@@ -1041,11 +1071,14 @@ export class SketchRunner {
 		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
-		for (let k = 0; k < this.jobRecords.length; k++) {
+		// Only the job workers asked for so far have records, so the figures count the ones that run.
+		const asked = this.sketch.wantJobs(0);
+		for (let k = 0; k < asked; k++) {
 			const jobRecord = this.jobRecords[k] as FrameRecorder;
 			jobRecord.begin(frame);
 			jobRecord.commit(glue.takeJobBusyMs(k));
 		}
+		if (asked < this.jobRecords.length) this.growJobs(glue.takeHandedMs());
 		return frame;
 	}
 }

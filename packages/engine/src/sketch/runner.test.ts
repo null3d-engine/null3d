@@ -23,6 +23,7 @@ import {
 	Role,
 	sampleFrames,
 } from '../shared/metrics';
+import { jobAsker } from '../shared/task-host';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import type { QualityStart, QualityUpdate } from './quality';
 import { runPipelined, SketchRunner } from './runner';
@@ -83,6 +84,7 @@ function fakeGlue(
 	calls: unknown[][] = [],
 	grows = false,
 	cellsRefused = () => 0,
+	handedMs = 0,
 ): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
@@ -94,6 +96,7 @@ function fakeGlue(
 		reserveObject: () => ++slots,
 		cellsRefused,
 		meshMemoryBytes: () => MESH_BYTES,
+		takeHandedMs: () => handedMs,
 	};
 	const clearDirty = () =>
 		new Uint32Array(
@@ -200,6 +203,7 @@ async function start(
 		cellsRefused,
 		control = controlViews(createControlBuffer(shared)),
 		fps,
+		jobs = { most: 0, handedMs: 0, asked: [] },
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -209,6 +213,11 @@ async function start(
 		cellsRefused?: () => number;
 		control?: ReturnType<typeof controlViews>;
 		fps?: number;
+		/**
+		 * The most job workers, the parallel work each frame hands out in ms, and where the counts
+		 * of job workers that the runner asks for go.
+		 */
+		jobs?: { most: number; handedMs: number; asked: number[] };
 	} = {},
 ) {
 	const log: string[] = [];
@@ -217,7 +226,7 @@ async function start(
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
-	const metrics = createMetricsBuffer(false, 0);
+	const metrics = createMetricsBuffer(false, jobs.most);
 	const stopDrawing = drawing ? drawFrames(control, metrics, drawing) : () => {};
 	if (drawing) Atomics.store(control.slots, Slot.Running, 1);
 	const memory = new WebAssembly.Memory({ initial: 2 });
@@ -225,11 +234,11 @@ async function start(
 		() => {},
 		metrics,
 		{
-			glue: fakeGlue(log, memory, calls, grows, cellsRefused),
+			glue: fakeGlue(log, memory, calls, grows, cellsRefused, jobs.handedMs),
 			memory,
 			control,
 			keyCodes: [],
-			jobWorkers: 0,
+			jobWorkers: jobs.most,
 			device: {
 				webgl2: true,
 				storageBindingBytes: 0,
@@ -271,6 +280,7 @@ async function start(
 			fps,
 			threads: [['sketch-worker', [Role.Sketch, Role.Render]]],
 			showStats: (show) => log.push(`stats ${show}`),
+			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
 		},
 		holdSeconds,
@@ -324,6 +334,20 @@ describe('SketchRunner', () => {
 			'cullFrame',
 			'recordFrame',
 		]);
+	});
+
+	it('asks for twice the job workers, up to the most, after each 30 frames that hand out 0.2 ms or more of parallel work', async () => {
+		const busy = { most: 6, handedMs: 0.25, asked: [] as number[] };
+		const { runner } = await start(() => ({}), undefined, { jobs: busy });
+		for (let frame = 0; frame < 29; frame++) runner.step(frame * 16);
+		expect(busy.asked).toEqual([]);
+		for (let frame = 29; frame < 200; frame++) runner.step(frame * 16);
+		expect(busy.asked).toEqual([2, 4, 6]);
+
+		const light = { most: 6, handedMs: 0.15, asked: [] as number[] };
+		const quiet = await start(() => ({}), undefined, { jobs: light });
+		for (let frame = 0; frame < 200; frame++) quiet.runner.step(frame * 16);
+		expect(light.asked).toEqual([]);
 	});
 
 	it('updates no transforms a second time for a sketch without a late update', async () => {

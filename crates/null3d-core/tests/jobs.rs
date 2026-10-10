@@ -100,6 +100,34 @@ fn job_workers_time_their_chunks_before_the_loop_returns() {
 }
 
 #[test]
+fn the_caller_times_the_loops_it_hands_out_even_before_any_job_worker_joins() {
+    const CHUNK_MS: f64 = 0.2;
+    // Room for four job workers, none of which has joined: the caller runs every chunk.
+    let jobs = JobSystem::with_config(JobConfig {
+        workers: 4,
+        clock: Some(clock_ms),
+        ..JobConfig::default()
+    });
+    jobs.parallel_for(20, 1, &|_, _| {
+        spin_for(Duration::from_secs_f64(CHUNK_MS / 1000.0));
+    });
+    let handed = jobs.take_handed_ms();
+    assert!(handed >= CHUNK_MS * 20.0, "{handed} ms for 20 chunks");
+    assert_eq!(jobs.take_handed_ms(), 0.0, "the total starts again");
+
+    // A loop of one chunk runs inline, and hands nothing out.
+    jobs.parallel_for(1, 1, &|_, _| spin_for(Duration::from_micros(200)));
+    assert_eq!(jobs.take_handed_ms(), 0.0, "an inline loop");
+
+    let untimed = JobSystem::with_config(JobConfig {
+        workers: 4,
+        ..JobConfig::default()
+    });
+    untimed.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert_eq!(untimed.take_handed_ms(), 0.0, "no clock, no handed time");
+}
+
+#[test]
 fn every_job_worker_takes_part_in_a_loop_that_waits_for_it() {
     let pool = Workers::start(4);
     let jobs = pool.jobs();

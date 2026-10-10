@@ -694,6 +694,13 @@ pub fn job_worker_failed(index: u32) {
     }
 }
 
+/// The milliseconds that the sketch thread spent in parallel loops that it handed out since the
+/// last call, which starts the total again from zero. The page starts job workers as it grows.
+#[wasm_bindgen(js_name = takeHandedMs)]
+pub fn take_handed_ms() -> f64 {
+    JOBS.get().map_or(0.0, JobSystem::take_handed_ms)
+}
+
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
 /// its total again from zero. The sketch thread reads it once per frame.
 #[wasm_bindgen(js_name = takeJobBusyMs)]

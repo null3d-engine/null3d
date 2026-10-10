@@ -132,7 +132,9 @@ for (const mode of ENGINE_MODES) {
 			expect(asked, what).toBeLessThan(coreAt);
 		}
 		if (mode.build === 'single') return;
-		const workers = ['null3d-job-0'];
+		// Job workers start only as the work asks for them, which an empty sketch never does.
+		expect(step('null3d-job-0: started')).toBe(-1);
+		const workers: string[] = [];
 		if (mode.sketchThread === 'worker') workers.push('null3d-sketch');
 		if (mode.renderThread === 'render-worker') workers.push('null3d-render');
 		for (const worker of workers) {
@@ -406,15 +408,29 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(engineProblems(result, pipelined, gpu, notPacing)).toEqual([]);
 		});
 	}
-	test(`the engine starts the job workers that ?jobs= asks for on ${gpu}`, async ({ page }) => {
+	test(`the engine starts no job workers for a scene without parallel work on ${gpu}`, async ({
+		page,
+	}) => {
 		const mode = { ...pipelined, query: 'jobs=3', jobWorkers: 3 };
 		await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
 		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 		expect(result.error).toBeUndefined();
 		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
-		// Each job worker records every frame, so the figures name exactly three.
+		// Only job workers that run record frames, so the figures name none.
 		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
-		expect(jobThreads).toEqual(['job-0', 'job-1', 'job-2']);
+		expect(jobThreads).toEqual([]);
+	});
+	test(`the engine starts job workers as the parallel work grows, up to the most that ?jobs= sets, on ${gpu}`, async ({
+		page,
+	}) => {
+		const mode = { ...pipelined, query: 'jobs=3', jobWorkers: 3 };
+		// Asks for 2 job workers after the first 30 busy frames, and for the third after 30 more.
+		await page.goto(`engine.html?gpu=${gpu}&seconds=4&${mode.query}&sketch=busy`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, mode, gpu, notPacing)).toEqual([]);
+		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
+		expect(jobThreads.sort()).toEqual(['job-0', 'job-1', 'job-2']);
 	});
 	test(`the engine runs single-threaded on ${gpu} in a page without isolation`, async ({
 		page,

@@ -190,7 +190,7 @@ The header stays in the corner when the card opens, and the card opens under it,
 - Engine: every other phase on the thread, such as commands, culling, recording, uploads and replay.
 - GPU: the GPU's time, from one frame in eleven.
 
-A bar stacks parts only where the parts add up to the time beside it. A thread's phases run one after another, so they stack. The `Jobs` bar shows the slowest job worker, with the count of job workers beside its name, such as `Jobs ×6`. The job workers share one step of the frame, and the frame waits for the slowest of them. So a sum or a mean would mislead.
+A bar stacks parts only where the parts add up to the time beside it. A thread's phases run one after another, so they stack. The `Jobs` bar shows the slowest job worker, with the count of job workers that run beside its name, such as `Jobs ×6`. The engine starts job workers only as the work grows, so a small scene shows no `Jobs` bar. The job workers share one step of the frame, and the frame waits for the slowest of them. So a sum or a mean would mislead.
 
 **The thread modes.** The symbol before the target is a button whose tooltip explains the mode. The tooltip shows while the pointer is on the symbol or the symbol has the keyboard's focus, and a tap shows or hides it.
 

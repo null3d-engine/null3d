@@ -61,6 +61,8 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerCalls(index: number): number;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
+	/** Milliseconds the sketch thread spent in parallel loops it handed out since the last call. */
+	takeHandedMs(): number;
 	/** The address of the job system's wake word, or 0 before it exists. */
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
@@ -748,6 +750,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'jobWorkerCallDone',
 	'jobWorkerCalls',
 	'takeJobBusyMs',
+	'takeHandedMs',
 	'jobsWakeAddress',
 	'jobsStopAddress',
 	'destroyEngine',
