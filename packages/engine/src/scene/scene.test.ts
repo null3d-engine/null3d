@@ -340,6 +340,19 @@ describe('structural changes', () => {
 		]);
 	});
 
+	test('cameras are tracked, so they keep updating below a hidden object', () => {
+		const { scene, take } = fakeCore();
+		const body = scene.createGroup();
+		const eyes = scene.createPerspectiveCamera({ parent: body });
+		const map = scene.createOrthographicCamera({ dynamic: false });
+		const creates = take().filter(([op]) => ((op as number) & 0xff) === C.COMMAND_CREATE);
+		expect(creates.map(([op, handle]) => [(op as number) >>> 8, handle])).toEqual([
+			[C.FLAG_VISIBLE, body.handle],
+			[C.FLAG_VISIBLE | C.FLAG_DYNAMIC | C.FLAG_TRACKED, eyes.handle],
+			[C.FLAG_VISIBLE | C.FLAG_TRACKED, map.handle],
+		]);
+	});
+
 	test('the mesh calls queue their changes and write the bounds first', () => {
 		const { scene, box, ball, paint, row, take } = fakeCore();
 		const rock = scene.createMesh({ mesh: box, material: paint });
