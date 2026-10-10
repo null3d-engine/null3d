@@ -65,6 +65,14 @@ export const ALPHA_COVERAGE_MAX_DIFFERENT_PERCENT = 0.25;
 export const ALPHA_HASH_MAX_DIFFERENT_PERCENT = 6;
 
 /**
+ * The glass scene's limit, in percent of the pixels. On the Mac's GPU, 0.001% of the pixels differ
+ * from three.js on WebGPU and 0.000% on WebGL2. Compatibility mode's 8-bit path averages the edge
+ * samples of the tinted ball and the wall after it encodes them, so 0.086% differ there, all on
+ * those edges. three.js's two renderers differ by 0.052% on the same frame.
+ */
+export const TRANSMISSION_MAX_DIFFERENT_PERCENT = 0.2;
+
+/**
  * The outline scenes' limit, in percent of the pixels. The outline is a look of null3D's own, so
  * these scenes are a sanity check: the twin draws the same line from the mask of three.js's
  * OutlinePass. The limit sits above the scene's own edges on SwiftShader's WebGPU, and below what a
@@ -357,14 +365,14 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's glass uses KHR_materials_transmission, volume and ior, which three.js draws and null3D
- * does not read: 0.87% of the pixels differ, all on the glass and its beads. The instanced cubes
- * have black faces beside white ones at hundreds of edges, which compatibility mode's 8-bit path
- * averages after it encodes the colors: 0.41% differ there, and none on the other tiers. The same
- * cubes compressed with meshopt take the same limit, for the same edges.
+ * lamp's stained glass takes its transmission from a map, which null3D does not draw, and a clear
+ * coat: 0.39% of the pixels differ, all on the glass. The instanced cubes have black faces beside
+ * white ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes
+ * the colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with
+ * meshopt take the same limit, for the same edges.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
-	ktx2: 1,
+	ktx2: 0.5,
 	instancing: 0.5,
 	'meshopt-ext': 0.5,
 };
@@ -435,6 +443,14 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 	// null3D at each card's own cutoff, which glTF's alpha mode MASK means (D-82).
 	{ test: 'transparency', twin: `${TWINS}/transparency.html` },
 	{ test: 'transparency-solids', twin: `${TWINS}/transparency.html?solids` },
+	// Glass balls against three.js's MeshPhysicalMaterial transmission: each bends the striped wall
+	// through each ball, blurs it by its roughness and tints it by its volume, as three.js does.
+	{
+		test: 'transmission',
+		twin: `${TWINS}/transmission.html`,
+		sketchSwitches: NO_TONE,
+		limit: TRANSMISSION_MAX_DIFFERENT_PERCENT,
+	},
 	{ test: 'sprites', twin: `${TWINS}/sprites.html` },
 	// Points against three.js's Points and PointsMaterial, whose WebGPURenderer draws them one pixel
 	// wide, so WebGLRenderer's frame is the reference on every tier. WebGPU's samples within a pixel

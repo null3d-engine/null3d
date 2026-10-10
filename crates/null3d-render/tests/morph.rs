@@ -264,6 +264,7 @@ fn webgl2_draws_a_custom_material_on_a_morphed_mesh_at_rest() {
         attributes: 0,
         base_color: true,
         textures: 0,
+        transmission: false,
     });
     world.add_morphed_with([0.0; 3], [1.0, 0.0], custom);
     let mut mock = MockBackend::default();

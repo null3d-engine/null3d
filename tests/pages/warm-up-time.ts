@@ -1,5 +1,6 @@
 // Times the start of a sketch, as a loading screen covers it: from createEngine until the first frame
-// is on screen, and the part of it that the GPU pipelines take. ?sketch= names the sketch module from
+// is on screen, the part of it that the GPU pipelines take, and createEngine's own time, which on a
+// first visit holds the preset check that runs after the first frame. ?sketch= names the sketch module from
 // the server's root, with the sketch's own query after it. The canvas fills the window at the pixel
 // ratio of the preset that the engine chooses, as an app's does. The engine reads its own switches:
 // ?gpu=, the thread mode's, ?shaders=fresh, which makes the browser compile every shader again
@@ -25,8 +26,10 @@ run('warm-up-time', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
-	const firstFrameShownMs = performance.now() - started;
 	const metrics = await engine.measure(MEASURE_SECONDS);
+	// The engine notes when the GPU finished the first frame, which can come long before
+	// createEngine resolves. Both clocks count from the page's time origin.
+	const firstFrameShownMs = (metrics.load.firstFrameDoneMs ?? performance.now()) - started;
 	await engine.destroy();
 	const { tier, features } = engine.capabilities;
 	return {

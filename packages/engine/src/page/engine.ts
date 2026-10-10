@@ -10,7 +10,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
-import type { PresetCheck } from '../quality/check';
+import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
 import {
 	choosePreset,
 	crashTier,
@@ -27,6 +27,7 @@ import {
 	presetOption,
 	presetValue,
 	type QualityPreset,
+	targetFpsOption,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
@@ -40,7 +41,7 @@ import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
-import { clearJobTasks, type JobTaskHost, setJobTasks } from '../shared/task-host';
+import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
 import { spawnWorker } from '../shared/worker-start';
@@ -132,6 +133,15 @@ export interface EngineOptions {
 	 * a preset lower. Another value fails with E1213. The `?preset=` switch wins over it.
 	 */
 	preset?: 'auto' | QualityPreset;
+	/**
+	 * The frame rate that the engine defends: the preset check and the quality governor lower the
+	 * quality when frames fall below it. Without it, the target is the display's refresh rate, at
+	 * most 60. `display` targets the display's full rate, such as 120 or 144 for a game on a fast
+	 * display. A whole number from 1 up caps the target at that rate. The engine draws at the
+	 * display's rate in every case. The `?target-fps=` switch wins over it. Another value fails with
+	 * E1213.
+	 */
+	targetFps?: TargetFps;
 	/**
 	 * Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the
 	 * cap. `ctx.quality.set` changes it during play.
@@ -312,7 +322,8 @@ export interface EngineOptions {
 	 * batch, `'background'` with a texture, environment or cube map background, `'sky'` with the
 	 * sky, `'coverage'` with the first masked material that MSAA smooths, `'hash'` with the first
 	 * hashed material, `'cutout'` with the first masked object that casts shadows, which casts none
-	 * until its shaders are built, and `'occlusion'` with the first object that `setOccluder(true)`
+	 * until its shaders are built, `'transmission'` with the first material that lets light
+	 * through, and `'occlusion'` with the first object that `setOccluder(true)`
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
@@ -408,7 +419,10 @@ export interface EngineMode {
 	sketchThread: SketchThread;
 	/** The thread that owns the canvas and draws. */
 	renderThread: 'render-worker' | 'sketch-worker' | 'main';
-	/** The job workers that share the engine's parallel work. */
+	/**
+	 * The most job workers that share the engine's parallel work. The engine starts none at first,
+	 * and starts them as the work grows.
+	 */
 	jobWorkers: number;
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
@@ -677,6 +691,8 @@ interface WorkerEvents {
 	stats(show: StatsRequest): void;
 	/** The slot in the label table of a label's id, or -1 once it has none. */
 	labelSlot: LabelSlotSender;
+	/** The sketch thread asked for this many job workers, as its parallel work grew. */
+	jobsWanted(count: number): void;
 }
 
 /**
@@ -745,6 +761,9 @@ export class EngineWorker {
 					return;
 				case 'label':
 					events.labelSlot(reply.id, reply.slot, reply.generation);
+					return;
+				case 'jobs-wanted':
+					events.jobsWanted(reply.count);
 					return;
 				case 'lost':
 					forgetWorkerProbe();
@@ -877,18 +896,55 @@ function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 }
 
 /**
- * Starts the engine's workers: the sketch worker unless the page runs the sketch, the render worker
- * when it draws, and the job workers. The page starts them before the core has compiled, so their
- * scripts and the core's loader download while the core does. Each worker waits for its start
- * message, which carries the core. A job worker that fails to start is reported as a failure of the
- * running engine, and never holds up the start. `reused` is the drawing worker that kept the canvas
- * when an engine before stopped, which serves in its role again.
+ * Starts job worker `index`. It joins the job system once it is ready: until then the sketch thread
+ * and the job workers already running take every chunk, so no frame waits for it. A job worker that
+ * fails to start is reported as a failure of the running engine, and returns undefined when the
+ * browser refuses it at once.
+ */
+function startJobWorker(
+	index: number,
+	slots: Int32Array,
+	events: WorkerEvents,
+): EngineWorker | undefined {
+	const failed = (error: unknown) => {
+		if (Atomics.load(slots, Slot.Running) !== 0)
+			events.failure(
+				error instanceof EngineError ? error : startError(`job ${index}`, messageOf(error)),
+				false,
+			);
+	};
+	try {
+		const job = new EngineWorker(
+			spawnWorker(
+				() =>
+					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+						type: 'module',
+						name: `null3d-job-${index}`,
+					}),
+				(code, message) => new EngineError(code, message),
+			),
+			`job ${index}`,
+			events,
+		);
+		job.ready().catch(failed);
+		return job;
+	} catch (thrown) {
+		failed(thrown);
+		return undefined;
+	}
+}
+
+/**
+ * Starts the engine's workers: the sketch worker unless the page runs the sketch, and the render
+ * worker when it draws. The page starts them before the core has compiled, so their scripts and the
+ * core's loader download while the core does. Each worker waits for its start message, which
+ * carries the core. The job workers start later, as the thread that runs the sketch asks for them.
+ * `reused` is the drawing worker that kept the canvas when an engine before stopped, which serves
+ * in its role again.
  */
 function startWorkers(
 	sketchWorker: boolean,
 	renderWorker: boolean,
-	jobWorkers: number,
-	slots: Int32Array,
 	events: WorkerEvents,
 	reused?: { worker: Worker; role: DrawingRole },
 ): EngineWorkers {
@@ -930,30 +986,7 @@ function startWorkers(
 					events,
 				)
 			: undefined;
-		const jobs = Array.from({ length: jobWorkers }, (_, index) => {
-			const job = new EngineWorker(
-				kept(
-					() =>
-						new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-							type: 'module',
-							name: `null3d-job-${index}`,
-						}),
-				),
-				`job ${index}`,
-				events,
-			);
-			// Job workers join the job system as each becomes ready: until then the sketch thread and
-			// the job workers already running take every chunk, so no frame waits for them.
-			job.ready().catch((error: unknown) => {
-				if (Atomics.load(slots, Slot.Running) !== 0)
-					events.failure(
-						error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
-						false,
-					);
-			});
-			return job;
-		});
-		return { sketch, render, jobs };
+		return { sketch, render, jobs: [] };
 	} catch (thrown) {
 		// A browser that refuses a worker at once, such as for a script address it cannot read.
 		for (const worker of made) worker.terminate();
@@ -1112,6 +1145,9 @@ async function startEngine(
 		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
 	const history = marker?.read() ?? NO_HISTORY;
 	const optionPreset = presetOption(options.preset);
+	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
+	const optionTarget = targetFpsOption(options.targetFps);
+	const maxTarget = maxTargetFps(switches.targetFps ?? optionTarget, switches.fps);
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
@@ -1213,11 +1249,14 @@ async function startEngine(
 			mode.preset = update.preset;
 			if (!update.check) return;
 			mode.presetCheck = update.check;
-			checkStore?.save(update.check, switches.fps);
+			checkStore?.save(update.check, maxTarget);
 		},
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, slot, generation) => pageLabels?.setSlot(id, slot, generation),
+		jobsWanted: (count) => growJobs?.(count),
 	};
+	/** Starts job workers up to a count, once the core is ready to hand them. */
+	let growJobs: ((count: number) => void) | undefined;
 	/** The page's labels, once the page knows which thread draws. */
 	let pageLabels: PageLabels | undefined;
 
@@ -1242,7 +1281,7 @@ async function startEngine(
 			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
 		},
 		sharedMemory: threaded,
-		fpsCap: switches.fps,
+		maxTargetFps: maxTarget,
 		gpuFeatures,
 		mode,
 	}));
@@ -1292,8 +1331,6 @@ async function startEngine(
 		? startWorkers(
 				!sketchOnPage,
 				renderThread === 'render-worker',
-				jobWorkers,
-				slots,
 				events,
 				keptWorker && movedTo && { worker: keptWorker, role: movedTo },
 			)
@@ -1505,7 +1542,7 @@ async function startEngine(
 			chosen !== 'low';
 		if (checks && history.crashed === 0) {
 			const { width, height } = options.canvas.getBoundingClientRect();
-			const conditions = checkConditions(report, tier, chosen, switches.fps);
+			const conditions = checkConditions(report, tier, chosen, switches.fps, maxTarget);
 			checkStore = new CheckStore(sketchUrl, conditions, width * height);
 		}
 		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
@@ -1675,23 +1712,30 @@ async function startEngine(
 			});
 		};
 
-		if (threads?.jobs.length) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (threads && jobWorkers > 0) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
 		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
-		 * Hands the core to the job workers, each with a port for the on-demand loader's tasks. A stop
-		 * waits until each job worker reports that it left the job system, which one without the core
-		 * never does. Returns the other end of each port, for the thread that runs the sketch.
+		 * Makes a port for each job worker that the engine may start, for the on-demand loader's
+		 * tasks, and returns the other end of each, for the thread that runs the sketch. The job
+		 * workers start as that thread asks for them: each gets the core and its port as it starts.
+		 * A stop waits until each started job worker reports that it left the job system, which one
+		 * without the core never does.
 		 */
-		const startJobs = (jobs: readonly EngineWorker[]): MessagePort[] => {
+		const startJobs = (jobs: EngineWorker[]): MessagePort[] => {
 			jobsWithCore = jobs;
-			return jobs.map((job, index) => {
-				const tasks = channel();
-				job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: tasks.port1 }, [
-					tasks.port1,
-				]);
-				return tasks.port2;
-			});
+			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
+			growJobs = (count) => {
+				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
+					if (Atomics.load(slots, Slot.Running) === 0) return;
+					const job = startJobWorker(index, slots, events);
+					if (!job) return;
+					jobs.push(job);
+					const port = (taskPorts[index] as MessageChannel).port1;
+					job.worker.postMessage({ type: 'init', ...handoff, index, taskPort: port }, [port]);
+				}
+			};
+			return taskPorts.map((tasks) => tasks.port2);
 		};
 		/**
 		 * Moves the canvas to the worker that draws, unless that worker kept it from an engine before.
@@ -1743,11 +1787,14 @@ async function startEngine(
 			const imageTable = new ImageTable();
 			const render = threads?.render;
 			// The page's on-demand loader sends its tasks to this engine's job workers; without them, it
-			// starts a task worker.
+			// starts a task worker. The job workers start as the tasks and the frames' parallel work
+			// ask for them.
 			const glue = started.glue;
+			const wantJobs = jobAsker(jobWorkers, (count) => growJobs?.(count));
 			jobTaskHost = {
 				ports: threads ? startJobs(threads.jobs) : [],
 				call: (index) => glue.callJobWorker(index),
+				want: wantJobs,
 			};
 			setJobTasks(jobTaskHost);
 			let imagePort: MessagePort | undefined;
@@ -1778,9 +1825,10 @@ async function startEngine(
 					capabilities,
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
-					fps: switches.fps,
+					maxTargetFps: maxTarget,
 					threads: engineThreads,
 					showStats: events.stats,
+					wantJobs,
 					sendLabelSlot: events.labelSlot,
 				},
 				hold,
@@ -1830,7 +1878,7 @@ async function startEngine(
 				capabilities,
 				hold,
 				quality,
-				fps: switches.fps,
+				maxTargetFps: maxTarget,
 				threads: engineThreads,
 			};
 			withCore.add(sketch);

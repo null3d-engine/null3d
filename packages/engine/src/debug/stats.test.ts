@@ -7,9 +7,9 @@ import {
 	Phase,
 	Role,
 } from '../shared/metrics';
-import { rateLevel, targetFps, workLevel } from './frame-target';
+import { rateLevel, workLevel } from './frame-target';
 import { overlayFigures, type PageFigures } from './overlay';
-import { codeMs, drawingMs, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
+import { codeMs, drawingMs, targetTip, tenthsOfMib, WorkThreads, widthStep } from './overlay-look';
 import { type FrameStats, FrameStatsWindow, STATS_WINDOW_MS } from './stats';
 import { statsText } from './stats-text';
 
@@ -348,12 +348,18 @@ describe('FrameStatsWindow GPU time', () => {
 });
 
 describe('the overlay target and colors', () => {
-	it("aims at the display's rate, at most 60 frames a second, or a lower cap", () => {
-		expect(targetFps(0, undefined)).toBe(60);
-		expect(targetFps(120, undefined)).toBe(60);
-		expect(targetFps(50, undefined)).toBe(50);
-		expect(targetFps(120, 30)).toBe(30);
-		expect(targetFps(120, 90)).toBe(60);
+	it("explains the target against the display's rate in its symbol's words", () => {
+		expect(targetTip(60, 0)).toBe(
+			"The display's rate is not measured yet, so the engine defends 60 fps for now.",
+		);
+		const full = targetTip(120, 120);
+		expect(full).toStartWith("The engine defends the display's full rate, 120 fps.");
+		expect(full).toEndWith("Each bar's mark is 8.3 ms.");
+		const floor = targetTip(60, 120);
+		expect(floor).toStartWith('The display runs at 120 Hz');
+		expect(floor).toContain('It defends 60 fps.');
+		expect(floor).toContain("Each bar's dark mark is 16.7 ms, and its faint mark is 8.3 ms.");
+		expect(floor).toEndWith('The targetFps option raises the target.');
 	});
 
 	it('colors work green below 80% of the interval, amber up to it, and red past it', () => {

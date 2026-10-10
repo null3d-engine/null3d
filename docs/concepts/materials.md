@@ -55,6 +55,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `alphaMode: 'mask'` or `'hash'` | A shader variant that drops the fragments whose alpha fails its test |
 | `alphaToCoverage` | The pipeline's state: MSAA turns the masked alpha into coverage |
 | `alphaMode: 'blend'`, `blending` | The pipeline's blend state, and the transparent pass |
+| `transmission` | A shader variant that samples a copy of the opaque objects' colors, and the transparent pass |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
@@ -96,6 +97,8 @@ Sorting by object has these limits:
 - Surfaces that cross each other have no right order. One object draws before the other, so where the second lies behind the first, it shows wrong. Split such meshes, or give them `depthWrite: false` so they never hide each other.
 - A large object, such as a long glass wall, has one center. A small object can have a center that is farther away than the wall's while it stands in front of the wall. Split large blended meshes, or set their order with `setRenderOrder`.
 - The triangles of one mesh draw in the mesh's own order. A closed blended mesh, such as a sphere, draws only its front faces unless it is double-sided. A double-sided one draws its back faces first, then its front faces, as three.js draws it. So its near side covers its far side. Each run of neighbors that share its mesh and material takes a second draw. On flat surfaces, whose faces never overlap, `forceSinglePass: true` saves it.
+
+Surfaces that let light through, which `transmission` makes, draw in the transparent pass too, sorted with the blended ones. Before the camera's transparent pass, the engine copies its opaque objects' colors into a texture with blurred levels, which those surfaces sample behind them ([Transmission](../api/materials.md#transmission)).
 
 Blended objects cost more than opaque ones. The job workers cull and sort them in every frame, and on WebGPU the engine also writes each visible one's data for the GPU. Neighbors that differ in mesh or material need draw calls of their own. The GPU shades every blended layer of a pixel, so large overlapping surfaces cost GPU time. Keep blended objects to what needs them, and use the `mask` mode for cut-out shapes.
 

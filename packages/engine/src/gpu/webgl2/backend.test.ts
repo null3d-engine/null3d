@@ -5,7 +5,8 @@ import { WebGL2Backend } from './backend';
 
 /**
  * A WebGL2 context that lists the calls made on it. Its constants are numbers, it offers no
- * extension, each create call makes an empty object, and every framebuffer is complete.
+ * extension, each create call makes an empty object, every program links and every framebuffer is
+ * complete.
  */
 function fakeContext() {
 	const calls: string[] = [];
@@ -25,6 +26,7 @@ function fakeContext() {
 					if (name === 'checkFramebufferStatus') return constant('FRAMEBUFFER_COMPLETE');
 					if (name === 'getExtension') return null;
 					if (name === 'getParameter') return 4;
+					if (name === 'getProgramParameter') return true;
 					if (name === 'isContextLost') return false;
 					if (name.startsWith('create')) return {};
 					return undefined;
@@ -66,6 +68,36 @@ describe('WebGL2Backend', () => {
 		backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
 		expect(calls.filter((name) => name === 'createFramebuffer')).toHaveLength(2);
 		expect(calls.filter((name) => name === 'checkFramebufferStatus')).toHaveLength(2);
+	});
+
+	it("makes the levels of a linear render target of one layer with GL's own generateMipmap", async () => {
+		const { gl, calls } = fakeContext();
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const replay = () => {
+			const list = new Uint32Array(words.splice(0));
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(64));
+		};
+		const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+		const array = G.VIEW_2D_ARRAY;
+		push(G.OP_CREATE_TEXTURE, [1, 64, 64, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 7, array]);
+		push(G.OP_GENERATE_MIPMAPS, [1, 0]);
+		replay();
+		expect(calls.filter((name) => name === 'generateMipmap')).toHaveLength(1);
+		expect(calls).not.toContain('drawArrays');
+		// An sRGB target, an array of several layers and a texture of uploaded images draw each level.
+		const srgb = G.FORMAT_RGBA8_UNORM_SRGB;
+		const uploaded = usage | G.TEXTURE_USAGE_COPY_DST;
+		push(G.OP_CREATE_TEXTURE, [2, 64, 64, 1, srgb, usage, 1, 7, array]);
+		push(G.OP_CREATE_TEXTURE, [3, 64, 64, 4, G.FORMAT_RGBA16_FLOAT, usage, 1, 7, array]);
+		push(G.OP_CREATE_TEXTURE, [4, 64, 64, 1, G.FORMAT_RGBA8_UNORM, uploaded, 1, 7, array]);
+		for (const id of [2, 3, 4]) push(G.OP_GENERATE_MIPMAPS, [id, 0]);
+		replay();
+		expect(calls.filter((name) => name === 'generateMipmap')).toHaveLength(1);
+		expect(calls.filter((name) => name === 'drawArrays')).toHaveLength(3 * 6);
 	});
 
 	it('keeps a running total of the GPU memory that its buffers, textures and renderbuffers take', async () => {

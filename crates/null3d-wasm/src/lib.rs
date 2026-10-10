@@ -33,7 +33,7 @@ use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
-use null3d_core::scene::{CommandRing, SceneStorage};
+use null3d_core::scene::{CommandRing, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
@@ -99,6 +99,12 @@ extern "C" {
     /// The browser's clock, in milliseconds, on the thread that calls it.
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
     fn performance_now() -> f64;
+    /// Asks the thread's host for job workers, which it starts as the work grows: the global
+    /// function that the module with the job workers' task ports defines (`shared/task-host.ts`)
+    /// in each thread that runs a sketch. The job system calls it when it queues a background task
+    /// before any job worker has joined.
+    #[wasm_bindgen(js_namespace = globalThis, js_name = __null3dWantJobWorkers)]
+    fn want_job_workers();
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -480,6 +486,7 @@ pub fn init_engine(
             .set(JobSystem::with_config(JobConfig {
                 workers: job_workers,
                 clock: Some(performance_now),
+                want_workers: Some(want_job_workers),
                 ..JobConfig::default()
             }))
             .is_ok(),
@@ -694,11 +701,28 @@ pub fn job_worker_failed(index: u32) {
     }
 }
 
-/// The milliseconds job worker `index` spent on work since the last call for it, which starts
-/// its total again from zero. The sketch thread reads it once per frame.
-#[wasm_bindgen(js_name = takeJobBusyMs)]
-pub fn take_job_busy_ms(index: u32) -> f64 {
-    JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
+/// The whole microseconds that the sketch thread spent in parallel loops that it handed out since
+/// the last call, which starts the total again from zero. The page starts job workers as it grows.
+#[wasm_bindgen(js_name = takeHandedUs)]
+pub fn take_handed_us() -> u32 {
+    JOBS.get().map_or(0, JobSystem::take_handed_us)
+}
+
+/// Starts or stops the timing of the parallel loops that the sketch thread hands out. Each timing
+/// reads the browser's clock, which allocates, so the sketch thread times them only while it may
+/// ask for more job workers.
+#[wasm_bindgen(js_name = timeHandedLoops)]
+pub fn time_handed_loops(on: bool) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.time_handed_loops(on);
+    }
+}
+
+/// The whole microseconds job worker `index` spent on work since the last call for it, which
+/// starts its total again from zero. The sketch thread reads it once per frame.
+#[wasm_bindgen(js_name = takeJobBusyUs)]
+pub fn take_job_busy_us(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.take_busy_us(index))
 }
 
 /// The address of the job system's wake word, or 0 before it exists.
@@ -1272,7 +1296,8 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 /// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
 /// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
 /// (one 32-bit integer a row), and 0 for scales. A line batch has positions (3 floats a point) and
-/// colors (3 floats a point), and 0 for the others.
+/// colors (3 floats a point), and 0 for the others. Every batch also has the words of its dirty
+/// rows' bitset, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -1280,6 +1305,9 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             .batches
             .get(Handle::from_raw(batch))
             .map_err(core_failure)?;
+        if field == batch_field::DIRTY_WORDS {
+            return Ok(address(batch.dirty().words()));
+        }
         if batch.sprite_look().is_some() {
             let (sizes, rotations, colors, frames) = batch.sprite_rows();
             return Ok(match field {
@@ -1331,6 +1359,23 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
             batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
+/// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
+/// the bits, so a change rebuilds them, as an object's new flags do.
+#[wasm_bindgen(js_name = setBatchShadows)]
+pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            if batch.shadows() != bits & flags::SHADOWS {
+                batch.set_shadows(bits);
+                e.structure_changed = true;
+            }
             0
         }
         Err(error) => core_failure(error),
@@ -1836,8 +1881,9 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
 /// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
-/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, and the number of textures
-/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`. Its features
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, the number of textures
+/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`, and
+/// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
 /// `bias_slope`, whose positive values push the surface away.
@@ -1865,6 +1911,7 @@ pub fn create_material(
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
             textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
+            transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
         }),
         _ => Shading::Lit,
     };
@@ -2980,6 +3027,8 @@ fn sky_of(values: &[f32]) -> Sky {
         cloud_elevation: value(at::CLOUD_ELEVATION),
         time: value(at::TIME),
         sun_disc: value(at::SUN_DISC) > 0.0,
+        second_sun_position: std::array::from_fn(|k| value(at::SECOND_SUN_POSITION + k as u32)),
+        second_sky_weight: value(at::SECOND_SKY_WEIGHT),
     }
 }
 

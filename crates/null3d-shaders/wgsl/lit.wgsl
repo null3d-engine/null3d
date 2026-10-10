@@ -20,6 +20,14 @@ enable draw_index;
 // its joints (null3d::mesh), before the instance's world matrix places it, and the MORPH builds
 // of WebGL2 add its morph targets' deltas before that.
 //
+// The TRANSMISSION builds let light through the surface, as three.js's MeshPhysicalMaterial does
+// (null3d::refraction): the light from behind it takes the share of its diffuse light that the
+// material's transmission gives. Such materials draw in the transparent pass, after the camera's
+// view copied the color of its opaque objects, which they sample. On the 8-bit path, where the copy
+// holds display color, the light from behind joins the surface's own light after the tone mapping.
+// Custom materials' surfaces have the transmission and the thickness in every build, and the
+// builds that let light through only where their WGSL sets the surface's transmission.
+//
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
 // a sampler. A map reads
@@ -70,6 +78,17 @@ enable draw_index;
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
+#else ifdef TRANSMISSION
+#import null3d::mesh::{world_direction}
+#endif
+#ifdef TRANSMISSION
+#import null3d::globals::{MaterialTransmission}
+#import null3d::mesh::{NO_FOG, material_transmission}
+#import null3d::refraction::{transmitted_light}
+#ifdef TONE_MAP
+#import null3d::fog::{fog_factor}
+#import null3d::tonemap::{encode, tone_map}
+#endif
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -98,6 +117,18 @@ var<private> hash_place: vec3f;
 #ifdef CUSTOM_UNIFORMS
 /// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
+#endif
+
+#ifdef TRANSMISSION
+/// The values of the material that lets light through, which the fragment shader reads once.
+var<private> transmission_row: MaterialTransmission;
+
+/// The diffuse light that `light_surface` gathers, of which the light through the surface takes
+/// the transmission's share.
+var<private> diffuse_light: vec3f;
+
+/// The object's scale along each of its axes.
+var<private> object_scale: vec3f;
 #endif
 
 
@@ -295,6 +326,11 @@ struct VertexOut {
     /// The object's origin, relative to the camera.
     @location(8) @interpolate(flat, either) origin: vec3f,
 #endif
+#ifdef TRANSMISSION
+    /// The object's scale along each of its axes, which turns the volume's thickness into world
+    /// units.
+    @location(9) @interpolate(flat, either) scale: vec3f,
+#endif
 }
 
 #ifdef CUSTOM
@@ -368,6 +404,15 @@ struct Surface {
     /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
     /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
     reflection: vec4f,
+    /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
+    /// share of its diffuse light, where the material lets light through.
+    transmission: f32,
+    /// The thickness of the volume under the surface, in the mesh's own units, which bends the
+    /// light that passes through: 0 for a thin wall.
+    thickness: f32,
+#else ifdef TRANSMISSION
+    transmission: f32,
+    thickness: f32,
 #endif
 }
 
@@ -457,6 +502,13 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 #ifdef CUSTOM
     s.reflection = vec4f(0.0);
 #endif
+#ifdef TRANSMISSION
+    s.transmission = transmission_row.values.x;
+    s.thickness = transmission_row.values.y;
+#else ifdef CUSTOM
+    s.transmission = 0.0;
+    s.thickness = 0.0;
+#endif
 #ifdef MAPS
     s = with_maps(s, input);
 #endif
@@ -543,6 +595,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef CUSTOM
     out.origin = origin;
 #endif
+#ifdef TRANSMISSION
+    out.scale = vec3f(
+        length(world_direction(found, vec3f(1.0, 0.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 1.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 0.0, 1.0))),
+    );
+#endif
     return out;
 }
 
@@ -589,6 +648,9 @@ fn light_surface(
     let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     var indirect = ambient * occlusion;
+#ifdef TRANSMISSION
+    diffuse_light = sun.diffuse + clustered.diffuse + indirect;
+#endif
     let env = engine_frame.environment;
 #ifdef CUSTOM
     let mirrored = saturate(reflection.a);
@@ -607,6 +669,9 @@ fn light_surface(
         let n_dot_v = saturate(dot(normal, to_view));
         let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
         indirect += image.diffuse * occlusion + specular;
+#ifdef TRANSMISSION
+        diffuse_light += image.diffuse * occlusion;
+#endif
     }
     return direct + indirect;
 }
@@ -634,7 +699,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
     // The frame's lights are exposed already. The surface's own light and its baked light take the
     // exposure here.
+#ifdef TRANSMISSION
+    // The surface draws over the surfaces that ambient occlusion saw, as a blended one does.
+    let blended = true;
+#else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -647,7 +717,31 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         s.reflection,
 #endif
     );
+#ifdef TRANSMISSION
+    // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less
+    // what the specular layer reflects, takes the transmission's share of the diffuse light.
+    let share = saturate(s.transmission);
+    let fresnel = pbr.specular_blended * dfg.x + pbr.specular_grazing * dfg.y;
+    let through = transmitted_light(
+        input.relativePosition,
+        normal,
+        input.viewDirection,
+        pbr.roughness,
+        s.thickness,
+        transmission_row.values.z,
+        transmission_row.attenuation,
+        object_scale,
+    ) * pbr.diffuse * (1.0 - fresnel);
+#ifdef TONE_MAP
+    let emitted = s.emissive * engine_frame.output.exposure;
+    let outgoing = reflected - diffuse_light * share + emitted;
+#else
+    let emitted = s.emissive * engine_frame.output.exposure;
+    let outgoing = reflected + (through - diffuse_light) * share + emitted;
+#endif
+#else
     let outgoing = reflected + s.emissive * engine_frame.output.exposure;
+#endif
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_HASH
     if s.alpha < alpha_hash_threshold(hash_place) {
@@ -663,7 +757,21 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef TRANSMISSION
+#ifdef TONE_MAP
+    // The copy holds display color, so the light from behind joins after the tone mapping, as far
+    // as the fog lets it.
+    let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
+    let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
+    let toned = tone_map(fogged(outgoing, input.relativePosition, material_row), engine_frame.output);
+    let display = toned + through * share * (1.0 - fog);
+    let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
+#else
     let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+#endif
+#else
+    let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+#endif
 #ifdef ALPHA_COVERAGE
     return vec4f(finished.rgb, coverage);
 #else
@@ -678,6 +786,10 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
     material_row = material_of(in.material);
+#ifdef TRANSMISSION
+    transmission_row = material_transmission(in.material);
+    object_scale = in.scale;
+#endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
 #endif

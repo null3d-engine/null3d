@@ -74,8 +74,36 @@ struct EnvironmentLight {
     params: vec4f,
 }
 
-/// One material's row of the material table, as the core writes it (`materials.rs` in the
-/// renderer crate names each float). Colors are linear.
+/// One material's whole row of the material table, as the core writes it (`materials.rs` in the
+/// renderer crate names each float): the values that every shader reads, which `Material` holds,
+/// then the values of a material that lets light through, which only the builds that let light
+/// through read. Colors are linear.
+struct MaterialRow {
+    color: vec4f,
+    emissive: vec4f,
+    surface: vec4f,
+    strengths: vec4f,
+    uv_u: vec4f,
+    uv_v: vec4f,
+    maps: vec4f,
+    more_maps: vec4f,
+    specular: vec4f,
+    /// The transmission, the thickness of the volume in the mesh's own units, the index of
+    /// refraction, and a spare.
+    transmission: vec4f,
+    /// The color that white light takes after it travels the attenuation distance through the
+    /// volume, and that distance, 0 for a volume that absorbs nothing.
+    attenuation: vec4f,
+}
+
+/// The values of a material that lets light through: its row's `transmission` and `attenuation`.
+struct MaterialTransmission {
+    values: vec4f,
+    attenuation: vec4f,
+}
+
+/// The values of one material's row that every shader reads (see `MaterialRow`). Colors are
+/// linear.
 struct Material {
     /// The base color and the opacity.
     color: vec4f,

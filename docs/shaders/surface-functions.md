@@ -3,7 +3,7 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; vertex-offset functions; per-instance attributes."
+summary: "The surface record; uniforms and textures; reflections; transmission; vertex-offset functions; per-instance attributes."
 ---
 
 # Surface functions
@@ -72,8 +72,10 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
 | `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
 | `reflection` | `vec4f` | Light from the mirror direction in `rgb`, such as a reflection pass's color, and in `a` how much of it takes the place of the environment's reflection, from 0 to 1 ([Reflections](#reflections)) |
+| `transmission` | `f32` | How much of the light behind the point passes through it, from 0 to 1, in a material that lets light through ([Transmission](#transmission)) |
+| `thickness` | `f32` | The thickness of the volume under the point, in the mesh's own units, which bends the light that passes through |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission and the thickness are the material's. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -197,6 +199,32 @@ Give the pass's texture to the material with `textures: { mirror: textures.fromP
 - The reflection works with or without an environment.
 - `reflection_uv(clip, offset)` gives the texture coordinates of the point whose clip position is `clip`. The texture holds the mirrored image, so the function turns the screen's x around. `offset` moves the place in texture coordinates. A ripple's tilt, such as `s.normal.xz * 0.05`, makes the reflection waver.
 - Roughness does not blur the reflection, which keeps the pass's resolution. A reflection at a quarter of the render size looks soft.
+
+## Transmission
+
+A surface that lets light through shows what lies behind it, bent by its normal and its volume, as [Transmission](../api/materials.md#transmission) on the Materials page describes. A surface function sets how much light passes with the surface's `transmission`, and how deep the volume is with its `thickness`. Water whose ripples bend the stones on its bed only needs a normal:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    let slope = vec2f(cos(p.x * 3.1 + frame.time), cos(p.y * 4.7 + frame.time * 1.3)) * 0.1;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    s.transmission = 1.0;
+    return s;
+}
+```
+
+```ts
+const water = materials.shader({
+  wgsl: rippled, ior: 1.33, roughness: 0.05, transmission: 1, thickness: 0.6,
+  attenuationColor: '#6fc4b8', attenuationDistance: 1.2,
+});
+```
+
+- Only WGSL that sets or reads the surface's `transmission` builds the shaders that let light through. The material also needs the `transmission` option at creation. Without the WGSL, the option throws E1217.
+- The engine bends the light by the surface's normal, so ripples move what shows through.
+- The light from behind takes the place of that share of the diffuse light, times the base color, and the reflections stay.
 
 ## Vertex offsets
 

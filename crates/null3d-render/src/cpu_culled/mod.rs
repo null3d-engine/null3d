@@ -122,6 +122,7 @@ use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
+use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -211,8 +212,11 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_AO + 1;
+    /// The texel that frame groups bind in place of the copy of the camera's opaque color while
+    /// nothing lets light through.
+    pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const TARGETS: u32 = BLANK_TRANSMISSION + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -260,8 +264,10 @@ mod ids {
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
     /// The bind group of each step of depth of field, after the effects'.
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
-    /// The bind groups of materials' maps, after depth of field's.
-    pub const TEXTURE_GROUPS: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind group of the copy of the camera's opaque color, after depth of field's.
+    pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind groups of materials' maps, after the copy's.
+    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -455,6 +461,10 @@ impl CpuCulledRenderer {
                             first_group: ids::DOF_GROUPS,
                         },
                         view_copy: None,
+                        transmission: TransmissionIds {
+                            group: ids::TRANSMISSION_GROUP,
+                            blank: ids::BLANK_TRANSMISSION,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -774,7 +784,8 @@ impl CpuCulledRenderer {
     /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
     /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
-        self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
+        self.upload_bound_without_clusters()
+            + self.clusters.pending_bytes(&self.layout, &self.casters)
     }
 
     /// [`Self::upload_bound`] without the cluster orders.
@@ -828,6 +839,7 @@ impl CpuCulledRenderer {
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
+        transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -1055,6 +1067,7 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1094,6 +1107,17 @@ impl CpuCulledRenderer {
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
+            transmission: ids::BLANK_TRANSMISSION,
+        };
+        // Only the camera's view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
+        let lit_of = |lit: LitTextures, index: usize| LitTextures {
+            transmission: if index == ViewId::CAMERA.index() {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            },
+            ..lit
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1105,7 +1129,7 @@ impl CpuCulledRenderer {
         let rebind = lights_remade || self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || rebind {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
             }
         }
         let cascades = self.cascades();
@@ -1143,13 +1167,16 @@ impl CpuCulledRenderer {
             self.bound_environment = environment;
             lit.environment = environment;
             for index in 0..self.opaque.views() {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit))?;
+                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
             }
         }
         for index in 0..views {
             if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
                 frame.uniform.environment = uniform;
             }
+        }
+        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
+            frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
         }
         self.graph.upload(
             list,
@@ -1178,7 +1205,8 @@ impl CpuCulledRenderer {
         let meshes = self.settings.meshes();
         self.skins
             .upload(list, arena, input.animations, input.morphs, meshes)?;
-        self.clusters.upload(list, arena, &self.layout)?;
+        self.clusters
+            .upload(list, arena, &self.layout, &self.casters)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;
 

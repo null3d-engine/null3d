@@ -29,6 +29,7 @@ describe('parseSwitches', () => {
 			shadowDepthBits: 16,
 			textureCache: true,
 			fps: undefined,
+			targetFps: undefined,
 			queue: undefined,
 			jobs: undefined,
 			join: true,
@@ -189,6 +190,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=off').queue).toBe(Number.POSITIVE_INFINITY);
 		expect(parseSwitches('?queue=0').queue).toBeUndefined();
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
+	});
+
+	it('reads the target frame rate: display or a whole number', () => {
+		expect(parseSwitches('?target-fps=display').targetFps).toBe('display');
+		expect(parseSwitches('?target-fps=120').targetFps).toBe(120);
+		for (const value of ['0', '59.94', 'max', ''])
+			expect(parseSwitches(`?target-fps=${value}`).targetFps).toBeUndefined();
 	});
 
 	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {

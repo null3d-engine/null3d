@@ -323,7 +323,7 @@ export default defineSketch(async ({ scene, assets, post }) => {
 | `'afternoon'` | 15:00 | 38 degrees up | A white sun and a blue sky |
 | `'goldenHour'` | 17:36 | 5 degrees up | A low orange sun |
 | `'blueHour'` | 18:24 | 5 degrees under the horizon | A deep blue sky with the sunset's glow, and the moon |
-| `'night'` | 23:00 | Far under the horizon | A dark sky, and the moon |
+| `'night'` | 23:00 | Far under the horizon | A navy sky lit from the moon, and the moon |
 
 The sun rises toward +X at 6, stands toward -Z at noon, 60 degrees up, and sets toward -X at 18. The option `heading` turns that path about +Y, in radians, and `noonElevation` sets the noon sun's height.
 
@@ -341,8 +341,10 @@ The result holds plain values. Apply them to your own objects, as above:
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 
 - three.js's sky is far brighter than the lights' usual range. By day `skyIntensity` is 0.15, so the sun outshines the sky's diffuse light about two to one, and the fog's color can match the horizon.
-- three.js's sky goes dark about 2 degrees after sunset. So after sunset the helper keeps the sky's own sun just under the horizon. Then `skyIntensity` dims the sky to a deep blue, and later to night.
-- Each call returns a new object, and `setColor` converts a color. So call `timeOfDay` when the time changes, not in every frame of a still scene. For a day that passes, a few calls a second are enough: the sky's environment takes 7 frames to follow anyway.
+- three.js's sky gives no light once its sun is about 2.3 degrees under the horizon, and the tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
+- At night the sky's own sun stands at the moon's place, and `skyIntensity` dims it: the "day for night" sky of film. The sky is a navy blue with a lighter horizon and a faint glow around the moon. Its sun's disc draws a small moon, and the sky's environment lights the scene a dim blue. `showSunDisc: false` hides the moon's disc.
+- As the sun sinks from 6 to 12 degrees under the horizon, the sunset's sky fades straight into the moon's sky. No frame goes dark between them. The sky draws both at once: `sky.secondSunPosition` is the moon's place, and `sky.secondSkyWeight` is the moon sky's share. At other times the weight is 0, so pass the whole `sky` each time.
+- Each call returns a new object, and `setColor` converts a color. So call `timeOfDay` when the time changes, not in every frame of a still scene. For a day that passes, a few calls a second are enough: the sky's environment takes about 20 frames to follow anyway.
 
 ## Lights in scene passes
 
