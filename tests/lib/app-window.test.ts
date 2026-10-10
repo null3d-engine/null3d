@@ -5,6 +5,8 @@ import {
 	frontApp,
 	keepingFocus,
 	mainScreen,
+	NEW_WINDOW_APPS,
+	newWindowScript,
 	PARKED_STRIP,
 	parkChromeWindow,
 	parkedPlace,
@@ -79,6 +81,26 @@ describe('parkScript', () => {
 		const script = parkScript('Firefox', 'run=r1&runner=mac-firefox', place, SMALL_SIZE);
 		expect(script).toContain(`name of w contains "${RUNNER_TITLE}"`);
 		expect(script).not.toContain('URL');
+	});
+});
+
+describe('newWindowScript', () => {
+	const place = { right: 10, top: 939 };
+	const url = 'http://localhost:5550/tests/pages/runner.html?run=r1&runner=mac-google-chrome';
+
+	it("opens Chrome's runner page in a new window, and parks that window", () => {
+		expect(NEW_WINDOW_APPS.has('Google Chrome')).toBe(true);
+		const script = newWindowScript('Google Chrome', url, place, SMALL_SIZE);
+		expect(script).toContain('tell application "Google Chrome"');
+		expect(script).toContain('set w to make new window');
+		expect(script).toContain(`set URL of active tab of w to "${url}"`);
+		expect(script).toContain('set bounds of w to {10 - (800), 939, 10, 939 + (600)}');
+	});
+
+	it("keeps the window's own size without one, and says when the page opened unparked", () => {
+		const script = newWindowScript('Google Chrome', url, place);
+		expect(script).toContain('set bounds of w to {10 - (c - a), 939, 10, 939 + (d - b)}');
+		expect(script).toContain('return "opened"');
 	});
 });
 

@@ -119,9 +119,9 @@
 //                       such as tab-memory, may run there: Safari stops reloading a tab that
 //                       crashes again soon after the last crash, and only a person can reopen it
 //   --front             browser apps on a Mac open in front, at the window size they choose. Without
-//                       it, they open in the background, and Safari's and Firefox's runner windows
-//                       move almost wholly past the main display's left edge, at a small size, or at
-//                       their own size in timed plans
+//                       it, they open in the background, Chrome's runner page in a new window, and
+//                       Safari's, Firefox's and Chrome's runner windows move almost wholly past the
+//                       main display's left edge, at a small size, or at their own size in timed plans
 // In Safari, a page that fails with a refused memory, a lost GPU or context, or room for shared
 // memory that did not come back runs once more in a new runner page after the run, and fails only
 // if it fails again there. Each such rerun prints as RERUN and goes into the run's results.
@@ -166,6 +166,8 @@ import {
 	appWindow,
 	frontApp,
 	giveFocusBack,
+	NEW_WINDOW_APPS,
+	openParkedWindow,
 	PARKED_APPS,
 	parkWindow,
 } from './lib/app-window.ts';
@@ -613,7 +615,9 @@ const unparked = new Set<string>();
  * as behind a first-launch prompt on a machine that nobody watches, fails after a minute instead
  * of stopping the whole run. There the app opens in the background unless the run asks for the
  * front, and the runner window of an app that the tool can move goes almost wholly past the main
- * display's left edge. Should the app take focus all the same, the app in front before gets it back.
+ * display's left edge. Chrome opens the page in a new window, which parks so; should Chrome refuse,
+ * the page opens as in other apps. Should the app take focus all the same, the app in front before
+ * gets it back.
  * On Linux, the app's command by its name in lowercase opens the page: the first call starts the
  * browser, which keeps running, and a later call hands the page to it.
  */
@@ -622,9 +626,15 @@ function openApp({ app, window }: AppLaunch, url: string): boolean {
 		if (process.platform === 'darwin') {
 			const before = window?.background ? frontApp() : undefined;
 			const background = window?.background ? ['-g'] : [];
-			execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+			const ownWindow =
+				window?.park && NEW_WINDOW_APPS.has(app)
+					? openParkedWindow(app, url, window.small)
+					: { opened: false };
+			if (!ownWindow.opened)
+				execFileSync('open', [...background, '-a', app, url], { timeout: OPEN_TIMEOUT_MS });
 			const why =
-				window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined;
+				ownWindow.why ??
+				(window?.park && PARKED_APPS.has(app) ? parkWindow(app, url, window.small) : undefined);
 			if (why && !unparked.has(app)) {
 				unparked.add(app);
 				console.log(`${app}: its runner window stays where the app put it: ${why}`);
@@ -778,16 +788,20 @@ function keepDisplayAwake(): void {
 	child.unref();
 }
 
+/** The apps whose earlier runner page the tool closes before it opens a new one. */
+const CLOSED_APPS: ReadonlySet<string> = new Set(['Safari', ...NEW_WINDOW_APPS]);
+
 /**
- * Closes a run's runner page in Safari through AppleScript. Not in CI: there macOS asks whether the
- * tool may control Safari, and nobody can answer.
+ * Closes a run's runner page in Safari or Chrome through AppleScript, so the earlier page stops,
+ * and Chrome's window of its own closes with its last tab. Not in CI: there macOS asks whether the
+ * tool may control the app, and nobody can answer.
  */
-function closeSafariRunner(run: string, runner: string): void {
-	if (process.env.CI) return;
+function closeRunner(app: string, run: string, runner: string): void {
+	if (process.env.CI || !CLOSED_APPS.has(app)) return;
 	const match = `run=${run}&runner=${runner}`;
 	output('osascript', [
 		'-e',
-		`tell application "Safari" to close (every tab of every window whose URL contains "${match}")`,
+		`tell application "${app}" to close (every tab of every window whose URL contains "${match}")`,
 	]);
 }
 
@@ -922,7 +936,7 @@ function deviceReopener(run: string, launches: Launches, baseUrl: string): Reope
 				return true;
 			}
 			if (!isApp(launch)) return false;
-			if (launch.app === 'Safari') closeSafariRunner(run, runner);
+			closeRunner(launch.app, run, runner);
 			return openApp(launch, url);
 		},
 	};

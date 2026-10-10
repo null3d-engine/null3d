@@ -4,9 +4,12 @@
 // covers nothing: macOS keeps a strip of the title bar on the screen. A new window of an app in the
 // background opens above every app's windows but the front app's, and macOS lets no other process
 // push it lower, so the tools move it out of the way instead. Safari, Firefox and Chrome draw at full
-// speed there, and under other windows. None draws once the app hides, and Safari drew at half speed
-// on a second display, so the tools do neither. Plans that time frames keep the window's own size,
-// since a page that fills the window draws fewer pixels in a small one.
+// speed there. Safari and Firefox draw under other windows too, and so does Chrome with the switches
+// that the tools give it. A person's own Chrome has none of them: it reports a page hidden, and draws
+// nothing, while other windows cover its window wholly, so its runner window must park. None draws
+// once the app hides, and Safari drew at half speed on a second display, so the tools do neither.
+// Plans that time frames keep the window's own size, since a page that fills the window draws fewer
+// pixels in a small one.
 
 import { execFileSync } from 'node:child_process';
 import {
@@ -139,6 +142,70 @@ export function parkWindow(app: string, url: string, small: boolean): string | u
 	} catch (e) {
 		const { stderr, message } = e as Error & { stderr?: string };
 		return (stderr?.trim() || message.split('\n')[0]) ?? 'failed';
+	}
+}
+
+/**
+ * The apps whose runner page opens in a new window of its own, which then parks: Chrome would open
+ * the page in a new tab of the person's front window, which the tool must not move.
+ */
+export const NEW_WINDOW_APPS: ReadonlySet<string> = new Set(['Google Chrome']);
+
+/**
+ * The AppleScript that opens `url` in a new window of a Chromium app and parks the window, at `size`
+ * or at its own size. It returns "parked", or "opened" when the page opened but the window kept its
+ * place. It fails with no window made when the app refuses the tool's control.
+ */
+export function newWindowScript(
+	app: string,
+	url: string,
+	place: { right: number; top: number },
+	size?: { width: number; height: number },
+): string {
+	const [width, height] = size ? [size.width, size.height] : ['c - a', 'd - b'];
+	return [
+		`tell application "${app}"`,
+		'	set w to make new window',
+		`	set URL of active tab of w to "${url}"`,
+		'	try',
+		'		set {a, b, c, d} to bounds of w',
+		`		set bounds of w to {${place.right} - (${width}), ${place.top}, ${place.right}, ${place.top} + (${height})}`,
+		'	on error',
+		'		return "opened"',
+		'	end try',
+		'end tell',
+		'return "parked"',
+	].join('\n');
+}
+
+/**
+ * Opens the runner page at `url` in a new window of `app` and parks it, small or at its own size.
+ * It says whether the page opened, and why the window did not park when it did not. macOS asks once
+ * whether the terminal may control the app, under Privacy & Security, Automation; without that
+ * permission, no window opens.
+ */
+export function openParkedWindow(
+	app: string,
+	url: string,
+	small: boolean,
+): { opened: boolean; why?: string } {
+	try {
+		const script = newWindowScript(
+			app,
+			url,
+			parkedPlace(mainScreen()),
+			small ? SMALL_SIZE : undefined,
+		);
+		const answer = execFileSync('osascript', ['-e', script], {
+			encoding: 'utf8',
+			timeout: 15_000,
+		}).trim();
+		return answer === 'parked'
+			? { opened: true }
+			: { opened: true, why: 'the app did not move its window' };
+	} catch (e) {
+		const { stderr, message } = e as Error & { stderr?: string };
+		return { opened: false, why: (stderr?.trim() || message.split('\n')[0]) ?? 'failed' };
 	}
 }
 
