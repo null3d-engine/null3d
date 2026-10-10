@@ -140,11 +140,12 @@ fn push_stage(
     sky: &Sky,
 ) -> Result<(), RecordError> {
     let [x, y, z] = sky.sun_position;
+    let [heading, elevation] = sky.second_angles();
     let values = [
         x,
         y,
         z,
-        0.0,
+        sky.second_sky_weight,
         sky.turbidity,
         sky.rayleigh,
         sky.mie_coefficient,
@@ -155,8 +156,8 @@ fn push_stage(
         sky.cloud_density,
         sky.cloud_elevation,
         sky.time,
-        0.0,
-        0.0,
+        heading,
+        elevation,
     ];
     let mut words = [0u32; STEP_WORDS];
     words[..3].copy_from_slice(&[id, generator, stage]);

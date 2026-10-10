@@ -96,7 +96,7 @@ To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, o
 
 ## Light from the sky
 
-A directional light gives the sun's own light. The light of the sky around it comes from an environment. [`assets.skyEnvironment()`](assets.md#environments) makes one of the sky that `scene.setBackground({ sky })` draws, and it follows the sky as the sun moves. [`timeOfDay`](scene.md#time-of-day) gives the sun's direction, color and intensity for an hour, and the sky that matches them. At night it gives the moon.
+A directional light gives the sun's own light. The light of the sky around it comes from an environment. [`assets.skyEnvironment()`](assets.md#environments) makes one of the sky that `scene.setBackground({ sky })` draws, and it follows the sky as the sun moves. [`timeOfDay`](scene.md#time-of-day) gives the sun's direction, color and intensity for an hour, and the sky that matches them. At night it gives the moon, and a navy sky lit from the moon's place.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
