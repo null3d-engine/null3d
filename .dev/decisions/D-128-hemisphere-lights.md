@@ -54,6 +54,10 @@ Compatibility mode's figures with the room pass because three.js's two renderers
 
 The `lights-hemisphere-split` test draws the light as two halves, one upside down with its colors swapped, set in every frame. It matched the single light's references on all three paths, on the Mac's GPU and on SwiftShader.
 
+GPU time per frame, `bun run bench:gpu-check` on the MacBook Pro in Chrome, WebGPU, 10 October 2026: S4 at Medium 3.91 to 3.92 ms, S6 at Medium 4.70 to 4.78 ms, S4 at High 2.62 to 2.20 ms, S6 at High 10.00 to 8.67 ms. No change lay outside the check's rule of 25% and 0.3 ms. The check judged none, because this change adds a switch to the benchmark pages. Neither scene has a hemisphere light, so the figures measure the three multiply-adds that every pixel now pays.
+
+Allocation, `bun run bench:allocation --hemisphere`: S1 with two hemisphere lights whose intensities change in every frame passes on WebGPU and on WebGL2. No place of the light code shows in the profile.
+
 How the data was produced: `bun run parity -- --scene lights-hemisphere,environment-room-hemisphere,lights-16,environment-room` on the Mac, and the same with `CI=1` for SwiftShader. `bun run test:images` on both sets: 9 of 9 hemisphere tests pass on the Mac, and 106 of 106 tests of lights, materials, environments, lines, transmission, reflections and time of day pass on SwiftShader. The shader library test passes on both, with `ambient_irradiance` among its cases.
 
 ## Decision
