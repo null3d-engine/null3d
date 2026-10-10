@@ -63,10 +63,11 @@ The material row grew from nine `vec4f`s to eleven: the transmission, the thickn
 
 `KHR_materials_transmission` sets `transmission`, and `KHR_materials_volume` sets `thickness`, `attenuationColor` and `attenuationDistance`. A missing `attenuationDistance` absorbs nothing, as glTF's default of infinity does. A masked material lets no light through, as the engine draws transmission without a mask.
 
-### Two faults that the tests found
+### Three faults that the tests found
 
 - The frame turned the copy on after it asked for the pipelines. A frame held at one time then declared no copy, and glass showed only the ambient light. The builders now turn it on first.
 - On WebGL2 with multi-draw, the first glass downloaded two shader files. The copy's pipeline has no draw index bit, since its shader has no build with it. So the shader set loaded the module without the bit too. A feature's module now always takes the device's draw index bit.
+- On WebGL2 the copy's levels cost about 3.3 ms of GPU time per frame on the Mac, while the whole glass water, its copy and its shading, cost WebGPU 0.89 ms. WebGL2 made each level as it makes the levels of uploaded images: a draw into a spare texture of the full size, then a copy into the level, so two passes per level. A first S1 timing with the clear water showed it, and a comparison on 10 October 2026 named the cause. With the water, WebGL2 took 8.61 and 8.44 ms per frame with those draws, 5.04 and 5.16 ms with GL's own `generateMipmap`, and 5.53 and 5.28 ms with no levels at all. The Mac's load was 8 to 12 then, so only the differences count. A render target of the frame with one layer, in a linear format, now takes `generateMipmap`. Uploaded images and sRGB targets keep the draws, for the faults on Adreno and in Firefox that the backend records.
 
 ## Data
 
