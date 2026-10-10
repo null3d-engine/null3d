@@ -76,6 +76,41 @@ Texture sharing: today two model files that name one texture each upload their o
 - The benchmark report gains a table of each streamed scene's load, so a run compares the load times and the bytes of both engines.
 - Texture sharing between model files becomes a task of its own after the texture budget (#346) merges. This record's texture figures and S6's load times feed it.
 
+## Blockers by connected part, 2026-10-09
+
+The merged towers (one mesh per material) crowded the kit's blockers out of WebGL2's software occlusion ([D-41](D-41-software-occlusion.md)). Each tower mesh's sphere held the camera, so the mesh counted as 0 m away. Its far boxes then filled the frame's 16,384 blocker triangles. The engine now gives a blocker one candidate per connected part:
+
+- When it builds a blocker mesh, it splits the welded triangles into connected parts, the triangles that share corners. It keeps a bounding sphere for each part.
+- The frame's pick sorts each part by the nearest point of its own sphere. The object's matrix moves and grows that sphere. Each box of a tower mesh then competes as a box of its own mesh did before.
+- A blocker of one part, such as a kit building or the asset tool's box, keeps the object's own sphere. So a scene without merged meshes picks as before.
+- A mesh's blocker still builds the first time the frame's budget reaches the object. The object's sphere places it, and that sphere lies no farther than any of its parts. That frame draws the mesh whole; later frames sort its parts. So a view full of new meshes builds no more blockers than before.
+- The 4,096-triangle limit still counts the whole mesh, and the asset tool needs no change.
+
+A replay of the engine's choice along the route gave these figures per frame. It took one frame a second over the 187 s loop, 186 samples, at the bench window of 1,400 x 800.
+
+| Per frame, median (90th percentile) | One mesh per box | One mesh per material | One mesh per material, blocker parts |
+| --- | --- | --- | --- |
+| Kit blockers drawn | 274 (327) | 12 (230) | 277 (329) |
+| Kit blocker triangles | 15,944 (16,356) | 468 (14,104) | 15,996 (16,240) |
+| Tower blockers drawn | 33 (269) | 129 (161) | 31 (203) |
+| Tower blocker triangles | 396 (3,228) | 15,744 (16,200) | 372 (2,436) |
+| Distance where the budget ran out | 127 m (151 m) | 0 m (109 m) | 127 m (154 m) |
+
+The tower meshes split into 1,849 parts, 22,188 triangles. Against one mesh per box, the frames lose no kit blocker at the median, 2 at the 90th percentile, and none within 50 m.
+
+S6's occlusion turns on WebGL2 measured the engine itself, with culling off and on in turns. They ran on the owner's Mac in Chrome, at Medium, 1,400 x 800, governor off. Each side had 4 rounds of 8 s. Each build ran 4 times, and the table gives the median. The counts barely moved between runs. One mesh per box with blocker parts counts only its last 2 runs, as its first 2 ran an earlier form of the change. The times come from runs in a quiet window on 10 October 2026. That window gave 2 runs per build with one mesh per box, and 1 with one mesh per material. Earlier runs, beside other work on the Mac, gave times up to twice as long.
+
+| Per frame, median | One mesh per box | The same, blocker parts | One mesh per material | The same, blocker parts |
+| --- | --- | --- | --- | --- |
+| Index list entries that occlusion hid | 2,879 | 2,914 | 300 | 2,753 |
+| Index list entries drawn, culling on | 5,984 | 5,907 | 7,833 | 5,389 |
+| Draw calls, culling on | 1,826 | 1,805 | 986 | 976 |
+| Culling time, culling off | 0.20 ms | 0.19 ms | 0.17 ms | 0.17 ms |
+| Culling time, culling on | 0.94 ms | 0.99 ms | 0.66 ms | 0.99 ms |
+| Job time, culling on | 0.80 ms | 0.71 ms | 0.68 ms | 0.84 ms |
+
+So the merged towers hide about as much as one mesh per box did, with about half the draw calls. With one mesh per material, the parts cost 0.33 ms more culling a frame. The frame now draws about 280 kit blockers in place of 12, and hides 9 times as many entries. With one mesh per box, the parts change little: two-box blockers from the asset tool now sort box by box.
+
 ## CI
 
 The first CI run of S6's pull request (run 37704989364, 8 October 2026) built the city's files in every job that loads S6. Each build took 369 seconds, 6.2 minutes, because the Actions cache had no copy. A pull request reads main's caches but saves none, and main had never built the city. All 7 browser shards and the second benchmark shard then hit their 15-minute limit, with their tests passing but 4 to 6 minutes short.

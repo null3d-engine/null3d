@@ -47,7 +47,11 @@
 // the build's functions through its source maps; `--dev` samples the dev server's pages, with the
 // engine's development checks. `--no-inline` turns the browser's inlining off, so each function's
 // objects count in its own place, not in its caller's; budgets then do not hold, so read the places,
-// not the verdict. From the repository root:
+// not the verdict. `--warmup-frames 1200` sets the warm-up's frames, for a quick look whose code
+// the browser may not have optimized yet. With CI set, as on CI's machines, it runs Playwright's
+// Chromium without a window, on SwiftShader, and samples S1 with fewer boxes. It then counts the
+// frames that S1 steps, and judges a few places by budgets of SwiftShader's own.
+// From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
@@ -74,7 +78,8 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import type { Page } from '@playwright/test';
+import { chromium, type Page } from '@playwright/test';
+import { defaultEnvironment, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
@@ -85,7 +90,7 @@ import {
 	steadyPlaces,
 	totalSize,
 } from './lib/allocation';
-import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
+import { attachWorkers, DevTools, pagesAt, sleep, within } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -100,9 +105,28 @@ const SAMPLING_INTERVAL = 128;
 const WARMUP_SECONDS = 30;
 /**
  * Frames the page must draw before sampling starts as well. The browser optimizes by frames, so a
- * display at a lower refresh rate needs more seconds for the same warm-up.
+ * display at a lower refresh rate needs more seconds for the same warm-up. Its optimizing compiler
+ * takes a function after a few thousand calls, and code that runs once per frame gets one call a
+ * frame.
  */
 const WARMUP_FRAMES = 3600;
+/**
+ * S1's object count on SwiftShader, where the check runs in CI. SwiftShader draws S1's 100,000
+ * boxes at under one frame a second, and 1,000 at 3 to 8 on CI's machines. Each frame runs the same
+ * engine code whatever the count.
+ */
+const SWIFTSHADER_COUNT = 1000;
+/**
+ * On SwiftShader the browser's compilers take a function after fewer calls, so a shorter warm-up
+ * reaches the code that a long one reaches. At 3,600 frames the warm-up took 8 to 18 minutes on
+ * CI's machines. At 1,200 frames with the browser's own counts, the sketch's phase timer and the
+ * canvas view's helper had not been optimized yet, and allocated. With these counts, 600 frames
+ * still left a callback of the sketch worker unoptimized, and 900 frames passed.
+ */
+const SWIFTSHADER_JS_FLAGS =
+	'--invocation-count-for-maglev=100 --invocation-count-for-turbofan=500 --minimum-invocations-after-ic-update=100';
+/** The warm-up's frames on SwiftShader, with the lower counts of `SWIFTSHADER_JS_FLAGS`. */
+const SWIFTSHADER_WARMUP_FRAMES = 1200;
 /**
  * Samples the check takes one after another. Allocation in every frame shows in each of them. An
  * event that happens once, such as the browser installing code it has just optimized, lands in one.
@@ -121,7 +145,9 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   the canvas texture and its view. Each render pass adds its encoder, about 17 bytes. S4's two
  *   shadow passes and nine more uploads per frame put its replay 46 to 48 bytes above S1's. The
  *   canvas hands out a new texture each frame, so the view of it must be made each frame too. The
- *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1;
+ *   backend's `colorView` makes it, and the browser counts it there, about 34 bytes on S1. Where
+ *   the browser does not inline `targetView` into it, as on SwiftShader's short warm-up, it counts
+ *   the view in `targetView` instead;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
@@ -137,7 +163,7 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
-const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
 		'runPipelined sketch/runner.ts': 128,
@@ -150,8 +176,10 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'replay webgpu/backend.ts': 320,
 		'commandEncoder webgpu/backend.ts': 32,
 		'colorView webgpu/backend.ts': 48,
+		'targetView webgpu/backend.ts': 48,
 		'draw render/loop.ts': 64,
-		'drawFrame render/scene-renderer.ts': 192,
+		'drawFrame render/webgpu-renderers.ts': 192,
+		'drawFrame render/webgl2-renderers.ts': 192,
 		'(IDLE)': 48,
 		'(JS)': 24,
 		'take webgpu/staging.ts': 160,
@@ -175,7 +203,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
  * without a readback allocates nothing more, so these budgets stay the same whatever the scene
  * holds. WebGL2's timer allocated nothing that the profiler saw.
  */
-const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': {
 		'copyOut webgpu/gpu-timer.ts': 24,
@@ -190,13 +218,30 @@ const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = 
 
 /**
  * Places that allocate with `--sky-environment` on top of `BUDGETS`, while the sun moves in every
- * frame. Each stage of the sky map that draws makes one object that the browser returns, on six of
- * every seven frames: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
+ * frame. Each stage of the sky map that draws makes one object that the browser returns, in every
+ * frame but the copy's: on WebGPU its render pass's encoder, about 17 bytes, and on WebGL2 its fence,
  * about 16 bytes.
  */
-const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+export const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': { 'draw webgpu/environment.ts': 20, 'stage webgl2/environment.ts': 20 },
+};
+
+/**
+ * Budgets on SwiftShader, where the check runs in CI, in place of those of `BUDGETS`. SwiftShader
+ * draws a few frames a second, and the browser still calls the render worker at the display's rate,
+ * so work that runs at each of those calls weighs several times as much per frame:
+ * - the browser's own objects in the render worker between tasks and outside the engine's
+ *   functions, which on WebGL2 took 195 to 323 bytes per frame in `(IDLE)` and 86 to 148 in
+ *   `(JS)`, against under 50 and 25 on a real GPU;
+ * - the completion tracker's clock reading at each check of a frame that the GPU still holds, which
+ *   SwiftShader holds at nearly every check: up to 20 bytes per frame on WebGPU and 128 on WebGL2,
+ *   whose fence the render worker checks at each call. On a real GPU the frames finish before the
+ *   check, and the place allocates nothing.
+ */
+export const SWIFTSHADER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': { '(IDLE)': 512, '(JS)': 256, 'giveUpStalled gpu/completion.ts': 256 },
 };
 
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
@@ -247,14 +292,18 @@ function nameNodes(node: ProfileNode, names: BuildNames): void {
 const INPUT_STEP_MS = 16;
 
 /**
- * Moves the mouse in circles over the canvas until `running` turns false. It presses a key every
- * 10 steps and holds the mouse button down for a few steps in every 30, so the page writes moves,
- * drags, clicks and key presses into the input ring.
+ * Moves the mouse in circles over the canvas until `running` turns false, and counts its steps in
+ * `driven`. It presses a key every 10 steps and holds the mouse button down for a few steps in every
+ * 30, so the page writes moves, drags, clicks and key presses into the input ring.
  */
-async function driveInput(page: Page, running: () => boolean): Promise<void> {
+async function driveInput(
+	page: Page,
+	running: () => boolean,
+	driven: { steps: number },
+): Promise<void> {
 	const box = await page.locator('canvas').boundingBox();
 	if (!box) throw new Error('the benchmark page has no canvas');
-	for (let step = 0; running(); step++) {
+	for (let step = 0; running(); step++, driven.steps++) {
 		const angle = step * 0.2;
 		await page.mouse.move(
 			box.x + box.width * (0.5 + 0.3 * Math.cos(angle)),
@@ -267,6 +316,35 @@ async function driveInput(page: Page, running: () => boolean): Promise<void> {
 	}
 }
 
+/** Seconds without a new frame after which the check gives up on a page that stopped drawing. */
+const STALL_SECONDS = 60;
+
+/**
+ * The longest that one call to the browser may take, such as starting or stopping a sample, or
+ * reading the frame count. Each takes under a few seconds; a call that never returns would
+ * otherwise hold CI's machine until the job's own time runs out.
+ */
+const STEP_MS = 60_000;
+
+/**
+ * Waits until `frames` counts `target` frames, and says how far the count has come once a minute.
+ * Throws when the count stands still for `STALL_SECONDS`, as on a page whose engine failed.
+ */
+async function reachFrames(frames: () => Promise<number>, target: number): Promise<void> {
+	let last = -1;
+	let still = 0;
+	for (let second = 1; ; second++) {
+		const now = await frames();
+		if (now >= target) return;
+		still = now === last ? still + 1 : 0;
+		if (still >= STALL_SECONDS)
+			throw new Error(`the page drew no frame for ${STALL_SECONDS} s, at ${now} of ${target}`);
+		if (second % 60 === 0) console.log(`Warming up: ${now} of ${target} frames`);
+		last = now;
+		await sleep(1000);
+	}
+}
+
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 	const option = (name: string, fallback: number) => {
@@ -276,7 +354,16 @@ async function main(): Promise<void> {
 	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
 	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3' && scene !== 's4')
 		throw new Error(`--scene takes s1, s1-cells, s3 or s4, not ${scene}`);
-	const n = option('--n', scene === 's3' ? S3_DEFAULT_COUNT : 100_000);
+	// With CI set, as on CI's machines, Playwright's Chromium draws on SwiftShader, the software GPU.
+	const swiftShader = defaultEnvironment() === 'chromium-swiftshader';
+	if (swiftShader && scene !== 's1')
+		throw new Error(
+			'on SwiftShader the check counts the frames that S1 steps, so it samples S1 only',
+		);
+	const n = option(
+		'--n',
+		swiftShader ? SWIFTSHADER_COUNT : scene === 's3' ? S3_DEFAULT_COUNT : 100_000,
+	);
 	const seconds = option('--seconds', 5);
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
@@ -284,20 +371,27 @@ async function main(): Promise<void> {
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
+	const warmupFrames = option(
+		'--warmup-frames',
+		swiftShader ? SWIFTSHADER_WARMUP_FRAMES : WARMUP_FRAMES,
+	);
 	const dev = args.includes(DEV_OPTION);
 	const noInline = args.includes('--no-inline');
 	const server = await serveBenchPages({ dev });
-	const browser = await launchInWindow({
-		channel: 'chrome',
-		args: [
-			`--remote-debugging-port=${DEBUG_PORT}`,
-			...(noInline ? ['--js-flags=--no-turbo-inlining --no-maglev-inlining'] : []),
-		],
-	});
+	// The browser takes one set of script engine flags, so these share one switch.
+	const jsFlags = [
+		...(noInline ? ['--no-turbo-inlining --no-maglev-inlining'] : []),
+		...(swiftShader ? [SWIFTSHADER_JS_FLAGS] : []),
+	];
+	const browserArgs = [
+		`--remote-debugging-port=${DEBUG_PORT}`,
+		...(jsFlags.length > 0 ? [`--js-flags=${jsFlags.join(' ')}`] : []),
+	];
+	const browser = swiftShader
+		? await chromium.launch({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
+		: await launchInWindow({ channel: 'chrome', args: browserArgs });
 	try {
 		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
-		// The page's own measurement starts after the sampling ends, so its timers stay off.
-		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
 		const blend = args.includes('--blend') ? '&blend' : '';
 		const animatedCount = option('--animated', 0);
@@ -341,26 +435,42 @@ async function main(): Promise<void> {
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
-		const query = `seconds=${pageSeconds}&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${statsQuery}`;
+		// The demo run keeps the scene running until the page closes, with no measurement of the
+		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${environment}${effects}${sky}${reflection}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
-		// Counts the display's frames on the page, which the render worker draws at the same rate.
-		await page.evaluate(() => {
-			const scope = globalThis as unknown as {
-				requestAnimationFrame(callback: () => void): number;
-				__frameCounter?: { frames: number };
-			};
-			const counter = { frames: 0 };
-			const tick = () => {
-				counter.frames++;
+		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
+		// the display's frames on the page. On SwiftShader the display's frames outrun the frames
+		// that the engine computes and draws, so it counts the frames that S1 steps, which the page
+		// publishes once the sketch has started.
+		if (!swiftShader)
+			await page.evaluate(() => {
+				const scope = globalThis as unknown as {
+					requestAnimationFrame(callback: () => void): number;
+					__frameCounter?: { frames: number };
+				};
+				const counter = { frames: 0 };
+				const tick = () => {
+					counter.frames++;
+					scope.requestAnimationFrame(tick);
+				};
 				scope.requestAnimationFrame(tick);
-			};
-			scope.requestAnimationFrame(tick);
-			scope.__frameCounter = counter;
-		});
+				scope.__frameCounter = counter;
+			});
 		const framesSoFar = () =>
-			page.evaluate(
-				() => (globalThis as { __frameCounter?: { frames: number } }).__frameCounter?.frames ?? 0,
+			within(
+				page.evaluate(() => {
+					const scope = globalThis as {
+						__frameCounter?: { frames: number };
+						__null3dFrames?: Int32Array;
+					};
+					return scope.__null3dFrames
+						? Atomics.load(scope.__null3dFrames, 0)
+						: (scope.__frameCounter?.frames ?? 0);
+				}),
+				STEP_MS,
+				'reading the frame count',
 			);
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		const [target] = await pagesAt(devtools, url);
@@ -368,40 +478,54 @@ async function main(): Promise<void> {
 		const { workers: sessions } = await attachWorkers(devtools, target.targetId, WORKERS);
 		// Input runs from now to the end of the sample, so the code that reads it warms up too.
 		let driving = true;
-		const input = driveInput(page, () => driving);
+		const driven = { steps: 0 };
+		const input = driveInput(page, () => driving, driven);
 		// A failure is reported where the input is awaited, after the sample.
 		input.catch(() => {});
 		// Let the sketch run its setup and warm up before sampling.
+		const warmupStart = performance.now();
 		await sleep(warmup * 1000);
-		while ((await framesSoFar()) < WARMUP_FRAMES) await sleep(1000);
-		for (const sessionId of sessions.values())
-			await devtools.send('HeapProfiler.enable', {}, sessionId);
+		await reachFrames(framesSoFar, warmupFrames);
+		console.log(
+			`Warmed up: ${await framesSoFar()} frames in ${((performance.now() - warmupStart) / 1000).toFixed(0)} s`,
+		);
+		for (const [name, sessionId] of sessions)
+			await within(
+				devtools.send('HeapProfiler.enable', {}, sessionId),
+				STEP_MS,
+				`enabling the heap profiler in the ${name}`,
+			);
+		const stepsBefore = driven.steps;
 		const samples = new Map<string, Sample[]>();
 		const bytes = new Map<string, number>();
 		let frames = 0;
 		for (let k = 0; k < SAMPLES; k++) {
-			for (const sessionId of sessions.values()) {
+			for (const [name, sessionId] of sessions) {
 				// The profiler keeps the samples of objects that garbage collection frees, which
 				// per-frame garbage is; by default it reports only objects still alive when sampling
 				// stops.
-				await devtools.send(
-					'HeapProfiler.startSampling',
-					{
-						samplingInterval: SAMPLING_INTERVAL,
-						includeObjectsCollectedByMajorGC: true,
-						includeObjectsCollectedByMinorGC: true,
-					},
-					sessionId,
+				await within(
+					devtools.send(
+						'HeapProfiler.startSampling',
+						{
+							samplingInterval: SAMPLING_INTERVAL,
+							includeObjectsCollectedByMajorGC: true,
+							includeObjectsCollectedByMinorGC: true,
+						},
+						sessionId,
+					),
+					STEP_MS,
+					`starting sample ${k + 1} in the ${name}`,
 				);
 			}
 			const startFrames = await framesSoFar();
 			await sleep(seconds * 1000);
 			const profiles = new Map<string, HeapProfile>();
 			for (const [name, sessionId] of sessions) {
-				const { profile } = await devtools.send<{ profile: HeapProfile }>(
-					'HeapProfiler.stopSampling',
-					{},
-					sessionId,
+				const { profile } = await within(
+					devtools.send<{ profile: HeapProfile }>('HeapProfiler.stopSampling', {}, sessionId),
+					STEP_MS,
+					`stopping sample ${k + 1} in the ${name}`,
 				);
 				if (server.names) nameNodes(profile.head, server.names);
 				profiles.set(name, profile);
@@ -417,17 +541,26 @@ async function main(): Promise<void> {
 			}
 		}
 		driving = false;
-		await input;
+		const inputSteps = driven.steps - stepsBefore;
+		// On SwiftShader a mouse or key press now and then never returns. The input then stops, and
+		// the frames go on, so the samples still judge the frame code; the count shows how much input
+		// they held.
+		await within(input, STEP_MS, 'moving the mouse and pressing keys').catch((e: Error) =>
+			console.log(`warning: ${e.message}`),
+		);
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
 		);
 		const over: string[] = [];
 		for (const [worker, workerSamples] of samples) {
-			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
+			const budgets = {
+				...BUDGETS[worker as (typeof WORKERS)[number]],
+				...(swiftShader ? SWIFTSHADER_BUDGETS[worker as (typeof WORKERS)[number]] : {}),
+			};
 			const statsBudgets = stats ? STATS_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const skyBudgets = skyLight
 				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
@@ -453,7 +586,10 @@ async function main(): Promise<void> {
 		console.log(over.length === 0 ? 'pass' : `FAIL: over budget: ${over.join('; ')}`);
 		process.exitCode = over.length === 0 ? 0 : 1;
 	} finally {
-		await browser.close();
+		// A browser that does not close must not hide the error that ended the check.
+		await within(browser.close(), STEP_MS, 'closing the browser').catch((e: Error) =>
+			console.error(`error: ${e.message}`),
+		);
 		server.stop();
 	}
 }

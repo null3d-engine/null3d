@@ -80,11 +80,12 @@ export const DEMOS: readonly Demo[] = [
 		group: 'Building scenes',
 		sketch: new URL('./mesh-arrays/sketch.ts', import.meta.url),
 		title: 'Meshes from arrays',
-		scene: 'Hills and water',
+		scene: 'Crystal island',
 		summary:
-			'A height field and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not.',
+			'An island and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not. Each vertex of the island has a color of its own, and a reflection pass mirrors the island in the water.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the crystal over the hills.`,
 		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'objects',
@@ -93,20 +94,22 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Objects and parents',
 		scene: 'Turntable stage',
 		summary:
-			'Crates ride a turntable and step off in turn. setParent with keepWorld moves each crate between the table and the ground without moving it in the world.',
+			'Crates of six materials ride a turntable on a studio stage and step off in turn. setParent with keepWorld moves each crate between the table and the stage without moving it in the world.',
 		controls: CAMERA,
 		hold: 2.5,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'layers',
 		group: 'Building scenes',
 		sketch: new URL('./layers/sketch.ts', import.meta.url),
 		title: 'Render layers',
-		scene: 'Golden-hour town',
+		scene: 'Cottage street',
 		summary:
-			'A street of houses with roofs and map pins on layers of their own. Every 2 seconds the camera draws another set of layers.',
+			'A street of brick cottages in the late afternoon sun, with roofs and map pins on layers of their own. Every 2 seconds the camera draws another set of layers.',
 		controls: CAMERA,
 		hold: 5,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'environment',
@@ -115,7 +118,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Environment light',
 		scene: 'Sphere gallery',
 		summary:
-			'Plastic and metal spheres, from rough to smooth, lit only by an environment. Every 4 seconds it changes: a sunset from an HDR file, a studio from an EXR file, then the built-in room.',
+			'Plastic and metal spheres, from rough to smooth, over a polished floor that reflects them, lit only by an environment. Every 4 seconds it changes: a sunset from an HDR file, a studio from an EXR file, then the light of the generated sky.',
 		assets: 'Shows how environment maps load from Radiance HDR and OpenEXR files.',
 		controls: CAMERA,
 		hold: 1,
@@ -128,7 +131,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'glTF models',
 		scene: 'Studio turntable',
 		summary:
-			'The Khronos BoomBox, loaded with assets.loadGltf and lit by the built-in room environment. Its base color, normal, occlusion, roughness, metalness and emissive maps all come from the file.',
+			'The Khronos BoomBox, loaded with assets.loadGltf, on a turntable with a polished top in a dark studio, lit by a key light and the built-in room environment, with depth of field. Its base color, normal, occlusion, roughness, metalness and emissive maps all come from the file.',
 		assets: "Shows how a glTF model's meshes, materials and texture maps load from a file.",
 		controls: CAMERA,
 		hold: 2,
@@ -141,7 +144,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Post effects',
 		scene: 'Neon alley',
 		summary:
-			'Crates under neon lights, with bloom, ambient occlusion, an outline, a vignette and a custom lens effect. Every 3 seconds the color grading table changes: none, warm, then cool.',
+			'Crates in a neon alley at night on wet ground, with bloom, ambient occlusion, an outline, depth of field, a vignette and a custom lens effect. Every 3 seconds the color grading table changes: none, warm, then cool.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the pink lamp.`,
 		hold: 4,
 	},
@@ -152,9 +155,10 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Sprites and lines',
 		scene: 'Spark fountain',
 		summary:
-			'A fountain of 2,000 sparks in one sprite batch, a lit helix of wide lines in world units, and dashes that run around a ring.',
+			'A fountain of 2,000 glowing sparks in one sprite batch at nightfall, a neon helix of wide lines in world units, and dashes that run around the rim of a pool that reflects them all.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the fountain.`,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'security-camera',
@@ -163,9 +167,10 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Render to texture',
 		scene: 'Security camera',
 		summary:
-			'A camera on a pole sweeps a yard behind a wall. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there.',
+			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines.',
 		controls: `${CAMERA} Move the mouse, or tap, to aim the security camera.`,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'character',
@@ -174,7 +179,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Animated characters',
 		scene: 'Knight in a courtyard',
 		summary:
-			'The KayKit Knight walks a circle at a speed that rises and falls. A blend mixes its idle, walk and run clips by speed, and an upper-body layer swings its sword every 4 seconds.',
+			'The KayKit Knight walks a circle in a cobbled courtyard at a speed that rises and falls. A blend mixes its idle, walk and run clips by speed, and an upper-body layer swings its sword every 4 seconds.',
 		assets: 'Shows how a skinned character and its animation clips load from a glTF file.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the Knight.`,
 		hold: 4.5,
@@ -186,10 +191,12 @@ export const DEMOS: readonly Demo[] = [
 		sketch: new URL('./input/sketch.ts', import.meta.url),
 		title: 'Input and actions',
 		scene: 'Walking robot',
-		summary: 'An action map moves a box with the keyboard or a gamepad. The camera follows it.',
+		summary:
+			'An action map moves a small robot with the keyboard or a gamepad. Its legs and arms swing on joints as it walks, and the camera follows it.',
 		controls:
 			'Move with WASD, the arrow keys or the left stick. Jump with Space or A, and change color with E or X. Drag or use the right stick to turn the camera, scroll or pinch to zoom, and right-drag or drag two fingers to pan.',
 		hold: 0,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'picking',
@@ -198,9 +205,10 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Picking and labels',
 		scene: 'Gallery plinth',
 		summary:
-			'Six shapes turn on a table, each with an HTML label that follows it. The pointer lights up the shape under it, and a click outlines it and marks the point that the ray hit.',
+			'Six polished pieces turn on pedestals on a plinth in a dark gallery under spotlights, each with an HTML label that follows it. The pointer lights up the piece under it, and a click outlines it and marks the point that the ray hit.',
 		controls: `Point at a shape to light it up, and click or tap it to select it. ${CAMERA}`,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'math',
@@ -231,11 +239,12 @@ export const DEMOS: readonly Demo[] = [
 		group: 'Scale',
 		sketch: new URL('./far-from-origin/sketch.ts', import.meta.url),
 		title: 'Far from the origin',
-		scene: 'Keys and wheel',
+		scene: 'Keys and brass wheel',
 		summary:
-			'A tray of 2 cm keys and a spinning wheel 1,000 km from the origin, seen from 40 cm. Grid cells keep every position precise to a fraction of a millimeter.',
+			"A tray of 2 cm keys and a spinning brass wheel on a desk, 1,000 km from the origin, seen from 40 cm. Grid cells keep every position precise to a fraction of a millimeter, and a label gives the camera's distance from the origin.",
 		controls: CAMERA,
 		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'large-world',
@@ -244,10 +253,11 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Large worlds',
 		scene: 'Road at golden hour',
 		summary:
-			"A drive along a road on the Earth's surface, 6,378 km from the origin, under a sky with fog. Large-world mode keeps the 15 cm lane marks sharp and the camera smooth.",
+			"A drive along a road on the Earth's surface at golden hour, 6,378 km from the origin, lit by the sky, with hills that fade into the fog. Large-world mode keeps the 15 cm lane marks sharp and the camera smooth.",
 		controls: CAMERA,
 		hold: 3,
 		largeWorld: true,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'hold-mode',
@@ -256,8 +266,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Repeatable frames',
 		scene: 'Bouncing balls',
 		summary:
-			'400 balls drop from random places and bounce. Each live run differs, and the held frame is the same on every run.',
+			'400 glossy balls drop from random places into a pen and bounce. Each live run differs, and the held frame is the same on every run.',
 		controls: `${CAMERA} Move the mouse, or tap, to bring up a paddle that kicks the balls up.`,
 		hold: 3,
+		timeoutSeconds: 60,
 	},
 ];

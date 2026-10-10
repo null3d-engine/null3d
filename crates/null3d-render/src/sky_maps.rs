@@ -3,10 +3,11 @@
 //! a scene that holds its `Sky`.
 //!
 //! A sky map is a cube texture whose generator, which the thread that draws holds, made it ready
-//! for the sky. The map then fills in stages, one draw-list command each ([`Op::SkyMapStep`]):
-//! stage 0 draws the sky into the generator's chain of levels, stage `k` filters level `k` of the
-//! map from the chain for its roughness, and the last stage copies every level into the texture at
-//! once. Until that copy, frames draw with the map as it was. The first fill records every stage in
+//! for the sky. The map then fills in stages, one draw-list command each ([`Op::SkyMapStep`]). The
+//! thread that draws plans what each stage does, and the map knows only how many there are: the
+//! first stages draw the sky into the generator's chain of levels, the next ones filter the map's
+//! levels from the chain for their roughness, a few faces each, and the last stage copies every
+//! level into the texture at once. Until that copy, frames draw with the map as it was. The first fill records every stage in
 //! one frame, so the first frame that draws with the map already has its light. A later change of
 //! the sky refreshes the map one stage a frame, so no frame waits for the whole map. A change that
 //! comes while a refresh runs waits for it to end, and then starts the next one with the sky as it
@@ -34,6 +35,8 @@ type Sh = [[f32; 3]; 9];
 #[derive(Clone, Copy, Debug)]
 struct SkyMap {
     texture: Handle,
+    /// Its stages, the copy included.
+    stages: u32,
     /// The sky of the levels that frames draw with, and its diffuse light, once the map is full.
     shown: Option<(Sky, Sh)>,
     /// The fill under way: the next stage to record, and the sky and diffuse light that it makes.
@@ -60,12 +63,13 @@ impl SkyMaps {
         self.sky = Some(sky);
     }
 
-    /// Makes cube texture `texture` a sky map, which fills in the first frame after its generator
-    /// made it ready. A texture that is a sky map already stays one.
-    pub fn add(&mut self, texture: Handle) {
+    /// Makes cube texture `texture` a sky map of `stages` stages, at least 1, which fills in the
+    /// first frame after its generator made it ready. A texture that is a sky map already stays one.
+    pub fn add(&mut self, texture: Handle, stages: u32) {
         if self.maps.iter().all(|map| map.texture != texture) {
             self.maps.push(SkyMap {
                 texture,
+                stages: stages.max(1),
                 shown: None,
                 fill: None,
             });
@@ -100,7 +104,7 @@ impl SkyMaps {
             return Ok(());
         };
         for map in &mut self.maps {
-            let Some((id, levels, generator)) = textures.generated_cube(map.texture) else {
+            let Some((id, _, generator)) = textures.generated_cube(map.texture) else {
                 map.shown = None;
                 map.fill = None;
                 continue;
@@ -111,11 +115,12 @@ impl SkyMaps {
                 None => (0, sky, sky_sh(&sky)),
             };
             // A map that frames do not draw with yet fills whole at once.
-            let last = if map.shown.is_none() { levels } else { first };
+            let copy = map.stages - 1;
+            let last = if map.shown.is_none() { copy } else { first };
             for stage in first..=last {
                 push_stage(list, id, generator, stage, &sky)?;
             }
-            map.fill = if last == levels {
+            map.fill = if last == copy {
                 map.shown = Some((sky, sh));
                 None
             } else {

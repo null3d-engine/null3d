@@ -18,6 +18,8 @@ use null3d_render::view::{ViewFrame, ViewId};
 /// The width of the cube's largest faces, and its mip levels.
 const SIZE: u32 = 16;
 const LEVELS: u32 = 4;
+/// The map's stages, the copy included, which the thread that draws plans apart from the levels.
+const STAGES: u32 = 9;
 
 /// The stages that a frame records, each with its texture, its generator and its sun's position.
 fn stages(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, [f32; 3])> {
@@ -63,7 +65,7 @@ fn check_sky_maps<B: FrameBuilder>(
         .create_cube(SIZE, LEVELS, format::RGB9E5_UFLOAT)
         .unwrap();
     let generator = textures.set_generated(cube).unwrap();
-    settings.sky_maps_mut().add(cube);
+    settings.sky_maps_mut().add(cube, STAGES);
     settings.set_environment(Some(Environment {
         texture: cube,
         intensity: 1.0,
@@ -100,7 +102,7 @@ fn check_sky_maps<B: FrameBuilder>(
         .position(|(op, _)| *op == Op::SkyMapStep)
         .unwrap();
     assert!(generated < first_stage);
-    let all: Vec<_> = (0..=LEVELS)
+    let all: Vec<_> = (0..STAGES)
         .map(|stage| (id, generator, stage, noon))
         .collect();
     assert_eq!(stages(&commands), all);
@@ -121,7 +123,7 @@ fn check_sky_maps<B: FrameBuilder>(
         .renderer
         .settings_mut()
         .set_background_source(Some(sky(low)));
-    for stage in 0..=LEVELS {
+    for stage in 0..STAGES {
         if stage == 2 {
             // A change during the refresh waits for it to end.
             world
@@ -132,7 +134,7 @@ fn check_sky_maps<B: FrameBuilder>(
         let commands = world.step(&mut mock, false);
         assert_eq!(stages(&commands), [(id, generator, stage, low)]);
         let light = frame_of(&world.renderer).unwrap().sh;
-        if stage < LEVELS {
+        if stage < STAGES - 1 {
             assert_eq!(light, noon_light, "stage {stage} keeps the old light");
         } else {
             assert_ne!(light, noon_light, "the last stage takes the new light");
@@ -141,7 +143,7 @@ fn check_sky_maps<B: FrameBuilder>(
     // The change that came during the refresh starts the next one.
     let commands = world.step(&mut mock, false);
     assert_eq!(stages(&commands), [(id, generator, 0, noon)]);
-    for _ in 1..=LEVELS {
+    for _ in 1..STAGES {
         world.step(&mut mock, false);
     }
     assert_eq!(frame_of(&world.renderer).unwrap().sh, noon_light);
@@ -152,7 +154,7 @@ fn check_sky_maps<B: FrameBuilder>(
     let mut fresh = MockBackend::default();
     fresh.provide_generator(generator);
     let commands = world.step(&mut fresh, true);
-    assert_eq!(stages(&commands).len(), LEVELS as usize + 1);
+    assert_eq!(stages(&commands).len(), STAGES as usize);
 
     // A destroyed map records nothing more.
     let frame = world.frame;
