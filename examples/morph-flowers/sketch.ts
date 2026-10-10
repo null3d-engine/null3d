@@ -2,7 +2,7 @@
 // with geometry.fromArrays: six cupped petals, closed into a bud. One morph target, "Open", holds
 // how each vertex moves, how its normal turns and how its color changes from a green-tinted bud to
 // the full color. The tulips of a color share one mesh, and setMorphWeight sets each one's weight.
-import { defineSketch, type MeshOptions, math, timeOfDay, type Vec3, vec3 } from '@null3d/engine';
+import { defineSketch, type MeshOptions, math, quat, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
 /** Petals per head, the grid of each petal, and a petal's length and width, in metres. */
@@ -13,7 +13,7 @@ const HUES = [0.8, 0.03, 0.06, 0.95, 0.65, 0.04, 0.9, 0.88, 0.82, 0.45, 0.05, 0.
 const [BUD, ROWS, COLUMNS] = [[0.1, 0.3, 0.05], 6, 12] as const;
 
 /** The point of petal `p` at (u, v), with u across it from -1 to 1 and v from its base to its tip. */
-function petal(out: Vec3, p: number, u: number, v: number, open: number): Vec3 {
+function petal(out: number[], p: number, u: number, v: number, open: number): number[] {
 	// The petal's spine leans out more as it rises, and far more when the tulip opens.
 	let [r, y] = [0.006 - (p % 2) * 0.002, 0];
 	for (let i = 0; i < 8; i++) {
@@ -122,11 +122,13 @@ export default defineSketch(async (ctx) => {
 	const greens = ['#1d3816', '#33612a', '#4f8034'].map((color) => materials.standard({ color }));
 	part({ material: greens[0], position: [0, 0.2, -1.45], scale: [6, 0.4, 0.4] });
 	const sprig = geometry.sphere({ widthSegments: 6, heightSegments: 4 });
+	const leaves = greens.map((material) => scene.createInstances(sprig, 800, { material }));
 	for (let k = 0, r = math.randFloat; k < 2400; k++) {
 		const [x, y, z] = [r(-3, 3), r(0.01, 0.41), k % 4 ? -1.24 : r(-1.65, -1.25)];
-		const leafy = { mesh: sprig, material: greens[k % 3], scale: [0.025, 0.004, 0.015] } as const;
-		const placed = part({ ...leafy, position: [x, z < -1.24 ? 0.41 : y, z], castShadows: false });
-		placed.setRotationEuler(r(0, 6), r(0, 6), r(0, 6));
+		const [batch, row] = [leaves[k % 3], Math.floor(k / 3)];
+		batch.positions.set([x, z < -1.24 ? 0.41 : y, z], row * 3);
+		batch.scales.set([0.025, 0.004, 0.015], row * 3);
+		batch.rotations.set(quat.fromEuler([0, 0, 0, 1], r(0, 6), r(0, 6), r(0, 6)), row * 4);
 	}
 
 	return {
