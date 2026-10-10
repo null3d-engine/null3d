@@ -162,7 +162,8 @@ const dissolve = materials.shader({
 - Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
 - The fields fit in 32 numbers, less one for each texture; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
-- Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
+- Per-instance data (0.2): `createInstances(mesh, count, { material, values: true })` gives each row four floats in `batch.values`, which the WGSL reads as `object.values` in `vertexOffset` and `surface`. Objects and rows without values read zeros. `colors: true` tints each row through `input.vertexColor`, with no WGSL. (`concepts/instances`, Per-row values)
+- A material with a `vertexOffset` casts shadows that follow the offset (0.2), so swaying grass casts swaying shadows. Its shadows draw again in every frame, as moving objects' do.
 
 Textures (0.2): declare each one as `var name: texture_2d<f32>;`, with no `@group` or `@binding`, and pass it by name in the `textures` option. The engine declares its sampler as `nameSampler`, with the texture's `wrap` and `filter` options:
 

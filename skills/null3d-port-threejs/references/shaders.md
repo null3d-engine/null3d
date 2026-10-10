@@ -81,7 +81,8 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 | `normalMatrix` (view space in three.js) | `input.normal` is already in world space. View space needs `camera.view` (0.2) |
 | `cameraPosition` | `camera.position` |
 | Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.normal` |
-| `instanceMatrix`, `instanceColor` | The engine applies the instance's transform. Instance batches store colors but draw them only from 0.2 |
+| `instanceMatrix`, `instanceColor` | The engine applies the instance's transform. A batch made with `colors: true` multiplies each row's color into `input.vertexColor` (0.2; 0.1 stores the colors only) |
+| Instanced attributes (`InstancedBufferAttribute`), such as a per-instance phase or tint | `object.values` (0.2): four floats per row from a batch made with `values: true`, in `vertexOffset` and surface functions. Pack up to four numbers per instance into them |
 | Uniform `time` passed by the app | `frame.time` |
 | `#include <fog_fragment>` and fog uniforms | Nothing: fog is applied after the surface function |
 | `#include <tonemapping_fragment>`, `<colorspace_fragment>` | Delete: the final pass does both, once |

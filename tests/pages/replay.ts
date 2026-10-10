@@ -314,7 +314,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		16,
+		17,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -332,6 +332,8 @@ run('replay', async () => {
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
 		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
+		// The row values of instance batches, which only shaders built for them read.
+		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

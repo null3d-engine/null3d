@@ -1627,6 +1627,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Instance batches whose rows bring colors: lit, unlit, mapped, masked and blended rows, from
+	// static and dynamic batches, beside rows of the same pairs without colors.
+	{
+		name: 'row-colors',
+		sketch: 'tests/pages/sketches/row-colors-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Instance batches whose rows bring values: grass that sways out of step and takes a tint per
+	// blade, from a static and a dynamic batch, with shadows that sway with it, at two moments of
+	// the wind.
+	...(
+		[
+			['row-values', 1],
+			['row-values-later', 1.4],
+		] as const
+	).map(([name, hold]) => ({
+		name,
+		sketch: 'tests/pages/sketches/row-values-sketch.ts',
+		hold,
+		size: [480, 270] as const,
+	})),
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a

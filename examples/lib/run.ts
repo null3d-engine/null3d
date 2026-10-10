@@ -48,6 +48,9 @@ export async function startDemo({
 		stats: stats && { collapsed: true },
 	});
 	if (labels) showLabels(engine, labels);
+	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
+	if (demo.pointerLock)
+		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
 	return engine;
 }
 

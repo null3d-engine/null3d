@@ -1126,12 +1126,19 @@ pub fn draw_debug_lines(points: u32) -> u32 {
 
 // --- Instance batches ---
 
-/// Creates an instance batch of one mesh and one material, and returns its id.
+/// Creates an instance batch of one mesh and one material, and returns its id. With `row_values`,
+/// each row has a colour and four values of its own, which shaders read.
 #[wasm_bindgen(js_name = createBatch)]
-pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, material: u32) -> u32 {
+pub fn create_batch(
+    capacity: u32,
+    dynamic: bool,
+    row_values: bool,
+    mesh: u32,
+    material: u32,
+) -> u32 {
     value_with_engine(|e| {
         add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create(capacity, dynamic, colors, mesh, material, radius)
+            batches.create(capacity, dynamic, row_values, mesh, material, radius)
         })
     })
 }
@@ -1139,14 +1146,14 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
 /// Creates one part of a model as an instance batch, and returns its id: a mesh and a material,
 /// placed in the space of each row by `part`, 12 numbers of a 3 × 4 matrix by rows. With a
 /// `source` batch other than 0, the part reads that batch's rows, and takes its capacity, its
-/// dynamic flag and its colors; without one, it owns `capacity` rows.
+/// dynamic flag and whether its rows have row values; without one, it owns `capacity` rows.
 #[wasm_bindgen(js_name = createBatchPart)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_batch_part(
     source: u32,
     capacity: u32,
     dynamic: bool,
-    colors: bool,
+    row_values: bool,
     mesh: u32,
     material: u32,
     part: &[f32],
@@ -1162,7 +1169,7 @@ pub fn create_batch_part(
         matrix[..n].copy_from_slice(&part[..n]);
         add_batch(e, capacity, mesh, |batches, radius| {
             batches.create_part(
-                source, capacity, dynamic, colors, mesh, material, radius, matrix,
+                source, capacity, dynamic, row_values, mesh, material, radius, matrix,
             )
         })
     })
@@ -1293,7 +1300,8 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
-/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
+/// a row), rotations (4), scales (3), colors (4) or values (4), the last two 0 for a batch without
+/// row values. A sprite
 /// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
 /// (one 32-bit integer a row), and 0 for scales. A line batch has positions (3 floats a point) and
 /// colors (3 floats a point), and 0 for the others. Every batch also has the words of its dirty
@@ -1331,7 +1339,8 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             batch_field::POSITIONS => address(batch.positions()),
             batch_field::ROTATIONS => address(batch.rotations()),
             batch_field::SCALES => address(batch.scales()),
-            batch_field::COLORS if batch.has_colors() => address(batch.colors()),
+            batch_field::COLORS if batch.has_row_values() => address(batch.colors()),
+            batch_field::VALUES if batch.has_row_values() => address(batch.values()),
             _ => 0,
         })
     })
@@ -1912,6 +1921,8 @@ pub fn create_material(
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
             textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
             transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
+            row_values: custom & shading::CUSTOM_ROW_VALUES != 0,
+            caster: custom & shading::CUSTOM_CASTER != 0,
         }),
         _ => Shading::Lit,
     };

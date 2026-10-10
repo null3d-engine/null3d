@@ -49,6 +49,8 @@ import {
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
+	SHADING_CUSTOM_CASTER,
+	SHADING_CUSTOM_ROW_VALUES,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_CUSTOM_TRANSMISSION,
 	SHADING_LIT,
@@ -64,7 +66,11 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
-import { PERMUTATION_TRANSMISSION } from '../generated/gpu';
+import {
+	PERMUTATION_CASTER,
+	PERMUTATION_ROW_VALUES,
+	PERMUTATION_TRANSMISSION,
+} from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -1095,9 +1101,14 @@ function customShader(compiled: CompiledMaterial): CustomShader {
 	};
 }
 
+/** True when one of a custom material's builds has any of the permutation bits of `bits`. */
+function builds(compiled: CompiledMaterial, bits: number): boolean {
+	return Object.values(compiled.variants).some((v) => v.permutation & bits);
+}
+
 /** True when a custom material's WGSL has the builds that let light through. */
 function lets(compiled: CompiledMaterial): boolean {
-	return Object.values(compiled.variants).some((v) => v.permutation & PERMUTATION_TRANSMISSION);
+	return builds(compiled, PERMUTATION_TRANSMISSION);
 }
 
 /** Every value of either material, which `set` writes. */
@@ -1692,7 +1703,9 @@ export class Materials {
 			(compiled.attributes << SHADING_CUSTOM_ATTRIBUTE_SHIFT) |
 			(compiled.baseColor ? SHADING_CUSTOM_BASE_COLOR : 0) |
 			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT) |
-			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0);
+			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0) |
+			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
+			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);

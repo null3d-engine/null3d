@@ -156,23 +156,27 @@ export interface CoreGlue extends CoreErrors {
 	debugLineArrays(field: number): number;
 	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
 	drawDebugLines(points: number): number;
+	/**
+	 * Creates an instance batch. With `rowValues`, each row has a color and four values of its
+	 * own, which shaders read.
+	 */
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
-		colors: boolean,
+		rowValues: boolean,
 		mesh: number,
 		material: number,
 	): number;
 	/**
 	 * Creates one part of a model as a batch: `part` places the mesh in the space of each row, 12
 	 * numbers of a 3 × 4 matrix by rows. With a `source` batch other than 0, it reads that batch's
-	 * rows and takes its capacity, dynamic flag and colors.
+	 * rows and takes its capacity, dynamic flag and row values.
 	 */
 	createBatchPart(
 		source: number,
 		capacity: number,
 		dynamic: boolean,
-		colors: boolean,
+		rowValues: boolean,
 		mesh: number,
 		material: number,
 		part: Float32Array,

@@ -96,7 +96,7 @@ boxes.markDirty();
 color.fromHex(rgb, '#ff8800'); // the linear RGB of an sRGB hex color
 ```
 
-This version stores a batch's colors but does not draw them yet, so every row shows its material's color.
+Each row's color multiplies its material's base color and opacity, as [Instances and batching](../concepts/instances.md#per-row-colors) explains. `color.fromHsl` and `color.fromHex` write three numbers, so a row keeps its alpha.
 
 ## Random numbers
 

@@ -325,6 +325,7 @@ post.set({ toneMapping: reinhard });
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
 - [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.
+- [The depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens): the focus racks across a chess board with `focusPoint`, while a dolly zoom changes the camera's focal length in every frame.
 
 ## API reference
 
