@@ -40,7 +40,21 @@ Some views have no copy of the opaque colors. There, without an environment, sur
 
 ## Data
 
-<filled in below>
+Parity with three.js r186, by three.js's image rule (under 0.1% of pixels), on 10 October 2026. The figures give the share of pixels that differ from three.js's page on the same GPU path.
+
+| Scene | WebGPU | Compatibility mode | WebGL2 | three.js's two renderers | Device |
+| --- | --- | --- | --- | --- | --- |
+| `lights-hemisphere`: one hemisphere light and a dim ambient light | 0.000% | 0.000% | 0.000% | 0.020% | MacBook Pro (Apple M5 Max), Chrome |
+| The same | 0.000% | 0.000% | 0.000% | 0.014% | SwiftShader, Playwright's Chromium |
+| `environment-room-hemisphere`: the room and a hemisphere light | 0.008% | 0.284% | 0.008% | 0.334% | MacBook Pro, Chrome |
+| The same | 0.009% | 0.271% | 0.008% | 0.356% | SwiftShader |
+| `environment-room`, without the hemisphere light, for comparison | 0.008% | 0.269% | 0.008% | 0.316% | MacBook Pro, Chrome |
+
+Compatibility mode's figures with the room pass because three.js's two renderers differ more. They come from the room, not from the hemisphere light: the room alone gives the same figures.
+
+The `lights-hemisphere-split` test draws the light as two halves, one upside down with its colors swapped, set in every frame. It matched the single light's references on all three paths, on the Mac's GPU and on SwiftShader.
+
+How the data was produced: `bun run parity -- --scene lights-hemisphere,environment-room-hemisphere,lights-16,environment-room` on the Mac, and the same with `CI=1` for SwiftShader. `bun run test:images` on both sets: 9 of 9 hemisphere tests pass on the Mac, and 106 of 106 tests of lights, materials, environments, lines, transmission, reflections and time of day pass on SwiftShader. The shader library test passes on both, with `ambient_irradiance` among its cases.
 
 ## Decision
 
@@ -50,5 +64,6 @@ Option B. The core sums the hemisphere lights in the frame's light pass (`LightT
 
 - `docs/api/lights.md` and `docs/concepts/lighting.md` describe hemisphere lights and the rule for environments, and drop the note that they do not light yet. The three.js mapping and both skills follow.
 - The image tests add `lights-hemisphere`, `lights-hemisphere-split` and `environment-room-hemisphere`. The parity list compares the first and the last with three.js.
+- Every shader that declares the frame's values carries the three new fields. After Brotli, the WebGPU builds of the lines grew by 150 bytes (2.3%), and the small texture coordinate builds by 67 to 72 bytes (2.8% and 3.9%). Every other file grew by less than 2%.
 - `bun run bench:allocation --hemisphere` samples S1 with two hemisphere lights whose intensities change in every frame.
 - three.js points a hemisphere light's sky from its position toward the origin. null3D points it along the light's +Y axis, as before this record. A port turns the light where three.js moves it.
