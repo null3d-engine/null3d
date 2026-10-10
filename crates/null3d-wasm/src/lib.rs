@@ -99,6 +99,12 @@ extern "C" {
     /// The browser's clock, in milliseconds, on the thread that calls it.
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
     fn performance_now() -> f64;
+    /// Asks the thread's host for job workers, which it starts as the work grows: the global
+    /// function that the module with the job workers' task ports defines (`shared/task-host.ts`)
+    /// in each thread that runs a sketch. The job system calls it when it queues a background task
+    /// before any job worker has joined.
+    #[wasm_bindgen(js_namespace = globalThis, js_name = __null3dWantJobWorkers)]
+    fn want_job_workers();
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -480,6 +486,7 @@ pub fn init_engine(
             .set(JobSystem::with_config(JobConfig {
                 workers: job_workers,
                 clock: Some(performance_now),
+                want_workers: Some(want_job_workers),
                 ..JobConfig::default()
             }))
             .is_ok(),

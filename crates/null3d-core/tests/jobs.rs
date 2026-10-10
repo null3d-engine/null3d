@@ -5,13 +5,15 @@
 
 mod common;
 
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use common::{Workers, wait_for_every_thread, wait_until};
-use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 
 /// Busy-waits for `d`, so the thread stays on its core the way real work would.
 fn spin_for(d: Duration) {
@@ -239,6 +241,62 @@ fn background_tasks_run_exactly_once_on_job_workers() {
     });
     assert_eq!(BACKGROUND_RUNS.load(Ordering::Relaxed), 500);
     assert_eq!(pool.jobs().pending_background(), 0);
+}
+
+/// The job system of the test below, which its hook reaches.
+static LATE_JOBS: OnceLock<Arc<JobSystem>> = OnceLock::new();
+/// The job worker that the hook started.
+static LATE_WORKER: Mutex<Option<JoinHandle<LoopExit>>> = Mutex::new(None);
+/// The times that the job system asked for job workers.
+static WANTED: AtomicU32 = AtomicU32::new(0);
+/// The background tasks that ran in the test below.
+static LATE_RUNS: AtomicU32 = AtomicU32::new(0);
+
+/// The host's hook: starts a job worker the first time, as a page that starts its job workers as
+/// the work grows does.
+fn start_a_job_worker() {
+    if WANTED.fetch_add(1, Ordering::SeqCst) == 0 {
+        let jobs = Arc::clone(LATE_JOBS.get().expect("the job system exists"));
+        *LATE_WORKER.lock().unwrap() = Some(std::thread::spawn(move || jobs.worker_loop(0)));
+    }
+}
+
+fn count_late_run(_: u64, worker: WorkerId) {
+    assert_ne!(worker, WorkerId::CALLER);
+    LATE_RUNS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[test]
+fn a_background_task_queued_before_any_job_worker_joined_asks_for_one_and_runs() {
+    let jobs = LATE_JOBS.get_or_init(|| {
+        Arc::new(JobSystem::with_config(JobConfig {
+            workers: 2,
+            want_workers: Some(start_a_job_worker),
+            ..JobConfig::default()
+        }))
+    });
+    let task = BackgroundTask {
+        run: count_late_run,
+        arg: 0,
+    };
+    jobs.spawn_background(task).unwrap();
+    wait_until(
+        "the task to run on the job worker that it asked for",
+        || LATE_RUNS.load(Ordering::SeqCst) >= 1,
+    );
+    // A job worker has joined, so the next task asks for none.
+    jobs.spawn_background(task).unwrap();
+    wait_until("the second task to run", || {
+        LATE_RUNS.load(Ordering::SeqCst) >= 2
+    });
+    assert_eq!(WANTED.load(Ordering::SeqCst), 1);
+    jobs.shutdown();
+    let worker = LATE_WORKER
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the hook started a job worker");
+    assert_eq!(worker.join().unwrap(), LoopExit::Stopped);
 }
 
 /// Numbers that every thread draws from one sequence, so a test can order what the threads did

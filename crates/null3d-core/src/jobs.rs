@@ -64,7 +64,9 @@
 //! left to claim, and it checks for frame work again before each further task. A worker already
 //! inside a task when a frame job starts joins the job when that task ends, so background work
 //! delays a frame job's helpers by at most one task each, and never blocks the caller, which
-//! runs any chunk no worker has taken.
+//! runs any chunk no worker has taken. A host may start its job workers only as the work asks for
+//! them: then a task queued before any job worker has joined calls the host's hook from the
+//! settings, so the host starts some, and no queued task waits for a worker that never starts.
 //!
 //! # Calls from the host
 //!
@@ -118,6 +120,10 @@ pub type ChunkFn<'a> = dyn Fn(Range<u32>, WorkerId) + Sync + 'a;
 /// in native tests. Any thread may call it.
 pub type Clock = fn() -> f64;
 
+/// Asks the host to start job workers. The system calls it on the thread that queues a background
+/// task while no job worker has joined.
+pub type WantWorkers = fn();
+
 /// Identifies the thread running a chunk: [`WorkerId::CALLER`] for the thread that called
 /// [`JobSystem::parallel_for`], and `i + 1` for job worker `i`. Use it to index per-thread data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -168,6 +174,9 @@ pub struct JobConfig {
     pub spin_rounds: u32,
     /// The clock that times each job worker's work, or `None` to time nothing.
     pub clock: Option<Clock>,
+    /// The hook that asks the host for job workers when a background task is queued before any
+    /// has joined, or `None` for a host that starts them all at once.
+    pub want_workers: Option<WantWorkers>,
 }
 
 impl Default for JobConfig {
@@ -177,6 +186,7 @@ impl Default for JobConfig {
             background_capacity: DEFAULT_BACKGROUND_CAPACITY,
             spin_rounds: DEFAULT_SPIN_ROUNDS,
             clock: None,
+            want_workers: None,
         }
     }
 }
@@ -227,6 +237,9 @@ pub struct JobSystem {
     spin_rounds: u32,
     background: TaskQueue,
     clock: Option<Clock>,
+    want_workers: Option<WantWorkers>,
+    /// True once a job worker has entered [`JobSystem::worker_loop`].
+    joined: AtomicBool,
     /// Nanoseconds of work per job worker since its total was last taken.
     busy_ns: Box<[CachePadded<AtomicU64>]>,
     /// True while each job worker runs a frame chunk that it has not counted as done.
@@ -280,6 +293,8 @@ impl JobSystem {
             spin_rounds: config.spin_rounds,
             background: TaskQueue::new(config.background_capacity),
             clock: config.clock,
+            want_workers: config.want_workers,
+            joined: AtomicBool::new(false),
             busy_ns: (0..workers)
                 .map(|_| CachePadded(AtomicU64::new(0)))
                 .collect(),
@@ -395,13 +410,20 @@ impl JobSystem {
     }
 
     /// Queues a background task. Fails with [`CoreError::CapacityExceeded`] when the queue is
-    /// full. With no job workers, tasks wait for [`JobSystem::run_background_tasks`].
+    /// full. With no job workers, tasks wait for [`JobSystem::run_background_tasks`]. Before any
+    /// job worker has joined, it asks the host for job workers through the settings' hook.
     pub fn spawn_background(&self, task: BackgroundTask) -> Result<(), CoreError> {
         if !self.background.push(task) {
             return Err(CoreError::CapacityExceeded {
                 resource: Resource::BackgroundTasks,
                 capacity: self.background.capacity(),
             });
+        }
+        if self.workers > 0
+            && !self.joined.load(Ordering::Acquire)
+            && let Some(want) = self.want_workers
+        {
+            want();
         }
         self.wake_workers(false);
         Ok(())
@@ -457,6 +479,7 @@ impl JobSystem {
         let Some(calls) = self.calls.get(worker_index as usize) else {
             return LoopExit::Stopped;
         };
+        self.joined.store(true, Ordering::Release);
         let me = WorkerId::job_worker(worker_index);
         let previous = CURRENT_WORKER.with(|c| c.replace(me.0));
         let mut idle_rounds = 0;

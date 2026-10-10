@@ -15,7 +15,6 @@
 import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
 import { DEV } from '../shared/dev';
-import { jobTasks } from '../shared/task-host';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
 import type { CoreMemory } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
@@ -977,9 +976,6 @@ export async function loadAnimationRig(scene: Scene, data: RigData): Promise<Ani
 /** Makes the clips of a rig whose skeleton `start` stored, on the job workers. */
 async function finishLoad(start: RigStart, data: RigData): Promise<AnimationRig> {
 	const { core } = start;
-	// The engine starts its job workers as the work asks for them, and only job workers resample the
-	// clips, so the clips ask for the first job workers, as the loader's tasks do.
-	jobTasks()?.want(2);
 	const tickets = data.clips.map((clip) => {
 		stageClip(core, clip);
 		const call = `the clip "${clip.name}"`;
