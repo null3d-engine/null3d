@@ -159,6 +159,13 @@ The sky takes the names and the defaults of three.js's `Sky` uniforms:
 | `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
 | `showSunDisc` | true | Whether the sky shows the sun's disc |
 
+Two more settings are null3D's own. They add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
+
+| Setting | Default | What it sets |
+| --- | --- | --- |
+| `secondSunPosition` | `[0, 1, 0]` | A point toward the second sky's sun. The second sky has the first sky's air and clouds |
+| `secondSkyWeight` | 0 | The weight of the second sky's light beside the first sky's. 0 draws no second sky and costs nothing |
+
 ```ts
 import { defineSketch } from '@null3d/engine';
 
@@ -236,7 +243,7 @@ The fog does not cover the background, so give the background the fog's color to
 
 ## Time of day
 
-`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects.
+`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

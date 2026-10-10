@@ -99,6 +99,12 @@ extern "C" {
     /// The browser's clock, in milliseconds, on the thread that calls it.
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
     fn performance_now() -> f64;
+    /// Asks the thread's host for job workers, which it starts as the work grows: the global
+    /// function that the module with the job workers' task ports defines (`shared/task-host.ts`)
+    /// in each thread that runs a sketch. The job system calls it when it queues a background task
+    /// before any job worker has joined.
+    #[wasm_bindgen(js_namespace = globalThis, js_name = __null3dWantJobWorkers)]
+    fn want_job_workers();
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -480,6 +486,7 @@ pub fn init_engine(
             .set(JobSystem::with_config(JobConfig {
                 workers: job_workers,
                 clock: Some(performance_now),
+                want_workers: Some(want_job_workers),
                 ..JobConfig::default()
             }))
             .is_ok(),
@@ -691,6 +698,23 @@ pub fn job_worker_calls(index: u32) -> u32 {
 pub fn job_worker_failed(index: u32) {
     if let Some(jobs) = JOBS.get() {
         jobs.worker_failed(index);
+    }
+}
+
+/// The whole microseconds that the sketch thread spent in parallel loops that it handed out since
+/// the last call, which starts the total again from zero. The page starts job workers as it grows.
+#[wasm_bindgen(js_name = takeHandedUs)]
+pub fn take_handed_us() -> u32 {
+    JOBS.get().map_or(0, JobSystem::take_handed_us)
+}
+
+/// Starts or stops the timing of the parallel loops that the sketch thread hands out. Each timing
+/// reads the browser's clock, which allocates, so the sketch thread times them only while it may
+/// ask for more job workers.
+#[wasm_bindgen(js_name = timeHandedLoops)]
+pub fn time_handed_loops(on: bool) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.time_handed_loops(on);
     }
 }
 
@@ -3014,6 +3038,8 @@ fn sky_of(values: &[f32]) -> Sky {
         cloud_elevation: value(at::CLOUD_ELEVATION),
         time: value(at::TIME),
         sun_disc: value(at::SUN_DISC) > 0.0,
+        second_sun_position: std::array::from_fn(|k| value(at::SECOND_SUN_POSITION + k as u32)),
+        second_sky_weight: value(at::SECOND_SKY_WEIGHT),
     }
 }
 

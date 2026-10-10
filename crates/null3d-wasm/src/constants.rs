@@ -223,8 +223,11 @@ pub mod background_value {
     pub const TIME: u32 = 17;
     /// 1 where the sky shows the sun's disc, else 0.
     pub const SUN_DISC: u32 = 18;
+    /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
+    pub const SECOND_SUN_POSITION: u32 = 19;
+    pub const SECOND_SKY_WEIGHT: u32 = 22;
     /// The values in the block.
-    pub const COUNT: u32 = 19;
+    pub const COUNT: u32 = 23;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -968,6 +971,8 @@ pub fn typescript() -> String {
                 ("CLOUD_ELEVATION", background_value::CLOUD_ELEVATION),
                 ("TIME", background_value::TIME),
                 ("SUN_DISC", background_value::SUN_DISC),
+                ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
+                ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
                 ("COUNT", background_value::COUNT),
             ],
         ),

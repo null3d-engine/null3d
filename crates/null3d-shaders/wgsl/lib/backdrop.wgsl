@@ -11,7 +11,7 @@ struct Backdrop {
     /// each in `xyz`.
     rotation: array<vec4f, 3>,
     /// The factor of the background's light, the blur as a roughness from 0 to 1, the cube map's
-    /// last mip level, and a spare.
+    /// last mip level, and the weight of the sky's second sky, 0 for none.
     params: vec4f,
     /// The sky's sun position in `xyz`, as three.js's `sunPosition`, and 1 where the sky shows the
     /// sun's disc, else 0.
@@ -20,7 +20,8 @@ struct Backdrop {
     scattering: vec4f,
     /// The sky's cloud scale, cloud speed, cloud coverage and cloud density.
     clouds: vec4f,
-    /// The sky's cloud elevation, its time in seconds, and two spares.
+    /// The sky's cloud elevation, its time in seconds, and its second sky's sun as a heading and an
+    /// elevation in radians.
     cloud_place: vec4f,
 }
 

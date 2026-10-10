@@ -1,12 +1,13 @@
 // The render worker: owns the canvas and every GPU object, runs no sketch code, and draws only inside
-// its own requestAnimationFrame callback. The canvas cannot go back to the page once it is here, so
-// when the engine stops, the worker keeps it: it frees its GPU device and lets go of the engine's
-// core, and the next engine on the same canvas starts it again with a core of its own.
+// its own requestAnimationFrame callback. It reads the draw lists and the scene straight from the
+// shared memory, so it runs no copy of the engine's core. The canvas cannot go back to the page once
+// it is here, so when the engine stops, the worker keeps it: it frees its GPU device and lets go of
+// the engine's memory, and the next engine on the same canvas starts it again with its own.
 
+import { setErrorFixes } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
 import { controlViews } from '../shared/control';
-import type { CoreGlue } from '../shared/core';
 import { setWakeByMessage } from '../shared/wake';
 import { DrawingHost } from './drawing-host';
 import {
@@ -17,15 +18,13 @@ import {
 	type ShaderPreload,
 	startSteps,
 	startWorker,
-	startWorkerCore,
 } from './protocol';
 
 let host = new DrawingHost();
 let controlSlots: Int32Array | undefined;
 /** The canvas that the first engine moved here, which every later engine draws on. */
 let canvas: OffscreenCanvas | undefined;
-/** The running engine's core and image port, which a park lets go of. */
-let core: CoreGlue | undefined;
+/** The running engine's image port, which a park lets go of. */
 let imagePort: MessagePort | undefined;
 
 const step = startSteps('render');
@@ -45,7 +44,7 @@ startWorker(
 				imagePort = message.imagePort;
 				controlSlots = controlViews(message.control).slots;
 				setWakeByMessage(message.wakeByMessage);
-				core = (await startWorkerCore(message, step)).glue;
+				setErrorFixes(message.errorFixes);
 				const drawing = await host.start(
 					startDrawing({
 						...message,
@@ -62,8 +61,7 @@ startWorker(
 				replyToPage({
 					type: 'ready',
 					role: 'render',
-					threaded: core.isThreadedBuild(),
-					version: core.engineVersion(),
+					threaded: message.build === 'threaded',
 					tier: drawing.renderer.tier,
 				});
 			} catch (e) {
@@ -85,8 +83,6 @@ startWorker(
 			imagePort?.close();
 			imagePort = undefined;
 			controlSlots = undefined;
-			core?.releaseInstance?.();
-			core = undefined;
 		}
 	},
 );
