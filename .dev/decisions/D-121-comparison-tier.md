@@ -98,7 +98,7 @@ The [run's record](../tested-devices/macbook-pro-chrome/20261010-092218-factory-
 | three.js, WebGPURenderer | 0 | 81 ms (12 fps) | 158 ms (6 fps) | 381 ms (3 fps) | 489 MiB |
 
 - null3D held 22 to 27 times the count of three.js's faster renderer. Every null3D figure in the table ran at 120 frames a second.
-- three.js's time is almost all in its render calls: at 50,000 parts, 108 of its 112 ms. Its renderer walks the scene graph to work out the world matrices, and draws each part on its own. null3D works out the trees on its job workers and draws the parts that share a mesh and a material together, in 117 draws at every count.
+- three.js's time is almost all in its render calls: at 50,000 parts, 108 of its 112 ms. Its renderer walks the scene graph to work out the world matrices, and draws each part on its own. null3D works out the trees on its job workers. It draws the parts that share a mesh and a material together, in 117 draws at every count.
 - WebGPURenderer held no step: at 2,000 parts it drew 50 frames a second.
 - null3D's page needs more memory at small counts. At 10,000 parts, null3D's page took 134 MiB on WebGPU, and three.js's 35 MiB. An earlier probe put null3D's floor at about 84 MiB at 2,000 parts: its WebAssembly memory, and the JavaScript of each engine worker. From 10,000 to 50,000 parts, each added object took 1.9 KB in null3D and 1.3 KB in three.js.
 
@@ -114,12 +114,12 @@ The [run's record](../tested-devices/macbook-pro-chrome/20261010-092218-factory-
 - null3D on WebGPU held the ramp's top, and three.js's WebGLRenderer held 190,792. null3D's busiest thread took less time at every count.
 - null3D on WebGL2 stopped at 63,896, with only 2.1 ms on its busiest CPU thread at that step. So the limit is in the GPU's work or the browser's WebGL2 layer. These runs did not find it.
 - three.js's page needs far less memory here: 17 MiB against null3D's 115 MiB on WebGPU. Each copy is one matrix in three.js, and null3D's floor of threads and memory stays.
-- The null3D rows in this table come from a later build than the rest: after main's merge of 10 October 2026, with the batches casting and receiving the spot lights' shadows, as three.js's batches did in every run. Before that merge, null3D's batches drew no shadows, and its page took 252 MiB, since every job worker started at once. The three.js half did not change between the builds.
+- The null3D rows in this table come from a later build than the rest, after main's merge of 10 October 2026. In it, the batches cast and receive the spot lights' shadows, as three.js's batches did in every run. Before that merge, null3D's batches drew no shadows, and its page took 252 MiB, since every job worker started at once. The three.js half did not change between the builds.
 - WebGPURenderer held no step at the display's full rate. It held 2,400 parts at half the rate.
 
 ### The first run
 
-The first run, on 9 October 2026, measured the first build: a null3D tree against three.js's batches, on the development server, with room in null3D for the ramp's top at every count, at 60 frames a second. Every engine held the ramp's top of 50,000. Its figures measured two different programs, so these figures replace them. Its [record](../tested-devices/macbook-pro-chrome/20261009-125644-factory-ramp.md) stays.
+The first run, on 9 October 2026, measured the first build: a null3D tree against three.js's batches, on the development server. null3D made room for the ramp's top at every count, and the window ran at 60 frames a second. Every engine held the ramp's top of 50,000. Its figures measured two different programs, so these figures replace them. Its [record](../tested-devices/macbook-pro-chrome/20261009-125644-factory-ramp.md) stays.
 
 ## Device sitting before Factory goes on the page
 
