@@ -16,8 +16,11 @@ const HEADER = `${OVERLAY} button[aria-controls]`;
 /** The overlay's card of figures. */
 const CARD = `${OVERLAY} .card`;
 /** The button of the frame mode's symbol, and its tooltip. */
-const MODE_BUTTON = `${OVERLAY} button[aria-describedby]`;
-const TOOLTIP = `${OVERLAY} [role=tooltip]`;
+const MODE_BUTTON = `${OVERLAY} button[aria-describedby=mode-tip]`;
+const TOOLTIP = `${OVERLAY} #mode-tip`;
+/** The button of the target's symbol, and its tooltip. */
+const TARGET_BUTTON = `${OVERLAY} button[aria-describedby=target-tip]`;
+const TARGET_TIP = `${OVERLAY} #target-tip`;
 
 const MODES = [
 	...ENGINE_MODES.map((mode) => ({ ...mode, query: `gpu=webgpu&${mode.query}` })),
@@ -224,6 +227,50 @@ for (const { name, query, latency } of [
 		await page.mouse.move(0, 0);
 		await expect(tooltip).toBeHidden();
 	});
+
+test("the stats overlay shows the display's rate above a lower target, with a faint mark on each bar", async ({
+	page,
+}) => {
+	// A target of 30 fps sits below the rate of any display that the tests run on.
+	const result = await openStats(page, 'gpu=webgl2&target-fps=30');
+	expect(statsProblems(result)).toEqual([]);
+	const figures = result.overlay?.figures ?? {};
+	expect(figures.target).toBe('≥30 fps · 33.3 ms');
+	const hz = Number(figures.display?.match(/^(\d+) Hz$/)?.[1]);
+	expect(hz).toBeGreaterThan(30);
+	// Each bar spans twice the target's interval, so the display's mark sits at this share of it.
+	const left = `${Math.round((30 / (2 * hz)) * 200) / 2}%`;
+	const marks = page.locator(`${OVERLAY} .lane:not([hidden]) .mark.display`);
+	expect(await marks.count()).toBeGreaterThan(0);
+	for (const mark of await marks.all()) {
+		await expect(mark).toBeVisible();
+		expect(
+			await mark.evaluate((node) => (node as unknown as { style: { left: string } }).style.left),
+		).toBe(left);
+	}
+	const button = page.locator(TARGET_BUTTON);
+	await expect(button).toHaveAttribute('aria-label', 'Target frame rate: what it means');
+	await expect(page.locator(TARGET_TIP)).toContainText(`The display runs at ${hz} Hz`);
+	await expect(page.locator(TARGET_TIP)).toContainText('It defends 30 fps.');
+	// A tap shows the words, as for the mode's symbol.
+	await button.click();
+	await page.mouse.move(0, 0);
+	await expect(page.locator(TARGET_TIP)).toBeVisible();
+});
+
+test("the stats overlay shows the target once where it is the display's full rate", async ({
+	page,
+}) => {
+	const result = await openStats(page, 'gpu=webgl2&target-fps=display');
+	expect(statsProblems(result)).toEqual([]);
+	const figures = result.overlay?.figures ?? {};
+	expect(figures.display).toBeUndefined();
+	expect(figures.target).toMatch(/^\d+ fps · \d+\.\d ms$/);
+	await expect(page.locator(`${OVERLAY} .mark.display:not([hidden])`)).toHaveCount(0);
+	await expect(page.locator(TARGET_TIP)).toContainText(
+		"The engine defends the display's full rate",
+	);
+});
 
 for (const gpu of ['webgpu', 'webgl2'])
 	test(`the collapsed stats overlay makes the GPU time and read back nothing, on ${gpu}`, async ({

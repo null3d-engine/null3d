@@ -34,8 +34,8 @@ export interface CheckHost {
 	drawFrame(): Promise<boolean>;
 	/** True while textures wait to upload. */
 	uploading(): boolean;
-	/** The frame rate that the ?fps= switch holds, which caps the target. */
-	maxFps: number | undefined;
+	/** The highest target that the page's `targetFps` setting and the ?fps= switch allow. */
+	maxTargetFps: number;
 	/** How many times the page showed again after it was hidden, or resumed after a pause. */
 	resumes(): number;
 }
@@ -85,7 +85,7 @@ export async function checkPreset(
 			start = performance.now();
 			continue;
 		}
-		targetFps = raiseTarget(targetFps, refreshRate(host.metrics), host.maxFps);
+		targetFps = raiseTarget(targetFps, refreshRate(host.metrics), host.maxTargetFps);
 		const round = {
 			preset: host.preset,
 			presentedFps: rateOf(presented),

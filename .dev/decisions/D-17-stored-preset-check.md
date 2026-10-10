@@ -79,7 +79,7 @@ A stored result applies only when the start matches the one that the check measu
 - A check from the last 7 days. Browsers and drivers update every few weeks, and Safari clears a site's script storage after 7 days of use without a visit to it anyway.
 - No crash: a start after a crashed start measures again, and does not store.
 
-The engine stores a result only when it measured against the highest target, 60 frames per second, or the `?fps=` cap. A display that saves power with a lower refresh rate gives an easier target. Its result could keep a preset too heavy for a normal day. A result measured against the highest target is safe to take at any lower target.
+The engine stores a result only when it measured against the highest target, 60 frames per second, or the `?fps=` cap. A display that saves power with a lower refresh rate gives an easier target. Its result could keep a preset too heavy for a normal day. A result measured against the highest target is safe to take at any lower target. Since [D-124](D-124-target-frame-rate.md), the page's `targetFps` setting is one of the conditions. The engine stores a result whose target reaches 60, or the setting's rate when that is lower.
 
 A start that takes a stored result runs the stored preset from its setup on. Its settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. These are anti-aliasing, the shadow tiles, point light shadows and the prepass. A unit test checks that both paths give the same settings. `engine.mode.presetCheck` reports the stored result with `reused: true`. The `?check=fresh` switch measures again.
 

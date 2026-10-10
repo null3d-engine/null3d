@@ -104,8 +104,11 @@ export interface SketchCore {
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
+	/**
+	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
+	 * setting under the ?fps= cap, and infinity for the display's full rate.
+	 */
+	maxTargetFps: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
 	/** Asks the page to show or hide its stats overlay, or to change its options. */
@@ -349,7 +352,7 @@ export class SketchRunner {
 							shadowCasters: () => glue.shadowCasters(),
 							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 						},
-						sketch.fps,
+						sketch.maxTargetFps,
 					)
 				: undefined;
 		const { governor } = this;
@@ -509,7 +512,7 @@ export class SketchRunner {
 					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxFps: this.sketch.fps,
+					maxTargetFps: this.sketch.maxTargetFps,
 					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
