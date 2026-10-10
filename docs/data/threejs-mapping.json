@@ -592,9 +592,9 @@
       "category": "Lights and shadows",
       "three": "HemisphereLight",
       "status": "direct",
-      "since": "0.1",
+      "since": "0.2",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored, but it does not light surfaces yet. Use an ambient light for the fill.",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. It lights surfaces as three.js's does, diffuse only, and its light adds to the environment's. Any number of them cost the same per pixel.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },

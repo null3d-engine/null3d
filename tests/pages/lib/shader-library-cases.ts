@@ -1486,6 +1486,24 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return floats([0.5 - (0.5 * x) / w + u, 0.5 + (0.5 * y) / w + v]);
 		},
 	},
+	// A unit normal, the ambient light, and the colors that hemisphere lights add along x, y and z,
+	// which may be negative where a light's ground is brighter than its sky.
+	{
+		name: 'lighting::ambient_irradiance',
+		cases: samples((random) =>
+			new Inputs()
+				.setF(0, unit(random))
+				.setF(1, values(random, 3, 0, 1))
+				.setF(2, values(random, 3, -0.5, 0.5))
+				.setF(3, values(random, 3, -0.5, 0.5))
+				.setF(4, values(random, 3, -0.5, 0.5)),
+		),
+		expected: (i) => {
+			const [x, y, z] = xyz(i.f(0));
+			const along = add(add(scale(xyz(i.f(2)), x), scale(xyz(i.f(3)), y)), scale(xyz(i.f(4)), z));
+			return floats(add(xyz(i.f(1)), along));
+		},
+	},
 ];
 
 /** The largest exponent of the fog's height terms, as `null3d::fog` limits it. */
