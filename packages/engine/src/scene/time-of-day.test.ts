@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type TimeOfDayPreset, timeOfDay } from './time-of-day';
 
+const DEGREE = Math.PI / 180;
+
 const PRESETS: TimeOfDayPreset[] = ['afternoon', 'goldenHour', 'blueHour', 'night'];
 
 /** The sun's height in degrees that a result's sky shows. */
@@ -63,6 +65,61 @@ describe('timeOfDay', () => {
 		expect(golden.light.color[0]).toBeGreaterThan(golden.light.color[2]);
 		const afternoon = timeOfDay('afternoon');
 		expect(afternoon.fog.color[2]).toBeGreaterThan(afternoon.fog.color[0]);
+	});
+
+	test('lights the night sky from the moon, with blue light', () => {
+		for (const hours of ['night', 20, 2, 4.5] as const) {
+			const day = timeOfDay(hours, { heading: 2.2 });
+			// The sky's sun stands at the moon's place, above the horizon, so the sky has light.
+			const moon = day.light.direction.map((c) => -c);
+			day.sky.sunPosition.forEach((c, k) => {
+				expect(c).toBeCloseTo(moon[k] as number, 9);
+			});
+			expect(skyElevation(hours)).toBeGreaterThanOrEqual(25);
+			for (const color of [day.ambient.color, day.fog.color])
+				expect(color[2]).toBeGreaterThan(2 * color[0]);
+		}
+	});
+
+	test('moves from the dusk sky to the night sky with no jump', () => {
+		// The sky's sun moves to the moon's side when the sun is 9 degrees down, at dusk and at
+		// dawn. It stands past the model's cutoff there, so the sky shows no change.
+		const offset = (12 / Math.PI) * Math.asin(Math.sin(9 * DEGREE) / Math.sin(Math.PI / 3));
+		const values = (hours: number) => {
+			const day = timeOfDay(hours, { heading: 2.2 });
+			return [
+				...day.sky.sunPosition,
+				Math.log(day.skyIntensity),
+				...day.fog.color,
+				...day.ambient.color.map((c) => c * day.ambient.intensity),
+				day.exposure,
+			];
+		};
+		// Each value changes by a step that shrinks with the step in time. A jump would not shrink.
+		const largestStep = (from: number, to: number, dark: number, step: number) => {
+			let largest = 0;
+			let before = values(from);
+			for (let hours = from + step; hours <= to; hours += step) {
+				const now = values(hours);
+				// The sky's sun is left out of the step across its move.
+				const across = (hours - dark) * (hours - step - dark) <= 0;
+				for (let k = across ? 3 : 0; k < now.length; k++)
+					largest = Math.max(largest, Math.abs((now[k] as number) - (before[k] as number)));
+				before = now;
+			}
+			return largest;
+		};
+		// From 4 to 13 degrees under the horizon, at dusk and at dawn.
+		for (const [from, dark, to] of [
+			[18.3, 18 + offset, 19],
+			[5, 6 - offset, 5.7],
+		] as const) {
+			const coarse = largestStep(from, to, dark, 1e-3);
+			expect(coarse).toBeLessThan(0.25);
+			expect(largestStep(from, to, dark, 1e-4)).toBeLessThan(coarse * 0.2);
+			for (const side of [-1e-6, 1e-6])
+				expect(timeOfDay(dark + side).sky.sunPosition[1]).toBeLessThan(Math.sin(-2.3 * DEGREE));
+		}
 	});
 
 	test('turns the sun path with the heading, and sets the noon height', () => {

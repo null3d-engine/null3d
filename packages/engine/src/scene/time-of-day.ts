@@ -41,7 +41,10 @@ export interface TimeOfDayOptions {
 export interface TimeOfDay {
 	/** The hour, from 0 up to 24. */
 	hours: number;
-	/** The sky's settings for `scene.setBackground({ sky })`: its sun and its air. */
+	/**
+	 * The sky's settings for `scene.setBackground({ sky })`: its sun and its air. At night the
+	 * sky's sun stands at the moon's place, so the sky is lit from there and its disc is the moon.
+	 */
 	sky: {
 		sunPosition: [number, number, number];
 		turbidity: number;
@@ -88,13 +91,25 @@ const PRESET_HOURS: Readonly<Record<TimeOfDayPreset, number>> = {
 const DEGREE = Math.PI / 180;
 
 /**
- * How low the sky's own sun sinks, in degrees: at dusk, and once night has fallen. three.js's sky
- * goes dark once its sun is about 2 degrees under the horizon. So at dusk the sky keeps its sun
- * just above that, which keeps the sunset's glow, and `skyIntensity` sets how bright it shows. As
- * night falls the sun sinks past it, and the sky turns an even dark blue.
+ * How low the sky's own sun sinks, in degrees: at dusk, and as night falls. three.js's sky gives
+ * no sun light once its sun is about 2.3 degrees under the horizon, which leaves only a flat grey
+ * that the tone curve maps to black. So at dusk the sky keeps its sun just above that, which keeps
+ * the sunset's glow, and `skyIntensity` sets how bright it shows. As night falls the sun sinks past
+ * it, and the sunset's glow fades out.
  */
 const DUSK_SUN = -1.2;
 const NIGHT_SUN = -3;
+
+/**
+ * The sun heights, in degrees, of nightfall. From the first to the second the sky's sun sinks from
+ * its dusk height to its night height. At the second, where the sky has no sun light, the sky's
+ * sun moves to the moon's side. From the second to the third the sky dims to the scale of the
+ * moon's sky, and from the third to the fourth the sky's sun rises to the moon's place. Below that
+ * the sky is lit as by day from the moon's place and dimmed by `skyIntensity`, the "day for night"
+ * sky of film: a navy sky with a lighter horizon, a faint glow around the moon, and the sun's disc
+ * drawn as the moon.
+ */
+const NIGHTFALL = [-6, -9, -10, -12] as const;
 
 /**
  * The sky's intensity by day. three.js's sky is about 5 at the horizon. Lights and fog take
@@ -106,7 +121,7 @@ const DAY_SKY = 0.15;
  * The luminance of the sky's average light, after `skyIntensity`, as the sun sinks: sun heights
  * in degrees and luminances. Above the first height the sky keeps the model's own light. three.js's
  * sky dims a hundredfold as its sun reaches the horizon, and goes dark 2 degrees below it, so dusk
- * follows this table instead: a deep blue sky at blue hour, and a dim one at night.
+ * follows this table instead: a deep blue sky at blue hour, and a dim navy one at night.
  */
 const DUSK: readonly (readonly [number, number])[] = [
 	[8, 0],
@@ -132,11 +147,11 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
 
 /**
  * Works out the settings of a time of day: an hour from 0 to 24, or a named preset. The sun rises
- * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue and then to
- * night, and the moon takes over as the main light. Each value comes from three.js's sky model, the
- * one that the sky background draws, so the fog fades into the sky's horizon. Each call returns a
- * new object, so call it when the time changes. Throws a `RangeError` for an hour that is not a
- * finite number, or an unknown preset.
+ * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue, and then to
+ * a navy night sky lit from the moon's place, and the moon takes over as the main light. Each value
+ * comes from three.js's sky model, the one that the sky background draws, so the fog fades into
+ * the sky's horizon. Each call returns a new object, so call it when the time changes. Throws a
+ * `RangeError` for an hour that is not a finite number, or an unknown preset.
  *
  * ```ts
  * const day = timeOfDay('goldenHour');
@@ -170,10 +185,20 @@ export function timeOfDay(
 		heading,
 	);
 	const elevation = Math.asin(sun[1]) / DEGREE;
-	const floor = mix(DUSK_SUN, NIGHT_SUN, smoothstep(-6, -12, elevation));
-	const skySun = elevation < floor ? atElevation(sun, floor) : sun;
-	// Haze and scattering grow toward the horizon, which warms a low sun.
-	const air = smoothstep(2, 15, elevation);
+	// The moon: opposite the sun, never lower than its floor.
+	const moon = atElevation(scale(sun, -1), Math.max(-elevation, MOON_FLOOR));
+	const [fade, dark, dim, night] = NIGHTFALL;
+	let skySun = sun;
+	if (elevation < dark) {
+		const rise = smoothstep(dim, night, elevation);
+		skySun = atElevation(moon, mix(NIGHT_SUN, Math.asin(moon[1]) / DEGREE, rise));
+	} else {
+		const floor = mix(DUSK_SUN, NIGHT_SUN, smoothstep(fade, dark, elevation));
+		if (elevation < floor) skySun = atElevation(sun, floor);
+	}
+	// Haze and scattering grow as the sky's sun nears the horizon, which warms a low sun. The moon's
+	// sky, whose sun stands high, keeps clear air.
+	const air = smoothstep(2, 15, Math.asin(skySun[1]) / DEGREE);
 	const sky = {
 		sunPosition: skySun,
 		turbidity: mix(4, 2.5, air),
@@ -191,6 +216,15 @@ export function timeOfDay(
 		const high = skyModel(atElevation(sun, top), air.turbidity, air.rayleigh, air.mie);
 		const target = between(DUSK, elevation, DAY_SKY * luminance(high.average()), true);
 		skyIntensity = target / Math.max(luminance(model.average()), 1e-9);
+		if (elevation < dark && elevation > night) {
+			// While the moon's sky rises it keeps the scale of the risen sky, so its glow fades in
+			// rather than flaring at the horizon. Before it rises, while the sky has no sun light,
+			// the scale moves to that one in log space.
+			const risen = skyModel(moon, air.turbidity, air.rayleigh, air.mie);
+			const toRisen = smoothstep(dark, dim, elevation);
+			skyIntensity =
+				skyIntensity ** (1 - toRisen) * (target / luminance(risen.average())) ** toRisen;
+		}
 	}
 
 	let light: TimeOfDay['light'];
@@ -204,10 +238,9 @@ export function timeOfDay(
 			intensity: SUN_INTENSITY * peak * smoothstep(-1, 6, elevation),
 		};
 	} else {
-		// The moon: opposite the sun, never lower than its floor, brightening as the dusk deepens.
-		const moon = atElevation([-sun[0], -sun[1], -sun[2]], Math.max(-elevation, MOON_FLOOR));
+		// The moon, brightening as the dusk deepens.
 		light = {
-			direction: [-moon[0], -moon[1], -moon[2]],
+			direction: scale(moon, -1),
 			color: [...MOON_COLOR],
 			intensity: MOON_INTENSITY * smoothstep(0, 6, -elevation),
 		};

@@ -236,7 +236,7 @@ The fog does not cover the background, so give the background the fog's color to
 
 ## Time of day
 
-`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects.
+`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
