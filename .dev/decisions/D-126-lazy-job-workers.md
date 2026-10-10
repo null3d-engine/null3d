@@ -47,7 +47,7 @@ Measured on 9 and 10 October 2026, MacBook Pro (18 logical cores), Chrome, produ
 
 Measured on 10 October 2026 on the same Mac, Chrome 155, production builds of main (2f54175) and of this change.
 
-**Start-up.** A test page ran a busy scene: 64,000 boxes in 16 turning groups, made over the first four frames. It measured the frames in windows of 0.25 s for 6 s from the engine's start. Three runs of each build on WebGPU and one on WebGL2, at a load of 2.7 to 6.1:
+**Start-up.** A test page ran a busy scene: 64,000 boxes in 16 turning groups, made over the first four frames. The engine test's busy sketch now moves the rows of an instance batch instead, which hands out parallel work in every frame on both GPU paths. It measured the frames in windows of 0.25 s for 6 s from the engine's start. Three runs of each build on WebGPU and one on WebGL2, at a load of 2.7 to 6.1:
 
 | Window from the start | Main, mean CPU ms per frame | This change | Job workers running, this change |
 | --- | --- | --- | --- |
