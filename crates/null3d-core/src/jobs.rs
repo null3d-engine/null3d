@@ -81,7 +81,7 @@
 //! With a clock in its settings, the system adds up the time each job worker spends in frame
 //! chunks and background tasks. A worker adds a chunk's time before it counts the chunk as done,
 //! so when [`JobSystem::parallel_for`] returns, the time of every chunk is included.
-//! [`JobSystem::take_busy_ms`] reads a worker's total and starts it again from zero.
+//! [`JobSystem::take_busy_us`] reads a worker's total and starts it again from zero.
 //!
 //! # Sleeping
 //!
@@ -410,13 +410,14 @@ impl JobSystem {
         self.background.len()
     }
 
-    /// The milliseconds job worker `worker_index` spent on frame chunks and background tasks
-    /// since the last call for it, which starts its total again from zero. It is 0 without a
-    /// clock, and for an index past the worker count.
-    pub fn take_busy_ms(&self, worker_index: u32) -> f64 {
-        self.busy_ns
-            .get(worker_index as usize)
-            .map_or(0.0, |busy| busy.0.swap(0, Ordering::Relaxed) as f64 / 1e6)
+    /// The whole microseconds job worker `worker_index` spent on frame chunks and background
+    /// tasks since the last call for it, which starts its total again from zero. It is 0 without
+    /// a clock, and for an index past the worker count. A whole number reaches JavaScript as a
+    /// small integer, where a fraction would make a number object at each read.
+    pub fn take_busy_us(&self, worker_index: u32) -> u32 {
+        self.busy_ns.get(worker_index as usize).map_or(0, |busy| {
+            u32::try_from(busy.0.swap(0, Ordering::Relaxed) / 1000).unwrap_or(u32::MAX)
+        })
     }
 
     /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame

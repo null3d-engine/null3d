@@ -73,29 +73,25 @@ fn job_workers_time_their_chunks_before_the_loop_returns() {
     });
     for k in 0..2u32 {
         let ran = chunks[k as usize + 1].load(Ordering::Relaxed);
-        let busy = jobs.take_busy_ms(k);
+        let busy = f64::from(jobs.take_busy_us(k)) / 1000.0;
         assert!(
             busy >= CHUNK_MS * f64::from(ran),
             "worker {k}: {busy} ms for {ran} chunks"
         );
         assert_eq!(
-            jobs.take_busy_ms(k),
-            0.0,
+            jobs.take_busy_us(k),
+            0,
             "worker {k}: the total starts again"
         );
     }
-    assert_eq!(jobs.take_busy_ms(2), 0.0, "an index past the worker count");
+    assert_eq!(jobs.take_busy_us(2), 0, "an index past the worker count");
     pool.stop();
 
     let untimed = Workers::start(2);
     untimed
         .jobs()
         .parallel_for(60, 1, &|_, _| spin_for(Duration::from_micros(100)));
-    assert_eq!(
-        untimed.jobs().take_busy_ms(0),
-        0.0,
-        "no clock, no busy time"
-    );
+    assert_eq!(untimed.jobs().take_busy_us(0), 0, "no clock, no busy time");
     untimed.stop();
 }
 

@@ -694,11 +694,11 @@ pub fn job_worker_failed(index: u32) {
     }
 }
 
-/// The milliseconds job worker `index` spent on work since the last call for it, which starts
-/// its total again from zero. The sketch thread reads it once per frame.
-#[wasm_bindgen(js_name = takeJobBusyMs)]
-pub fn take_job_busy_ms(index: u32) -> f64 {
-    JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
+/// The whole microseconds job worker `index` spent on work since the last call for it, which
+/// starts its total again from zero. The sketch thread reads it once per frame.
+#[wasm_bindgen(js_name = takeJobBusyUs)]
+pub fn take_job_busy_us(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.take_busy_us(index))
 }
 
 /// The address of the job system's wake word, or 0 before it exists.

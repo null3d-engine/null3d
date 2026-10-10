@@ -1044,7 +1044,7 @@ export class SketchRunner {
 		for (let k = 0; k < this.jobRecords.length; k++) {
 			const jobRecord = this.jobRecords[k] as FrameRecorder;
 			jobRecord.begin(frame);
-			jobRecord.commit(glue.takeJobBusyMs(k));
+			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
 		return frame;
 	}
