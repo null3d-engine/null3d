@@ -257,6 +257,13 @@ const OTHER_BUDGET = 4;
 const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
 
 /**
+ * What `--batch-shadows` adds to the WebGPU replay's budget: the browser's encoder of each sun
+ * cascade's culling pass and render pass, about 17 bytes each, for its 3 cascades. The rows move
+ * through every cascade, so each cascade draws again in every frame, not only on its turn.
+ */
+const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
  * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
  * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
@@ -575,6 +582,7 @@ async function main(): Promise<void> {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
+					(replay && batchShadows ? BATCH_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
