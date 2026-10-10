@@ -1,6 +1,6 @@
 # D-122: Transmission and screen-space refraction
 
-Status: proposed, 2026-10-09. Date: 2026-10-09. Task: M2-EX16.
+Status: decided by the helper of M2-EX16 on 10 October 2026, for the owner's review. Date: 2026-10-09. Task: M2-EX16.
 
 Summary: A standard or custom material with `transmission` lets the light behind it through, as three.js's `MeshPhysicalMaterial` does. After the camera's opaque pass, the frame copies the scene color into a target with a whole chain of mip levels. Such surfaces draw in the transparent pass. Each samples the copy where its refracted ray leaves the volume, with three.js's bicubic filter, at a level that its roughness picks. `ior`, `thickness`, `attenuationColor` and `attenuationDistance` take three.js's names and formulas. The glTF extensions `KHR_materials_transmission` and `KHR_materials_volume` load into them. The glass scene matches three.js in 0.001% of the pixels on WebGPU, 0.000% on WebGL2 and 0.086% in compatibility mode. Nothing runs or downloads until a material lets light through.
 
@@ -83,13 +83,20 @@ In compatibility mode the 8-bit path averages the edge samples of the tinted bal
 
 **Checks of the look.** `tests/image/transmission.spec.ts` measures each effect against the same scene drawn another way, on all three tiers. A ball with no thickness shows the wall within 0.019 of the empty scene's colors, and a thick one differs by 0.071. The smooth ball's stripes are about 5 times as sharp as the rough ball's. The tinted ball's red falls from 0.67 to 0.004. On the water, ripples change the bed's colors by 0.019 on average against flat water.
 
-**Cost.** TBD.
+**Cost.** `bun run bench:run -- --scenes s1 --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`, without and with `--switches transmission`, on the Mac's GPU (Apple M5 Max, 120 Hz) on 10 October 2026 at e2ecb6120, at a load of 2 to 5. The switch puts clear water that lets light through under S1's 100,000 boxes. Medians of 3 runs of 10 seconds:
+
+| Page | GPU ms without | GPU ms with | CPU ms without | CPU ms with | Draw calls |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU | 2.90 | 3.79 | 1.66 | 1.64 | 2 to 4 |
+| WebGL2 | 5.32 | 5.11 | 1.78 | 2.18 | 3 to 5 |
+
+On WebGPU the water, its copy and its levels cost 0.89 ms of GPU time. On WebGL2 the difference is smaller than the noise of the timer: the same page without the water took 4.36 ms in the first timing. Before the levels used `generateMipmap`, the water cost WebGL2 4.0 ms (4.36 to 8.36 ms). The CPU time does not change on WebGPU. On WebGL2 the median moved with one run of three, and the lowest runs were 1.75 ms both times. Every page held 120 fps.
 
 **Allocation.** `bun run bench:allocation --transmission` on the Mac's GPU on 10 October 2026, S1 with the clear water. Both paths pass. On WebGL2 the sketch worker allocated 376.6 bytes per frame and the render worker 148.6. On WebGPU they allocated 314.1 and 885.4. Most of WebGPU's share is the browser's encoder objects, which the check allows per pass. The replay allocated 333.3 bytes per frame, 13 more than its budget without the water, so the copy's render pass takes 64 bytes on top, as each of bloom's passes does. The mip levels allocated 174.4 bytes per frame, about 17 per level's pass, and may allocate 32 per pass for up to 11 levels.
 
 **Size.** `bun run build:check-size` against main at c93bbaf5, after Brotli, on 10 October 2026. The pipelined start grew from 129.8 to 130.4 KB on WebGPU, and from 127.1 to 127.6 KB on WebGL2. The material options, the copy's pipeline and binding, and the WebGPU backend's cached mip chains make most of it. The glTF worker grew by 2.1%, since it reads the two extensions, and the renderer that the sketch worker loads in its own thread modes by 1.4%. The WebAssembly files grew 0.5% and 0.6%. Each shader file of the `transmission` feature takes 18.3 to 22.4 KB of its 32 KB budget, and loads only with the first material that lets light through. The feature claims the builds that it shares with skinning and morph targets. Without that claim, a skinned or morphed mesh's builds that let light through went into the skinning and morph files, and those grew by 16% to 20%.
 
-**GPU check.** TBD.
+**GPU check.** `bun run bench:gpu-check` at e2ecb6120 against main at c93bbaf5d, on the Mac. It did not judge, since the benchmark pages changed between the commits. The GPU time per frame changed by -0.1% on S4 at Medium (3.91 ms), +2.8% on S6 at Medium (5.21 to 5.25 ms), -0.2% on S4 at High (3.92 to 3.91 ms) and -1.2% on S6 at High (5.36 to 5.29 ms). Neither scene has a material that lets light through, so each is within the noise and far below the check's limit of 25% and 0.3 ms.
 
 ## Decision
 
