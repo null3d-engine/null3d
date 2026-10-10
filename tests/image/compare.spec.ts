@@ -64,6 +64,12 @@ for (const engine of ['null3d', 'threejs'] as const)
 		expect(measured.count).toBe(400);
 		expect(measured.fps).toBeGreaterThan(0);
 		// The test pages are cross-origin isolated, so Chrome measures the whole page's memory.
+		// Chromium's headless shell, CI's browser, refuses the measurement, and the page then
+		// reports no memory and no error.
+		if (test.info().project.name.startsWith('chromium-swiftshader')) {
+			expect(measured.memory).toBeNull();
+			return;
+		}
 		expect(measured.memory?.bytes).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
 	});
