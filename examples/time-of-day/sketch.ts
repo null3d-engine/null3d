@@ -45,7 +45,7 @@ export default defineSketch(async (ctx) => {
 	post.set({ bloom: { intensity: 0.25, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
 	const sun = scene.createDirectionalLight({ castShadows: true, shadow: { distance: 60 } });
 	// A fill light in the horizon's color that grows at dusk, so the island keeps its mid-tones.
-	const fill = scene.createHemisphereLight({ groundColor: '#0c1a20' });
+	const fill = scene.createAmbientLight();
 	const camera = scene.createPerspectiveCamera({ fov: 40, far: 5000, position: [22, 8, 30] });
 	camera.lookAt(...TARGET);
 	scene.setActiveCamera(camera);
@@ -138,7 +138,7 @@ export default defineSketch(async (ctx) => {
 				sun.setColor(day.light.color);
 				sun.setIntensity(day.light.intensity);
 				fill.setColor(day.fog.color);
-				fill.setIntensity(4 * day.skyIntensity + Math.min(3, 6 * (day.exposure - 1)));
+				fill.setIntensity(day.skyIntensity + Math.min(0.75, 1.5 * (day.exposure - 1)));
 				scene.setEnvironment(environment, { intensity: day.skyIntensity });
 				scene.setFog({ ...day.fog, density: 0.003, height: 0, heightFalloff: 0.1 });
 				post.set({ exposure: day.exposure });
