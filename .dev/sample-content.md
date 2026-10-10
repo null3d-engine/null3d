@@ -26,6 +26,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | The city layout (`sources/city/layout/layout.json`), from the repository's seeded generator | S6: 19,173 objects in 1,296 buildings, 200 materials (each texture set in five tints), 32 point lights, a camera path through the streets and 8 labels |
 | Four Poly Haven environments at 2048 x 1024, with one OpenEXR copy | Environment light and backgrounds (M2-B2, M2-E2, M2-E3) and the HDR readers (M2-E4) |
 | Colour grading tables in `.cube` and `.3dl` form | Colour grading (M2-F3) |
+| The Creek's trees, plants and cave mouth (`sources/showcase/creek/`), built by script in Blender | The Creek showcase scene (M2-EX8) |
 
 No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references.
 
@@ -42,6 +43,36 @@ No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `t
 The city layout holds rows of objects, not models. S6 needs model files, so `bench/lib/city-files.ts` builds two from the layout. The kit file holds each part of the Kenney models that the layout uses. The tower file holds one mesh per material with every box in that material, and the layout's 200 materials. The files go into the shared cache, in `city/<key>` beside the commits' folders. The key is the layout's SHA-256 and the module's own source, so a change to either builds them again. Their images stay in the commit's folder, and the files name them by relative paths. Only the packed images of occlusion, roughness and metalness are new files.
 
 A page imports them as `/s6-city/kit.gltf?optimized` and `/s6-city/towers.gltf?optimized`. The `cityServer` plugin of the module resolves each import to the built file, and the null3D plugin optimizes it as any model. The benchmark pages' build and the dev server both use it. The first build takes about 27 seconds, and the optimization about 100 more on the owner's Mac. `bun bench/lib/city-files.ts` does both ahead of time. In CI, the `city` job runs it once per run through `.github/actions/city`, after the samples action, and keeps both results in the Actions cache. Its key covers the pinned sample content, the module and the asset tool. The job hands both results to the jobs that load S6 as artifacts. A build without the cache took 6.2 minutes on GitHub's Linux machines ([D-106](decisions/D-106-s6-city.md#ci)). [Benchmarks](benchmarks.md#the-city) describes S6.
+
+## Models built in Blender
+
+Some showcase models are organic shapes that code in a sketch would make poorly, such as trees and a cave. A Python script builds them in Blender, with no hand work and no downloads, and the sample-assets repository keeps its output. The scripts live in this repository, in `tools/samples/blender/`, so a change to a model is a reviewed change to code.
+
+| Script | Builds |
+| --- | --- |
+| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub and a cave mouth. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, three barks and a rock. The vertex colors hold ambient occlusion and moss |
+| `creek.ts` | Runs `creek.py` in Blender, optimizes each model with the asset tool, and packs each model's KTX2 textures into its own file |
+
+Build the Creek's models with `bun tools/samples/blender/creek.ts <folder>`. It needs Blender 5.2, at the macOS app's place or where `BLENDER` names it, and takes about 10 seconds. It prints each part's triangles and each file's size. To publish them:
+
+1. Copy the three files into `sources/showcase/creek/` of the sample-assets repository, and run `bun scripts/manifest.ts --write` there.
+2. Commit, push, and pin the commit here, as "Add or change an asset" says.
+
+The sample-assets repository records these models with the origin kind `blender`, which links to the script. Its import script has nothing to download for them, and its check does not build them again, because the check would need Blender.
+
+The models are optimized before they go into the sample-assets repository, unlike the other sources there. A sketch loads them with `sampleUrl`, so a website's build copies one file for each model. The asset tool writes its KTX2 textures as separate files, and the build would not copy those. So `creek.ts` moves each texture into the model's binary chunk, as an image with a buffer view.
+
+Each model draws with few triangles, so a scene can place many copies:
+
+| Part | Triangles |
+| --- | --- |
+| Oak: wood, leaves | 3,712, 5,088 |
+| Beech: wood, leaves | 3,956, 5,936 |
+| Birch: wood, leaves | 2,806, 2,976 |
+| Fern, hosta, shrub | 416, 560, 252 |
+| Cave mouth | 6,999 |
+
+The trees file takes 1,027 KB, the plants file 209 KB, and the cave file 725 KB. The trees' leaves are cards: each card holds a cluster of leaves in a 2 by 2 atlas, and its alpha cuts their outline. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided.
 
 ## The sample check
 
