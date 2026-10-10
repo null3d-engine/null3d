@@ -365,14 +365,14 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's glass uses KHR_materials_transmission, volume and ior, which three.js draws and null3D
- * does not read: 0.87% of the pixels differ, all on the glass and its beads. The instanced cubes
- * have black faces beside white ones at hundreds of edges, which compatibility mode's 8-bit path
- * averages after it encodes the colors: 0.41% differ there, and none on the other tiers. The same
- * cubes compressed with meshopt take the same limit, for the same edges.
+ * lamp's stained glass takes its transmission from a map, which null3D does not draw, and a clear
+ * coat: 0.39% of the pixels differ, all on the glass. The instanced cubes have black faces beside
+ * white ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes
+ * the colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with
+ * meshopt take the same limit, for the same edges.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
-	ktx2: 1,
+	ktx2: 0.5,
 	instancing: 0.5,
 	'meshopt-ext': 0.5,
 };
