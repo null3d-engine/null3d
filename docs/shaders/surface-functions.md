@@ -254,7 +254,7 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 
 ## Built-in values
 
-Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of an instance batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase of the wind or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). [Built-in shader inputs](builtins.md) lists every field.
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of a batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). [Built-in shader inputs](builtins.md) lists every field.
 
 ## Library functions
 

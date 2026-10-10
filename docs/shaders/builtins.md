@@ -55,7 +55,7 @@ The values of the object that the draw shows. For instances of a batch, they are
 | `position` | `vec3f` | The position of the object's origin in the world |
 | `values` | `vec4f` | The four numbers of the instance's row, for a batch made with `values: true`. Zeros elsewhere |
 
-Use `object.position` to give each object or instance a look of its own from one material, such as a hue or a phase. Use `object.values` for what the sketch sets row by row, such as a phase of the wind, an age or a tint: the sketch writes them in the batch's `values` array ([Instances and batching](../concepts/instances.md#per-row-values)). A full shader reads zeros there, as `fill_builtins` leaves them.
+Use `object.position` to give each object or instance a look of its own from one material, such as a hue or a phase. Use `object.values` for what the sketch sets row by row, such as a phase of the wind, an age or a tint. The sketch writes them in the batch's `values` array ([Instances and batching](../concepts/instances.md#per-row-values)). A full shader reads zeros there, as `fill_builtins` leaves them.
 
 ## `material`
 

@@ -23,8 +23,8 @@ export default defineSketch(({ scene, materials, geometry, textures }) => {
 			fov: 40,
 			near: 0.1,
 			far: 60,
-			position: [0, 6, 13],
-			target: [0, 0.6, 0],
+			position: [0, 11, 8],
+			target: [0, 0, 0.3],
 		}),
 	);
 	scene.createDirectionalLight({
