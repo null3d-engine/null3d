@@ -32,9 +32,13 @@
 // shadows to S1, with casters that circle them, so tiles of the shadow atlas draw again every
 // frame. `--batch-shadows` gives the sun shadows in 3 cascades and makes S1's rows
 // cast and receive them, so a moving batch tests the far cascades and the tiles each frame.
+// `--row-values` gives S1's rows colors and values that change every frame, which a custom
+// material reads to sway and tint each box, so the frame uploads every row's values; with
+// `--batch-shadows`, the rows cast with the material's own caster builds.
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--sky` draws three.js's sky behind S1, and
+// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
+// one of them tilted, and changes their intensities every frame. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
@@ -76,6 +80,7 @@
 //   bun run bench:allocation --labels 256 --gpu webgl2
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
+//   bun run bench:allocation --hemisphere --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
 //   bun run bench:allocation --stats --gpu webgl2
 //   bun run bench:allocation --sky --gpu webgl2
@@ -453,8 +458,13 @@ async function main(): Promise<void> {
 		const batchShadows = args.includes('--batch-shadows') ? '&shadows=3&batchShadows' : '';
 		if (batchShadows && scene !== 's1')
 			throw new Error('--batch-shadows makes the rows of S1 cast shadows only');
+		const rowValues = args.includes('--row-values') ? '&rowValues' : '';
+		if (rowValues && scene !== 's1')
+			throw new Error('--row-values gives the rows of S1 colors and values only');
 		const environment = args.includes('--environment') ? '&environment' : '';
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
+		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
+		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
 		const skyLight = args.includes('--sky-environment');
@@ -469,7 +479,7 @@ async function main(): Promise<void> {
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${environment}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -582,7 +592,7 @@ async function main(): Promise<void> {
 		);
 		devtools.close();
 		console.log(
-			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${batchShadows ? ', its rows casting and receiving shadows' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances${animatedCount > 0 ? ` and ${animatedCount} animated characters` : ''}${morphedCount > 0 ? ` and ${morphedCount} morphed objects` : ''}${labelCount > 0 ? ` and ${labelCount} labels` : ''}${tileShadows ? ' and shadowed spot and point lights' : ''}${batchShadows ? ', its rows casting and receiving shadows' : ''}${rowValues ? ', its rows with colors and values' : ''}${stats ? ', the stats overlay shown' : statsCollapsed ? ', the stats overlay collapsed' : ''}, ${pagesText(dev)}${noInline ? ', inlining off' : ''}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames, ${inputSteps} input steps`,
 		);
 		console.log(
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',

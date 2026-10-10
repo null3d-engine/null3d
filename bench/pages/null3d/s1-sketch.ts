@@ -19,7 +19,9 @@
 // allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
-// light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
+// light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
+// changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
@@ -36,7 +38,9 @@
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
 // switch makes the swarm's rows cast and receive them, for the cost of a large batch in the shadow
-// passes and for the allocation sample of its rows as moving casters.
+// passes and for the allocation sample of its rows as moving casters. The `rowValues` switch gives
+// every row a color and values that change every frame, read by a custom material that sways and
+// tints each box, for the allocation sample of the row values' uploads.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
@@ -60,6 +64,7 @@ export default defineSketch(async (context) => {
 			? await createLineSwarm(context, count)
 			: createSwarm(context, count, true, undefined, switches.has('blend'), {
 					shadows: switches.has('batchShadows'),
+					rowValues: switches.has('rowValues'),
 				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
@@ -132,6 +137,7 @@ export default defineSketch(async (context) => {
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
 		});
+	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -141,6 +147,10 @@ export default defineSketch(async (context) => {
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
+		}
+		if (hemispheres) {
+			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
+			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
 		}
 		if (room) {
 			turn[1] = 0.5 * t;
@@ -204,6 +214,22 @@ fn effect(input: EffectInput) -> vec4f {
     return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
 }
 `;
+
+/**
+ * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
+ * warm one tilted an eighth of a turn about X.
+ */
+function createHemispheres({ scene }: SketchContext) {
+	const tilt = Math.sin(Math.PI / 8);
+	return [
+		scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' }),
+		scene.createHemisphereLight({
+			skyColor: '#ffd9a8',
+			groundColor: '#202830',
+			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
+		}),
+	] as const;
+}
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
 const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';

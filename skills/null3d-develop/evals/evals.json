@@ -12,7 +12,7 @@
         "States that glTF loading comes in engine 0.2, and does not present assets.loadGltf or scene.instantiate as working in 0.1; it uses a placeholder mesh or asks how to proceed",
         "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
         "The floor mesh receives shadows and the directional light casts them; materials.shadowCatcher, if named, is marked as 0.2",
-        "Lighting uses a directional light and an ambient light; a hemisphere light, if used, is noted as not lighting surfaces until 0.2, and an environment, if named, is marked as 0.2",
+        "Lighting uses a directional light and an ambient light; a hemisphere light, if used, is marked as 0.2, and an environment, if named, is marked as 0.2",
         "The code awaits scene.warmUp() or preloads assets before showing the model",
         "No DOM access appears in sketch.ts and onUpdate allocates nothing",
         "Recommends small textures and meshes for phones, and marks bunx @null3d/cli assets optimize as 0.2 if it names it"

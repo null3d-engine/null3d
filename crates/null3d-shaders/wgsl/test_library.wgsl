@@ -297,6 +297,11 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
 #ifdef REFLECTION
         case 102u: { return pair(null3d::reflection::reflection_uv(f[0], f[1].xy)); }
 #endif
+#ifdef LIGHTING
+        case 103u: {
+            return triple(null3d::lighting::ambient_irradiance(f[0].xyz, f[1].xyz, f[2].xyz, f[3].xyz, f[4].xyz));
+        }
+#endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
         default: { return whole(u[0]); }

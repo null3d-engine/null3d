@@ -55,6 +55,9 @@ export async function startDemo({
 	});
 	if (labels) showLabels(engine, labels);
 	if (choices) showChoices(engine, demo, choices);
+	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
+	if (demo.pointerLock)
+		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
 	return engine;
 }
 

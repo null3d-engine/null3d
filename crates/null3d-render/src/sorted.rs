@@ -137,8 +137,10 @@ pub(crate) struct SortedRow {
     pub(crate) source: SortedSource,
     /// The row's grid cell.
     pub(crate) cell: u32,
-    /// The row's place in the builder's data plus its cell above [`CELL_SHIFT`]: a scene
-    /// object's slot, or a batch's base plus the row.
+    /// The row's place in the builder's data: a scene object's slot, or a batch's base plus the
+    /// row.
+    pub(crate) place: u32,
+    /// The row's place plus its cell above [`CELL_SHIFT`].
     pub(crate) entry: u32,
 }
 
@@ -274,8 +276,13 @@ impl SortedLayout {
         skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
-            let pipeline = settings.pipeline_of(mesh, material)?;
+        let key_of = |pipeline: Option<DrawKey>,
+                      mesh: u32,
+                      material: u32,
+                      group: u32,
+                      object: u32|
+         -> Option<SortedKey> {
+            let pipeline = pipeline?;
             if !pipeline.sorts() {
                 return None;
             }
@@ -291,7 +298,8 @@ impl SortedLayout {
         // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
         let pair_key = |slot: usize| {
             let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
-            key_of(mesh, material, resident, scene.flags()[slot])
+            let pipeline = settings.pipeline_of(mesh, material);
+            key_of(pipeline, mesh, material, resident, scene.flags()[slot])
         };
         let scene_key = |slot: usize| {
             let key = pair_key(slot)?;
@@ -311,6 +319,7 @@ impl SortedLayout {
         // Instance batches receive shadows as their shadow bits say.
         let batch_key = |index: usize, batch: &InstanceBatch| {
             key_of(
+                settings.batch_pipeline_of(batch),
                 batch.mesh(),
                 batch.material(),
                 place(index, batch).1,
@@ -594,6 +603,7 @@ impl SortedLayout {
                 bucket: self.scene_buckets[row as usize],
                 source: SortedSource::Scene(slot),
                 cell,
+                place: slot,
                 entry: slot | (cell << CELL_SHIFT),
             };
         }
@@ -610,6 +620,7 @@ impl SortedLayout {
             bucket: batch.bucket,
             source: SortedSource::Batch(batch.id, row),
             cell,
+            place: batch.base + row,
             entry: (batch.base + row) | (cell << CELL_SHIFT),
         }
     }

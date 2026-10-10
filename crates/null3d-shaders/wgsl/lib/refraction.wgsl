@@ -2,7 +2,7 @@
 #import null3d::globals::{EnvironmentLight}
 #import null3d::ibl::{environment_map, environment_sampler, has_environment, map_direction}
 #import null3d::ibl::{roughness_level}
-#import null3d::mesh::{frame}
+#import null3d::mesh::{ambient_light, frame}
 
 // Light that passes through a surface, as three.js's MeshPhysicalMaterial lets it through
 // (transmission_pars_fragment, after the glTF Sample Viewer). The camera's view copies the color of
@@ -113,10 +113,11 @@ fn copied_light(clip: vec4f, roughness: f32, ior: f32) -> vec3f {
 }
 
 /// The environment's light from direction `d` as a surface of perceptual `roughness` takes it,
-/// times the environment's intensity, or the frame's ambient light without an environment.
+/// times the environment's intensity, or the frame's ambient and hemisphere light along `d` without
+/// an environment.
 fn surrounding_light(env: EnvironmentLight, d: vec3f, roughness: f32) -> vec3f {
     if !has_environment(env) {
-        return frame.ambient.rgb;
+        return ambient_light(d);
     }
     let level = roughness_level(roughness, env.params.x);
     let light = textureSampleLevel(environment_map, environment_sampler, map_direction(env, d), level);

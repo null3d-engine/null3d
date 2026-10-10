@@ -592,9 +592,9 @@
       "category": "Lights and shadows",
       "three": "HemisphereLight",
       "status": "direct",
-      "since": "0.1",
+      "since": "0.2",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored, but it does not light surfaces yet. Use an ambient light for the fill.",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. It lights surfaces as three.js's does, diffuse only, and its light adds to the environment's. Any number of them cost the same per pixel.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },
@@ -1012,7 +1012,7 @@
       "status": "manual",
       "since": "0.2",
       "target": "A vertexOffset function that reads the texture with textureSampleLevel",
-      "notes": "Enlarge the object bounds with setBounds so culling does not hide displaced vertices. Shadows follow the mesh's own vertices, not the displaced ones.",
+      "notes": "Enlarge the object bounds with setBounds so culling does not hide displaced vertices. Shadows follow the displaced vertices, as three.js's do with a depth material that displaces them.",
       "docs": "shaders/surface-functions",
       "detect": "\\bdisplacement(Map|Scale|Bias)\\b"
     },
@@ -1309,7 +1309,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array, which is stored, and draws from 0.2. Prefabs from glTF models come in 0.2. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from 0.2; 0.1 stores it only). Prefabs from glTF models come in 0.2. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1330,8 +1330,8 @@
       "three": "InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data)",
       "status": "changed",
       "since": "0.2",
-      "target": "createInstances(mesh, count, { material, attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read",
-      "notes": "",
+      "target": "createInstances(mesh, count, { material, values: true }) adds batch.values, four floats per row, which a custom material's vertexOffset and surface functions read as object.values",
+      "notes": "Four floats per row replace named attributes: pack a phase, an age, a tint or a size into them. A shader that read an instanced attribute reads object.values.x to .w instead. A material with a vertexOffset casts shadows that follow it.",
       "docs": "concepts/instances",
       "detect": "\\bInstanced(Buffer)?(Geometry|Attribute|InterleavedBuffer)\\b|\\bInstancedBufferAttribute\\b"
     },
