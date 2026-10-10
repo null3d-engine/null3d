@@ -1,8 +1,8 @@
 # D-123: Objects under a hidden object skip their transform update
 
-Status: proposed by the helper of the hidden objects work on 10 October 2026, for the owner's review. Date: 2026-10-10. Task: none (found by the Factory comparison).
+Status: proposed by the helper of the hidden objects work on 10 October 2026, for the owner's review. Figures added on 11 October 2026. Date: 2026-10-10. Task: none (found by the Factory comparison).
 
-Summary: An object under a hidden object, dynamic or static, is left alone by the transform update once both world buffers hold it hidden. It uploads nothing, and the frame that shows its ancestor recomputes it. Cameras and their ancestors keep updating, and the world getters work an object's matrix out from the local transforms. Figures are pending a quiet timing window.
+Summary: An object under a hidden object, dynamic or static, is left alone by the transform update once both world buffers hold it hidden. It uploads nothing, and the frame that shows its ancestor recomputes it. Cameras and their ancestors keep updating, and the world getters work an object's matrix out from the local transforms. With room for 200,000 parts and 2,000 shown, the Factory comparison's busiest thread drops from 5.08 to 0.87 ms per frame on WebGPU. On WebGL2 it drops from 5.00 to 1.25 ms.
 
 ## Question
 
@@ -24,9 +24,18 @@ Before the change, from the Factory comparison (production builds, quiet Mac, 12
 | Room for 200,000 parts, arm parts and crates dynamic | 5.55 ms |
 | The same, arm parts and crates static | 0.72 ms |
 
-After the change: pending.
+After the change, busiest thread per frame in ms, with the upload per frame. Room for 200,000 parts, arm parts and crates dynamic:
 
-How the data was produced: pending.
+| Shown parts | WebGPU before | WebGPU after | WebGL2 before | WebGL2 after | Upload before | Upload after (WebGPU) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2,000 | 5.08 | 0.87 | 5.00 | 1.25 | 13.75 MiB | 0.11 MiB |
+| 17,832 | 5.56 | 2.15 | 6.16 | 2.33 | 13.75 MiB | 0.84 MiB |
+| 21,399 | 5.49 | 4.77 | 7.11 | 4.42 | 13.75 MiB | 13.75 MiB |
+| 50,000 | 6.65 | 5.49 | 7.61 | 5.99 | 13.75 MiB | 13.75 MiB |
+
+From 21,399 shown parts, the frame's list of changed rows overflows, so every row still uploads. The change to the upload list fixes that part. With room for exactly 50,000 parts and all of them shown, no object is hidden. The figures then stay the same: 2.51 ms before and 2.59 ms after on WebGPU, 2.71 and 2.68 ms on WebGL2.
+
+How the data was produced: two production builds of the Factory comparison page. One is main with the Factory page merged in, and the other adds this change. The page ran in Chrome 155 with a window, on an Apple M5 Max at 120 Hz, at 1280x720 with all effects. The machine's load was below 8 at the start. Each figure is one run of 20 seconds of warm-up and 10 seconds of measurement, at a fixed count of shown parts.
 
 ## Options
 
