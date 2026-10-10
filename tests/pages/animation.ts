@@ -93,8 +93,8 @@ run('animation', async () => {
 		const times: number[] = [];
 		const busy = () => {
 			let sum = 0;
-			for (let w = 0; w < jobWorkers; w++) sum += core.takeJobBusyMs(w);
-			return sum;
+			for (let w = 0; w < jobWorkers; w++) sum += core.takeJobBusyUs(w);
+			return sum / 1000;
 		};
 		for (let frame = 0; frame < warmup + frames; frame++) {
 			await nextFrame();

@@ -46,6 +46,8 @@ pub mod batch_field {
     pub const SIZES: u32 = 4;
     /// A sprite batch's atlas frames, one 32-bit integer a row.
     pub const FRAMES: u32 = 5;
+    /// The rows marked dirty since the last batch update, one bit a row, in 64-bit words.
+    pub const DIRTY_WORDS: u32 = 6;
 }
 
 /// Fields of `debugLineArrays`.
@@ -94,6 +96,9 @@ pub mod shading {
     /// Where a custom shading holds the number of textures that its WGSL declares, from 0 to the
     /// map slots of a row, in 3 bits.
     pub const CUSTOM_TEXTURE_SHIFT: u32 = 25;
+    /// The bit of a custom shading whose WGSL has the builds that let light through, which a
+    /// material with the transmission feature draws with.
+    pub const CUSTOM_TRANSMISSION: u32 = 1 << 28;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -210,8 +215,11 @@ pub mod background_value {
     pub const TIME: u32 = 17;
     /// 1 where the sky shows the sun's disc, else 0.
     pub const SUN_DISC: u32 = 18;
+    /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
+    pub const SECOND_SUN_POSITION: u32 = 19;
+    pub const SECOND_SKY_WEIGHT: u32 = 22;
     /// The values in the block.
-    pub const COUNT: u32 = 19;
+    pub const COUNT: u32 = 23;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -624,6 +632,7 @@ pub fn typescript() -> String {
                 ("COLORS", batch_field::COLORS),
                 ("SIZES", batch_field::SIZES),
                 ("FRAMES", batch_field::FRAMES),
+                ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
             ],
         ),
         (
@@ -787,6 +796,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
                 ("CUSTOM_TEXTURE_SHIFT", shading::CUSTOM_TEXTURE_SHIFT),
+                ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -806,6 +816,7 @@ pub fn typescript() -> String {
                 ("ALPHA_TO_COVERAGE", feature::ALPHA_TO_COVERAGE),
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
+                ("TRANSMISSION", feature::TRANSMISSION),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -863,6 +874,11 @@ pub fn typescript() -> String {
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
+                ("TRANSMISSION", param::TRANSMISSION as u32),
+                ("THICKNESS", param::THICKNESS as u32),
+                ("IOR", param::IOR as u32),
+                ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
+                ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
@@ -944,6 +960,8 @@ pub fn typescript() -> String {
                 ("CLOUD_ELEVATION", background_value::CLOUD_ELEVATION),
                 ("TIME", background_value::TIME),
                 ("SUN_DISC", background_value::SUN_DISC),
+                ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
+                ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
                 ("COUNT", background_value::COUNT),
             ],
         ),

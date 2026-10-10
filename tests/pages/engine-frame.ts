@@ -4,7 +4,8 @@
 // a page that never stops its engine. Opened on its own, the page publishes the same message on
 // window, and its trail notes each worker's replies. The page that holds the frame can read the
 // engine's control slots, to learn which thread a start that never ends waits for, and it hears how
-// many job workers were still inside the job loop when the frame's page left.
+// many job workers were still inside the job loop when the frame's page left. ?sketch=busy runs a
+// scene whose parallel work starts job workers.
 import { createEngine, EngineError } from '@null3d/engine';
 import * as Slot from '../../packages/engine/src/shared/slot';
 import { progress } from './lib/result';
@@ -52,7 +53,10 @@ try {
 	if (!canvas) throw new Error('the page has no canvas');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
+		sketch:
+			new URLSearchParams(location.search).get('sketch') === 'busy'
+				? new URL('./sketches/busy-sketch.ts', import.meta.url)
+				: new URL('./sketches/empty-sketch.ts', import.meta.url),
 		onProgress: progress,
 	});
 	await engine.firstFrame;

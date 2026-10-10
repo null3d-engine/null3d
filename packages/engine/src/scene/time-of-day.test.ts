@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type TimeOfDayPreset, timeOfDay } from './time-of-day';
 
+const DEGREE = Math.PI / 180;
+
 const PRESETS: TimeOfDayPreset[] = ['afternoon', 'goldenHour', 'blueHour', 'night'];
 
 /** The sun's height in degrees that a result's sky shows. */
@@ -63,6 +65,93 @@ describe('timeOfDay', () => {
 		expect(golden.light.color[0]).toBeGreaterThan(golden.light.color[2]);
 		const afternoon = timeOfDay('afternoon');
 		expect(afternoon.fog.color[2]).toBeGreaterThan(afternoon.fog.color[0]);
+	});
+
+	test('lights the night sky from the moon, with blue light', () => {
+		for (const hours of ['night', 20, 2, 4.5] as const) {
+			const day = timeOfDay(hours, { heading: 2.2 });
+			// The sky's sun stands at the moon's place, above the horizon, so the sky has light.
+			const moon = day.light.direction.map((c) => -c);
+			day.sky.sunPosition.forEach((c, k) => {
+				expect(c).toBeCloseTo(moon[k] as number, 9);
+			});
+			expect(skyElevation(hours)).toBeGreaterThanOrEqual(25);
+			for (const color of [day.ambient.color, day.fog.color])
+				expect(color[2]).toBeGreaterThan(2 * color[0]);
+		}
+	});
+
+	test('fades the sunset sky straight into the moon sky as night falls', () => {
+		// The sun 9 degrees down, halfway through nightfall, at dusk and at dawn.
+		const offset = (12 / Math.PI) * Math.asin(Math.sin(9 * DEGREE) / Math.sin(Math.PI / 3));
+		for (const hours of [18 + offset, 6 - offset]) {
+			const day = timeOfDay(hours, { heading: 2.2 });
+			// The first sky keeps the sunset's sun under the horizon, and the moon's sky adds to it.
+			expect(skyElevation(hours)).toBeCloseTo(-1.2, 5);
+			expect(day.sky.secondSkyWeight).toBeGreaterThan(0);
+			const moon = day.light.direction.map((c) => -c);
+			day.sky.secondSunPosition.forEach((c, k) => {
+				expect(c).toBeCloseTo(moon[k] as number, 9);
+			});
+		}
+		for (const hours of ['afternoon', 'blueHour', 'night', 18.3, 19.2] as const)
+			expect(timeOfDay(hours).sky.secondSkyWeight).toBe(0);
+	});
+
+	test('keeps the sky at the dusk table, whose night value is 0.003', () => {
+		// The ambient light is the sky's average light times π, and the table sets its luminance.
+		const sky = (hours: number | TimeOfDayPreset) => {
+			const { ambient } = timeOfDay(hours, { heading: 2.2 });
+			return luminance(ambient.color.map((c) => c * ambient.intensity)) / Math.PI;
+		};
+		expect(sky('night')).toBeCloseTo(0.003, 6);
+		expect(sky(21)).toBeCloseTo(0.003, 6);
+		// Halfway through nightfall, between 0.008 and 0.003 in log space.
+		const offset = (12 / Math.PI) * Math.asin(Math.sin(9 * DEGREE) / Math.sin(Math.PI / 3));
+		expect(sky(18 + offset)).toBeCloseTo(Math.sqrt(0.008 * 0.003), 6);
+	});
+
+	test('moves from the dusk sky to the night sky with no jump', () => {
+		// The light of each sky, the air, the fog, the ambient light and the exposure.
+		const values = (hours: number) => {
+			const day = timeOfDay(hours, { heading: 2.2 });
+			const moon = day.light.direction.map((c) => -c);
+			const atMoon = day.sky.sunPosition.every((c, k) => Math.abs(c - (moon[k] as number)) < 1e-9);
+			const moonSky = atMoon ? day.skyIntensity : day.skyIntensity * day.sky.secondSkyWeight;
+			return [
+				atMoon ? 0 : day.skyIntensity,
+				moonSky,
+				day.sky.turbidity,
+				day.sky.rayleigh,
+				...day.fog.color,
+				...day.ambient.color.map((c) => c * day.ambient.intensity),
+				day.exposure,
+			];
+		};
+		// Each value's largest step, which shrinks with the step in time. A jump would not shrink.
+		const largestSteps = (from: number, to: number, step: number) => {
+			let before = values(from);
+			const largest = before.map(() => 0);
+			for (let hours = from + step; hours <= to; hours += step) {
+				const now = values(hours);
+				now.forEach((v, k) => {
+					largest[k] = Math.max(largest[k] as number, Math.abs(v - (before[k] as number)));
+				});
+				before = now;
+			}
+			return largest;
+		};
+		// From 4 to 13 degrees under the horizon, at dusk and at dawn.
+		for (const [from, to] of [
+			[18.3, 19],
+			[5, 5.7],
+		] as const) {
+			const coarse = largestSteps(from, to, 1e-3);
+			const fine = largestSteps(from, to, 1e-4);
+			coarse.forEach((c, k) => {
+				expect(fine[k] as number).toBeLessThanOrEqual(c * 0.2 + 1e-12);
+			});
+		}
 	});
 
 	test('turns the sun path with the heading, and sets the noon height', () => {

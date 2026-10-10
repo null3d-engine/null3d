@@ -93,7 +93,7 @@ The owner asked on 8 October 2026 for the overlay at the top right, collapsible 
 
 ### The rules
 
-1. **Target.** The overlay judges frames against the engine's own target: the one that the preset check and the quality governor aim at. It is the display's refresh rate, at most 60 frames a second, or a lower cap such as `?fps=` (`checkTargetFps`). The overlay neither invents a target nor measures one. A 120 Hz display shows a target of 60 fps; a 30 fps cap shows 30.
+1. **Target.** The overlay judges frames against the engine's own target: the one that the preset check and the quality governor aim at. It is the display's refresh rate, at most 60 frames a second, or a lower cap such as `?fps=` (`checkTargetFps`). The overlay neither invents a target nor measures one. A 120 Hz display shows a target of 60 fps; a 30 fps cap shows 30. Since [D-124](D-124-target-frame-rate.md) (10 October 2026), the card shows the display's rate beside a lower target, such as `120 Hz ≥60 fps · 16.7 ms`, with a faint second mark on each bar. The page's `targetFps` option can raise the target to the display's rate.
 2. **Scale.** Every work bar spans twice the target's interval, so the target's mark sits in the middle of each.
 3. **Work colors.** A thread's or the GPU's time is green below 80% of the target's interval, amber up to it, and red past it.
 4. **Frame-rate colors.** The ring is green from 90% of the target, the share that a preset must hold in the preset check (`CHECK_HOLD_SHARE`). It is amber from 75%, and red below.

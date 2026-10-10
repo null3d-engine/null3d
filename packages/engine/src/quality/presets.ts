@@ -9,6 +9,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { Tier } from '../shared/tier';
+import type { TargetFps } from './check';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -638,6 +639,19 @@ export function presetOption(value: unknown): QualityPreset | 'auto' {
 	return value === undefined
 		? 'auto'
 		: namedPreset('createEngine()', value, ['auto', ...QUALITY_PRESETS] as const);
+}
+
+/**
+ * The target frame rate setting that `createEngine`'s `targetFps` option names, or undefined for
+ * none. Throws E1213 for a value other than `display` or a whole number from 1 up.
+ */
+export function targetFpsOption(value: unknown): TargetFps | undefined {
+	if (value === undefined || value === 'display') return value;
+	if (Number.isInteger(value) && (value as number) >= 1) return value as number;
+	throw new EngineError(
+		'E1213',
+		`createEngine() got ${quoted(value)} for targetFps, which is not 'display' or a whole number from 1 up.`,
+	);
 }
 
 /** The preset that `quality.setPreset` got. Throws E1213 when it names no preset. */

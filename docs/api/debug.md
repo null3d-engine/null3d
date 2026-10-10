@@ -168,13 +168,13 @@ const engine = await createEngine({
 
 The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. Options add up: a call changes only the options that it names, and an overlay that shows again keeps them. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it four times a second. A held engine for image tests shows no overlay.
 
-The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button and the card's mode symbol take the pointer. Drags anywhere else on the overlay reach the canvas.
+The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button and the card's two symbols take the pointer. Drags anywhere else on the overlay reach the canvas.
 
 ### The card
 
 | Part | What it shows |
 | --- | --- |
-| `Frame work` | The target frame rate and its interval, such as `Target 60 fps · 16.7 ms`, after a symbol of the engine's thread mode |
+| `Frame work` | A symbol of the engine's thread mode, then a display symbol. After them come the display's refresh rate and the target with its interval, such as `120 Hz ≥60 fps · 16.7 ms`. Where the target is the display's full rate, the rate shows once, such as `60 fps · 16.7 ms` |
 | Work bars | CPU time per frame of each engine thread, and the GPU's time per frame, against the target |
 | `Held back by` | Below the target frame rate, the part of the frame that holds it back |
 | `Memory` | The engine's memory, the GPU's textures and buffers, and the page's JavaScript heap, as one bar with a legend |
@@ -182,17 +182,17 @@ The header stays in the corner when the card opens, and the card opens under it,
 | Counts | Draw calls, triangles and objects per frame |
 | Last line | The GPU path, the quality preset and the render scale |
 
-**The target.** The overlay judges each frame against the engine's own target: the one that the [preset check](../concepts/quality-presets.md) and the quality governor aim at. It is the display's refresh rate, at most 60 frames a second, or a lower cap such as the `?fps=` switch. So a 120 Hz display still shows a target of 60 fps. The engine still draws faster when the display allows it.
+**The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
 
-**The work bars.** Each thread has its own bar, because the threads run at the same time. The bars come in this order: `Sketch`, `Drawing`, `Jobs`, `Page`, then `GPU`. A thread that the engine's thread mode does not run has no bar. Every bar spans twice the target's interval, so the target's mark sits in the middle of each. Each bar is colored by who did the work:
+**The work bars.** Each thread has its own bar, because the threads run at the same time. The bars come in this order: `Sketch`, `Drawing`, `Jobs`, `Page`, then `GPU`. A thread that the engine's thread mode does not run has no bar. Every bar spans twice the target's interval, so the target's dark mark sits in the middle of each. Where the display refreshes faster than the target, a faint second mark shows the display's interval, such as 8.3 ms at 120 Hz. Each bar is colored by who did the work:
 
 - Your code: the sketch's own callbacks, the `update` phase.
 - Engine: every other phase on the thread, such as commands, culling, recording, uploads and replay.
 - GPU: the GPU's time, from one frame in eleven.
 
-A bar stacks parts only where the parts add up to the time beside it. A thread's phases run one after another, so they stack. The `Jobs` bar shows the slowest job worker, with the count of job workers beside its name, such as `Jobs ×6`. The job workers share one step of the frame, and the frame waits for the slowest of them. So a sum or a mean would mislead.
+A bar stacks parts only where the parts add up to the time beside it. A thread's phases run one after another, so they stack. The `Jobs` bar shows the slowest job worker, with the count of job workers that run beside its name, such as `Jobs ×6`. The engine starts job workers only as the work grows, so a small scene shows no `Jobs` bar. The job workers share one step of the frame, and the frame waits for the slowest of them. So a sum or a mean would mislead.
 
-**The thread modes.** The symbol before the target is a button whose tooltip explains the mode. The tooltip shows while the pointer is on the symbol or the symbol has the keyboard's focus, and a tap shows or hides it.
+**The thread modes.** The first symbol is a button whose tooltip explains the mode. The tooltip shows while the pointer is on the symbol or the symbol has the keyboard's focus, and a tap shows or hides it.
 
 | Mode | Symbol | Bars |
 | --- | --- | --- |

@@ -72,6 +72,7 @@ use crate::lines::{self, LineLook, LineMode, Segment};
 use crate::math::{
     self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
 };
+use crate::scene::flags;
 use crate::sprites::{self, SpriteLook};
 use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
 
@@ -175,6 +176,8 @@ pub struct InstanceBatch {
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
+    /// The shadow bits of every row: [`flags::CAST_SHADOWS`] and [`flags::RECEIVE_SHADOWS`].
+    shadows: u32,
     with_colors: bool,
     /// The batch whose rows this one reads, for a part that owns no rows.
     source: Option<Handle>,
@@ -386,6 +389,7 @@ impl InstanceBatch {
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
+            shadows: 0,
             with_colors,
             source,
             part,
@@ -636,6 +640,21 @@ impl InstanceBatch {
     /// no rebuild and no update of the rows.
     pub fn set_layers(&mut self, mask: u32) {
         self.layers = mask;
+    }
+
+    /// The shadow bits of every row: whether the rows cast shadows ([`flags::CAST_SHADOWS`]) and
+    /// receive them ([`flags::RECEIVE_SHADOWS`]), as an object's flags say.
+    pub fn shadows(&self) -> u32 {
+        self.shadows
+    }
+
+    /// Sets the shadow bits of every row, from the [`flags::SHADOWS`] bits of `bits`. Sprite and
+    /// line batches place their own vertices, so they take none. The renderer's tables depend on
+    /// the bits, so a change needs their rebuild.
+    pub fn set_shadows(&mut self, bits: u32) {
+        if self.sprite.is_none() && self.line.is_none() {
+            self.shadows = bits & flags::SHADOWS;
+        }
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with
@@ -1814,6 +1833,25 @@ mod tests {
         assert_eq!(&batch.world(1).colors()[4..8], &[0.1, 0.2, 0.3, 0.4]);
         assert_eq!(batch.changed_ranges(), &[RowRange { start: 0, count: 5 }]);
         assert_eq!(batch.frame_active_count(1), 5);
+    }
+
+    #[test]
+    fn shadow_bits_take_cast_and_receive_and_sprites_and_lines_take_none() {
+        let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+        let mut batch = InstanceBatch::new(4, false, false, 3, 4, 1.0);
+        assert_eq!(batch.shadows(), 0);
+        batch.set_shadows(both | flags::DYNAMIC | flags::OUTLINED);
+        assert_eq!(batch.shadows(), both);
+        batch.set_shadows(flags::RECEIVE_SHADOWS);
+        assert_eq!(batch.shadows(), flags::RECEIVE_SHADOWS);
+        let look = SpriteLook::new(1, 1, false);
+        let mut sprites = InstanceBatch::try_new_sprites(2, false, 3, 4, 0.75, look).unwrap();
+        sprites.set_shadows(both);
+        assert_eq!(sprites.shadows(), 0);
+        let look = LineLook::new(LineMode::Segments, 1.0, false, false);
+        let mut line = InstanceBatch::try_new_lines(2, false, 3, 4, 1.0, look).unwrap();
+        line.set_shadows(both);
+        assert_eq!(line.shadows(), 0);
     }
 
     #[test]
