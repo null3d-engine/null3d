@@ -44,6 +44,8 @@ export interface TimeOfDay {
 	/**
 	 * The sky's settings for `scene.setBackground({ sky })`: its sun and its air. At night the
 	 * sky's sun stands at the moon's place, so the sky is lit from there and its disc is the moon.
+	 * As night falls the second sky, the moon's, fades in over the sunset's sky; at other times
+	 * its weight is 0.
 	 */
 	sky: {
 		sunPosition: [number, number, number];
@@ -51,8 +53,8 @@ export interface TimeOfDay {
 		rayleigh: number;
 		mieCoefficient: number;
 		mieDirectionalG: number;
-		secondSun: [number, number, number];
-		secondWeight: number;
+		secondSunPosition: [number, number, number];
+		secondSkyWeight: number;
 	};
 	/**
 	 * The factor of the sky's light for the background's and the environment's `intensity`. It
@@ -93,35 +95,21 @@ const PRESET_HOURS: Readonly<Record<TimeOfDayPreset, number>> = {
 const DEGREE = Math.PI / 180;
 
 /**
- * How low the sky's own sun sinks, in degrees: at dusk, and as night falls. three.js's sky gives
- * no sun light once its sun is about 2.3 degrees under the horizon, which leaves only a flat grey
- * that the tone curve maps to black. So at dusk the sky keeps its sun just above that, which keeps
- * the sunset's glow, and `skyIntensity` sets how bright it shows. As night falls the sun sinks past
- * it, and the sunset's glow fades out.
+ * How low the sky's own sun sinks after sunset, in degrees. three.js's sky gives no sun light once
+ * its sun is about 2.3 degrees under the horizon, which leaves only a flat grey that the tone curve
+ * maps to black. So after sunset the sky keeps its sun just above that, which keeps the sunset's
+ * glow, and `skyIntensity` sets how bright it shows.
  */
 const DUSK_SUN = -1.2;
-const NIGHT_SUN = -3;
 
 /**
- * The sun heights, in degrees, of nightfall. From the first to the second the sky's sun sinks from
- * its dusk height to its night height. At the second, where the sky has no sun light, the sky's
- * sun moves to the moon's side. From the second to the third the sky dims to the scale of the
- * moon's sky, and from the third to the fourth the sky's sun rises to the moon's place. Below that
- * the sky is lit as by day from the moon's place and dimmed by `skyIntensity`, the "day for night"
- * sky of film: a navy sky with a lighter horizon, a faint glow around the moon, and the sun's disc
- * drawn as the moon.
+ * The sun heights, in degrees, between which night falls. The sunset's sky fades straight into the
+ * moon's sky, each scaled to the dusk table, so no frame goes dark and no glow rises at the moon's
+ * horizon. The moon's sky is lit as by day from the moon's place and dimmed by `skyIntensity`, the
+ * "day for night" sky of film: a navy sky with a lighter horizon, a faint glow around the moon,
+ * and the sun's disc drawn as the moon.
  */
-const NIGHTFALL = [-6, -9, -10, -12] as const;
-
-/**
- * Preview switches, read from the global object: the nightfall's kind, the phases above or a
- * straight cross-fade from the finished sunset sky to the moon's sky, and a factor of the night
- * sky's brightness.
- */
-interface NightPreview {
-	__null3dNightfall?: 'phases' | 'crossfade';
-	__null3dNightSky?: number;
-}
+const NIGHTFALL = [-6, -12] as const;
 
 /**
  * The sky's intensity by day. three.js's sky is about 5 at the horizon. Lights and fog take
@@ -139,7 +127,7 @@ const DUSK: readonly (readonly [number, number])[] = [
 	[8, 0],
 	[0, 0.03],
 	[-6, 0.008],
-	[-12, 0.0015],
+	[-12, 0.003],
 ];
 
 /** The sun's light intensity high in a clear sky, in lux of three.js's scale. */
@@ -188,12 +176,6 @@ export function timeOfDay(
 			`timeOfDay() got ${String(time)}, which takes an hour from 0 to 24 or 'afternoon', 'goldenHour', 'blueHour' or 'night'.`,
 		);
 	const { heading = 0, noonElevation = Math.PI / 3 } = options;
-	const preview = globalThis as NightPreview;
-	const nightScale = preview.__null3dNightSky ?? 1;
-	const duskTable =
-		nightScale === 1
-			? DUSK
-			: DUSK.map(([e, v], k) => [e, k === DUSK.length - 1 ? v * nightScale : v] as const);
 	const hour = ((hours % 24) + 24) % 24;
 	// The sun's path: a tilted circle that rises toward +X at 6 and stands toward -Z at noon.
 	const angle = ((hour - 6) / 12) * Math.PI;
@@ -205,45 +187,42 @@ export function timeOfDay(
 	const elevation = Math.asin(sun[1]) / DEGREE;
 	// The moon: opposite the sun, never lower than its floor.
 	const moon = atElevation(scale(sun, -1), Math.max(-elevation, MOON_FLOOR));
-	const [fade, dark, dim, night] = NIGHTFALL;
-	let skySun = sun;
-	if (elevation < dark) {
-		const rise = smoothstep(dim, night, elevation);
-		skySun = atElevation(moon, mix(NIGHT_SUN, Math.asin(moon[1]) / DEGREE, rise));
-	} else {
-		const floor = mix(DUSK_SUN, NIGHT_SUN, smoothstep(fade, dark, elevation));
-		if (elevation < floor) skySun = atElevation(sun, floor);
-	}
+	// After sunset the sky keeps its sun just under the horizon. As night falls the moon's sky
+	// fades in over it as a second sky, and once night has fallen the sky's sun is the moon.
+	const nightfall = smoothstep(NIGHTFALL[0], NIGHTFALL[1], elevation);
+	const skySun = nightfall === 1 ? moon : elevation < DUSK_SUN ? atElevation(sun, DUSK_SUN) : sun;
 	// Haze and scattering grow as the sky's sun nears the horizon, which warms a low sun. The moon's
-	// sky, whose sun stands high, keeps clear air.
-	const air = smoothstep(2, 15, Math.asin(skySun[1]) / DEGREE);
+	// sky, whose sun stands high, has clear air, and the air clears as it fades in.
+	const air = mix(smoothstep(2, 15, Math.asin(skySun[1]) / DEGREE), 1, nightfall);
 	const sky = {
 		sunPosition: skySun,
 		turbidity: mix(4, 2.5, air),
 		rayleigh: mix(2, 1.2, air),
 		mieCoefficient: 0.005,
 		mieDirectionalG: 0.8,
-		secondSun: [0, 1, 0] as Vec3,
-		secondWeight: 0,
+		secondSunPosition: moon,
+		secondSkyWeight: 0,
 	};
 	const model = skyModel(skySun, sky.turbidity, sky.rayleigh, sky.mieCoefficient);
+	const moonSky =
+		nightfall > 0 && nightfall < 1
+			? skyModel(moon, sky.turbidity, sky.rayleigh, sky.mieCoefficient)
+			: undefined;
 
 	// By day the sky keeps the model's own light. From late afternoon it follows the dusk table.
+	// While night falls the two skies share the table's luminance by the nightfall's progress.
 	let skyIntensity = DAY_SKY;
+	let moonSkyIntensity = 0;
 	const [top] = DUSK[0] as readonly [number, number];
 	if (elevation < top) {
 		const air = { turbidity: sky.turbidity, rayleigh: sky.rayleigh, mie: sky.mieCoefficient };
 		const high = skyModel(atElevation(sun, top), air.turbidity, air.rayleigh, air.mie);
-		const target = between(duskTable, elevation, DAY_SKY * luminance(high.average()), true);
-		skyIntensity = target / Math.max(luminance(model.average()), 1e-9);
-		if (elevation < dark && elevation > night) {
-			// While the moon's sky rises it keeps the scale of the risen sky, so its glow fades in
-			// rather than flaring at the horizon. Before it rises, while the sky has no sun light,
-			// the scale moves to that one in log space.
-			const risen = skyModel(moon, air.turbidity, air.rayleigh, air.mie);
-			const toRisen = smoothstep(dark, dim, elevation);
-			skyIntensity =
-				skyIntensity ** (1 - toRisen) * (target / luminance(risen.average())) ** toRisen;
+		const target = between(DUSK, elevation, DAY_SKY * luminance(high.average()), true);
+		const share = moonSky ? nightfall : 0;
+		skyIntensity = ((1 - share) * target) / Math.max(luminance(model.average()), 1e-9);
+		if (moonSky) {
+			moonSkyIntensity = (share * target) / luminance(moonSky.average());
+			sky.secondSkyWeight = moonSkyIntensity / skyIntensity;
 		}
 	}
 
@@ -269,39 +248,20 @@ export function timeOfDay(
 	// The fog takes the sky's color along the horizon, and turns to its average color at dusk,
 	// when only the side of the sunset glows. The ambient light takes the sky's average.
 	const dusk = smoothstep(0, -6, elevation);
-	const horizon = model.horizon();
-	const average = model.average();
-	let fogColor = scale(
-		[0, 1, 2].map((c) => mix(horizon[c] as number, average[c] as number, dusk)) as Vec3,
-		skyIntensity,
-	);
+	const fogOf = (m: SkyModel) => {
+		const horizon = m.horizon();
+		const average = m.average();
+		return [0, 1, 2].map((c) => mix(horizon[c] as number, average[c] as number, dusk)) as Vec3;
+	};
+	let fogColor = scale(fogOf(model), skyIntensity);
+	let ambient = scale(model.average(), skyIntensity);
+	if (moonSky) {
+		fogColor = add(fogColor, scale(fogOf(moonSky), moonSkyIntensity));
+		ambient = add(ambient, scale(moonSky.average(), moonSkyIntensity));
+	}
 	const fogPeak = Math.max(...fogColor);
 	if (fogPeak > 1) fogColor = scale(fogColor, 1 / fogPeak);
 	// An ambient light of intensity 1 and color L lights a surface as a whole sky of light L / π.
-	let ambient = scale(average, skyIntensity);
-	if (preview.__null3dNightfall === 'crossfade' && elevation < fade && elevation > night) {
-		// The finished sunset sky, whose sun stays at its dusk height, fades into the moon's sky,
-		// each scaled to the dusk table's luminance, and the air clears as the moon's sky comes in.
-		const w = smoothstep(fade, night, elevation);
-		const sunset = atElevation(sun, DUSK_SUN);
-		sky.sunPosition = sunset;
-		sky.turbidity = mix(4, 2.5, w);
-		sky.rayleigh = mix(2, 1.2, w);
-		const air = [sky.turbidity, sky.rayleigh, sky.mieCoefficient] as const;
-		const first = skyModel(sunset, ...air).average();
-		const second = skyModel(moon, ...air).average();
-		const high = skyModel(atElevation(sun, DUSK[0]?.[0] ?? 8), ...air).average();
-		const target = between(duskTable, elevation, DAY_SKY * luminance(high), true);
-		const firstScale = ((1 - w) * target) / luminance(first);
-		const secondScale = (w * target) / luminance(second);
-		skyIntensity = firstScale;
-		sky.secondSun = moon;
-		sky.secondWeight = secondScale / firstScale;
-		ambient = [0, 1, 2].map(
-			(c) => (first[c] as number) * firstScale + (second[c] as number) * secondScale,
-		) as Vec3;
-		fogColor = [...ambient];
-	}
 	const brightest = Math.max(...ambient, 1e-9);
 	return {
 		hours: hour,
@@ -359,6 +319,10 @@ function between(
 
 function scale(v: Vec3, factor: number): Vec3 {
 	return [v[0] * factor, v[1] * factor, v[2] * factor];
+}
+
+function add(a: Vec3, b: Vec3): Vec3 {
+	return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
 
 function luminance(v: Vec3): number {

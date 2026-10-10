@@ -338,7 +338,7 @@ return {
 };
 ```
 
-`timeOfDay` returns a new object, and `setColor` converts the color, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. At night the sky is a navy blue lit from the moon, whose disc the sky draws. The sky lights nothing by itself, so the sun light and the sky's environment light the scene. Docs: `concepts/lighting`, `api/scene`.
+`timeOfDay` returns a new object, and `setColor` converts the color, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene. Docs: `concepts/lighting`, `api/scene`.
 
 ## 11. Physics with a library in the sketch worker
 

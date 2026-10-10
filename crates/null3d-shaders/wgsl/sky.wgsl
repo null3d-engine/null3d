@@ -48,10 +48,10 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
     let direction = normalize(in.direction);
     var color = sky_light(direction, whole, settings, backdrop.sun.w);
     // A second sky, of a second sun, adds its light at its weight.
-    let second_weight = backdrop.params.w;
-    if second_weight > 0.0 {
+    let second_sky_weight = backdrop.params.w;
+    if second_sky_weight > 0.0 {
         let second = sky_whole(second_sun(backdrop.cloud_place), backdrop.scattering);
-        color += second_weight * sky_light(direction, second, settings, backdrop.sun.w);
+        color += second_sky_weight * sky_light(direction, second, settings, backdrop.sun.w);
     }
     let scale = backdrop.params.x * frame.output.exposure;
     return null3d::tonemap::finish(color * scale, in.clip.xy, frame.output);

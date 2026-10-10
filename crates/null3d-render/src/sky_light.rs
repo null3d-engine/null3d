@@ -229,11 +229,11 @@ fn face_direction(face: usize, s: f32, t: f32) -> Vec3 {
 /// The nine coefficients of the sky's diffuse light: red, green and blue for each.
 pub(crate) fn sky_sh(sky: &Sky) -> [[f32; 3]; 9] {
     let mut sh = integrate(sky, GRID, FINER);
-    if sky.second_weight > 0.0 {
+    if sky.second_sky_weight > 0.0 {
         let second = integrate(&sky.second(), GRID, FINER);
         for (sum, add) in sh.iter_mut().zip(second) {
             for c in 0..3 {
-                sum[c] += sky.second_weight * add[c];
+                sum[c] += sky.second_sky_weight * add[c];
             }
         }
     }
@@ -369,5 +369,31 @@ mod tests {
         });
         assert!(night[0][1] < 0.05 * day[0][1], "{night:?} against {day:?}");
         assert!(night[0][1] > 0.0);
+    }
+
+    #[test]
+    fn a_second_sky_adds_its_light_at_its_weight() {
+        let dusk = Sky {
+            sun_position: [0.0, -0.02, -1.0],
+            ..noon()
+        };
+        let moon = [0.3, 0.6, 0.7];
+        let blended = sky_sh(&Sky {
+            second_sun_position: moon,
+            second_sky_weight: 0.25,
+            ..dusk
+        });
+        let (first, second) = (
+            sky_sh(&dusk),
+            sky_sh(&Sky {
+                sun_position: moon,
+                ..dusk
+            }),
+        );
+        for ((b, f), s) in blended.iter().zip(first).zip(second) {
+            for c in 0..3 {
+                assert!((b[c] - (f[c] + 0.25 * s[c])).abs() <= 1e-5 * (1.0 + s[c].abs()));
+            }
+        }
     }
 }

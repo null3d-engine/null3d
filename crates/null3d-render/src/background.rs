@@ -94,18 +94,20 @@ pub struct Sky {
     pub time: f32,
     /// True where the sky shows the sun's disc.
     pub sun_disc: bool,
-    /// A second sky's sun, whose light adds to this sky's at `second_weight`, with the same air.
-    pub second_sun: [f32; 3],
-    pub second_weight: f32,
+    /// A point toward the sun of a second sky, whose light adds to this sky's at
+    /// `second_sky_weight`, with the same air and clouds. A weight of 0 draws no second sky.
+    pub second_sun_position: [f32; 3],
+    pub second_sky_weight: f32,
 }
 
 impl Sky {
-    /// The second sun's heading and elevation in radians, as the shaders' spare values carry it.
+    /// The second sun's heading about +Y and elevation, in radians, as the shaders read it from
+    /// the spare values of the clouds' place. Both are 0 without a second sky.
     pub(crate) fn second_angles(&self) -> [f32; 2] {
-        if self.second_weight <= 0.0 {
+        if self.second_sky_weight <= 0.0 {
             return [0.0, 0.0];
         }
-        let [x, y, z] = self.second_sun;
+        let [x, y, z] = self.second_sun_position;
         let length = (x * x + y * y + z * z).sqrt().max(1e-9);
         [z.atan2(x), (y / length).clamp(-1.0, 1.0).asin()]
     }
@@ -113,8 +115,8 @@ impl Sky {
     /// The sky of the second sun alone.
     pub(crate) fn second(&self) -> Self {
         Self {
-            sun_position: self.second_sun,
-            second_weight: 0.0,
+            sun_position: self.second_sun_position,
+            second_sky_weight: 0.0,
             ..*self
         }
     }
@@ -136,8 +138,8 @@ impl Default for Sky {
             cloud_elevation: 0.5,
             time: 0.0,
             sun_disc: true,
-            second_sun: [0.0, 1.0, 0.0],
-            second_weight: 0.0,
+            second_sun_position: [0.0, 1.0, 0.0],
+            second_sky_weight: 0.0,
         }
     }
 }
@@ -148,7 +150,7 @@ impl Default for Sky {
 struct BackdropUniform {
     /// The rows of the matrix that turns a direction in the world into the cube map's direction.
     rotation: [[f32; 4]; 3],
-    /// The intensity, the blur, the cube map's last mip level, and a spare.
+    /// The intensity, the blur, the cube map's last mip level, and the second sky's weight.
     params: [f32; 4],
     /// The sun's position, and 1 where the sky shows its disc.
     sun: [f32; 4],
@@ -156,7 +158,7 @@ struct BackdropUniform {
     scattering: [f32; 4],
     /// The cloud scale, speed, coverage and density.
     clouds: [f32; 4],
-    /// The cloud elevation, the time, and two spares.
+    /// The cloud elevation, the time, and the second sky's sun as a heading and an elevation.
     cloud_place: [f32; 4],
 }
 
@@ -202,7 +204,7 @@ impl BackdropUniform {
                 ];
                 let [heading, elevation] = sky.second_angles();
                 uniform.cloud_place = [sky.cloud_elevation, sky.time, heading, elevation];
-                uniform.params[3] = sky.second_weight;
+                uniform.params[3] = sky.second_sky_weight;
             }
             BackgroundSource::Texture(_) => {}
         }
@@ -512,5 +514,19 @@ mod tests {
         assert_eq!(uniform.clouds, [0.0002, 0.00002, 0.4, 0.4]);
         assert_eq!(uniform.cloud_place, [0.5, 7.0, 0.0, 0.0]);
         assert_eq!(uniform.params[1], 0.0, "only environments blur");
+    }
+
+    #[test]
+    fn a_second_sky_writes_its_weight_and_its_sun_as_angles() {
+        let sky = Sky {
+            second_sun_position: [0.0, 2.0, 2.0],
+            second_sky_weight: 3.0,
+            ..Sky::default()
+        };
+        let uniform = BackdropUniform::of(&background(BackgroundSource::Sky(sky)), 1);
+        assert_eq!(uniform.params[3], 3.0);
+        let [heading, elevation] = [uniform.cloud_place[2], uniform.cloud_place[3]];
+        assert!((heading - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert!((elevation - std::f32::consts::FRAC_PI_4).abs() < 1e-6);
     }
 }

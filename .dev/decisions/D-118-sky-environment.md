@@ -2,7 +2,7 @@
 
 Status: decided, 2026-10-09. Date: 2026-10-09, updated 2026-10-10 (the night sky). Task: M2-EX14.
 
-Summary: `assets.skyEnvironment()` makes an environment of the sky that `scene.setBackground({ sky })` draws, and the map follows the sky with no further call. The engine core refreshes it in 20 stages, one a frame, so no frame waits for the whole map. Each stage draws one cube face or a few. On a software GPU, the longest stage fell from 27 to 30 ms to under 6 ms. Frames draw with the old map until the last stage copies every new level in at once. The diffuse light changes in the same frame. The new light shows 19 frames after the move's frame, against 6 with the first design's 7 stages. `timeOfDay(hours or preset)` works out the sun, the sky, the main light, the fog, an ambient light and the exposure from one value. It returns values, which the sketch applies to its own objects. At night the sky's own sun stands at the moon's place, so the night sky is a dim navy blue, not black ([The night sky](#the-night-sky)).
+Summary: `assets.skyEnvironment()` makes an environment of the sky that `scene.setBackground({ sky })` draws, and the map follows the sky with no further call. The engine core refreshes it in 20 stages, one a frame, so no frame waits for the whole map. Each stage draws one cube face or a few. On a software GPU, the longest stage fell from 27 to 30 ms to under 6 ms. Frames draw with the old map until the last stage copies every new level in at once. The diffuse light changes in the same frame. The new light shows 19 frames after the move's frame, against 6 with the first design's 7 stages. `timeOfDay(hours or preset)` works out the sun, the sky, the main light, the fog, an ambient light and the exposure from one value. It returns values, which the sketch applies to its own objects. At night the sky's own sun stands at the moon's place, so the night sky is a dim navy blue, not black. As night falls, the sunset's sky fades straight into the moon's sky ([The night sky](#the-night-sky)).
 
 ## Question
 
@@ -184,9 +184,9 @@ The sun rises toward +X, stands toward -Z at noon, 60 degrees up by default, and
 
 How it works out each value:
 
-- **The sky's air.** Turbidity goes from 2.5 to 4 and Rayleigh from 1.2 to 2 as the sky's sun nears the horizon, which warms a low sun. The night sky's sun stands high, so the night keeps clear air.
+- **The sky's air.** Turbidity goes from 2.5 to 4 and Rayleigh from 1.2 to 2 as the sky's sun nears the horizon, which warms a low sun. The night sky's sun stands high, so the night keeps clear air, and the air clears as the moon's sky fades in.
 - **The sky's brightness.** three.js's sky reaches about 5 at the horizon by day. Lights and fog take colors from 0 to 1, and a bright sun is about 3. So by day `skyIntensity` is 0.15, which brings the sky into the lights' range. The sun then outshines the sky's diffuse light about two to one.
-- **The sky at dusk.** three.js's sky dims a hundredfold as its sun reaches the horizon, and goes dark about 2 degrees below it. So below 8 degrees, the sky's average light follows a table. It is 0.03 at sunset, 0.008 at 6 degrees down (blue hour) and 0.0015 at 12 degrees down (night), in log space between them. Under the horizon, the sky keeps its own sun at 1.2 degrees down, which keeps the sunset's glow. From 6 to 9 degrees down that sun sinks to 3 degrees down, and the glow fades out. Then the night sky takes over ([The night sky](#the-night-sky)).
+- **The sky at dusk.** three.js's sky dims a hundredfold as its sun reaches the horizon, and goes dark about 2 degrees below it. So below 8 degrees, the sky's average light follows a table. It is 0.03 at sunset, 0.008 at 6 degrees down (blue hour) and 0.003 at 12 degrees down (night), in log space between them. Under the horizon, the sky keeps its own sun at 1.2 degrees down, which keeps the sunset's glow. From 6 to 12 degrees down the moon's sky fades in over it ([The night sky](#the-night-sky)).
 - **The main light.** By day it is the sun, colored by the air that its light crosses: three.js's extinction in the sun's direction. Its intensity is 3.2 times its brightest channel, and it fades over the last 6 degrees to the horizon. Under the horizon it is the moon: opposite the sun, at least 25 degrees up, a cool white of intensity 0.4. The moon brightens over the first 6 degrees of dusk. One directional light serves both, and the switch comes where both are dark.
 - **The fog's color.** It is the sky's light 3 degrees up, averaged all around, times `skyIntensity`. At dusk it turns to the sky's average color, since only the sunset's side glows. A color past 1 scales down to 1.
 - **The ambient light.** It is the sky's light 35 degrees up, averaged all around, about its average over the sky. An ambient light of π times that lights a surface as that sky does. A scene lit by the sky's environment needs none.
@@ -198,38 +198,42 @@ The image tests `time-of-day-*` draw the four presets with the sky's environment
 
 The first design sank the sky's own sun to 3 degrees under the horizon at night. three.js's sky gives no sun light past its cutoff, about 2.3 degrees down. What is left is its flat night term, a grey of 0.1 times the air's extinction. The dusk table scales the sky's average to 0.0015, and at an exposure of 3.5 the tone curve maps that grey to black. The night preset's sky showed sRGB (4, 4, 3) at the zenith and (3, 3, 2) at 35 degrees up. Its horizon was (0, 0, 0), and its fog (3, 3, 2). The night references showed the same black sky. So did the showcase scenes' night presets.
 
-The fix lights the night sky as by day, from the moon's place, and dims it with `skyIntensity`. This is the "day for night" sky of film. The sky's average luminance still follows the dusk table, 0.0015 at night. That light is blue, and luminance weighs blue little, so the sky shows as a navy blue.
+The fix lights the night sky as by day, from the moon's place, and dims it with `skyIntensity`. This is the "day for night" sky of film. That light is blue, and luminance weighs blue little, so the sky shows as a navy blue. The sky's average luminance follows the dusk table, whose night value is now 0.003 (see below).
 
-How the sky's sun gets from its dusk place to the moon's place:
+How the sky gets from the sunset's sky to the moon's sky:
 
 | Option | Verdict |
 | --- | --- |
-| A: turn it along the arc between them from 6 to 12 degrees down | Rejected. The arc crosses the horizon and passes over the zenith. `skyIntensity` scales the sky's average to the table, so a low sun's glow and a high sun's glow both flare. Halfway, the horizon on the sunset's side reached sRGB (254, 238, 208), and 12 minutes of the day later the zenith reached (51, 88, 123) |
+| A: turn the sky's sun along the arc between them from 6 to 12 degrees down | Rejected. The arc crosses the horizon and passes over the zenith. `skyIntensity` scales the sky's average to the table, so a low sun's glow and a high sun's glow both flare. Halfway, the horizon on the sunset's side reached sRGB (254, 238, 208), and 12 minutes of the day later the zenith reached (51, 88, 123) |
 | B: switch at 12 degrees down | Rejected. One frame jumps from the dark grey sky to the navy one |
-| C: fade the dusk sky out, move the sun where the sky has no sun light, then fade the moon's sky in | Chosen |
+| C: in steps of the sun's height: sink the sky's sun past the cutoff so the sunset's glow fades out, move it to the moon's side there, then raise it to the moon's place | Rejected by the owner. It ran for 12 minutes of the day near black (sRGB (13, 13, 11) down to black), and then a dim warm glow rose on the moon's horizon as the sun rose there, like a second sunset |
+| D: draw two skies and fade the sunset's sky straight into the moon's sky | Chosen by the owner, 10 Oct, from contact sheets and animations of C and D on the time-of-day test scene and the lighthouse demo. No frame goes dark, and no warm glow rises on the moon's side |
 
-Option C works in steps of the real sun's height:
+How option D works, by the real sun's height:
 
-1. From 6 to 9 degrees down, the sky's sun sinks from 1.2 to 3 degrees down, and the sunset's glow fades, as before.
-2. At 9 degrees down, the sky's sun moves to the moon's side, still 3 degrees down. Past the cutoff the sky's light does not depend on the sun's heading, so no pixel changes. A unit test checks that the sky's sun stands past the cutoff on both sides of the move.
-3. From 9 to 10 degrees down, `skyIntensity` moves in log space from the dusk's scale to the scale of the risen moon's sky. The sky goes from (13, 13, 11) to black.
-4. From 10 to 12 degrees down, the sky's sun rises to the moon's place at that scale. The model's own light grows as the sun rises, so the moon's sky fades in. At first a dim warm glow shows on the moon's horizon, like a moonrise. Below 12 degrees down, `skyIntensity` scales the sky's average to the table again, and the two scales meet there.
+- Above 6 degrees down, the sky is the sunset's sky alone, its sun held at 1.2 degrees down.
+- From 6 to 12 degrees down, the sky background draws a second sky, the moon's, and adds its light to the first. The share of the moon's sky rises with a smoothstep from 0 to 1. Each sky is scaled so that its average alone matches the dusk table, and each takes its share. The air clears from the sunset's haze to the moon sky's clear air. The fog and the ambient light add both skies' colors in the same shares.
+- Below 12 degrees down, the sky is the moon's sky alone. Its sun is the moon's place, and the second sky's weight is 0.
 
-At dawn the same steps run the other way. A unit test samples the day from 17:30 to 19:30 and from 4:30 to 6:30. Every value's largest step shrinks tenfold with the time step, so no value jumps.
+The sky's settings carry the second sky as `secondSunPosition` and `secondSkyWeight`, the weight of its light beside the first sky's. The background's uniform block and the sky map's settings had spare values. The second sun goes in two of them as a heading and an elevation, and the weight in the last. The background and the sky map's chain run the sky model a second time only while the weight is above 0. So a sky with no second sky costs the same as before. The core's diffuse light adds the second sky's coefficients at the weight, since they are linear in the light.
+
+At dawn the same blend runs the other way. A unit test samples the day from 18:18 to 19:00 and from 5:00 to 5:42. Each sky's light, the air, the fog, the ambient light and the exposure change by steps that shrink fivefold with the time step. So no value jumps.
+
+The owner also chose a night sky twice as bright as the first fix's, from three levels (1x, 2x, 3x) at 21:00. The dusk table's night value went from 0.0015 to 0.003.
 
 The night sky's figures, from the helper's sky model with three.js's ACES curve at an exposure of 3.5, at 23:00:
 
-| Where | sRGB before | sRGB after |
-| --- | --- | --- |
-| Zenith | (4, 4, 3) | (0, 1, 7) |
-| 35 degrees up, toward the moon | (3, 3, 2) | (2, 11, 27) |
-| Horizon, toward the moon | (0, 0, 0) | (22, 39, 47) |
-| Horizon, away from the moon | (0, 0, 0) | (7, 18, 24) |
-| Fog | (3, 3, 2) | (0, 3, 12) |
+| Where | sRGB before the fix | sRGB at 0.0015 | sRGB at 0.003 (chosen) |
+| --- | --- | --- | --- |
+| Zenith | (4, 4, 3) | (0, 1, 7) | (0, 4, 18) |
+| 35 degrees up, toward the moon | (3, 3, 2) | (2, 11, 27) | (5, 26, 52) |
+| Horizon, toward the moon | (0, 0, 0) | (22, 39, 47) | (43, 71, 82) |
+| Horizon, away from the moon | (0, 0, 0) | (7, 18, 24) | (19, 37, 46) |
+| Fog | (3, 3, 2) | (0, 3, 12) | (1, 9, 27) |
 
-The ambient light's color is (0.13, 0.38, 1), a dim blue. The sky's environment gets the same blue from the same sky, and its diffuse light now matches. The sky's sun disc draws a small moon in the main light's direction. Its light is the sun's disc times `skyIntensity`, bright enough for bloom to give it a halo. `showSunDisc: false` hides it.
+The ambient light's color is (0.13, 0.38, 1), a dim blue. The sky's environment gets the same blue from the same sky, and its diffuse light now matches. The sky's sun disc draws a small moon in the main light's direction. Its light is the sun's disc times `skyIntensity`, bright enough for bloom to give it a halo. While night falls, the moon sky's disc fades in with its share. `showSunDisc: false` hides it.
 
-The moon's light keeps its floor of 25 degrees, so the sky's sun stands at least 25 degrees up at night. While the moon's sky rises, from 10 to 12 degrees down, its disc rises from the horizon to the moon's place. The moon's light stands there from sunset, so the disc follows it late.
+The moon's light keeps its floor of 25 degrees, so the sky's sun stands at least 25 degrees up at night.
 
 ## Decision
 

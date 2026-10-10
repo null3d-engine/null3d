@@ -145,7 +145,7 @@ fn push_stage(
         x,
         y,
         z,
-        sky.second_weight,
+        sky.second_sky_weight,
         sky.turbidity,
         sky.rayleigh,
         sky.mie_coefficient,

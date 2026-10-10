@@ -26,14 +26,16 @@ const ONE_OVER_FOUR_PI: f32 = 0.07957747154594767;
 
 /// The sky's settings, as the background's block and the environment generator's block hold them.
 struct SkySettings {
-    /// The sun's position in `xyz`, as three.js's `sunPosition`, and 1 where the sky shows the
-    /// sun's disc, else 0.
+    /// The sun's position in `xyz`, as three.js's `sunPosition`. In `w` the background holds 1
+    /// where the sky shows the sun's disc, else 0, and the environment generator holds the weight
+    /// of the second sky, 0 for none.
     sun: vec4f,
     /// The turbidity, Rayleigh coefficient, Mie coefficient and Mie directional g.
     scattering: vec4f,
     /// The cloud scale, cloud speed, cloud coverage and cloud density.
     clouds: vec4f,
-    /// The cloud elevation, the time in seconds, and two spares.
+    /// The cloud elevation, the time in seconds, and the second sky's sun as a heading and an
+    /// elevation in radians.
     cloud_place: vec4f,
 }
 
@@ -47,8 +49,8 @@ struct SkyWhole {
     sun: vec3f,
 }
 
-/// The second sky's sun, from its heading and elevation in radians in the spare values of the
-/// clouds' place.
+/// The direction of the second sky's sun, from its heading and elevation in the clouds' place. A
+/// second sky, such as the moon's sky as night falls, adds its light to the sky's at a weight.
 fn second_sun(cloud_place: vec4f) -> vec3f {
     let heading = cloud_place.z;
     let elevation = cloud_place.w;
