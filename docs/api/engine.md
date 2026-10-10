@@ -132,7 +132,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 ## What the engine reports
 
 - `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine

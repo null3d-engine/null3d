@@ -5,13 +5,15 @@
 
 mod common;
 
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use common::{Workers, wait_for_every_thread, wait_until};
-use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
 
 /// Busy-waits for `d`, so the thread stays on its core the way real work would.
 fn spin_for(d: Duration) {
@@ -93,6 +95,42 @@ fn job_workers_time_their_chunks_before_the_loop_returns() {
         .parallel_for(60, 1, &|_, _| spin_for(Duration::from_micros(100)));
     assert_eq!(untimed.jobs().take_busy_us(0), 0, "no clock, no busy time");
     untimed.stop();
+}
+
+#[test]
+fn the_caller_times_the_loops_it_hands_out_even_before_any_job_worker_joins() {
+    const CHUNK_MS: f64 = 0.2;
+    // Room for four job workers, none of which has joined: the caller runs every chunk.
+    let jobs = JobSystem::with_config(JobConfig {
+        workers: 4,
+        clock: Some(clock_ms),
+        ..JobConfig::default()
+    });
+    jobs.parallel_for(20, 1, &|_, _| {
+        spin_for(Duration::from_secs_f64(CHUNK_MS / 1000.0));
+    });
+    let handed = f64::from(jobs.take_handed_us()) / 1000.0;
+    assert!(handed >= CHUNK_MS * 20.0, "{handed} ms for 20 chunks");
+    assert_eq!(jobs.take_handed_us(), 0, "the total starts again");
+
+    // A loop of one chunk runs inline, and hands nothing out.
+    jobs.parallel_for(1, 1, &|_, _| spin_for(Duration::from_micros(200)));
+    assert_eq!(jobs.take_handed_us(), 0, "an inline loop");
+
+    // Stopped, the timing reads no clock; started again, it times the next loop.
+    jobs.time_handed_loops(false);
+    jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert_eq!(jobs.take_handed_us(), 0, "timing stopped");
+    jobs.time_handed_loops(true);
+    jobs.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert!(jobs.take_handed_us() > 0, "timing started again");
+
+    let untimed = JobSystem::with_config(JobConfig {
+        workers: 4,
+        ..JobConfig::default()
+    });
+    untimed.parallel_for(20, 1, &|_, _| spin_for(Duration::from_micros(50)));
+    assert_eq!(untimed.take_handed_us(), 0, "no clock, no handed time");
 }
 
 #[test]
@@ -199,6 +237,62 @@ fn background_tasks_run_exactly_once_on_job_workers() {
     });
     assert_eq!(BACKGROUND_RUNS.load(Ordering::Relaxed), 500);
     assert_eq!(pool.jobs().pending_background(), 0);
+}
+
+/// The job system of the test below, which its hook reaches.
+static LATE_JOBS: OnceLock<Arc<JobSystem>> = OnceLock::new();
+/// The job worker that the hook started.
+static LATE_WORKER: Mutex<Option<JoinHandle<LoopExit>>> = Mutex::new(None);
+/// The times that the job system asked for job workers.
+static WANTED: AtomicU32 = AtomicU32::new(0);
+/// The background tasks that ran in the test below.
+static LATE_RUNS: AtomicU32 = AtomicU32::new(0);
+
+/// The host's hook: starts a job worker the first time, as a page that starts its job workers as
+/// the work grows does.
+fn start_a_job_worker() {
+    if WANTED.fetch_add(1, Ordering::SeqCst) == 0 {
+        let jobs = Arc::clone(LATE_JOBS.get().expect("the job system exists"));
+        *LATE_WORKER.lock().unwrap() = Some(std::thread::spawn(move || jobs.worker_loop(0)));
+    }
+}
+
+fn count_late_run(_: u64, worker: WorkerId) {
+    assert_ne!(worker, WorkerId::CALLER);
+    LATE_RUNS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[test]
+fn a_background_task_queued_before_any_job_worker_joined_asks_for_one_and_runs() {
+    let jobs = LATE_JOBS.get_or_init(|| {
+        Arc::new(JobSystem::with_config(JobConfig {
+            workers: 2,
+            want_workers: Some(start_a_job_worker),
+            ..JobConfig::default()
+        }))
+    });
+    let task = BackgroundTask {
+        run: count_late_run,
+        arg: 0,
+    };
+    jobs.spawn_background(task).unwrap();
+    wait_until(
+        "the task to run on the job worker that it asked for",
+        || LATE_RUNS.load(Ordering::SeqCst) >= 1,
+    );
+    // A job worker has joined, so the next task asks for none.
+    jobs.spawn_background(task).unwrap();
+    wait_until("the second task to run", || {
+        LATE_RUNS.load(Ordering::SeqCst) >= 2
+    });
+    assert_eq!(WANTED.load(Ordering::SeqCst), 1);
+    jobs.shutdown();
+    let worker = LATE_WORKER
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the hook started a job worker");
+    assert_eq!(worker.join().unwrap(), LoopExit::Stopped);
 }
 
 /// Numbers that every thread draws from one sequence, so a test can order what the threads did

@@ -113,6 +113,11 @@ export interface SketchCore {
 	threads: readonly (readonly [string, readonly number[]])[];
 	/** Asks the page to show or hide its stats overlay, or to change its options. */
 	showStats(show: StatsRequest): void;
+	/**
+	 * Asks the page for at least `count` job workers, which it starts as the work grows, and
+	 * returns how many it has been asked for.
+	 */
+	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
@@ -124,6 +129,18 @@ const SLOT_POLL_MS = 4;
  * figures, and then one frame in every this many.
  */
 const MEMORY_EVERY = 8;
+/** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
+const JOB_WINDOW = 30;
+/**
+ * The mean time per frame that the sketch thread spends in loops it hands out, in microseconds,
+ * from which it asks for more job workers: twice as many, and at least 2.
+ */
+const JOB_GROW_US = 200;
+/**
+ * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
+ * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ */
+const JOB_PAUSE = 270;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -216,6 +233,16 @@ export class SketchRunner {
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
+	/**
+	 * The parallel work of the frames in the current window, in whole microseconds, and the
+	 * window's frames.
+	 */
+	private jobWindowUs = 0;
+	private jobWindowFrames = 0;
+	/** The frames left before the sketch thread times its parallel loops again. */
+	private jobPause = 0;
+	/** Whether the core times the parallel loops that the sketch thread hands out. */
+	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
@@ -653,6 +680,41 @@ export class SketchRunner {
 		return this.governorLoop ? this.governor.scale : this.heldScale;
 	}
 
+	/**
+	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
+	 * the `asked` job workers, and at least 2, when the frames handed out enough work to share.
+	 * After a window with less, the loops go untimed for a while; once every job worker has been
+	 * asked for, for good.
+	 */
+	private growJobs(glue: CoreGlue, asked: number): void {
+		if (asked >= this.jobRecords.length) {
+			this.timeHandedLoops(glue, false);
+			return;
+		}
+		if (this.jobPause > 0) {
+			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+			return;
+		}
+		this.jobWindowUs += glue.takeHandedUs();
+		if (++this.jobWindowFrames < JOB_WINDOW) return;
+		const enough = this.jobWindowUs >= JOB_GROW_US * this.jobWindowFrames;
+		this.jobWindowUs = 0;
+		this.jobWindowFrames = 0;
+		if (enough) {
+			this.sketch.wantJobs(Math.max(2, asked * 2));
+		} else {
+			this.jobPause = JOB_PAUSE;
+			this.timeHandedLoops(glue, false);
+		}
+	}
+
+	/** Starts or stops the core's timing of the parallel loops that this thread hands out. */
+	private timeHandedLoops(glue: CoreGlue, on: boolean): void {
+		if (this.timingHanded === on) return;
+		this.timingHanded = on;
+		glue.timeHandedLoops(on);
+	}
+
 	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
 	private publishMemory(): void {
 		const { record } = this;
@@ -1050,11 +1112,14 @@ export class SketchRunner {
 		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
-		for (let k = 0; k < this.jobRecords.length; k++) {
+		// Only the job workers asked for so far have records, so the figures count the ones that run.
+		const asked = this.sketch.wantJobs(0);
+		for (let k = 0; k < asked; k++) {
 			const jobRecord = this.jobRecords[k] as FrameRecorder;
 			jobRecord.begin(frame);
 			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
+		this.growJobs(glue, asked);
 		return frame;
 	}
 }

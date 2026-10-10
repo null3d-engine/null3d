@@ -205,8 +205,9 @@ export interface Switches {
 	 */
 	targetFps: TargetFps | undefined;
 	/**
-	 * The job workers that ?jobs= asks for, or undefined for the count from the device's cores. The
-	 * engine starts no more than the device has logical cores (`jobWorkerCount`).
+	 * The most job workers that ?jobs= lets the engine start, or undefined for the count from the
+	 * device's cores. The engine starts them as the work grows, and no more than the device has
+	 * logical cores (`jobWorkerCount`).
 	 */
 	jobs: number | undefined;
 	/**
@@ -261,9 +262,9 @@ const RESERVED_CORES = 2;
 const MEMORY_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values;
 
 /**
- * The job workers of a threaded engine on a device with `cores` logical cores: the count that
+ * The most job workers of a threaded engine on a device with `cores` logical cores: the count that
  * ?jobs= asks for, up to `cores`, or else the cores that the sketch and render workers leave free,
- * and at least one.
+ * and at least one. The engine starts them as the work grows.
  */
 export function jobWorkerCount(fromSwitch: number | undefined, cores: number): number {
 	return fromSwitch !== undefined
