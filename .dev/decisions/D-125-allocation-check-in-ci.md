@@ -1,8 +1,8 @@
 # D-125: The per-frame allocation check runs in CI on SwiftShader
 
-Status: decided by the owner on 2026-10-09: "yes add it". The settings below come from six trial runs on CI's machines on 9 and 10 October 2026. The warm-up of 1,200 frames is set from the sixth; the pull request's own run gives the final time. Date: 2026-10-10. Task: CI.
+Status: decided by the owner on 2026-10-09: "yes add it". The settings below come from six trial runs on CI's machines on 9 and 10 October 2026. The warm-up of 1,200 frames is set from the sixth. In the run of #467, which added the job, each job took about 4 minutes. Date: 2026-10-10. Task: CI.
 
-Summary: CI's `allocation` job runs `bun run bench:allocation` on S1, once on WebGPU and once on WebGL2. It runs on each push to main, and on each ready pull request that changes what the check covers. On SwiftShader it draws 1,000 boxes and counts the frames that S1 steps. It keeps its own budgets for three places that the browser fills between frames. The browser optimizes after fewer calls there, so 1,200 frames of warm-up do the work of 3,600. A job takes about 7 minutes, against 17 to 18 with the full warm-up.
+Summary: CI's `allocation` job runs `bun run bench:allocation` on S1, once on WebGPU and once on WebGL2. It runs on each push to main, and on each ready pull request that changes what the check covers. On SwiftShader it draws 1,000 boxes and counts the frames that S1 steps. It keeps its own budgets for three places that the browser fills between frames. The browser optimizes after fewer calls there, so 1,200 frames of warm-up do the work of 3,600. A job takes about 4 minutes, against 17 to 18 with the full warm-up.
 
 ## Question
 
@@ -24,6 +24,7 @@ The job must catch a place of the engine's frame code that starts to allocate ea
 | CI 37956553296 | 3,600 frames, 1,000 boxes, CI budgets | 2 of 2 passed, warm-up 897 and 1,055 s | 1 of 2 passed, warm-up 998 s. The other warmed up in 519 s, then hung in its samples until the job's 50 minutes ran out |
 | CI 37979009491 | The same, with a one-minute limit on each call to the browser | 2 of 4 passed, in 11 and 18 minutes. 2 failed after their samples: a mouse or key press never returned | 4 of 4 passed, in 17 to 18 minutes |
 | CI 38010789676 | The browser's compilers take a function after 100 and 500 calls, not 400 and 3,000. 600 and 900 frames, 2 jobs each | 600: 0 of 2 passed, in 4.3 minutes. 900: 0 of 2 passed, in 5.3 to 5.5 minutes, only on the canvas view's helper, `targetView`, 6.7 and 23.5 of 4 bytes | 600: 0 of 2 passed, in 2.5 minutes. 900: 2 of 2 passed, in 5.4 to 5.6 minutes |
+| CI 38013393828, #467 | 1,200 frames with the lower counts | Passed in 4.2 minutes: warm-up 187 s, sketch worker 276 bytes per frame, render worker 512 | Passed in 3.9 minutes: warm-up 181 s, sketch worker 289 bytes per frame, render worker 328 |
 
 How the data was produced: `.github/workflows/alloc-experiment.yml` on a branch that was not merged, on GitHub's Linux machines with 4 processors. Each job ran the check alone.
 

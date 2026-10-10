@@ -520,7 +520,7 @@ jobs:
     # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
     # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
     # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
-    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 7
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
     needs: [build, city, allocation-paths]
