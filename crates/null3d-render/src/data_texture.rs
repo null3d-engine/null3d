@@ -3,10 +3,10 @@
 //! in turn, each item a few texels, read with `textureLoad`. Their writes go out as at most three
 //! rectangles, and they are made again with room to grow.
 
-use null3d_core::world::ROW_VALUE_FLOATS;
+use null3d_core::world::{MATRIX_FLOATS, ROW_VALUE_FLOATS};
 use null3d_gpu::drawlist::{DrawList, Op, format, sizes, texture_usage, view};
 
-use crate::frame::RecordError;
+use crate::frame::{RecordError, address, floats_as_bytes};
 
 /// Items of a data texture: `count` items from item `first` on, `per_row` items to a texture row
 /// from texel `column` of the row, each `texels` texels and `bytes` bytes.
@@ -30,6 +30,18 @@ impl TextureRows {
             per_row: sizes::INDICES_PER_TEXTURE_ROW,
             texels: 1,
             bytes: 4,
+        }
+    }
+
+    /// `count` world matrices of the textures of matrix rows, from matrix `first` on.
+    pub(crate) fn matrices(first: u32, count: u32) -> Self {
+        Self {
+            first,
+            count,
+            column: 0,
+            per_row: sizes::MATRICES_PER_TEXTURE_ROW,
+            texels: sizes::MATRIX_TEXELS,
+            bytes: (MATRIX_FLOATS * 4) as u32,
         }
     }
 
@@ -83,6 +95,21 @@ pub(crate) fn write_rows(
         at += items * rows.bytes;
     }
     Ok(())
+}
+
+/// Writes the row values of rows `start..start + count` of a batch, whose world output holds them
+/// as `values`, into a row values texture whose rows put the batch's first row at `base`.
+pub(crate) fn write_row_values(
+    list: &mut DrawList,
+    texture: u32,
+    base: u32,
+    values: &[f32],
+    start: u32,
+    count: u32,
+) -> Result<(), RecordError> {
+    let floats = &values[start as usize * ROW_VALUE_FLOATS..][..count as usize * ROW_VALUE_FLOATS];
+    let rows = TextureRows::row_values(base + start, count);
+    write_rows(list, texture, rows, address(floats_as_bytes(floats)))
 }
 
 /// The rows to create a data texture with when it must hold `needed`: room to grow, so a slowly

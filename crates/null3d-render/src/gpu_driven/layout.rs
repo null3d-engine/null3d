@@ -18,13 +18,13 @@ use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_core::world::{MATRIX_FLOATS, ROW_VALUE_FLOATS, UNBOUNDED_RADIUS};
+use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
-use crate::data_texture::{self, TextureRows};
+use crate::data_texture::write_row_values;
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
@@ -1005,15 +1005,7 @@ impl Layout {
         }
         let mut upload = |base: u32, batch: &InstanceBatch, start: u32, count: u32| {
             let values = batch.world(parity).row_values();
-            let floats =
-                &values[start as usize * ROW_VALUE_FLOATS..][..count as usize * ROW_VALUE_FLOATS];
-            let rows = TextureRows::row_values(base + start, count);
-            data_texture::write_rows(
-                list,
-                ids::ROW_VALUES,
-                rows,
-                address(floats_as_bytes(floats)),
-            )
+            write_row_values(list, ids::ROW_VALUES, base, values, start, count)
         };
         let batches = input.batches.iter().zip(&self.batch_bases);
         if everything || input.snapshot.overflowed() {

@@ -1,19 +1,19 @@
 //! Data textures: the world matrices of the sources and the index lists, as texels, with their
 //! uploads, and the rings that keep each frame's data apart from what the GPU may still read.
 
-use null3d_core::world::{MATRIX_FLOATS, ROW_VALUE_FLOATS};
+use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{DrawList, format, sizes};
 
 use super::ids;
 use super::layout::Layout;
-pub(super) use crate::data_texture::{DataTexture, TextureRows, grown_rows, write_rows};
+pub(super) use crate::data_texture::{
+    DataTexture, TextureRows, grown_rows, write_row_values, write_rows,
+};
 use crate::frame::{RecordError, address, floats_as_bytes};
 
 /// Frames that the rings of streamed and index list textures cover: the frame being recorded and
 /// the two the GPU may still be drawing.
 pub(super) const RING: u32 = 3;
-/// Bytes of one world matrix: three rows of four floats.
-const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// Texels of one light record: four vectors of four 32-bit values.
 const LIGHT_TEXELS: u32 = sizes::LIGHT_RECORD_BYTES / 16;
 /// The first column of the light grid's words in the light data texture, after the records'.
@@ -75,34 +75,8 @@ pub(super) fn write_matrices(
     first: u32,
     matrices: &[f32],
 ) -> Result<(), RecordError> {
-    write_rows(
-        list,
-        texture,
-        TextureRows {
-            first,
-            count: (matrices.len() / MATRIX_FLOATS) as u32,
-            column: 0,
-            per_row: sizes::MATRICES_PER_TEXTURE_ROW,
-            texels: sizes::MATRIX_TEXELS,
-            bytes: MATRIX_BYTES,
-        },
-        address(floats_as_bytes(matrices)),
-    )
-}
-
-/// Writes the row values of rows `start..start + count` of a batch, whose world output holds them
-/// as `values`, into a row values texture whose rows put the batch's first row at `base`.
-pub(super) fn write_row_values(
-    list: &mut DrawList,
-    texture: u32,
-    base: u32,
-    values: &[f32],
-    start: u32,
-    count: u32,
-) -> Result<(), RecordError> {
-    let floats = &values[start as usize * ROW_VALUE_FLOATS..][..count as usize * ROW_VALUE_FLOATS];
-    let rows = TextureRows::row_values(base + start, count);
-    write_rows(list, texture, rows, address(floats_as_bytes(floats)))
+    let rows = TextureRows::matrices(first, (matrices.len() / MATRIX_FLOATS) as u32);
+    write_rows(list, texture, rows, address(floats_as_bytes(matrices)))
 }
 
 impl TextureRows {
