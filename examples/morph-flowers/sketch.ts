@@ -36,22 +36,19 @@ function petal(out: Vec3, p: number, u: number, v: number, open: number): Vec3 {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, time } = ctx;
-	const day = timeOfDay(8.6, { heading: -2.2 });
-	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity: day.skyIntensity });
+	const day = timeOfDay(9, { heading: -2.5 });
+	const sky = { ...day.sky, cloudCoverage: 0.35 };
+	scene.setBackground({ sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
-	scene.setFog({ color: day.fog.color, density: 0.03, sunGlow: day.fog.sunGlow });
-	post.set({
-		exposure: day.exposure,
-		bloom: { threshold: 1.2 },
-		ao: { radius: 0.1 },
-		vignette: {},
-	});
+	scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+	const exposure = day.exposure * 1.3;
+	post.set({ exposure, bloom: { threshold: 1.2 }, ao: { radius: 0.1 }, vignette: {} });
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 6 } });
-	const camera = scene.createPerspectiveCamera({ fov: 35, near: 0.05, far: 5000 });
-	camera.setPosition(0.5, 1.15, 1.9);
-	camera.lookAt(0, 0.2, -0.05);
+	const lens = { fov: 35, near: 0.05, far: 5000, position: [0.55, 0.8, 2.05] } as const;
+	const camera = scene.createPerspectiveCamera(lens);
+	camera.lookAt(0, 0.3, -0.2);
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 0.2, -0.05], groundY: 0.35 });
+	const view = interact(ctx, camera, { target: [0, 0.3, -0.2], groundY: 0.35 });
 
 	// The head: each vertex in the bud and in the open flower. Each normal comes from the petal's
 	// slopes across and along, worked out from nearby points.
@@ -73,8 +70,7 @@ export default defineSketch(async (ctx) => {
 				if (i < ACROSS && j < ALONG)
 					indices.push(k, k + 1, k + ACROSS + 1, k + 1, k + ACROSS + 2, k + ACROSS + 1);
 			}
-	const moved = opened.map((value, i) => value - closed[i]);
-	const bent = turned.map((value, i) => value - normals[i]);
+	const [moved, bent] = [opened.map((v, i) => v - closed[i]), turned.map((v, i) => v - normals[i])];
 	// One mesh per color: the bud is green at the base and tinted toward its color at the tip.
 	const heads = [0, 3, 6, 9, 12].map((hue) => {
 		const tip = (i: number) => closed[i - (i % 3) + 1] / LENGTH;
@@ -86,7 +82,8 @@ export default defineSketch(async (ctx) => {
 		return geometry.fromArrays({ positions: closed, normals, colors, indices, morphTargets });
 	});
 
-	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn.
+	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn, before
+	// a low hedge of clipped mounds.
 	const data = new Uint8Array(64 * 64 * 4).fill(255);
 	for (let i = 0, w = Math.PI / 32; i < 64 * 64; i++) {
 		const [x, y, r] = [i % 64, i >> 6, Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1)];
@@ -108,11 +105,14 @@ export default defineSketch(async (ctx) => {
 		part({ material: plank, position: [0, 0.09, side * 0.72], scale: [2.8, 0.18, 0.08] });
 		part({ material: plank, position: [side * 1.36, 0.09, 0], scale: [0.08, 0.18, 1.36] });
 	}
+	const leaf = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
+	const hedge = materials.standard({ color: '#2f5a24', roughness: 0.9, flatShading: true });
+	const shrub = { mesh: leaf, material: hedge, scale: [0.24, 0.3, 0.22] } as const;
+	for (let i = 0; i < 21; i++) part({ ...shrub, position: [i * 0.29 - 2.9, 0.2, -1.45] });
 
 	// The tulips: a stem, two leaves and a head, in a group that sways in the breeze.
 	const petals = materials.standard({ vertexColors: true, roughness: 0.55, doubleSided: true });
 	const green = materials.standard({ color: '#3f7a2a', roughness: 0.6 });
-	const leaf = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
 	math.seed(9);
 	const tulips = Array.from({ length: ROWS * COLUMNS }, (_, t) => {
 		const x = ((t % COLUMNS) - (COLUMNS - 1) / 2) * 0.2 + math.randFloat(-0.04, 0.04);

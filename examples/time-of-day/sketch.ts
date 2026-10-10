@@ -1,16 +1,15 @@
 // Time of day: a day passes over a lighthouse in 40 seconds. timeOfDay(hour) gives each hour's sky,
-// sun or moon, fog, sky intensity and exposure, which the sketch applies. The sky's environment
-// follows the sky by itself, so every surface takes the hour's light. At dusk the windows and the
-// lamp light up, and its beams sweep the sea. timeOfDay makes a new object, so the sketch calls it
-// only when the hour has moved on a few minutes.
+// sun or moon, fog, sky intensity and exposure. The sky's environment follows the sky, so every
+// surface takes the hour's light. At dusk the windows and lamp light up and its beams sweep the sea.
+// timeOfDay makes a new object, so the sketch calls it only when the hour moves on a few minutes.
 import { defineSketch, type Material, type MeshOptions, math, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
 // Seconds per day, the share of the day at time 0 (about 15:00), how much dawn and dusk slow the
 // clock (0 for an even clock), and the hours between calls of timeOfDay.
 const [DAY, START, LINGER, STEP] = [40, 14 / 24, 0.7, 1 / 20];
-/** The sun's path turned about +Y, so that it sets ahead of the camera, left of the lighthouse. */
-const HEADING = -1.15;
+/** The sun's path turned about +Y, so that it sets ahead of the camera, well right of the island. */
+const HEADING = -1.45;
 /** The lighthouse's place, each cottage's place and turn, and each pine's place. */
 const TOWER = [1.5, 0, -1] as const;
 const HOUSES = [-3.2, 1.2, 0.3, -1.2, 3.6, -0.2];
@@ -20,13 +19,13 @@ const TARGET = [0, 4.5, 0] as const;
 const BOUNDS = [-10, -100, -1, 10, 100, 1] as const;
 
 // The lamp's beams: light added to what lies behind, fading from the lamp and toward the edges.
-const ADDITIVE = { alphaMode: 'blend', blending: 'additive', depthWrite: false } as const;
+const ADDED = { alphaMode: 'blend', blending: 'additive', depthWrite: false, fog: false } as const;
 const beam = /* wgsl */ `
 struct Uniforms { strength: f32 }
-
 fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     s.baseColor = vec3f(0.0);
+    s.reflection = vec4f(0.0, 0.0, 0.0, 1.0);
     let facing = abs(dot(input.normal, input.viewDirection));
     s.emissive = vec3f(1.0, 0.85, 0.55) * material.strength * input.uv.y * input.uv.y * facing;
     return s;
@@ -45,6 +44,8 @@ export default defineSketch(async (ctx) => {
 	const environment = await assets.skyEnvironment();
 	post.set({ bloom: { intensity: 0.25, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
 	const sun = scene.createDirectionalLight({ castShadows: true, shadow: { distance: 60 } });
+	// A fill light in the sky's horizon color, so the side away from a low sun keeps its shapes.
+	const fill = scene.createHemisphereLight({ groundColor: '#0c1a20' });
 	const camera = scene.createPerspectiveCamera({ fov: 40, far: 5000, position: [22, 8, 30] });
 	camera.lookAt(...TARGET);
 	scene.setActiveCamera(camera);
@@ -63,9 +64,8 @@ export default defineSketch(async (ctx) => {
 
 	// A calm sea that mirrors the sky's light, and a headland of rock and grass, with boulders.
 	const sea = materials.standard({ color: '#134456', roughness: 0.12, doubleSided: true });
-	const flat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
 	const plane = geometry.plane({ width: 1e4, height: 1e4 });
-	part(sea, { mesh: plane, rotation: flat, castShadows: false });
+	part(sea, { mesh: plane, rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], castShadows: false });
 	const cliff = { radiusTop: 7, radiusBottom: 9, height: 4, radialSegments: 11 };
 	part(rough('#958572'), { mesh: geometry.cylinder(cliff), position: [0, 1, 0] });
 	const cap = geometry.cylinder({ ...cliff, radiusBottom: 7, height: 0.4 });
@@ -92,7 +92,7 @@ export default defineSketch(async (ctx) => {
 	part(lantern, { mesh: drum, position: at(9.36), scale: [0.38, 0.6, 0.38] });
 	part(red, { mesh: geometry.cone({ radius: 0.5, height: 0.5 }), position: at(9.91) });
 	const beams = scene.createGroup({ position: at(9.36), dynamic: true });
-	const light = materials.shader({ wgsl: beam, uniforms: { strength: 0 }, ...ADDITIVE });
+	const light = materials.shader({ wgsl: beam, uniforms: { strength: 0 }, ...ADDED });
 	const cone = geometry.cone({ radius: 1.8, height: 16, openEnded: true, radialSegments: 24 });
 	for (const side of [-1, 1]) {
 		const rotation = [0, 0, side * Math.SQRT1_2, Math.SQRT1_2] as const;
@@ -122,8 +122,7 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			// The pointer's place across the plane picks an hour from 4:00 to 20:00. The lamps light
-			// from late afternoon until the morning.
+			// The pointer picks an hour from 4:00 at the left to 20:00 at the right. Lamps light at dusk.
 			const hour = math.lerp(clock(time.now), 12 + view.point[0] * 0.8, view.steering);
 			const night = hour > 12 ? math.smoothstep(hour, 17.2, 19) : 1 - math.smoothstep(hour, 5.2, 7);
 			lantern.set({ emissiveIntensity: 0.3 + 12 * night });
@@ -138,9 +137,10 @@ export default defineSketch(async (ctx) => {
 				sun.setDirection(...day.light.direction);
 				sun.setColor(day.light.color);
 				sun.setIntensity(day.light.intensity);
+				fill.setColor(day.fog.color);
+				fill.setIntensity(6 * day.skyIntensity);
 				scene.setEnvironment(environment, { intensity: day.skyIntensity });
-				const fog = { density: 0.003, height: 0, heightFalloff: 0.1, sunGlow: day.fog.sunGlow };
-				scene.setFog({ color: day.fog.color, ...fog });
+				scene.setFog({ ...day.fog, density: 0.003, height: 0, heightFalloff: 0.1 });
 				post.set({ exposure: day.exposure });
 				scene.setBackground({ sky }, { intensity: day.skyIntensity });
 			}
