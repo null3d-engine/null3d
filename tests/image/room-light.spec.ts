@@ -16,11 +16,12 @@ interface RoomLightResult {
 	set: boolean;
 	steadyBlue: boolean;
 	pixels: number;
+	darkBlue: boolean;
 	blackFrames: number;
 	blueFrames: number;
 	blueChanged: number[];
 	litMiddle: number;
-	unlitMiddle: number | null;
+	unlitMiddle: number;
 	setMs: number | null;
 	lightMs: number | null;
 	failures: string[];
@@ -66,9 +67,9 @@ for (const { gpu, tier, mode, name, source: file } of RUNS)
 		expect(result.set, 'the room resolved').toBe(true);
 		expect(result.steadyBlue).toBe(true);
 		expect(result.blueFrames, 'frames that use the room were captured').toBeGreaterThan(0);
-		// The room lights the sphere, which is dark without it.
-		expect(result.unlitMiddle).not.toBeNull();
-		expect(result.litMiddle).toBeGreaterThan((result.unlitMiddle as number) + 40);
+		// The room lights the sphere, which is dark in the frame before the request.
+		expect(result.darkBlue, 'the frame before the request has no room').toBe(false);
+		expect(result.litMiddle).toBeGreaterThan(result.unlitMiddle + 40);
 		// Each frame that uses the room draws as the steady frame does, within a few pixels.
 		const most = Math.ceil(0.001 * result.pixels);
 		expect(result.blueChanged.filter((count) => count > most)).toEqual([]);
