@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build, createServer, type Rollup } from 'vite';
@@ -16,6 +16,10 @@ import {
 	type WgslCompile,
 	wgslError,
 } from './wgsl';
+
+// A custom surface function builds into every variant of the standard material, which takes seconds
+// on a CI runner of four cores.
+setDefaultTimeout(30_000);
 
 /** The hint that the tests' compiles end their message about a missing entry point with. */
 const HINT = 'HINT';
@@ -312,7 +316,8 @@ fn effect(input: EffectInput) -> vec4f {
 	it('builds a surface function into every variant of the standard material', async () => {
 		const built = material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
-		// Each WebGL2 build has a twin that skins, for skinned meshes.
+		// Each WebGL2 build has a twin that skins, for skinned meshes, and each build has a twin that
+		// reads the row values of instance batches.
 		const plain = [
 			'webgl2',
 			'webgl2_alpha_mask',
@@ -364,7 +369,8 @@ fn effect(input: EffectInput) -> vec4f {
 			'webgpu_vertex_color_receive_shadows',
 		];
 		const skinned = plain.filter((name) => name.startsWith('webgl2')).map((name) => `${name}_skin`);
-		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned].sort());
+		const rowValued = plain.map((name) => `${name}_row_values`);
+		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned, ...rowValued].sort());
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
 		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });

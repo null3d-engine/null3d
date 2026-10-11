@@ -74,6 +74,7 @@ import {
 	governorProblems,
 } from '../pages/lib/governor.ts';
 import { type JitterResult, jitterProblems } from '../pages/lib/jitter.ts';
+import { type OcclusionTurnsResult, occlusionTurnsProblems } from '../pages/lib/occlusion.ts';
 import {
 	framesInFlight,
 	type OverloadResult,
@@ -115,7 +116,7 @@ import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
 import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
-import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import { BENCH_BUILD, type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { type MipLevelsResult, mipLevelsNote, mipLevelsProblems } from './mip-levels-checks.ts';
 import {
 	type ObjectGrowthCheck,
@@ -123,6 +124,7 @@ import {
 	objectGrowthPlan,
 	objectGrowthProblems,
 } from './object-growth.ts';
+import { type OcclusionS6Check, occlusionS6Plan, saveOcclusionS6Images } from './occlusion-s6.ts';
 import {
 	HEAVY_SPHERES,
 	heavyCheckProblems,
@@ -209,7 +211,14 @@ export type Check =
 	| { kind: 'stats'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
+	| {
+			kind: 'bench';
+			tier: Tier;
+			scene: BenchScene;
+			page: BenchPageKind;
+			jobs?: number;
+			reflection?: ReflectionSize;
+	  }
 	/** The visual page of a benchmark scene: its shadow figures and frames, on one GPU path. */
 	| { kind: 'visual'; tier: Tier; scene: BenchScene }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
@@ -222,6 +231,12 @@ export type Check =
 	| { kind: 'effect'; effect: CostedEffect; tier: Tier; scale: number }
 	/** The environment cost page: the built-in room off and on in turns, over layers of planes. */
 	| { kind: 'environment'; tier: Tier }
+	/** The grass cost page: a field of blades still and swaying by their row values, in turns. */
+	| { kind: 'grass'; tier: Tier }
+	/** The sky map cost page: each stage of a sky map's refresh, timed on one GPU path. */
+	| { kind: 'sky-map'; tier: Tier }
+	/** The sky refresh page: the frames from a sun move until the sky's light follows it. */
+	| { kind: 'sky-refresh'; tier: Tier }
 	/**
 	 * The room light page: an environment asked for during play, the built-in room or an HDR file,
 	 * whose every frame must show its light; it times the load.
@@ -250,7 +265,9 @@ export type Check =
 	/** A load of the texture cache page with the city's textures, with the cache off or on. */
 	| TextureCacheCheck
 	/** The object growth page's timing mode: the create calls that grow the scene's object tables. */
-	| ObjectGrowthCheck;
+	| ObjectGrowthCheck
+	/** S6's occlusion turns at one preset and one occlusion buffer size, for T-36. */
+	| OcclusionS6Check;
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -364,13 +381,12 @@ export interface BenchSwitches {
 	jobs?: number;
 	/** True makes a null3D page capture a PNG file of its frame after the measured seconds. */
 	capture?: boolean;
+	/** S1's water with a reflection pass of this share of the render size, or undefined for none. */
+	reflection?: ReflectionSize;
 }
 
-/**
- * The benchmark pages' production build, which timed runs load under one address prefix of the
- * runner's own, so they measure the engine as a developer ships it: without development checks.
- */
-const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+/** The reflection pass's sizes that S1's `reflection` switch takes. */
+export type ReflectionSize = 'quarter' | 'half' | 'full';
 
 /**
  * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
@@ -380,11 +396,11 @@ const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	{ seconds, n, jobs, capture }: BenchSwitches = {},
+	{ seconds, n, jobs, capture, reflection }: BenchSwitches = {},
 	scene: BenchScene = 's1',
 ): PlanItem<Check> {
 	const switches = [
-		...Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
+		...Object.entries({ seconds, n, jobs, reflection }).flatMap(([name, value]) =>
 			value === undefined ? [] : [`${name}=${value}`],
 		),
 		...(capture ? ['capture'] : []),
@@ -394,7 +410,14 @@ export function benchItem(
 		id,
 		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
-		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
+		check: {
+			kind: 'bench',
+			tier,
+			scene,
+			page,
+			...(jobs !== undefined && { jobs }),
+			...(reflection && { reflection }),
+		},
 	};
 }
 
@@ -901,8 +924,11 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 	);
 }
 
-/** The effects that the effect cost page measures: bloom, ambient occlusion, or 4 custom effects. */
-export type CostedEffect = 'bloom' | 'ao' | 'effects';
+/**
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
+ * custom effects.
+ */
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -915,11 +941,14 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * depth prepass on with it, so the ao plan also times each page with the prepass on in both
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
- * one effect's pass. D-21 records the results of the bloom plan and the ao plan, and D-71 those of
- * the effects plan.
+ * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
+ * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
+ * D-119 those of the dof plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
+	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -934,22 +963,25 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 			: [];
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
-			prepass.map((on) =>
-				pageItem(
-					`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}`,
-					'effect-cost',
-					{ kind: 'effect', effect, tier, scale },
-					{
-						switches: [
-							`gpu=${tier}`,
-							`scale=${scale}`,
-							`effect=${effect}`,
-							...(on ? ['prepass=on'] : []),
-							// One pass for each effect, so a quarter of the difference is one pass.
-							...(effect === 'effects' ? ['join=off'] : []),
-						],
-						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-					},
+			prepass.flatMap((on) =>
+				tapCounts.map((taps) =>
+					pageItem(
+						`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}`,
+						'effect-cost',
+						{ kind: 'effect', effect, tier, scale },
+						{
+							switches: [
+								`gpu=${tier}`,
+								`scale=${scale}`,
+								`effect=${effect}`,
+								...(on ? ['prepass=on'] : []),
+								...(taps ? [`taps=${taps}`] : []),
+								// One pass for each effect, so a quarter of the difference is one pass.
+								...(effect === 'effects' ? ['join=off'] : []),
+							],
+							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+						},
+					),
 				),
 			),
 		),
@@ -1029,6 +1061,81 @@ export function environmentPlan(): PlanItem<Check>[] {
 			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
 		),
 	);
+}
+
+/**
+ * What row values cost on each GPU path: a field of 100,000 grass blades under the sun's shadows,
+ * still in the standard material and swaying out of step with a tint each, from their rows'
+ * values, in turns. D-127 records the results.
+ */
+export function grassPlan(): PlanItem<Check>[] {
+	return TIERS.map((tier) =>
+		pageItem(
+			`grass-${tier}`,
+			'grass-cost',
+			{ kind: 'grass', tier },
+			{ switches: [`gpu=${tier}`], timeoutSeconds: EFFECT_TIMEOUT_SECONDS },
+		),
+	);
+}
+
+/** The GPU paths of the sky plan's pages, with the tier each draws on. */
+const SKY_PATHS = [
+	['webgpu', 'webgpu'],
+	['compat', 'webgpu'],
+	['webgl2', 'webgl2'],
+] as const;
+
+/**
+ * What a sky map's refresh costs on each GPU path, for D-118: each of its stages, timed from its
+ * call until the GPU has finished it, and the frames from a sun move until the sky's light follows
+ * it. The capabilities page comes first, so a device without WebGPU skips those pages.
+ */
+export function skyPlan(): PlanItem<Check>[] {
+	return [
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-map-cost-${path}`,
+				'sky-map-cost',
+				{ kind: 'sky-map', tier },
+				{ switches: [`gpu=${path}`, 'runs=8'], timeoutSeconds: 240 },
+			),
+		),
+		...SKY_PATHS.map(([path, tier]) =>
+			pageItem(
+				`sky-refresh-${path}`,
+				'sky-refresh',
+				{ kind: 'sky-refresh', tier },
+				{ switches: [`gpu=${path}`, 'fps=20'], timeoutSeconds: 90 },
+			),
+		),
+	];
+}
+
+/** The reflection plan's sizes of S1's reflection pass, with none first. */
+const REFLECTION_SIZES = [undefined, 'quarter', 'half'] as const;
+/** The reflection plan's rounds, and each benchmark page's warm-up and measured seconds. */
+const REFLECTION_ROUNDS = 3;
+const REFLECTION_SECONDS = 10;
+
+/**
+ * What a reflection pass costs, for D-120: S1 with water under the swarm, whose reflection pass
+ * draws at a quarter and at half the render size, against S1 with no reflection, on each of
+ * null3D's GPU paths. The sizes take turns round by round in one session, so a device that slows
+ * as it warms slows each size alike. A device without WebGPU skips those pages.
+ */
+export function reflectionPlan(): PlanItem<Check>[] {
+	return Array.from({ length: REFLECTION_ROUNDS }, (_, round) =>
+		(['null3d-webgpu', 'null3d-webgl2'] as const).flatMap((page) =>
+			REFLECTION_SIZES.map((reflection) =>
+				benchItem(`reflection-${page}-${reflection ?? 'none'}-${round + 1}`, page, {
+					seconds: REFLECTION_SECONDS,
+					reflection,
+				}),
+			),
+		),
+	).flat();
 }
 
 /** The environments that the load plan asks for: the built-in room, and HDR files of each kind. */
@@ -1476,12 +1583,17 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	dof: () => effectPlan('dof'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
+	grass: grassPlan,
+	sky: skyPlan,
+	reflection: reflectionPlan,
 	occlusion: occlusionPlan,
 	'gpu-occlusion': gpuOcclusionPlan,
+	'occlusion-s6': occlusionS6Plan,
 	jitter: jitterPlan,
 	shimmer: shimmerPlan,
 	animation: animationPlan,
@@ -1518,6 +1630,64 @@ function environmentLoadProblems(result: ItemResult): string[] {
 			? []
 			: ["the environment's light did not brighten the sphere"]),
 	];
+}
+
+/** What the sky map cost page reports: each stage's times over the refreshes, by stage. */
+interface SkyMapResult {
+	fill: number;
+	stages: number[][];
+	gpuStages: number[][];
+	errors: string[];
+}
+
+/** The median of some times, or 0 for none. */
+const medianOf = (times: readonly number[]) =>
+	[...times].sort((a, b) => a - b)[Math.floor(times.length / 2)] ?? 0;
+
+/** The sky map cost page's figures, as lines of the report, and its GPU errors. */
+function skyMapReport(result: SkyMapResult): { lines: string[]; problems: string[] } {
+	const stages = (times: readonly number[][]) =>
+		times.map((t) => medianOf(t).toFixed(2)).join(', ');
+	const lines = [
+		`the whole map at once ${result.fill.toFixed(2)} ms`,
+		`each stage's median ${stages(result.stages)} ms`,
+		`each stage's longest ${result.stages.map((t) => Math.max(...t).toFixed(2)).join(', ')} ms`,
+		...(result.gpuStages.some((t) => t.length > 0)
+			? [`each stage's median by timer queries ${stages(result.gpuStages)} ms`]
+			: []),
+	];
+	return { lines, problems: result.errors.map((error) => `GPU error: ${error}`) };
+}
+
+/** What the sky refresh page reports: each capture's frames since the move and its two colors. */
+interface SkyRefreshResult {
+	frames: { since: number; mirror: number[]; rough: number[] }[];
+}
+
+/** How far a color may stray from the new sky's, in levels of 255, to count as the new light. */
+const SKY_NEAR = 4;
+
+/**
+ * The frames from a sun move until both spheres show the new sky's light: the first capture after
+ * the move from which every later capture matches the last one.
+ */
+function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: string[] } {
+	const after = result.frames.filter((frame) => frame.since >= 0);
+	const last = after.at(-1);
+	if (!last) return { line: '', problems: ['no capture after the sun moved'] };
+	const near = (a: number[], b: number[]) =>
+		a.every((value, c) => Math.abs(value - (b[c] as number)) <= SKY_NEAR);
+	let first = after.length - 1;
+	while (first > 0) {
+		const frame = after[first - 1] as (typeof after)[number];
+		if (!near(frame.mirror, last.mirror) || !near(frame.rough, last.rough)) break;
+		first -= 1;
+	}
+	const since = (after[first] as (typeof after)[number]).since;
+	return {
+		line: `the new sky's light shows ${since} frames after the move, over ${after.length} captures`,
+		problems: last.since === 15 ? [] : [`the last capture shows frame ${last.since}, not 15`],
+	};
 }
 
 /**
@@ -2105,9 +2275,15 @@ export function judge(
 		case 'skinning':
 			return skinningProblems(result as ItemResult & SkinningResult);
 		case 'effect':
-		case 'environment': {
+		case 'environment':
+		case 'grass': {
 			const cost = result as ItemResult & { failures?: string[]; on?: { intervalMs?: number } };
-			const feature = check.kind === 'effect' ? check.effect : 'the environment';
+			const feature =
+				check.kind === 'effect'
+					? check.effect
+					: check.kind === 'grass'
+						? 'the grass swaying'
+						: 'the environment';
 			return [
 				...(cost.failures ?? []).map((code) => `the engine failed with ${code}`),
 				...(cost.on?.intervalMs ? [] : [`the page measured no frame with ${feature} on`]),
@@ -2129,6 +2305,16 @@ export function judge(
 		}
 		case 'environment-load':
 			return environmentLoadProblems(result);
+		case 'sky-map': {
+			const { lines, problems } = skyMapReport(result as ItemResult & SkyMapResult);
+			if (problems.length === 0) context?.note?.(`the sky map: ${lines.join('; ')}`);
+			return problems;
+		}
+		case 'sky-refresh': {
+			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
+			if (problems.length === 0) context?.note?.(line);
+			return problems;
+		}
 		case 'shimmer': {
 			const shimmer = result as ItemResult & { shimmer?: number };
 			return typeof shimmer.shimmer === 'number' ? [] : ['the page measured no shimmer'];
@@ -2143,6 +2329,15 @@ export function judge(
 				...(occlusion.on?.intervalMs ? [] : ['the page measured no frame with occlusion on']),
 				...(occlusion.on?.occludedEntries ? [] : ['occlusion culling hid nothing in the city']),
 			];
+		}
+		case 'occlusion-s6': {
+			const turns = result as ItemResult & OcclusionTurnsResult;
+			if (context)
+				saveOcclusionS6Images(
+					join(context.imageDir, 'frames', `occlusion-s6-${check.preset}-${check.buffer}`),
+					turns,
+				);
+			return occlusionTurnsProblems(turns);
 		}
 		case 'jitter': {
 			const jitter = result as unknown as JitterResult;
@@ -2246,11 +2441,12 @@ export function benchRows(
 				visual.set(visualName(check), result as unknown as VisualResult);
 		}
 		if (check.kind !== 'bench') continue;
-		const { scene, page, jobs } = check;
-		const key = `${scene} ${page} ${jobs ?? ''}`;
+		const { scene, page, jobs, reflection } = check;
+		const kind = reflection ? `${page} reflection=${reflection}` : page;
+		const key = `${scene} ${kind} ${jobs ?? ''}`;
 		const group = groups.get(key) ?? {
 			scene,
-			kind: page,
+			kind,
 			jobs,
 			results: [],
 			...(isNull3dPage(page) && { visualKey: visualName(check) }),

@@ -1,7 +1,7 @@
 // Checks that no frame draws the scene without an environment's light: the built-in room, or with
 // ?source=<address> an HDR file that the engine reads and filters at load. The sketch
-// (sketches/room-light-sketch.ts) draws a metal sphere with no light on black. The page asks it for
-// the environment during play, and captures the newest frame again and again while the map is made,
+// (sketches/room-light-sketch.ts) draws a metal sphere with no light on black. The page captures
+// that dark frame first, then asks the sketch for the environment during play, and captures the newest frame again and again while the map is made,
 // until it has a number of frames that use it. The sketch sets the environment and a blue
 // background in the same step, so a capture with the blue background is a frame that uses it. Each
 // one should match the steady frame at the end. The page reports how many captures had each
@@ -69,6 +69,9 @@ run('room-light', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	// The dark sample comes before the request: on a fast GPU the environment can be ready before
+	// the first capture after the request, so no capture after it need be dark.
+	const dark = await engine.captureFrame();
 	let set = false;
 	let setMs: number | null = null;
 	const started = performance.now();
@@ -80,7 +83,6 @@ run('room-light', async () => {
 		setMs = performance.now() - started;
 	});
 	engine.postToSketch('room', new URLSearchParams(location.search).get('source'));
-	let firstBlack: Frame | undefined;
 	let blackFrames = 0;
 	let lightMs: number | null = null;
 	const blue: Frame[] = [];
@@ -105,10 +107,7 @@ run('room-light', async () => {
 		if (isBlue(frame)) {
 			lightMs ??= performance.now() - started;
 			blue.push(frame);
-		} else {
-			firstBlack ??= frame;
-			blackFrames++;
-		}
+		} else blackFrames++;
 		await nextSketchFrame(before);
 	}
 	off();
@@ -120,13 +119,15 @@ run('room-light', async () => {
 		set,
 		steadyBlue: isBlue(steady),
 		pixels: steady.width * steady.height,
+		darkBlue: isBlue(dark),
+		/** The captures after the request without the environment, which a fast GPU may not catch. */
 		blackFrames,
 		blueFrames: blue.length,
 		/** The changed pixels of each blue frame, against the steady frame. */
 		blueChanged: blue.map((frame) => changed(frame, steady)),
-		/** The sphere's middle, lit by the room in the steady frame and unlit in the first frame. */
+		/** The sphere's middle, lit by the room in the steady frame and unlit before the request. */
 		litMiddle: middle(steady),
-		unlitMiddle: firstBlack ? middle(firstBlack) : null,
+		unlitMiddle: middle(dark),
 		/**
 		 * Milliseconds from the request until the environment resolved, and until the first capture
 		 * that uses it: the download, the reading and the shaders, then the map and its frame.

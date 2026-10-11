@@ -5,16 +5,25 @@
 // at the frame's start. The first of them also destroys a group with a child, and moves a box
 // again to where it already went. In the first frame both modes move that box, turn the dynamic
 // box, and add a box under the tree's root, whose slot in grow mode lies past every slot of the
-// tables it started with. Both modes post 'after' once frames have drawn.
+// tables it started with. Both modes post 'after' once frames have drawn. ?play-ms= sets the least
+// time of play before 'before'. Each message carries the render scale that the frame drew at.
 import { defineSketch, type Group } from '@null3d/engine';
 
-const growing = new URL(import.meta.url).searchParams.get('mode') === 'grow';
+const params = new URL(import.meta.url).searchParams;
+const growing = params.get('mode') === 'grow';
+/** The least time of play before the picture before, in ms. */
+const PLAY_MS = Number(params.get('play-ms') ?? 0);
 /** Groups that each frame of the growth creates. */
 const GROUPS = [1_500, 3_000, 6_000, 12_000, 24_000];
 /** Frames before each picture. */
 const FRAMES = 6;
 
-export default defineSketch(({ scene, geometry, materials, page, time }) => {
+export default defineSketch(({ scene, geometry, materials, page, quality, time }) => {
+	// The test slows every frame far below the target rate, so the frame-budget governor would
+	// lower the render scale once its grace after the first frame ends. When it does depends on how
+	// fast the machine runs, so the two engines could draw at different scales. Off, both draw at
+	// the highest scale.
+	quality.set({ governor: false });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({ position: [0, 4, 12], target: [0, 0, 0] });
 	scene.setActiveCamera(camera);
@@ -42,6 +51,8 @@ export default defineSketch(({ scene, geometry, materials, page, time }) => {
 	if (!moved) throw new Error('the sketch made no boxes');
 
 	let start = -1;
+	let startMs = 0;
+	let ready = false;
 	let asked = false;
 	let grown = -1;
 	const hidden: Group[] = [];
@@ -50,8 +61,14 @@ export default defineSketch(({ scene, geometry, materials, page, time }) => {
 	});
 	return {
 		onUpdate() {
-			if (start < 0) start = time.frame;
-			if (time.frame - start === FRAMES) page.post('before');
+			if (start < 0) {
+				start = time.frame;
+				startMs = performance.now();
+			}
+			if (!ready && time.frame - start >= FRAMES && performance.now() - startMs >= PLAY_MS) {
+				ready = true;
+				page.post('before', { renderScale: quality.renderScale });
+			}
 			if (grown < 0 && asked) grown = time.frame;
 			if (grown < 0) return;
 			const step = time.frame - grown;
@@ -68,7 +85,10 @@ export default defineSketch(({ scene, geometry, materials, page, time }) => {
 				moved.setPosition(0, 3, 0);
 			}
 			if (step === GROUPS.length + FRAMES)
-				page.post('after', { objects: growing ? hidden.length + 1 : 1 });
+				page.post('after', {
+					objects: growing ? hidden.length + 1 : 1,
+					renderScale: quality.renderScale,
+				});
 		},
 	};
 });

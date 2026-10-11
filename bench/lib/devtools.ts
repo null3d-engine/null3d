@@ -23,6 +23,19 @@ export interface CallFrame {
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Resolves with `promise`, or throws naming `step` once `ms` milliseconds have passed. */
+export async function within<T>(promise: Promise<T>, ms: number, step: string): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(`${step} took longer than ${ms / 1000} s`)), ms);
+	});
+	try {
+		return await Promise.race([promise, late]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /** How long a browser that is starting may take to open its debugging port. */
 const CONNECT_TIMEOUT_MS = 20_000;
 

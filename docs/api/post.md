@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
+summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
 ---
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom, ambient occlusion, outlines, color grading, the vignette, custom effects and custom tone curves in 0.2. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves in 0.2. The API is experimental, so it can still change between versions.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom and ambient occlusion do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
 
 ## Tone mapping and exposure
 
@@ -131,6 +131,49 @@ export default defineSketch(({ post, quality }) => {
 - A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
 - `post.set` allocates nothing, so a sketch can change its settings every frame. Turning it on or off adds or removes passes, which takes a few frames.
 
+## Depth of field
+
+Depth of field blurs what lies in front of and behind the focus distance, as a camera lens does. It is off by default. The camera's focal length frames the shot, and the aperture and the focus set the blur:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post }) => {
+  const camera = scene.createPerspectiveCamera({ position: [0, 1.6, 4], target: [0, 1, 0] });
+  // An 85 mm portrait lens on a full-frame camera, wide open at f/1.8.
+  camera.setFocalLength(85);
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  const vase = scene.createMesh({
+    mesh: geometry.sphere({ radius: 0.3 }),
+    material: materials.standard({ color: '#c8643c' }),
+    position: [0, 1, 0],
+  });
+  post.set({ dof: { aperture: 1.8, focusPoint: [0, 1, 0] } });
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `dof` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `dof.focusDistance` | The distance from the camera, along its view, that is sharp, in world units: above 0. | 10 |
+| `dof.focusPoint` | A point in the world to focus on in every frame, as a camera's autofocus does, or `false` to focus at `focusDistance`. | `false` |
+| `dof.aperture` | The aperture as an f-number, above 0. A lower number opens the lens and blurs more. | 2.8 |
+| `dof.focalLength` | The lens's focal length in millimetres, above 0, or `'camera'` for the active camera's. | `'camera'` |
+| `dof.maxBlur` | The largest blur radius, as a share of the image's height, from 0 to 0.1. | 0.02 |
+| `dof.blades` | The aperture's blades: 0 for round out-of-focus highlights, or a whole number from 3 to 12 for polygons. | 0 |
+
+- The lens is a photographer's: a focal length on a full-frame sensor, 24 mm tall, and an f-number. World units count as metres, as in glTF. An aperture of 1.4 blurs twice as much as 2.8. At the same aperture, an 85 mm lens blurs far more than a 24 mm one.
+- `'camera'` takes the focal length of the active camera's field of view, which `camera.setFocalLength` sets. So the blur always matches the framing. An orthographic camera takes 50 mm.
+- With `focusPoint`, the engine finds the point's distance along the camera's view in each frame, so the focus follows a moving camera. To follow a moving object, pass its position again each frame, from an array that the sketch changes in place. Setting `focusDistance` stops the focus on the point.
+- The blur is the circle of confusion of a thin lens. It is 0 at the focus. Behind the focus it grows toward a limit, and in front of it, it grows without limit. `maxBlur` caps it.
+- It runs after the custom effects and before bloom, so bloom glows from the blurred image.
+- It draws where the quality setting `dofSamples` is above 0: 22 taps on Medium, 43 on High and 71 on Ultra. On Low it is 0, so it draws nothing there unless the sketch sets `quality.set({ dofSamples: 16 })` or more.
+- It needs HDR color, as bloom does. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA. On a device with no HDR target it stays off, and development builds warn once.
+- A setting that a call leaves out keeps its value, also while it is off. `post.set({ dof: {} })` turns it on with the values it had.
+- `post.set` allocates nothing, so a sketch can move the focus every frame. Turning depth of field on or off adds or removes passes, which takes a few frames, and its shaders download the first time.
+
 ## Outlines
 
 Outlines draw a crisp line around the meshes that `setOutlined(true)` marks, as three.js's `OutlinePass` draws edges around its selected objects. They are off by default.
@@ -172,7 +215,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Color grading
 
-A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md), then give it to `post.set`:
+A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md#color-grading-tables), or make one from numbers with [`assets.lutFromData`](assets.md#tables-from-numbers). Then give it to `post.set`:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -186,7 +229,7 @@ export default defineSketch(async ({ assets, post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `lut` | A table from `assets.loadLut`, or `false` to turn grading off. | Off |
+| `lut` | A table from `assets.loadLut` or `assets.lutFromData`, or `false` to turn grading off. | Off |
 | `lutIntensity` | The share of the table's color in each pixel, from 0 to 1, as `LUTPass`'s `intensity`. | 1 |
 
 - The table grades each pixel after the tone mapping and the sRGB encoding, as `LUTPass` does after three.js's `OutputPass`. Tables made for sRGB display color, as most are, look as their authors made them.
@@ -265,7 +308,7 @@ post.set({ toneMapping: reinhard });
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, outline or vignette value other than settings or `false`. Also a `lut` that is not a table from `assets.loadLut`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, outline or vignette value other than settings or `false`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -275,13 +318,15 @@ post.set({ toneMapping: reinhard });
 ## Related pages
 
 - [Color management](../concepts/color-management.md): HDR color, the final pass, the 8-bit path and the background.
-- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, outlines and custom effects work, and what they cost.
+- [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines and custom effects work, and what they cost.
+- [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
-- [Quality presets](../concepts/quality-presets.md): `aoScale` on each preset.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
+- [Quality presets](../concepts/quality-presets.md): `aoScale` and `dofSamples` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
-- [Assets](assets.md): `assets.loadLut`, which loads color grading tables.
-- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene.
+- [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
+- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.
+- [The depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens): the focus racks across a chess board with `focusPoint`, while a dolly zoom changes the camera's focal length in every frame.
 
 ## API reference
 

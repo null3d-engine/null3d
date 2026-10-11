@@ -10,13 +10,14 @@
 
 import * as Counter from './counter';
 import * as GpuCounter from './gpu-counter';
+import * as MemoryFigure from './memory-figure';
 import * as Phase from './phase';
 import * as Role from './role';
 
 // The numbered names of the metrics buffer: the rings, one per thread role (job worker k writes
 // ring `Role.Job + k`), the CPU phases of a frame in the order they run, the counters of a frame
-// record, and what a GPU record's counter slots hold.
-export { Counter, GpuCounter, Phase, Role };
+// record, what a GPU record's counter slots hold, and the memory figures in the header.
+export { Counter, GpuCounter, MemoryFigure, Phase, Role };
 
 export const PHASE_NAMES = [
 	'update',
@@ -47,6 +48,9 @@ export const COUNTER_NAMES = [
 	'skippedDraws',
 	'gpuObjects',
 	'occludedEntries',
+	'triangles',
+	'drawnObjects',
+	'uncountedFigures',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -81,12 +85,18 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
-const RECORD_WORDS = 21;
+const RECORD_WORDS = 24;
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;
 const RINGS = 1;
 const MEASURING = 2;
+/**
+ * Int32 word of the readers of the frame figures, the stats overlay and a sketch's frame figures,
+ * which also want what only they show: the counts of the draws that the GPU culls and the memory
+ * figures. A measurement samples without them.
+ */
+const FIGURES = 3;
 /** Float64 index of the epoch time, in ms, at which the first frame was presented. */
 const FIRST_FRAME = 2;
 /** Float64 index of the display's refresh rate in hertz, as the thread that draws measured it. */
@@ -101,7 +111,12 @@ const WARM_UP_END = 6;
 const FIRST_FRAME_PIPELINES = 7;
 /** Float64 index of the time, in ms, that the thread that draws spent on the first frame's draw. */
 const FIRST_DRAW = 8;
-const HEADER_WORDS = 18;
+/**
+ * Float64 index of the first of the memory figures that the engine's threads publish while the page
+ * samples, in the order of `MemoryFigure`.
+ */
+const MEMORY = 9;
+const HEADER_WORDS = 2 * (MEMORY + MemoryFigure.Count);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -156,6 +171,32 @@ class MetricsViews {
 	}
 }
 
+/**
+ * Turns the costly figures on or off for one reader of the frame figures, the stats overlay or a
+ * sketch's frame figures: GPU time from timer queries, the counts of the draws that the GPU culls,
+ * and the memory figures that the sketch thread publishes. Readers count, so the engine samples
+ * while any reader wants it. A measurement samples GPU time alone.
+ */
+export function sampleFrames(buffer: ArrayBufferLike, on: boolean): void {
+	const header = new Int32Array(buffer, 0, HEADER_WORDS);
+	sample(header, MEASURING, on);
+	sample(header, FIGURES, on);
+}
+
+/** Adds a reader to one of the header's counts of readers, or takes one away. */
+function sample(header: Int32Array, word: number, on: boolean): void {
+	if (on) Atomics.add(header, word, 1);
+	else Atomics.sub(header, word, 1);
+}
+
+/**
+ * A view of the memory figures that the engine's threads publish, in the order of `MemoryFigure`,
+ * for code on any thread. Each is 0 before its thread first published it.
+ */
+export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
+	return new Float64Array(buffer, MEMORY * 8, MemoryFigure.Count);
+}
+
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
 export function refreshRate(buffer: ArrayBufferLike): number {
 	return new Float64Array(buffer, 0, HEADER_WORDS / 2)[REFRESH_HZ] as number;
@@ -176,9 +217,20 @@ export class FrameRecorder {
 		this.sequence = Atomics.load(this.views.header, WRITTEN + ring);
 	}
 
-	/** True while the page is measuring; costly timing, such as GPU queries, runs only then. */
+	/**
+	 * True while any reader samples, such as a measurement or the stats overlay. Costly timing, such
+	 * as GPU queries, runs only then.
+	 */
 	get measuring(): boolean {
 		return Atomics.load(this.views.header, MEASURING) !== 0;
+	}
+
+	/**
+	 * True while the stats overlay or a sketch's frame figures read the figures that only they show:
+	 * the counts of the draws that the GPU culls and the memory figures.
+	 */
+	get figures(): boolean {
+		return Atomics.load(this.views.header, FIGURES) !== 0;
 	}
 
 	/** Starts the record of a frame, with every time and counter at zero. */
@@ -220,8 +272,22 @@ export class FrameRecorder {
 
 	/** Finishes the record with the frame's total busy time on this thread. */
 	commit(busyMs: number): void {
-		const { header, words, floats } = this.views;
-		floats[this.at + BUSY] = busyMs;
+		this.views.floats[this.at + BUSY] = busyMs;
+		this.finish();
+	}
+
+	/**
+	 * Finishes the record with the frame's busy time in whole microseconds. A caller that the
+	 * browser does not inline this into passes a small integer, where a fraction would make a number
+	 * object at each call.
+	 */
+	commitMicros(busyUs: number): void {
+		this.views.floats[this.at + BUSY] = busyUs / 1000;
+		this.finish();
+	}
+
+	private finish(): void {
+		const { header, words } = this.views;
 		this.sequence++;
 		Atomics.store(words, this.at + SEQUENCE, this.sequence);
 		Atomics.store(header, WRITTEN + this.ring, this.sequence);
@@ -237,6 +303,19 @@ export class FrameRecorder {
 	/** Records the display's refresh rate, which the thread that draws measures. */
 	setRefreshHz(hz: number): void {
 		this.views.times[REFRESH_HZ] = hz;
+	}
+
+	/** Publishes a memory figure by its `MemoryFigure` place, for the frame figures on any thread. */
+	publishMemory(figure: number, value: number): void {
+		this.views.times[MEMORY + figure] = value;
+	}
+
+	/**
+	 * Publishes the GPU memory that the backend holds: its texture bytes, then its buffer bytes, as
+	 * `GpuMemory.bytes` keeps them. A copy between typed arrays boxes no fraction.
+	 */
+	publishGpuMemory(bytes: Float64Array): void {
+		this.views.times.set(bytes, MEMORY + MemoryFigure.GpuTextureBytes);
 	}
 
 	/**
@@ -356,7 +435,7 @@ export class MetricsReader {
 			this.read[ring] = Atomics.load(header, WRITTEN + ring);
 		this.records = Array.from({ length: this.views.rings }, emptyRecords);
 		this.lost = 0;
-		Atomics.add(header, MEASURING, 1);
+		sample(header, MEASURING, true);
 	}
 
 	drain(): void {
@@ -391,7 +470,7 @@ export class MetricsReader {
 	/** Drains the last records and turns costly timing off again. */
 	end(): void {
 		this.drain();
-		Atomics.sub(this.views.header, MEASURING, 1);
+		sample(this.views.header, MEASURING, false);
 	}
 }
 

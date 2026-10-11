@@ -129,7 +129,7 @@ It also saves the errors and warnings that the page logged, with their stacks, i
 
 ## Measure
 
-In the sketch, `debug.stats(true)` shows frame figures over the canvas. They are the frame rates, and the CPU time per frame of each thread and phase. The call `debug.frameStats()` gives the sketch the same figures, for logs and tests. Both work in production builds too. [Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures) lists the figures.
+The stats overlay shows frame figures over the top-right corner of the canvas. Its header shows the frame rate. A click opens a card with each thread's CPU time and the GPU's time against the target frame rate. The card also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back. Show it from the page with `createEngine({ stats: true })`, `engine.stats(true)` or the `?stats` switch, or from the sketch with `debug.stats(true)`. The call `debug.frameStats()` gives the sketch the engine's figures, for logs and tests. Both work in production builds too. [Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures) lists the figures.
 
 `engine.measure(seconds)` measures the running engine from the page: CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls and memory. [Debug drawing and stats](../api/debug.md#frame-measurement) shows an example, and the [performance guide](performance.md) explains the numbers.
 

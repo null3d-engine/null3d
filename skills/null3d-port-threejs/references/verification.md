@@ -114,7 +114,7 @@ null3D checks its own parity with three.js r186 on scenes of each feature, on co
 - Tone mapping with anti-aliasing: null3D averages an edge's samples before it tone maps them, and `WebGLRenderer` after. Where a very bright surface meets a dark one, the edge pixels differ. Compare such views with anti-aliasing off on both sides, or review those edges.
 - Fog: null3D measures the straight-line distance from the camera, and three.js the depth along the view. A ported `Fog` or `FogExp2` matches within three.js's rule in null3D's fog scenes, whose view is narrow. A wide view takes more fog at its corners: in the S4 town, 2.9% to 3.3% of the pixels differed. Review the corners, or compare the middle of the view.
 - The background color: null3D tone maps and exposes it with the scene. `WebGLRenderer` clears to `scene.background` as it is, with no tone mapping or exposure. With an exposure other than 1, or a curve that changes the background's color, the two backgrounds differ.
-- Hemisphere lights: null3D stores them, but they do not light surfaces yet. A view lit by a `HemisphereLight` is darker in the port, so give the port an ambient light for the fill.
+- Hemisphere lights: three.js points the sky from the light's position toward the origin, and null3D along the light's +Y axis. A `HemisphereLight` moved off the vertical needs the null3D light turned to match. An upright one matches as it is.
 
 ## 5. Compare performance
 

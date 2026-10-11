@@ -78,5 +78,15 @@ export const GRID_ENVIRONMENTS = {
 
 export type GridEnvironmentName = keyof typeof GRID_ENVIRONMENTS;
 
+/**
+ * The hemisphere light that the environment test with a hemisphere light adds to the room's light:
+ * a blue sky above and a brown ground below, upright.
+ */
+export const GRID_HEMISPHERE = {
+	skyColor: '#9cc8ff',
+	groundColor: '#806040',
+	intensity: 1,
+} as const;
+
 /** The environment's turn in the rotated test: a quarter turn about +Y, as three.js's Euler angles. */
 export const GRID_ENVIRONMENT_ROTATION = [0, Math.PI / 2, 0] as const;

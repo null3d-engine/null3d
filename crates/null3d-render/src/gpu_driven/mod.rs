@@ -134,8 +134,10 @@ use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
+use crate::data_texture::DataTexture;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
@@ -155,6 +157,7 @@ use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUnifo
 use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
+use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
@@ -206,6 +209,7 @@ fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
 mod ids {
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
@@ -292,8 +296,10 @@ mod ids {
 
     /// The uniform buffer of the custom effects' blocks.
     pub const EFFECTS: u32 = NO_PYRAMID + 1;
+    /// The uniform buffer of depth of field's steps.
+    pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EFFECTS + 1;
+    pub const PAGES: u32 = DOF + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -318,8 +324,14 @@ mod ids {
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
     pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The texel that frame groups bind in place of the copy of the camera's opaque color while
+    /// nothing lets light through.
+    pub const BLANK_TRANSMISSION: u32 = CELL_OFFSETS + 1;
+    /// The row values of instance batches, two texels per source, which the vertex shaders of rows
+    /// with row values read.
+    pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = CELL_OFFSETS + 1;
+    pub const TARGETS: u32 = ROW_VALUES + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -334,8 +346,10 @@ mod ids {
     pub const SHADOW_TEXEL_SAMPLER: u32 = 5;
     /// The linear sampler of the custom effects.
     pub const EFFECT_SAMPLER: u32 = 6;
+    /// The linear sampler of depth of field's steps.
+    pub const DOF_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -391,8 +405,12 @@ mod ids {
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1 + MAX_VIEWS as u32;
     /// The bind group of the copy of each view's image into its target, after the effects'.
     pub const VIEW_COPY_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
-    /// The bind groups of materials' maps, after the copies'.
-    pub const TEXTURE_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of each step of depth of field, after the copies'.
+    pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
+    /// The bind group of the copy of the camera's opaque color, after depth of field's.
+    pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind groups of materials' maps, after the copy's.
+    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -521,6 +539,8 @@ pub struct GpuDrivenRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The texel rows of the row values texture, 0 before it exists.
+    value_rows: u32,
 }
 
 /// The builder's scene settings from `config`: meshes in shared buffers, each page within one
@@ -585,6 +605,15 @@ impl GpuDrivenRenderer {
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
                         },
+                        dof: DofIds {
+                            buffer: ids::DOF,
+                            sampler: ids::DOF_SAMPLER,
+                            first_group: ids::DOF_GROUPS,
+                        },
+                        transmission: TransmissionIds {
+                            group: ids::TRANSMISSION_GROUP,
+                            blank: ids::BLANK_TRANSMISSION,
+                        },
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
                         }),
@@ -628,6 +657,7 @@ impl GpuDrivenRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            value_rows: 0,
         }
     }
 
@@ -705,8 +735,10 @@ impl GpuDrivenRenderer {
         );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
+        let settings = &self.settings;
+        let sways = |material| settings.sways(material);
         self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref());
+            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let passes = CasterPasses {
@@ -767,7 +799,7 @@ impl GpuDrivenRenderer {
                 &self.skinning,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
-            let skinning = &self.skinning;
+            let (skinning, layout) = (&self.skinning, &self.layout);
             self.sorted
                 .rebuild(
                     &self.settings,
@@ -775,7 +807,7 @@ impl GpuDrivenRenderer {
                     targets,
                     input.scene,
                     input.batches,
-                    |_, _| (0, 0),
+                    |index, _| (layout.batch_base(index), 0),
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
@@ -857,10 +889,13 @@ impl GpuDrivenRenderer {
             self.settings.clock_seconds(),
             self.settings.camera_projection(input.canvas),
         );
+        self.graph
+            .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -879,6 +914,8 @@ impl GpuDrivenRenderer {
         if !self.created {
             self.create_fixed(list)?;
         }
+        // A new row values texture needs every group that binds it again, and every row's values.
+        let values_remade = self.size_row_values(list)?;
         self.graph
             .set_shadows(shadow.as_ref().map(ShadowPasses::of));
         self.graph.set_tiles(self.tiles.shape().map(|s| TilePasses {
@@ -886,6 +923,7 @@ impl GpuDrivenRenderer {
             size: s.size,
         }));
         self.graph.set_skinning(self.skinning.dispatches());
+        self.settings.pace_views();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -907,6 +945,15 @@ impl GpuDrivenRenderer {
         let first_new = self.views_made;
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
+        // Only the camera's view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
+        let transmission = |view: ViewId| {
+            if view == ViewId::CAMERA {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            }
+        };
         for index in 0..views {
             let view = ViewId::from_index(index);
             if index >= first_new {
@@ -915,10 +962,10 @@ impl GpuDrivenRenderer {
             }
             // Ambient occlusion can switch the prepass on after a view first drew, and
             // occlusion culling's occluders' pass draws into the same depth.
-            if depth_pass != Prepass::Off && index >= self.prepass_views {
+            if depth_pass != Prepass::Off && (index >= self.prepass_views || values_remade) {
                 shadow::bind_depth(list, ids::prepass_group(view), view)?;
             }
-            if index >= first_new || self.graph.textures_made() {
+            if index >= first_new || self.graph.textures_made() || values_remade {
                 opaque::bind_frame(
                     list,
                     view,
@@ -926,6 +973,7 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     self.bound_environment,
+                    transmission(view),
                 )?;
             }
         }
@@ -949,6 +997,14 @@ impl GpuDrivenRenderer {
                 {
                     pyramids_made |= 1 << index;
                 }
+            }
+        }
+        if values_remade {
+            let made = (0..self.cascades_made).map(ViewId::cascade);
+            let tiles = (0..self.tiles_made).map(ViewId::tile);
+            let outline = self.outline_made.then_some(ViewId::OUTLINE);
+            for view in made.chain(tiles).chain(outline) {
+                shadow::bind_depth(list, ids::frame_group(view), view)?;
             }
         }
         let cascades = shadow.as_ref().map_or(0, |s| s.cascades.count);
@@ -1029,11 +1085,22 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
-                opaque::bind_frame(list, view, shadow_map, atlas, ao_texture, environment)?;
+                opaque::bind_frame(
+                    list,
+                    view,
+                    shadow_map,
+                    atlas,
+                    ao_texture,
+                    environment,
+                    transmission(view),
+                )?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
             frame.uniform.environment = lit;
+        }
+        if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
+            frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
         }
         self.graph.upload(
             list,
@@ -1159,6 +1226,8 @@ impl GpuDrivenRenderer {
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
+        self.layout
+            .upload_row_values(list, input, parity, upload_everything || values_remade)?;
         self.layout.update_skinned(list, arena, input.scene)?;
         if shadows {
             self.casters.update_skinned(list, arena, input.scene)?;
@@ -1167,7 +1236,8 @@ impl GpuDrivenRenderer {
             self.outlined.update_skinned(list, arena, input.scene)?;
         }
         self.skinning.begin_frame();
-        self.layout.update_order(list, arena, &self.cells, input)?;
+        self.layout
+            .update_order(list, arena, &self.cells, input, &self.casters)?;
         self.light_clusters.upload(list, arena, &mut self.lights)?;
         self.transparent.size(list, &self.sorted, views)?;
 
@@ -1351,12 +1421,12 @@ impl GpuDrivenRenderer {
                     opaque::record(list, view, Bundle::Prepass)
                 }
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
-                    let camera = view == ViewId::CAMERA;
-                    if camera {
+                    let backdrop = settings.draws_background(view);
+                    if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::First)?;
                     }
                     opaque::record(list, view, Bundle::Opaque)?;
-                    if camera {
+                    if backdrop {
                         background.record(list, ids::frame_group(view), &[], Place::Last)?;
                     }
                     Ok(())
@@ -1378,6 +1448,15 @@ impl GpuDrivenRenderer {
         self.tiles
             .finish(input.frame, created_pipelines, input.pipelines_built);
         Ok(upload_everything)
+    }
+
+    /// Makes the row values texture big enough for the scene layout's sources with row values,
+    /// with room to grow, and at least one texel row, which the frame groups bind while no batch
+    /// has row values. Returns true when it made the texture again.
+    fn size_row_values(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        let needed = (self.layout.value_sources).div_ceil(sizes::ROW_VALUES_PER_TEXTURE_ROW);
+        let limit = BUDGET[Limit::TextureDimension2D as usize];
+        DataTexture::row_values(ids::ROW_VALUES, 1).grow(list, &mut self.value_rows, needed, limit)
     }
 
     /// Records the creation of the material table, the data texture of materials' custom values,
@@ -1417,6 +1496,7 @@ impl GpuDrivenRenderer {
         dfg::create(list, ids::DFG)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
+        transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
@@ -1515,6 +1595,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.value_rows = 0;
         self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
@@ -1538,6 +1619,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.sky_maps_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

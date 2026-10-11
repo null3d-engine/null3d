@@ -1,7 +1,10 @@
 // Percentiles and rates of per-frame samples. Every engine's benchmark report uses these functions,
 // so the figures of null3d and of the engines it is compared with are computed the same way.
 
-/** The highest frame rate that the engine aims for and that benchmark reports hold it to, in hertz. */
+/**
+ * The highest frame rate that the engine aims for by default, and that benchmark reports hold it
+ * to, in hertz.
+ */
 export const TARGET_CAP_HZ = 60;
 
 /**
@@ -43,7 +46,12 @@ export function percentile(sorted: ArrayLike<number>, fraction: number): number 
 	return low + (high - low) * (position - lower);
 }
 
-/** The median, 95th and 99th percentiles and mean. Sorts a copy, so call it outside frame code. */
+/**
+ * The median, 95th and 99th percentiles and mean of per-frame samples. It sorts a copy, so call it
+ * outside frame code.
+ *
+ * @category api/debug
+ */
 export function percentiles(samples: ArrayLike<number>): Percentiles {
 	const sorted = Float64Array.from(samples).sort();
 	let sum = 0;
@@ -60,6 +68,8 @@ export function percentiles(samples: ArrayLike<number>): Percentiles {
 /**
  * Events per second from the intervals between them: the count over the time they took, so a few
  * long intervals lower the rate as much as they cost. Null without intervals.
+ *
+ * @category api/debug
  */
 export function ratePerSecond(intervalsMs: ArrayLike<number>): number | null {
 	if (intervalsMs.length === 0) return null;
@@ -78,6 +88,8 @@ export function spanMs(intervalsMs: ArrayLike<number>): number {
  * Events in each whole second, from the intervals between them. An event falls in the second that
  * the running sum of the intervals reaches at it. It counts the first `seconds` seconds, by default
  * every second that has ended: the ones before the last event's second.
+ *
+ * @category api/debug
  */
 export function countPerSecond(
 	intervalsMs: ArrayLike<number>,

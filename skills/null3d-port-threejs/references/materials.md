@@ -34,7 +34,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | `scene.setEnvironment(env)`, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything. `envIntensity` multiplies the scene's `intensity`, where three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | The scene's rotation; materials share it |
-| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | `loadEnvironment` takes the `.hdr` or `.exr` file that `HDRLoader` or `EXRLoader` loaded, and filters it on the GPU. Prefiltering it offline with `bunx @null3d/cli assets env` skips that work at load. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. Reflections match three.js's PMREM, roughness by roughness |
+| `scene.environment` from `PMREMGenerator` | `scene.setEnvironment(await assets.loadEnvironment(url))` (0.2) | `loadEnvironment` takes the `.hdr` or `.exr` file that `HDRLoader` or `EXRLoader` loaded, and filters it on the GPU. Prefiltering it offline with `bunx @null3d/cli assets env` skips that work at load. `RoomEnvironment` is `await assets.builtinEnvironment('room')`, which the GPU makes with no file. `fromScene` of a scene that holds `Sky` is `await assets.skyEnvironment()`, called once: it follows `scene.setBackground({ sky })`. Reflections match three.js's PMREM, roughness by roughness |
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function: procedural now, from a height texture in 0.2 (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map`'s alpha offline, or a surface function that samples the alpha map (0.2) | three.js reads the alpha map's G channel (recipe in section 8) |
@@ -47,7 +47,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
 | `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
-| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'` |
+| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'`. null3D blends in linear color, as `WebGPURenderer` does; `WebGLRenderer` blends after tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` for debugging, or `scene.createLines({ positions, mode: 'segments' })` (0.2) with two points for each edge of the mesh | |
 | `fog: false` | Same name | |
@@ -58,7 +58,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer, and takes the index of refraction and specular options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` covers the base layer, and takes the index of refraction, specular and transmission options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -66,13 +66,13 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `reflectivity` | `ior` | Convert: `ior = (1 + 0.4 * reflectivity) / (1 - 0.4 * reflectivity)`, as three.js does |
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
+| `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
 
-glTF files with `KHR_materials_ior` and `KHR_materials_specular` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
 | `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `transmission`, `thickness`, `attenuationColor` | `alphaMode: 'blend'`, low `opacity`, tint with `color`, higher `envIntensity` (0.2). Keep `ior` | No refraction or thickness color |
 | `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
@@ -109,6 +109,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
+| `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction become transmission: give the water's custom material `transmission`, `thickness` and `ior: 1.33`, and set `s.transmission` with the rippled normal (`api/materials`) |
 
 ## 7. Texture settings
 

@@ -1,5 +1,5 @@
 //! The output of a transform update: a 3 × 4 world matrix and a world bounding sphere per row,
-//! plus an optional colour per row for instance batches. Matrices and sphere centers are relative
+//! plus optional row values for instance batches: a colour and four values of the sketch's own. Matrices and sphere centers are relative
 //! to the center of the row's grid cell (see [`crate::cells`]).
 //!
 //! Scene storage and instance batches keep two [`WorldArrays`], one per frame parity: frame `f`
@@ -17,6 +17,11 @@ use crate::math::{Affine, Affine4, transpose4};
 pub const MATRIX_FLOATS: usize = 12;
 /// Floats per colour (red, green, blue, alpha).
 pub const COLOR_FLOATS: usize = 4;
+/// Floats of a row's own values besides its colour.
+pub const VALUE_FLOATS: usize = 4;
+/// Floats of a row's values in the world output: its colour, then its own values. The GPU reads
+/// them as two four-float texels per row.
+pub const ROW_VALUE_FLOATS: usize = COLOR_FLOATS + VALUE_FLOATS;
 /// The world radius of a row that culling must always reject: a row with no live object, or an
 /// object hidden by its own flag or an ancestor's.
 pub const HIDDEN_RADIUS: f32 = f32::NEG_INFINITY;
@@ -70,41 +75,56 @@ pub struct WorldArrays {
     ys: Vec<f32>,
     zs: Vec<f32>,
     radii: Vec<f32>,
-    colors: Vec<f32>,
+    /// Each row's colour then its own values, [`ROW_VALUE_FLOATS`] floats per row, or empty.
+    values: Vec<f32>,
 }
 
+/// The values of a new row: white, then zeros.
+const NEW_ROW_VALUES: [f32; ROW_VALUE_FLOATS] = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+
 impl WorldArrays {
-    /// Arrays for `rows` rows, every row hidden, with colours when `with_colors` is set.
-    pub(crate) fn new(rows: usize, with_colors: bool) -> Self {
-        let Ok(arrays) = Self::try_new(rows, with_colors) else {
+    /// Arrays for `rows` rows, every row hidden, with row values when `with_values` is set.
+    pub(crate) fn new(rows: usize, with_values: bool) -> Self {
+        let Ok(arrays) = Self::try_new(rows, with_values) else {
             panic!("no memory for world arrays")
         };
         arrays
     }
 
     /// As [`WorldArrays::new`], or an error when memory cannot grow for the arrays.
-    pub(crate) fn try_new(rows: usize, with_colors: bool) -> Result<Self, TryReserveError> {
+    pub(crate) fn try_new(rows: usize, with_values: bool) -> Result<Self, TryReserveError> {
+        let mut values = filled(
+            if with_values {
+                rows * ROW_VALUE_FLOATS
+            } else {
+                0
+            },
+            0.0,
+        )?;
+        for row in values.as_chunks_mut::<ROW_VALUE_FLOATS>().0 {
+            *row = NEW_ROW_VALUES;
+        }
         Ok(Self {
             matrices: filled(rows * MATRIX_FLOATS, 0.0)?,
             xs: filled(rows, 0.0)?,
             ys: filled(rows, 0.0)?,
             zs: filled(rows, 0.0)?,
             radii: filled(rows, HIDDEN_RADIUS)?,
-            colors: filled(if with_colors { rows * COLOR_FLOATS } else { 0 }, 1.0)?,
+            values,
         })
     }
 
     /// A copy with `rows` rows: these rows, then hidden ones. It is a new allocation, so these
     /// arrays stay where they are for a reader that still holds their addresses.
     pub(crate) fn try_grown(&self, rows: usize) -> Result<Self, TryReserveError> {
-        let mut grown = Self::try_new(rows.max(self.rows()), !self.colors.is_empty())?;
+        let mut grown = Self::try_new(rows.max(self.rows()), !self.values.is_empty())?;
         let copy = |to: &mut Vec<f32>, from: &[f32]| to[..from.len()].copy_from_slice(from);
         copy(&mut grown.matrices, &self.matrices);
         copy(&mut grown.xs, &self.xs);
         copy(&mut grown.ys, &self.ys);
         copy(&mut grown.zs, &self.zs);
         copy(&mut grown.radii, &self.radii);
-        copy(&mut grown.colors, &self.colors);
+        copy(&mut grown.values, &self.values);
         Ok(grown)
     }
 
@@ -145,9 +165,10 @@ impl WorldArrays {
         &self.radii
     }
 
-    /// Colours, 4 floats per row, or an empty slice when the owner has no colours.
-    pub fn colors(&self) -> &[f32] {
-        &self.colors
+    /// Row values, [`ROW_VALUE_FLOATS`] floats per row: the colour, then the row's own values. An
+    /// empty slice when the owner has none.
+    pub fn row_values(&self) -> &[f32] {
+        &self.values
     }
 
     /// The sphere of `row` as `(x, y, z, radius)`.
@@ -169,9 +190,9 @@ impl WorldArrays {
             ys: self.ys.as_ptr(),
             zs: self.zs.as_ptr(),
             radii: self.radii.as_ptr(),
-            colors: self.colors.as_ptr(),
+            values: self.values.as_ptr(),
             rows: self.rows(),
-            color_rows: self.colors.len() / COLOR_FLOATS,
+            value_rows: self.values.len() / ROW_VALUE_FLOATS,
         }
     }
 
@@ -213,9 +234,9 @@ impl WorldArrays {
             ys: self.ys.as_mut_ptr(),
             zs: self.zs.as_mut_ptr(),
             radii: self.radii.as_mut_ptr(),
-            colors: self.colors.as_mut_ptr(),
+            values: self.values.as_mut_ptr(),
             rows: self.xs.len(),
-            has_colors: !self.colors.is_empty(),
+            has_values: !self.values.is_empty(),
         }
     }
 }
@@ -230,9 +251,9 @@ pub struct WorldView {
     ys: *const f32,
     zs: *const f32,
     radii: *const f32,
-    colors: *const f32,
+    values: *const f32,
     rows: usize,
-    color_rows: usize,
+    value_rows: usize,
 }
 
 // SAFETY: the view only reads, and its `unsafe` accessors make the caller prove no thread writes
@@ -274,13 +295,13 @@ impl WorldView {
         }
     }
 
-    /// The colours, 4 floats per row, or an empty slice without colours.
+    /// The row values, [`ROW_VALUE_FLOATS`] floats per row, or an empty slice without them.
     ///
     /// # Safety
     /// As for [`WorldView::matrices`].
-    pub unsafe fn colors<'a>(&self) -> &'a [f32] {
+    pub unsafe fn row_values<'a>(&self) -> &'a [f32] {
         // SAFETY: as the caller guarantees.
-        unsafe { std::slice::from_raw_parts(self.colors, self.color_rows * COLOR_FLOATS) }
+        unsafe { std::slice::from_raw_parts(self.values, self.value_rows * ROW_VALUE_FLOATS) }
     }
 }
 
@@ -293,9 +314,9 @@ pub(crate) struct WorldPtrs {
     ys: *mut f32,
     zs: *mut f32,
     radii: *mut f32,
-    colors: *mut f32,
+    values: *mut f32,
     rows: usize,
-    has_colors: bool,
+    has_values: bool,
 }
 
 // SAFETY: the pointers are only dereferenced through the `unsafe` methods below, whose callers
@@ -353,36 +374,35 @@ impl WorldPtrs {
         }
     }
 
-    /// Copies the colours of rows `row..row + 4` (16 floats) from `colors`. Does nothing when
-    /// the arrays have no colours.
+    /// Copies the row values of rows `row..row + 4` from 16 floats of colours at `colors` and 16
+    /// floats of the rows' own values at `values`. Does nothing when the arrays have no row values.
     ///
     /// # Safety
-    /// As for [`WorldPtrs::write4`], and `colors` points at 16 readable floats.
+    /// As for [`WorldPtrs::write4`], and both pointers point at 16 readable floats.
     #[inline(always)]
-    pub(crate) unsafe fn write_colors4(&self, row: usize, colors: *const f32) {
+    pub(crate) unsafe fn write_values4(&self, row: usize, colors: *const f32, values: *const f32) {
         debug_assert!(row + 4 <= self.rows);
-        if self.has_colors {
-            // SAFETY: in bounds and exclusive, as the caller guarantees.
-            unsafe {
-                std::ptr::copy_nonoverlapping(colors, self.colors.add(row * COLOR_FLOATS), 16);
-            }
+        for lane in 0..4 {
+            // SAFETY: the four lanes stay inside the 16 floats of each input, as the caller
+            // guarantees.
+            unsafe { self.write_values(row + lane, colors.add(lane * 4), values.add(lane * 4)) };
         }
     }
 
-    /// Writes the colour of `row`. Does nothing when the arrays have no colours.
+    /// Writes the row values of `row` from 4 floats of colour at `color` and 4 floats of the row's
+    /// own values at `values`. Does nothing when the arrays have no row values.
     ///
     /// # Safety
-    /// As for [`WorldPtrs::write`].
+    /// As for [`WorldPtrs::write`], and both pointers point at 4 readable floats.
     #[inline(always)]
-    pub(crate) unsafe fn write_color(&self, row: usize, color: [f32; 4]) {
+    pub(crate) unsafe fn write_values(&self, row: usize, color: *const f32, values: *const f32) {
         debug_assert!(row < self.rows);
-        if self.has_colors {
+        if self.has_values {
             // SAFETY: in bounds and exclusive, as the caller guarantees.
             unsafe {
-                self.colors
-                    .add(row * COLOR_FLOATS)
-                    .cast::<[f32; 4]>()
-                    .write_unaligned(color);
+                let out = self.values.add(row * ROW_VALUE_FLOATS);
+                std::ptr::copy_nonoverlapping(color, out, COLOR_FLOATS);
+                std::ptr::copy_nonoverlapping(values, out.add(COLOR_FLOATS), VALUE_FLOATS);
             }
         }
     }
@@ -414,7 +434,7 @@ impl WorldPtrs {
         unsafe { self.radii.add(row).read() }
     }
 
-    /// Copies the matrix, sphere and colour of `row` from `source`.
+    /// Copies the matrix, sphere and row values of `row` from `source`.
     ///
     /// # Safety
     /// `row` is in bounds of both, no thread writes `row` of `source`, and no other thread
@@ -432,13 +452,9 @@ impl WorldPtrs {
                 source.radii.add(row).read(),
             ];
             self.write(row, &matrix, sphere);
-            if self.has_colors && source.has_colors {
-                let color = source
-                    .colors
-                    .add(row * COLOR_FLOATS)
-                    .cast::<[f32; 4]>()
-                    .read_unaligned();
-                self.write_color(row, color);
+            if self.has_values && source.has_values {
+                let from = source.values.add(row * ROW_VALUE_FLOATS);
+                self.write_values(row, from, from.add(COLOR_FLOATS));
             }
         }
     }

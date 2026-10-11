@@ -103,7 +103,7 @@ A setup function that awaits `scene.warmUp()` after it creates the scene, as the
 
 ## The preset check
 
-When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the display's rate, up to 60 frames per second, the engine lowers the preset and measures again. The loading screen hides these frames.
+When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the [target frame rate](../concepts/quality-presets.md#the-target-frame-rate), the engine lowers the preset and measures again. By default the target is the display's rate, up to 60 frames per second. The loading screen hides these frames.
 
 The check takes most of the start on a tablet. On an 11-inch iPad Pro, the first frame of each benchmark scene and demo showed about 1 second after `createEngine` was called. It took about 2 seconds when the check lowered the preset once. A phone starts at Low, which has no lighter preset, so the engine skips the check. On a Galaxy S24+, the first frame showed after 0.23 to 0.43 seconds. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
 
@@ -144,6 +144,11 @@ Most shaders come with the engine's start. The shaders of a feature that many ga
 | `'background'` | with the first texture, environment or cube map background |
 | `'sky'` | with the first sky background |
 | `'occlusion'` | with the first object that `setOccluder(true)` marks, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders |
+| `'coverage'` | with the first masked material that MSAA smooths with alpha to coverage |
+| `'hash'` | with the first material whose alpha mode is `'hash'` |
+| `'cutout'` | with the first masked object that casts shadows. It casts none until its shaders are built |
+| `'views'` | with the first scene pass. Its texture shows nothing until its shaders are built |
+| `'effect_groups'` | the first time custom effects join into one pass, or fold into the final pass. Until its shaders are built, each effect draws a pass of its own |
 
 Each feature's file is 1 to 19 KB after Brotli. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode. A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 

@@ -405,3 +405,40 @@ fn far_cascades_draw_in_turn_and_keep_their_layers_in_between() {
         assert_eq!(depth_passes(&commands).len(), 3);
     }
 }
+
+#[test]
+fn a_batch_that_casts_lists_its_rows_in_each_cascade_and_one_that_receives_reads_the_map() {
+    for multi_draw in [true, false] {
+        let mut world = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        }));
+        world.renderer.settings_mut().set_sun_shadow(Some(SUN));
+        let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+        world
+            .batches
+            .get_mut(world.batch)
+            .unwrap()
+            .set_shadows(both);
+        world.record(true);
+        MockBackend::default()
+            .replay(world.renderer.list(1).words())
+            .unwrap();
+        // No scene object casts, so each cascade lists the batch's rows alone.
+        for cascade in 0..3 {
+            let entries = cascade_entries(&world, cascade);
+            assert_eq!(entries.len(), 1, "the batch's bucket alone");
+            assert!(entries[0] > 0, "the batch's rows");
+        }
+        let commands = world.commands();
+        let pipelines = operands(&commands, Op::CreateRenderPipeline);
+        assert!(pipelines.iter().any(|p| p[1] == template::SHADOW_DEPTH));
+        assert!(
+            pipelines
+                .iter()
+                .filter(|p| p[1] == template::INSTANCED_LIT)
+                .any(|p| p[2] & permutation::RECEIVE_SHADOWS != 0),
+            "the batch reads the shadow map"
+        );
+    }
+}
