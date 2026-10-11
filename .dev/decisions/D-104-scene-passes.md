@@ -56,7 +56,7 @@ Images upload with their first row at v = 0, the bottom of a plane (`textures.fr
 
 ### M2 limits
 
-Scene passes draw the sun, its shadows, the ambient light, the point and spot lights that their cameras see, the environment's light and fog. They draw no ambient occlusion and no sky background, which wait for a later task. Part 1 shipped without point and spot lights. The coordinator ruled on 8 October 2026 that they come as their own task, right after part 1 and before part 2. The next section records that task. On the 8-bit path, WebGL2 devices without float targets keep display color in a pass texture, as the section after it says. Part 2 of M2-F6 adds full-screen passes of the sketch's WGSL, targets at half and quarter size, and the outline mask as an input.
+Scene passes draw the sun, its shadows, the ambient light, the point and spot lights that their cameras see, the environment's light and fog. They draw no ambient occlusion and no sky background, which wait for a later task. Reflection passes, a later kind of pass, draw the scene's background ([D-120](D-120-planar-reflections.md)). Part 1 shipped without point and spot lights. The coordinator ruled on 8 October 2026 that they come as their own task, right after part 1 and before part 2. The next section records that task. On the 8-bit path, WebGL2 devices without float targets keep display color in a pass texture, as the section after it says. Part 2 of M2-F6 adds full-screen passes of the sketch's WGSL, targets at half and quarter size, and the outline mask as an input.
 
 ### Point and spot lights in scene passes (8 October 2026)
 
@@ -76,7 +76,7 @@ How B works:
 - WebGL2: each camera view has its own ring of three light data textures, sized to its lists, and its frame groups bind them. Before the view has a grid, its groups bind the camera's ring, which it never reads. The fragment stage binds as many textures as before.
 - The light clustering pass runs only for views that draw in the frame and have lights.
 
-Shadows: the shadow maps' matrices, of the cascades and of the atlas's tiles, take positions relative to the camera of the camera's view. Part 1 passed positions relative to the pass's own camera. So a pass read every shadow at the offset between the two cameras. The frame uniform now holds that offset (`shadow_origin`, 16 bytes more, 528 in all), and the shadow lookups add it. The builder computes it from the cameras' cells in 64-bit floats. It is 0 in the camera's view. The `minimap-lamps` image test shows it. Its map camera stands 13 m above the main camera and 13 m further along its view. With the offset left out of the shadow lookups, 0.88% of the image's pixels changed on the Mac's GPU in WebGPU, 0.91% in WebGL2 and 0.95% in compatibility mode, all inside the minimap. The spot light's pool in the map lay mostly in a shadow that belongs elsewhere, and the boxes' shadows fell in the wrong places. The main view did not change.
+Shadows: the shadow maps' matrices, of the cascades and of the atlas's tiles, take positions relative to the camera of the camera's view. Part 1 passed positions relative to the pass's own camera. So a pass read every shadow at the offset between the two cameras. The frame uniform now holds that offset (`shadow_origin`, 16 bytes more), and the shadow lookups add it. The builder computes it from the cameras' cells in 64-bit floats. It is 0 in the camera's view. The `minimap-lamps` image test shows it. Its map camera stands 13 m above the main camera and 13 m further along its view. With the offset left out of the shadow lookups, 0.88% of the image's pixels changed on the Mac's GPU in WebGPU, 0.91% in WebGL2 and 0.95% in compatibility mode, all inside the minimap. The spot light's pool in the map lay mostly in a shadow that belongs elsewhere, and the boxes' shadows fell in the wrong places. The main view did not change.
 
 The atlas's tiles go to the lamps that the camera sees, the largest first (`shadow_tiles.rs`). A lamp that the camera gave a tile casts its shadow in a pass from the same tile. A lamp that only a pass sees lights the pass without a shadow. Tiles of the passes' own would split the atlas's few tiles between the views. A tile would also draw again for each view that wants it. `api/render` and `guides/custom-passes` state the limit.
 
@@ -86,6 +86,8 @@ Tests:
 - The render crate's scene pass tests on both paths. A lamp that only the pass sees lights the pass alone, and both paths list the same lights. Each WebGPU view with lamps fills its own grid. A pass that sees no lamp makes no grid. A pass reads the camera's tiles from its own camera.
 - The no-allocation test with a moving lamp and a pass, on both paths.
 - The `minimap-lamps` image test on all three tiers, in both reference sets.
+
+Reflection passes ([D-120](D-120-planar-reflections.md)) merged while this task waited, with the same limit and the same warning. A reflection's view is a camera view like a scene pass's, so it gets the same pick of lamps and its own grid. Its grid's tiles come from its own matrix, which is the mirrored, oblique one that its shaders find their clusters with, so the clusters match. Its camera stands where the main camera stands, so its shadow offset is 0.
 
 The development warning is gone.
 
@@ -103,7 +105,7 @@ The coordinator chose B on 8 October 2026, at the helper's recommendation, and f
 
 ## Consequences
 
-- Code: `crates/null3d-render/src/graph.rs` and `graph/compile.rs` (culling, the colour budget, kept targets that resolve without storing their samples), `frame_graph.rs` (views' targets, copies, reads, clear colours), `view.rs`, `view_copy.rs`, `textures.rs` (pass arrays), both builders (hidden buckets), `crates/null3d-wasm/src/lib.rs` (`addScenePass`, `removeScenePass`, `setScenePassEnabled`, `createPassTexture`, `renderGraphMessage`, `renderGraphDot`), `packages/engine/src/scene/render.ts` and `textures.ts` (`fromPass`), and the WebGPU backend's layout and template.
+- Code: `crates/null3d-render/src/graph.rs` and `graph/compile.rs` (culling, the colour budget, kept targets that resolve without storing their samples), `frame_graph.rs` (views' targets, copies, reads, clear colours), `view.rs`, `view_copy.rs`, `textures.rs` (pass arrays), both builders (hidden buckets), `crates/null3d-wasm/src/lib.rs` (`addPass`, then named `addScenePass`, `removeScenePass`, `setScenePassEnabled`, `createPassTexture`, `renderGraphMessage`, `renderGraphDot`), `packages/engine/src/scene/render.ts` and `textures.ts` (`fromPass`), and the WebGPU backend's layout and template.
 - The 8-bit copy: `view_copy.wgsl` has a TONE_MAP build, and the pass targets that WebGPU's copies fill are `rgba8unorm-srgb` on the 8-bit path (`view_target_format` in `frame_graph.rs`).
 - Docs: `api/render` (written), `guides/custom-passes` (render to a texture), `concepts/render-graph`, `api/textures`, the mapping entry `render-target`, E1220 and the fixes of E1502 to E1505.
 - Skills: the develop skill's quick reference, recipes, shaders and `SKILL.md`, and the port skill's post-processing notes.

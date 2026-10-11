@@ -32,8 +32,12 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
+use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
+/// The first binding of the instance group's row values textures, after the textures of
+/// skinned and morphed meshes: the resident rows', then the streamed rows'.
+const ROW_VALUES_BINDING: u32 = 8;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
@@ -57,6 +61,9 @@ pub(super) struct LitTextures {
     pub(super) occlusion: u32,
     pub(super) environment: u32,
     pub(super) lights: u32,
+    /// The copy of the opaque color that surfaces which let light through sample: the camera's,
+    /// or a blank texel for other views.
+    pub(super) transmission: u32,
 }
 
 /// The ring slots a view's frame draws from.
@@ -252,8 +259,10 @@ impl Opaque {
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
     /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
     /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
-    /// occlusion, and the environment's cube texture of `lit` with its sampler. A shadow cascade's or a shadow tile's
-    /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
+    /// occlusion, the environment's cube texture of `lit` with its sampler, and the copy of the
+    /// opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or a
+    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
+    /// it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -286,6 +295,7 @@ impl Opaque {
             occlusion,
             environment,
             lights,
+            transmission: copy,
         }) = lit
         else {
             let mut words = [0; 18];
@@ -294,7 +304,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 53 + environment::ENTRY_WORDS];
+        let mut words = [0; 58 + environment::ENTRY_WORDS];
         words[3..18].copy_from_slice(&common);
         words[18..43].copy_from_slice(&[
             4,
@@ -324,10 +334,17 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 12]);
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 13]);
             words[43..48].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[53..]
+            words[53..58].copy_from_slice(&[
+                transmission::BINDING,
+                resource_kind::TEXTURE,
+                copy,
+                0,
+                0,
+            ]);
+            words[58..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }
@@ -336,9 +353,11 @@ impl Opaque {
 
     /// Makes a view's draw record buffer big enough for the layout, with the group that binds
     /// one block or record of it, and binds the view's instance textures again when one of them
-    /// is new (`textures_remade`). With `skins`, the joint texture, the texture of first joints and
-    /// weights and the morph textures of deltas and weights, the instance groups bind them too, for
-    /// the pipelines that skin and morph.
+    /// is new (`textures_remade`): the resident and streamed textures, the index list, the cluster
+    /// texture, and the row values textures beside the resident and the streamed ones. With
+    /// `skins`, the joint texture, the texture of first joints and weights and the morph textures
+    /// of deltas and weights, the instance groups bind them too, for the pipelines that skin and
+    /// morph.
     pub(super) fn size(
         &mut self,
         list: &mut DrawList,
@@ -348,59 +367,51 @@ impl Opaque {
         textures_remade: bool,
     ) -> Result<(), RecordError> {
         if textures_remade {
-            let bindings = if skins.is_some() { 8 } else { 4 };
             let [joints, first_joints, deltas, weights] = skins.unwrap_or_default();
-            let mut words = [
-                0,
-                bind_layout::INSTANCES,
-                bindings,
-                0,
-                resource_kind::TEXTURE,
-                ids::RESIDENT,
-                0,
-                0,
-                1,
-                resource_kind::TEXTURE,
-                0,
-                0,
-                0,
-                2,
-                resource_kind::TEXTURE,
-                0,
-                0,
-                0,
-                3,
-                resource_kind::TEXTURE,
-                ids::CLUSTERS,
-                0,
-                0,
-                4,
-                resource_kind::TEXTURE,
-                joints,
-                0,
-                0,
-                5,
-                resource_kind::TEXTURE,
-                first_joints,
-                0,
-                0,
-                6,
-                resource_kind::TEXTURE,
-                deltas,
-                0,
-                0,
-                7,
-                resource_kind::TEXTURE,
-                weights,
-                0,
-                0,
+            let entry = |binding: u32, id: u32| [binding, resource_kind::TEXTURE, id, 0, 0];
+            // The streamed textures' and the index list's entries take each group's own slots.
+            let skin_entries = [
+                entry(4, joints),
+                entry(5, first_joints),
+                entry(6, deltas),
+                entry(7, weights),
             ];
-            let used = 3 + bindings as usize * 5;
+            let values = [
+                entry(ROW_VALUES_BINDING, ids::RESIDENT_VALUES),
+                entry(ROW_VALUES_BINDING + 1, 0),
+            ];
+            // The entries in binding order: the instance textures, the textures of skins and
+            // morph targets where the groups bind them, then the row values textures.
+            let skinned = if skins.is_some() {
+                &skin_entries[..]
+            } else {
+                &[]
+            };
+            let mut words = [0u32; 3 + 5 * 10];
+            let mut used = 3;
+            for item in [
+                entry(0, ids::RESIDENT),
+                entry(1, 0),
+                entry(2, 0),
+                entry(3, ids::CLUSTERS),
+            ]
+            .iter()
+            .chain(skinned)
+            .chain(&values)
+            {
+                words[used..used + 5].copy_from_slice(item);
+                used += 5;
+            }
+            words[1..3].copy_from_slice(&[bind_layout::INSTANCES, (used as u32 - 3) / 5]);
+            // Where an entry's id lies among the words, by its place in the list.
+            let id_of = |place: usize| 3 + place * 5 + 2;
+            let streamed_values = (used - 3) / 5 - 1;
             for streamed in 0..RING {
                 for listed in 0..RING {
                     words[0] = ids::instances_group(view) + streamed * RING + listed;
-                    words[10] = ids::STREAMED + streamed;
-                    words[15] = ids::visible(view) + listed;
+                    words[id_of(1)] = ids::STREAMED + streamed;
+                    words[id_of(2)] = ids::visible(view) + listed;
+                    words[id_of(streamed_values)] = ids::STREAMED_VALUES + streamed;
                     list.push(Op::CreateBindGroup, &words[..used])?;
                 }
             }

@@ -1,15 +1,18 @@
 // The sketch's own render passes, which `ctx.render` adds to the engine's render graph. A scene
 // pass draws the scene from a camera of the sketch into a texture of its own size, which
 // `textures.fromPass` gives to materials and sprites, as a minimap or a security camera's screen
-// shows it. The engine core checks each change against the whole graph at once, so a pass that
-// reads a missing target, makes one twice or closes a loop throws its error code from the call.
+// shows it. A reflection pass draws the camera's view mirrored across a plane, into a texture of
+// the render size or a part of it, which a custom material reads where its surface shows on the
+// screen, as water and polished floors do. The engine core checks each change against the whole
+// graph at once, so a pass that reads a missing target, makes one twice or closes a loop throws
+// its error code from the call.
 
 import { checkLayers, checkLive, DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
-import type { Camera, Scene } from './scene';
+import type { Camera, Scene, Vec3 } from './scene';
 import type { ShaderPreloads } from './shader-preloads';
 
 /**
@@ -64,11 +67,81 @@ export interface ScenePassOptions {
 }
 
 /**
+ * The plane that a reflection pass mirrors the camera's view across.
+ *
+ * @category api/render
+ */
+export interface ReflectionPlane {
+	/** A point on the plane, in the world, such as a point on the water's surface. */
+	readonly point: Vec3;
+	/**
+	 * The plane's normal, toward the side that the reflection shows. It need not have length 1.
+	 * It is up, (0, 1, 0), by default, for water and floors.
+	 */
+	readonly normal?: Vec3;
+}
+
+/**
+ * The size of a reflection pass's texture, as a share of the render size each way: the whole
+ * size, half or a quarter.
+ *
+ * @category api/render
+ */
+export type ReflectionScale = 1 | 0.5 | 0.25;
+
+/**
+ * Options of `render.addPass` for a reflection pass, which draws the camera's view mirrored across
+ * a plane into a texture of the render size or a part of it. A custom material reads it where its
+ * surface shows on the screen, with `reflection_uv` from `null3d::reflection`, and lights it as
+ * the surface's `reflection`. Nothing below the plane shows in it.
+ *
+ * @category api/render
+ */
+export interface ReflectionPassOptions {
+	/** `'reflection'`: the pass draws the camera's view mirrored across `plane`. */
+	readonly kind: 'reflection';
+	/** The plane that the pass mirrors the view across. */
+	readonly plane: ReflectionPlane;
+	/**
+	 * The name of the pass's texture in the render graph, as a scene pass's `writes`. Each pass
+	 * writes a name of its own.
+	 */
+	readonly writes: string;
+	/**
+	 * The texture's size as a share of the render size each way. It follows the quality preset's
+	 * `reflectionScale` by default.
+	 */
+	readonly scale?: ReflectionScale;
+	/**
+	 * The pass draws in one frame of every `every`, from the first, and the texture keeps its last
+	 * image in between. It is 1 by default: every frame. The reflection lags a moving camera in
+	 * the frames between, so a larger value suits a camera that moves slowly.
+	 */
+	readonly every?: number;
+	/** The pass's name in `render.dumpGraph()` and errors. It is `writes` by default. */
+	readonly name?: string;
+	/**
+	 * The layers of the objects the pass draws, as a 32-bit mask. It is the camera's layers by
+	 * default, and follows them when they change.
+	 */
+	readonly layers?: number;
+	/** The textures of other passes that the objects this pass draws may show, as a scene pass's. */
+	readonly reads?: readonly string[];
+	/**
+	 * The color that the texture clears to before the pass draws, behind the scene's background.
+	 * It is the scene's background color by default.
+	 */
+	readonly clearColor?: ColorInput;
+	/** The alpha that the texture clears to with `clearColor`, from 0 to 1. It is 1 by default. */
+	readonly clearAlpha?: number;
+}
+
+/**
  * Options of `render.addPass`.
  *
  * @category api/render
  */
-export type RenderPassOptions = ScenePassOptions;
+export type RenderPassOptions = ScenePassOptions | ReflectionPassOptions;
 
 /**
  * A pass that `render.addPass` added. `render.setPassEnabled` switches it, and
@@ -88,17 +161,17 @@ export class RenderPass {
 	constructor(
 		place: number,
 		/** The kind of pass. */
-		readonly kind: 'scene',
+		readonly kind: 'scene' | 'reflection',
 		/** The pass's name in the render graph. */
 		readonly name: string,
 		/** The name of the texture it draws into. */
 		readonly writes: string,
-		/** The texture's width in pixels. */
+		/** The texture's width in pixels, or 0 for a reflection, whose texture follows the render size. */
 		readonly width: number,
-		/** The texture's height in pixels. */
+		/** The texture's height in pixels, or 0 for a reflection, whose texture follows the render size. */
 		readonly height: number,
-		/** @internal The camera it draws from. */
-		readonly camera: Camera,
+		/** @internal The camera it draws from, or none for a reflection, which mirrors the camera's view. */
+		readonly camera: Camera | undefined,
 		/** @internal Its own layers, or undefined to follow the camera's. */
 		readonly layers: number | undefined,
 	) {
@@ -115,19 +188,6 @@ export class RenderPass {
 		return this.on;
 	}
 }
-
-/** The options that a scene pass takes, for the error that lists them. */
-const SCENE_OPTIONS = new Set([
-	'kind',
-	'camera',
-	'writes',
-	'size',
-	'name',
-	'layers',
-	'reads',
-	'clearColor',
-	'clearAlpha',
-]);
 
 /** E1220 for a call that got options or a pass that it cannot take. */
 function invalid(call: string, detail: string): EngineError {
@@ -158,13 +218,15 @@ export class Render {
 	/**
 	 * Adds a pass to the render graph, from the next frame on, and returns it. A scene pass draws
 	 * the scene from a camera into a texture of its own, which `textures.fromPass` gives to
-	 * materials. It runs only while something shows its texture.
+	 * materials. A reflection pass draws the camera's view mirrored across a plane, with the
+	 * scene's background, and clips everything below the plane. A pass runs only while something
+	 * shows its texture.
 	 *
-	 * A scene pass draws the sun, its shadows where the main camera's cascades reach, the ambient
-	 * light, the point and spot lights that its camera sees, the environment's light and fog. A
-	 * point or spot light casts its shadow in the pass where the main camera's view gives it a
-	 * shadow. A light that only the pass sees casts none there. A pass does not draw ambient
-	 * occlusion or the sky background yet.
+	 * Both kinds draw the sun, its shadows where the main camera's cascades reach, the ambient
+	 * light, the point and spot lights that the pass's view sees, the environment's light and fog.
+	 * A point or spot light casts its shadow in a pass where the main camera's view gives it a
+	 * shadow. A light that only the pass sees casts none there. Neither kind draws ambient
+	 * occlusion, and a scene pass draws no sky background.
 	 *
 	 * Throws E1220 for options it does not take, a name that a live pass writes already, or the
 	 * 32nd live pass. Throws the render graph's code when the pass does not fit the graph: E1502
@@ -174,8 +236,9 @@ export class Render {
 	addPass(options: RenderPassOptions): RenderPass {
 		const call = 'render.addPass';
 		if (DEV) checkOptions(options, call, this.maxSize);
-		const { camera, writes } = options;
-		const [width, height] = options.size;
+		const { writes } = options;
+		const scene = options.kind === 'scene' ? options : undefined;
+		const [width, height] = scene?.size ?? [0, 0];
 		const name = options.name ?? writes;
 		for (const pass of this.passes) {
 			if (pass.writes === writes)
@@ -203,34 +266,49 @@ export class Render {
 		const clear =
 			options.clearColor === undefined ? undefined : linearColor(options.clearColor, call);
 		const alpha = options.clearAlpha ?? 1;
+		const layers = options.layers === undefined ? undefined : options.layers >>> 0;
+		const [r, g, b] = clear ?? [0, 0, 0];
+		// A scene pass takes a scale below 0; a reflection, its share of the render size or 0.
+		const reflection = scene ? undefined : (options as ReflectionPassOptions);
+		const [nx, ny, nz] = reflection?.plane.normal ?? [0, 1, 0];
+		const [px, py, pz] = reflection?.plane.point ?? [0, 0, 0];
 		this.shaders.need('views');
 		const place = this.core.check(
-			this.core.glue.addScenePass(
+			this.core.glue.addPass(
 				name,
 				writes,
 				reads.join('\n'),
 				width,
 				height,
 				clear !== undefined,
-				clear?.[0] ?? 0,
-				clear?.[1] ?? 0,
-				clear?.[2] ?? 0,
+				r,
+				g,
+				b,
 				alpha,
+				reflection ? (reflection.scale ?? 0) : -1,
+				reflection?.every ?? 1,
+				layers ?? -1,
+				nx,
+				ny,
+				nz,
+				px,
+				py,
+				pz,
 			),
 			call,
 		);
 		const pass = new RenderPass(
 			place,
-			'scene',
+			options.kind,
 			name,
 			writes,
 			width,
 			height,
-			camera,
-			options.layers === undefined ? undefined : options.layers >>> 0,
+			scene?.camera,
+			layers,
 		);
 		this.passes.push(pass);
-		this.scene.setPassCamera(place, camera, pass.layers);
+		if (scene) this.scene.setPassCamera(place, scene.camera, layers);
 		this.newPipelines = true;
 		return pass;
 	}
@@ -296,18 +374,23 @@ export function checkPass(pass: RenderPass, call: string): void {
 function checkOptions(options: RenderPassOptions, call: string, maxSize: number): void {
 	if (typeof options !== 'object' || options === null)
 		throw invalid(call, `got ${String(options)}, which is not an object of options.`);
-	if (options.kind !== 'scene')
-		throw invalid(call, `got the kind ${JSON.stringify(options.kind)}; it takes 'scene'.`);
+	const { kind } = options;
+	if (kind !== 'scene' && kind !== 'reflection')
+		throw invalid(call, `got the kind ${JSON.stringify(kind)}; it takes 'scene' or 'reflection'.`);
+	// The options of every pass, then those of its kind. Only development builds run the checks,
+	// so release builds leave the lists out.
+	const takes = new Set(['kind', 'writes', 'name', 'layers', 'reads', 'clearColor', 'clearAlpha']);
+	for (const key of kind === 'scene' ? ['camera', 'size'] : ['plane', 'scale', 'every'])
+		takes.add(key);
 	for (const key of Object.keys(options))
-		if (!SCENE_OPTIONS.has(key))
+		if (!takes.has(key))
 			throw invalid(
 				call,
-				`got the option "${key}", which a scene pass does not take. It takes ${[...SCENE_OPTIONS].join(', ')}.`,
+				`got the option "${key}", which a ${kind} pass does not take. It takes ${[...takes].join(', ')}.`,
 			);
-	const { camera, writes, size, name, layers, reads, clearAlpha } = options;
-	if (typeof camera?.sendLens !== 'function')
-		throw invalid(call, 'got no camera. Give the camera that the pass draws from.');
-	checkLive(call, camera, true);
+	if (kind === 'scene') checkScene(options, call, maxSize);
+	else checkReflection(options, call);
+	const { writes, name, layers, reads, clearAlpha } = options;
 	const named = (text: unknown) => typeof text === 'string' && text.length > 0;
 	if (!named(writes))
 		throw invalid(
@@ -318,13 +401,6 @@ function checkOptions(options: RenderPassOptions, call: string, maxSize: number)
 		throw invalid(
 			call,
 			`got the name ${JSON.stringify(name)}; it takes a string with at least one character.`,
-		);
-	const side = (value: unknown) =>
-		typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= maxSize;
-	if (!Array.isArray(size) || size.length !== 2 || !side(size[0]) || !side(size[1]))
-		throw invalid(
-			call,
-			`got the size ${JSON.stringify(size)}; it takes [width, height] in whole pixels from 1 to ${maxSize}.`,
 		);
 	if (layers !== undefined) checkLayers(call, layers);
 	if (
@@ -340,4 +416,41 @@ function checkOptions(options: RenderPassOptions, call: string, maxSize: number)
 			call,
 			`got the clear alpha ${String(clearAlpha)}; it takes a number from 0 to 1.`,
 		);
+}
+
+/** Throws E1220 for a scene pass's camera or size that `render.addPass` does not take. */
+function checkScene(options: ScenePassOptions, call: string, maxSize: number): void {
+	const { camera, size } = options;
+	if (typeof camera?.sendLens !== 'function')
+		throw invalid(call, 'got no camera. Give the camera that the pass draws from.');
+	checkLive(call, camera, true);
+	const side = (value: unknown) =>
+		typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= maxSize;
+	if (!Array.isArray(size) || size.length !== 2 || !side(size[0]) || !side(size[1]))
+		throw invalid(
+			call,
+			`got the size ${JSON.stringify(size)}; it takes [width, height] in whole pixels from 1 to ${maxSize}.`,
+		);
+}
+
+/** Throws E1220 for a reflection's plane, scale or pace that `render.addPass` does not take. */
+function checkReflection(options: ReflectionPassOptions, call: string): void {
+	const { plane, scale, every } = options;
+	const vector = (value: unknown) =>
+		Array.isArray(value) && value.length === 3 && value.every((v) => Number.isFinite(v));
+	if (typeof plane !== 'object' || plane === null || !vector(plane.point))
+		throw invalid(
+			call,
+			`got the plane ${JSON.stringify(plane)}; it takes { point: [x, y, z] }, with a normal too when the plane does not face up.`,
+		);
+	const { normal } = plane;
+	if (normal !== undefined && !(vector(normal) && normal.some((v) => v !== 0)))
+		throw invalid(
+			call,
+			`got the plane's normal ${JSON.stringify(normal)}; it takes [x, y, z] with a length above 0, toward the side that the reflection shows.`,
+		);
+	if (scale !== undefined && scale !== 1 && scale !== 0.5 && scale !== 0.25)
+		throw invalid(call, `got the scale ${String(scale)}; it takes 1, 0.5 or 0.25.`);
+	if (every !== undefined && !(Number.isInteger(every) && every >= 1))
+		throw invalid(call, `got every ${String(every)}; it takes a whole number from 1.`);
 }

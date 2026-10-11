@@ -84,10 +84,11 @@ pub enum Op {
     /// decodes it chooses both. Uploads of a few rows at a time spread a large image over frames.
     UploadImage = 14,
     /// [texture id, layer]: makes mip levels 1 and up of one layer from its level 0, each from the
-    /// level before it, with a linear filter in linear color. The texture is a 2D array of
-    /// `RGBA8_UNORM` or `RGBA8_UNORM_SRGB`, with `TEXTURE_BINDING` and `RENDER_ATTACHMENT` usage.
+    /// level before it, with a linear filter in linear color. The texture is a 2D array of a format
+    /// that [`format::draws_mipmaps`] takes, with `TEXTURE_BINDING` and `RENDER_ATTACHMENT` usage.
     /// Both backends draw each level with the mip shader, which samples the level before it.
-    /// WebGL2's `generateMipmap` would remake every layer of an array.
+    /// WebGL2's `generateMipmap` would remake every layer of an array. A frame may make a render
+    /// target's levels in every frame, so the backends keep what each texture's levels need.
     GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
@@ -156,12 +157,24 @@ pub enum Op {
     /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
     /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
+    /// [texture id, image id, stage, then the sky's settings as 16 floats: the sun's position and
+    /// a spare, the turbidity, Rayleigh, Mie coefficient and Mie directional g, the cloud scale,
+    /// speed, coverage and density, and the cloud elevation, the time and two spares]: runs one
+    /// stage of a sky map on the cube texture that the generator under the image id filled. The
+    /// backend's plan of the stages says what each one draws: the first ones draw the sky into
+    /// the generator's own chain of levels, a face each; the next ones filter the map's levels for
+    /// their roughness from the chain, a few faces each; the last copies the finished levels into
+    /// the texture at once. Only stage 0 reads the settings, which hold for the whole refresh.
+    /// The stages before the copy write nothing that a frame reads, so a map can refresh over
+    /// several frames while frames draw with the old one. Each stage reads only what earlier
+    /// stages wrote, in this list or in an earlier one.
+    SkyMapStep = 55,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 40] = [
+    pub const ALL: [Op; 41] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -201,6 +214,7 @@ impl Op {
         Op::ReleaseImage,
         Op::DestroyPipeline,
         Op::GenerateTexture,
+        Op::SkyMapStep,
         Op::Submit,
     ];
 
@@ -249,6 +263,7 @@ impl Op {
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
             Op::GenerateTexture => "GENERATE_TEXTURE",
+            Op::SkyMapStep => "SKY_MAP_STEP",
             Op::Submit => "SUBMIT",
         }
     }
@@ -492,10 +507,17 @@ pub mod format {
         is_compressed(format) || format == RGB9E5_UFLOAT
     }
 
-    /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
-    /// device can filter and draw into.
+    /// True for the formats of images whose mip levels the engine makes with `GenerateMipmaps`:
+    /// 8-bit color, which every device can filter and draw into.
     pub const fn makes_mipmaps(format: u32) -> bool {
         matches!(format, RGBA8_UNORM | RGBA8_UNORM_SRGB)
+    }
+
+    /// True for the formats whose mip levels `GenerateMipmaps` takes: those of
+    /// [`makes_mipmaps`], and the HDR formats of the render graph's targets, which a device
+    /// filters and draws into wherever it draws the scene in them.
+    pub const fn draws_mipmaps(format: u32) -> bool {
+        makes_mipmaps(format) || matches!(format, RGBA16_FLOAT | RG11B10_UFLOAT)
     }
 
     /// The width or height of a mip level, from the size of level 0.
@@ -706,9 +728,16 @@ pub mod layout {
     /// [`FINAL_EFFECTS`] with a multisampled scene depth, whose sample 0 the effects read. Only
     /// WebGPU has it.
     pub const FINAL_EFFECTS_DEPTH_MS: u32 = 24;
-    /// Group 0 of the copy of a view's image into its target: the image, which it reads with
-    /// `textureLoad`, as plain floats. Only WebGPU has it.
+    /// Group 0 of the copy of a view's image into its target, and of the copy of the camera's
+    /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
+    /// floats.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
+    /// blurred image at half the render size, which the step reads with the linear sampler.
+    pub const DOF_COMPOSITE: u32 = 27;
+    /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
+    /// WebGPU has it.
+    pub const DOF_COMPOSITE_MS: u32 = 28;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -786,9 +815,21 @@ pub mod permutation {
     /// A masked surface keeps each fragment whose alpha passes a threshold from a hash of its place
     /// on the mesh, instead of the cutoff.
     pub const ALPHA_HASH: u32 = 1 << 22;
+    /// The surface lets light through: it samples the copy of the opaque objects' color behind it,
+    /// bent by its index of refraction and blurred by its roughness, as three.js's transmission.
+    pub const TRANSMISSION: u32 = 1 << 23;
+    /// The rows of an instance batch bring a color and values of their own. The vertex shader reads
+    /// them from the row values texture: the color multiplies the base color as a vertex color
+    /// does, and custom materials read the values as `object.values`.
+    pub const ROW_VALUES: u32 = 1 << 24;
+    /// A custom material's template draws a shadow caster's depth: the vertex shader moves each
+    /// vertex by the material's vertex offset, then places it as the depth template places a
+    /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
+    /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
+    pub const CASTER: u32 = 1 << 25;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 22] = [
+    pub const NAMES: [(&str, u32); 25] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -811,6 +852,9 @@ pub mod permutation {
         ("SAMPLE_MASK", SAMPLE_MASK),
         ("ALPHA_COVERAGE", ALPHA_COVERAGE),
         ("ALPHA_HASH", ALPHA_HASH),
+        ("TRANSMISSION", TRANSMISSION),
+        ("ROW_VALUES", ROW_VALUES),
+        ("CASTER", CASTER),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -831,8 +875,30 @@ pub mod permutation {
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
     /// vertex shader reads the culling shader's copies, so the builds that read their instances by
     /// index never skin: those builds would load with the skinning feature and double its WebGPU
-    /// files.
-    pub const APART: [(u32, u32); 2] = [(ALPHA_HASH, ALPHA_COVERAGE), (SKIN, INSTANCE_INDEX)];
+    /// files. A surface that lets light through tests no mask, and draws in the transparent pass,
+    /// which never reads instances by index. Row values come from instance batches, which neither
+    /// skin nor morph, read their instances from the culling shader's copies, and test a mask
+    /// against its cutoff; a surface that lets light through draws its rows without their values.
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
+    pub const APART: [(u32, u32); 17] = [
+        (ALPHA_HASH, ALPHA_COVERAGE),
+        (SKIN, INSTANCE_INDEX),
+        (TRANSMISSION, ALPHA_MASK),
+        (TRANSMISSION, INSTANCE_INDEX),
+        (ROW_VALUES, SKIN),
+        (ROW_VALUES, MORPH),
+        (ROW_VALUES, INSTANCE_INDEX),
+        (ROW_VALUES, ALPHA_COVERAGE),
+        (ROW_VALUES, ALPHA_HASH),
+        (ROW_VALUES, TRANSMISSION),
+        (CASTER, TONE_MAP),
+        (CASTER, VERTEX_COLOR),
+        (CASTER, ALPHA_MASK),
+        (CASTER, RECEIVE_SHADOWS),
+        (CASTER, TRANSMISSION),
+        (CASTER, PREPASS),
+        (CASTER, INSTANCE_INDEX),
+    ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
     /// no pair of bits kept apart ([`APART`]): the words that the shader build makes.
@@ -1278,8 +1344,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, and the view's offset for shadow lookups.
-    pub const FRAME_UNIFORM_BYTES: u32 = 528;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, and the view's offset for
+    /// shadow lookups.
+    pub const FRAME_UNIFORM_BYTES: u32 = 576;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1301,6 +1368,11 @@ pub mod sizes {
     pub const MATRICES_PER_TEXTURE_ROW: u32 = 512;
     /// Indices per row of an index list texture: WebGL2's smallest allowed texture width.
     pub const INDICES_PER_TEXTURE_ROW: u32 = 2048;
+    /// Texels of an `RGBA32_FLOAT` data texture per row of an instance batch's row values: its
+    /// color, then its own values.
+    pub const ROW_VALUE_TEXELS: u32 = 2;
+    /// Row values per row of their data texture, which is 2,048 texels wide.
+    pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
@@ -1318,9 +1390,9 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: nine `vec4f`s. On WebGL2 each row is a
-    /// row of nine `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 144;
+    /// Bytes of one material's row in the material table: eleven `vec4f`s. On WebGL2 each row is a
+    /// row of eleven `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 176;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1465,6 +1537,28 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// Depth of field's first step: one triangle over a target at half the render size, which
+    /// reads four pixels of the scene's color and depth for each texel and writes their color with
+    /// the blur's signed size. It binds as a custom effect that reads depth does.
+    pub const DOF_SETUP: u32 = 41;
+    /// [`DOF_SETUP`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_SETUP_MS: u32 = 42;
+    /// Depth of field's gather: a disk or polygon of taps around each texel, which splits what it
+    /// reads into the near and the far field. It binds as a step of bloom does.
+    pub const DOF_BLUR: u32 = 43;
+    /// Depth of field's small tent filter over the gather's result. It binds as a step of bloom
+    /// does.
+    pub const DOF_FILTER: u32 = 44;
+    /// Depth of field's last step: one triangle over a target of the render size, which mixes the
+    /// blurred image into the scene's color by each pixel's own blur size.
+    pub const DOF_COMPOSITE: u32 = 45;
+    /// [`DOF_COMPOSITE`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const DOF_COMPOSITE_MS: u32 = 46;
+    /// The copy of the camera's opaque color that surfaces which let light through sample: one
+    /// triangle over the first level of its target, which reads one texel of the scene color per
+    /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
+    /// does.
+    pub const TRANSMISSION_COPY: u32 = 47;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1751,6 +1845,8 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1837,6 +1933,13 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),
+                ("DOF_SETUP", template::DOF_SETUP),
+                ("DOF_SETUP_MS", template::DOF_SETUP_MS),
+                ("DOF_BLUR", template::DOF_BLUR),
+                ("DOF_FILTER", template::DOF_FILTER),
+                ("DOF_COMPOSITE", template::DOF_COMPOSITE),
+                ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
+                ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1986,6 +2089,12 @@ mod tests {
         let shift = |per_row: u32| per_row.trailing_zeros();
         assert!(sizes::MATRICES_PER_TEXTURE_ROW.is_power_of_two());
         assert!(sizes::INDICES_PER_TEXTURE_ROW.is_power_of_two());
+        assert!(sizes::ROW_VALUES_PER_TEXTURE_ROW.is_power_of_two());
+        assert_eq!(
+            sizes::ROW_VALUE_TEXELS,
+            2,
+            "the shader reads two texels per row's values"
+        );
         assert_eq!(
             sizes::MATRIX_TEXELS,
             3,
@@ -1999,6 +2108,10 @@ mod tests {
             format!(
                 "const INDEX_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::INDICES_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const VALUES_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.

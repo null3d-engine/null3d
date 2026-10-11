@@ -33,7 +33,9 @@
 			"null3d-source": "./src/internal.ts"
 		},
 		"./stats": {
-			"null3d-source": "./src/shared/stats.ts"
+			"null3d-source": "./src/stats.ts",
+			"types": "./lib/stats.d.ts",
+			"default": "./lib/stats.js"
 		},
 		"./early-core": {
 			"null3d-source": "./src/page/early-core.ts",

@@ -1,5 +1,6 @@
-// S1's instances as one null3d instance batch. The sketch writes each row's position and rotation
-// straight into the batch's arrays; the engine computes the matrices on its job workers.
+// S1's instances as one null3d instance batch. The sketch writes each row's position and rotation,
+// and with row values its color and values, straight into the batch's arrays; the engine computes
+// the matrices on its job workers.
 import type { InstanceBatch, SketchContext } from '@null3d/engine';
 import { createS1, S1_BOX_SIZE, S1_COLOR, s1InstanceAt } from '../../scenes/spec';
 
@@ -13,8 +14,28 @@ export interface Swarm {
 const BLENDED_OPACITY = 0.6;
 
 /**
+ * The material of S1's boxes with row values: each box sways by its row's first value, its phase,
+ * and its second value tints it, on top of its row's color.
+ */
+const SWAY = /* wgsl */ `
+fn vertexOffset(input: VertexInput) -> vec3f {
+    let h = input.position.y + 0.5;
+    return vec3f(sin(frame.time * 2.0 + object.values.x) * 0.3 * h, 0.0, 0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= mix(vec3f(1.0), vec3f(0.6, 0.9, 0.5), object.values.y);
+    return s;
+}
+`;
+
+/**
  * Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default.
- * With `blend`, the boxes see through, so each frame sorts every visible row back to front.
+ * With `blend`, the boxes see through, so each frame sorts every visible row back to front. With
+ * `shadows`, every row casts and receives shadows. With `rowValues`, every row has a color and
+ * values of its own, which the pose writes in every frame, and a custom material sways and tints
+ * each box by its values.
  */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
@@ -22,21 +43,43 @@ export function createSwarm(
 	dynamic: boolean,
 	instanceAt = s1InstanceAt,
 	blend = false,
+	{ shadows = false, rowValues = false }: { shadows?: boolean; rowValues?: boolean } = {},
 ): Swarm {
 	const data = createS1(count);
-	const material = blend
-		? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
-		: materials.standard({ color: S1_COLOR });
+	const material = rowValues
+		? materials.shader({ wgsl: SWAY, color: S1_COLOR })
+		: blend
+			? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
+			: materials.standard({ color: S1_COLOR });
 	const batch = scene.createInstances(
 		geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE }),
 		count,
-		{ material, dynamic },
+		{
+			material,
+			dynamic,
+			castShadows: shadows,
+			receiveShadows: shadows,
+			colors: rowValues,
+			values: rowValues,
+		},
 	);
 	const position = new Float64Array(3);
 	const rotation = new Float64Array(4);
 	const pose = (t: number): void => {
 		const positions = batch.positions;
 		const rotations = batch.rotations;
+		const colors = batch.colors;
+		const values = batch.values;
+		if (colors && values)
+			for (let i = 0; i < count; i++) {
+				const shade = 0.75 + 0.25 * Math.sin(t + i * 0.01);
+				colors[i * 4] = shade;
+				colors[i * 4 + 1] = shade;
+				colors[i * 4 + 2] = 1;
+				colors[i * 4 + 3] = 1;
+				values[i * 4] = i * 0.37;
+				values[i * 4 + 1] = 0.5 + 0.5 * Math.sin(t * 0.5 + i * 0.1);
+			}
 		for (let i = 0; i < count; i++) {
 			instanceAt(data, i, t, position, rotation);
 			positions[i * 3] = position[0] as number;

@@ -22,6 +22,12 @@
 //! - The directional light created first gives the frame's main light: the direction its light
 //!   travels and its color times its intensity.
 //! - Ambient lights add up.
+//! - Hemisphere lights add up too. A hemisphere light gives a surface three.js's blend from its
+//!   ground color to its sky color, by the weight `0.5 * dot(normal, up) + 0.5`. That blend is
+//!   half the sum of the two colors, plus `dot(normal, up)` times half their difference: a
+//!   constant and a linear term of the normal. The constant joins the ambient sum, and the linear
+//!   term adds to [`FrameLights::hemisphere`], which holds the color that each world axis adds.
+//!   So any number of hemisphere lights reach the shaders as the same few values.
 //! - Each point or spot light is culled with its range sphere against the view's frustum, at its
 //!   position relative to the view's camera. The offset from the camera to the light's grid cell
 //!   is computed in 64-bit floats, so lights far from the origin keep their precision. Each light
@@ -30,8 +36,6 @@
 //! Every color that the frame gets is the light's linear color times its intensity and the frame's
 //! exposure, so a light in real units, such as a sun of 100,000 lux at an exposure for EV100 15,
 //! gives the shaders values near 1, which a 16-bit float holds.
-//!
-//! Hemisphere lights are stored, and the frame does not read them yet.
 //!
 //! # Shadows
 //!
@@ -199,8 +203,16 @@ pub struct FrameLights {
     /// The main directional light's linear color times its intensity and the exposure: black when
     /// there is none.
     pub sun_color: [f32; 3],
-    /// The sum of the ambient lights' linear colors times their intensities, times the exposure.
+    /// The light that reaches a surface from every direction: the sum of the ambient lights'
+    /// linear colors times their intensities, plus half the sum of each hemisphere light's sky and
+    /// ground colors times its intensity, all times the exposure.
     pub ambient: [f32; 3],
+    /// The light that a surface's normal adds along each world axis, x, y and z, from the
+    /// hemisphere lights: half the difference of each light's sky and ground colors, times its
+    /// intensity and the exposure, times its sky direction's component on that axis. A surface
+    /// with unit normal `n` gets `ambient + n.x * hemisphere[0] + n.y * hemisphere[1] + n.z *
+    /// hemisphere[2]`. All zero when no hemisphere light lights the frame.
+    pub hemisphere: [[f32; 3]; 3],
     /// The main directional light's shadows, or `None` when it casts none or there is no main
     /// light.
     pub sun_shadow: Option<SunShadow>,
@@ -212,6 +224,7 @@ impl Default for FrameLights {
             sun_direction: [0.0, -1.0, 0.0],
             sun_color: [0.0; 3],
             ambient: [0.0; 3],
+            hemisphere: [[0.0; 3]; 3],
             sun_shadow: None,
         }
     }
@@ -511,6 +524,18 @@ impl LightTable {
                         *sum += add;
                     }
                 }
+                kind::HEMISPHERE => {
+                    let ground = row.colors[color::GROUND as usize];
+                    let up = up(world.matrix(s));
+                    for c in 0..3 {
+                        let ground = ground[c] * intensity * exposure;
+                        frame.ambient[c] += 0.5 * (lit[c] + ground);
+                        let half_difference = 0.5 * (lit[c] - ground);
+                        for (axis, along) in frame.hemisphere.iter_mut().zip(up) {
+                            axis[c] += along * half_difference;
+                        }
+                    }
+                }
                 kind::DIRECTIONAL => {
                     if main_order.is_none_or(|main| row.order < main) {
                         main_order = Some(row.order);
@@ -667,12 +692,22 @@ fn lit_slot(scene: &SceneStorage, object: Handle) -> Option<u32> {
 /// The direction of a world matrix's -Z axis, of length 1: the way a light points. Straight down
 /// when the matrix flattens the axis.
 fn forward(m: &[f32; 12]) -> [f32; 3] {
-    let axis = [-m[2], -m[6], -m[10]];
+    unit_or([-m[2], -m[6], -m[10]], [0.0, -1.0, 0.0])
+}
+
+/// The +Y axis of a world matrix of three rows, scaled to length 1: the direction of a hemisphere
+/// light's sky. Straight up for a matrix that squashes the axis to nothing.
+fn up(m: &[f32; 12]) -> [f32; 3] {
+    unit_or([m[1], m[5], m[9]], [0.0, 1.0, 0.0])
+}
+
+/// `axis` scaled to length 1, or `fallback` when it has no length or an infinite one.
+fn unit_or(axis: [f32; 3], fallback: [f32; 3]) -> [f32; 3] {
     let length = axis.iter().map(|v| v * v).sum::<f32>().sqrt();
     if length > 0.0 && length.is_finite() {
         axis.map(|v| v / length)
     } else {
-        [0.0, -1.0, 0.0]
+        fallback
     }
 }
 
@@ -793,5 +828,17 @@ mod tests {
         ];
         assert_eq!(forward(&m), [0.0, -1.0, 0.0]);
         assert_eq!(forward(&[0.0; 12]), [0.0, -1.0, 0.0]);
+    }
+
+    #[test]
+    fn up_is_the_y_axis_of_length_one() {
+        // The same quarter turn points +Y along -Z; a scale of 3 does not lengthen it.
+        let m = [
+            3.0, 0.0, 0.0, 5.0, //
+            0.0, 0.0, 3.0, 6.0, //
+            0.0, -3.0, 0.0, 7.0,
+        ];
+        assert_eq!(up(&m), [0.0, 0.0, -1.0]);
+        assert_eq!(up(&[0.0; 12]), [0.0, 1.0, 0.0]);
     }
 }

@@ -6,6 +6,7 @@
 import { DEV } from '../errors/checks';
 import type { CoreErrors } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
+import { CORE_SOURCES } from './core-sources';
 
 export type Build = 'threaded' | 'single';
 
@@ -59,8 +60,12 @@ export interface CoreGlue extends CoreErrors {
 	jobWorkerCallDone(index: number): void;
 	/** The task calls of a job worker that it has not finished. */
 	jobWorkerCalls(index: number): number;
-	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
-	takeJobBusyMs(index: number): number;
+	/** Whole microseconds a job worker spent on work since the last call for it; resets its total. */
+	takeJobBusyUs(index: number): number;
+	/** Whole microseconds the sketch thread spent in parallel loops it handed out since the last call. */
+	takeHandedUs(): number;
+	/** Starts or stops the timing of the parallel loops that the sketch thread hands out. */
+	timeHandedLoops(on: boolean): void;
 	/** The address of the job system's wake word, or 0 before it exists. */
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
@@ -151,23 +156,27 @@ export interface CoreGlue extends CoreErrors {
 	debugLineArrays(field: number): number;
 	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
 	drawDebugLines(points: number): number;
+	/**
+	 * Creates an instance batch. With `rowValues`, each row has a color and four values of its
+	 * own, which shaders read.
+	 */
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
-		colors: boolean,
+		rowValues: boolean,
 		mesh: number,
 		material: number,
 	): number;
 	/**
 	 * Creates one part of a model as a batch: `part` places the mesh in the space of each row, 12
 	 * numbers of a 3 × 4 matrix by rows. With a `source` batch other than 0, it reads that batch's
-	 * rows and takes its capacity, dynamic flag and colors.
+	 * rows and takes its capacity, dynamic flag and row values.
 	 */
 	createBatchPart(
 		source: number,
 		capacity: number,
 		dynamic: boolean,
-		colors: boolean,
+		rowValues: boolean,
 		mesh: number,
 		material: number,
 		part: Float32Array,
@@ -210,6 +219,8 @@ export interface CoreGlue extends CoreErrors {
 	setBatchActiveCount(batch: number, count: number): number;
 	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
 	setBatchLayers(batch: number, mask: number): number;
+	/** Sets whether every row of a batch casts and receives shadows, from an object's flag bits. */
+	setBatchShadows(batch: number, bits: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
@@ -373,6 +384,13 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	generateTexture(texture: number): number;
 	/**
+	 * Makes a generated cube texture a map of the scene's sky, which fills once its generator ran
+	 * and refreshes over the next frames, one of its `stages` stages a frame, whenever the sky
+	 * changes. Before the scene's first sky background, the maps show the sky of the background's
+	 * values, which TypeScript writes first.
+	 */
+	addSkyMap(texture: number, stages: number): number;
+	/**
 	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
 	 * TypeScript writes them at: tightly packed rows, of blocks in a compressed format, layer after
 	 * layer, and level after level for a texture whose data brings its mip levels.
@@ -435,13 +453,16 @@ export interface CoreGlue extends CoreErrors {
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
-	 * Adds a scene pass: a view that draws into a `width` x `height` target named `target`,
-	 * through a pass named `pass`, which reads the targets named in `reads`, one per line. With
-	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. Returns the
-	 * view's place from 1, or 0 on failure: the render graph's errors (1502 to 1505), whose message
-	 * `renderGraphMessage` gives.
+	 * Adds a pass named `pass`, which draws into a target named `target` and reads the targets
+	 * named in `reads`, one per line. With `clears`, the target clears to the exposed linear color
+	 * `r`, `g`, `b`, `a`. With `scale` below 0 it is a scene pass of a `width` x `height` target.
+	 * From 0 it is a reflection pass across the plane through the point (`px`, `py`, `pz`) with
+	 * normal (`nx`, `ny`, `nz`), whose target takes `scale` of the render size each way, or the
+	 * share that `setReflectionScale` sets for 0, and which draws the objects on `layers`, or the
+	 * camera's for -1, in one frame of every `every`. Returns the view's place from 1, or 0 on
+	 * failure: the render graph's errors (1502 to 1505), whose message `renderGraphMessage` gives.
 	 */
-	addScenePass(
+	addPass(
 		pass: string,
 		target: string,
 		reads: string,
@@ -452,7 +473,21 @@ export interface CoreGlue extends CoreErrors {
 		g: number,
 		b: number,
 		a: number,
+		scale: number,
+		every: number,
+		layers: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		px: number,
+		py: number,
+		pz: number,
 	): number;
+	/**
+	 * Sets the share of the render size each way that the targets of reflection passes without a
+	 * scale of their own take.
+	 */
+	setReflectionScale(scale: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -500,6 +535,10 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
+	setDof(on: boolean): number;
+	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
+	setDofTaps(taps: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -719,7 +758,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'callJobWorker',
 	'jobWorkerCallDone',
 	'jobWorkerCalls',
-	'takeJobBusyMs',
+	'takeJobBusyUs',
+	'takeHandedUs',
+	'timeHandedLoops',
 	'jobsWakeAddress',
 	'jobsStopAddress',
 	'destroyEngine',
@@ -756,6 +797,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'batchArrays',
 	'setBatchActiveCount',
 	'setBatchLayers',
+	'setBatchShadows',
 	'markBatchDirty',
 	'memoryEpoch',
 	'queryArrays',
@@ -782,6 +824,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setTextureImage',
 	'setCubeImages',
 	'generateTexture',
+	'addSkyMap',
 	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
@@ -794,7 +837,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setPerspectiveCamera',
 	'setOrthographicCamera',
 	'clearShadowCamera',
-	'addScenePass',
+	'addPass',
+	'setReflectionScale',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',
@@ -813,6 +857,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setDof',
+	'setDofTaps',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',
@@ -890,18 +936,42 @@ export function coreUrls(build: Build): CoreFiles {
 			};
 }
 
+/** A generated module as it loads, before the checks: the build writes in its sources' stamp. */
+export type LoadedGlue = Partial<CoreGlue> & { readonly coreSources?: string };
+
 /**
- * Imports the generated module for a build. Development builds also check that it has every
- * function the engine calls. A release build bundles this code and the core from one install, so
- * only a development setup can pair a core with code from another build, and release builds drop
- * the check and its list of names.
+ * E1402 when a generated module does not belong with this code: when `sources`, the stamp of the
+ * Rust sources that a dev server gives, differs from the stamp that the build wrote in, or when
+ * the module lacks a function that the engine calls.
+ */
+export function glueMismatch(
+	build: Build,
+	glue: LoadedGlue,
+	sources: string | undefined,
+): EngineError | undefined {
+	if (sources !== undefined && glue.coreSources !== sources)
+		return new EngineError(
+			'E1402',
+			`the ${build} engine core was built from other Rust sources than this checkout holds.`,
+		);
+	const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
+	if (missing.length > 0)
+		return new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+	return undefined;
+}
+
+/**
+ * Imports the generated module for a build. Development builds also check that it comes from the
+ * Rust sources of the checkout that the dev server serves, and that it has every function the
+ * engine calls. A release build bundles this code and the core from one install, so only a
+ * development setup can pair a core with code from another build, and release builds drop the
+ * check and its list of names.
  */
 export async function loadGlue(build: Build): Promise<CoreGlue> {
-	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as Partial<CoreGlue>;
+	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as LoadedGlue;
 	if (DEV) {
-		const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
-		if (missing.length > 0)
-			throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+		const mismatch = glueMismatch(build, glue, CORE_SOURCES);
+		if (mismatch) throw mismatch;
 	}
 	return glue as CoreGlue;
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { PERMUTATION_BLOOM, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
+import {
+	PERMUTATION_BLOOM,
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_HALF,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
 import type { DeviceShaders, FirstUseShaders, ShaderVariant } from '../generated/shaders';
 import { DeviceShaderSet } from './device-shaders';
 
@@ -79,6 +84,17 @@ describe('DeviceShaderSet', () => {
 		expect(asked).toEqual([`bloom ${PERMUTATION_HALF}`]);
 		await settle();
 		expect(set.ready(final, PERMUTATION_BLOOM, 'wgsl')).toBe(true);
+	});
+
+	it("loads a feature's module of the device's draw index for a pass whose shader has no build with it", async () => {
+		const { asked, load, settle } = loader();
+		const set = new DeviceShaderSet(start(), PERMUTATION_DRAW_INDEX, load);
+		const sprite = set.shaders.sprite;
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(false);
+		expect(set.ready(sprite, PERMUTATION_DRAW_INDEX, 'wgsl')).toBe(false);
+		expect(asked).toEqual([`sprites ${PERMUTATION_DRAW_INDEX}`]);
+		await settle();
+		expect(set.ready(sprite, 0, 'wgsl')).toBe(true);
 	});
 
 	it("loads the start's module of other fixed bits for a build of no feature", async () => {

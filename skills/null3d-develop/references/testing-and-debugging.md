@@ -114,7 +114,8 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
-| `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
+| `?target-fps=display`, `?target-fps=90` | (0.2) Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
+| `?jobs=4` | Start at most this many job workers, from 1 to 255, instead of the logical cores minus 2. They start as the work grows |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
 | `?queue=3` | Let this many frames wait unfinished on the GPU instead of 2; `?queue=off` sets no limit, as browsers do on their own (`guides/performance`) |
@@ -133,7 +134,7 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase | Every build |
+| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of work bars against the target frame rate, GPU time, memory, and triangles and objects drawn | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`; `'lit'` to go back | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders | Development only |
@@ -180,7 +181,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
 | Objects draw black | No light reaches them: standard materials need a directional or ambient light | `scene.createDirectionalLight` and `scene.createAmbientLight`; check that the lights share a layer with the camera | `api/lights` |
 | An object does not move, or a development build logs E1110 | A static object's values changed without a setter | The setter, or `dynamic: true` | `concepts/static-dynamic` |
-| A row of an instance batch does not move | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
+| A row of an instance, sprite or point batch does not move, or a development build logs E1110 naming a row | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |

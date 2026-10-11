@@ -20,6 +20,23 @@ enable draw_index;
 // its joints (null3d::mesh), before the instance's world matrix places it, and the MORPH builds
 // of WebGL2 add its morph targets' deltas before that.
 //
+// The TRANSMISSION builds let light through the surface, as three.js's MeshPhysicalMaterial does
+// (null3d::refraction): the light from behind it takes the share of its diffuse light that the
+// material's transmission gives. Such materials draw in the transparent pass, after the camera's
+// view copied the color of its opaque objects, which they sample. On the 8-bit path, where the copy
+// holds display color, the light from behind joins the surface's own light after the tone mapping.
+// Custom materials' surfaces have the transmission and the thickness in every build, and the
+// builds that let light through only where their WGSL sets the surface's transmission.
+//
+// The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
+// color multiplies the vertex color, so it tints the base color and the alpha as three.js's
+// instance colors do, and custom materials read the row's own values as `object.values` in both
+// stages. The CASTER builds, which only custom materials with a vertex offset have, draw a shadow
+// caster's depth: the vertex shader moves each vertex by the offset, then places it as the shadow
+// depth template places a caster's, flattened onto the near face of the light's box. Their
+// pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
+// that the pass keeps.
+//
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
 // a sampler. A map reads
@@ -65,11 +82,28 @@ enable draw_index;
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
-#import null3d::mesh::{BLEND_FLAG, custom_value, frame as engine_frame, material_of}
+#import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#ifdef ROW_VALUES
+#import null3d::mesh::{row_values_of}
+#endif
+#ifdef CASTER
+#import null3d::mesh::{caster_clip}
+#endif
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
+#else ifdef TRANSMISSION
+#import null3d::mesh::{world_direction}
+#endif
+#ifdef TRANSMISSION
+#import null3d::globals::{MaterialTransmission}
+#import null3d::mesh::{NO_FOG, material_transmission}
+#import null3d::refraction::{transmitted_light}
+#ifdef TONE_MAP
+#import null3d::fog::{fog_factor}
+#import null3d::tonemap::{encode, tone_map}
+#endif
 #endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -98,6 +132,18 @@ var<private> hash_place: vec3f;
 #ifdef CUSTOM_UNIFORMS
 /// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
+#endif
+
+#ifdef TRANSMISSION
+/// The values of the material that lets light through, which the fragment shader reads once.
+var<private> transmission_row: MaterialTransmission;
+
+/// The diffuse light that `light_surface` gathers, of which the light through the surface takes
+/// the transmission's share.
+var<private> diffuse_light: vec3f;
+
+/// The object's scale along each of its axes.
+var<private> object_scale: vec3f;
 #endif
 
 
@@ -295,6 +341,19 @@ struct VertexOut {
     /// The object's origin, relative to the camera.
     @location(8) @interpolate(flat, either) origin: vec3f,
 #endif
+#ifdef TRANSMISSION
+    /// The object's scale along each of its axes, which turns the volume's thickness into world
+    /// units.
+    @location(9) @interpolate(flat, either) scale: vec3f,
+#endif
+#ifdef ROW_VALUES
+    /// The color of the instance's row.
+    @location(10) @interpolate(flat, either) row_color: vec4f,
+#ifdef CUSTOM
+    /// The values of the instance's row.
+    @location(11) @interpolate(flat, either) row_values: vec4f,
+#endif
+#endif
 }
 
 #ifdef CUSTOM
@@ -326,7 +385,7 @@ struct SurfaceInput {
     /// The unit direction from the surface toward the camera.
     viewDirection: vec3f,
     /// The mesh's vertex color when the material takes vertex colors and the mesh has them, else
-    /// white.
+    /// white, times the row's color for a row of an instance batch with row values.
     vertexColor: vec4f,
 #ifdef MAPS
     /// The mesh's first texture coordinates.
@@ -364,6 +423,20 @@ struct Surface {
     occlusion: f32,
     /// Baked light that reaches the surface, such as a light map's, added to the ambient light.
     irradiance: vec3f,
+#ifdef CUSTOM
+    /// Light from the mirror direction, such as a reflection pass's color, in `rgb`, and how much
+    /// of it takes the place of the environment's reflection, from 0 to 1, in `a`.
+    reflection: vec4f,
+    /// How much of the light behind the surface passes through it, from 0 to 1, in place of that
+    /// share of its diffuse light, where the material lets light through.
+    transmission: f32,
+    /// The thickness of the volume under the surface, in the mesh's own units, which bends the
+    /// light that passes through: 0 for a thin wall.
+    thickness: f32,
+#else ifdef TRANSMISSION
+    transmission: f32,
+    thickness: f32,
+#endif
 }
 
 #ifdef MAPS
@@ -449,6 +522,16 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     s.emissive = m.emissive.rgb * m.strengths.w;
     s.occlusion = 1.0;
     s.irradiance = vec3f(0.0);
+#ifdef CUSTOM
+    s.reflection = vec4f(0.0);
+#endif
+#ifdef TRANSMISSION
+    s.transmission = transmission_row.values.x;
+    s.thickness = transmission_row.values.y;
+#else ifdef CUSTOM
+    s.transmission = 0.0;
+    s.thickness = 0.0;
+#endif
 #ifdef MAPS
     s = with_maps(s, input);
 #endif
@@ -458,9 +541,15 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef ROW_VALUES
+    let row = row_values_of(found);
+#endif
 #ifdef CUSTOM
     let origin = relative_position(found, vec3f(0.0));
     fill_builtins(origin);
+#ifdef ROW_VALUES
+    object.values = row.values;
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
@@ -502,7 +591,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #else
     out.relative = relative_position(found, position);
 #endif
+#ifdef CASTER
+    var clip = caster_clip(found, out.relative, normal);
+    clip.z = min(clip.z, clip.w);
+    out.clip = clip;
+#else
     out.clip = clip_of(found, out.relative);
+#endif
     out.normal = world_normal(found, normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
@@ -535,16 +630,33 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef CUSTOM
     out.origin = origin;
 #endif
+#ifdef ROW_VALUES
+    out.row_color = row.color;
+#ifdef CUSTOM
+    out.row_values = row.values;
+#endif
+#endif
+#ifdef TRANSMISSION
+    out.scale = vec3f(
+        length(world_direction(found, vec3f(1.0, 0.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 1.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 0.0, 1.0))),
+    );
+#endif
     return out;
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
-/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient light,
-/// `extra` irradiance such as a light map's, and the environment's light times the material's
-/// factor of it. `occlusion` darkens the ambient light and the environment's diffuse light, and
+/// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
+/// hemisphere lights, `extra` irradiance such as a light map's, and the environment's light times
+/// the material's factor of it. The environment's light adds to the ambient and hemisphere lights,
+/// as three.js adds it, and neither its intensity nor the material's factor scales them.
+/// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
 /// position relative to the camera, `to_view` points from the surface toward the camera, and
-/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle. In custom materials,
+/// `reflection` holds light from the mirror direction and its share, which takes the place of
+/// that share of the environment's reflection, with or without an environment.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -553,6 +665,9 @@ fn light_surface(
     dfg: vec2f,
     extra: vec3f,
     occlusion: f32,
+#ifdef CUSTOM
+    reflection: vec4f,
+#endif
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
@@ -573,18 +688,33 @@ fn light_surface(
         compensation,
     );
     let clustered = clustered_light(m, relative, normal, to_view, compensation);
-    let ambient = indirect_diffuse(m, engine_frame.ambient.rgb + extra, dfg);
+    let ambient = indirect_diffuse(m, ambient_light(normal) + extra, dfg);
     let direct = sun.diffuse + sun.specular + clustered.diffuse + clustered.specular;
     var indirect = ambient * occlusion;
+#ifdef TRANSMISSION
+    diffuse_light = sun.diffuse + clustered.diffuse + indirect;
+#endif
     let env = engine_frame.environment;
+#ifdef CUSTOM
+    let mirrored = saturate(reflection.a);
+    if has_environment(env) || mirrored > 0.0 {
+        let strength = select(0.0, material_row.uv_u.w, has_environment(env));
+        let irradiance = environment_irradiance(env, normal) * strength;
+        let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
+        let radiance = mix(surrounding, reflection.rgb, mirrored);
+#else
     if has_environment(env) {
         let strength = material_row.uv_u.w;
         let irradiance = environment_irradiance(env, normal) * strength;
         let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+#endif
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
         let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
         indirect += image.diffuse * occlusion + specular;
+#ifdef TRANSMISSION
+        diffuse_light += image.diffuse * occlusion;
+#endif
     }
     return direct + indirect;
 }
@@ -612,7 +742,12 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
     // The frame's lights are exposed already. The surface's own light and its baked light take the
     // exposure here.
+#ifdef TRANSMISSION
+    // The surface draws over the surfaces that ambient occlusion saw, as a blended one does.
+    let blended = true;
+#else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -621,8 +756,35 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         dfg,
         s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(pixel.xyz, blended),
+#ifdef CUSTOM
+        s.reflection,
+#endif
     );
+#ifdef TRANSMISSION
+    // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less
+    // what the specular layer reflects, takes the transmission's share of the diffuse light.
+    let share = saturate(s.transmission);
+    let fresnel = pbr.specular_blended * dfg.x + pbr.specular_grazing * dfg.y;
+    let through = transmitted_light(
+        input.relativePosition,
+        normal,
+        input.viewDirection,
+        pbr.roughness,
+        s.thickness,
+        transmission_row.values.z,
+        transmission_row.attenuation,
+        object_scale,
+    ) * pbr.diffuse * (1.0 - fresnel);
+#ifdef TONE_MAP
+    let emitted = s.emissive * engine_frame.output.exposure;
+    let outgoing = reflected - diffuse_light * share + emitted;
+#else
+    let emitted = s.emissive * engine_frame.output.exposure;
+    let outgoing = reflected + (through - diffuse_light) * share + emitted;
+#endif
+#else
     let outgoing = reflected + s.emissive * engine_frame.output.exposure;
+#endif
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_HASH
     if s.alpha < alpha_hash_threshold(hash_place) {
@@ -638,7 +800,21 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef TRANSMISSION
+#ifdef TONE_MAP
+    // The copy holds display color, so the light from behind joins after the tone mapping, as far
+    // as the fog lets it.
+    let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
+    let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
+    let toned = tone_map(fogged(outgoing, input.relativePosition, material_row), engine_frame.output);
+    let display = toned + through * share * (1.0 - fog);
+    let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
+#else
     let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+#endif
+#else
+    let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
+#endif
 #ifdef ALPHA_COVERAGE
     return vec4f(finished.rgb, coverage);
 #else
@@ -652,12 +828,22 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
 #else
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
+#ifdef CASTER
+    return vec4f(0.0);
+#else
     material_row = material_of(in.material);
+#ifdef TRANSMISSION
+    transmission_row = material_transmission(in.material);
+    object_scale = in.scale;
+#endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
 #endif
 #ifdef CUSTOM
     fill_builtins(in.origin);
+#ifdef ROW_VALUES
+    object.values = in.row_values;
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
@@ -684,6 +870,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
+#ifdef ROW_VALUES
+    input.vertexColor *= in.row_color;
+#endif
 #ifdef CUSTOM
     input.worldPosition = in.relative + engine_frame.camera_world.xyz;
 #endif
@@ -707,5 +896,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     return masked_fragment(shade(s, input, in.clip));
 #else
     return shade(s, input, in.clip);
+#endif
 #endif
 }

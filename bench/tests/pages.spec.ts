@@ -451,7 +451,7 @@ function s4LowPassesTest(): void {
  * occlusion-s6 plan runs the long form on phones and tablets.
  */
 function s6OcclusionTurnsTest(): void {
-	testUnlessTooSlow('s6 on null3d-webgl2')(
+	testUnlessTooSlow('s6', 'null3d-webgl2')(
 		's6 on null3d-webgl2 turns occlusion culling off and on, and hides nothing wrongly at rest',
 		async ({ page }) => {
 			await page.setViewportSize(PHONE_VIEWPORT);

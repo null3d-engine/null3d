@@ -63,6 +63,7 @@ export type Three = Pick<
 	| 'Matrix4'
 	| 'Mesh'
 	| 'MeshBasicMaterial'
+	| 'MeshPhysicalMaterial'
 	| 'MeshStandardMaterial'
 	| 'NoColorSpace'
 	| 'Object3D'

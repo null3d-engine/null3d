@@ -57,12 +57,39 @@ const HOOKS: [Hook; 2] = [
     },
     Hook {
         name: "vertexOffset",
-        def: "CUSTOM_VERTEX_OFFSET",
+        def: VERTEX_OFFSET_DEF,
         params: &["VertexInput"],
         returns: "vec3f",
         signature: "fn vertexOffset(input: VertexInput) -> vec3f",
     },
 ];
+
+/// The shader def that makes the template call a custom material's vertex offset.
+const VERTEX_OFFSET_DEF: &str = "CUSTOM_VERTEX_OFFSET";
+
+/// The bits of a custom material's shading builds that its shadow caster builds keep: the draw
+/// index, skins on WebGL2, and row values, which a vertex offset may read.
+const CASTER_KEEPS: [&str; 3] = ["DRAW_INDEX", "SKIN", "ROW_VALUES"];
+
+/// The variant of a custom material's shadow caster builds beside one of its shading variants:
+/// the same defs and targets, every build with the CASTER bit, and with or without CASTER_OFFSET
+/// for casters that draw their back faces. The material's vertex offset then moves its shadow as it
+/// moves its surface.
+fn caster_variant(shading: &Variant) -> Variant {
+    let mut permutations: Vec<String> = shading
+        .permutations
+        .iter()
+        .filter(|bit| CASTER_KEEPS.contains(&bit.as_str()))
+        .cloned()
+        .collect();
+    permutations.extend(["CASTER_OFFSET", "CASTER"].map(str::to_owned));
+    Variant {
+        defs: shading.defs.clone(),
+        permutations,
+        required: vec!["CASTER".to_owned()],
+        targets: shading.targets.clone(),
+    }
+}
 
 /// The shader defs of every custom material's build: the custom material's built-in values, and
 /// the first texture coordinates.
@@ -337,6 +364,14 @@ fn built_inputs(built: &BTreeMap<String, VariantOutput>, entry: &str) -> (Vec<u3
         .map_or((Vec::new(), 0), |wgsl| mesh_inputs(&wgsl.source, entry))
 }
 
+/// True when a custom material's WGSL sets or reads the surface's `transmission`, so the material
+/// can let light through.
+fn sets_transmission(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -402,7 +437,9 @@ impl Compiler {
             return Err(problems.into_iter().collect());
         }
 
-        let variants: BTreeMap<String, Variant> = template
+        let transmits = sets_transmission(&tokens);
+        let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
+        let mut variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
             .map(|(name, variant)| {
@@ -422,6 +459,10 @@ impl Compiler {
                 // instances from the culling shader's copies on every path, so they have no
                 // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
+                // Only WGSL that sets the surface's transmission has the builds that let light
+                // through, so other materials keep their builds as few as before. Every material
+                // has the builds of rows with row values, since a batch's rows may bring colors
+                // that the default surface multiplies.
                 let skins = !variant.targets.contains(&Target::Wgsl);
                 let left_out = [
                     "HALF",
@@ -435,16 +476,25 @@ impl Compiler {
                     .permutations
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
+                    .filter(|bit| transmits || *bit != "TRANSMISSION")
                     .cloned()
                     .collect();
                 let variant = Variant {
                     defs,
                     permutations,
+                    required: Vec::new(),
                     targets: variant.targets.clone(),
                 };
                 (name.clone(), variant)
             })
             .collect();
+        if offsets {
+            let casters: Vec<(String, Variant)> = variants
+                .iter()
+                .map(|(name, variant)| (format!("{name}_shadow"), caster_variant(variant)))
+                .collect();
+            variants.extend(casters);
+        }
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
         let source = format!("{}{own_source}{loader}{bindings}", template.source);
         let mut errors = BuildError::default();
@@ -513,6 +563,7 @@ impl Compiler {
                 Variant {
                     defs: Vec::new(),
                     permutations: vec!["TONE_MAP".to_owned(), "RECEIVE_SHADOWS".to_owned()],
+                    required: Vec::new(),
                     targets: vec![Target::Wgsl],
                 },
             ),
@@ -521,6 +572,7 @@ impl Compiler {
                 Variant {
                     defs: vec!["WEBGL2".to_owned()],
                     permutations: vec!["DRAW_INDEX".to_owned(), "TONE_MAP".to_owned()],
+                    required: Vec::new(),
                     targets: vec![Target::Glsl],
                 },
             ),

@@ -15,6 +15,8 @@
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `debug_view`: the debug views, which draw every mesh with one debug shading in place of its
 //!   material's
+//! - `dof`: depth of field, a camera lens's blur by distance from the focus, with the near and far
+//!   fields apart, as three.js's BokehPass draws it in intent
 //! - `environment`: the scene's environment map, which standard materials reflect and take
 //!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
@@ -32,6 +34,8 @@
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
+//! - `mirror`: planar reflections: the camera's view mirrored across a plane, with the plane as its
+//!   near plane
 //! - `occlusion`: the camera's blockers for software occlusion culling on the WebGL2 path
 //! - `outline`: a crisp line around the objects that the sketch outlines: a mask of the outlined
 //!   objects, from which the final pass draws the line
@@ -42,8 +46,11 @@
 //! - `shadows`: the cascades of a directional light's shadows, fitted to the camera's view
 //! - `skinning`: skinned objects' bounds from their poses, the joint matrix texture, and the
 //!   vertex format of skinned vertices, which both frame builders share
-//! - `sorted`: the blended objects of the transparent pass, culled and sorted back to front
+//! - `sorted`: the objects of the transparent pass, which blend or let light through, culled and
+//!   sorted back to front
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
+//! - `transmission`: the copy of the camera's opaque color with a mip chain, which surfaces that
+//!   let light through sample, as three.js's transmission does
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod ao;
@@ -53,9 +60,11 @@ pub mod bloom;
 pub mod camera;
 mod cells;
 pub mod cpu_culled;
+mod data_texture;
 pub mod debug_lines;
 pub mod debug_view;
 pub mod dfg;
+pub mod dof;
 pub mod effects;
 pub mod environment;
 mod final_pass;
@@ -70,6 +79,7 @@ pub mod graph;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
+pub mod mirror;
 pub mod morph;
 pub mod occlusion;
 pub mod outline;
@@ -80,7 +90,10 @@ pub mod queries;
 pub mod shadow_tiles;
 pub mod shadows;
 pub mod skinning;
+mod sky_light;
+pub mod sky_maps;
 pub mod sorted;
 pub mod textures;
+mod transmission;
 pub mod view;
 mod view_copy;

@@ -2,7 +2,8 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{fog_color, fog_factor}
-#import null3d::globals::{Frame, Material}
+#import null3d::globals::{Frame, Material, MaterialRow, MaterialTransmission}
+#import null3d::lighting::{ambient_irradiance}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -29,7 +30,7 @@ enable draw_index;
 // Positions are relative to the camera: the frame's view-projection matrix puts the camera at the
 // origin, and each instance's world matrix is moved by the offset from the camera to its grid cell.
 //
-// On WebGPU each instance brings three rows of its world matrix and its material id as
+// On WebGPU each instance brings three rows of its world matrix, its material id and its source as
 // instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
 // buffer, so the same vertex stage runs in WebGPU's compatibility mode. The culling shader has
 // already moved each matrix by its cell's offset.
@@ -62,6 +63,14 @@ enable draw_index;
 // texture of deltas, which follows the joint texture in the data textures' group, beside the
 // texture of weights. The second half of the rows of the texture of indices gives each source row
 // the first texel of its morph weights. WebGPU morphs in its skinning pass instead.
+//
+// The ROW_VALUES builds draw the rows of instance batches with row values: a color and four values
+// of the sketch's own for each row, two texels of the row values texture. On WebGPU the texture
+// has a texel row for each 1,024 sources, and the culling shader writes each copy's source beside
+// its material, so the vertex shader finds the row's texels. It is part of the frame's group, for
+// the vertex stage alone. On WebGL2 each data texture of matrix rows has a texture of row values
+// beside it in the group of data textures, laid out by the same source rows. A source without row
+// values never draws with these builds, so its texels hold anything.
 //
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
@@ -121,11 +130,20 @@ struct CellOffsets {
 /// Every morphed object's weights.
 @group(2) @binding(7) var morph_weights: texture_2d<f32>;
 #endif
+#ifdef ROW_VALUES
+/// The row values of the sources of the resident data texture, then of the streamed one.
+@group(2) @binding(8) var resident_values: texture_2d<f32>;
+@group(2) @binding(9) var streamed_values: texture_2d<f32>;
+#endif
 #else
-@group(0) @binding(1) var<storage, read> materials: array<Material>;
+@group(0) @binding(1) var<storage, read> materials: array<MaterialRow>;
 /// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
 /// shaders read them too, and read no storage buffers, so they have a data texture of their own.
 @group(0) @binding(2) var custom_values: texture_2d<f32>;
+#ifdef ROW_VALUES
+/// The row values of every source, two texels each, which the vertex stage reads.
+@group(0) @binding(16) var row_values: texture_2d<f32>;
+#endif
 #ifdef INSTANCE_INDEX
 /// The bit of a bucket table entry that marks an occluder, above the entry's bucket and below its
 /// cell index.
@@ -207,7 +225,8 @@ struct InstanceIn {
 
 /// One instance: the rows of its world matrix that give x, y and z, its material, the first joint
 /// of its skin in the joint texture, the first texel of its morph weights in the morph texture,
-/// and whether it draws at all. (Library modules keep names that
+/// whether it draws at all, and the source that its row values belong to: on WebGL2 its row of
+/// the data texture that `streamed` names. (Library modules keep names that
 /// end in a digit out of their structs, because the shader composer cannot keep them.)
 struct Instance {
     row_x: vec4f,
@@ -217,7 +236,41 @@ struct Instance {
     first_joint: u32,
     morph_weights: u32,
     drawn: bool,
+    source: u32,
+    streamed: bool,
 }
+
+/// What a row of an instance batch brings of its own: a linear color, and four values of the
+/// sketch's.
+struct RowValues {
+    color: vec4f,
+    values: vec4f,
+}
+
+/// Sources per texel row of the row values texture are 1 << VALUES_ROW_SHIFT, two texels each.
+const VALUES_ROW_SHIFT: u32 = 10u;
+
+#ifdef ROW_VALUES
+/// The row values of an instance's source.
+fn row_values_of(found: Instance) -> RowValues {
+    let row = (1u << VALUES_ROW_SHIFT) - 1u;
+    let at = vec2u((found.source & row) * 2u, found.source >> VALUES_ROW_SHIFT);
+#ifdef WEBGL2
+    if found.streamed {
+        return RowValues(
+            textureLoad(streamed_values, at, 0),
+            textureLoad(streamed_values, at + vec2u(1u, 0u), 0),
+        );
+    }
+    return RowValues(
+        textureLoad(resident_values, at, 0),
+        textureLoad(resident_values, at + vec2u(1u, 0u), 0),
+    );
+#else
+    return RowValues(textureLoad(row_values, at, 0), textureLoad(row_values, at + vec2u(1u, 0u), 0));
+#endif
+}
+#endif
 
 /// A material's parameters, by its id in the material table. (A shader that imports it by name
 /// cannot also read a field called `material`, since the composer reads that name as this
@@ -236,9 +289,34 @@ fn material_of(id: u32) -> Material {
     m.specular = textureLoad(materials, vec2u(8u, id), 0);
     return m;
 #else
-    return materials[id];
+    return Material(
+        materials[id].color,
+        materials[id].emissive,
+        materials[id].surface,
+        materials[id].strengths,
+        materials[id].uv_u,
+        materials[id].uv_v,
+        materials[id].maps,
+        materials[id].more_maps,
+        materials[id].specular,
+    );
 #endif
 }
+
+#ifdef TRANSMISSION
+/// The values of material `id` that let light through, which only the builds that let light
+/// through read.
+fn material_transmission(id: u32) -> MaterialTransmission {
+#ifdef WEBGL2
+    return MaterialTransmission(
+        textureLoad(materials, vec2u(9u, id), 0),
+        textureLoad(materials, vec2u(10u, id), 0),
+    );
+#else
+    return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
+#endif
+}
+#endif
 
 /// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
 /// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the
@@ -359,6 +437,8 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
     out.row_y.w += offset.y;
     out.row_z.w += offset.z;
     out.material = record.y;
+    out.source = row;
+    out.streamed = record.z != 0u;
 #ifdef SKIN
     out.first_joint = textureLoad(first_joints, vec2u(row & index_row, row >> INDEX_ROW_SHIFT), 0).x;
 #else
@@ -385,7 +465,7 @@ fn instance_by_index(source: u32) -> Instance {
     let row_x = instance_matrices[source * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     let row_y = instance_matrices[source * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
     let row_z = instance_matrices[source * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);
-    return Instance(row_x, row_y, row_z, bucket.material, bucket.first_joint, 0u, true);
+    return Instance(row_x, row_y, row_z, bucket.material, bucket.first_joint, 0u, true, source, false);
 }
 #endif
 
@@ -400,7 +480,7 @@ fn find_instance(i: InstanceIn) -> Instance {
 #else ifdef INSTANCE_INDEX
     return instance_by_index(i.source);
 #else
-    return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true);
+    return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true, i.ids.z, false);
 #endif
 }
 
@@ -435,6 +515,18 @@ fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
 }
 
+/// The exposed light that reaches a surface with unit `normal` from the frame's ambient and
+/// hemisphere lights.
+fn ambient_light(normal: vec3f) -> vec3f {
+    return ambient_irradiance(
+        normal,
+        frame.ambient.rgb,
+        frame.hemisphere_x.xyz,
+        frame.hemisphere_y.xyz,
+        frame.hemisphere_z.xyz,
+    );
+}
+
 /// Linear color in the scene's units, such as an unlit material's color or its emissive light,
 /// times the frame's exposure: the exposed color that the frame's lights give already.
 fn exposed(c: vec3f) -> vec3f {
@@ -457,6 +549,36 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
     return transform_direction(transform_of(found), direction);
+}
+
+/// How far a caster's back face that faces straight away from the light moves toward it, in
+/// texels of the map where it stands.
+const CASTER_OFFSET_TEXELS: f32 = 1.0;
+/// The most that a caster's back face moves, in meters. A floor that casts shadows compares its
+/// lit top with its own bottom, so a larger offset in a far cascade's coarse texels would shadow
+/// the top of a floor 20 cm thick.
+const CASTER_OFFSET_MAX: f32 = 0.05;
+
+/// The clip position of a shadow caster's vertex at `relative`, with `normal` in the mesh's own
+/// space, drawn from the frame's light. The CASTER_OFFSET builds move the caster's back faces
+/// toward the light by up to a texel of the map they draw into, so a face that lies on a receiver
+/// stays in front of it. A face that lies on a receiver faces away from the light as squarely as
+/// the receiver faces it, and the share squared moves it. A face seen nearly edge-on from the
+/// light moves little, so the caster's lit faces beside it keep their light up to the edge.
+fn caster_clip(found: Instance, relative: vec3f, normal: vec3f) -> vec4f {
+    var clip = clip_of(found, relative);
+#ifdef CASTER_OFFSET
+    // A texel spans two clip units over the map's texels across. The first row of the matrix
+    // turns that into meters, at the caster's distance from a spot or point light.
+    let m = frame.view_proj;
+    let texel = 2.0 * clip.w * frame.target_size.z / length(vec3f(m[0].x, m[1].x, m[2].x));
+    let light = frame.camera_position;
+    let toward = normalize(light.xyz - relative * light.w);
+    let away = clamp(-dot(world_normal(found, normal), toward), 0.0, 1.0);
+    let offset = min(CASTER_OFFSET_TEXELS * away * away * texel, CASTER_OFFSET_MAX);
+    clip = clip_of(found, relative + toward * offset);
+#endif
+    return clip;
 }
 
 #ifdef SKIN

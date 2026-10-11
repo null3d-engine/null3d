@@ -20,6 +20,7 @@
 
 import { DebugDraw } from '../debug/draw';
 import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
+import type { StatsRequest } from '../debug/stats-options';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -63,7 +64,7 @@ import {
 	type PreloadSender,
 	type ShaderSender,
 } from '../shared/images';
-import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, MemoryFigure, Phase, Role } from '../shared/metrics';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { FixedClock, FrameClock, holdSteps } from './clock';
@@ -103,18 +104,43 @@ export interface SketchCore {
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
-	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
-	fps?: number;
+	/**
+	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
+	 * setting under the ?fps= cap, and infinity for the display's full rate.
+	 */
+	maxTargetFps: number;
 	/** Each engine thread's name and the roles it runs, as `engine.measure` names them. */
 	threads: readonly (readonly [string, readonly number[]])[];
-	/** Asks the page to show or hide its stats overlay. */
-	showStats(show: boolean): void;
+	/** Asks the page to show or hide its stats overlay, or to change its options. */
+	showStats(show: StatsRequest): void;
+	/**
+	 * Asks the page for at least `count` job workers, which it starts as the work grows, and
+	 * returns how many it has been asked for.
+	 */
+	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/**
+ * While a reader shows the frame figures, the first frame that samples publishes the memory
+ * figures, and then one frame in every this many.
+ */
+const MEMORY_EVERY = 8;
+/** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
+const JOB_WINDOW = 30;
+/**
+ * The mean time per frame that the sketch thread spends in loops it hands out, in microseconds,
+ * from which it asks for more job workers: twice as many, and at least 2.
+ */
+const JOB_GROW_US = 200;
+/**
+ * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
+ * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ */
+const JOB_PAUSE = 270;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -199,9 +225,24 @@ export class SketchRunner {
 	/** The page's count of canvas size changes when the viewport last read them. */
 	private viewportSerial = -1;
 	private gpuEpoch = 0;
+	/**
+	 * Frames left before the next publish of the memory figures, while a reader samples them. It is
+	 * 0 while nobody samples, so the first frame that samples publishes them.
+	 */
+	private memoryWait = 0;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
+	/**
+	 * The parallel work of the frames in the current window, in whole microseconds, and the
+	 * window's frames.
+	 */
+	private jobWindowUs = 0;
+	private jobWindowFrames = 0;
+	/** The frames left before the sketch thread times its parallel loops again. */
+	private jobPause = 0;
+	/** Whether the core times the parallel loops that the sketch thread hands out. */
+	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
@@ -338,7 +379,7 @@ export class SketchRunner {
 							shadowCasters: () => glue.shadowCasters(),
 							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 						},
-						sketch.fps,
+						sketch.maxTargetFps,
 					)
 				: undefined;
 		const { governor } = this;
@@ -382,7 +423,7 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				textureMemory: textures.memory,
+				wasmBytes: () => this.core.memory.buffer.byteLength,
 			},
 		};
 		const templates = new ShaderTemplates(sketch.sendShader);
@@ -462,7 +503,7 @@ export class SketchRunner {
 		this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		const { check } = this.sketch.quality;
-		if (check && this.holdSeconds === undefined) await this.checkPreset(check.fps);
+		if (check && this.holdSeconds === undefined) await this.checkPreset();
 		// Warm-ups that the setup started without waiting for them publish their frames first, so
 		// the frame loop never records while a setup frame does.
 		await this.setupFrames;
@@ -476,7 +517,7 @@ export class SketchRunner {
 	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
 	 * check that cannot load leaves the preset as it is.
 	 */
-	private async checkPreset(fps: number | undefined): Promise<void> {
+	private async checkPreset(): Promise<void> {
 		if (!(await this.drawSetupFrame())) return;
 		const loading = import('./preset-check');
 		let loaded = false;
@@ -498,7 +539,7 @@ export class SketchRunner {
 					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxFps: fps,
+					maxTargetFps: this.sketch.maxTargetFps,
 					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 				},
 				graceStart,
@@ -640,6 +681,51 @@ export class SketchRunner {
 	}
 
 	/**
+	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
+	 * the `asked` job workers, and at least 2, when the frames handed out enough work to share.
+	 * After a window with less, the loops go untimed for a while; once every job worker has been
+	 * asked for, for good.
+	 */
+	private growJobs(glue: CoreGlue, asked: number): void {
+		if (asked >= this.jobRecords.length) {
+			this.timeHandedLoops(glue, false);
+			return;
+		}
+		if (this.jobPause > 0) {
+			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+			return;
+		}
+		this.jobWindowUs += glue.takeHandedUs();
+		if (++this.jobWindowFrames < JOB_WINDOW) return;
+		const enough = this.jobWindowUs >= JOB_GROW_US * this.jobWindowFrames;
+		this.jobWindowUs = 0;
+		this.jobWindowFrames = 0;
+		if (enough) {
+			this.sketch.wantJobs(Math.max(2, asked * 2));
+		} else {
+			this.jobPause = JOB_PAUSE;
+			this.timeHandedLoops(glue, false);
+		}
+	}
+
+	/** Starts or stops the core's timing of the parallel loops that this thread hands out. */
+	private timeHandedLoops(glue: CoreGlue, on: boolean): void {
+		if (this.timingHanded === on) return;
+		this.timingHanded = on;
+		glue.timeHandedLoops(on);
+	}
+
+	/** Publishes the textures' and meshes' GPU memory for the frame figures on every thread. */
+	private publishMemory(): void {
+		const { record } = this;
+		const textures = this.textures.memory;
+		record.publishMemory(MemoryFigure.TextureBytes, textures.bytes);
+		record.publishMemory(MemoryFigure.TextureBudgetBytes, textures.budgetBytes);
+		record.publishMemory(MemoryFigure.DroppedLevels, textures.droppedLevels);
+		record.publishMemory(MemoryFigure.MeshBytes, this.context.geometry.memoryBytes);
+	}
+
+	/**
 	 * Applies the settings that the frames read: gives the governor the render scale's range and
 	 * the shadow settings, and tells the core whether the scale can drop below the whole canvas, and
 	 * how shadows filter and update after the governor's steps. With the governor off, the range
@@ -667,6 +753,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
@@ -941,6 +1029,12 @@ export class SketchRunner {
 		}
 		if (this.followEffects()) restart = true;
 		if (this.governor.stepChanges !== this.stepChanges) this.applyGovernedSteps();
+		// Development builds first report static batch rows written without markDirty, because the
+		// batch update clears the marks.
+		if (DEV) {
+			const unmarked = this.context.scene.unmarkedRows?.check();
+			if (unmarked) this.report(unmarked);
+		}
 		glue.updateBatches(frame);
 		if (!this.cellsWarned && glue.cellsRefused() !== 0) {
 			this.cellsWarned = true;
@@ -995,6 +1089,16 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// The memory figures change slowly, so a few times a window is enough. They start with the
+		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
+		// memory of the last time a reader sampled.
+		if (this.record.figures) {
+			if (this.memoryWait === 0) {
+				this.publishMemory();
+				this.memoryWait = MEMORY_EVERY;
+			}
+			this.memoryWait--;
+		} else this.memoryWait = 0;
 		// A frame whose list needs more room than any before moves the list, so each frame gives
 		// the thread that draws its list's address.
 		const parity = frame & 1;
@@ -1008,11 +1112,14 @@ export class SketchRunner {
 		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
-		for (let k = 0; k < this.jobRecords.length; k++) {
+		// Only the job workers asked for so far have records, so the figures count the ones that run.
+		const asked = this.sketch.wantJobs(0);
+		for (let k = 0; k < asked; k++) {
 			const jobRecord = this.jobRecords[k] as FrameRecorder;
 			jobRecord.begin(frame);
-			jobRecord.commit(glue.takeJobBusyMs(k));
+			jobRecord.commitMicros(glue.takeJobBusyUs(k));
 		}
+		this.growJobs(glue, asked);
 		return frame;
 	}
 }

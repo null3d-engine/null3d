@@ -90,6 +90,7 @@ use std::collections::TryReserveError;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{BucketedCull, NO_BUCKET};
 use null3d_core::handle::Handle;
+use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
@@ -102,6 +103,7 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
+use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
@@ -121,10 +123,11 @@ use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
+use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
-use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
-use layout::{Clusters, Drawn, Layout, RESIDENT, STREAMED};
+use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
+use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
 use lights::LightTextures;
 use opaque::{LitTextures, OFFSETS_BYTES, Opaque, Shading, ViewUpload};
 use skin::Skins;
@@ -136,6 +139,7 @@ mod ids {
     use super::data::RING;
     use crate::ao::STEPS as AO_STEPS;
     use crate::bloom::STEPS;
+    use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
@@ -165,8 +169,10 @@ mod ids {
     pub const BACKGROUND: u32 = AO + 1;
     /// The uniform buffer of the custom effects' blocks.
     pub const EFFECTS: u32 = BACKGROUND + 1;
+    /// The uniform buffer of depth of field's steps.
+    pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = EFFECTS + 1;
+    pub const PAGES: u32 = DOF + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -212,8 +218,15 @@ mod ids {
     pub const BLANK_AO: u32 = MORPH_WEIGHTS + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_AO + 1;
+    /// The texel that frame groups bind in place of the copy of the camera's opaque color while
+    /// nothing lets light through.
+    pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The row values of instance batches at the resident texture's rows, two texels per row.
+    pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// The ring of row values at the streamed textures' rows, one per ring slot.
+    pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const TARGETS: u32 = STREAMED_VALUES + RING;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -226,8 +239,10 @@ mod ids {
     pub const ENVIRONMENT_SAMPLER: u32 = 4;
     /// The linear sampler of the custom effects.
     pub const EFFECT_SAMPLER: u32 = 5;
+    /// The linear sampler of depth of field's steps.
+    pub const DOF_SAMPLER: u32 = 6;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 6;
+    pub const SAMPLERS: u32 = 7;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -257,8 +272,12 @@ mod ids {
     /// The bind group of each custom effect, and of each group of joined effects, after the
     /// background's.
     pub const EFFECT_GROUPS: u32 = BACKGROUND_GROUP + 1;
-    /// The bind groups of materials' maps, after the effects'.
-    pub const TEXTURE_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
+    /// The bind group of each step of depth of field, after the effects'.
+    pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
+    /// The bind group of the copy of the camera's opaque color, after depth of field's.
+    pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
+    /// The bind groups of materials' maps, after the copy's.
+    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -446,7 +465,16 @@ impl CpuCulledRenderer {
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
                         },
+                        dof: DofIds {
+                            buffer: ids::DOF,
+                            sampler: ids::DOF_SAMPLER,
+                            first_group: ids::DOF_GROUPS,
+                        },
                         view_copy: None,
+                        transmission: TransmissionIds {
+                            group: ids::TRANSMISSION_GROUP,
+                            blank: ids::BLANK_TRANSMISSION,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -772,7 +800,8 @@ impl CpuCulledRenderer {
     /// multi-draw arrays, the cascades' and the tiles' uniform blocks, the final pass's settings,
     /// the skinned objects' first joints after a change, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
-        self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
+        self.upload_bound_without_clusters()
+            + self.clusters.pending_bytes(&self.layout, &self.casters)
     }
 
     /// [`Self::upload_bound`] without the cluster orders.
@@ -826,6 +855,7 @@ impl CpuCulledRenderer {
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
+        transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -905,8 +935,9 @@ impl CpuCulledRenderer {
     }
 
     /// Uploads changed world matrices of the scene and of static batches into the resident
-    /// texture, straight from the core's world buffers of this parity, or every one of them after
-    /// the layout changed.
+    /// texture, and the changed row values of static batches that have them into the resident row
+    /// values texture, straight from the core's world buffers of this parity, or every one of them
+    /// after the layout changed.
     fn upload_resident(
         &self,
         list: &mut DrawList,
@@ -923,6 +954,21 @@ impl CpuCulledRenderer {
                 matrices_of(matrices, start, count),
             )
         };
+        let upload_rows =
+            |list: &mut DrawList, slot: &BatchSlot, batch: &InstanceBatch, start, count| {
+                upload(
+                    list,
+                    slot.base,
+                    batch.world(parity).matrices(),
+                    start,
+                    count,
+                )?;
+                if slot.values {
+                    let values = batch.world(parity).row_values();
+                    write_row_values(list, ids::RESIDENT_VALUES, slot.base, values, start, count)?;
+                }
+                Ok::<(), RecordError>(())
+            };
         if everything || input.snapshot.overflowed() {
             // Slots past the highest one ever used, and rows past a batch's active count, draw
             // nothing; they upload when they change.
@@ -933,13 +979,7 @@ impl CpuCulledRenderer {
                     .batches
                     .get(slot.id)
                     .expect("the layout names live batches");
-                upload(
-                    list,
-                    slot.base,
-                    batch.world(parity).matrices(),
-                    0,
-                    batch.frame_active_count(parity),
-                )?;
+                upload_rows(list, slot, batch, 0, batch.frame_active_count(parity))?;
             }
             return Ok(());
         }
@@ -971,13 +1011,7 @@ impl CpuCulledRenderer {
             let Ok(batch) = input.batches.get(slot.id) else {
                 continue;
             };
-            upload(
-                list,
-                slot.base,
-                batch.world(parity).matrices(),
-                range.start,
-                range.count,
-            )?;
+            upload_rows(list, slot, batch, range.start, range.count)?;
         }
         if let Some((first, rows)) = span {
             upload(list, 0, scene, first, rows)?;
@@ -998,7 +1032,9 @@ impl CpuCulledRenderer {
         })
     }
 
-    /// Writes the active rows of every dynamic batch into the streamed texture of slot `streamed`.
+    /// Writes the active rows of every dynamic batch into the streamed texture of slot `streamed`,
+    /// and the row values of those that have them into the streamed row values texture of the
+    /// same slot.
     fn upload_streamed(
         &self,
         list: &mut DrawList,
@@ -1013,6 +1049,11 @@ impl CpuCulledRenderer {
             let active = batch.frame_active_count(parity);
             let matrices = matrices_of(batch.world(parity).matrices(), 0, active);
             write_matrices(list, ids::STREAMED + streamed, slot.base, matrices)?;
+            if slot.values {
+                let values = batch.world(parity).row_values();
+                let texture = ids::STREAMED_VALUES + streamed;
+                write_row_values(list, texture, slot.base, values, 0, active)?;
+            }
         }
         Ok(())
     }
@@ -1039,6 +1080,10 @@ impl CpuCulledRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.graph.set_dof(
+            self.settings
+                .dof_frame(input.scene, input.parity(), input.canvas),
+        );
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1049,6 +1094,7 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1067,6 +1113,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
+        self.settings.pace_views();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1088,6 +1135,7 @@ impl CpuCulledRenderer {
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
             lights: 0,
+            transmission: ids::BLANK_TRANSMISSION,
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1095,17 +1143,24 @@ impl CpuCulledRenderer {
                 .size(list, &mut self.lights, self.config.max_texture_size)?;
         self.opaque.add_views(list, views)?;
         // Every camera view's frame groups bind the shadow maps and its light textures, so a view
-        // binds them again when the graph or its light textures make them again.
+        // binds them again when the graph or its light textures make them again. Only the camera's
+        // view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
         let light_textures = &self.light_textures;
-        let lit_for = |view: ViewId| LitTextures {
+        let lit_for = |lit: LitTextures, view: ViewId| LitTextures {
             lights: ids::light_data(light_textures.owner(view)),
+            transmission: if view == ViewId::CAMERA {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            },
             ..lit
         };
         let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
                 let view = ViewId::from_index(index);
-                Opaque::bind_frame(list, view, Some(lit_for(view)))?;
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         let cascades = self.cascades();
@@ -1144,17 +1199,16 @@ impl CpuCulledRenderer {
             lit.environment = environment;
             for index in 0..self.opaque.views() {
                 let view = ViewId::from_index(index);
-                let lit = LitTextures {
-                    lights: ids::light_data(self.light_textures.owner(view)),
-                    ..lit
-                };
-                Opaque::bind_frame(list, view, Some(lit))?;
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         for index in 0..views {
             if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
                 frame.uniform.environment = uniform;
             }
+        }
+        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
+            frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
         }
         self.graph.upload(
             list,
@@ -1183,7 +1237,8 @@ impl CpuCulledRenderer {
         let meshes = self.settings.meshes();
         self.skins
             .upload(list, arena, input.animations, input.morphs, meshes)?;
-        self.clusters.upload(list, arena, &self.layout)?;
+        self.clusters
+            .upload(list, arena, &self.layout, &self.casters)?;
         let drawn_views = (0..views)
             .filter(|&index| self.culling.frame(ViewId::from_index(index)).is_some())
             .fold(0u32, |mask, index| mask | 1 << index);
@@ -1295,18 +1350,18 @@ impl CpuCulledRenderer {
             skips,
             |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
-                    let camera = view == ViewId::CAMERA;
+                    let backdrop = settings.draws_background(view);
                     let slot = opaque.frame_slot(view);
                     let light_slot = light_textures.slot(view);
                     let group = ids::frame_group(view) + light_slot;
-                    if camera {
+                    if backdrop {
                         background.record(list, group, &[slot, slot], Place::First)?;
                     }
                     let starts = culling.culled(frame, view).bucket_starts();
                     let shading = Shading::Lit { light_slot };
                     let hidden = hidden_in(view);
                     opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)?;
-                    if camera {
+                    if backdrop {
                         background.record(list, group, &[slot, slot], Place::Last)?;
                     }
                     Ok(())
@@ -1444,8 +1499,10 @@ impl FrameBuilder for CpuCulledRenderer {
             .view_frame(ViewId::CAMERA, scene, parity, canvas, scale);
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
+        let settings = &self.settings;
+        let sways = |material| settings.sways(material);
         self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref());
+            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
@@ -1645,6 +1702,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.skins.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.sky_maps_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

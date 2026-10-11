@@ -39,7 +39,9 @@ import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { SPRITE_IMAGE } from '../../bench/scenes/sprites.ts';
 import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
+import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
+import { COMPARISONS } from '../../examples/compare/comparisons.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -158,6 +160,49 @@ function bloomTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			switches: ['hdr=off'],
 			reference: 'bloom-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
+const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
+
+/** The depth of field tests' image size: wide enough for the blur's disks to show. */
+const DOF_SIZE = [480, 270] as const;
+
+/**
+ * Depth of field focused on the post near the camera, so the far field blurs; on the lights far
+ * behind, so the near field blurs; and on the box between them, so both blur; and the scene without
+ * it, on every tier. A six-bladed aperture draws the far lights as hexagons. A focus on a point at the box's distance,
+ * and depth of field turned on during play, draw the both-fields image. At half the render scale
+ * the steps draw into the corners of the same targets. A device with no HDR target draws no depth
+ * of field: the page's switch that turns HDR off stands in for one, and must draw the scene without
+ * it.
+ */
+function dofTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${DOF_SKETCH}${query}`,
+		hold: 1,
+		size: DOF_SIZE,
+	});
+	return [
+		test('dof-off', ''),
+		test('dof-far-field', '?dof=near'),
+		test('dof-near-field', '?dof=far'),
+		test('dof-both', '?dof=both'),
+		test('dof-hexagon', '?dof=near&blades=6'),
+		{ ...test('dof-point', '?dof=both&point'), reference: 'dof-both' },
+		{ ...test('dof-later', '?dof=both&later'), reference: 'dof-both' },
+		test('dof-scale-50', '?scale=0.5&dof=both'),
+		{
+			...test('dof-8-bit', '?dof=both'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'dof-off',
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
@@ -338,7 +383,8 @@ const GRADING_SKETCH = 'tests/pages/sketches/grading-sketch.ts';
 
 /**
  * Color grading on every tier: a table from a .cube file, a table from a .3dl file, the vignette,
- * and a table at part of its intensity with the vignette. Compatibility mode keeps the 8-bit path
+ * and a table at part of its intensity with the vignette. A table made from the .cube file's
+ * numbers must draw the file's image. Compatibility mode keeps the 8-bit path
  * with MSAA, where grading runs the final pass in place of the resolve pass. The page's switch that
  * turns HDR off puts the other tiers on that path too, which must draw the HDR path's image. At
  * half the render scale, the final pass grades the scaled image. The parity test compares the
@@ -353,6 +399,7 @@ function gradingTests(): ImageTest[] {
 	});
 	return [
 		test('lut-cube', '?lut=warm'),
+		{ ...test('lut-numbers', '?lut=warm-numbers'), reference: 'lut-cube' },
 		test('lut-3dl', '?lut=cool'),
 		test('vignette', '?vignette'),
 		test('lut-vignette', '?lut=warm&mix&vignette'),
@@ -466,6 +513,37 @@ function minimapTests(): ImageTest[] {
 		test('minimap-lamps', '?lamps'),
 	];
 }
+
+/** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
+export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
+
+/**
+ * A reflection pass mirrors the camera's view across a floor at height 0, on every tier. The floor
+ * is a smooth metal mirror, so a red box at the left and a green box at the right each hang upside
+ * down below themselves, with the sky around them, which the pass draws as the camera's view
+ * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
+ * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
+ * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
+ * The quarter test draws the reflection at a quarter of the render size. The reflection spec
+ * checks where the boxes' reflections land, and that no magenta shows.
+ */
+function reflectionTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${REFLECTION_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('reflection-mirror', ''),
+		test('reflection-water', '?water'),
+		test('reflection-quarter', '?quarter'),
+	];
+}
+
+/** The sketch of the glass scene, which three.js's transmission draws too. */
+const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
+/** The sketch of clear water over a bed of stones. */
+const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -800,6 +878,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'texture-background',
 		expect: { hdr: false },
 	},
+	// A KTX2 file as the background, in the compressed format the device takes, and as RGBA8 where
+	// the device has no compressed format, as ?compression=none makes it. Both draw the same image,
+	// so the second borrows the first's references.
+	{
+		name: 'ktx2-background',
+		sketch: 'tests/pages/sketches/ktx2-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+	},
+	{
+		name: 'ktx2-background-rgba8',
+		sketch: 'tests/pages/sketches/ktx2-background-sketch.ts',
+		size: [BACKGROUND_IMAGE.width, BACKGROUND_IMAGE.height],
+		hold: 0,
+		switches: ['compression=none'],
+		reference: 'ktx2-background',
+	},
 	// The other backgrounds: three.js's sky with clouds, an environment that blurs, dims and turns
 	// behind spheres it lights, and a cube map of six pictures. The parity test compares each with
 	// three.js.
@@ -913,12 +1008,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...toneMappingTests(),
 	...antialiasTests(),
 	...bloomTests(),
+	...dofTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
 	...aoTests(),
 	...outlineTests(),
 	...minimapTests(),
+	...reflectionTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1091,6 +1188,19 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// The same scene with every object a row of an instance batch, static or dynamic: batch rows cast
+	// and receive shadows as objects do, so they borrow the shadows test's references.
+	...['', 'dynamic'].map(
+		(kind): ImageTest => ({
+			name: kind === '' ? 'shadows-batches' : `shadows-batches-${kind}`,
+			sketch: `tests/pages/sketches/shadows-sketch.ts?batches=${kind}`,
+			hold: 0,
+			size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+			reference: 'shadows',
+		}),
+	),
 	// Spot light shadows: two spot lights, each with a tile of the shadow atlas, over casters that
 	// receive shadows, a receiver that casts none, a caster that receives none, and an unlit box.
 	// The tile size is fixed, as the presets of the GPU tiers differ. Both GPU paths draw the same
@@ -1103,6 +1213,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		switches: ['shadowTileSize=1024'],
 		sameOnEveryTier: true,
 		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// The same scene with the objects on the ground as rows of instance batches: rows cast into and
+	// receive the lights' tiles as objects do, so they borrow the spot shadows test's references.
+	{
+		name: 'spot-shadows-batches',
+		sketch: 'tests/pages/sketches/spot-shadows-sketch.ts?batches',
+		hold: 0,
+		size: [480, 270],
+		switches: ['shadowTileSize=1024'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+		reference: 'spot-shadows',
 	},
 	// Point light shadows: one point light among casters on every side, whose shadows fall across
 	// the six tiles of its cube onto the ground and a wall. The switch turns point light shadows
@@ -1412,6 +1534,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(env === 'room' && { modes: ALL_MODES, timeoutSeconds: 60 }),
 		}),
 	),
+	// The room's light with a hemisphere light added, which the parity test compares with three.js:
+	// the hemisphere light adds to the environment's light, and the environment's intensity does
+	// not scale it.
+	{
+		name: 'environment-room-hemisphere',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid&env=room&hemisphere',
+		hold: 0,
+		size: [GRID_IMAGE.width, GRID_IMAGE.height],
+		timeoutSeconds: 60,
+	},
 	// The same spheres lit by HDR files that the engine reads and filters itself at load. The
 	// sunset's Radiance file must draw as the tool's map of it does, so it borrows that test's
 	// references: the scene lights the same from either source. The studio's OpenEXR file has its
@@ -1434,10 +1566,23 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [GRID_IMAGE.width, GRID_IMAGE.height],
 		timeoutSeconds: 60,
 	},
+	// Four times of day from `timeOfDay`: the sky background, the sky's environment, the main
+	// light, the fog and the exposure together, over spheres from mirror to rough. The sky's
+	// environment must show the sky behind it in the smooth spheres at each time. A held frame
+	// makes the whole map at once, which a software GPU does slowly (D-118).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `time-of-day-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/time-of-day-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. The parity test compares the grid of 16 and the spot
-	// lights with three.js.
+	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
+	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -1445,6 +1590,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			['lights-256', 'lights=256'],
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
+			['lights-hemisphere', 'scene=hemisphere'],
 		] as const
 	).map(([name, query]) => ({
 		name,
@@ -1452,6 +1598,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
+	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
+	// their intensities and colors in every frame. The frame sums them to the single light, so the
+	// test borrows its references.
+	{
+		name: 'lights-hemisphere-split',
+		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=hemisphere-split',
+		hold: 0.1,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
+		reference: 'lights-hemisphere',
+	},
 	// Custom materials with surface functions: pairs of a standard material and a surface function
 	// that keeps its look, which must match, then surface functions that change the look. Each
 	// thread mode sends the shaders to the thread that draws in its own way.
@@ -1478,6 +1634,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Instance batches whose rows bring colors: lit, unlit, mapped, masked and blended rows, from
+	// static and dynamic batches, beside rows of the same pairs without colors.
+	{
+		name: 'row-colors',
+		sketch: 'tests/pages/sketches/row-colors-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Instance batches whose rows bring values: grass that sways out of step and takes a tint per
+	// blade, from a static and a dynamic batch, with shadows that sway with it, at two moments of
+	// the wind.
+	...(
+		[
+			['row-values', 1],
+			['row-values-later', 1.4],
+		] as const
+	).map(([name, hold]) => ({
+		name,
+		sketch: 'tests/pages/sketches/row-values-sketch.ts',
+		hold,
+		size: [480, 270] as const,
+	})),
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
@@ -1675,6 +1853,34 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
 	},
+	// A smooth, a rough and a tinted glass ball let the striped wall behind them through, from the
+	// copy of the opaque objects' color. The parity test compares it with three.js's
+	// MeshPhysicalMaterial transmission, and the transmission spec checks how each ball bends and
+	// blurs the stripes.
+	{
+		name: 'transmission',
+		sketch: TRANSMISSION_SKETCH,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// The same balls with a custom material whose surface function sets the transmission: they
+	// draw as the standard material does, so the references are copies of the transmission test's.
+	{
+		name: 'transmission-custom',
+		sketch: `${TRANSMISSION_SKETCH}?custom`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+		reference: 'transmission',
+	},
+	// A blended pane in front of the balls draws over them in the same pass, sorted back to front.
+	{
+		name: 'transmission-blend',
+		sketch: `${TRANSMISSION_SKETCH}?blend`,
+		hold: 0,
+		size: [TRANSMISSION_IMAGE.width, TRANSMISSION_IMAGE.height],
+	},
+	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
+	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{
@@ -1721,6 +1927,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: demo.hold,
 			...(demo.largeWorld && { switches: ['largeWorld'] }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+		}),
+	),
+	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
+	// draws its own references: the owner reviews the two frames side by side, as each draws each
+	// effect with its own technique for the same look. The instanced mode builds the same scene with
+	// batches of copies, so it borrows the scene graph's references.
+	...COMPARISONS.flatMap((comparison) =>
+		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
+			const name = `compare-${comparison.name}-${engine}`;
+			const test: ImageTest = {
+				name,
+				page: 'tests/pages/compare.html',
+				switches: [`compare=${comparison.name}`, `engine=${engine}`],
+				size: [640, 360],
+				hold: comparison.hold.seconds,
+				tiers: ['webgpu', 'webgl2'],
+				timeoutSeconds: 90,
+			};
+			return [
+				test,
+				{
+					...test,
+					name: `${name}-instanced`,
+					switches: [...(test.switches ?? []), 'mode=instanced'],
+					reference: name,
+				},
+			];
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once

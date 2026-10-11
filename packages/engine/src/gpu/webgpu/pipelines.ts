@@ -13,6 +13,8 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
+	LAYOUT_DOF_COMPOSITE,
+	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
 	LAYOUT_EFFECT_DEPTH_MS,
 	LAYOUT_FINAL,
@@ -27,6 +29,7 @@ import {
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
+	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_INSTANCE_INDEX,
 	PERMUTATION_PREPASS,
@@ -61,6 +64,12 @@ import {
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
 	TEMPLATE_DEPTH_PYRAMID,
+	TEMPLATE_DOF_BLUR,
+	TEMPLATE_DOF_COMPOSITE,
+	TEMPLATE_DOF_COMPOSITE_MS,
+	TEMPLATE_DOF_FILTER,
+	TEMPLATE_DOF_SETUP,
+	TEMPLATE_DOF_SETUP_MS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -82,6 +91,7 @@ import {
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
@@ -101,7 +111,6 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
-import { DEV } from '../../shared/dev';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
@@ -112,6 +121,16 @@ import {
 	vertexAttribute,
 	vertexStride,
 } from '../vertex-format';
+
+declare const __NULL3D_DEV__: boolean | undefined;
+
+/**
+ * True in development builds, which add the debug views' templates. This file reads the constant
+ * itself, as the files that load on first use do. It loads with its GPU path's renderers, apart from
+ * the start's files, so a check through the shared constant would keep the debug views' shaders in
+ * the start's files of a production build. A check that folds within this file drops them.
+ */
+const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV__;
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -160,6 +179,12 @@ export interface RenderTemplate {
 	 */
 	readonly depthFragment?: boolean;
 }
+
+/**
+ * The binding of the row values texture of instance batches in the frame group and in the depth
+ * template's group, as the frame builder binds it and the mesh shaders declare it.
+ */
+const ROW_VALUES_BINDING = 16;
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
@@ -394,7 +419,9 @@ export class Pipelines {
 		shaders: DeviceShaders,
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
-		// The frame's constants and the material table, which depth-only pipelines read too.
+		// The frame's constants and the material table, which depth-only pipelines read too, then
+		// the materials' custom values and the row values of instance batches, which the vertex
+		// shaders of custom materials' shadow casters read too.
 		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
@@ -403,13 +430,28 @@ export class Pipelines {
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
-		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
+		const rowValues: GPUBindGroupLayoutEntry = {
+			binding: ROW_VALUES_BINDING,
+			visibility: GPUShaderStage.VERTEX,
+			texture: { sampleType: 'unfilterable-float' },
+		};
+		this.defineLayout(LAYOUT_DEPTH, 'depth', [
+			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+			rowValues,
+		]);
 		// The materials' custom values, the table of specular terms, then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
-		// textureLoad, the environment's cube map with its filtering sampler, and the sampler that
-		// reads four texels of the shadow map at once.
+		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
+		// four texels of the shadow map at once, the copy of the opaque color that surfaces which
+		// let light through sample with the environment's sampler, and the row values of instance
+		// batches, which only vertex shaders read.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -438,6 +480,8 @@ export class Pipelines {
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
+			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			rowValues,
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -595,6 +639,15 @@ export class Pipelines {
 			...effectEntries,
 			unfiltered(3, true),
 		]);
+		// Depth of field's composite: an effect's entries with the scene's depth, then the blurred
+		// image, which it reads with the linear sampler.
+		const blurred: GPUBindGroupLayoutEntry = { binding: 4, visibility: fragment, texture: {} };
+		this.defineLayout(LAYOUT_DOF_COMPOSITE, 'dof', [...effectEntries, unfiltered(3), blurred]);
+		this.defineLayout(LAYOUT_DOF_COMPOSITE_MS, 'dof ms', [
+			...effectEntries,
+			unfiltered(3, true),
+			blurred,
+		]);
 		// The final pass with custom effects folded into it: the pass's own entries, then every
 		// effect's block and the scene's depth, which the effects read as a group does. The effects
 		// sample the scene color with a linear filter, so it binds as a filterable float texture:
@@ -686,12 +739,31 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
+			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
+			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],
+			[TEMPLATE_DOF_FILTER, 'dof tent', shaders.dof, 'tent', LAYOUT_BLOOM],
+			[TEMPLATE_DOF_COMPOSITE, 'dof composite', shaders.dof, 'composite', LAYOUT_DOF_COMPOSITE],
+			[
+				TEMPLATE_DOF_COMPOSITE_MS,
+				'dof composite ms',
+				shaders.dof_ms,
+				'composite',
+				LAYOUT_DOF_COMPOSITE_MS,
+			],
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,
+			pipeline: 'main',
+			layouts: [LAYOUT_VIEW_COPY],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_TRANSMISSION_COPY, {
+			label: 'transmission copy',
+			shader: shaders.transmission_copy,
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
@@ -900,11 +972,20 @@ export class Pipelines {
 		const byIndex = (permutation & PERMUTATION_INSTANCE_INDEX) !== 0;
 		const multisampled =
 			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
-		const key = template * 8 + (skins ? 1 : 0) + (byIndex ? 2 : 0) + (multisampled ? 4 : 0);
+		// A custom material's shadow caster draws in the shadow passes, whose views bind the depth
+		// template's group in place of the frame group.
+		const caster = (permutation & PERMUTATION_CASTER) !== 0;
+		const key =
+			template * 16 +
+			(skins ? 1 : 0) +
+			(byIndex ? 2 : 0) +
+			(multisampled ? 4 : 0) +
+			(caster ? 8 : 0);
 		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
+			const own = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
 			const groups = [
-				...(multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts),
+				...(caster ? [LAYOUT_DEPTH, ...own.slice(1)] : own),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];

@@ -37,7 +37,9 @@ pub struct FrameUniform {
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare: what custom materials read as `frame`.
     pub clock: [f32; 4],
-    /// The camera's position in the world, absolute rather than relative to it, and a spare.
+    /// The camera's position in the world, absolute rather than relative to it, then 1 while the
+    /// view's surfaces that let light through sample the copy of its opaque color, else 0 (see
+    /// [`crate::transmission`]).
     pub camera_world: [f32; 4],
     /// The size of the render target in pixels, and one over each.
     pub target_size: [f32; 4],
@@ -49,6 +51,11 @@ pub struct FrameUniform {
     pub occlusion: [f32; 4],
     /// The scene's environment: see [`crate::environment`].
     pub environment: EnvironmentUniform,
+    /// The light that the hemisphere lights add along each world axis, x, y and z, each in the
+    /// first three floats: a surface with unit normal `n` gets `ambient` plus `n.x` times the
+    /// first, `n.y` times the second and `n.z` times the third (see
+    /// [`null3d_core::lights::FrameLights::hemisphere`]).
+    pub hemisphere: [[f32; 4]; 3],
     /// The view's camera relative to the camera of the camera's view, and 0. The matrices of the
     /// shadow maps take positions relative to the camera of the camera's view, so shadow lookups
     /// add this to a position relative to the view's camera. It is 0 in the camera's view.

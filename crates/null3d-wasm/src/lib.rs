@@ -33,7 +33,7 @@ use null3d_core::lights::LightTable;
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
-use null3d_core::scene::{CommandRing, SceneStorage};
+use null3d_core::scene::{CommandRing, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_core::sprites::SpriteLook;
 use null3d_gpu::caps::Capabilities;
@@ -47,6 +47,7 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
+use null3d_render::dof::{self, Dof};
 use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
@@ -59,6 +60,7 @@ use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::MeshError;
+use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
@@ -97,6 +99,12 @@ extern "C" {
     /// The browser's clock, in milliseconds, on the thread that calls it.
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
     fn performance_now() -> f64;
+    /// Asks the thread's host for job workers, which it starts as the work grows: the global
+    /// function that the module with the job workers' task ports defines (`shared/task-host.ts`)
+    /// in each thread that runs a sketch. The job system calls it when it queues a background task
+    /// before any job worker has joined.
+    #[wasm_bindgen(js_namespace = globalThis, js_name = __null3dWantJobWorkers)]
+    fn want_job_workers();
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -215,12 +223,14 @@ struct Engine {
 /// threshold and soft edge, a table at its full intensity over colors from 0 to 1, the vignette's
 /// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
-/// bloom's mixing blend and its levels' default shares, then the vignette's falloff and roundness.
+/// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
+/// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
+/// 2% of the image's height and round aperture, with no focus point.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -477,6 +487,7 @@ pub fn init_engine(
             .set(JobSystem::with_config(JobConfig {
                 workers: job_workers,
                 clock: Some(performance_now),
+                want_workers: Some(want_job_workers),
                 ..JobConfig::default()
             }))
             .is_ok(),
@@ -691,11 +702,28 @@ pub fn job_worker_failed(index: u32) {
     }
 }
 
-/// The milliseconds job worker `index` spent on work since the last call for it, which starts
-/// its total again from zero. The sketch thread reads it once per frame.
-#[wasm_bindgen(js_name = takeJobBusyMs)]
-pub fn take_job_busy_ms(index: u32) -> f64 {
-    JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
+/// The whole microseconds that the sketch thread spent in parallel loops that it handed out since
+/// the last call, which starts the total again from zero. The page starts job workers as it grows.
+#[wasm_bindgen(js_name = takeHandedUs)]
+pub fn take_handed_us() -> u32 {
+    JOBS.get().map_or(0, JobSystem::take_handed_us)
+}
+
+/// Starts or stops the timing of the parallel loops that the sketch thread hands out. Each timing
+/// reads the browser's clock, which allocates, so the sketch thread times them only while it may
+/// ask for more job workers.
+#[wasm_bindgen(js_name = timeHandedLoops)]
+pub fn time_handed_loops(on: bool) {
+    if let Some(jobs) = JOBS.get() {
+        jobs.time_handed_loops(on);
+    }
+}
+
+/// The whole microseconds job worker `index` spent on work since the last call for it, which
+/// starts its total again from zero. The sketch thread reads it once per frame.
+#[wasm_bindgen(js_name = takeJobBusyUs)]
+pub fn take_job_busy_us(index: u32) -> u32 {
+    JOBS.get().map_or(0, |jobs| jobs.take_busy_us(index))
 }
 
 /// The address of the job system's wake word, or 0 before it exists.
@@ -1099,12 +1127,19 @@ pub fn draw_debug_lines(points: u32) -> u32 {
 
 // --- Instance batches ---
 
-/// Creates an instance batch of one mesh and one material, and returns its id.
+/// Creates an instance batch of one mesh and one material, and returns its id. With `row_values`,
+/// each row has a colour and four values of its own, which shaders read.
 #[wasm_bindgen(js_name = createBatch)]
-pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, material: u32) -> u32 {
+pub fn create_batch(
+    capacity: u32,
+    dynamic: bool,
+    row_values: bool,
+    mesh: u32,
+    material: u32,
+) -> u32 {
     value_with_engine(|e| {
         add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create(capacity, dynamic, colors, mesh, material, radius)
+            batches.create(capacity, dynamic, row_values, mesh, material, radius)
         })
     })
 }
@@ -1112,14 +1147,14 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
 /// Creates one part of a model as an instance batch, and returns its id: a mesh and a material,
 /// placed in the space of each row by `part`, 12 numbers of a 3 × 4 matrix by rows. With a
 /// `source` batch other than 0, the part reads that batch's rows, and takes its capacity, its
-/// dynamic flag and its colors; without one, it owns `capacity` rows.
+/// dynamic flag and whether its rows have row values; without one, it owns `capacity` rows.
 #[wasm_bindgen(js_name = createBatchPart)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_batch_part(
     source: u32,
     capacity: u32,
     dynamic: bool,
-    colors: bool,
+    row_values: bool,
     mesh: u32,
     material: u32,
     part: &[f32],
@@ -1135,7 +1170,7 @@ pub fn create_batch_part(
         matrix[..n].copy_from_slice(&part[..n]);
         add_batch(e, capacity, mesh, |batches, radius| {
             batches.create_part(
-                source, capacity, dynamic, colors, mesh, material, radius, matrix,
+                source, capacity, dynamic, row_values, mesh, material, radius, matrix,
             )
         })
     })
@@ -1266,10 +1301,12 @@ pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
-/// a row), rotations (4), scales (3), or colors (4, or 0 for a batch without colors). A sprite
+/// a row), rotations (4), scales (3), colors (4) or values (4), the last two 0 for a batch without
+/// row values. A sprite
 /// batch has positions, sizes (2 floats a row), rotations in radians (1), colors (4) and frames
 /// (one 32-bit integer a row), and 0 for scales. A line batch has positions (3 floats a point) and
-/// colors (3 floats a point), and 0 for the others.
+/// colors (3 floats a point), and 0 for the others. Every batch also has the words of its dirty
+/// rows' bitset, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = batchArrays)]
 pub fn batch_arrays(batch: u32, field: u32) -> u32 {
     value_with_engine(|e| {
@@ -1277,6 +1314,9 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             .batches
             .get(Handle::from_raw(batch))
             .map_err(core_failure)?;
+        if field == batch_field::DIRTY_WORDS {
+            return Ok(address(batch.dirty().words()));
+        }
         if batch.sprite_look().is_some() {
             let (sizes, rotations, colors, frames) = batch.sprite_rows();
             return Ok(match field {
@@ -1300,7 +1340,8 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
             batch_field::POSITIONS => address(batch.positions()),
             batch_field::ROTATIONS => address(batch.rotations()),
             batch_field::SCALES => address(batch.scales()),
-            batch_field::COLORS if batch.has_colors() => address(batch.colors()),
+            batch_field::COLORS if batch.has_row_values() => address(batch.colors()),
+            batch_field::VALUES if batch.has_row_values() => address(batch.values()),
             _ => 0,
         })
     })
@@ -1328,6 +1369,23 @@ pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
         Ok(batch) => {
             batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
+/// Sets whether every row of a batch casts shadows and receives them, from the cast and receive
+/// bits of an object's flags. Sprite and line batches take neither. The renderer's tables depend on
+/// the bits, so a change rebuilds them, as an object's new flags do.
+#[wasm_bindgen(js_name = setBatchShadows)]
+pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            if batch.shadows() != bits & flags::SHADOWS {
+                batch.set_shadows(bits);
+                e.structure_changed = true;
+            }
             0
         }
         Err(error) => core_failure(error),
@@ -1833,8 +1891,9 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
 /// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
-/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, and the number of textures
-/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`. Its features
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, `shading::CUSTOM_BASE_COLOR`, the number of textures
+/// that its WGSL declares from `shading::CUSTOM_TEXTURE_SHIFT`, and
+/// `shading::CUSTOM_TRANSMISSION` when its WGSL has the builds that let light through. Its features
 /// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
 /// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
 /// `bias_slope`, whose positive values push the surface away.
@@ -1862,6 +1921,9 @@ pub fn create_material(
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
             base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
             textures: (custom >> shading::CUSTOM_TEXTURE_SHIFT) & 7,
+            transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
+            row_values: custom & shading::CUSTOM_ROW_VALUES != 0,
+            caster: custom & shading::CUSTOM_CASTER != 0,
         }),
         _ => Shading::Lit,
     };
@@ -2341,18 +2403,28 @@ fn graph_failure(e: &mut Engine, error: GraphError) -> u32 {
     fail(error.code(), error.details())
 }
 
-/// Adds a scene pass: a view that draws the scene into a target of `width` x `height` texels,
-/// which the render graph names `target`, through a pass that it names `pass`. The view reads the
-/// targets of the other passes named in `reads`, one name per line, so the objects it draws may
-/// show them. With `clears`, its target clears to the exposed linear color `r`, `g`, `b` and
-/// alpha `a`; without, to the color the camera's target clears to. The view draws once a camera
-/// is set for it through `setPerspectiveCamera` or `setOrthographicCamera`, with
-/// `constants::camera_target::PASS_VIEWS` plus its place. Returns its place, from 1, or 0 when the
-/// builder draws the most views already, or when the pass does not fit the render graph, with the
-/// graph's error (E1502 to E1505), whose message `renderGraphMessage` gives.
-#[wasm_bindgen(js_name = addScenePass)]
+/// Adds a scene pass or a reflection pass, through a pass that the render graph names `pass`, which
+/// draws into a target that it names `target`. The view reads the targets of the other passes
+/// named in `reads`, one name per line, so the objects it draws may show them. With `clears`, its
+/// target clears to the exposed linear color `r`, `g`, `b` and alpha `a`; without, to the color
+/// the camera's target clears to.
+///
+/// With `scale` below 0 it is a scene pass: a view that draws the scene into a target of `width` x
+/// `height` texels. The view draws once a camera is set for it through `setPerspectiveCamera` or
+/// `setOrthographicCamera`, with `constants::camera_target::PASS_VIEWS` plus its place.
+///
+/// With `scale` from 0 it is a reflection pass: a view that draws the camera's view mirrored across
+/// the plane through the point (`px`, `py`, `pz`) of the world with normal (`nx`, `ny`, `nz`). Its
+/// target takes `scale` of the render size each way, 1, 0.5 or 0.25, or for 0 the share that
+/// `setReflectionScale` sets. It draws the objects on `layers`, or below 0 those on the camera's
+/// layers, in one frame of every `every`.
+///
+/// Returns the view's place, from 1, or 0 when the builder draws the most views already, or when
+/// the pass does not fit the render graph, with the graph's error (E1502 to E1505), whose message
+/// `renderGraphMessage` gives.
+#[wasm_bindgen(js_name = addPass)]
 #[allow(clippy::too_many_arguments)]
-pub fn add_scene_pass(
+pub fn add_pass(
     pass: &str,
     target: &str,
     reads: &str,
@@ -2363,7 +2435,41 @@ pub fn add_scene_pass(
     g: f32,
     b: f32,
     a: f32,
+    scale: f32,
+    every: u32,
+    layers: f64,
+    nx: f32,
+    ny: f32,
+    nz: f32,
+    px: f64,
+    py: f64,
+    pz: f64,
 ) -> u32 {
+    let target_of = |size| ViewTarget {
+        size,
+        every: every.max(1),
+        clear: clears.then_some([r, g, b, a]),
+        ..ViewTarget::default()
+    };
+    let view = if scale < 0.0 {
+        View::default().with_target(target_of(Some((width.max(1), height.max(1)))))
+    } else {
+        // The TypeScript API refuses a normal without length; the plane faces up in its place.
+        let point = [px, py, pz];
+        let mirror = Mirror::new([nx, ny, nz], point)
+            .or_else(|| Mirror::new([0.0, 1.0, 0.0], point))
+            .expect("the up direction has length");
+        let halvings = (scale > 0.0).then(|| halvings_of(scale));
+        let layers = (layers >= 0.0).then_some(layers as u32);
+        View::mirror(mirror, halvings, layers).with_target(target_of(None))
+    };
+    add_pass_view(view, pass, target, reads)
+}
+
+/// Adds the view of a sketch's pass with the render graph's names `pass` and `target`, reading
+/// the targets named in `reads`, one name per line. Returns its place, from 1, or 0 with the
+/// failures of `addPass`.
+fn add_pass_view(view: View, pass: &str, target: &str, reads: &str) -> u32 {
     value_with_engine(|e| {
         let names = ViewNames {
             pass: pass.to_owned(),
@@ -2374,11 +2480,6 @@ pub fn add_scene_pass(
                 .map(str::to_owned)
                 .collect(),
         };
-        let view = View::default().with_target(ViewTarget {
-            size: Some((width.max(1), height.max(1))),
-            clear: clears.then_some([r, g, b, a]),
-            ..ViewTarget::default()
-        });
         let settings = e.renderer.settings_mut();
         let Some(id) = settings.add_named_view(view, names) else {
             return Err(render_failure(
@@ -2396,6 +2497,25 @@ pub fn add_scene_pass(
         e.structure_changed = true;
         Ok(id.index() as u32)
     })
+}
+
+/// Sets the share of the render size each way, 1, 0.5 or 0.25, that the targets of reflection
+/// passes without a scale of their own take, from the next frame on: the quality preset's
+/// reflection scale.
+#[wasm_bindgen(js_name = setReflectionScale)]
+pub fn set_reflection_scale(scale: f32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .set_mirror_halvings(halvings_of(scale));
+        0
+    })
+}
+
+/// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
+/// size, 1 for half and 2 for a quarter.
+fn halvings_of(scale: f32) -> u8 {
+    (1.0 / scale.clamp(1.0 / 128.0, 1.0)).log2().round() as u8
 }
 
 /// Removes the scene pass of view place `place`, from 1. Fails with the render graph's error
@@ -2436,8 +2556,9 @@ pub fn set_scene_pass_enabled(place: u32, enabled: bool) -> u32 {
 }
 
 /// Creates a texture that shows the target of the scene pass of view place `place`, from 1, and
-/// returns its handle. It holds the pass's `width` x `height` texels, and samples as no texture
-/// until the pass first draws.
+/// returns its handle. It holds the pass's `width` x `height` texels, or for a reflection pass,
+/// whose target follows the render size, 0 x 0, and samples as no texture until the pass first
+/// draws.
 #[wasm_bindgen(js_name = createPassTexture)]
 pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
     value_with_engine(|e| {
@@ -2449,7 +2570,7 @@ pub fn create_pass_texture(place: u32, width: u32, height: u32) -> u32 {
         };
         let texture = settings
             .textures_mut()
-            .create_pass(place, width, height, format)
+            .create_pass(place, width.max(1), height.max(1), format)
             .map_err(texture_failure)?;
         // The camera's passes now read the target, which can close a cycle.
         if let Err(error) = e.renderer.check_graph() {
@@ -2653,6 +2774,46 @@ pub fn set_bloom(on: bool) -> u32 {
     })
 }
 
+/// Turns depth of field on with its focus, aperture, focal length, largest blur, blades and focus
+/// point from the post-processing values, or off, from the next frame on. The TypeScript API checks
+/// the values.
+#[wasm_bindgen(js_name = setDof)]
+pub fn set_dof(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let dof = on.then(|| Dof {
+            focus_distance: value(place::DOF_FOCUS_DISTANCE),
+            focus_point: (value(place::DOF_FOCUS_ON_POINT) > 0.0)
+                .then(|| e.post_values3(place::DOF_FOCUS_POINT).map(f64::from)),
+            aperture: value(place::DOF_APERTURE),
+            focal_length: value(place::DOF_FOCAL_LENGTH),
+            max_blur: value(place::DOF_MAX_BLUR),
+            blades: value(place::DOF_BLADES) as u32,
+        });
+        e.renderer.settings_mut().set_dof(dof);
+        0
+    })
+}
+
+/// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
+/// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
+/// count up, at most 71.
+#[wasm_bindgen(js_name = setDofTaps)]
+pub fn set_dof_taps(taps: u32) -> u32 {
+    with_engine(|e| {
+        let taps = match taps {
+            0 => 0,
+            _ => dof::TAP_COUNTS
+                .into_iter()
+                .find(|&count| count >= taps)
+                .unwrap_or(dof::TAP_COUNTS[dof::TAP_COUNTS.len() - 1]),
+        };
+        e.renderer.settings_mut().set_dof_taps(taps);
+        0
+    })
+}
+
 /// Turns ambient occlusion on with its settings from the post-processing values, or off, from the
 /// next frame on. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setAo)]
@@ -2833,20 +2994,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let values = &e.background_values;
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
-        let sky = Sky {
-            sun_position: three(at::SUN_POSITION),
-            turbidity: value(at::TURBIDITY),
-            rayleigh: value(at::RAYLEIGH),
-            mie_coefficient: value(at::MIE_COEFFICIENT),
-            mie_directional_g: value(at::MIE_DIRECTIONAL_G),
-            cloud_scale: value(at::CLOUD_SCALE),
-            cloud_speed: value(at::CLOUD_SPEED),
-            cloud_coverage: value(at::CLOUD_COVERAGE),
-            cloud_density: value(at::CLOUD_DENSITY),
-            cloud_elevation: value(at::CLOUD_ELEVATION),
-            time: value(at::TIME),
-            sun_disc: value(at::SUN_DISC) > 0.0,
-        };
+        let sky = sky_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -2870,6 +3018,55 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             blur,
             rotation,
         }));
+        0
+    })
+}
+
+/// The sky's settings in the background's values.
+fn sky_of(values: &[f32]) -> Sky {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    Sky {
+        sun_position: std::array::from_fn(|k| value(at::SUN_POSITION + k as u32)),
+        turbidity: value(at::TURBIDITY),
+        rayleigh: value(at::RAYLEIGH),
+        mie_coefficient: value(at::MIE_COEFFICIENT),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+        second_sun_position: std::array::from_fn(|k| value(at::SECOND_SUN_POSITION + k as u32)),
+        second_sky_weight: value(at::SECOND_SKY_WEIGHT),
+    }
+}
+
+// Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
+// scene's sky, which fills in the first frame after the generator ran and refreshes over the next
+// frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
+// sky background, the maps show the sky of the background's values, which TypeScript writes
+// first. Fails for a texture that is not live.
+/// Makes a generated cube texture a map of the scene's sky.
+#[wasm_bindgen(js_name = addSkyMap)]
+pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
+    with_engine(|e| {
+        let sky = sky_of(&e.background_values[..]);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        if texture.is_none() {
+            return 0;
+        }
+        let maps = settings.sky_maps_mut();
+        if maps.sky().is_none() {
+            maps.set_sky(sky);
+        }
+        maps.add(texture, stages);
         0
     })
 }
@@ -3633,6 +3830,14 @@ pub fn overlap(kind: u32, layers: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reflections_share_of_the_render_size_becomes_halvings() {
+        assert_eq!(halvings_of(1.0), 0);
+        assert_eq!(halvings_of(0.5), 1);
+        assert_eq!(halvings_of(0.25), 2);
+        assert_eq!(halvings_of(2.0), 0, "a share above 1 takes the whole size");
+    }
 
     #[test]
     fn a_growth_doubles_until_a_quarter_of_the_places_is_spare() {
