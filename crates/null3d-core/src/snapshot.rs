@@ -105,8 +105,9 @@ impl FrameSnapshot {
         &self.uploads
     }
 
-    /// True when the list ran out of room. The reader must then upload every row of every
-    /// target for this frame.
+    /// True when the list ran out of room for a target's range. The reader must then upload
+    /// every row of every target for this frame. A range of the last range's target never
+    /// overflows the list: it widens the last range instead.
     pub fn overflowed(&self) -> bool {
         self.overflowed
     }
@@ -119,19 +120,29 @@ impl FrameSnapshot {
     }
 
     /// Appends a changed range, merging it with the previous one when they touch. Never
-    /// allocates: past the capacity it sets [`FrameSnapshot::overflowed`] instead.
+    /// allocates. Past the capacity, a range of the last range's target that starts after it
+    /// widens it to cover both, with the rows between them, so the list holds what changed and
+    /// some rows that did not. Both world buffers hold the latest matrix of every row that
+    /// draws, so such rows upload unchanged. Any other range past the capacity sets
+    /// [`FrameSnapshot::overflowed`].
     pub fn push_upload(&mut self, target: u32, start: u32, count: u32) {
+        self.push_within(target, start, count, self.uploads.capacity());
+    }
+
+    /// [`FrameSnapshot::push_upload`] with room for `room` ranges, at most the capacity.
+    fn push_within(&mut self, target: u32, start: u32, count: u32, room: usize) {
         if count == 0 {
             return;
         }
+        let full = self.uploads.len() >= room;
         if let Some(last) = self.uploads.last_mut()
             && last.target == target
-            && last.start + last.count == start
+            && (last.start + last.count == start || full && last.start <= start)
         {
-            last.count += count;
+            last.count = (start + count).max(last.start + last.count) - last.start;
             return;
         }
-        if self.uploads.len() < self.uploads.capacity() {
+        if !full {
             self.uploads.push(UploadRange {
                 target,
                 start,
@@ -144,10 +155,15 @@ impl FrameSnapshot {
 
     /// Records frame `frame`'s uploads: the scene's changed slots, then each batch's changed
     /// ranges, in batch id order.
+    /// The scene's ranges leave room for every batch's, so only batch ranges past the capacity
+    /// overflow the list.
     pub fn record(&mut self, frame: u32, scene: &SceneStorage, batches: &BatchTable) {
         self.clear(frame);
+        let capacity = self.uploads.capacity();
+        let batch_ranges: usize = batches.iter().map(|(_, b)| b.changed_ranges().len()).sum();
+        let scene_room = capacity.saturating_sub(batch_ranges).max(1);
         for (start, count) in scene.changed().runs() {
-            self.push_upload(SCENE_TARGET, start, count);
+            self.push_within(SCENE_TARGET, start, count, scene_room);
         }
         for (id, batch) in batches.iter() {
             for range in batch.changed_ranges() {
@@ -390,9 +406,59 @@ mod tests {
             ]
         );
         assert!(!snapshot.overflowed());
+        // Past the capacity, a range of the last range's target widens it.
         snapshot.push_upload(0, 20, 1);
+        snapshot.push_upload(0, 14, 2);
+        assert!(!snapshot.overflowed());
+        assert_eq!(
+            snapshot.uploads()[2],
+            UploadRange {
+                target: 0,
+                start: 10,
+                count: 11
+            }
+        );
+        // Another target's range has no room left.
+        snapshot.push_upload(7, 30, 1);
         assert!(snapshot.overflowed());
         assert_eq!(snapshot.uploads().len(), 3);
+    }
+
+    #[test]
+    fn a_frame_with_more_scene_runs_than_room_widens_its_last_and_keeps_room_for_batches() {
+        use crate::handle::Handle;
+        use crate::instances::BatchTable;
+        use crate::jobs::JobSystem;
+        use crate::scene::{Command, SceneStorage, flags};
+
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(32);
+        // Moving and still objects take turns, so each moving one is a run of its own.
+        let commands: Vec<Command> = (0..20)
+            .map(|k| {
+                let h = scene.reserve().unwrap();
+                let moving = if k % 2 == 0 { flags::DYNAMIC } else { 0 };
+                Command::create(h, Handle::NONE, 1, flags::VISIBLE | moving)
+            })
+            .collect();
+        let mut table = BatchTable::with_capacity(1);
+        let batch = table.create(8, true, false, 1, 1, 1.0).unwrap();
+        let mut snapshot = FrameSnapshot::with_capacity(4);
+        for frame in 1..=3 {
+            let initial: &[Command] = if frame == 1 { &commands } else { &[] };
+            scene.apply_commands(initial, frame).unwrap();
+            scene.update_transforms(&jobs);
+            table.update(&jobs, frame, scene.cell_table_mut());
+            snapshot.record(frame, &scene, &table);
+        }
+        assert!(!snapshot.overflowed());
+        let uploads = snapshot.uploads();
+        assert_eq!(uploads.len(), 4);
+        // Ten runs of one slot: two exactly, then one that covers the rest.
+        let runs: Vec<(u32, u32)> = uploads[..3].iter().map(|u| (u.start, u.count)).collect();
+        assert_eq!(runs, [(1, 1), (3, 1), (5, 15)]);
+        assert!(uploads[..3].iter().all(|u| u.target == SCENE_TARGET));
+        assert_eq!(uploads[3].target, batch.raw());
     }
 
     #[test]
