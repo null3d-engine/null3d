@@ -45,10 +45,11 @@ class StateLog {
 	constructor(engine: Engine) {
 		engine.onSketchMessage((name, data) => {
 			if (name !== 'governor-state') return;
-			const [renderScale, steps, farCascadeInterval, shadowFilter] = data as number[];
+			const [renderScale, budgetScale, steps, farCascadeInterval, shadowFilter] = data as number[];
 			const state = {
 				at: (performance.now() - this.from) / 1000,
 				renderScale: renderScale as number,
+				budgetScale: budgetScale as number,
 				steps: steps as number,
 				farCascadeInterval: farCascadeInterval as number,
 				shadowFilter: shadowFilter as number,
@@ -129,12 +130,15 @@ async function walk(engine: Engine, log: StateLog, budgetMs: number) {
 			state !== undefined &&
 			state.shadowFilter === 3 &&
 			state.farCascadeInterval === 8 &&
-			Math.abs(state.renderScale - GOVERNOR.walkMinScale) < 1e-6
+			Math.abs(state.renderScale - GOVERNOR.walkMinScale) < 1e-6 &&
+			state.budgetScale === GOVERNOR.budgetMin
 		);
 	};
 	const top = () => {
 		const state = last();
-		return state !== undefined && state.steps === 0 && state.renderScale === 1;
+		return (
+			state !== undefined && state.steps === 0 && state.renderScale === 1 && state.budgetScale === 1
+		);
 	};
 	await capture();
 	log.restart();

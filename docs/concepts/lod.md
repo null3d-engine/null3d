@@ -8,7 +8,7 @@ summary: "LOD groups; generated LODs; per-instance selection."
 
 # Levels of detail
 
-> Experimental. Skinned and morphed objects, and materials that blend or let light through, draw their base mesh at every distance. Custom materials, and masks with the `'hash'` alpha mode, switch levels at once, with no fading band.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Skinned and morphed objects, and materials that blend or let light through, draw their base mesh at every distance. Custom materials, and masks with the `'hash'` alpha mode, switch levels at once, with no fading band.
 
 ```mermaid
 flowchart LR

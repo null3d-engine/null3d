@@ -13,17 +13,17 @@ null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 ## 1. Find the docs that match the installed engine
 
-The engine docs are the source of truth. This skill describes engine 0.1, and names the version of each later part it mentions. A project may use another version, so check before you rely on anything here.
+The engine docs are the source of truth. This skill describes the first release, null3D 0.1.0, and marks the parts that are not built yet. A project may use another version, so check before you rely on anything here.
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
-   - from any terminal (0.3): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
+   - from any terminal (0.3, not built yet): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
+Doc IDs appear in backticks throughout, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today.
 
 ## 2. The model
 
@@ -129,7 +129,7 @@ Materials:
 | --- | --- | --- |
 | Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
-| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
+| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2, not built yet) | `api/materials` |
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
@@ -206,11 +206,11 @@ The full table and the debugging tools are in `references/testing-and-debugging.
 
 Read these when the task needs them:
 
-- `references/api-quickref.md`: the API by area, with the version that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
+- `references/api-quickref.md`: the API by area, with the roadmap step that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
 - `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
-- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3), error codes and a full troubleshooting table.
+- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a full troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
 ## 9. Before you finish

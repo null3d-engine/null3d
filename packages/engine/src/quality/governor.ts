@@ -1,14 +1,18 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
 // how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale. When the frames have time to
-// spare again, it raises them in the reverse order. It never changes a setting that is fixed while
-// a preset runs.
+// occlusion's scale. When the frames have time to spare again, it raises them in the reverse order.
+// It never changes a setting that is fixed while a preset runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
 // error is at most the threshold, so two pixels draw much as one does, while far objects lose
 // most of their vertices.
+//
+// A sketch's own systems take part through their budgets, which share one scale from 0 to 1. While
+// a budget can go lower, its steps alternate with the render scale's, a budget's step first, so a
+// sketch's system scales down before the render scale reaches its floor. Once the render scale is at
+// its floor, the budgets' remaining steps come before the detail and shadow steps.
 //
 // The render scale is a part of the canvas's width and height, in whole thousandths, which the core
 // turns into an exact size in pixels. Scene passes draw into that corner of targets the size of the
@@ -61,6 +65,21 @@ export const SCALE_STEP = 50;
 /** The render scale in thousandths of a scale from 0 to 1, rounded, from 1 to the whole canvas. */
 export function thousandths(scale: number): number {
 	return Math.min(FULL_SCALE, Math.max(1, Math.round(scale * FULL_SCALE)));
+}
+
+/** How far one step moves the budgets' scale, in thousandths. */
+export const BUDGET_STEP = 250;
+/** The budgets' steps from the full scale down to none. */
+export const BUDGET_STEPS = FULL_SCALE / BUDGET_STEP;
+
+/** The budgets' steps from the full scale down to `min`, a scale from 0 to 1. */
+export function budgetSteps(min: number): number {
+	return Math.ceil((FULL_SCALE - Math.round(min * FULL_SCALE)) / BUDGET_STEP);
+}
+
+/** A budget's scale from 0 to 1 after `level` steps of the budgets, and at least `min`. */
+export function budgetScale(level: number, min: number): number {
+	return Math.max(min, (FULL_SCALE - level * BUDGET_STEP) / FULL_SCALE);
 }
 
 /** The longest interval between two draws of a far shadow cascade, in frames. */
@@ -162,13 +181,16 @@ const STATE_SIZE = 6;
 
 /**
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
- * step down. They cover every scale of the widest range and every step past the scale.
+ * step down. They cover every scale of the widest range, every step of the budgets and every step
+ * past the scale.
  */
-const LEVELS = FULL_SCALE / SCALE_STEP + 1 + DETAIL_STEPS + farIntervalSteps(1) + 1 + 1 + 1;
+const LEVELS =
+	FULL_SCALE / SCALE_STEP + 1 + BUDGET_STEPS + DETAIL_STEPS + farIntervalSteps(1) + 1 + 1 + 1;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
- * and calls `judge` once per window. The settings and the scene's shadows set the steps it can take.
+ * and calls `judge` once per window. The settings, the scene's shadows and the sketch's budgets set
+ * the steps it can take.
  */
 export class Governor {
 	/** The render scale in thousandths. */
@@ -184,6 +206,8 @@ export class Governor {
 	 * 2 and 4 after the detail steps.
 	 */
 	detailFactor = 1;
+	/** The steps of the budgets' scale that the governor has taken: 0 at the full scale. */
+	budgetLevel = 0;
 	/** The far cascades' interval that frames draw with: the setting's, or longer after a step. */
 	farInterval = 1;
 	/** The shadow filter that frames draw with: the setting's, or the lightest after a step. */
@@ -228,6 +252,8 @@ export class Governor {
 	private ao = false;
 	/** True while the scene draws a mesh with levels of detail, which the detail steps need. */
 	private levels = false;
+	/** The steps that the sketch's budgets allow: those to the lowest of their floors. */
+	private budgetSteps = 0;
 
 	constructor() {
 		this.restart(0);
@@ -301,11 +327,24 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** Turns the governor on or off. Off, the scale goes to the highest and the settings apply as set. */
+	/**
+	 * Sets the steps of the budgets' scale that the sketch's budgets allow, 0 for none, and keeps the
+	 * steps taken within them.
+	 */
+	setBudgetSteps(steps: number): void {
+		this.budgetSteps = steps;
+		this.budgetLevel = Math.min(this.budgetLevel, steps);
+	}
+
+	/**
+	 * Turns the governor on or off. Off, the scale goes to the highest, the budgets to the full scale,
+	 * and the settings apply as set.
+	 */
 	setOn(on: boolean): void {
 		this.on = on;
 		if (on) return;
 		this.scale = this.high;
+		this.budgetLevel = 0;
 		this.steps = 0;
 		this.applySteps();
 	}
@@ -426,7 +465,8 @@ export class Governor {
 	}
 
 	/**
-	 * One step down: the render scale while it is above the lowest, then the detail, shadow, bloom
+	 * One step down: the budgets and the render scale in turn, a budget's step first, while the
+	 * scale is above the lowest; then the budgets' remaining steps, then the detail, shadow, bloom
 	 * and ambient occlusion steps. When it
 	 * leaves a level whose step up is still on trial, the next step up into that level waits twice
 	 * as long as that one did. Otherwise the level held, and the frames got heavier, so its wait
@@ -434,8 +474,14 @@ export class Governor {
 	 */
 	private lower(now: number): void {
 		const left = this.level();
+		const { budgetLevel } = this;
 		let moved = true;
-		if (this.scale > this.low) this.scale = Math.max(this.low, this.scale - SCALE_STEP);
+		if (
+			budgetLevel < this.budgetSteps &&
+			(budgetLevel <= this.scaleSteps() || this.scale <= this.low)
+		)
+			this.budgetLevel = budgetLevel + 1;
+		else if (this.scale > this.low) this.scale = Math.max(this.low, this.scale - SCALE_STEP);
 		else if (this.steps < this.maxSteps) this.moveSteps(1);
 		else moved = false;
 		if (moved) {
@@ -451,27 +497,30 @@ export class Governor {
 	}
 
 	/**
-	 * One step up: the ambient occlusion, bloom, shadow and detail steps back first, then the render
-	 * scale.
+	 * One step up, in the reverse order of the steps down: the ambient occlusion, bloom, shadow and
+	 * detail steps back first, then the budgets' steps past the scale's, then the render scale and
+	 * the budgets in turn, so the budgets' last step comes back last.
 	 */
 	private raise(now: number): void {
 		let moved = true;
 		if (this.steps > 0) this.moveSteps(-1);
+		else if (this.budgetLevel > this.scaleSteps()) this.budgetLevel--;
 		else if (this.scale < this.high) this.scale = Math.min(this.high, this.scale + SCALE_STEP);
 		else moved = false;
 		if (moved) this.raisedAt[this.level()] = now;
 		this.settle(moved, now);
 	}
 
-	/**
-	 * The level that the frames draw at: the scale's steps below the highest, rounded up, then the
-	 * steps past the scale.
-	 */
+	/** The level that the frames draw at: the scale's steps, the budgets' and the steps past the scale. */
 	private level(): number {
+		return Math.min(LEVELS - 1, this.scaleSteps() + this.budgetLevel + this.steps);
+	}
+
+	/** The render scale's steps below the highest, rounded up. */
+	private scaleSteps(): number {
 		const below = this.high - this.scale;
 		const rest = below % SCALE_STEP;
-		const scaleSteps = (below - rest) / SCALE_STEP + (rest > 0 ? 1 : 0);
-		return Math.min(LEVELS - 1, scaleSteps + this.steps);
+		return (below - rest) / SCALE_STEP + (rest > 0 ? 1 : 0);
 	}
 
 	/** Forgets every level's trial: no step up on trial, and the shortest wait before each. */
