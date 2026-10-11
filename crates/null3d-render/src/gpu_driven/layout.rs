@@ -27,7 +27,7 @@ use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::write_row_values;
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
-    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -1058,17 +1058,28 @@ impl Layout {
             }
             return Ok(());
         }
+        // Scene rows that changed close together upload in one write, as a span that grows until
+        // the next run lies too far from it.
+        let scene = input.scene.world(parity).matrices();
+        let mut span: Option<(u32, u32)> = None;
         for range in input.snapshot.uploads() {
             let Some(base) = self.base_of(range.target) else {
                 continue;
             };
             if range.target == SCENE_TARGET {
-                let scene = input.scene.world(parity).matrices();
-                if let Some((start, count)) =
-                    drawn_rows(&self.home_buckets, range.start, range.count)
-                {
-                    upload(base, scene, start, count)?;
-                }
+                let Some((start, count)) = drawn_rows(&self.home_buckets, range.start, range.count)
+                else {
+                    continue;
+                };
+                span = match span.and_then(|span| joined_rows(span, start, count)) {
+                    Some(joined) => Some(joined),
+                    None => {
+                        if let Some((first, rows)) = span {
+                            upload(0, scene, first, rows)?;
+                        }
+                        Some((start, count))
+                    }
+                };
                 continue;
             }
             let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
@@ -1080,6 +1091,9 @@ impl Layout {
                 range.start,
                 range.count,
             )?;
+        }
+        if let Some((first, rows)) = span {
+            upload(0, scene, first, rows)?;
         }
         Ok(())
     }
