@@ -304,12 +304,14 @@ describe('post.set', () => {
 		output.set({ ssr: { maxDistance: 30, thickness: 0.6, intensity: 0.5 } });
 		output.set({ ssr: false });
 		output.set({ ssr: { maxRoughness: 0.8 } });
+		// The values pass through 32-bit floats.
+		const thickness = Math.fround(0.6);
 		expect(ssrs).toEqual([
 			[false, 1, 100, 0.5, 0.5],
 			[true, 1, 100, 0.5, 0.5],
-			[true, 0.5, 30, 0.6, 0.5],
-			[false, 0.5, 30, 0.6, 0.5],
-			[true, 0.5, 30, 0.6, 0.8],
+			[true, 0.5, 30, thickness, 0.5],
+			[false, 0.5, 30, thickness, 0.5],
+			[true, 0.5, 30, thickness, Math.fround(0.8)],
 		]);
 		expect(needs).toContain('ao');
 		expect(needs).toContain('transmission');
