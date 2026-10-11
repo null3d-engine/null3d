@@ -16,7 +16,6 @@
 // result carries as `lateInMotion` once the page runs it.
 import type { Engine, FrameSummary } from '@null3d/engine';
 import {
-	differingPixels,
 	hiddenAtRest,
 	medianFigures,
 	type OcclusionFigures,
@@ -25,6 +24,7 @@ import {
 	roundSides,
 	roundStart,
 	stopShares,
+	visiblyDifferingPixels,
 } from '../../../tests/pages/lib/occlusion';
 import { occlusionFigures } from '../../../tests/pages/lib/occlusion-figures';
 import { toBase64 } from '../../../tests/pages/lib/result';
@@ -88,8 +88,8 @@ export async function occlusionTurns(
 		const on = await engine.captureFrame();
 		const stop = {
 			share,
-			noise: differingPixels(off.pixels, again.pixels),
-			differing: differingPixels(off.pixels, on.pixels),
+			noise: visiblyDifferingPixels(off.pixels, again.pixels, off.width, off.height),
+			differing: visiblyDifferingPixels(off.pixels, on.pixels, off.width, off.height),
 		};
 		stops.push(stop);
 		if (hiddenAtRest(stop) && Object.keys(images).length < 2 * HIDDEN_IMAGES) {

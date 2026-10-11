@@ -184,7 +184,7 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
 | `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
 | `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
-| `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
+| `mesh.morphTargetDictionary` | The mesh geometry's `morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 | `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.

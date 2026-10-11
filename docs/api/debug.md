@@ -57,6 +57,8 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
 | `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint, as three.js's `SkeletonHelper` draws them | Blue at the joint, green at its parent |
 
+`grid` takes `center`, `color` and `centerColor`, gray (`'#888888'`) and darker gray (`'#444444'`) by default. `light` takes `position`, `size` in meters (1 by default) and `color`.
+
 Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
