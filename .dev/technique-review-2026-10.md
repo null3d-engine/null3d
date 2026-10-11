@@ -327,7 +327,7 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 9 | GLSL-to-WGSL port command | three.js's transpiler | S to M | M3, command line only |
 | 10 | Gaussian splats, on WebGL2 too | PlayCanvas, Babylon.js; three.js on WebGPU only | M to L | M3 add-on |
 | 11 | Planar reflections and linked views | three.js add-ons, Babylon.js | M | M3; planar reflections in M2-EX15 for the showcase scenes ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
-| 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | M3 add-on |
+| 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | Before 1.0, an add-on in M2-EX20 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 13 | Projected decals | three.js's `DecalGeometry` | S | M2 or M3 |
 | 14 | Per-object light maps, reading `NEEDLE_lightmaps` first | Bevy, PlayCanvas, Godot | S to M | M3 |
 | 15 | IK (two-bone, aim, CCD) | Godot, Babylon.js, a three.js add-on | S to M | M3; add-on if large |
@@ -341,12 +341,14 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md), [D-122](decisions/D-122-transmission.md)) |
 | 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | After 1.0 |
 | 25 | Automatic exposure | Godot, Unity, Filament | M | After 1.0 |
-| 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur after 1.0 |
+| 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 27 | Weighted blended transparency | | M | After 1.0, opt-in for particle scenes |
-| 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | After 1.0; god rays as a custom-effect recipe in M3 |
-| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); screen-space reflections after 1.0 |
+| 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | Before 1.0: light shafts and lit fog in M2-EX21 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
+| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); screen-space reflections before 1.0, in M2-EX22 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0. XR needs the thread mode that draws on the main thread, so keep that mode working |
 | 31 | Terrain | No engine core | L | After 1.0 |
+
+Global illumination was not one of the gaps. DDGI was judged too heavy for phones, so it waited for desktop presets after 1.0. It now joins M3, with a technique that phones can run ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
 Water is a recipe on planar reflections. Navigation meshes, CSG, trails, exporters and gizmos block no user segment in 1.0.
 

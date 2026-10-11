@@ -265,6 +265,8 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 
 ### The look
 
+A comparison must look very beautiful, as every demo and showcase scene must ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md), owner, 11 October 2026). It uses shaders, effects, particles and complex geometry. A good figure does not excuse a plain scene. The bar is the generators demo and Creek.
+
 Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
 
 ### The stats panel of three.js
@@ -322,14 +324,31 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain, rocks, grass).
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
-- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0 ([D-117](decisions/D-117-showcase-features-before-1-0.md)):
-  - per-row values in instance batches;
-  - environment light from the sky, with time of day;
-  - planar reflections, transmission and depth of field;
-  - a temporal anti-aliasing prototype.
-
-  Batch shadows come from M2-R6.
+- **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md) and [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md). The table below lists them.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
+
+### Engine features for the showcase
+
+Each feature gets a decision record of its own when it is built.
+
+| Feature | What the scenes use it for | Task | Ruling |
+| --- | --- | --- | --- |
+| Per-row values in instance batches | Grass that sways out of step, with a tint per blade | M2-EX13 ([D-127](decisions/D-127-row-values.md)) | D-117 |
+| Environment light from the sky, with time of day | Light and reflections that follow the hour | M2-EX14 ([D-118](decisions/D-118-sky-environment.md)) | D-117 |
+| Planar reflections | Water that reflects its banks | M2-EX15 ([D-120](decisions/D-120-planar-reflections.md)) | D-117 |
+| Transmission | Water that shows its bed | M2-EX16 ([D-122](decisions/D-122-transmission.md)) | D-117 |
+| Depth of field | A focus on the subject | M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)) | D-117 |
+| Temporal anti-aliasing, a prototype first | Dense grass without shimmer in motion | M2-EX18 | D-117 |
+| Batch shadows | Grass and plants that cast and receive shadows | M2-R6 ([D-115](decisions/D-115-batch-shadows.md)) | D-117 |
+| The particles add-on | Spray, leaves and fireflies; sparks, smoke and debris; rain and steam | M2-EX20 | D-132 |
+| Light shafts and lit fog | Sun through trees, and a glow around lamps and headlights | M2-EX21 | D-132 |
+| Screen-space reflections | Wet streets, puddles and polished floors | M2-EX22 | D-132 |
+| Contact shadows | No light gap where an object meets the ground | M2-F12 | D-132 |
+| Bump and displacement maps | Detail on stones, bark and ground | M2-J4 | D-132 |
+| LOD groups | Dense, complex geometry far from the camera | M2-I4 | D-132 |
+
+Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
 ## Groups and titles (owner, 9 October 2026)
 

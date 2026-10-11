@@ -1,6 +1,6 @@
 # D-117: Showcase engine features move before 1.0
 
-Status: decided by the owner on 8 October 2026. The features are tasks M2-EX13 to M2-EX18. Each one's design and figures go into a record of its own when it is built.
+Status: decided by the owner on 8 October 2026. The features are tasks M2-EX13 to M2-EX18. Each one's design and figures go into a record of its own when it is built. [D-132](D-132-showcase-look-and-features-2026-10-11.md) extends it on 11 October 2026 with a look bar and more features, the particles add-on among them.
 
 Summary: The showcase scenes must reach the quality of the "Cozy creek" reference. So every engine feature they need moves before 1.0. These are per-row values in instance batches, environment light from the sky with time of day, planar reflections, transmission and depth of field. A temporal anti-aliasing prototype comes too.
 
@@ -33,7 +33,7 @@ The engine on main on 8 October 2026, against what the reference needs:
 | Water that shows its bed, bent by its ripples | No transmission | After 1.0 | M2-EX16 |
 | Depth of field | Not built; custom effects read one pixel, so they cannot blur | After 1.0 | M2-EX17 |
 | Dense grass without shimmer in motion | MSAA and alpha to coverage, with no temporal anti-aliasing | After 1.0 | M2-EX18, a prototype first |
-| Spray, falling leaves, fireflies | Sprites | The particles add-on, M3 | M3, no change |
+| Spray, falling leaves, fireflies | Sprites | The particles add-on, M3 | M3, no change; M2-EX20 since [D-132](D-132-showcase-look-and-features-2026-10-11.md) |
 
 Caustics, glints, foam, water flow and wind are recipes on top of these features: surface functions and vertex offsets. They are not engine features of their own.
 
