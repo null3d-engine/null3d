@@ -25,6 +25,7 @@ function material(uniforms: CompiledMaterial['uniforms'] = []): CompiledMaterial
 		locations: [0, 1, 2],
 		attributes: 0,
 		baseColor: true,
+		objectIds: false,
 	};
 }
 

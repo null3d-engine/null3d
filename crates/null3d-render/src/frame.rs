@@ -1976,6 +1976,8 @@ impl SceneSettings {
         let output = self.drawn_output();
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
+            view: camera.view,
+            projection: camera.projection,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,

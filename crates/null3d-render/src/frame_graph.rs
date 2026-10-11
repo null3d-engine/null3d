@@ -1927,9 +1927,11 @@ impl FrameGraph {
         }
     }
 
-    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects, once
-    /// the folded effects draw alone, as a group waits (see [`EffectPass::request_pipelines`]), and
-    /// plans the effects' passes with each group and the fold whose pipeline is built.
+    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects and the
+    /// fold may draw, once the folded effects draw alone, as a group waits (see
+    /// [`EffectPass::request_pipelines`]). A fold that may not draw, beside bloom for one, builds
+    /// nothing until it may. It then plans the effects' passes with each group and the fold whose
+    /// pipeline is built.
     fn request_effect_joins(&mut self, pipelines: &mut PipelineCache, pipelines_built: u32) {
         let count = self.effect_count;
         let alone = |first: usize, pipelines: &PipelineCache| {
@@ -1938,12 +1940,12 @@ impl FrameGraph {
                 .is_some_and(|pass| pass.alone_built(first..count, pipelines, pipelines_built))
         };
         let fold = match self.effect_joins.fold_of(count) {
-            Some((first, template)) if alone(first, pipelines) => {
+            Some((first, template)) if self.may_fold() && alone(first, pipelines) => {
                 let multisampled = self.gpu_culling && self.samples > 1 && self.folded_depth(first);
                 let id = self
                     .final_pass
                     .request_fold(pipelines, template, multisampled);
-                (self.may_fold() && pipelines.built(id, pipelines_built)).then_some(first)
+                pipelines.built(id, pipelines_built).then_some(first)
             }
             _ => None,
         };
@@ -3763,10 +3765,23 @@ mod tests {
                 .any(|set| set[0] == fold)
         );
 
-        // Bloom reads the effects' image, so nothing folds while it is on.
+        // Bloom reads the effects' image, so nothing folds while it is on, and a new fold builds
+        // nothing until bloom is off.
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         let names = frame(&mut frames, &mut pipelines, &joins, 10, &mut list);
         assert_eq!(effect_passes(&names), 2);
+        joins.fold = Some((1, 92));
+        let names = frame(&mut frames, &mut pipelines, &joins, 11, &mut list);
+        assert_eq!(effect_passes(&names), 2);
+        let asked =
+            |pipelines: &PipelineCache| pipelines.keys().iter().any(|key| key.template == 92);
+        assert!(!asked(&pipelines), "a fold beside bloom builds nothing");
+        frames.set_bloom(None, ChainFrame::default());
+        let names = frame(&mut frames, &mut pipelines, &joins, 12, &mut list);
+        assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
+        assert!(asked(&pipelines));
+        let names = frame(&mut frames, &mut pipelines, &joins, 13, &mut list);
+        assert_eq!(effect_passes(&names), 1);
     }
 
     #[test]
