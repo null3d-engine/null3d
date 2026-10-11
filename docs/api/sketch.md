@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context field `render` is not built yet, so coding agents must not use it. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The context field `render` is not built yet, so coding agents must not use it. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 

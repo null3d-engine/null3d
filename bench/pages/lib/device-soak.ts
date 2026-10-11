@@ -114,10 +114,10 @@ export function soakPreset(mode: SoakMode | undefined): string {
 }
 
 /**
- * A row of the soak table: the path, the preset, the minutes, the losses, the frame rates and the
- * memory.
+ * A row of the soak table: the scene, the path, the preset, the minutes, the losses, the frame
+ * rates and the memory.
  */
-export function soakRow(tier: string, report: SoakReport, mode?: SoakMode): string {
+export function soakRow(scene: string, tier: string, report: SoakReport, mode?: SoakMode): string {
 	const { samples } = report;
 	const lowest = samples.reduce<SoakMinute | undefined>(
 		(low, sample) => (low && low.presentedFps <= sample.presentedFps ? low : sample),
@@ -133,6 +133,7 @@ export function soakRow(tier: string, report: SoakReport, mode?: SoakMode): stri
 			? `${((last - first) / (1024 * 1024)).toFixed(1)} MiB`
 			: '-';
 	const cells = [
+		scene,
 		tier,
 		soakPreset(mode),
 		`${samples.length} of ${report.minutes}`,
@@ -147,6 +148,6 @@ export function soakRow(tier: string, report: SoakReport, mode?: SoakMode): stri
 
 /** The header of the soak table. */
 export const SOAK_TABLE_HEAD = [
-	'| Path | Preset | Minutes measured | GPU losses | Median fps | Lowest fps | WebAssembly memory growth | Engine failures |',
-	'| --- | --- | --- | --- | --- | --- | --- | --- |',
+	'| Scene | Path | Preset | Minutes measured | GPU losses | Median fps | Lowest fps | WebAssembly memory growth | Engine failures |',
+	'| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 ];

@@ -17,8 +17,13 @@ export interface PlanItem<Check = unknown> {
 	 * its own name where the path has `{run}` and `{runner}`.
 	 */
 	path: string;
-	/** How long the page may take to publish its result. */
+	/** How long the page may take to publish its result, with the rest before it. */
 	timeoutSeconds: number;
+	/**
+	 * Seconds that the runner page waits before it opens the page, so that a phone or a tablet cools
+	 * down between long timed runs.
+	 */
+	restSeconds?: number;
 	/**
 	 * How long the runner page may send nothing on this page before it counts as stopped, for a page
 	 * that posts its progress as it goes, so a dead tab shows sooner than at the page's timeout.
