@@ -1011,8 +1011,8 @@
       "three": "material.bumpMap / bumpScale",
       "status": "changed",
       "since": "0.2",
-      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump`",
-      "notes": "Not built yet. Until then, make the normal map from the bump map in an image tool. Normal maps are cheaper at run time and look the same or better.",
+      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump bump.png normal.ktx2 --scale <bumpScale>`",
+      "notes": "The scale matches three.js where one texel covers one screen pixel; three.js bumps look stronger farther away. Normal maps are cheaper at run time and look the same or better.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bbump(Map|Scale)\\b"
     },
@@ -1275,8 +1275,8 @@
       "three": "FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader",
       "status": "changed",
       "since": "0.2",
-      "target": "Convert to glTF before release, with Blender or another converter",
-      "notes": "Not built yet. `bunx @null3d/cli assets convert` (0.2) will convert them. The engine loads glTF only.",
+      "target": "Convert to glTF before release: `bunx @null3d/cli assets convert model.fbx model.glb` for FBX, OBJ with MTL, STL and PLY; Blender for Collada, 3DM and USDZ",
+      "notes": "The engine loads glTF only. The command keeps FBX skins, blend shapes and clips, turns materials into metal-rough ones, and puts units in meters with Y up. Bump maps become normal maps.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(FBX|OBJ|MTL|Collada|STL|PLY|3DM|USDZ|TDS|VRML|VTK|Rhino3dm)Loader\\b"
     },

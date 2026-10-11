@@ -85,7 +85,7 @@ export const GENERATOR = `null3D asset tool ${VERSION}`;
  * A reader and writer of glTF files with every extension that glTF-Transform knows, MSFT_lod and
  * the engine's own.
  */
-async function glTFIO() {
+export async function glTFIO() {
 	await Promise.all([MeshoptDecoder.ready, MeshoptEncoder.ready]);
 	return new NodeIO()
 		.registerExtensions([...ALL_EXTENSIONS, MSFTLod, Null3dOccluder, Null3dMeshBvh])
@@ -109,7 +109,7 @@ export function namedFiles(path) {
 }
 
 /** The name of Draco's extension, which a file that holds Draco data names in its JSON. */
-const DRACO = 'KHR_draco_mesh_compression';
+export const DRACO = 'KHR_draco_mesh_compression';
 
 /** Draco's decoder, loaded for the first file that holds Draco data. */
 let dracoDecoder;
@@ -121,7 +121,7 @@ let dracoDecoder;
  * @param {NodeIO} io
  * @param {string} path
  */
-async function readModel(io, path) {
+export async function readModel(io, path) {
 	const json = extname(path).toLowerCase() === '.gltf' ? readFileSync(path) : glbJson(path);
 	if (json.includes(DRACO)) {
 		dracoDecoder ??= createRequire(import.meta.url)('draco3d').createDecoderModule();
@@ -153,7 +153,7 @@ function glbJson(path) {
  *
  * @param {Document} doc
  */
-function tidyBuffers(doc) {
+export function tidyBuffers(doc) {
 	const root = doc.getRoot();
 	const [first, ...rest] = root.listBuffers();
 	const buffer = first ?? doc.createBuffer();
