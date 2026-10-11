@@ -106,6 +106,35 @@ export function rerunsInNewTab(browser: string, verdict: readonly string[]): boo
 	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
 }
 
+/** The address of the sketch module that a failure names as not loaded (E1410), if any. */
+export function unloadedModule(verdict: readonly string[]): string | undefined {
+	for (const problem of verdict) {
+		const url = /\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1];
+		if (url) return url;
+	}
+	return undefined;
+}
+
+/** How long the runner waits for the test server to send a module again, for a failure's note. */
+const MODULE_NOTE_MS = 60_000;
+
+/**
+ * A note that names a module that a page could not import, with what the test server sends for it
+ * now: its size and time, or the server's own failure. A module that the server sends in full
+ * points at the browser, and its size shows whether the module was too large.
+ */
+export async function moduleNote(url: string): Promise<string> {
+	const start = performance.now();
+	try {
+		const response = await fetch(url, { signal: AbortSignal.timeout(MODULE_NOTE_MS) });
+		const bytes = (await response.arrayBuffer()).byteLength;
+		const ms = Math.round(performance.now() - start);
+		return `module import failed: ${url}. The test server now answers ${response.status} with ${(bytes / 1e6).toFixed(2)} MB in ${ms} ms`;
+	} catch (e) {
+		return `module import failed: ${url}. The test server does not send it now either: ${(e as Error).message}`;
+	}
+}
+
 /** The run that waiting runner pages start, and the runners that may start it now. */
 export interface CurrentRun {
 	run: string;

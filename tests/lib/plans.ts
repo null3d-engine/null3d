@@ -444,13 +444,41 @@ const SHADERS_BASE_SECONDS = 30;
  */
 const SHADERS_SECONDS_PER_PROGRAM = 0.5;
 
+/** Every GLSL program of the engine, which the parts of the shaders page share. */
+const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
+
 /**
- * The shaders page's time, which grows with the GLSL programs that it compiles, so more shader
- * variants never make it time out. A page that stops still fails, with the last step it noted.
+ * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
+ * own, with a WebGL2 context of its own that it gives up at its end. Safari on CI's Mac lost the
+ * context of a page that compiled every program in one context, after 2,240 programs and 266 s.
+ */
+const SHADER_PROGRAMS_PER_PART = 400;
+
+/** The parts of the shaders page: enough that none holds more than that many programs. */
+export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
+
+/**
+ * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
+ * more shader variants never make it time out. A page that stops still fails, with the last step it
+ * noted.
  */
 export const SHADERS_PAGE_SECONDS = Math.ceil(
-	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * glslProgramsOf(await everyShader()).length,
+	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * Math.ceil(GLSL_PROGRAMS / SHADER_PARTS),
 );
+
+/** The parts of the shaders page, each with its share of the programs and modules. */
+const shaderPages = (): PlanItem<Check>[] =>
+	Array.from({ length: SHADER_PARTS }, (_, i) =>
+		pageItem(
+			`shaders-${i + 1}`,
+			'shaders',
+			{ kind: 'shaders' },
+			{
+				switches: [`part=${i + 1}`, `parts=${SHADER_PARTS}`],
+				timeoutSeconds: SHADERS_PAGE_SECONDS,
+			},
+		),
+	);
 
 /**
  * The production build of the engine test page, which the checks plan runs in every mode, under one
@@ -460,8 +488,8 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, the shader library's values on both GPU
- * paths, every run of the image test manifest, the compressed formats of KTX2 files on both GPU
+ * The browser checks: the capability report, isolation, every shader's compile in parts, the shader
+ * library's values on both GPU paths, every run of the image test manifest, the compressed formats of KTX2 files on both GPU
  * paths, the engine in every mode on both GPU paths, and again on the production build, the
  * threaded modes with wake messages in place of Atomics.waitAsync, a frame captured as a PNG file
  * in every mode on both GPU paths, and the engine started and stopped again and again in every
@@ -472,7 +500,7 @@ export function checksPlan(): PlanItem<Check>[] {
 	return [
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
-		pageItem('shaders', 'shaders', { kind: 'shaders' }, { timeoutSeconds: SHADERS_PAGE_SECONDS }),
+		...shaderPages(),
 		...TIERS.map((tier) =>
 			pageItem(
 				`shader-library-${tier}`,
