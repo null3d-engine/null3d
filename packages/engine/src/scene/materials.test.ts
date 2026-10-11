@@ -44,7 +44,12 @@ import {
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
-import { SIZE_MATERIAL_BYTES, VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
+import {
+	SIZE_MATERIAL_BYTES,
+	TEMPLATE_CUSTOM_FIRST,
+	VERTEX_COLOR,
+	VERTEX_UV0,
+} from '../generated/gpu';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
@@ -559,6 +564,13 @@ describe('materials.shader', () => {
 			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2], textures: 0 }],
 			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2], textures: 0 }],
 		]);
+	});
+
+	test('starts at template 128, above every template id that the engine keeps for itself', () => {
+		const { sent, materials } = fakeCore();
+		materials.shader({ wgsl: compiledMaterial() });
+		expect(sent.map(([template]) => template)).toEqual([128]);
+		expect(TEMPLATE_CUSTOM_FIRST).toBe(128);
 	});
 
 	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {

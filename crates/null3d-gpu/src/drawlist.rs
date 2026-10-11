@@ -1559,8 +1559,9 @@ pub mod template {
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
-    /// template from here up, which the thread that draws receives from the sketch.
-    pub const CUSTOM_FIRST: u32 = 64;
+    /// template from here up, which the thread that draws receives from the sketch. The engine's
+    /// own templates take ids below it.
+    pub const CUSTOM_FIRST: u32 = 128;
 }
 
 /// Why recording failed.
@@ -2364,6 +2365,22 @@ mod tests {
             decode(&truncated).next(),
             Some(Err(DecodeError::Truncated { at: 0 }))
         );
+    }
+
+    #[test]
+    fn engine_templates_have_unique_ids_below_the_custom_ones() {
+        assert_eq!(template::CUSTOM_FIRST, 128);
+        let mut ids: Vec<u32> = typescript_constants()
+            .lines()
+            .filter_map(|line| line.strip_prefix("export const TEMPLATE_"))
+            .filter(|line| !line.starts_with("CUSTOM_FIRST "))
+            .map(|line| line.split(" = ").nth(1).unwrap().trim_end_matches(';'))
+            .map(|id| id.parse().unwrap())
+            .collect();
+        assert!(ids.len() > 40, "{} engine templates", ids.len());
+        ids.sort_unstable();
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
+        assert!(ids.iter().all(|&id| id > 0 && id < template::CUSTOM_FIRST));
     }
 
     #[test]
