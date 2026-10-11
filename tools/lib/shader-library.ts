@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { readIfExists } from './files';
 import { renderFrontMatter } from './frontmatter';
 import { slugifyHeading } from './links';
+import { shipsSentence } from './steps';
 
 /** The folder of library modules. */
 export const LIBRARY_DIR = 'crates/null3d-shaders/wgsl/lib';
@@ -259,7 +260,7 @@ export function libraryPage(
 
 # ${title}
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function, vertex offset or full shader can call these modules.
+> ${shipsSentence('0.1')} The API is experimental, so it can still change between versions. A custom material's surface function, vertex offset or full shader can call these modules.
 
 ${INTRO}
 ${rows.join('\n')}

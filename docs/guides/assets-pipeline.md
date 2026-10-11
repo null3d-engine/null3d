@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; blockers and stored
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ The integers need a transform that turns them back into positions. The command p
 
 The steps follow the mesh's longest side. So a mesh that spreads small parts over a large space gets coarse steps. One mesh that holds a city's buildings of one material, 760 m across, gets steps of 4.6 cm, and buildings that meet can open gaps. The extras `"quantizePositions": false` keep that mesh's positions as 32-bit floats. Its other vertex data still takes integers, and meshopt still compresses its buffers.
 
-Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
+Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`. The engine loads Draco files as well. It then downloads Draco's decoder, about 60 KB after Brotli, and development builds warn about each such file. [Compressed meshes](../concepts/assets.md#compressed-meshes) says when a Draco file is worth keeping.
 
 ## What it does to clips
 

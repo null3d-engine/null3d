@@ -80,7 +80,7 @@ const parse = (glb: Uint8Array): GltfData =>
 		readContainer(glb, 'https://example.com/scene.glb'),
 		new Map(),
 		'https://example.com/scene.glb',
-		decode,
+		{ meshopt: decode },
 	);
 
 /** A node's matrix in the scene, column-major, from the parsed nodes. */

@@ -62,6 +62,8 @@ interface PlanItem {
 	ownTab?: boolean;
 	/** The GPU path that the page needs. */
 	gpu?: GpuPath;
+	/** Seconds to wait before the page, so the device cools down. */
+	restSeconds?: number;
 }
 
 type Result = { ok: boolean; error?: string } & Record<string, unknown>;
@@ -517,6 +519,12 @@ async function runPlan(run: string, from?: number): Promise<void> {
 		if (item.endsTab)
 			await post(run, progressName(item.id), { startedAt: new Date().toISOString() });
 		stage.classList.toggle('report-on-top', plan.reportOnTop === true && !item.timesFrames);
+		if (item.restSeconds) {
+			show(
+				`${report.counts()}; resting ${item.restSeconds} s before ${item.id}, so the device cools`,
+			);
+			await sleep(item.restSeconds * 1000);
+		}
 		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
 		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
 		const result = await runItem(item, run);
