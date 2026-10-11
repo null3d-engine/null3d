@@ -141,6 +141,9 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	ReflectionPassOptions,
+	ReflectionPlane,
+	ReflectionScale,
 	Render,
 	RenderPass,
 	RenderPassOptions,
