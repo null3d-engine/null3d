@@ -576,12 +576,17 @@ mod tests {
         );
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines, true);
-        pass.set_tone_curve(Some(70));
+        pass.set_tone_curve(Some(template::CUSTOM_FIRST));
         pass.request_pipeline(&mut pipelines, true);
         let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
         assert_eq!(
             templates,
-            [template::FINAL, template::FINAL_BLOOM, 70, 71],
+            [
+                template::FINAL,
+                template::FINAL_BLOOM,
+                template::CUSTOM_FIRST,
+                template::CUSTOM_FIRST + 1
+            ],
             "the curve's builds bind as the pass's"
         );
         pass.set_mode(
@@ -589,7 +594,10 @@ mod tests {
             Antialias::None,
         );
         pass.request_pipeline(&mut pipelines, false);
-        assert_eq!(pipelines.keys().last().map(|key| key.template), Some(70));
+        assert_eq!(
+            pipelines.keys().last().map(|key| key.template),
+            Some(template::CUSTOM_FIRST)
+        );
     }
 
     #[test]
