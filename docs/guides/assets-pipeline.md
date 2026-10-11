@@ -79,7 +79,7 @@ The integers need a transform that turns them back into positions. The command p
 
 The steps follow the mesh's longest side. So a mesh that spreads small parts over a large space gets coarse steps. One mesh that holds a city's buildings of one material, 760 m across, gets steps of 4.6 cm, and buildings that meet can open gaps. The extras `"quantizePositions": false` keep that mesh's positions as 32-bit floats. Its other vertex data still takes integers, and meshopt still compresses its buffers.
 
-Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
+Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`. The engine loads Draco files as well. It then downloads Draco's decoder, about 60 KB after Brotli, and development builds warn about each such file. [Compressed meshes](../concepts/assets.md#compressed-meshes) says when a Draco file is worth keeping.
 
 ## What it does to clips
 

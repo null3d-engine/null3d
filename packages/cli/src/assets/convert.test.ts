@@ -49,7 +49,7 @@ const parse = (glb: Uint8Array): GltfData =>
 		readContainer(glb, 'https://example.com/model.glb'),
 		new Map(),
 		'https://example.com/model.glb',
-		decode,
+		{ meshopt: decode },
 	);
 
 /** The JSON of a binary glTF file. */

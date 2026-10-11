@@ -20,19 +20,19 @@ const URL_OF = 'https://example.com/models/hostile.glb';
 const QUICK_MS = 1500;
 
 /** Parses a file whose buffers are all inside it, and checks that it took little time. */
-function parse(file: Uint8Array, decode?: Parameters<typeof parseGltf>[3]): GltfData {
+function parse(file: Uint8Array, decoders?: Parameters<typeof parseGltf>[3]): GltfData {
 	const start = performance.now();
 	try {
-		return parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, decode);
+		return parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, decoders);
 	} finally {
 		expect(performance.now() - start).toBeLessThan(QUICK_MS);
 	}
 }
 
 /** The code and message of the error that parsing a file throws. */
-function refusal(file: Uint8Array, decode?: Parameters<typeof parseGltf>[3]): [string, string] {
+function refusal(file: Uint8Array, decoders?: Parameters<typeof parseGltf>[3]): [string, string] {
 	try {
-		parse(file, decode);
+		parse(file, decoders);
 	} catch (error) {
 		if (error instanceof GltfError) return [error.code, error.message];
 		throw error;
@@ -94,7 +94,7 @@ describe('names that every JavaScript object has', () => {
 			b.json.bufferViews[view].extensions.EXT_meshopt_compression[field] = 'constructor';
 			const at = b.accessorOf(view, 5126, 3, 3, { min: [0, 0, 0], max: [0, 0, 0], byteStride: 16 });
 			b.node({ mesh: b.mesh([{ attributes: { POSITION: at } }]) });
-			expect(refusal(b.glb(), decode)[1]).toContain(words);
+			expect(refusal(b.glb(), { meshopt: decode })[1]).toContain(words);
 		}
 	});
 });
@@ -152,7 +152,7 @@ describe("a file's total allocation", () => {
 		b.node({ mesh: b.mesh(primitives) });
 		const file = b.glb();
 		expect(count * 16 * 6).toBeGreaterThan(modelAllowance(file.length));
-		const [code, message] = refusal(file, decode);
+		const [code, message] = refusal(file, { meshopt: decode });
 		expect(code).toBe('E1416');
 		expect(message).toContain('would bring what the file decodes to');
 	});

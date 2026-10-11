@@ -44,6 +44,10 @@ function null3dResult(busy: number, update: number) {
 		stats: {
 			cpuMsAllThreads: figures(busy + 1),
 			gpuMs: figures(2),
+			gpuPassMs: [
+				{ name: 'compute 1', ms: figures(0.25) },
+				{ name: 'render 1', ms: figures(1.75) },
+			],
 			presentedFps: 30,
 			completedFps: 30,
 			gpuLatencyMs: figures(5),
@@ -273,6 +277,10 @@ describe('archiveFolder', () => {
 			cpuMs: { median: 16, p95: 17.6, p99: 19.2 },
 			ownWorkMs: 2,
 			busiest: 'sketch-worker',
+			gpuPassMs: [
+				{ name: 'compute 1', ms: 0.25 },
+				{ name: 'render 1', ms: 1.75 },
+			],
 		});
 		expect(JSON.stringify(record)).not.toContain('captured frame');
 	});
