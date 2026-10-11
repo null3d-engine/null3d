@@ -2,13 +2,15 @@
 //! them at run time: each piece's items before the host's chain, each shared item once, and a chain
 //! that calls each piece in turn. naga then reads and validates the joined WGSL.
 
+mod subset;
+
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::OnceLock;
 
 use null3d_shaders::{
-    Compiler, EffectOutput, EffectSource, Inputs, Output, PieceOutput, PostTemplates, VariantOutput,
+    Compiler, EffectOutput, EffectSource, Inputs, PieceOutput, PostTemplates, VariantOutput,
 };
+use subset::repository_subset;
 
 /// Brightens each pixel by a uniform: an effect that reads only its own pixel.
 const GAIN: &str = "struct Uniforms { gain: f32 }
@@ -51,6 +53,27 @@ const REINHARD: &str = "fn toneCurve(color: vec3f) -> vec3f {
 }
 ";
 
+/// Light shafts from the sky toward a point: an effect that reads only its own pixel and the depth
+/// in a loop. naga's GLSL keeps a flag for each loop under a name that is unique across the module,
+/// so the loop of the host's entry point after this one's takes another name in the piece's build.
+const RAYS: &str = "struct Uniforms { sun: vec2f, strength: f32, tint: vec3f }
+
+fn effect(input: EffectInput) -> vec4f {
+    let toward = uniforms.sun - input.uv;
+    let step = toward / 28.0;
+    var uv = input.uv;
+    var lit = 0.0;
+    var weight = 1.0;
+    for (var i = 0; i < 28; i++) {
+        lit += select(0.0, weight, effectDepth(uv) == 0.0);
+        weight *= 0.95;
+        uv += step;
+    }
+    let rays = lit / 28.0 * uniforms.strength;
+    return vec4f(input.color.rgb + uniforms.tint * rays * input.color.a, input.color.a);
+}
+";
+
 fn root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -70,14 +93,11 @@ fn compile(source: &str) -> EffectOutput {
         .expect("the WGSL builds")
 }
 
-/// The engine's builds of a host shader, by build name, from one build of the engine's shaders.
+/// The engine's builds of a host shader, by build name, from a build of that shader alone.
 fn host(name: &str) -> BTreeMap<String, VariantOutput> {
-    static OUTPUT: OnceLock<Output> = OnceLock::new();
-    let output = OUTPUT.get_or_init(|| {
-        let inputs = Inputs::read(&root()).expect("the repository's shaders");
-        null3d_shaders::build(&inputs).expect("the engine's shaders build")
-    });
-    output.shaders[name].clone()
+    let mut output =
+        null3d_shaders::build(&repository_subset(&[name])).expect("the host shader builds");
+    output.shaders.remove(name).expect("the host's builds")
 }
 
 /// The byte range of the top-level function `name` in a shader that naga wrote: from the start of
@@ -143,6 +163,117 @@ fn join_wgsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) 
     let joined: Vec<&str> = items.iter().map(|item| item.as_str()).collect();
     text.replace_range(span, &format!("{}\n{chain}", joined.join("\n")));
     text
+}
+
+/// Joins pieces into a host's GLSL fragment shader as the engine's joiner does: a curve's items and
+/// its call in place of `tone_curve_hook`, then the effects' items, each once, and their chain in
+/// place of `effect_chain`, with the effects' slots from 0.
+fn join_glsl(host: &str, effects: &[&PieceOutput], curve: Option<&PieceOutput>) -> String {
+    let mut text = host.to_owned();
+    if let Some(curve) = curve {
+        let glsl = curve.glsl.as_ref().expect("a GLSL piece");
+        let span = function_span(&text, "tone_curve_hook");
+        let mut hook = glsl.items.join("\n");
+        hook.push_str(&format!(
+            "\nvec3 tone_curve_hook(vec3 color) {{\n    return clamp({}(color), vec3(0.0), vec3(1.0));\n}}\n",
+            glsl.run
+        ));
+        text.replace_range(span, &hook);
+    }
+    let mut items: Vec<&String> = Vec::new();
+    let mut chain =
+        String::from("vec4 effect_chain(EffectInput start) {\n    EffectInput link = start;\n");
+    for (slot, piece) in effects.iter().enumerate() {
+        let glsl = piece.glsl.as_ref().expect("a GLSL piece");
+        for item in &glsl.items {
+            if !items.contains(&item) {
+                items.push(item);
+            }
+        }
+        chain.push_str(&format!("    link.color = {}(link, {slot}u);\n", glsl.run));
+    }
+    chain.push_str("    return link.color;\n}\n");
+    let span = function_span(&text, "effect_chain");
+    let joined: Vec<&str> = items.iter().map(|item| item.as_str()).collect();
+    text.replace_range(span, &format!("{}\n{chain}", joined.join("\n")));
+    text
+}
+
+/// The name of the function that a line of naga's GLSL starts to define: a line at the first
+/// column that opens a body after a parameter list, and not a struct's or a uniform block's.
+fn glsl_function(line: &str) -> Option<&str> {
+    if line.starts_with(char::is_whitespace)
+        || !line.trim_end().ends_with('{')
+        || line.starts_with("struct ")
+        || line.starts_with("layout(")
+    {
+        return None;
+    }
+    let before = line[..line.find('(')?].trim_end();
+    let start = before
+        .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .map_or(0, |at| at + 1);
+    Some(&before[start..])
+}
+
+/// The names that `line` calls: each name followed by an opening parenthesis.
+fn glsl_calls(line: &str) -> impl Iterator<Item = &str> {
+    line.match_indices('(').filter_map(move |(at, _)| {
+        let before = &line[..at];
+        let start = before
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |at| at + 1);
+        (start < at).then(|| &before[start..])
+    })
+}
+
+/// Checks GLSL as a WebGL2 driver would refuse it where joins can go wrong: a function defined
+/// twice, `main` among them, or one called before its definition, which GLSL needs first. naga
+/// cannot read GLSL ES, so this stands in for a driver.
+fn check_glsl(glsl: &str) {
+    let lines: Vec<&str> = glsl.lines().collect();
+    let functions: Vec<&str> = lines
+        .iter()
+        .filter_map(|line| glsl_function(line))
+        .collect();
+    let mut defined: Vec<&str> = Vec::new();
+    let mut inside: Option<&str> = None;
+    for (number, line) in lines.iter().enumerate() {
+        if let Some(name) = glsl_function(line) {
+            assert!(
+                !defined.contains(&name),
+                "line {}: `{name}` is defined twice\n{glsl}",
+                number + 1
+            );
+            defined.push(name);
+            inside = Some(name);
+            continue;
+        }
+        if line.starts_with('}') {
+            inside = None;
+        }
+        let Some(caller) = inside else { continue };
+        for name in glsl_calls(line) {
+            assert!(
+                !functions.contains(&name) || (defined.contains(&name) && name != caller),
+                "line {}: `{caller}` calls `{name}` before its definition\n{glsl}",
+                number + 1
+            );
+        }
+    }
+    assert_eq!(
+        defined.iter().filter(|name| **name == "main").count(),
+        1,
+        "{glsl}"
+    );
+}
+
+/// A host's GLSL fragment shader of its build `build`.
+fn host_glsl(hosts: &BTreeMap<String, VariantOutput>, build: &str) -> String {
+    hosts[build].glsl.as_ref().expect("a GLSL build")["main"]
+        .fragment
+        .source
+        .clone()
 }
 
 /// Reads and validates WGSL with naga, as a browser would refuse it.
@@ -259,6 +390,19 @@ fn joined_effects_make_a_valid_group_shader() {
     );
     validate(&multisampled);
     assert!(multisampled.contains("texture_multisampled_2d"));
+    let glsl = host_glsl(&hosts, "webgl2");
+    let joined = join_glsl(
+        &glsl,
+        &[
+            &split.pieces.group["webgl2"],
+            &gain.pieces.group["webgl2"],
+            &fog.pieces.group["webgl2"],
+            &gain.pieces.group["webgl2"],
+        ],
+        None,
+    );
+    check_glsl(&joined);
+    assert_eq!(joined.matches(" effectColor(vec2 ").count(), 1);
 }
 
 #[test]
@@ -280,6 +424,79 @@ fn effects_and_a_curve_fold_into_a_valid_final_pass() {
         &host.source,
         &[&gain.pieces.fold["webgpu"]],
         None,
+    ));
+    let glsl = host_glsl(&hosts, "webgl2");
+    check_glsl(&join_glsl(
+        &glsl,
+        &[&edge.pieces.fold["webgl2"], &gain.pieces.fold["webgl2"]],
+        Some(&curve.pieces.fold["webgl2"]),
+    ));
+    check_glsl(&join_glsl(&glsl, &[&gain.pieces.fold["webgl2"]], None));
+}
+
+#[test]
+fn an_effect_with_a_loop_joins_and_folds_without_the_hosts_functions() {
+    let rays = compile(RAYS);
+    let gain = compile(GAIN);
+    let curve = compile(REINHARD);
+    assert!(
+        rays.joins,
+        "the rays read only their own pixel and the depth"
+    );
+    for (name, pieces) in [
+        ("effect_group", &rays.pieces.group),
+        ("final_effects", &rays.pieces.fold),
+    ] {
+        let hosts = host(name);
+        for (build, piece) in pieces {
+            let own = &hosts[build.trim_end_matches("_depth_multisampled")];
+            // No item of the piece defines a function that the host's build defines already: a
+            // function whose names naga changed in the piece's build stays the host's.
+            let (items, source) = match (&piece.wgsl, &piece.glsl) {
+                (Some(wgsl), _) => (&wgsl.items, own.wgsl.as_ref().unwrap().source.clone()),
+                (_, Some(glsl)) => (&glsl.items, host_glsl(&hosts, build)),
+                _ => panic!("{name} {build}: a piece without a build"),
+            };
+            for item in items {
+                let head = item.lines().find(|l| !l.starts_with('@')).unwrap_or("");
+                assert!(
+                    !source
+                        .lines()
+                        .any(|line| line == head && line.contains('(') && line.ends_with('{')),
+                    "{name} {build}: the piece holds the host's {head}"
+                );
+            }
+        }
+    }
+    let group = host("effect_group");
+    validate(&join_wgsl(
+        &group["webgpu"].wgsl.as_ref().unwrap().source,
+        &[&rays.pieces.group["webgpu"], &gain.pieces.group["webgpu"]],
+        None,
+    ));
+    check_glsl(&join_glsl(
+        &host_glsl(&group, "webgl2"),
+        &[&rays.pieces.group["webgl2"], &gain.pieces.group["webgl2"]],
+        None,
+    ));
+    let fold = host("final_effects");
+    for effects in [
+        vec![&rays.pieces.fold["webgpu"]],
+        vec![&gain.pieces.fold["webgpu"], &rays.pieces.fold["webgpu"]],
+    ] {
+        validate(&join_wgsl(
+            &fold["webgpu"].wgsl.as_ref().unwrap().source,
+            &effects,
+            Some(&curve.pieces.fold["webgpu"]),
+        ));
+    }
+    let glsl = host_glsl(&fold, "webgl2");
+    check_glsl(&glsl);
+    check_glsl(&join_glsl(&glsl, &[&rays.pieces.fold["webgl2"]], None));
+    check_glsl(&join_glsl(
+        &glsl,
+        &[&gain.pieces.fold["webgl2"], &rays.pieces.fold["webgl2"]],
+        Some(&curve.pieces.fold["webgl2"]),
     ));
 }
 

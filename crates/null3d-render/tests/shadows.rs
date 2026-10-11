@@ -163,7 +163,8 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
     let depth_groups = bind_groups(&commands, layout::DEPTH);
     assert_eq!(depth_groups.len(), 3);
     // They bind the frame uniform and the material table, and for the vertex shaders of custom
-    // materials' casters the custom values and the row values, but never the shadow map.
+    // materials' casters the custom values, the row values and the table of object ranges, but
+    // never the shadow map.
     for group in &depth_groups {
         assert!(group.values().all(|&(_, id)| id != map[0]));
         let kinds: Vec<u32> = group.values().map(|&(kind, _)| kind).collect();
@@ -171,7 +172,7 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
             .iter()
             .filter(|&&k| k == resource_kind::BUFFER)
             .count();
-        assert_eq!((buffers, kinds.len()), (2, 4));
+        assert_eq!((buffers, kinds.len()), (3, 5));
     }
 
     // Casters draw their back faces into depth alone. Lit receivers read the shadow maps; the

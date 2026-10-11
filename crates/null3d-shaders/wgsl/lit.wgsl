@@ -66,7 +66,11 @@ enable draw_index;
 // `engine_frame` here. When their WGSL declares `struct Uniforms`, the build adds
 // `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
 // uniforms. When their WGSL declares textures, the build binds them in the maps' bind group and
-// adds `load_custom_texture_layers`, which CUSTOM_TEXTURES makes each stage call. Their WGSL
+// adds `load_custom_texture_layers`, which CUSTOM_TEXTURES makes each stage call. Inputs that cost
+// something come only to WGSL that reads them: CUSTOM_UV1 reads the second texture coordinates,
+// OBJECT_IDS finds the instance's index and the object's id (null3d::mesh), and OBJECT_MATRICES
+// passes the world matrix's rows to the fragment shader, at the locations that only the MAPS and
+// ALPHA_HASH builds use otherwise, which custom materials never have. Their WGSL
 // shares this file's names, so the template imports library items by name and keeps its own names
 // few. It never imports a module whole, which would reserve the module's name
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
@@ -93,6 +97,12 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
+#ifdef OBJECT_IDS
+#import null3d::mesh::{object_ids}
+#endif
+#ifdef OBJECT_MATRICES
+#import null3d::vertex::{affine_matrix, affine_normal_matrix}
+#endif
 #ifdef ROW_VALUES
 #import null3d::mesh::{row_values_of}
 #endif
@@ -443,6 +453,9 @@ struct VertexIn {
     @location(3) uv1: vec2f,
 #else ifdef UV0
     @location(2) uv0: vec2f,
+#ifdef CUSTOM_UV1
+    @location(3) uv1: vec2f,
+#endif
 #endif
 #ifdef VERTEX_TANGENT
     @location(4) tangent: vec4f,
@@ -471,6 +484,8 @@ struct VertexOut {
 #endif
 #ifdef MAPS
     /// The first texture coordinates, then the second.
+    @location(4) uv: vec4f,
+#else ifdef CUSTOM_UV1
     @location(4) uv: vec4f,
 #else ifdef UV0
     /// The first texture coordinates.
@@ -507,6 +522,16 @@ struct VertexOut {
     @location(11) @interpolate(flat, either) row_values: vec4f,
 #endif
 #endif
+#ifdef OBJECT_MATRICES
+    /// The rows of the object's world matrix that give x, y and z, relative to the camera.
+    @location(5) @interpolate(flat, either) world_x: vec4f,
+    @location(6) @interpolate(flat, either) world_y: vec4f,
+    @location(7) @interpolate(flat, either) world_z: vec4f,
+#endif
+#ifdef OBJECT_IDS
+    /// The instance's index in its batch, then the object's id.
+    @location(12) @interpolate(flat, either) ids: vec2u,
+#endif
 }
 
 #ifdef CUSTOM
@@ -519,6 +544,14 @@ struct VertexInput {
     normal: vec3f,
     /// The vertex's first texture coordinates.
     uv: vec2f,
+#ifdef CUSTOM_UV1
+    /// The vertex's second texture coordinates, or the first on a mesh without a second set.
+    uv1: vec2f,
+#endif
+#ifdef OBJECT_IDS
+    /// The instance's index in its batch: 0 for an object of the scene.
+    instance: u32,
+#endif
 }
 #endif
 
@@ -548,6 +581,10 @@ struct SurfaceInput {
 #else ifdef UV0
     /// The mesh's first texture coordinates.
     uv: vec2f,
+#ifdef CUSTOM_UV1
+    /// The mesh's second texture coordinates, or the first on a mesh without a second set.
+    uv1: vec2f,
+#endif
 #endif
 #ifdef VERTEX_TANGENT
     /// The mesh's tangent and bitangent in world space, as the vertices give them.
@@ -556,6 +593,15 @@ struct SurfaceInput {
 #endif
     /// True on the front face of a triangle.
     frontFacing: bool,
+#ifdef CUSTOM
+    /// The pixel's position: x and y in pixels from the target's top left corner, at the pixel's
+    /// center, and z the depth, 1 at the near plane and 0 at the far plane.
+    fragCoord: vec3f,
+#endif
+#ifdef OBJECT_IDS
+    /// The instance's index in its batch: 0 for an object of the scene.
+    instance: u32,
+#endif
 }
 
 /// A point of a surface, ready to light. Colors are linear.
@@ -742,6 +788,14 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef ROW_VALUES
     object.values = row.values;
 #endif
+#ifdef OBJECT_IDS
+    let ids = object_ids(found);
+    object.id = ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(found.row_x, found.row_y, found.row_z);
+    object.normalMatrix = affine_normal_matrix(found.row_x, found.row_y, found.row_z);
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(found.material);
@@ -778,7 +832,17 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let normal = rest_normal;
 #endif
 #ifdef CUSTOM_VERTEX_OFFSET
-    let offset = vertexOffset(VertexInput(position, normal, mesh_uv(v.uv0)));
+    var offset_input: VertexInput;
+    offset_input.position = position;
+    offset_input.normal = normal;
+    offset_input.uv = mesh_uv(v.uv0);
+#ifdef CUSTOM_UV1
+    offset_input.uv1 = mesh_second_uv(v.uv1);
+#endif
+#ifdef OBJECT_IDS
+    offset_input.instance = ids.x;
+#endif
+    let offset = vertexOffset(offset_input);
     out.relative = relative_position(found, position + offset);
 #else ifdef DISPLACEMENT
     let unit_normal = normalize(normal);
@@ -808,6 +872,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef MAPS
     out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+#else ifdef CUSTOM_UV1
+    out.uv = vec4f(mesh_uv(v.uv0), mesh_second_uv(v.uv1));
 #else ifdef UV0
     out.uv = mesh_uv(v.uv0);
 #endif
@@ -834,6 +900,14 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef CUSTOM
     out.row_values = row.values;
 #endif
+#endif
+#ifdef OBJECT_MATRICES
+    out.world_x = found.row_x;
+    out.world_y = found.row_y;
+    out.world_z = found.row_z;
+#endif
+#ifdef OBJECT_IDS
+    out.ids = ids;
 #endif
 #ifdef TRANSMISSION
     out.scale = vec3f(
@@ -1050,6 +1124,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef ROW_VALUES
     object.values = in.row_values;
 #endif
+#ifdef OBJECT_IDS
+    object.id = in.ids.y;
+#endif
+#ifdef OBJECT_MATRICES
+    object.worldMatrix = affine_matrix(in.world_x, in.world_y, in.world_z);
+    object.normalMatrix = affine_normal_matrix(in.world_x, in.world_y, in.world_z);
+#endif
 #endif
 #ifdef CUSTOM_UNIFORMS
     material = load_material_uniforms(in.material);
@@ -1085,6 +1166,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef MAPS
     input.uv = in.uv.xy;
     input.uv1 = in.uv.zw;
+#else ifdef CUSTOM_UV1
+    input.uv = in.uv.xy;
+    input.uv1 = in.uv.zw;
 #else ifdef UV0
     input.uv = in.uv;
 #endif
@@ -1093,6 +1177,17 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.bitangent = in.bitangent;
 #endif
     input.frontFacing = front;
+#ifdef CUSTOM
+    // Pixel rows count upward on WebGL2, so its rows turn to count from the top, as on WebGPU.
+    var coord = in.clip.xyz;
+#ifdef WEBGL2
+    coord.y = engine_frame.target_size.y - coord.y;
+#endif
+    input.fragCoord = coord;
+#endif
+#ifdef OBJECT_IDS
+    input.instance = in.ids.x;
+#endif
 #ifdef CUSTOM_SURFACE
     let s = surface(input);
 #else

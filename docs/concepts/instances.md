@@ -8,7 +8,7 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Ships in null3D 0.1, with shadows of batch rows, row colors and row values in 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds shadows of batch rows, row colors and row values. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -255,6 +255,10 @@ export default defineSketch(({ scene, geometry, materials }) => {
 A batch that casts shadows casts them with its material's vertex offset, so the shadows of the grass sway with the grass. The shadows of such a material draw again in every frame, as the shadows of moving objects do.
 
 Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. With colors or values, a masked material tests its alpha against its cutoff, with neither alpha to coverage nor the alpha hash.
+
+### A row's place and its batch's id
+
+A custom material also reads each row's place in its batch as `input.instance`, from 0, in its `vertexOffset` and `surface` functions, as three.js's `gl_InstanceID` gives it. It needs no `values` array: a hue, a phase or a size that follows from the row's place costs the sketch nothing. Every row reads its batch's id as `object.id`, which is `batch.shaderId` in the sketch. [Built-in shader inputs](../shaders/builtins.md#object) describes both.
 
 ## Related pages
 

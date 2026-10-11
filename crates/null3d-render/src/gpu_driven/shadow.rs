@@ -10,7 +10,7 @@
 use null3d_gpu::drawlist::{DrawList, Op, layout as bind_layout, resource_kind};
 
 use super::ids;
-use super::opaque::ROW_VALUES_BINDING;
+use super::opaque::{OBJECT_RANGES_BINDING, ROW_VALUES_BINDING};
 use crate::frame::RecordError;
 use crate::view::ViewId;
 
@@ -32,8 +32,13 @@ pub(super) fn bind_depth(list: &mut DrawList, group: u32, view: ViewId) -> Resul
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
         entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
+        entry(
+            OBJECT_RANGES_BINDING,
+            resource_kind::BUFFER,
+            ids::OBJECT_RANGES,
+        ),
     ];
-    let mut words = [0u32; 3 + 5 * 4];
+    let mut words = [0u32; 3 + 5 * 5];
     words[..3].copy_from_slice(&[group, bind_layout::DEPTH, entries.len() as u32]);
     words[3..].copy_from_slice(entries.as_flattened());
     list.push(Op::CreateBindGroup, &words)?;

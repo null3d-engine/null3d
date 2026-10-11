@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: every `materials.standard` option in section 1 is built, unless its row gives a version, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode (0.2) too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view`, which comes later in 0.2.
+Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Every `materials.standard` option in section 1 is built, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode (0.2) too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials (0.2) are built, so the alpha map recipe works. The matcap recipe also needs `camera.view` (0.2, not built yet).
 
 ## Contents
 
@@ -25,7 +25,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `color` | `color` | Hex values are sRGB in both |
 | `map` | `map` | Must be sRGB (`colorSpace: 'srgb'`). Its alpha multiplies `opacity` |
 | `roughness`, `metalness` | `roughness`, `metalness` | Same meaning (perceptual roughness) and the same defaults |
-| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (0.2; the same texture can hold AO in R) |
+| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (0.2, not built yet; the same texture can hold AO in R) |
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent space only. The frame comes from the mesh's tangents where it has them, else from the pixels around it, as in three.js |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
 | `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
@@ -51,7 +51,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | Same name (0.2), on standard, unlit and custom materials | Fixed when the material is created. Lines one pixel wide with the material's shading, as in three.js. `wireframeLinewidth` has no effect. For the outline edges of `EdgesGeometry`, use `scene.createLines({ positions, mode: 'segments' })` |
 | `fog: false` | Same name | |
-| `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
+| `toneMapped: false` | Not in 1.0 | No pass draws after post-processing. Tune the color so that tone mapping gives the wanted value, or draw the element in the page's HTML |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
@@ -68,7 +68,7 @@ Versions: every `materials.standard` option in section 1 is built, unless its ro
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply once their options exist:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ Both become `materials.standard` with `metalness: 0`. The standard material adds
 
 ## 5. MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials (0.2, built) and the camera's view matrix, which comes later in 0.2.
+Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials (0.2, built) and the camera's view matrix, `camera.view` (0.2, built).
 
 ## 6. Other three.js materials
 
@@ -103,7 +103,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | --- | --- |
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging (world-space normals; three.js shows view-space ones); a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')` for debugging; custom shadow materials are not needed |
-| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2) |
+| `ShadowMaterial` | `materials.shadowCatcher({ opacity })` (0.2, not built yet) |
 | `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending` (0.2). Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors` (0.2). Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
@@ -132,7 +132,7 @@ Texture formats: `loadTexture` decodes PNG, JPEG, WebP and AVIF files. It also l
 
 ## 8. Recipes
 
-The toon, clipping and alpha map recipes work now. The matcap recipe waits for `camera.view` (later in 0.2).
+The toon, clipping and alpha map recipes work now. The matcap recipe works with `camera.view` (0.2).
 
 Toon shading with three bands:
 
@@ -154,7 +154,7 @@ const toon = materials.shader({
 });
 ```
 
-Matcap, which waits for `camera.view` (later in 0.2):
+Matcap, with `camera.view` (0.2):
 
 ```ts
 const matcap = materials.shader({

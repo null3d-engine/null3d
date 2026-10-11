@@ -27,8 +27,9 @@ use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::write_row_values;
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
-    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
+use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
@@ -257,6 +258,10 @@ pub(super) struct Layout {
     /// The sources up to the last row of a batch with row values, which the row values texture
     /// holds, or 0 while no batch has them.
     pub(super) value_sources: u32,
+    /// The table of object ranges, which the scene's layout builds when it changes while a live
+    /// material reads ids, and true while the GPU lacks its last build.
+    object_ranges: ObjectRanges,
+    ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
@@ -370,7 +375,13 @@ impl Layout {
         let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
         // A frame that writes every record writes the skinned objects' bounds again after them.
         let writes = if self.skinned.is_empty() { 1 } else { 2 };
-        rows + self.buckets.len() * BUCKET_BYTES as usize * writes
+        // The scene's layout may build its table of object ranges in the frame, after this bound.
+        let ranges = if self.owns_sources() {
+            sizes::OBJECT_RANGE_BYTES as usize
+        } else {
+            0
+        };
+        rows + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -544,6 +555,12 @@ impl Layout {
             return Err(RecordError::TooManySources { limit });
         }
         self.sources = sources;
+        if self.owns_sources() && settings.materials().reads_object_ids() {
+            let bases = self.batch_bases.iter();
+            let ranges = bases.map(|&(id, base)| (base, Handle::from_raw(id)));
+            self.object_ranges.build(scene_rows, ranges);
+            self.ranges_pending = true;
+        }
         let owned = self.owned(sources);
         self.order
             .try_reserve(owned as usize)
@@ -1027,6 +1044,20 @@ impl Layout {
         Ok(())
     }
 
+    /// Uploads the table of object ranges after the layout built it again.
+    pub(super) fn upload_object_ranges(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !std::mem::take(&mut self.ranges_pending) {
+            return Ok(());
+        }
+        let (at, bytes) = arena.push(self.object_ranges.bytes())?;
+        list.push(Op::WriteBuffer, &[ids::OBJECT_RANGES, 0, at, bytes])?;
+        Ok(())
+    }
+
     /// Uploads changed world matrices straight from the core's world buffers of this parity, or
     /// every matrix after the layout changed.
     pub(super) fn upload_matrices(
@@ -1060,17 +1091,28 @@ impl Layout {
             }
             return Ok(());
         }
+        // Scene rows that changed close together upload in one write, as a span that grows until
+        // the next run lies too far from it.
+        let scene = input.scene.world(parity).matrices();
+        let mut span: Option<(u32, u32)> = None;
         for range in input.snapshot.uploads() {
             let Some(base) = self.base_of(range.target) else {
                 continue;
             };
             if range.target == SCENE_TARGET {
-                let scene = input.scene.world(parity).matrices();
-                if let Some((start, count)) =
-                    drawn_rows(&self.home_buckets, range.start, range.count)
-                {
-                    upload(base, scene, start, count)?;
-                }
+                let Some((start, count)) = drawn_rows(&self.home_buckets, range.start, range.count)
+                else {
+                    continue;
+                };
+                span = match span.and_then(|span| joined_rows(span, start, count)) {
+                    Some(joined) => Some(joined),
+                    None => {
+                        if let Some((first, rows)) = span {
+                            upload(0, scene, first, rows)?;
+                        }
+                        Some((start, count))
+                    }
+                };
                 continue;
             }
             let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
@@ -1082,6 +1124,9 @@ impl Layout {
                 range.start,
                 range.count,
             )?;
+        }
+        if let Some((first, rows)) = span {
+            upload(0, scene, first, rows)?;
         }
         Ok(())
     }

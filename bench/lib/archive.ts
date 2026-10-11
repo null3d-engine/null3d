@@ -241,6 +241,8 @@ export interface ArchivedRun {
 	presentedFps?: number;
 	completedFps?: number | null;
 	gpuMs?: number | null;
+	/** The median GPU time per frame of each part of the frame, where the browser times passes. */
+	gpuPassMs?: { name: string; ms: number }[];
 	gpuLatencyMs?: number | null;
 	refreshHz?: number | null;
 	trace?: TraceSummary;
@@ -356,7 +358,10 @@ export function archiveRun(
 	const bench = result as unknown as BenchResult & {
 		runnerRefreshHz?: number;
 		heat?: HeatSummary;
-		stats?: { refreshHz?: number | null };
+		stats?: {
+			refreshHz?: number | null;
+			gpuPassMs?: { name: string; ms: { median: number } }[] | null;
+		};
 	};
 	if (!result.ok || !bench.cpuMs)
 		return {
@@ -381,6 +386,9 @@ export function archiveRun(
 		presentedFps: figures.presentedFps,
 		completedFps: figures.completedFps,
 		gpuMs: figures.gpuMs,
+		...(bench.stats?.gpuPassMs && {
+			gpuPassMs: bench.stats.gpuPassMs.map(({ name, ms }) => ({ name, ms: ms.median })),
+		}),
 		gpuLatencyMs: figures.gpuLatencyMs,
 		refreshHz,
 		...(bench.trace && { trace: summarizeTrace(bench.trace, refreshHz) }),
