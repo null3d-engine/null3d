@@ -50,6 +50,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_CASTER,
+	SHADING_CUSTOM_OBJECT_IDS,
 	SHADING_CUSTOM_ROW_VALUES,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_CUSTOM_TRANSMISSION,
@@ -1085,6 +1086,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/** True when the WGSL reads an instance's index or an object's id. */
+	readonly objectIds?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
@@ -1705,7 +1708,8 @@ export class Materials {
 			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT) |
 			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0) |
 			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
-			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0);
+			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0) |
+			(compiled.objectIds ? SHADING_CUSTOM_OBJECT_IDS : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);

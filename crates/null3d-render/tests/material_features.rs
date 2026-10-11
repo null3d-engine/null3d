@@ -175,6 +175,7 @@ fn check_custom<B: FrameBuilder>(mut world: World<B>) {
         transmission: false,
         row_values: false,
         caster: false,
+        object_ids: false,
     });
     let colors_and_mask = feature::VERTEX_COLORS | feature::ALPHA_MASK;
     add(&mut world, &triangle(true), full, colors_and_mask);
