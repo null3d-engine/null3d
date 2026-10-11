@@ -11,6 +11,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
 | `examples/<name>/sketch.ts` | One demo, under 150 lines |
+| `examples/<name>/<scenery>.ts` | A demo's scenery, such as its sky, floor and lights, when the sketch would pass 150 lines with it. The sketch keeps the feature it shows |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
@@ -61,8 +62,8 @@ The examples page is the clone's own layout of the demos. The website has a layo
 
 `sourceUrl(demo, ref)` gives the GitHub address of a demo's code at a branch or a tag, and `ref` is `main` when a page names none. The clone's page names none. The website names the release tag that it builds from, so its link shows the code that it runs.
 
-- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Every feature demo is one sketch, so the reader lands on the code at once.
-- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
+- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Most feature demos are one sketch, so the reader lands on the code at once.
+- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A feature demo with its scenery in a file of its own does the same, such as `shader-inputs/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
 
 The address comes from the demo's entry, not from its `sketch` field. A build gives each sketch a hashed address of its own. `REPOSITORY_URL` in the same module holds the repository's address. A unit test checks it against the `repository` field of the root `package.json`.
 
@@ -316,6 +317,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 | morph-flowers | 116 to 120 fps, GPU 4.4 to 5.1 ms | 118 to 120 fps, GPU 5.2 to 5.8 ms |
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
+
+## The crystal spiral's scenery (11 October 2026)
+
+The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
+
+- A dusk sky with the sun low behind the stones. The sky's own environment gives the light, so the reflections on the crystals match the sky.
+- A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
+- A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
+- The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
+- On WebGL2, the reflection pass leaves out an instance batch with a custom material, so the floor there mirrors the stones and the sky. It leaves out the crystals. The fault was on main before this demo; a main build of 9 October shows it with a plain test scene.
 
 ## Showcase scenes
 

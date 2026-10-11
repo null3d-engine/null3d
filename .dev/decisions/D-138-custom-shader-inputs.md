@@ -81,7 +81,48 @@ It binds at binding 17 of WebGPU's frame and depth groups, and at binding 8 of W
 
 ## Data
 
-To be measured.
+All figures compare this change with main at `540d38cff`, on the Mac's GPU unless a line says otherwise.
+
+### Download size
+
+| File, after Brotli | Before | After | Change |
+| --- | --- | --- | --- |
+| Core WebAssembly, threaded | 363,356 bytes | 368,124 bytes | +1.3% |
+| Core WebAssembly, single-threaded | 362,216 bytes | 366,796 bytes | +1.3% |
+| First-use shader files | | | +0.3% to +1.1% |
+
+No file grew by more than 2% and by 64 bytes or more, so the size check needs no reason. The core keeps 40% of its 600 KB budget.
+
+### GPU time
+
+`bun run bench:gpu-check`, median GPU time per frame:
+
+| Page | Before | After | Change |
+| --- | --- | --- | --- |
+| S4, Medium | 3.94 ms | 3.93 ms | -0.4% |
+| S6, Medium | 4.63 ms | 4.78 ms | +2.8% |
+| S4, High | 3.93 ms | 3.94 ms | +0.5% |
+| S6, High | 5.03 ms | 4.97 ms | +0.1% |
+
+All four are within the check's noise. A material that reads none of the new inputs gets no new code in its shaders. The frame block grows by 128 bytes per view, which the check cannot see.
+
+### Allocation
+
+`bun run bench:allocation` on SwiftShader (`CI=1`), bytes allocated per frame:
+
+| Worker | WebGPU | WebGL2 |
+| --- | --- | --- |
+| Render worker | 498.6 | 92.0 |
+| Sketch worker | 165.9 | 200.2 |
+
+Both paths pass their budgets. The table of object ids is built when the layout changes, not each frame.
+
+### Tests
+
+- Rust: 637 of 637 pass in the render, GPU and WebAssembly crates. The shader compiler's material tests: 26 of 26.
+- Unit tests pass, with two new cases for the GPU library's affine matrices. The library test passes on all three GPU paths.
+- The custom inputs image test draws the same picture on WebGPU, WebGPU compatibility mode and WebGL2.
+- Image regression on the Mac's GPU: 185 of 191 pass before new references. The other 6 were the new tests, which now have references on the Mac and on SwiftShader.
 
 ## Decision
 

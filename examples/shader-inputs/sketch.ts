@@ -4,9 +4,10 @@
 // spiral and lifts the crystals' tips in turn. The stones share one custom material too: bands run
 // along each stone's own axis, from `object.worldMatrix`, and stay on it while the stone turns.
 // The stone whose `shaderId` matches the material's uniform, as `object.id`, lights its bands.
-// Hovering a stone, or tapping it, picks it.
+// Hovering a stone, or tapping it, picks it. The scenery around them is in pool.ts.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { pool } from './pool';
 
 /** Crystals in the spiral, and the golden angle that spaces them. */
 const COUNT = 900;
@@ -51,29 +52,12 @@ fn surface(input: SurfaceInput) -> Surface {
 `;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, post, time } = ctx;
-	const sun = [-0.7, 0.06, -0.7] as const;
-	scene.setBackground({ sky: { sunPosition: sun, turbidity: 6, rayleigh: 3, time: 0 } });
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
-	scene.setFog({ color: '#5a4a6a', density: 0.02, sunGlow: 0.8 });
-	post.set({ bloom: { intensity: 0.5, threshold: 1 }, vignette: {} });
-	const camera = scene.createPerspectiveCamera({ fov: 45, far: 500, position: [0, 6, 12.5] });
-	camera.lookAt(0, 0.6, 0);
+	const { scene, geometry, materials, time } = ctx;
+	await pool(ctx);
+	const camera = scene.createPerspectiveCamera({ fov: 45, far: 3000, position: [0, 4.5, 13] });
+	camera.lookAt(0, 0.9, 0);
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 0.6, 0] });
-	scene.createDirectionalLight({
-		direction: [-sun[0], -sun[1], -sun[2]],
-		color: '#ffb48a',
-		intensity: 3,
-		castShadows: true,
-	});
-	scene.createHemisphereLight({ skyColor: '#9fa8e6', groundColor: '#4a3438', intensity: 1.4 });
-	scene.createMesh({
-		mesh: geometry.circle({ radius: 80, segments: 64 }),
-		material: materials.standard({ color: '#2a2630', roughness: 0.45, doubleSided: true }),
-		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
-		receiveShadows: true,
-	});
+	const view = interact(ctx, camera, { target: [0, 0.9, 0] });
 
 	// The spiral: each crystal a little further out than the one before, at the golden angle.
 	math.seed(11);

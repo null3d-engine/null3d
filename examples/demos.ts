@@ -133,6 +133,7 @@ export const DEMOS: readonly Demo[] = [
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
+		code: 'shader-inputs/',
 		title: 'Custom shader inputs',
 		scene: 'Crystal spiral',
 		summary:
