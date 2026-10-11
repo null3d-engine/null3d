@@ -2,13 +2,15 @@
 //! them at run time: each piece's items before the host's chain, each shared item once, and a chain
 //! that calls each piece in turn. naga then reads and validates the joined WGSL.
 
+mod subset;
+
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::OnceLock;
 
 use null3d_shaders::{
-    Compiler, EffectOutput, EffectSource, Inputs, Output, PieceOutput, PostTemplates, VariantOutput,
+    Compiler, EffectOutput, EffectSource, Inputs, PieceOutput, PostTemplates, VariantOutput,
 };
+use subset::repository_subset;
 
 /// Brightens each pixel by a uniform: an effect that reads only its own pixel.
 const GAIN: &str = "struct Uniforms { gain: f32 }
@@ -70,14 +72,11 @@ fn compile(source: &str) -> EffectOutput {
         .expect("the WGSL builds")
 }
 
-/// The engine's builds of a host shader, by build name, from one build of the engine's shaders.
+/// The engine's builds of a host shader, by build name, from a build of that shader alone.
 fn host(name: &str) -> BTreeMap<String, VariantOutput> {
-    static OUTPUT: OnceLock<Output> = OnceLock::new();
-    let output = OUTPUT.get_or_init(|| {
-        let inputs = Inputs::read(&root()).expect("the repository's shaders");
-        null3d_shaders::build(&inputs).expect("the engine's shaders build")
-    });
-    output.shaders[name].clone()
+    let mut output =
+        null3d_shaders::build(&repository_subset(&[name])).expect("the host shader builds");
+    output.shaders.remove(name).expect("the host's builds")
 }
 
 /// The byte range of the top-level function `name` in a shader that naga wrote: from the start of
