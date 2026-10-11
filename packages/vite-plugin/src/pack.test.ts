@@ -50,6 +50,7 @@ function material(variants: number): CompiledMaterial {
 		locations: [0, 1],
 		attributes: 0,
 		baseColor: true,
+		objectIds: false,
 	};
 }
 
