@@ -5,11 +5,22 @@
 // its surface's reflection. With the default, the plane is a smooth metal mirror, so each box's
 // reflection hangs below it on its own side and the sky fills the rest. ?water ripples the plane
 // with a few waves and gives it water's color and reflectance. ?quarter draws the reflection at a
-// quarter of the render size, and ?every=3 draws it in one frame of three. The magenta box must
+// quarter of the render size, and ?every=3 draws it in one frame of three. ?batches builds each
+// box from an instance batch of four smaller boxes: the red batch with a custom material, the
+// green one with a standard material, both made after the plane's material, so the pass must
+// draw both kinds of batch after the plane's draws, which it leaves out. The magenta box must
 // never show: the pass clips everything below the plane, and the reflection spec checks it.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
+
+const redWgsl = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = vec3f(0.75, 0.04, 0.04);
+    return s;
+}
+`;
 
 const mirrorWgsl = /* wgsl */ `
 #import null3d::reflection::{reflection_uv}
@@ -71,8 +82,11 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 	const box = geometry.box({ width: 1.2, height: 1.6, depth: 1.2 });
 	const solid = (color: string) => materials.standard({ color, roughness: 0.6 });
-	scene.createMesh({ mesh: box, material: solid('#e03030'), position: [-2.4, 0.8, 0.5] });
-	scene.createMesh({ mesh: box, material: solid('#30c040'), position: [2.4, 0.8, 0.5] });
+	const batches = params.has('batches');
+	if (!batches) {
+		scene.createMesh({ mesh: box, material: solid('#e03030'), position: [-2.4, 0.8, 0.5] });
+		scene.createMesh({ mesh: box, material: solid('#30c040'), position: [2.4, 0.8, 0.5] });
+	}
 	scene.createMesh({
 		mesh: geometry.sphere({ radius: 0.9 }),
 		material: solid('#3050e0'),
@@ -121,5 +135,24 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 		material: plane,
 	});
 	floor.setRotationEuler(-Math.PI / 2, 0, 0);
+
+	// The batches' materials come after the floor's, so the pass draws them after the floor's
+	// draws, which it leaves out.
+	if (batches) {
+		const red = materials.shader({ wgsl: redWgsl, roughness: 0.6 });
+		const column = geometry.box({ width: 0.55, height: 1.6, depth: 0.55 });
+		for (const [x, material] of [
+			[-2.4, red],
+			[2.4, solid('#30c040')],
+		] as const) {
+			const batch = scene.createInstances(column, 4, { material });
+			for (let k = 0; k < 4; k++)
+				batch.positions.set(
+					[x + (k % 2) * 0.6 - 0.3, 0.8, 0.5 + Math.floor(k / 2) * 0.6 - 0.3],
+					k * 3,
+				);
+			batch.markDirty();
+		}
+	}
 	return {};
 });
