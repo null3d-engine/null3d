@@ -519,8 +519,9 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
  * The quarter test draws the reflection at a quarter of the render size. The scale-50 test draws
  * the frame at a render scale of 0.5, where the reflection's texture takes the smaller size and
- * the pass fills it whole. The reflection spec checks where the boxes' reflections land, and that
- * no magenta shows.
+ * the pass fills it whole. The batches test builds each box from an instance batch, the red one
+ * with a custom material, so the pass draws both kinds of batch. The reflection spec checks where
+ * the boxes' reflections land, and that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -533,6 +534,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
 		test('reflection-scale-50', '?half'),
+		test('reflection-batches', '?batches'),
 	];
 }
 

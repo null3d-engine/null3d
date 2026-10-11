@@ -328,7 +328,7 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
 - A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
-- On WebGL2, the reflection pass leaves out an instance batch with a custom material, so the floor there mirrors the stones and the sky. It leaves out the crystals. The fault was on main before this demo; a main build of 9 October shows it with a plain test scene.
+- The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
 
 ## Showcase scenes
 
