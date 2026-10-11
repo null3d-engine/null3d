@@ -1670,6 +1670,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// The inputs that three.js's ShaderMaterial gives its shaders: the instance's row and the
+	// object's id in static and dynamic batches and on meshes, the camera's and the object's
+	// matrices, which green patches check, the second texture coordinates with and without a second
+	// set, and the pixel's position and depth.
+	{
+		name: 'custom-inputs',
+		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
+		hold: 1,
+		size: [480, 270],
+	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
 	{

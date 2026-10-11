@@ -351,6 +351,8 @@ impl View {
         let world: Affine = *scene.world(parity).matrix(slot as usize);
         Some(CameraTransform {
             view_proj: lens.relative_view_projection(&world, aspect),
+            view: lens.relative_view(&world),
+            projection: lens.projection(aspect),
             eye: lens.eye(&world),
             cell: scene.cell_position(slot, parity),
             depth: lens.depth(&world),
@@ -362,6 +364,9 @@ impl View {
 pub(crate) struct CameraTransform {
     /// The view-projection matrix for positions relative to the camera.
     pub view_proj: Mat4,
+    /// The view matrix for those positions, and the projection: `view_proj` is their product.
+    pub view: Mat4,
+    pub projection: Mat4,
     /// The camera's place for those positions, as [`Lens::eye`] gives it.
     pub eye: [f32; 4],
     /// The camera's cell, and its position in the cell.

@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are custom post effects and tone curves (0.2). Sections 1 to 6 and 8 to 10 apply now, apart from the parts marked (0.2) that say they come later. Custom passes (section 7) are not built yet. Do not ship code that uses a part until its docs page says it is built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and scene and reflection passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
 
 ## Contents
 
@@ -12,7 +12,7 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 4. Uniforms, textures and per-instance data
 5. Vertex offsets and full shaders
 6. Custom post effects and tone curves (0.2)
-7. Custom passes (later in 0.2)
+7. Custom passes
 8. Portable WGSL rules
 9. Imports from the shader library
 10. Debugging shaders
@@ -22,14 +22,14 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows follow the offset) |
 | Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
 | A full-screen image effect, or a tone curve of your own | Post effect or tone curve (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
 
-A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, and later `fn vertexOffset`), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
+A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset` or both), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
 ## 2. Surface functions
 
@@ -93,9 +93,11 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, and `'blend'` blends the surface over what lies behind it, in the transparent pass. `uv1`, `fragCoord` and `instance` in `SurfaceInput` come in 0.2.
+`s.alpha` works with the material's `alphaMode`: `'mask'` draws nothing below `alphaCutoff`, and `'blend'` blends the surface over what lies behind it, in the transparent pass.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+`SurfaceInput` also has `uv1`, `fragCoord` and `instance` (0.2). `uv1` is the second texture coordinates, or the first on a mesh with one set. `fragCoord` (`vec3f`) is the pixel from the top left, and its depth, 1 at the near plane. `instance` (`u32`) is the row in its batch, 0 for scene objects. `VertexInput` has `uv1` and `instance` too. Only WGSL that reads `uv1`, `instance`, `object.id` or the object's matrices pays for them.
+
+Names: your WGSL shares a file with the engine's standard material. Do not declare a name that the standard material declares or imports. The build stops at your line with a redefinition error. The names are `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs`, `fs` and `FLAT_SHADING`. They also include the library items it imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`, and where the WGSL reads them, `object_ids`, `affine_matrix` and `affine_normal_matrix`. Other library names, such as `brdf_ggx` or `PI`, stay free. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values
 
@@ -104,17 +106,17 @@ Globals that the vertex offset and the surface function both read (`shaders/buil
 | Name | Fields | Notes |
 | --- | --- | --- |
 | `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, pixels at the render scale, as `@builtin(position)` counts them) | The sketch's `time`; the held time in hold mode |
-| `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space) | |
-| `object` | `position` (the object's or instance's origin in the world) | Gives each object a look of its own from one material |
+| `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space); `view`, `projection` (`mat4x4f`), `near`, `far` (0.2) | `projection * view == viewProjection`; `view` is the rotation only; reversed depth, 1 at the near plane |
+| `object` | `position` (the object's or instance's origin in the world); `values` (`vec4f`), `worldMatrix` (`mat4x4f`), `normalMatrix` (`mat3x3f`), `id` (`u32`) (0.2) | `worldMatrix`'s translation is relative to the camera. `id` equals `mesh.shaderId` or `batch.shaderId`, and stays while the object lives |
 | `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-In 0.2: `camera.view`, `projection`, `near` and `far`, and `object.worldMatrix`, `normalMatrix` and `id`.
+A vertex offset in a shadow pass reads zeros for `camera.view` and `camera.projection`. A full shader reads zeros for the object's matrices and id.
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
 ## 4. Uniforms, textures and per-instance data
 
-Uniforms are built, and so are textures (0.2). Per-instance data comes in 0.2. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
+Uniforms are built, and so are textures (0.2) and per-instance data (0.2). The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
 
 ```ts
 materials.shader({
@@ -209,7 +211,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 - Exactly this signature; the build rejects another.
 - Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
-- Shadows use the unmoved vertices.
+- Shadows follow the moved vertices, and draw again in every frame.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
 A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
@@ -302,7 +304,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
-- Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
+- Full-screen passes of your own WGSL are (0.2, not built yet). Until then, write full-screen WGSL as a custom effect (section 6). Docs: `api/render`, `guides/custom-passes`.
 
 A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
 
