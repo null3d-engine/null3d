@@ -39,6 +39,8 @@ use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale};
+use crate::light_grid::DEFAULT_AREA_LIGHT_CAP;
+use crate::light_tables::LightTables;
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
@@ -725,6 +727,10 @@ pub struct SceneSettings {
     /// How many times the targets of mirror views without a size of their own halve the render
     /// size, which the quality settings set.
     mirror_halvings: u8,
+    /// The area lights' tables and the lights' images, and their texture's state.
+    light_tables: LightTables,
+    /// The most area lights that one frame shades, which the quality settings set.
+    area_light_cap: u32,
 }
 
 impl SceneSettings {
@@ -783,7 +789,31 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             shadow_camera: None,
             mirror_halvings: 1,
+            light_tables: LightTables::default(),
+            area_light_cap: DEFAULT_AREA_LIGHT_CAP,
         }
+    }
+
+    /// The area lights' tables and the lights' images.
+    pub fn light_tables(&self) -> &LightTables {
+        &self.light_tables
+    }
+
+    /// The area lights' tables and the lights' images, for the sketch thread to fill and the frame
+    /// builders to upload.
+    pub fn light_tables_mut(&mut self) -> &mut LightTables {
+        &mut self.light_tables
+    }
+
+    /// The most area lights that one frame shades: the ones nearest the camera when more are
+    /// visible.
+    pub fn area_light_cap(&self) -> u32 {
+        self.area_light_cap
+    }
+
+    /// Sets the most area lights that one frame shades, from the next frame on.
+    pub fn set_area_light_cap(&mut self, cap: u32) {
+        self.area_light_cap = cap;
     }
 
     /// Makes the standard material's maps share the first `units` bindings of their bind group,
@@ -1635,6 +1665,7 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
+        lights.set_area_ready(self.light_tables.ready());
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);

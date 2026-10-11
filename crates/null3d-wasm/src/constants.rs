@@ -604,6 +604,8 @@ pub fn typescript() -> String {
                 ("SPOT", light_kind::SPOT),
                 ("HEMISPHERE", light_kind::HEMISPHERE),
                 ("AMBIENT", light_kind::AMBIENT),
+                ("RECT", light_kind::RECT),
+                ("TUBE", light_kind::TUBE),
             ],
         ),
         (
@@ -623,6 +625,10 @@ pub fn typescript() -> String {
                 ("SHADOW_CASCADES", light_value::SHADOW_CASCADES),
                 ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
                 ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
+                ("WIDTH", light_value::WIDTH),
+                ("HEIGHT", light_value::HEIGHT),
+                ("RADIUS", light_value::RADIUS),
+                ("IMAGE", light_value::IMAGE),
             ],
         ),
         (

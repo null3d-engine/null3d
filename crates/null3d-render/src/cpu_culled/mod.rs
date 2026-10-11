@@ -223,8 +223,11 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
+    /// The light tables: the area lights' tables (see [`crate::light_tables`]). WebGL2 reads the
+    /// split-sum table beside the material table instead.
+    pub const LIGHT_TABLES: u32 = STREAMED_VALUES + RING;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STREAMED_VALUES + RING;
+    pub const TARGETS: u32 = LIGHT_TABLES + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -857,6 +860,9 @@ impl CpuCulledRenderer {
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
+        self.settings
+            .light_tables_mut()
+            .create(list, ids::LIGHT_TABLES)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -1152,9 +1158,13 @@ impl CpuCulledRenderer {
             self.light_textures
                 .size(list, &mut self.lights, self.config.max_texture_size)?;
         self.opaque.add_views(list, views)?;
-        // Every camera view's frame groups bind the shadow maps and the light textures, so each
-        // view binds them again when the graph or the light textures make them again.
-        let rebind = lights_remade || self.graph.textures_made();
+        // Every camera view's frame groups bind the shadow maps, the light textures and the light
+        // tables, so each view binds them again when the graph or the lights make them again.
+        let tables_remade = self
+            .settings
+            .light_tables_mut()
+            .record(list, ids::LIGHT_TABLES)?;
+        let rebind = lights_remade || tables_remade || self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || rebind {
                 Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
@@ -1564,6 +1574,8 @@ impl FrameBuilder for CpuCulledRenderer {
             )
             .map_err(|_| out_of_memory(&self.layout))?;
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
+            self.lights
+                .set_area_light_cap(self.settings.area_light_cap());
             self.lights.assign(input.jobs, frame, input.lights);
             self.lights.mark_shadows(&self.tiles, input.shadow_lights);
         }
@@ -1696,6 +1708,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.skins.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.light_tables_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
     }
 

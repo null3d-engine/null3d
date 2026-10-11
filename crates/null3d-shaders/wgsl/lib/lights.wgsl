@@ -1,5 +1,7 @@
 #define_import_path null3d::lights
+#import null3d::area_lights::{range_window, rectangle_light, tube_light}
 #import null3d::lighting::{PbrMaterial, Reflected, distance_attenuation, spot_attenuation}
+#import null3d::tables::{AreaTerms, area_terms}
 #ifdef HALF
 #import null3d::half::{direct_light}
 #else
@@ -28,9 +30,15 @@
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
 
+/// The kind of a rectangle light's record: the core's `RECT`. Kinds from it on are area lights.
+const KIND_RECT: u32 = 6u;
+/// The kind of a tube light's record: the core's `TUBE`.
+const KIND_TUBE: u32 = 7u;
+
 /// A point or spot light, as the light list holds it. Colors are linear and include the
 /// intensity. A point light shines in every direction: its cone cosines let every direction
-/// through.
+/// through. An area light's record keeps its shape where a point or spot light keeps its decay
+/// and cone (see `area_across`).
 struct PointLight {
     /// The position relative to the camera, and the range in meters where the light ends.
     position_range: vec4f,
@@ -87,6 +95,36 @@ fn light_of(i: u32) -> PointLight {
 #endif
 }
 
+/// An area light's second vector: a rectangle's half side along its Y axis, or a tube's radius
+/// and two zeros. Its record keeps it in the places of a spot light's decay and cone cosines,
+/// and its first vector, half the rectangle's X side or half the tube's axis, in `direction_cone`.
+fn area_across(light: PointLight) -> vec3f {
+    return vec3f(light.color_decay.w, light.direction_cone.w, light.penumbra.x);
+}
+
+/// The light that a PBR surface reflects from one area light, with `terms` from the tables for the
+/// surface's view and roughness.
+fn area_light(
+    m: PbrMaterial,
+    terms: AreaTerms,
+    light: PointLight,
+    kind: u32,
+    relative: vec3f,
+    normal: vec3f,
+    to_view: vec3f,
+) -> Reflected {
+    let toward = light.position_range.xyz - relative;
+    let color = light.color_decay.rgb * range_window(length(toward), light.position_range.w);
+    let along = light.direction_cone.xyz;
+    let across = area_across(light);
+    if kind == KIND_TUBE {
+        return tube_light(m, terms, normal, to_view, toward, along, across.x, color);
+    }
+    // A rectangle light keeps its image's layer plus one where a spot light keeps its tile.
+    let image = i32(light.penumbra.w) - 1;
+    return rectangle_light(m, terms, normal, to_view, toward, along, across, color, image);
+}
+
 /// The lights of the cluster that holds a position relative to the camera: where they start in
 /// the light grid, and how many there are. A position past the last slice, or in a view whose
 /// grid lists no light, has none.
@@ -108,8 +146,9 @@ fn cluster_lights(relative: vec3f) -> vec2u {
     return vec2u(word & ((1u << START_BITS) - 1u), word >> START_BITS);
 }
 
-/// The light that a PBR surface reflects toward the camera from the point and spot lights of its
-/// cluster, as three.js's `RE_Direct_Physical` gives it for each of them. `relative` is the
+/// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
+/// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
+/// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
 /// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
 /// direction toward the camera. `compensation` comes from `multiscatter_compensation`.
 fn clustered_light(
@@ -121,8 +160,22 @@ fn clustered_light(
 ) -> Reflected {
     var sum = Reflected(vec3f(0.0), vec3f(0.0));
     let found = cluster_lights(relative);
+    // The area lights' tables for the surface, read with the cluster's first area light.
+    var terms = AreaTerms(vec4f(0.0), vec2f(0.0));
+    var have_terms = false;
     for (var k = 0u; k < found.y; k++) {
         let light = light_of(grid_word(found.x + k));
+        let kind = bitcast<u32>(light.penumbra.y);
+        if kind >= KIND_RECT {
+            if !have_terms {
+                terms = area_terms(dot(normal, to_view), m.roughness);
+                have_terms = true;
+            }
+            let reflected = area_light(m, terms, light, kind, relative, normal, to_view);
+            sum.diffuse += reflected.diffuse;
+            sum.specular += reflected.specular;
+            continue;
+        }
         let offset = light.position_range.xyz - relative;
         let gap = length(offset);
         let to_light = offset / max(gap, 1e-6);

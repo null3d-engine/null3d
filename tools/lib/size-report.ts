@@ -243,16 +243,19 @@ export function isFirstUseShaderPart(name: string): boolean {
 }
 
 /**
- * The WebAssembly modules that the on-demand loader compiles on first use: the KTX2 transcoder,
- * with a page's first KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt
- * data, and Draco's decoder, with its first glTF file that holds Draco data. A build copies each
- * as it is, under its name with a hash. Draco's decoder is a recorded exception to the limit of
- * files that load on first use (D-14).
+ * The files besides code that load on first use: the WebAssembly modules that the on-demand
+ * loader compiles, and the area lights' tables. They are the KTX2 transcoder, with a page's first
+ * KTX2 file, the meshopt decoder, with its first glTF file that holds meshopt data, Draco's
+ * decoder, with its first glTF file that holds Draco data, and the tables, with the first
+ * rectangle or tube light. A build copies each as it is, under its name with a hash. Draco's
+ * decoder and the tables are recorded exceptions to the limit of files that load on first use
+ * (D-14, D-145).
  */
-export const FIRST_USE_WASM = [
+export const FIRST_USE_FILES = [
 	'basis_transcoder.wasm',
 	'meshopt_decoder.wasm',
 	'draco_decoder_gltf.wasm',
+	'area-light-tables.bin',
 ] as const;
 
 /** Every file that the size report measures, by the name that the report prints. */
@@ -260,17 +263,17 @@ export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
-	...FIRST_USE_WASM.map((file) => `first-use/${file}`),
+	...FIRST_USE_FILES.map((file) => `first-use/${file}`),
 ];
 
 /**
- * The built name of each first-use WebAssembly module, by its own name, from the names of a
- * build's files. A build adds a hash of 8 characters to each name. Throws when a file is missing or
- * there twice, since the loader would then fetch no file or the wrong one.
+ * The built name of each file of `FIRST_USE_FILES`, by its own name, from the names of a build's
+ * files. A build adds a hash of 8 characters to each name. Throws when a file is missing or there
+ * twice, since the engine would then fetch no file or the wrong one.
  */
-export function findFirstUseWasm(builtNames: readonly string[]): Map<string, string> {
+export function findFirstUseFiles(builtNames: readonly string[]): Map<string, string> {
 	const found = new Map<string, string>();
-	for (const file of FIRST_USE_WASM) {
+	for (const file of FIRST_USE_FILES) {
 		const dot = file.lastIndexOf('.');
 		const [stem, extension] = [file.slice(0, dot), file.slice(dot)];
 		const matches = builtNames.filter(
@@ -278,7 +281,7 @@ export function findFirstUseWasm(builtNames: readonly string[]): Map<string, str
 				name.startsWith(`${stem}-`) && name.endsWith(extension) && name.length === file.length + 9,
 		);
 		if (matches.length !== 1)
-			throw new Error(`${file}: expected one built copy of the module, found ${matches.length}`);
+			throw new Error(`${file}: expected one built copy of the file, found ${matches.length}`);
 		found.set(file, matches[0] as string);
 	}
 	return found;

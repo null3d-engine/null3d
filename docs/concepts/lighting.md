@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -18,20 +18,20 @@ flowchart LR
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
     frame --> main["The first directional light,<br/>the ambient and hemisphere lights"]
-    frame --> list["Point and spot lights<br/>whose ranges reach the view"]
+    frame --> list["Point, spot and area lights<br/>whose ranges reach the view"]
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
     grid --> shading
     env --> shading
 ```
 
-Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors, its intensity, and for point and spot lights their range, decay and cone.
+Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors and its intensity. It also holds a point or spot light's range, decay and cone, and an area light's range and size.
 
 Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
 2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.
-3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
+3. It tests the sphere of each point, spot and area light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
 ## Kinds of light and their units
@@ -45,8 +45,12 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Spot | A torch or a stage light: light from a point in a cone | Candela | `'lumen'`: divided by π at any cone angle |
 | Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | Lux, on both colors | `'lux'` |
 | Ambient | Light that bounces everywhere, from no direction | Lux | `'lux'` |
+| Rectangle | A window, a screen or a soft box: light from a glowing rectangle | Nits: the brightness of its surface | None |
+| Tube | A neon or fluorescent tube: light from a glowing tube | Nits: the brightness of its surface | None |
 
 A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
+
+A rectangle or tube light's light follows from its size and brightness: the engine integrates it over the light's area, with three.js's linearly transformed cosines. A larger light of the same intensity therefore gives more light, and a shiny surface shows its shape. [Area lights](../api/lights.md#area-lights) gives the details.
 
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 
@@ -95,13 +99,13 @@ Colors that you set in the scene's units take the exposure too: a background col
 
 ## Clustered forward shading
 
-A scene can hold hundreds of point and spot lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
+A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
 
 Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
 ```mermaid
 flowchart LR
-    lights["Visible point and<br/>spot lights"] --> path{"GPU path"}
+    lights["Visible point, spot<br/>and area lights"] --> path{"GPU path"}
     path -->|WebGPU| upload["Upload:<br/>lights only"]
     upload --> compute["Compute pass:<br/>lights of each cluster"]
     path -->|WebGL2| assign["Job workers:<br/>lights of each cluster"]
@@ -123,11 +127,11 @@ The engine shades each surface in the pass that draws it. A deferred renderer wo
 - Forward shading works with MSAA directly, where deferred shading needs extra passes.
 - Transparent surfaces use the same lighting code as opaque ones.
 
-Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it. Each cluster lists up to 128. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
+Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
 
 ## Lights as objects
 
-Because each light is an object, it moves, turns, hides and has a parent the way a mesh does. A lamp that is the child of a car moves with the car. Directional and spot lights send their light along their -Z axis, as a camera looks, so `lookAt` aims them. A hemisphere light's sky lies along its +Y axis.
+Because each light is an object, it moves, turns, hides and has a parent the way a mesh does. A lamp that is the child of a car moves with the car. Directional, spot and rectangle lights send their light along their -Z axis, as a camera looks, so `lookAt` aims them. A tube light runs along its -Z axis. A hemisphere light's sky lies along its +Y axis.
 
 Point and spot lights that move in most frames should be dynamic, with `dynamic: true`, as any object that moves in most frames should be. [Static and dynamic objects](static-dynamic.md) explains the choice.
 
@@ -220,7 +224,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 12 of them, the cube map included, so four stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
+- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 13 of them, the cube map and the area lights' tables included, so three stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 

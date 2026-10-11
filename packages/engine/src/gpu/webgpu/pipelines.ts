@@ -457,7 +457,8 @@ export class Pipelines {
 			rowValues,
 			objectRanges,
 		]);
-		// The materials' custom values, the table of specular terms, then the shadow map, whose
+		// The materials' custom values, the light tables (the table of specular terms and the area
+		// lights' tables, in the layers of one array), then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
 		// atlas, the cascades, the camera's light grid and light list, the shadow atlas of point and
 		// spot lights with its tiles, ambient occlusion's texture, which the lit shading reads with
@@ -472,7 +473,7 @@ export class Pipelines {
 				visibility: GPUShaderStage.VERTEX | fragment,
 				texture: { sampleType: 'unfilterable-float' },
 			},
-			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 3, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{
 				binding: 4,
 				visibility: fragment,

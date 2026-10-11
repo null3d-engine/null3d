@@ -173,6 +173,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// The most area lights that one frame shades: the ones nearest the camera when more are in
+	// view. An area light costs a surface several times what a point light costs, so phones shade
+	// fewer. A change makes no GPU object (D-145).
+	areaLights: {
+		presets: [4, 8, 16, 32],
+		changes: 'live',
+		values: { min: 0, max: 64, whole: true },
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
 	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
@@ -380,6 +388,12 @@ export interface QualitySettings {
 	 * the reflections' textures again.
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
+	/**
+	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
+	 * more are in view, the ones nearest the camera shade. An area light costs each surface it
+	 * reaches several times what a point light costs. It changes during play.
+	 */
+	areaLights: number;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then

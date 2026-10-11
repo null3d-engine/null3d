@@ -32,6 +32,10 @@
 //!   position relative to the view's camera. The offset from the camera to the light's grid cell
 //!   is computed in 64-bit floats, so lights far from the origin keep their precision. Each light
 //!   that survives writes a [`VisibleLight`] record to the visible list, in row order.
+//! - Rectangle and tube lights, the area lights, are culled the same way, once their tables have
+//!   arrived (see [`LightTable::set_area_ready`]), and join the same list. A rectangle light's
+//!   sides lie along its object's X and Y axes, and its light leaves along -Z. A tube runs along
+//!   its object's Z axis. Their sizes ignore the object's scale, as a range does.
 //!
 //! Every color that the frame gets is the light's linear color times its intensity and the frame's
 //! exposure, so a light in real units, such as a sun of 100,000 lux at an exposure for EV100 15,
@@ -72,6 +76,13 @@ pub mod kind {
     pub const HEMISPHERE: u32 = 4;
     /// The same light on every surface.
     pub const AMBIENT: u32 = 5;
+    /// Light from a rectangle, out to its range: its light leaves the side its -Z axis points to.
+    pub const RECT: u32 = 6;
+    /// Light from a tube in every direction around it, out to its range: the tube runs along its
+    /// -Z axis.
+    pub const TUBE: u32 = 7;
+    /// The last kind.
+    pub const LAST: u32 = TUBE;
 }
 
 /// The colors of a light, which [`LightTable::set_color`] writes.
@@ -111,13 +122,23 @@ pub mod value {
     /// The distance in meters from the camera, along its view, out to which a directional light's
     /// shadows fall. The default is 200.
     pub const SHADOW_DISTANCE: u32 = 9;
+    /// The width in meters of a rectangle light, along its X axis, or the length of a tube light.
+    /// The default is 1.
+    pub const WIDTH: u32 = 10;
+    /// The height in meters of a rectangle light, along its Y axis. The default is 1.
+    pub const HEIGHT: u32 = 11;
+    /// The radius in meters of a tube light. The default is 0.025.
+    pub const RADIUS: u32 = 12;
+    /// The layer of a rectangle light's image in the frame builder's light tables, plus one, or 0
+    /// for a light without an image. The engine sets it when it places the image.
+    pub const IMAGE: u32 = 13;
     /// The last number.
-    pub const LAST: u32 = SHADOW_DISTANCE;
+    pub const LAST: u32 = IMAGE;
 }
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
-    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0,
+    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0, 1.0, 1.0, 0.025, 0.0,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -125,8 +146,12 @@ const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
 /// light through in full.
 pub const POINT_CONE: [f32; 2] = [-2.0, -1.0];
 
-/// A visible point or spot light, as one frame's list holds it: 64 bytes, four groups of four
+/// A visible point, spot or area light, as one frame's list holds it: 64 bytes, four groups of four
 /// 32-bit values, ready for the GPU.
+///
+/// An area light needs no decay and no cone, so its record keeps its shape in their places (see
+/// [`VisibleLight::area`]): its half sides, or its half axis and radius, and its texture's layer
+/// where a point or spot light keeps its shadow tile, since area lights cast no shadows.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct VisibleLight {
@@ -153,6 +178,39 @@ pub struct VisibleLight {
     /// The light's first tile in the frame builder's shadow atlas plus one, as a float, or 0 when
     /// the light has no tile. The core writes 0, and the frame builder the tile.
     pub shadow: f32,
+}
+
+impl VisibleLight {
+    /// The record of an area light of `kind`, light `light`, at `position` relative to the camera
+    /// with `range` and `color`. A rectangle light passes its half sides along its X and Y axes as
+    /// `along` and `across`. A tube light passes half its axis as `along`, and its radius as
+    /// `across[0]`. The record keeps `along` where a spot light keeps its direction, and `across`
+    /// in the places of the decay and the two cone cosines, in that order. `image` is the layer of
+    /// a rectangle light's image plus one, or 0, which the record keeps in the shadow tile's place.
+    #[allow(clippy::too_many_arguments)]
+    pub fn area(
+        kind: u32,
+        light: u32,
+        position: [f32; 3],
+        range: f32,
+        color: [f32; 3],
+        along: [f32; 3],
+        across: [f32; 3],
+        image: f32,
+    ) -> Self {
+        Self {
+            position,
+            range,
+            color,
+            decay: across[0],
+            direction: along,
+            cone_cos: across[1],
+            penumbra_cos: across[2],
+            kind,
+            light,
+            shadow: image,
+        }
+    }
 }
 
 /// The place in the visible list of a light that the view does not see.
@@ -297,6 +355,9 @@ pub struct LightTable {
     shadows: Vec<LightShadow>,
     /// The numbers that each new light starts with, by [`value`].
     defaults: [f32; value::LAST as usize + 1],
+    /// True once the shaders can light surfaces with area lights: their tables have arrived.
+    /// Until then the visible list holds no area light.
+    area_ready: bool,
 }
 
 impl Default for LightTable {
@@ -315,7 +376,14 @@ impl LightTable {
             visible: Vec::new(),
             shadows: Vec::new(),
             defaults: DEFAULT_VALUES,
+            area_ready: false,
         }
+    }
+
+    /// Lets area lights into the visible list from the next [`LightTable::gather`], once the
+    /// shaders have their tables, or keeps them out.
+    pub fn set_area_ready(&mut self, ready: bool) {
+        self.area_ready = ready;
     }
 
     /// Sets the number, by [`value`], that each light created from now on starts with, such as the
@@ -348,10 +416,10 @@ impl LightTable {
     /// a kind that [`kind`] does not name, and with [`CoreError::OutOfMemory`] when memory cannot
     /// grow.
     pub fn create(&mut self, object: Handle, light_kind: u32) -> Result<u32, CoreError> {
-        if light_kind == kind::NONE || light_kind > kind::AMBIENT {
+        if light_kind == kind::NONE || light_kind > kind::LAST {
             return Err(CoreError::OutOfRange {
                 value: light_kind,
-                limit: kind::AMBIENT,
+                limit: kind::LAST,
             });
         }
         let row = match self.free.pop() {
@@ -609,6 +677,45 @@ impl LightTable {
                         shadow: 0.0,
                     });
                 }
+                kind::RECT | kind::TUBE => {
+                    let Some(view) = view else {
+                        continue;
+                    };
+                    if !self.area_ready {
+                        continue;
+                    }
+                    let position = scene.cell_position(slot, parity);
+                    let offset = view.camera.offset_to(position.cell);
+                    let at: [f32; 3] = std::array::from_fn(|k| offset[k] + position.local[k]);
+                    if !view.frustum.contains_sphere(at[0], at[1], at[2], range) {
+                        continue;
+                    }
+                    let [width, height, radius] = [value::WIDTH, value::HEIGHT, value::RADIUS]
+                        .map(|v| row.values[v as usize]);
+                    let (along, across, image) = if row.kind == kind::RECT {
+                        let (x, y) = sides(world.matrix(s));
+                        let image = row.values[value::IMAGE as usize];
+                        (
+                            x.map(|v| v * 0.5 * width),
+                            y.map(|v| v * 0.5 * height),
+                            image,
+                        )
+                    } else {
+                        let axis = forward(world.matrix(s));
+                        (axis.map(|v| v * 0.5 * width), [radius, 0.0, 0.0], 0.0)
+                    };
+                    // The table reserved room for every row in the visible list when it grew.
+                    self.visible.push(VisibleLight::area(
+                        row.kind,
+                        index as u32,
+                        at,
+                        range,
+                        lit,
+                        along,
+                        across,
+                        image,
+                    ));
+                }
                 _ => {}
             }
         }
@@ -639,6 +746,25 @@ fn lit_slot(scene: &SceneStorage, object: Handle) -> Option<u32> {
 /// when the matrix flattens the axis.
 fn forward(m: &[f32; 12]) -> [f32; 3] {
     unit_or([-m[2], -m[6], -m[10]], [0.0, -1.0, 0.0])
+}
+
+/// The X and Y axes of a world matrix of three rows, made unit length and at right angles to each
+/// other and to its Z axis, so a scale or a shear in the matrix leaves an area light's shape as its
+/// numbers give it. A matrix that flattens an axis gives the world's X and Y axes.
+fn sides(m: &[f32; 12]) -> ([f32; 3], [f32; 3]) {
+    let z = unit_or([m[2], m[6], m[10]], [0.0, 0.0, 1.0]);
+    let x = [m[0], m[4], m[8]];
+    let along = x[0] * z[0] + x[1] * z[1] + x[2] * z[2];
+    let x = unit_or(
+        std::array::from_fn(|k| x[k] - along * z[k]),
+        [1.0, 0.0, 0.0],
+    );
+    let y = [
+        z[1] * x[2] - z[2] * x[1],
+        z[2] * x[0] - z[0] * x[2],
+        z[0] * x[1] - z[1] * x[0],
+    ];
+    (x, y)
 }
 
 /// The +Y axis of a world matrix of three rows, scaled to length 1: the direction of a hemisphere
@@ -738,17 +864,17 @@ mod tests {
         let light = table.create(Handle::new(1, 0), kind::POINT).unwrap();
         assert_eq!(
             table.create(Handle::new(2, 0), 9),
-            Err(CoreError::OutOfRange { value: 9, limit: 5 })
+            Err(CoreError::OutOfRange { value: 9, limit: 7 })
         );
         assert_eq!(
             table.create(Handle::new(2, 0), kind::NONE),
-            Err(CoreError::OutOfRange { value: 0, limit: 5 })
+            Err(CoreError::OutOfRange { value: 0, limit: 7 })
         );
         assert_eq!(
-            table.set_value(light, 10, 1.0),
+            table.set_value(light, 14, 1.0),
             Err(CoreError::OutOfRange {
-                value: 10,
-                limit: 9
+                value: 14,
+                limit: 13
             })
         );
         assert_eq!(

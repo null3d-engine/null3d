@@ -91,6 +91,7 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	areaLights: { label: 'Area lights per frame' },
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

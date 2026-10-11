@@ -504,6 +504,18 @@ export interface CoreGlue extends CoreErrors {
 	 * scale of their own take.
 	 */
 	setReflectionScale(scale: number): number;
+	/** Sets the most area lights that one frame shades. */
+	setAreaLightCap(cap: number): number;
+	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
+	areaLightTables(): number;
+	/** Marks the area lights' tables as written, so frames light with area lights. */
+	finishAreaLightTables(): number;
+	/** Makes room for a rectangle light's image; the address of its half floats, or 0. */
+	areaLightImage(light: number): number;
+	/** Marks a rectangle light's image as written, so frames show it. */
+	finishAreaLightImage(light: number): number;
+	/** Takes a rectangle light's image away. */
+	removeAreaLightImage(light: number): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -858,6 +870,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'setReflectionScale',
+	'setAreaLightCap',
+	'areaLightTables',
+	'finishAreaLightTables',
+	'areaLightImage',
+	'finishAreaLightImage',
+	'removeAreaLightImage',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',

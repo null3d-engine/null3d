@@ -77,6 +77,7 @@ pub mod gpu_driven;
 pub mod grading;
 pub mod graph;
 pub mod light_grid;
+pub mod light_tables;
 pub mod materials;
 pub mod meshes;
 pub mod mirror;

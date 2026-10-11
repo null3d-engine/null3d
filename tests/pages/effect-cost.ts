@@ -1,6 +1,8 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
 // ?effect=dof or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
-// bloom's scene. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
+// bloom's scene. ?effect=area measures ?count= area lights over the light scenes' floor, 4 by
+// default: rectangle lights, or ?kind=point or ?kind=tube lights, and ?image gives the rectangle
+// lights pictures. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
 // otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
@@ -35,6 +37,7 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	area: './sketches/area-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -63,7 +66,9 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}`;
+	const kind = params.get('kind');
+	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${area}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
@@ -136,6 +141,10 @@ run('effect-cost', async () => {
 		bloomSize: size === null ? null : Number(size),
 		dofSamples: taps === null ? null : Number(taps),
 		effects: effect === 'effects' ? Number(count ?? '4') : null,
+		lights:
+			effect === 'area'
+				? { count: Number(count ?? '4'), kind: kind ?? 'rect', image: params.has('image') }
+				: null,
 		joined: effect === 'effects' ? params.get('join') !== 'off' : null,
 		heavy,
 		joinBuilds,

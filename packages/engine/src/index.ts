@@ -106,6 +106,7 @@ export type {
 } from './scene/environment';
 export type { FogCurve, FogOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export type { LightImagePixels } from './scene/light-images';
 export type {
 	LineBatch,
 	LineMaterial,
@@ -216,9 +217,13 @@ export type {
 	PointLightOptions,
 	PrefabInstance,
 	Quat,
+	RectAreaLight,
+	RectAreaLightOptions,
 	Scene,
 	SpotLight,
 	SpotLightOptions,
+	TubeLight,
+	TubeLightOptions,
 	Vec3,
 } from './scene/scene';
 export type {

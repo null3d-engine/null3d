@@ -53,10 +53,11 @@ const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 
 /**
  * The texture units that every stage leaves free, for the per-pixel inputs of later features, such
- * as probes of light or the tables of area lights. The builds that let light through take one of
- * them for the copy of the opaque color that they sample (decision record D-122).
+ * as probes of light. The builds that let light through take one of them for the copy of the
+ * opaque color that they sample (decision record D-122). The area lights' tables took one of four
+ * (D-145).
  */
-const SPARE_TEXTURE_UNITS = 4;
+const SPARE_TEXTURE_UNITS = 3;
 
 /** The spare texture units of a stage, by its name. */
 const spareUnits = (name: string) =>

@@ -365,7 +365,7 @@ Each feature gets a decision record of its own when it is built.
 | Per-object motion vectors | The base for a later temporal anti-aliasing, motion blur and better screen-space reflections | M2-EX25 | D-142 |
 | Physical sky and atmosphere | Skies of every scene, with distant objects tinted by the sun's angle | M2-EX26 | D-142 |
 | Projected decals | Craters and scorch marks, street paint and puddles, moss on rocks | M2-EX27 | D-142 |
-| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142 |
+| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142, D-145 |
 | Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
 | Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |

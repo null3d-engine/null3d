@@ -239,6 +239,7 @@ describe('SketchQuality.lower', () => {
 			aoScale: low.aoScale,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			areaLights: low.areaLights,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -256,7 +257,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps
-		// and the reflections' size did.
+		// the reflections' size and the cap of area lights did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -265,6 +266,7 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
+			'areaLights',
 		]);
 	});
 });

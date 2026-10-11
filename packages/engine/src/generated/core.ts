@@ -36,6 +36,8 @@ export const LIGHT_KIND_POINT = 2;
 export const LIGHT_KIND_SPOT = 3;
 export const LIGHT_KIND_HEMISPHERE = 4;
 export const LIGHT_KIND_AMBIENT = 5;
+export const LIGHT_KIND_RECT = 6;
+export const LIGHT_KIND_TUBE = 7;
 
 export const LIGHT_COLOR_MAIN = 0;
 export const LIGHT_COLOR_GROUND = 1;
@@ -50,6 +52,10 @@ export const LIGHT_VALUE_SHADOW_NORMAL_BIAS = 6;
 export const LIGHT_VALUE_SHADOW_CASCADES = 7;
 export const LIGHT_VALUE_SHADOW_MAP_SIZE = 8;
 export const LIGHT_VALUE_SHADOW_DISTANCE = 9;
+export const LIGHT_VALUE_WIDTH = 10;
+export const LIGHT_VALUE_HEIGHT = 11;
+export const LIGHT_VALUE_RADIUS = 12;
+export const LIGHT_VALUE_IMAGE = 13;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;

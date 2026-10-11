@@ -21,6 +21,9 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
 // changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `areaLights` switch adds eight rectangle lights, two of which show images, and four tube
+// lights, which circle the swarm and change their intensities every frame, for the allocation
+// sample of area lights.
 // The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
@@ -138,6 +141,7 @@ export default defineSketch(async (context) => {
 			room = loaded;
 		});
 	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
+	const areas = switches.has('areaLights') ? createAreaLights(context) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -152,6 +156,14 @@ export default defineSketch(async (context) => {
 			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
 			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
 		}
+		if (areas)
+			for (let k = 0; k < areas.length; k++) {
+				const angle = t * 0.3 + (k * Math.PI * 2) / areas.length;
+				const light = areas[k] as (typeof areas)[number];
+				light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
+				light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
+				light.setIntensity(4 + Math.sin(t + k));
+			}
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -229,6 +241,28 @@ function createHemispheres({ scene }: SketchContext) {
 			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
 		}),
 	] as const;
+}
+
+/**
+ * Eight rectangle lights, two of which show a striped image, and four tube lights for the
+ * `areaLights` switch. The frames move them around the swarm.
+ */
+function createAreaLights({ scene }: SketchContext) {
+	const stripes = new Uint8Array(16 * 16 * 4).map((_, i) => ((i >> 6) % 2 ? 255 : 40));
+	const image = { width: 16, height: 16, data: stripes };
+	const range = S1_EXTENT * 3;
+	return Array.from({ length: 12 }, (_, k) =>
+		k < 8
+			? scene.createRectAreaLight({
+					width: 4,
+					height: 2,
+					range,
+					color: k % 2 ? '#ffd29a' : '#9ad2ff',
+					dynamic: true,
+					...(k < 2 ? { image } : {}),
+				})
+			: scene.createTubeLight({ length: 3, range, color: '#ff6ab0', dynamic: true }),
+	);
 }
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */

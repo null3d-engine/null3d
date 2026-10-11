@@ -35,6 +35,7 @@ import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
+import { AreaLightTables, isAreaLight } from './area-lights';
 import {
 	type BackgroundOptions,
 	type BackgroundSource,
@@ -71,6 +72,7 @@ import {
 	orthographicView,
 	setViewHeight,
 } from './lens';
+import { LIGHT_IMAGE_HALVES, type LightImagePixels, prepareLightImage } from './light-images';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory } from './memory';
 import {
@@ -515,9 +517,70 @@ export interface HemisphereLightOptions extends NodeOptions {
 	intensityUnit?: 'lux';
 }
 
+/**
+ * Options for `scene.createRectAreaLight`.
+ *
+ * @category api/lights
+ */
+export interface RectAreaLightOptions extends LightOptions {
+	/**
+	 * The width in meters, along the light's X axis, above 0. The default is 1. The light's scale
+	 * does not change it.
+	 */
+	width?: number;
+	/** The height in meters, along the light's Y axis, above 0. The default is 1. */
+	height?: number;
+	/**
+	 * The distance in meters from the light's middle where its light ends, above 0. Every area light
+	 * needs one, because the engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/**
+	 * The direction the light leaves the rectangle in, relative to the parent: its -Z axis. The
+	 * default, (0, -1, 0), points straight down. It sets the light's rotation, so it wins over
+	 * `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the light faces. It wins over `direction`. */
+	target?: Vec3;
+	/**
+	 * A picture that the light shows over its area, such as a shop window or a screen, as
+	 * `setImage` takes it. Without it, the light has one color.
+	 */
+	image?: LightImagePixels;
+}
+
+/**
+ * Options for `scene.createTubeLight`.
+ *
+ * @category api/lights
+ */
+export interface TubeLightOptions extends LightOptions {
+	/**
+	 * The tube's length in meters, along the light's -Z axis, above 0. The default is 1. The
+	 * light's scale does not change it.
+	 */
+	length?: number;
+	/** The tube's radius in meters, above 0. The default is 0.025, a thin neon tube. */
+	radius?: number;
+	/**
+	 * The distance in meters from the tube's middle where its light ends, above 0. Every area light
+	 * needs one, because the engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/**
+	 * The direction the tube runs along, relative to the parent: its -Z axis. The default,
+	 * (0, -1, 0), stands the tube upright. It sets the light's rotation, so it wins over `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the tube points toward. It wins over `direction`. */
+	target?: Vec3;
+}
+
 /** The options of any light, as the scene's shared create path reads them. */
 type AnyLightOptions = LightOptions &
 	Partial<Omit<SpotLightOptions, keyof LightOptions | 'intensityUnit'>> &
+	Partial<Omit<RectAreaLightOptions & TubeLightOptions, keyof LightOptions>> &
 	Pick<DirectionalLightOptions, 'shadow'> & { intensityUnit?: 'lumen' | 'lux' };
 
 /**
@@ -554,6 +617,10 @@ const LIGHT_NUMBERS = [
 	['decay', C.LIGHT_VALUE_DECAY],
 	['angle', C.LIGHT_VALUE_ANGLE],
 	['penumbra', C.LIGHT_VALUE_PENUMBRA],
+	['width', C.LIGHT_VALUE_WIDTH],
+	['height', C.LIGHT_VALUE_HEIGHT],
+	['length', C.LIGHT_VALUE_WIDTH],
+	['radius', C.LIGHT_VALUE_RADIUS],
 ] as const;
 
 /**
@@ -581,6 +648,9 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		Number.MAX_VALUE,
 		'above 0',
 	],
+	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 };
 
 /** The options of a directional light's shadows, and their codes in the light table. */
@@ -1869,6 +1939,103 @@ export class HemisphereLight extends Light {
 export class AmbientLight extends Light {}
 
 /**
+ * Light from a rectangle of even brightness, such as a window, a screen or a studio panel. Its
+ * light leaves the side that its -Z axis points to, and ends at its range. Surfaces show its whole
+ * shape in their highlights, and soft light near it, as three.js's `RectAreaLight` gives. Its
+ * intensity is the rectangle's brightness in nits, three.js's unit. It casts no shadows.
+ *
+ * @category api/lights
+ */
+export class RectAreaLight extends Light {
+	/** Sets the distance in meters from the light's middle where its light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets the width along the light's X axis and the height along its Y axis, in meters. */
+	setSize(width: number, height: number): void {
+		this.write('setSize', C.LIGHT_VALUE_WIDTH, width);
+		this.write('setSize', C.LIGHT_VALUE_HEIGHT, height);
+	}
+
+	/** Turns the light so that its light leaves along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+
+	/**
+	 * Shows a picture over the light's area, such as a shop window or a screen, or `null` to go back
+	 * to one color. The color and intensity tint it. The picture's top row lies along the light's
+	 * +Y axis, and it reads the right way round from the lit side. The engine resamples it to 128 x
+	 * 128 texels, so shiny surfaces show it sharp and rough ones blurred. Up to 32 lights show
+	 * pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
+	 * now and then, not in every frame.
+	 */
+	setImage(image: LightImagePixels | null): void {
+		const call = 'setImage';
+		if (DEV) checkLive(call, this);
+		const { core } = this.scene;
+		if (image === null) {
+			core.check(core.glue.removeAreaLightImage(this.id), call, this.label, true);
+			return;
+		}
+		if (DEV) checkLightImage(call, image, this);
+		const at = core.check(core.glue.areaLightImage(this.id), call, this.label);
+		prepareLightImage(image, new Uint16Array(core.memory.buffer, at, LIGHT_IMAGE_HALVES));
+		core.check(core.glue.finishAreaLightImage(this.id), call, this.label, true);
+	}
+
+	/** @internal A copy starts without the picture, which `setImage` gives it. */
+	override twin(handle: number): Object3D {
+		const twin = super.twin(handle) as RectAreaLight;
+		twin.scene.core.glue.setLightValue(twin.id, C.LIGHT_VALUE_IMAGE, 0);
+		return twin;
+	}
+
+	/** Removes the light at the next frame, and frees its picture's place. */
+	override destroy(): void {
+		if (this.id !== 0) this.scene.core.glue.removeAreaLightImage(this.id);
+		super.destroy();
+	}
+}
+
+/** Throws E1108 for pixels whose size or data a light's image cannot take. */
+function checkLightImage(call: string, image: LightImagePixels, light: Light): void {
+	const { width, height, data } = image;
+	const whole = (n: number) => Number.isInteger(n) && n > 0;
+	if (!whole(width) || !whole(height) || !data || data.length < width * height * 4)
+		throw new EngineError(
+			'E1108',
+			`${call}() got an image of ${width} x ${height} pixels with ${data?.length ?? 0} bytes on ${light.describe()}, which needs a whole width and height above 0 and 4 bytes per pixel.`,
+		);
+}
+
+/**
+ * Light from a glowing tube, such as a neon or fluorescent tube, in every direction around it,
+ * out to its range. The tube runs along the light's -Z axis. Its intensity is the tube's
+ * brightness in nits, as for a rectangle light. It casts no shadows.
+ *
+ * @category api/lights
+ */
+export class TubeLight extends Light {
+	/** Sets the distance in meters from the tube's middle where its light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets the tube's length along the light's -Z axis and its radius, in meters. */
+	setSize(length: number, radius: number): void {
+		this.write('setSize', C.LIGHT_VALUE_WIDTH, length);
+		this.write('setSize', C.LIGHT_VALUE_RADIUS, radius);
+	}
+
+	/** Turns the tube so that it runs along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+}
+
+/**
  * Many copies of one mesh and material. Write rows straight into the typed arrays; a dynamic batch
  * updates every row every frame, and a static batch updates the rows you mark dirty.
  *
@@ -2141,6 +2308,8 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_DIRECTIONAL]: DirectionalLight,
 	[C.LIGHT_KIND_POINT]: PointLight,
 	[C.LIGHT_KIND_SPOT]: SpotLight,
+	[C.LIGHT_KIND_RECT]: RectAreaLight,
+	[C.LIGHT_KIND_TUBE]: TubeLight,
 };
 
 /** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
@@ -2326,6 +2495,8 @@ export class Scene {
 	rangedLights = false;
 	/** @internal Called in development builds when the scene gets its first point or spot light. */
 	onRangedLight: (() => void) | undefined;
+	/** @internal The area lights' tables, which load with the first rectangle or tube light. */
+	readonly areaTables: AreaLightTables;
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
 	 * undefined to follow the camera's.
@@ -2402,6 +2573,7 @@ export class Scene {
 		/** The input reader, whose pointer events reach objects' handlers. */
 		private readonly pointerInput?: PointerInput,
 	) {
+		this.areaTables = new AreaLightTables(core);
 		if (DEV) {
 			this.unmarkedWrites = new UnmarkedWrites(this);
 			this.unmarkedRows = new UnmarkedRows(core);
@@ -3475,7 +3647,9 @@ export class Scene {
 		}
 		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
-		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
+		const area = isAreaLight(type);
+		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT || area;
+		if (area) this.areaTables.load();
 		if (DEV && ranged && !this.rangedLights) {
 			this.rangedLights = true;
 			this.onRangedLight?.();
@@ -3490,7 +3664,7 @@ export class Scene {
 				light.write(call, which, value as number);
 		}
 		if (options.shadow) light.shadow(call, options.shadow);
-		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT) {
+		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT || area) {
 			if (options.target) light.lookAt(...options.target);
 			else if (options.direction || !options.rotation)
 				light.aim(call, ...(options.direction ?? DOWN));
@@ -3516,6 +3690,26 @@ export class Scene {
 	/** Light from a point in a cone, out to `range` meters, which it needs. */
 	createSpotLight(options: SpotLightOptions): SpotLight {
 		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+	}
+
+	/**
+	 * Light from a rectangle, `width` by `height` meters, out to `range` meters, which it needs. Its
+	 * light leaves along `direction`.
+	 */
+	createRectAreaLight(options: RectAreaLightOptions): RectAreaLight {
+		const light = this.createLight(
+			RectAreaLight,
+			C.LIGHT_KIND_RECT,
+			options,
+			'createRectAreaLight',
+		);
+		if (options.image) light.setImage(options.image);
+		return light;
+	}
+
+	/** Light from a tube, `length` meters along `direction`, out to `range` meters, which it needs. */
+	createTubeLight(options: TubeLightOptions): TubeLight {
+		return this.createLight(TubeLight, C.LIGHT_KIND_TUBE, options, 'createTubeLight');
 	}
 
 	/** Light from the sky above and the ground below. */

@@ -613,12 +613,23 @@
       "id": "rect-light",
       "category": "Lights and shadows",
       "three": "RectAreaLight",
-      "status": "post-1.0",
-      "since": null,
-      "target": "A spot light plus emissive geometry",
-      "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createRectAreaLight({ color, intensity, width, height, range })",
+      "notes": "Needs a range, where three.js's light has no end. No RectAreaLightUniformsLib.init() call. The light leaves along -Z, as in three.js. Casts no shadows, as in three.js.",
+      "docs": "api/lights",
       "detect": "\\bRectAreaLight\\b"
+    },
+    {
+      "id": "rect-light-setup",
+      "category": "Lights and shadows",
+      "three": "RectAreaLightUniformsLib / RectAreaLightTexturesLib",
+      "status": "changed",
+      "since": "0.2",
+      "target": "Nothing: the engine loads the area lights' tables with the first area light",
+      "notes": "Remove the init() call.",
+      "docs": "api/lights",
+      "detect": "\\bRectAreaLight(UniformsLib|TexturesLib)\\b"
     },
     {
       "id": "light-probe",

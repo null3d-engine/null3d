@@ -54,7 +54,7 @@
 //! needs to find a position's cluster: [`LightGrid::cluster_at`] does what the shaders do.
 
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightShadow, VisibleLight};
+use null3d_core::lights::{LightShadow, VisibleLight, kind};
 use null3d_core::shared::SharedMut;
 use null3d_gpu::drawlist::sizes::LIGHT_RECORD_BYTES;
 
@@ -90,6 +90,11 @@ const AWAKE_PARALLEL_WORK: u32 = 512;
 /// and its radius, so that a fragment's cluster, which the GPU rounds on its own, still lists
 /// every light that reaches the fragment.
 const MARGIN: f32 = 1e-4;
+
+/// True for a rectangle or tube light's record.
+fn is_area(light: &VisibleLight) -> bool {
+    light.kind == kind::RECT || light.kind == kind::TUBE
+}
 
 /// How the grid cuts a view into clusters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,12 +132,19 @@ pub const DEFAULT_GRID: GridShape = GridShape {
     slices: 24,
 };
 
+/// The most area lights that one frame shades unless the quality settings say otherwise: the
+/// Ultra preset's cap.
+pub const DEFAULT_AREA_LIGHT_CAP: u32 = 32;
+
 /// The most lights a grid lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LightLimits {
     /// The most lights of one frame, at most [`MAX_LIGHTS`]: the ones nearest the camera when
     /// more are visible.
     pub lights: u32,
+    /// The most area lights of one frame, which cost a surface several times what a point light
+    /// costs: the ones nearest the camera when more are visible. They count toward `lights` too.
+    pub area_lights: u32,
     /// The most lights of one cluster, at most [`MAX_PER_CLUSTER`].
     pub per_cluster: u32,
     /// The most entries of the index list over every cluster, at most [`MAX_INDICES`].
@@ -144,6 +156,7 @@ impl Default for LightLimits {
     fn default() -> Self {
         Self {
             lights: 1024,
+            area_lights: DEFAULT_AREA_LIGHT_CAP,
             per_cluster: 128,
             indices: MAX_INDICES,
         }
@@ -359,6 +372,11 @@ impl LightGrid {
         self.limits
     }
 
+    /// Sets the most area lights of one frame, from the next frame on.
+    pub fn set_area_light_cap(&mut self, cap: u32) {
+        self.limits.area_lights = cap;
+    }
+
     /// The most words the grid gives the shaders: a word per cluster and the whole index list.
     pub fn max_words(&self) -> u32 {
         self.shape.clusters() + self.limits.indices
@@ -565,12 +583,14 @@ impl LightGrid {
         Some(work)
     }
 
-    /// Copies the lights the frame lists: all of `visible`, or past the frame's cap, the ones whose
-    /// spheres come nearest the camera, in the order of `visible`.
+    /// Copies the lights the frame lists: all of `visible`, or past the frame's cap or its cap of
+    /// area lights, the ones whose spheres come nearest the camera, in the order of `visible`.
     fn choose(&mut self, visible: &[VisibleLight]) {
         let cap = self.limits.lights as usize;
+        let area_cap = self.limits.area_lights as usize;
         self.lights.clear();
-        if visible.len() <= cap {
+        let areas = visible.iter().filter(|light| is_area(light)).count();
+        if visible.len() <= cap && areas <= area_cap {
             self.lights.extend_from_slice(visible);
             return;
         }
@@ -580,8 +600,14 @@ impl LightGrid {
         let nearest = &mut self.nearest;
         nearest.clear();
         if nearest.try_reserve(visible.len()).is_err() {
-            // Without room to rank them, the first lights stay.
-            self.lights.extend_from_slice(&visible[..cap]);
+            // Without room to rank them, the first lights stay, with the first area lights.
+            let mut kept_areas = 0;
+            let first = visible.iter().filter(|light| {
+                let area = is_area(light);
+                kept_areas += usize::from(area);
+                !area || kept_areas <= area_cap
+            });
+            self.lights.extend(first.take(cap).copied());
             return;
         }
         nearest.extend(0..visible.len() as u32);
@@ -590,10 +616,33 @@ impl LightGrid {
             let [x, y, z] = light.position;
             (x * x + y * y + z * z).sqrt() - light.range
         };
-        nearest.select_nth_unstable_by(cap - 1, |a, b| near_edge(a).total_cmp(&near_edge(b)));
-        nearest[..cap].sort_unstable();
+        let kept = if areas <= area_cap {
+            nearest.select_nth_unstable_by(cap - 1, |a, b| near_edge(a).total_cmp(&near_edge(b)));
+            cap
+        } else {
+            // Rank them all, then keep the nearest lights in order while the caps allow, moving
+            // each kept index to the front of the same list.
+            nearest.sort_unstable_by(|a, b| near_edge(a).total_cmp(&near_edge(b)));
+            let (mut kept, mut kept_areas) = (0, 0);
+            for at in 0..nearest.len() {
+                if kept == cap {
+                    break;
+                }
+                let index = nearest[at];
+                if is_area(&visible[index as usize]) {
+                    if kept_areas == area_cap {
+                        continue;
+                    }
+                    kept_areas += 1;
+                }
+                nearest[kept] = index;
+                kept += 1;
+            }
+            kept
+        };
+        nearest[..kept].sort_unstable();
         self.lights
-            .extend(nearest[..cap].iter().map(|&i| visible[i as usize]));
+            .extend(nearest[..kept].iter().map(|&i| visible[i as usize]));
     }
 
     /// Sets the slices for the frame's lights, and each light's span of slices. Returns the slices
@@ -809,6 +858,11 @@ impl CameraLights {
             room: 0,
             grid,
         }
+    }
+
+    /// Sets the most area lights of one frame, from the next frame on.
+    pub(crate) fn set_area_light_cap(&mut self, cap: u32) {
+        self.grid.set_area_light_cap(cap);
     }
 
     /// The grid of the camera's view.

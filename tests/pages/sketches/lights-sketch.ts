@@ -1,7 +1,9 @@
-// The point, spot and hemisphere light scenes (bench/scenes/lights.ts). ?lights=N lights the floor
-// with N point lights in a square grid, ?scene=spot with three spot lights instead, and
-// ?scene=hemisphere with a hemisphere light. ?scene=hemisphere-split gives the same light as two
-// lights that the frame sums. ?camera=ortho draws through an orthographic camera.
+// The point, spot, hemisphere, rectangle and tube light scenes (bench/scenes/lights.ts). ?lights=N
+// lights the floor with N point lights in a square grid, ?scene=spot with three spot lights
+// instead, ?scene=hemisphere with a hemisphere light, ?scene=rect with three rectangle lights and
+// ?scene=tube with three tube lights. ?areaLights=N caps the area lights of each frame.
+// ?scene=hemisphere-split gives the same light as two lights that the frame sums. ?camera=ortho
+// draws through an orthographic camera.
 // ?tone=none turns off the engine's default of ACES, as the parity test asks: the three.js twin
 // draws with no tone mapping, three.js's default.
 import { defineSketch } from '@null3d/engine';
@@ -15,13 +17,17 @@ import {
 	LIGHTS_SHAPES,
 	LIGHTS_SPHERE,
 	pointLightGrid,
+	RECT_LIGHTS,
 	SPOT_LIGHTS,
+	TUBE_LIGHTS,
 } from '../../../bench/scenes/lights';
 
 const params = new URL(import.meta.url).searchParams;
 
-export default defineSketch(({ scene, materials, geometry, post }) => {
+export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
+	const cap = params.get('areaLights');
+	if (cap !== null) quality.set({ areaLights: Number(cap) });
 	scene.setBackground(LIGHTS_BACKGROUND);
 	const camera =
 		params.get('camera') === 'ortho'
@@ -53,6 +59,28 @@ export default defineSketch(({ scene, materials, geometry, post }) => {
 	if (lights === 'spot') {
 		for (const { position, target, ...light } of SPOT_LIGHTS)
 			scene.createSpotLight({ ...light, position: [...position], target: [...target] });
+		return;
+	}
+	if (lights === 'rect') {
+		for (const { position, target, ...light } of RECT_LIGHTS)
+			scene.createRectAreaLight({ ...light, position: [...position], target: [...target] });
+		return;
+	}
+	if (lights === 'tube') {
+		for (const { from, to, ...light } of TUBE_LIGHTS) {
+			const position: [number, number, number] = [
+				(from[0] + to[0]) / 2,
+				(from[1] + to[1]) / 2,
+				(from[2] + to[2]) / 2,
+			];
+			const direction: [number, number, number] = [
+				to[0] - from[0],
+				to[1] - from[1],
+				to[2] - from[2],
+			];
+			const length = Math.hypot(...direction);
+			scene.createTubeLight({ ...light, position, direction, length });
+		}
 		return;
 	}
 	if (lights === 'hemisphere') {

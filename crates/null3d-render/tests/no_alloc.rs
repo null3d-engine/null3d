@@ -982,8 +982,9 @@ fn switching_render_graph_passes_after_the_first_compile_allocates_nothing() {
 
 /// Assigns `count` point lights that move every frame to a light grid with a frame cap of `cap`,
 /// on job workers that count their allocations, and returns what the steady frames allocated.
-/// With `on_gpu`, the grid only prepares what the GPU's passes read, as on WebGPU.
-fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
+/// With `on_gpu`, the grid only prepares what the GPU's passes read, as on WebGPU. With an
+/// `area_cap`, every third light is a rectangle light, and the grid shades at most that many.
+fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool, area_cap: Option<u32>) -> u64 {
     let lens = Lens::Perspective(Perspective {
         fov_degrees: 60.0,
         near: 0.1,
@@ -996,6 +997,7 @@ fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
     };
     let limits = LightLimits {
         lights: cap,
+        area_lights: area_cap.unwrap_or(LightLimits::default().area_lights),
         ..LightLimits::default()
     };
     let mut grid = LightGrid::new(DEFAULT_GRID, limits);
@@ -1007,7 +1009,11 @@ fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool) -> u64 {
             decay: 2.0,
             cone_cos: POINT_CONE[0],
             penumbra_cos: POINT_CONE[1],
-            kind: kind::POINT,
+            kind: if area_cap.is_some() && i % 3 == 0 {
+                kind::RECT
+            } else {
+                kind::POINT
+            },
             light: i + 1,
             ..VisibleLight::default()
         })
@@ -1049,24 +1055,29 @@ fn assigning_moving_lights_to_the_light_grid_allocates_nothing() {
     CountingAllocator::track_this_thread();
     // Enough lights over enough slices that the job workers take part.
     assert_eq!(
-        light_grid_allocations(1000, 1024, false),
+        light_grid_allocations(1000, 1024, false, None),
         0,
         "every light listed"
     );
     assert_eq!(
-        light_grid_allocations(1200, 1000, false),
+        light_grid_allocations(1200, 1000, false, None),
         0,
         "the nearest lights listed"
     );
     assert_eq!(
-        light_grid_allocations(5, 1024, false),
+        light_grid_allocations(5, 1024, false, None),
         0,
         "on the calling thread"
     );
     assert_eq!(
-        light_grid_allocations(1200, 1000, true),
+        light_grid_allocations(1200, 1000, true, None),
         0,
         "prepared for the GPU"
+    );
+    assert_eq!(
+        light_grid_allocations(600, 1024, false, Some(16)),
+        0,
+        "the nearest area lights listed"
     );
 }
 

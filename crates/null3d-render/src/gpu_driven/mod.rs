@@ -136,7 +136,6 @@ use crate::bloom::BloomIds;
 use crate::cells::CellCulling;
 use crate::data_texture::DataTexture;
 use crate::debug_lines::LinesPass;
-use crate::dfg;
 use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
@@ -148,6 +147,7 @@ use crate::frame::{
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
+use crate::light_tables;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
@@ -304,10 +304,11 @@ mod ids {
     pub const OBJECT_RANGES: u32 = DOF + 1;
     pub const PAGES: u32 = OBJECT_RANGES + 1;
 
-    /// three.js's table of the split-sum terms of specular light.
-    pub const DFG: u32 = 1;
+    /// The light tables: three.js's table of the split-sum terms of specular light, and the area
+    /// lights' tables (see [`crate::light_tables`]).
+    pub const LIGHT_TABLES: u32 = 1;
     /// The custom values of materials: one row of texels per material.
-    pub const CUSTOM_VALUES: u32 = DFG + 1;
+    pub const CUSTOM_VALUES: u32 = LIGHT_TABLES + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// The blank cube that the frame's groups bind while the scene has no environment.
@@ -1060,6 +1061,8 @@ impl GpuDrivenRenderer {
                 })
                 .flatten();
             if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
+                self.lights
+                    .set_area_light_cap(self.settings.area_light_cap());
                 self.lights.assign(input.jobs, frame, input.lights);
                 self.lights.mark_shadows(&self.tiles, input.shadow_lights);
             }
@@ -1067,8 +1070,12 @@ impl GpuDrivenRenderer {
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        if std::mem::take(&mut self.dfg_pending) {
-            dfg::upload(list, arena, ids::DFG, 0)?;
+        let tables_remade = self
+            .settings
+            .light_tables_mut()
+            .record(list, ids::LIGHT_TABLES)?;
+        if std::mem::take(&mut self.dfg_pending) || tables_remade {
+            light_tables::upload_dfg(list, arena, ids::LIGHT_TABLES)?;
         }
         let pages_remade = self
             .meshes
@@ -1090,7 +1097,8 @@ impl GpuDrivenRenderer {
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
-        if environment != self.bound_environment {
+        // A light tables texture made again for lights' images needs the frame groups again too.
+        if environment != self.bound_environment || tables_remade {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
@@ -1511,7 +1519,9 @@ impl GpuDrivenRenderer {
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
-        dfg::create(list, ids::DFG)?;
+        self.settings
+            .light_tables_mut()
+            .create(list, ids::LIGHT_TABLES)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
@@ -1528,8 +1538,8 @@ impl GpuDrivenRenderer {
     /// settings.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
+            + light_tables::DFG_BYTES;
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
@@ -1641,6 +1651,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+        self.settings.light_tables_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
     }
 

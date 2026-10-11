@@ -236,6 +236,8 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
 
+Rectangle and tube lights join the same clusters, and cost a pixel several times what a point light costs. Each takes two integrals over the light's outline, and the first area light of a pixel's cluster reads their tables. A light with an image adds two more reads. The quality preset's `areaLights` caps how many shade in a frame, the nearest first: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Give area lights short ranges, as for point lights. A pixel whose cluster holds no area light pays nothing for them.
+
 The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader.
 
 ## Shadows

@@ -335,6 +335,54 @@ fn slices_end_where_the_farthest_light_ends() {
     assert_eq!(word >> START_BITS, 1);
 }
 
+#[test]
+fn the_area_light_cap_keeps_the_nearest_area_lights_and_every_other_light() {
+    let view = view(PERSPECTIVE, &AHEAD);
+    let shape = GridShape {
+        tiles_x: 4,
+        tiles_y: 4,
+        slices: 8,
+    };
+    let jobs = JobSystem::new(0);
+    let area = |z: f32, row| VisibleLight {
+        kind: kind::RECT,
+        ..light([0.0, 0.0, z], 3.0, false, row)
+    };
+    // Area lights far, near and in between, among point lights.
+    let lights = [
+        area(-30.0, 1),
+        light([1.0, 0.0, -20.0], 3.0, false, 2),
+        area(-8.0, 3),
+        area(-15.0, 4),
+        light([-1.0, 0.0, -40.0], 3.0, false, 5),
+    ];
+    let rows = |limits| {
+        let mut grid = LightGrid::new(shape, limits);
+        grid.assign(&jobs, &view, &lights);
+        grid.lights().iter().map(|l| l.light).collect::<Vec<u32>>()
+    };
+    let capped = |area_lights| LightLimits {
+        area_lights,
+        ..LightLimits::default()
+    };
+    assert_eq!(rows(capped(3)), [1, 2, 3, 4, 5]);
+    assert_eq!(rows(capped(2)), [2, 3, 4, 5]);
+    assert_eq!(rows(capped(0)), [2, 5]);
+    // With the frame's cap too, the nearest lights stay among those the area cap keeps.
+    let both = LightLimits {
+        lights: 2,
+        area_lights: 1,
+        ..LightLimits::default()
+    };
+    assert_eq!(rows(both), [2, 3]);
+    // A grid's cap changes from the next frame.
+    let mut grid = LightGrid::new(shape, capped(3));
+    grid.set_area_light_cap(1);
+    grid.assign(&jobs, &view, &lights);
+    let kept: Vec<u32> = grid.lights().iter().map(|l| l.light).collect();
+    assert_eq!(kept, [2, 3, 5]);
+}
+
 /// The cases of the GPU's light clustering test page: a lens and a camera, the light count, the
 /// seed of the lights, how far they spread and how far they reach, and the limits.
 fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
@@ -342,6 +390,7 @@ fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
         lights: 200,
         per_cluster: 6,
         indices: 4000,
+        ..LightLimits::default()
     };
     [
         // S3's many small lights, as one camera sees them.

@@ -238,6 +238,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'area-lights',
+		group: 'Light, materials and effects',
+		sketch: new URL('./area-lights/sketch.ts', import.meta.url),
+		code: 'area-lights/',
+		title: 'Area lights',
+		scene: 'Neon street after rain',
+		summary:
+			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot.",
+		controls: `${CAMERA} Move the mouse, or tap, to carry the loose green tube.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'character',
 		group: 'Motion and interaction',
 		sketch: new URL('./character/sketch.ts', import.meta.url),
