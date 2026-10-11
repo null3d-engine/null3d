@@ -50,6 +50,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_CASTER,
+	SHADING_CUSTOM_OBJECT_IDS,
 	SHADING_CUSTOM_ROW_VALUES,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_CUSTOM_TRANSMISSION,
@@ -76,7 +77,13 @@ import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import {
+	arraysProblem,
+	meshFromArrays,
+	morphTargetCount,
+	updateVertices,
+	type VertexLayout,
+} from './mesh-arrays';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
@@ -104,6 +111,8 @@ export interface ResourceUsers {
 export class MeshGeometry {
 	/** The engine core's id, or 0 once the mesh is destroyed. */
 	private liveId: number;
+	/** The vertex count and format, read from the engine core at the first update. */
+	private layout: VertexLayout | undefined;
 
 	/** @internal */
 	constructor(
@@ -152,6 +161,35 @@ export class MeshGeometry {
 				`${call}() was called on a mesh that ${user} still uses. Destroy the objects and instance batches that use it first.`,
 			);
 		destroyMeshes(this.core, [this], call);
+	}
+
+	/**
+	 * Writes new values into one attribute of the mesh's vertices, like setting three.js's
+	 * `attribute.needsUpdate` after a change. `values` holds the attribute's values of every
+	 * vertex, in the array type the mesh was made with, as `geometry.fromArrays` takes them. Only
+	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
+	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
+	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
+	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
+	 * targets take no updates. Throws E1206 for values that do not fit the mesh, and E1101 for a
+	 * destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
+	 */
+	updateVertices(
+		name: UpdatableAttribute,
+		values: Float32Array | IntegerArray | readonly number[],
+		start = 0,
+		count?: number,
+	): void {
+		const call = 'mesh.updateVertices';
+		const id = this.id;
+		let layout = this.layout;
+		if (layout === undefined) {
+			const { glue } = this.core;
+			layout = { count: glue.meshVertexCount(id), format: glue.meshFormat(id) };
+			this.layout = layout;
+		}
+		const vertices = count ?? layout.count - start;
+		updateVertices(this.core, id, layout, name, values, start, vertices, call);
 	}
 
 	/** @internal Marks the mesh destroyed, once the engine core freed it. */
@@ -438,6 +476,13 @@ const RING: Required<RingOptions> = {
 	thetaStart: 0,
 	thetaLength: TAU,
 };
+
+/**
+ * The vertex attributes that `mesh.updateVertices` writes, by their names in `MeshArrays`.
+ *
+ * @category api/geometry
+ */
+export type UpdatableAttribute = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
 
 /**
  * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
@@ -1085,6 +1130,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/** True when the WGSL reads an instance's index or an object's id. */
+	readonly objectIds?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
@@ -1705,7 +1752,8 @@ export class Materials {
 			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT) |
 			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0) |
 			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
-			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0);
+			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0) |
+			(compiled.objectIds ? SHADING_CUSTOM_OBJECT_IDS : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);

@@ -78,6 +78,14 @@ The 8-bit path serves compatibility mode with MSAA and WebGL2 without float targ
 
 A reflection draws the scene a second time, so its cost follows its pixels and what it sees. The option `scale` takes 1, 0.5 or 0.25 of the render size each way. Without it, the preset's `reflectionScale` sets it, and a change during play makes the texture again on the next frame. The option `every` draws the pass in one frame of N, the first included, through the view's own turns in the core: no sketch code runs per frame. The texture keeps its image between, so the reflection lags a moving camera by up to N - 1 frames. A view with its own size culls once, without occlusion culling, so the reflection does too.
 
+Update, 11 October 2026: below a render scale of 1, the reflection drew into the top-left corner of its texture, as the scene's own targets do, while `reflection_uv` reads the whole texture. The image test `reflection-scale-50` showed the floor black at a render scale of 0.5 on all three tiers. Three fixes were weighed:
+
+- A texture of a share of the canvas's size, which the pass fills at any render scale. The reflection would then cost the same when the governor lowers the render scale, which it does exactly when the GPU is late.
+- Reading the corner in `reflection_uv`. Every material would need the render scale, and a ripple's offset would read past the corner's edge into texels that the pass did not draw.
+- A texture of the render size's share, made again when the render scale changes (`Size::Scaled` in the render graph).
+
+The third was chosen. Each pixel of the texture maps to one of the pass, a material reads it from 0 to 1 across as before, and the reflection gets cheaper with the render scale. Governor steps come seconds apart, so making the texture again costs little: one new texture and new bind groups in that frame. A reflection that draws in one frame of N draws at once into a texture of a new size, which holds no image yet.
+
 ## Data
 
 GPU time per frame, S1 with 100,000 boxes and the water under them (`?reflection=half` or `full`), the camera orbiting so the reflection sees most of the swarm. MacBook Pro M5 Max, Chrome, through `bun run bench:run -- --scenes s1 --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`, on 9 October 2026, with the Mac's load at about 6. Medians of 3 runs:

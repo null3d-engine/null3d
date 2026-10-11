@@ -107,6 +107,9 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
     /// shadow caster that moves by it.
     pub const CUSTOM_CASTER: u32 = 1 << 30;
+    /// The bit of a custom shading whose WGSL reads an instance's index or an object's id, which
+    /// the frame builders then keep in the table of object ranges.
+    pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -360,6 +363,8 @@ pub mod arrays_problem {
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
     pub const MORPH_NOT_FINITE: u32 = 10;
+    /// A vertex update named a mesh with joints or morph targets, which take no updates.
+    pub const POSED: u32 = 11;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
 }
@@ -809,6 +814,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
                 ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
                 ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
+                ("CUSTOM_OBJECT_IDS", shading::CUSTOM_OBJECT_IDS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -1207,6 +1213,7 @@ pub fn typescript() -> String {
                 ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
+                ("POSED", arrays_problem::POSED),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
             ],
         ),
