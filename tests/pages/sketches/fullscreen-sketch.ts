@@ -12,8 +12,9 @@
 // draws its glow.
 //
 // ?echo gives a full-screen pass the scene color as its input, at a quarter of the canvas's size,
-// and a screen in the scene shows it: the frame before, in a cool tint, since the pass runs after
-// the camera's passes.
+// in a cool tint, and a custom effect shows that texture as an inset at the top left of the frame.
+// The pass runs after the camera's passes and before the effect, so the inset shows the same
+// frame.
 import { defineSketch, type Texture } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -80,10 +81,23 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
-/** The scene's image in a cool tint, as a security monitor shows it. */
+/** The scene's image in a cool tint. */
 const echo = /* wgsl */ `
 fn effect(input: EffectInput) -> vec4f {
     return vec4f(input.color.rgb * vec3f(0.55, 0.85, 1.1), 1.0);
+}
+`;
+
+/** The frame with the echo's texture as an inset across the top left third. */
+const inset = /* wgsl */ `
+var echo: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let place = input.uv / 0.35;
+    if place.x > 1.0 || place.y > 1.0 {
+        return input.color;
+    }
+    return textureSampleLevel(echo, echoSampler, effectPassUv(place), 0.0);
 }
 `;
 
@@ -145,7 +159,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 			scale: 0.25,
 			input: 'sceneColor',
 		});
-		screen(textures.fromPass(monitor), 0);
+		post.addEffect({ wgsl: inset, textures: { echo: textures.fromPass(monitor) } });
 		return {};
 	}
 

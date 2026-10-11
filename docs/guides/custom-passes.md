@@ -277,7 +277,7 @@ const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { poin
 const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.fromPass(pass) } });
 ```
 
-- The pass follows the active camera. The quality preset sets its size: half the render size each way on Medium and High.
+- The pass follows the active camera. The quality preset sets its size: half the canvas's size each way on Medium and High.
 - The surface function puts the pass's color in the surface's `reflection`. The engine's lighting then weighs it with the material's Fresnel, so water reflects little straight down and much at a low angle.
 - `scale: 1` gives a sharp mirror. `every: 2` draws the reflection in every other frame, for a camera that moves slowly.
 - A reflection draws the scene's background and the sun's light and shadows. It draws no point or spot lights and no ambient occlusion yet.

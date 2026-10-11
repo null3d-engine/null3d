@@ -521,8 +521,8 @@ export const FULLSCREEN_SKETCH = 'tests/pages/sketches/fullscreen-sketch.ts';
  * Full-screen passes on every tier. The first test chains a scene pass at a quarter of the
  * canvas's size into a full-screen pass that posterizes it, and paints a second texture from
  * nothing, which shows upright: red at its top. The glow test blurs the outline mask at half size
- * and adds it to the scene's color through an effect's texture. The echo test shows the scene
- * color of the frame before on a screen, through a pass that reads it.
+ * and adds it to the scene's color through an effect's texture. The echo test reads the scene
+ * color at a quarter size in a full-screen pass, and an effect shows it as an inset.
  */
 function fullscreenTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -547,9 +547,10 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
- * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
- * boxes with a point light and a spot light, which their reflections show too. The reflection spec
- * checks where the boxes' reflections land, and that no magenta shows.
+ * The quarter test draws the reflection at a quarter of the canvas's size. The lamps test lights the
+ * boxes with a point light and a spot light, which their reflections show too. The half-scale
+ * test draws the frame at a render scale of 0.5, and the reflection still fills the floor. The
+ * reflection spec checks where the boxes' reflections land, and that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -562,6 +563,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
 		test('reflection-lamps', '?lamps'),
+		test('reflection-scale-50', '?half'),
 	];
 }
 

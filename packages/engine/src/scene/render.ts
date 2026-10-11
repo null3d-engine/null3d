@@ -2,7 +2,7 @@
 // pass draws the scene from a camera of the sketch into a texture of its own size, which
 // `textures.fromPass` gives to materials and sprites, as a minimap or a security camera's screen
 // shows it. A reflection pass draws the camera's view mirrored across a plane, into a texture of
-// the render size or a part of it, which a custom material reads where its surface shows on the
+// the canvas's size or a share of it, which a custom material reads where its surface shows on the
 // screen, as water and polished floors do. A full-screen pass runs the sketch's WGSL, written as a
 // custom effect's, over the whole of a texture of its own: a blur step, a mask's edges or a
 // texture that the GPU makes, which materials and effects read. The engine core checks each
@@ -114,7 +114,7 @@ export interface ReflectionPlane {
 
 /**
  * Options of `render.addPass` for a reflection pass, which draws the camera's view mirrored across
- * a plane into a texture of the render size or a part of it. A custom material reads it where its
+ * a plane into a texture of the canvas's size or a share of it. A custom material reads it where its
  * surface shows on the screen, with `reflection_uv` from `null3d::reflection`, and lights it as
  * the surface's `reflection`. Nothing below the plane shows in it.
  *
@@ -131,8 +131,8 @@ export interface ReflectionPassOptions {
 	 */
 	readonly writes: string;
 	/**
-	 * The texture's size as a share of the render size each way. It follows the quality preset's
-	 * `reflectionScale` by default.
+	 * The texture's size as a share of the canvas's size each way, which the pass fills at any
+	 * render scale. It follows the quality preset's `reflectionScale` by default.
 	 */
 	readonly scale?: PassScale;
 	/**
@@ -399,8 +399,7 @@ export class Render {
 		const reflection = scene ? undefined : (options as ReflectionPassOptions);
 		const [nx, ny, nz] = reflection?.plane.normal ?? [0, 1, 0];
 		const [px, py, pz] = reflection?.plane.point ?? [0, 0, 0];
-		// A scene pass's share of the canvas, and a reflection's of the render size, or 0 for the
-		// preset's.
+		// A pass's share of the canvas, or 0 for a reflection that takes the preset's.
 		const scale = options.scale ?? (scene ? 1 : 0);
 		this.shaders.need('views');
 		const place = this.core.check(

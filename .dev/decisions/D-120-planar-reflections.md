@@ -74,6 +74,8 @@ Point and spot lights stay out, as in scene passes. The light grid lists each cl
 
 Update, 11 October 2026: D-104's follow-up task gave each camera view its own grid, the reflection's included. The reflection's grid takes its planes from the reflection's own matrix, so a shader finds the right cluster. The reflection now draws the lamps that it sees, and the warning is gone ([D-104](D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)).
 
+Update, 11 October 2026: below a render scale of 1, the reflection drew into the top-left corner of its texture, as the scene's own targets do, while `reflection_uv` reads the whole texture. The test `reflection-scale-50` showed the floor black at a render scale of 0.5 on all three tiers. The texture now takes its share of the canvas's size, which the pass fills at any render scale (`Size::Share`, [D-104](D-104-scene-passes.md) part 2). Its cost no longer drops with the render scale.
+
 The 8-bit path serves compatibility mode with MSAA and WebGL2 without float targets. There the reflection's texture holds tone mapped color, as a scene pass's does ([D-104](D-104-scene-passes.md#display-color-on-the-8-bit-path-owner-8-october-2026)). The material applies the tone curve again, so the reflected sky looks grayer there. The image tests show it in compatibility mode.
 
 ### Size and pace
