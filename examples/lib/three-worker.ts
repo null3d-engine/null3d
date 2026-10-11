@@ -642,7 +642,9 @@ class ThreeRuntime {
 				height,
 			)) as ArrayBufferView;
 			const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-			pixels = packRows(bytes, width, height, bytes.length / height, false);
+			// The WebGL2 backend reads a target's rows from the bottom, as WebGL keeps them.
+			const bottomFirst = renderer.backend?.isWebGPUBackend !== true;
+			pixels = packRows(bytes, width, height, bytes.length / height, bottomFirst);
 			target.dispose();
 		} else {
 			drawer.render();

@@ -147,6 +147,9 @@ for (const engine of ['null3d', 'threejs'] as const)
 		page,
 	}) => {
 		test.skip(softwareGpu(), "the software GPU's browser measures no memory");
+		// Chrome answers each measurement of Battle's whole page after about a minute on the Mac, and
+		// the page measures twice: the memory, and its parts.
+		test.setTimeout(300_000);
 		await page.goto(
 			`compare.html?compare=battle&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=3`,
 		);
@@ -157,7 +160,7 @@ for (const engine of ['null3d', 'threejs'] as const)
 				fps: number;
 				memory: { bytes: number | null; browserBytes: number | null } | null;
 			};
-		}>(page, 100_000);
+		}>(page, 280_000);
 		expect(result.error).toBeUndefined();
 		expect(result.measured.count).toBe(400);
 		expect(result.measured.fps).toBeGreaterThan(0);

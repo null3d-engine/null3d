@@ -135,7 +135,7 @@ Built 2026-10-11, task M2-EX6. Battle is the second comparison, and the comparis
 - The rifle stays in the file, because null3D attaches a rigid mesh to a joint only from the file: its joints are not objects. three.js's `SkeletonUtils.clone` keeps the mesh under the bone. So the weapon follows the hand the same way in both engines.
 - The mech is Quaternius's CC0 George, as the old repository converted it: one skinned mesh of 3,000 triangles with four clips. The old repository's source links on Google Drive refused downloads on 11 October 2026 (quota exceeded), and no other copy of George was found. The sample-assets entry `characters/quaternius-mech` records the conversion and the source file's SHA-256.
 - The soldier keeps the source's detail: 5,828 triangles for the body and 1,122 for the rifle, about three times the old repository's simplified soldier. A comparison of ready-made assets draws them as made.
-- The skinned body's node in the source has a scale and a turn. The glTF rules ignore a skinned mesh's node transform, and three.js's loader applies it. The script bakes it into the vertices and into the inverse bind matrices, and puts the node at the origin, so both readings draw the same model. Baking it into the vertices alone drew each soldier 58 times too large and bent out of shape.
+- The skinned body's node in the source has a scale and a turn. The glTF rules ignore a skinned mesh's node transform, and three.js's loader applies it. The script bakes it into the vertices and into the inverse bind matrices, and puts the node at the origin. So both readings draw the same model. Baking it into the vertices alone drew each soldier 58 times too large and bent out of shape.
 
 ### How each engine builds it
 
@@ -162,7 +162,7 @@ The owner raised the bar on 11 October 2026: every comparison meets the look bar
 | Light of each blast and fire | A pool of 6 point lights for the newest blasts, and one light for each of the 7 fires on wrecks and in craters | The same lights |
 | Bloom, ambient occlusion, curve, grade | null3D's chain, AO, AgX and grading table | As for Factory |
 
-- Each sprite atlas keeps its frames as an upright image, top row first. null3D reads it that way. A three.js `DataTexture` without a flip puts the top row at v = 0, so the three.js sprite shader turns each frame's v around to draw it upright too.
+- Each sprite atlas keeps its frames as an upright image, top row first. null3D reads it that way. A three.js `DataTexture` without a flip puts the top row at v = 0. So the three.js sprite shader turns each frame's v around, to draw it upright too.
 - three.js draws a layer's sprites in one draw, unsorted. null3D sorts blended sprites from back to front. Smoke is soft enough that the order shows little.
 - The particles add-on (D-131) will take the null3D side of each layer. The scene's rows and the three.js side stay.
 - The sky's clouds stand still in both engines. Moving clouds would refresh null3D's sky light every frame, and three.js's PMREM pass would need to run again.
