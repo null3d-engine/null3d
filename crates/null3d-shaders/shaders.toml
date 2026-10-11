@@ -627,9 +627,12 @@ bits = ["INSTANCE_INDEX"]
 bits = ["ROW_VALUES"]
 
 # A page downloads the LOD_FADE builds of the mesh templates with its first mesh whose levels of
-# detail fade. Until they arrive, the fading levels draw nothing, for a frame or two.
+# detail fade. Until they arrive, the fading levels draw nothing, for a frame or two. It takes the
+# builds that it shares with alpha to coverage, so the coverage files do not grow on pages without
+# levels.
 [first_use.lod_fade]
 bits = ["LOD_FADE"]
+claims_shared_builds = true
 
 # The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
 # entry point is `main`. WebGPU only.

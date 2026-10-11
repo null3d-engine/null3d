@@ -2,16 +2,16 @@
 
 Status: proposed by the helper of M2-I4 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-I4.
 
-Summary: `mesh.setLevels` gives a mesh levels of detail: simpler meshes, each with its error in the mesh's units. Every object and every instance batch row that draws such a mesh picks one level per frame, the coarsest whose error covers less than a pixel threshold on the screen. The GPU's culling shader picks it on WebGPU and the job workers pick it on WebGL2, with one stateless rule, so both paths switch at the same distances. Near a switch, the two levels cross-fade with a 4 × 4 dither, from a band of builds that only fading objects use. Shadow views pick with the main camera's position and a larger threshold, so shadows draw a coarser level. The governor's render scale feeds the rule, and a governor step raises the threshold when frames run late.
+Summary: `mesh.setLevels` gives a mesh levels of detail: simpler meshes, each with its error in the mesh's units. Every object and every instance batch row that draws such a mesh picks one level per frame. It picks the coarsest level whose error covers less than a pixel threshold on the screen. The GPU's culling shader picks it on WebGPU and the job workers pick it on WebGL2. Both use one stateless rule, so both paths switch at the same distances. Near a switch, the two levels cross-fade with a 4 × 4 dither, from a band of builds that only fading objects use. Shadow views pick with the main camera's position and a larger threshold, so shadows draw a coarser level. The governor's render scale feeds the rule, and a governor step raises the threshold when frames run late.
 
 ## Question
 
-Creek needs denser forests and Night town a bigger skyline at the same cost. A far tree of 2,000 triangles covers a few pixels, and its vertex work buys nothing. three.js has the `LOD` object, and the asset tool already writes levels with their errors ([D-91](D-91-level-planning.md)), but the engine draws only the full mesh. How does the engine pick a level for each object and each instance row, on both GPU paths, without a visible pop, and what do the shadows draw?
+Creek needs denser forests and Night town a bigger skyline at the same cost. A far tree of 2,000 triangles covers a few pixels, and its vertex work buys nothing. three.js has the `LOD` object, and the asset tool already writes levels with their errors ([D-91](D-91-level-planning.md)). But the engine draws only the full mesh. How does the engine pick a level for each object and each instance row, on both GPU paths, without a visible pop? And what do the shadows draw?
 
 ## Rule
 
 - Levels switch where the screen-error rule says, at the same distances on WebGPU, compatibility mode and WebGL2 (the task's done-when).
-- The rule is Godot's: the coarsest level whose error, projected on the screen, is under the threshold of 1 pixel, with the render scale in the screen's height ([D-53](D-53-technique-defaults.md)).
+- The rule is Godot's: the coarsest level whose error, projected on the screen, is under the threshold of 1 pixel. The screen's height includes the render scale ([D-53](D-53-technique-defaults.md)).
 - A switch does not pop: the levels hand over smoothly, or the record states the alternative.
 - Shadows use a coarser level. A shadow never shows another level's silhouette on its own caster's surface by more than the normal bias hides.
 - No cost for scenes without levels: no new upload, no shader download, no bucket and no branch that costs measurable time (design principle 8).
@@ -28,14 +28,14 @@ Creek needs denser forests and Night town a bigger skyline at the same cost. A f
 | B: one object per level, as three.js's `LOD` holds one child per level, each culled with a band of distances | Rejected. A batch of 50,000 trees would need a batch per level, each with the rows' matrices, cells and uploads again. Culling work and memory grow with the levels |
 | C: the sketch switches meshes with `setMesh` | Rejected. A mesh change rebuilds every draw table, records each view's bundle again and uploads every matrix |
 
-With option A, `mesh.setLevels([{ mesh, error }, ...])` gives a mesh its lower levels, as Unity's mesh levels and glTF's `MSFT_lod` attach them to a mesh. Objects and batches keep the base mesh's id, so picking, raycasts, skinning, the software occlusion blockers and the transparent pass read the mesh as before. The glTF loader calls `setLevels` from `MSFT_lod`. Each level keeps its own engine mesh, so it draws from its own index range in the pages, and must have the base mesh's vertex attributes, as it draws with the base mesh's pipelines.
+With option A, `mesh.setLevels([{ mesh, error }, ...])` gives a mesh its lower levels, as Unity's mesh levels and glTF's `MSFT_lod` attach them to a mesh. Objects and batches keep the base mesh's id. So picking, raycasts, skinning, the software occlusion blockers and the transparent pass read the mesh as before. The glTF loader calls `setLevels` from `MSFT_lod`. Each level keeps its own engine mesh, so it draws from its own index range in the pages. It must have the base mesh's vertex attributes, as it draws with the base mesh's pipelines.
 
 | Option | Verdict |
 | --- | --- |
 | The object's mesh id names a level set, with a bit of its own | Rejected. Every reader of an object's mesh (raycasts, skinning, morphs, blockers, the sorted pass, mesh destruction) would have to resolve the set first |
 | A level set as a mesh of its own, sharing the base mesh's parts | Rejected. Removing a mesh moves the parts of the meshes after it, and a shared part would move under the set |
 
-A level's bucket key names it with a level key, a bit and the base mesh's id with the level's number, so a level's bucket never merges with the bucket of an object that draws the same simple mesh as a mesh of its own.
+A level's bucket key holds a level bit, the base mesh's id and the level's number. So a level's bucket never merges with the bucket of an object that draws the same simple mesh as a mesh of its own.
 
 ### Picking the level
 
@@ -47,7 +47,7 @@ The rule, for a source whose sphere centre lies at distance `d` from the main ca
 level j draws when  error[j] × scale × k < threshold × d,  with k = render height × P[1][1] / 2
 ```
 
-`scale` is the largest axis scale of the source's world matrix, which both paths compute from the same matrix. The error grows from level to level, so the walk stops at the first level that fails. `d` is the Euclidean distance, so turning the camera never changes a level. An orthographic camera uses `d = 1`, since its pixels do not shrink with distance.
+`scale` is the largest axis scale of the source's world matrix. Both paths compute it from the same matrix. The error grows from level to level, so the walk stops at the first level that fails. `d` is the straight-line distance. So turning the camera never changes a level. An orthographic camera uses `d = 1`, since its pixels do not shrink with distance.
 
 | Option | Verdict |
 | --- | --- |
@@ -94,7 +94,7 @@ Shadow cascades, shadow tiles, mirrors and the outline view already place every 
 | Shadows pick by the light's view | Rejected. A cascade's orthographic view would pick by the cascade's texel size, and a caster could shadow its own surface with a level far from the one the camera sees |
 | Shadows always draw the base level | Rejected. The shadow passes would keep the full vertex cost of a dense forest |
 
-Far cascades and shadow tiles keep their drawn depth between redraws. A level change then shows in them at their next redraw, which is within the far cascades' interval, or when the tile's light or a caster moves.
+Far cascades and shadow tiles keep their drawn depth between redraws. A level change then shows in them at their next redraw. That comes within the far cascades' interval, or when the tile's light or a caster moves.
 
 ### The governor
 
@@ -115,7 +115,7 @@ To be measured. The rows below give the plan.
 
 ## Data
 
-To be measured: a dense forest of instanced trees and a skyline of objects, on the Mac's GPU, with levels on and off, on each path. GPU time per frame, CPU time per thread, triangles drawn.
+To be measured on the Mac's GPU, on each path, with levels on and off. The scenes: a dense forest of instanced trees and a skyline of objects. The figures: GPU time per frame, CPU time per thread, triangles drawn.
 
 ### Trees with leaf cards
 
@@ -123,7 +123,7 @@ Creek's trees will come from glTF files whose leaves are cards: quads with an al
 
 The cause is in the level planner ([D-91](D-91-level-planning.md)). It locks each list's border, so the lists of a mesh still meet. Every vertex of a card lies on the card's border, so no card can lose a triangle. The trunk halves to 192 triangles, but the step keeps 1,392 of 1,584, more than three quarters, and the planner stops before the first level. Without the lock, meshopt's simplifier folds each card into one triangle. That cuts away half of each card's leaf texture, so it is no answer either.
 
-So for trees with leaf cards, the planner needs a step of its own for lists of separate cards: keep a share of the cards, spread evenly over the crown, and grow each kept card so that the crown keeps its cover. The error of such a level is the size of the cards it drops. Until then, an author can make the levels in Blender and export them with `MSFT_lod`, which the loader reads. The forest demo's procedural pines make their levels in code.
+So for trees with leaf cards, the planner needs a step of its own for lists of separate cards. The step keeps a share of the cards, spread evenly over the crown. It grows each kept card, so that the crown keeps its cover. The error of such a level is the size of the cards it drops. Until then, an author can make the levels in Blender and export them with `MSFT_lod`, which the loader reads. The forest demo's procedural pines make their levels in code.
 
 ## Decision
 
@@ -133,15 +133,15 @@ Pending the data.
 
 - Skinned and morphed objects draw their base level: their vertices come from regions of their own, which levels do not have yet.
 - Blended and transmissive sources draw their base level: the transparent pass sorts them on the job workers with buckets of its own.
-- Custom materials, and masks that test their alpha by the hash, switch levels at once: their builds have no fading level. Masks with alpha to coverage, the default for foliage, fade: the dither drops whole pixels after the coverage test, so each kept pixel keeps its smoothed edge (see "Masks with alpha to coverage" below).
+- Custom materials, and masks that test their alpha by the hash, switch levels at once: their builds have no fading level. Masks with alpha to coverage, the default for foliage, fade. The dither drops whole pixels after the coverage test, so each kept pixel keeps its smoothed edge (see "Masks with alpha to coverage" above).
 - A static batch with levels is not culled in groups of 64 rows on WebGL2, so each row can pick its own level.
 - Levels are separate engine meshes, so the levels from a glTF file that share the base mesh's vertices take a copy of them each.
 - The three.js mapping's `LOD (addLevel)` entry maps to `mesh.setLevels`, with distances converted at a 50 degree field of view on a screen 1,080 pixels high.
 
 ## Follow-ups
 
-1. Levels for skinned objects, first. Battle's armies are skinned, so they gain nothing yet. The WebGPU skinning pass skins each object's vertices into a region of its own. Each level would need a region, and the skinning pass would skin only the level that the object draws. A skinned object's level can be picked on the CPU before the skinning pass, as skinned objects are few. Expected gain, an estimate to measure: S5's Knight has 4,957 vertices, and its first level switches in at 12.8 m (D-91), each level halving the one above. An army seen from 30 to 60 m away would draw levels 2 and 3, a quarter to an eighth of the vertices. Skinning and vertex shading would then cost about a third of today's, so the skinning pass and the shadow passes, which grow with the vertices, would take roughly half their GPU time or less.
+1. Levels for skinned objects, first. Battle's armies are skinned, so they gain nothing yet. The WebGPU skinning pass skins each object's vertices into a region of its own. Each level would need a region, and the skinning pass would skin only the level that the object draws. A skinned object's level can be picked on the CPU before the skinning pass, as skinned objects are few. Expected gain, an estimate to measure: S5's Knight has 4,957 vertices, and its first level switches in at 12.8 m (D-91). Each level halves the one above. An army seen from 30 to 60 m away would draw levels 2 and 3, a quarter to an eighth of the vertices. Skinning and vertex shading would then cost about a third of today's. The skinning pass and the shadow passes grow with the vertices, so they would take roughly half their GPU time or less.
 2. Levels for blended and transmissive sources, in the transparent pass's own buckets.
 3. Fading builds for custom materials, which double their builds, and for the alpha hash.
 4. Levels as index ranges of the base mesh's vertices, so a file's levels take no copy of them.
-5. Levels for trees with leaf cards in the asset tool: a step that keeps a share of the cards and grows them ("Trees with leaf cards" above). Creek needs it to use levels for trees from files.
+5. Levels for trees with leaf cards in the asset tool. The step keeps a share of the cards and grows them ("Trees with leaf cards" above). Creek needs this step before its trees from files can use levels.

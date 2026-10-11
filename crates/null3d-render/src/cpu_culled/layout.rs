@@ -436,9 +436,7 @@ impl Layout {
                 .expect("level keys name known levels");
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (first, prepass) = pipelines_of(pipelines, pipeline);
-            // A fading level draws only part of its pixels, so its depth stays out of the prepass.
             let pairs = is_fade_key(&key);
-            let prepass = if pairs { 0 } else { prepass };
             // Each key's bucket of rows is at twice its place in the keys.
             let links = links_of(key, &self.key_counts, levels, meshes, eligible);
             self.level_links.push(LevelLink {

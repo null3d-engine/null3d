@@ -29,7 +29,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
-use crate::levels::{BucketKey, KeyLinks, expand_level_keys, is_fade_key, links_of};
+use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
@@ -733,9 +733,6 @@ impl Layout {
                 Drawn::Scene => {
                     let own = pipeline.places_own_vertices();
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
-                    // A fading level draws only part of its pixels, so its depth stays out of the
-                    // depth prepass and the occluders' pass.
-                    let prepass = if is_fade_key(&key) { 0 } else { prepass };
                     (pipeline, prepass, own)
                 }
             };
