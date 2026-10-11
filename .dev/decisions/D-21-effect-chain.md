@@ -1,8 +1,8 @@
 # D-21: The effect chain: bloom's method, effects on the 8-bit path, and where ambient occlusion applies
 
-Status: decided for the 8-bit path, 2026-10-03. Decided for ambient occlusion's placement and method, 2026-10-04. Decided again for bloom's method, 2026-10-05: the mip chain, after [D-53](D-53-technique-defaults.md) ruling 1 and prototype P2. Pending: the final chain's GPU time on the Galaxy S25, the Pixel 9 and the Pixel 11 (the `bloom-sizes` plan). Also pending: bloom's and ambient occlusion's cost on the iPad (the `ao` plan). Date: 2026-10-03. Tasks: M2-F1, M2-F2, M2-F7.
+Status: decided for the 8-bit path, 2026-10-03. Decided for ambient occlusion's placement and method, 2026-10-04. Decided again for bloom's method, 2026-10-05: the mip chain, after [D-53](D-53-technique-defaults.md) ruling 1 and prototype P2. Timed on the Galaxy S25, the Pixel 9 and the Pixel 11, 2026-10-11. After the owner's ruling of 11 October, the Pixel 11 is a known exception to the rule on bloom's GPU time. Pending: the owner's choice between Low's bases of 128 and 64. Also pending: bloom's and ambient occlusion's cost on the iPad (the `ao` plan). Date: 2026-10-03. Tasks: M2-F1, M2-F2, M2-F7.
 
-Summary: Bloom draws a mip chain sized on the canvas's shorter side, the only bloom in the core: 13-tap steps down with a Karis average, tent steps up, one read in the final pass, levels in `rgba16float`. Bases of 128 on Low and 512 elsewhere; the governor halves it with no GPU object. It reads 7.6 texels per pixel at 1080p against 10.8, and costs 0.79 to 0.85 ms on the Mac. PowerVR pays about 0.28 ms per pass, so smaller bases with fewer levels save there. Ports map `UnrealBloomPass` and pmndrs settings through the porting skill. Compatibility mode with MSAA moves to HDR color with FXAA when bloom turns on. Ambient occlusion runs `GTAOPass`'s steps at half size and darkens only the ambient light: 0.04% of the pixels differ from `GTAOPass`, at 46% of its GPU time.
+Summary: Bloom draws a mip chain sized on the canvas's shorter side, the only bloom in the core: 13-tap steps down with a Karis average, tent steps up, one read in the final pass, levels in `rgba16float`. Bases of 128 on Low and 512 elsewhere; the governor halves it with no GPU object. It reads 7.6 texels per pixel at 1080p against 10.8, and costs 0.79 to 0.85 ms on the Mac. PowerVR pays about 0.3 ms per pass, so smaller bases with fewer levels save there. On the Pixel 11, Low's bloom still costs 1.0 to 1.25 ms more than `UnrealBloomPass`'s steps did. A base of 64 costs 0.4 to 0.7 ms more. The Pixel 11 is a known exception to the cost rule. Ports map `UnrealBloomPass` and pmndrs settings through the porting skill. Compatibility mode with MSAA moves to HDR color with FXAA when bloom turns on. Ambient occlusion runs `GTAOPass`'s steps at half size and darkens only the ambient light: 0.04% of the pixels differ from `GTAOPass`, at 46% of its GPU time.
 
 ## Question
 
@@ -70,9 +70,41 @@ The rule: the base is about half the render's shorter side at the preset's lowes
 | High | Desktops, at 2 | 1080 to 1440 | 0.75 | 405 to 540 | 512 |
 | Ultra | Desktops | 1080 and up | 1 | 540 and up | 512 |
 
-Low's 128 on the short side is close to the prototype's 256-row chain on the phones: 128 x 221 texels against 118 x 256. That chain cost 1.31 ms on the S25 and 0.79 ms on the Pixel 9, against 1.41 and 1.11 ms for the old steps. Low's chain has 4 fewer passes than that one, and its cost does not follow the render scale. So it should cost no more at scale 0.5 than the old steps' 1.18 and 0.92 ms on those phones. On the Pixel 11 the cost per pass gives about 3.0 to 3.2 ms for 11 passes, against 3.21 ms. The `bloom-sizes` plan checks these estimates.
+Low's 128 on the short side is close to the prototype's 256-row chain on the phones: 128 x 221 texels against 118 x 256. That chain cost 1.31 ms on the S25 and 0.79 ms on the Pixel 9, against 1.41 and 1.11 ms for the old steps. Low's chain has 4 fewer passes than that one, and its cost does not follow the render scale. So it should cost no more at scale 0.5 than the old steps' 1.18 and 0.92 ms on those phones. On the Pixel 11 the cost per pass gives about 3.0 to 3.2 ms for 11 passes, against 3.21 ms. The `bloom-sizes` plan checks these estimates. [The built chain on the phones](#the-built-chain-on-the-phones) gives its results. The estimates held on the S25 and the Pixel 9, and failed on the Pixel 11.
 
 384 rows, which the plan proposed for Low, keeps neither the glow's size nor a power of two. The glow's widest level would grow by a third. The base never takes more than half the canvas's shorter side, whatever the preset, so a small canvas drops its finest levels too.
+
+### The built chain on the phones
+
+The `bloom-sizes` plan timed the built chain on 11 October 2026, at commit f854dd72d of main. The old steps ran on the same phones in the same sittings, from the prototype's branch (`proto/p2-bloom`, its `bloom-p2` plan's `unreal` items). So both sides share a day, a browser and a phone's heat. Each figure is bloom's GPU time per frame, on less off, on WebGPU. Every phone ran Chrome 152 on BrowserStack Automate. Two figures in a cell come from two rounds of the same page.
+
+| Bloom, render scale 1 / 0.5 | Galaxy S25 (Adreno 830) | Pixel 9 (Mali-G715) | Pixel 11 (PowerVR C-Series) |
+| --- | --- | --- | --- |
+| `UnrealBloomPass`'s steps, 11 passes | 1.44 / 1.11 ms | 1.64 / 0.98 ms | 2.88, 2.75 / 2.75, 2.75 ms |
+| Chain, base 512, 15 passes | | | 4.39 / 4.46 ms |
+| Chain, base 256, 13 passes | | | 4.52 / 4.52 ms |
+| Chain, base 128 (Low), 11 passes | 1.25 / 1.25 ms | 0.79 / 1.05 ms | 3.93, 4.00 / 3.74, 3.74 ms |
+| Chain, base 64, 9 passes | 0.98 / 1.05 ms | 0.72 / 0.85 ms | 3.28, 3.28 / 3.47, 3.47 ms |
+
+The runs are `20261011-064442-bloom-sizes` and `20261011-065957-bloom-sizes` (Pixel 11), `20261011-070545-bloom-sizes` (S25 at 128, Pixel 9) and `20261011-071143-bloom-sizes` (S25 at 64). The old steps' runs are `20261011-065037-bloom-p2` and `20261011-070326-bloom-p2` (Pixel 11) and `20261011-071313-bloom-p2` (S25, Pixel 9). The S25's screen ran at 30 Hz again, so only its GPU times count. Chrome's timer on these phones counts in steps of about 0.066 ms.
+
+What the figures show:
+
+- On the S25 and the Pixel 9, Low's chain costs less than the old steps at render scale 1. At scale 0.5 it costs 0.14 and 0.07 ms more, one or two steps of the timer. The old steps' work follows the scale, and the chain's does not. A base of 64 costs less than the old steps at both scales on both phones.
+- On the Pixel 11, Low's chain costs 1.0 to 1.25 ms more than the old steps. A base of 64 costs 0.4 to 0.7 ms more. The 5 October runs gave 0.6 to 0.85 ms more. Those timed the two sides on different days, with Chrome 149.
+- The cost per pass on the Pixel 11 is about 0.3 ms between bases of 256 and 64. But the chain's 11 passes at 128 cost about 1.1 ms more than the old steps' 11 passes. So passes alone do not explain the Pixel 11's cost, and the estimate above was wrong. Each of the chain's passes costs more on this GPU. Two causes are likely, and no run has measured them. One is the levels' `rgba16float` format. The other is each step up blending into its level, so a tile GPU must load the level's earlier contents.
+- No base that the setting allows (64 and up) meets the rule on the Pixel 11. Even the 9 passes of 64 cost more there than the old steps' 11.
+
+The look of a base of 64 against 128 was checked in Chrome on the Mac with WebGPU. It drew at Low, on canvases of 540 x 932 and 932 x 540. The glow keeps its size. The mean distance of its light from the bright shapes moved by at most 0.002 of the shorter side. So did the distances that hold half and 90% of it. The glow holds 1 to 3% less light, and its core around each shape is a little softer. Between the two bases, pixels differ by up to 30 of 255 levels, on at most 0.92% of the pixels. That is the soft test bloom on the landscape canvas.
+
+A base of 64 on Low has one more effect. The governor's bloom step halves the base only above the smallest base, 64. So Low would lose that step. Its cheapest bloom stays the same, since the governor's step already took Low's 128 down to 64.
+
+### The owner's ruling of 11 October 2026
+
+The 5 October figures showed Low's bloom over the rule on the Pixel 11. The owner chose option 1: time a base of 64 on Low. If it meets the rule and keeps the look, it becomes Low's base. Otherwise, option 2: record the figures, and record the Pixel 11 as a known exception to the rule.
+
+A base of 64 keeps the look, but it does not meet the rule on the Pixel 11. So the Pixel 11 is a known exception. On PowerVR C-Series GPUs, Low's bloom costs more GPU time than `UnrealBloomPass`'s steps did. At a base of 128 it costs 1.0 to 1.25 ms more per frame. Low keeps its base of 128 until the owner decides whether a base of 64 should take its place. That base costs less on all three phones and brings the S25 and the Pixel 9 within the rule at both scales.
+
 
 ### Keeping the glow's size
 
@@ -214,7 +246,7 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
    - The levels have the canvas's shape and a fixed number of texels on its shorter side, at most half of it. The quality setting `bloomSize` sets the base: 128 on Low, 512 on Medium, High and Ultra. The governor's step halves it once, by corners, with no GPU object.
    - The levels are always `rgba16float`.
    - The frame writes the settings only when an input changes, and finds the textures by name once per compile of the graph.
-   - It meets the rules. It reads fewer texels than the old steps at every canvas size of the presets, and the final pass reads one texture. A new render scale and the governor's step make no GPU object, and the glow keeps its size. Low's chain should cost no more than the old steps on the phones, by the prototype's figures; the `bloom-sizes` plan confirms it. The mapping reaches `UnrealBloomPass`'s and pmndrs's look within the sanity comparison, so the `three-compat` add-on needs no `UnrealBloomPass` halo.
+   - It meets the rules. It reads fewer texels than the old steps at every canvas size of the presets, and the final pass reads one texture. A new render scale and the governor's step make no GPU object, and the glow keeps its size. On the Galaxy S25 and the Pixel 9, Low's chain costs less than the old steps at render scale 1. At 0.5 it costs one or two steps of the timer more. On the Pixel 11 it costs 1.0 to 1.25 ms more, a known exception to the rule (the owner's ruling of 11 October 2026). The mapping reaches `UnrealBloomPass`'s and pmndrs's look within the sanity comparison, so the `three-compat` add-on needs no `UnrealBloomPass` halo.
 2. On the 8-bit path that serves only MSAA, turning bloom on moves the engine to HDR color with FXAA. It stays there for the rest of its life. One place decides both outputs, `effectsOutput` in `page/limits.ts`, so the start and the move agree. Where the device has no HDR target in any mode, bloom stays off, and development builds warn once. The docs name that case.
 3. Ambient occlusion darkens the ambient light in the opaque pass, as the plan drew it. That gives the better image. Occlusion measures how much of the light from around a point reaches it, so it belongs to the ambient light. Direct light and highlights stay bright in the shade, where `GTAOPass` darkens them too. The placement costs the depth prepass, which is close to nothing in the parity scene on the Mac. It draws on the 8-bit path with no HDR color. The method is GTAO at half size, with three.js's kernels and denoise: a horizon search whose authors built it to match ray-traced occlusion. It costs 46% of `GTAOPass`'s GPU time on the same scene. With `GTAOPass`'s defaults, 0.04% of the pixels differ, so the shade falls in the same places at the same strength. The upsample is the opaque pass's depth-weighted read of four texels, with no pass of its own. It has not been timed apart from the rest. The iPad's figures from the `ao` plan can reopen the placement. The proposed rule: the prepass takes at most 10% of the iPad's GPU time where a preset turns ambient occlusion on.
 
@@ -273,3 +305,4 @@ Its preset rows. The quality setting `aoScale` sets its targets' share of the re
 - 2026-10-05: M2-F7 built the chain as the only bloom, as decision 1 now says.
 - 2026-10-05: the owner accepted the strong bloom's wider edge haze, about 17% of the pixels apart from three.js, with a sanity limit of 20%.
 - 2026-10-08: the horizon step stopped building normals from neighbors outside its corner. They drew dark dots along the image's bottom row and right column. The `ao-*` references were made again in both sets.
+- 2026-10-11: the phones timed the built chain against the old steps in the same sittings. No allowed base meets the cost rule on the Pixel 11, so the owner's ruling makes it a known exception. A base of 64 keeps the glow's look and costs less on all three phones; Low's base waits on the owner.
