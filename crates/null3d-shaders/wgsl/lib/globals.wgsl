@@ -1,5 +1,6 @@
 #define_import_path null3d::globals
-#import null3d::fog::{Fog, Aerial}
+#import null3d::fog::Fog
+#import null3d::sky_scattering::Aerial
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the

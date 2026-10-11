@@ -34,9 +34,8 @@ export default defineSketch(({ scene, materials, geometry, quality, time, page }
 		target: [0, 8, -100],
 	});
 	scene.setActiveCamera(camera);
-	const sun = [0.4, 0.15, -1];
-	const analytic = { sky: { sunPosition: sun, cloudCoverage: 0.35, time: 0 } };
-	const physical = { atmosphere: { sunPosition: sun, cloudCoverage: 0.35, aerialPerspective: 3 } };
+	// The sun's height in its direction, whose other parts stay the same.
+	let sunY = 0.15;
 	scene.createDirectionalLight({ direction: [-0.4, -0.15, 1], color: '#ffd2a8', intensity: 3 });
 	scene.createAmbientLight({ color: '#9db4ff', intensity: 0.3 });
 	scene.createMesh({
@@ -49,14 +48,25 @@ export default defineSketch(({ scene, materials, geometry, quality, time, page }
 	for (let k = 0; k < 200; k++) {
 		const distance = 10 * 1.03 ** k;
 		const size = 1 + distance * 0.02;
-		const position = [Math.sin(k * 2.4) * distance * 0.6, size, -distance];
-		scene.createMesh({ mesh: box, material: stone, position, scale: [size, size * 2, size] });
+		scene.createMesh({
+			mesh: box,
+			material: stone,
+			position: [Math.sin(k * 2.4) * distance * 0.6, size, -distance],
+			scale: [size, size * 2, size],
+		});
 	}
 	let drawn = false;
+	// Each background takes the sun's place when shown, as a literal that keeps its three numbers.
 	const show = () => {
-		if (drawn) scene.setBackground(physical);
+		if (drawn)
+			scene.setBackground({
+				atmosphere: { sunPosition: [0.4, sunY, -1], cloudCoverage: 0.35, aerialPerspective: 3 },
+			});
 		else if (NONE) scene.setBackground('#7f9fc8');
-		else scene.setBackground(analytic);
+		else
+			scene.setBackground({
+				sky: { sunPosition: [0.4, sunY, -1], cloudCoverage: 0.35, time: time.now },
+			});
 	};
 	show();
 	page.onMessage((message) => {
@@ -79,8 +89,7 @@ export default defineSketch(({ scene, materials, geometry, quality, time, page }
 		onUpdate() {
 			if (!MOVING) return;
 			// The sun sweeps from 4 to 20 degrees up and back every 8 seconds.
-			sun[1] = 0.21 - 0.14 * Math.cos(time.now * 0.785);
-			analytic.sky.time = time.now;
+			sunY = 0.21 - 0.14 * Math.cos(time.now * 0.785);
 			show();
 		},
 	};

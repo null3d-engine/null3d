@@ -364,9 +364,7 @@ export class SceneBackground {
 		let kind = BACKGROUND_KIND_SKY;
 		let texture = 0;
 		const atmosphere = isAtmosphereBackground(source);
-		this.shaders.need(
-			atmosphere ? 'physical_sky' : isSkyBackground(source) ? 'sky' : 'background',
-		);
+		this.shaders.need(atmosphere ? 'physical_sky' : isSkyBackground(source) ? 'sky' : 'background');
 		if (atmosphere) {
 			kind = BACKGROUND_KIND_ATMOSPHERE;
 			writeAtmosphere(values, source.atmosphere);
@@ -452,8 +450,7 @@ function writeAtmosphere(values: Float32Array, atmosphere: AtmosphereOptions): v
 	values[BACKGROUND_VALUE_GROUND_ALBEDO] = atmosphere.groundAlbedo ?? d.groundAlbedo;
 	values[BACKGROUND_VALUE_ALTITUDE] = atmosphere.altitude ?? d.altitude;
 	values[BACKGROUND_VALUE_METERS_PER_UNIT] = atmosphere.metersPerUnit ?? d.metersPerUnit;
-	values[BACKGROUND_VALUE_AERIAL_PERSPECTIVE] =
-		atmosphere.aerialPerspective ?? d.aerialPerspective;
+	values[BACKGROUND_VALUE_AERIAL_PERSPECTIVE] = atmosphere.aerialPerspective ?? d.aerialPerspective;
 	values[BACKGROUND_VALUE_CLOUD_COVERAGE] = atmosphere.cloudCoverage ?? s.cloudCoverage;
 	values[BACKGROUND_VALUE_CLOUD_DENSITY] = atmosphere.cloudDensity ?? s.cloudDensity;
 	values[BACKGROUND_VALUE_CLOUD_ELEVATION] = atmosphere.cloudElevation ?? s.cloudElevation;

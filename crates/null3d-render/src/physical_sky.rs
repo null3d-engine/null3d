@@ -24,8 +24,7 @@
 
 use null3d_gpu::drawlist::{
     DrawList, NO_TARGET, Op, address, buffer_usage as usage, compare, filter, format,
-    layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage,
-    view,
+    layout as bind_layout, pass_flags, resource_kind, state_flags, template, texture_usage, view,
 };
 
 use crate::bloom::bytes_of;
@@ -225,7 +224,7 @@ impl SkyUniform {
 }
 
 /// The air between the camera and each surface, laid out as the shaders' `Aerial` in
-/// `null3d::fog`: lengths in the scene's units, light exposed. All zero without a physical sky.
+/// `null3d::sky_scattering`: lengths in the scene's units, light exposed. All zero without a physical sky.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct AerialUniform {
@@ -300,7 +299,9 @@ pub(crate) fn record_frame(
     list: &mut DrawList,
     arena: &mut UploadArena,
 ) -> Result<(bool, u32), RecordError> {
-    let sky = settings.physical_sky().map(|(atmosphere, intensity)| (*atmosphere, intensity));
+    let sky = settings
+        .physical_sky()
+        .map(|(atmosphere, intensity)| (*atmosphere, intensity));
     pass.record(
         list,
         arena,
@@ -312,7 +313,8 @@ pub(crate) fn record_frame(
     if let Some(height) = pass.height() {
         settings.sky_maps_mut().set_height(height);
     }
-    let drawn = settings.sky_maps().wants_panorama(settings.textures()) && pass.record_panorama(list)?;
+    let drawn =
+        settings.sky_maps().wants_panorama(settings.textures()) && pass.record_panorama(list)?;
     Ok((drawn, pass.panorama()))
 }
 

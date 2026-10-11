@@ -200,7 +200,12 @@ describe('timeOfDay', () => {
 				const day = timeOfDay(h, { model: 'physical' });
 				const change = (a: number, b: number) => Math.abs(a - b) / Math.max(a, b, 1e-6);
 				expect(change(day.exposure, before.exposure)).toBeLessThan(0.4);
-				expect(change(luminance(day.ambient.color) * day.ambient.intensity, luminance(before.ambient.color) * before.ambient.intensity)).toBeLessThan(0.5);
+				expect(
+					change(
+						luminance(day.ambient.color) * day.ambient.intensity,
+						luminance(before.ambient.color) * before.ambient.intensity,
+					),
+				).toBeLessThan(0.5);
 				before = day;
 			}
 		}

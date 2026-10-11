@@ -14,9 +14,8 @@
 //
 // A texel's place is its fragment position over the target's size. Rows count from the target's
 // first row on every GPU path, as textures sample them, so the tables need no flip.
-#import null3d::sky_scattering::{SkyValues, medium_at, ray_sphere, ground_hit, transmittance_uv, transmittance_point, multiscatter_uv, sky_view_uv, sky_view_direction, panorama_direction, from_texels, TRANSMITTANCE_SIZE, MULTISCATTER_SIZE, SKY_VIEW_SIZE, PI}
+#import null3d::sky_scattering::{SkyValues, medium_at, ray_sphere, ground_hit, transmittance_uv, transmittance_point, multiscatter_uv, sky_view_uv, sky_view_direction, panorama_direction, rayleigh_phase, mie_phase, from_texels, TRANSMITTANCE_SIZE, MULTISCATTER_SIZE, SKY_VIEW_SIZE, PI}
 #import null3d::sky_clouds::{clouds}
-#import null3d::fog::{rayleigh_phase, mie_phase}
 
 @group(0) @binding(0) var<uniform> values: SkyValues;
 @group(0) @binding(1) var transmittance_table: texture_2d<f32>;

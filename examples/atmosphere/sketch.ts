@@ -52,7 +52,8 @@ function land(): MeshArrays {
 		const y = heightAt(x, z);
 		positions.set([x, y, z], v * 3);
 		const steep = Math.hypot(heightAt(x + 30, z) - y, heightAt(x, z + 30) - y) / 30;
-		const forest = math.smoothstep(math.randFloat(0, 1), 0.35, 0.65) * (1 - math.smoothstep(y, 600, 800));
+		const forest =
+			math.smoothstep(math.randFloat(0, 1), 0.35, 0.65) * (1 - math.smoothstep(y, 600, 800));
 		const rock = math.smoothstep(steep, 0.45, 0.7);
 		const snow = math.smoothstep(y + 120 * math.randFloat(-1, 1), 900, 1050) * (1 - rock * 0.6);
 		for (let c = 0; c < 3; c++) {
@@ -87,7 +88,11 @@ export default defineSketch(async (ctx) => {
 	camera.lookAt(...TARGET);
 	scene.setActiveCamera(camera);
 	// The pointer points at an upright plane across the valley: left is morning, right evening.
-	const view = interact(ctx, camera, { target: TARGET, planeZ: 0, bounds: [-6e3, -1e4, -1, 6e3, 1e4, 1] });
+	const view = interact(ctx, camera, {
+		target: TARGET,
+		planeZ: 0,
+		bounds: [-6e3, -1e4, -1, 6e3, 1e4, 1],
+	});
 
 	math.seed(11);
 	const ground = materials.standard({ color: '#ffffff', roughness: 0.95 });
@@ -95,7 +100,12 @@ export default defineSketch(async (ctx) => {
 	// The lake mirrors the sky's environment, smooth and dark.
 	const lake = materials.standard({ color: '#0b1a22', roughness: 0.06, metalness: 0.1 });
 	const plane = geometry.plane({ width: WIDTH, height: WIDTH });
-	scene.createMesh({ mesh: plane, material: lake, position: [0, LAKE, 0], rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] });
+	scene.createMesh({
+		mesh: plane,
+		material: lake,
+		position: [0, LAKE, 0],
+		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+	});
 
 	// Pines on the gentle slopes near the camera, each a cone on the ground at a seeded place.
 	const pine = geometry.cone({ radius: 5, height: 22, radialSegments: 7 });

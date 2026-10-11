@@ -1,4 +1,5 @@
 #define_import_path null3d::sky_scattering
+#import null3d::fog::{fog_height_ratio}
 
 // The physical sky's air: Rayleigh and Mie scattering and ozone over a round planet, after
 // Hillaire's "A Scalable and Production Ready Sky and Atmosphere Rendering Technique" (2020), as
@@ -11,6 +12,8 @@
 // The sky view table gives the light of the whole sky seen from the camera's height. This module
 // holds the model and the tables' mappings. The shaders that draw and read the tables bind them
 // in their own groups. The renderer's `physical_sky_light` module holds a CPU copy of the model.
+// The aerial perspective, the air between the camera and each surface, needs no table: the mesh
+// shaders' fog step finds it from the values of each frame.
 
 
 const PI: f32 = 3.141592653589793;
@@ -217,4 +220,62 @@ fn sun_disc(d: vec3f, toward: vec3f, light: f32, cos_radius: f32, through: vec3f
     let limb = 1.0 - 0.6 * (1.0 - mu);
     let solid_angle = 2.0 * PI * (1.0 - cos_radius);
     return through * (light / solid_angle * limb * edge / 0.8);
+}
+
+/// The air between the camera and each surface: the physical sky's aerial perspective, as the
+/// engine writes it into each frame's values for the camera that draws. All zero while the scene
+/// draws no physical sky. Lengths are in the scene's units, and light is exposed.
+struct Aerial {
+    /// Rayleigh's scattering per unit of distance at the camera's height, which is also its
+    /// extinction, and Mie's scattering in `w`.
+    rayleigh: vec4f,
+    /// Mie's extinction per unit at the camera's height, how fast Rayleigh's and Mie's densities
+    /// fall per unit of height, and Mie's directional g.
+    shape: vec4f,
+    /// The unit direction toward the sun, and the red of the light that scatters more than once.
+    sun: vec4f,
+    /// The sun's light at the camera, and the green of the light that scatters more than once.
+    sun_light: vec4f,
+    /// The unit direction toward the moon, and the blue of the light that scatters more than once.
+    moon: vec4f,
+    /// The moon's light at the camera, and 1 while the scene draws the physical sky, else 0.
+    moon_light: vec4f,
+}
+
+/// Rayleigh's phase function.
+fn rayleigh_phase(cos_theta: f32) -> f32 {
+    return 0.05968310365946075 * (1.0 + cos_theta * cos_theta);
+}
+
+/// The Cornette-Shanks phase function of Mie scattering, of directional factor `g`.
+fn mie_phase(cos_theta: f32, g: f32) -> f32 {
+    let g2 = g * g;
+    let base = max(1.0 + g2 - 2.0 * g * cos_theta, 1e-4);
+    return 0.11936620731892151 * (1.0 - g2) * (1.0 + cos_theta * cos_theta) / ((2.0 + g2) * base * sqrt(base));
+}
+
+/// A color `c` at `relative`, its position relative to the camera, seen through the physical
+/// sky's air. The air dims it by Rayleigh's and Mie's extinction along the ray, and adds the light
+/// that it scatters toward the camera from the sun, the moon and the sky. Each density falls
+/// exponentially with height, so each integrates exactly along the ray, as height fog does. Over a
+/// scene's distances, the light at each point of the ray is the light at the camera.
+fn aerial_perspective(air: Aerial, c: vec3f, relative: vec3f) -> vec3f {
+    if (air.moon_light.w == 0.0) {
+        return c;
+    }
+    let distance = length(relative);
+    let rayleigh = air.rayleigh.xyz * (distance * fog_height_ratio(air.shape.y * relative.y));
+    let mie_path = distance * fog_height_ratio(air.shape.z * relative.y);
+    let mie_scattering = air.rayleigh.w * mie_path;
+    let depth = rayleigh + air.shape.x * mie_path;
+    let through = exp(-depth);
+    let view = relative / max(distance, 1e-6);
+    let g = air.shape.w;
+    let cos_sun = dot(view, air.sun.xyz);
+    let cos_moon = dot(view, air.moon.xyz);
+    let again = vec3f(air.sun.w, air.sun_light.w, air.moon.w);
+    let rayleigh_light = air.sun_light.xyz * rayleigh_phase(cos_sun) + air.moon_light.xyz * rayleigh_phase(cos_moon) + again;
+    let mie_light = air.sun_light.xyz * mie_phase(cos_sun, g) + air.moon_light.xyz * mie_phase(cos_moon, g) + again;
+    let scattered = (rayleigh * rayleigh_light + mie_scattering * mie_light) * ((1.0 - through) / max(depth, vec3f(1e-6)));
+    return c * through + scattered;
 }

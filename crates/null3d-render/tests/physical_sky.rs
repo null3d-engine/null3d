@@ -80,10 +80,20 @@ fn the_tables_draw_only_when_they_change<B: FrameBuilder>(mut world: World<B>) {
         .map(|(_, o)| (o[1], o[2]))
         .collect::<Vec<_>>();
     for size in [(256, 64), (32, 32), (256, 128), (512, 256)] {
-        assert!(created.contains(&size), "the {size:?} table is made: {created:?}");
+        assert!(
+            created.contains(&size),
+            "the {size:?} table is made: {created:?}"
+        );
     }
-    assert_eq!(steps(&commands, tables[0]), [0, 1, 2], "every table draws, in order");
-    assert!(draws_with(&commands, background[0]), "the sky draws once its tables do");
+    assert_eq!(
+        steps(&commands, tables[0]),
+        [0, 1, 2],
+        "every table draws, in order"
+    );
+    assert!(
+        draws_with(&commands, background[0]),
+        "the sky draws once its tables do"
+    );
 
     // A still sky draws no table, and a moving sun draws only the sky view.
     let commands = world.step(&mut mock, false);
@@ -96,7 +106,11 @@ fn the_tables_draw_only_when_they_change<B: FrameBuilder>(mut world: World<B>) {
         .set_background_source(physical(atmosphere));
     let commands = world.step(&mut mock, false);
     assert_eq!(steps(&commands, tables[0]), [2]);
-    assert_eq!(count(&commands, Op::CreateTexture), 0, "the tables are kept");
+    assert_eq!(
+        count(&commands, Op::CreateTexture),
+        0,
+        "the tables are kept"
+    );
 
     // Clouds drawn per pixel draw no table; new air draws them all.
     atmosphere.time = 5.0;
@@ -165,7 +179,14 @@ fn the_air_reaches_the_frame_block_and_the_analytic_sky_stands_in() {
     let mut world = World::new();
     let mut mock = MockBackend::default();
     world.step(&mut mock, true);
-    let aerial = |world: &World| world.renderer.view_frame(ViewId::CAMERA).unwrap().uniform.aerial;
+    let aerial = |world: &World| {
+        world
+            .renderer
+            .view_frame(ViewId::CAMERA)
+            .unwrap()
+            .uniform
+            .aerial
+    };
     assert_eq!(aerial(&world).moon_light[3], 0.0, "no physical sky, no air");
     let atmosphere = Atmosphere::default();
     world
@@ -176,7 +197,10 @@ fn the_air_reaches_the_frame_block_and_the_analytic_sky_stands_in() {
     let air = aerial(&world);
     assert_eq!(air.moon_light[3], 1.0);
     assert!(air.rayleigh[2] > air.rayleigh[0], "blue scatters most");
-    assert!(air.sun_light[0] > air.sun_light[2], "the sun reddens through the air");
+    assert!(
+        air.sun_light[0] > air.sun_light[2],
+        "the sun reddens through the air"
+    );
 
     // With the quality setting off, the analytic sky draws in its place, and the air stays.
     world.renderer.settings_mut().set_physical_sky(false);
@@ -193,7 +217,10 @@ fn the_air_reaches_the_frame_block_and_the_analytic_sky_stands_in() {
         other => panic!("the analytic sky stands in, not {other:?}"),
     }
     let intensity = world.renderer.settings().background().unwrap().intensity;
-    assert!(intensity > 0.0 && intensity < 1.0, "matched brightness: {intensity}");
+    assert!(
+        intensity > 0.0 && intensity < 1.0,
+        "matched brightness: {intensity}"
+    );
 
     // Without the aerial perspective, the shaders skip it.
     let atmosphere = Atmosphere {

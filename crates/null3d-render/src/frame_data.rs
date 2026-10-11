@@ -5,8 +5,8 @@ use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 use crate::camera::Mat4;
 use crate::environment::EnvironmentUniform;
 use crate::fog::FogUniform;
-use crate::physical_sky::AerialUniform;
 use crate::output::OutputUniform;
+use crate::physical_sky::AerialUniform;
 
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
 /// include the intensity. Shaders work in positions relative to the camera.

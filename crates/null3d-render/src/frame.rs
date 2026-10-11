@@ -45,9 +45,9 @@ use crate::materials::{
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
 use crate::outline::Outline;
+use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::physical_sky::{AerialUniform, Atmosphere};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
-use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
@@ -1288,7 +1288,8 @@ impl SceneSettings {
                         Some(MapSky::Physical { height, .. }) => height,
                         _ => atmosphere.height_of(0.0),
                     };
-                    self.sky_maps.set_sky(MapSky::Physical { atmosphere, height });
+                    self.sky_maps
+                        .set_sky(MapSky::Physical { atmosphere, height });
                 } else {
                     let (sky, gain) = analytic_stand_in(&atmosphere, model);
                     self.stand_in = Some((sky, gain));
