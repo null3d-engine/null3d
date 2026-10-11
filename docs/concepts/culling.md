@@ -138,7 +138,7 @@ scene.instantiate(city, { occluder: false });
 
 ### Turn it on where it pays
 
-Every quality preset leaves software occlusion culling off. The engine measured it in S6, its benchmark city, on three Android phones and an iPad, all on WebGL2. It hid 23% to 39% of the entries in view, but removed fewer than 3% of the draw calls. Most hidden entries were rows of instance batches whose other rows still showed, so the batch still drew. The job workers spent 7 to 22 ms more per frame, and the render worker saved 2 ms at most. On every device, it cost at least 3.5 times what it saved.
+Every quality preset leaves software occlusion culling off. The engine measured it in S6, its benchmark city, on three Android phones and an iPad, all on WebGL2. It hid 23% to 39% of the entries in view, but removed fewer than 3% of the draw calls. Most hidden entries were rows of instance batches whose other rows still showed, so the batch still drew. The job workers spent 7 to 22 ms more per frame, and the render worker saved 2.3 ms at most. On every device, it cost at least 3.5 times what it saved.
 
 A scene whose few large blockers hide many separate meshes, each its own draw call, can gain where the city lost. So turn it on only when your scene measures a gain:
 
