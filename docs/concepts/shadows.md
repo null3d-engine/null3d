@@ -8,7 +8,7 @@ summary: "Cascades that stay still as the camera turns and blend where they meet
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them since 0.2. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them since 0.2. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
