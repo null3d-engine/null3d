@@ -1000,8 +1000,8 @@
       "three": "material.bumpMap / bumpScale",
       "status": "changed",
       "since": "0.2",
-      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump`",
-      "notes": "Not built yet. Until then, make the normal map from the bump map in an image tool. Normal maps are cheaper at run time and look the same or better.",
+      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump bump.png normal.ktx2 --scale <bumpScale>`",
+      "notes": "The scale matches three.js where one texel covers one screen pixel; three.js bumps look stronger farther away. Normal maps are cheaper at run time and look the same or better.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bbump(Map|Scale)\\b"
     },
