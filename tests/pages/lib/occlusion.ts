@@ -15,11 +15,19 @@ export function median(values: readonly (number | null)[]): number | null {
 		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
-/** Pixels whose color differs between two RGBA frames of the same size. */
-export function differingPixels(a: Uint8Array, b: Uint8Array): number {
+/**
+ * Pixels whose color differs between two RGBA frames of the same size: in a channel by more than
+ * `tolerance` levels, or by any level without one.
+ */
+export function differingPixels(a: Uint8Array, b: Uint8Array, tolerance = 0): number {
 	let count = 0;
 	for (let i = 0; i < a.length; i += 4)
-		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
+		if (
+			Math.abs((a[i] as number) - (b[i] as number)) > tolerance ||
+			Math.abs((a[i + 1] as number) - (b[i + 1] as number)) > tolerance ||
+			Math.abs((a[i + 2] as number) - (b[i + 2] as number)) > tolerance
+		)
+			count++;
 	return count;
 }
 
@@ -113,6 +121,14 @@ export const LATE_IN_MOTION_LIMIT = 0;
 export const JUMP_SHARE = 0.001;
 
 /**
+ * The levels of 255 by which a pixel's color may differ in motion and still count as the same. The
+ * frames in motion and the still references differ a little in their shading, by up to 8 levels in
+ * a few dozen pixels at the route's start on the Mac, with culling on or off. A building that
+ * culling hid would change its pixels by far more.
+ */
+export const MOTION_TOLERANCE = 24;
+
+/**
  * The shares of the route where the check in motion jumps, evenly spread from the route's start:
  * with as many as the stops at rest, each lies halfway between two stops.
  */
@@ -151,6 +167,11 @@ export interface OcclusionFlight {
 	share: number;
 	toward: number;
 	noise: number;
+	/**
+	 * The pixels where the two ends' captures with culling off differ: what a frame that showed the
+	 * other end's view would add, and so how much a late frame could show at least.
+	 */
+	jump: number;
 	differing: number[];
 }
 

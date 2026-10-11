@@ -83,23 +83,25 @@ export default defineSketch(async (context) => {
 	const rotations = new Float64Array(data.count * 4);
 	// Still knights keep the place of the first move.
 	let placed = false;
+	// A knight takes its place in a function that takes its index alone, so the browser boxes no
+	// number for the call where it does not inline it.
+	const place = (i: number): void => {
+		const character = characters[i] as Object3D;
+		character.setPosition(
+			positions[i * 3] as number,
+			positions[i * 3 + 1] as number,
+			positions[i * 3 + 2] as number,
+		);
+		character.setRotation(
+			rotations[i * 4] as number,
+			rotations[i * 4 + 1] as number,
+			rotations[i * 4 + 2] as number,
+			rotations[i * 4 + 3] as number,
+		);
+	};
 	const moveCharacters = (): void => {
 		s5CharactersAt(data, clock, positions, rotations);
-		for (let i = 0; i < data.count; i++) {
-			if (placed && still(i)) continue;
-			const character = characters[i] as Object3D;
-			character.setPosition(
-				positions[i * 3] as number,
-				positions[i * 3 + 1] as number,
-				positions[i * 3 + 2] as number,
-			);
-			character.setRotation(
-				rotations[i * 4] as number,
-				rotations[i * 4 + 1] as number,
-				rotations[i * 4 + 2] as number,
-				rotations[i * 4 + 3] as number,
-			);
-		}
+		for (let i = 0; i < data.count; i++) if (!placed || !still(i)) place(i);
 		placed = true;
 	};
 

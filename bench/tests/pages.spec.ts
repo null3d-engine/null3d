@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
-import { type OcclusionTurnsResult, occlusionTurnsProblems } from '../../tests/pages/lib/occlusion';
+import {
+	AT_REST_MARGIN_PIXELS,
+	type OcclusionTurnsResult,
+	occlusionTurnsProblems,
+} from '../../tests/pages/lib/occlusion';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import type { TraceSecond } from '../pages/lib/trace';
 import { S5_BACKGROUND } from '../scenes/s5';
@@ -467,6 +471,9 @@ function s6OcclusionTurnsTest(): void {
 			expect(occlusionTurnsProblems(result)).toEqual([]);
 			expect(result.stops).toHaveLength(4);
 			expect(result.flights).toHaveLength(4);
+			// Each jump changes enough of the view that a frame late by one jump would show.
+			for (const flight of result.flights ?? [])
+				expect(flight.jump).toBeGreaterThan(flight.noise + AT_REST_MARGIN_PIXELS);
 			expect(result.lateInMotion).toBe(0);
 			expect(result.off.occludedEntries ?? 0).toBe(0);
 		},

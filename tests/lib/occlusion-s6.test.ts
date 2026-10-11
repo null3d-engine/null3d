@@ -9,6 +9,7 @@ import {
 	hiddenAtRest,
 	JUMP_SHARE,
 	lateFrames,
+	MOTION_TOLERANCE,
 	median,
 	medianFigures,
 	type OcclusionFigures,
@@ -92,6 +93,26 @@ describe('the occlusion turns', () => {
 		expect(differingPixels(a, a)).toBe(0);
 	});
 
+	it('count in motion only the pixels whose color moves by more than the tolerance', () => {
+		const a = new Uint8Array([10, 10, 10, 255, 10, 10, 10, 255, 10, 10, 10, 255]);
+		const b = new Uint8Array([
+			18,
+			10,
+			10,
+			255,
+			10,
+			10,
+			10 + MOTION_TOLERANCE + 1,
+			255,
+			200,
+			90,
+			40,
+			255,
+		]);
+		expect(differingPixels(a, b)).toBe(3);
+		expect(differingPixels(a, b, MOTION_TOLERANCE)).toBe(2);
+	});
+
 	it('change which side runs first each round, and spread the rounds over the route', () => {
 		expect([0, 1, 2, 3].map(roundSides)).toEqual([
 			['off', 'on'],
@@ -108,6 +129,7 @@ describe('the occlusion turns', () => {
 			share: 0,
 			toward: JUMP_SHARE,
 			noise,
+			jump: 1000,
 			differing,
 		});
 		expect(lateFrames(flight(0, [0, AT_REST_MARGIN_PIXELS]))).toBe(0);
@@ -174,8 +196,8 @@ describe('the occlusion turns', () => {
 				result({
 					lateInMotion: 3,
 					flights: [
-						{ share: 0, toward: 0.001, noise: 2, differing: [0, 1, 2, 3] },
-						{ share: 0.25, toward: 0.251, noise: 2, differing: [30, 0, 40, 50] },
+						{ share: 0, toward: 0.001, noise: 2, jump: 500, differing: [0, 1, 2, 3] },
+						{ share: 0.25, toward: 0.251, noise: 2, jump: 500, differing: [30, 0, 40, 50] },
 					],
 				}),
 			),

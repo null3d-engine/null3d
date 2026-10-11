@@ -181,7 +181,10 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   checks. In S4, the browser runs it on its middle tier for the whole sample, which boxes about
  *   two of the numbers that it passes to the camera's setters;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
- *   does a few times while its buffers reach their final sizes.
+ *   does a few times while its buffers reach their final sizes;
+ * - the sketch worker's reading of pointer events. It runs at the input's rate, not the frame's,
+ *   so the browser may keep it in a lower tier, where each fraction it computes is a new number.
+ *   With a mouse move about every third frame, S5 and S6 took 2 to 11 bytes per frame there.
  */
 export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
@@ -191,6 +194,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
+		'onPointer sketch/input.ts': 16,
 	},
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
@@ -323,6 +327,39 @@ const TRANSMISSION_REPLAY_BUDGET = 64;
  * per pass, 173 per frame.
  */
 const TRANSMISSION_MIPS_BUDGET = 11 * 32;
+
+/**
+ * What S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
+ * - S5's camera path, which the browser runs beside 500 knights' moves without inlining the
+ *   camera's setters, so it boxes up to all seven numbers that it passes to them: 46 to 84 bytes
+ *   per frame on the Mac;
+ * - S5's WebGPU uploads of the crowd's poses, through the staging ring, each with a view that
+ *   copies into the mapped range: 360 to 416 bytes per frame on the Mac, about six views more than
+ *   S1's;
+ * - S5's clock readings at each check of a frame that the GPU still holds, which its crowd keeps
+ *   busy longer than S1's boxes;
+ * - S6's camera path, whose route the browser does not inline, so it boxes the route's time:
+ *   41 to 50 bytes per frame on the Mac, at the edge of the budget that boxes four numbers;
+ * - S6's WebGPU replay: the encoders of its render passes, which the browser returns for each pass,
+ *   at bloom's allowance per pass. S6 draws bloom's 15 passes, the depth prepass, ambient
+ *   occlusion's 3 and a culling pass and a render pass for each of up to 4 shadow cascades. On the
+ *   Mac the replay took 1,725 to 1,775 bytes per frame.
+ */
+const SCENE_BUDGETS: Partial<
+	Record<
+		(typeof ALLOCATION_SCENES)[number],
+		Record<(typeof WORKERS)[number], Record<string, number>>
+	>
+> = {
+	s5: {
+		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 48 },
+		'render-worker': { 'write webgpu/staging.ts': 8 * 64, 'giveUpStalled gpu/completion.ts': 12 },
+	},
+	s6: {
+		'sketch-worker': { '(anonymous) null3d/sketch-common.ts': 16 },
+		'render-worker': { 'replay webgpu/backend.ts': BLOOM_REPLAY_BUDGET + (1 + 3 + 2 * 4) * 64 },
+	},
+};
 
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
@@ -620,6 +657,7 @@ async function main(): Promise<void> {
 			const skyBudgets = skyLight
 				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
 				: {};
+			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const replay = name === 'replay webgpu/backend.ts';
@@ -635,7 +673,8 @@ async function main(): Promise<void> {
 						? TRANSMISSION_MIPS_BUDGET
 						: 0) +
 					(statsBudgets[name] ?? 0) +
-					(skyBudgets[name] ?? 0);
+					(skyBudgets[name] ?? 0) +
+					(sceneBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(

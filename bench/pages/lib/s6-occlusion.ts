@@ -20,7 +20,8 @@
 // in every frame, so each frame shows the view one jump from the frame before, and the page
 // captures a few such frames. A culling that used an earlier frame's camera would hide what came
 // into view, so a capture that differs from the nearer end's reference by more than the noise shows
-// an object late. The figure counts those captures.
+// an object late. In motion a pixel counts as different only when its color moves by more than the
+// shading's own small changes. The figure counts those captures.
 import type { Engine, FrameSummary } from '@null3d/engine';
 import {
 	differingPixels,
@@ -29,6 +30,7 @@ import {
 	hidesWhatShows,
 	JUMP_SHARE,
 	lateFrames,
+	MOTION_TOLERANCE,
 	medianFigures,
 	type OcclusionFigures,
 	type OcclusionFlight,
@@ -130,7 +132,8 @@ export async function occlusionTurns(
 		for (const end of [share, toward]) {
 			await drive(end, true);
 			const first = await engine.captureFrame();
-			noise = Math.max(noise, differingPixels(first.pixels, (await engine.captureFrame()).pixels));
+			const again = await engine.captureFrame();
+			noise = Math.max(noise, differingPixels(first.pixels, again.pixels, MOTION_TOLERANCE));
 			ends.push(first);
 		}
 		await cull(true);
@@ -143,7 +146,12 @@ export async function occlusionTurns(
 			differing.push(pixels);
 			if (hidesWhatShows(noise, pixels)) shown ??= { off, on };
 		}
-		flights.push({ share, toward, noise, differing });
+		const jump = differingPixels(
+			(ends[0] as Capture).pixels,
+			(ends[1] as Capture).pixels,
+			MOTION_TOLERANCE,
+		);
+		flights.push({ share, toward, noise, jump, differing });
 		if (shown && shownFlights++ < HIDDEN_IMAGES) {
 			images[`flight-${k}-off`] = await png(shown.off);
 			images[`flight-${k}-on`] = await png(shown.on);
@@ -173,11 +181,11 @@ export async function occlusionTurns(
 /** A frame that `engine.captureFrame` read back. */
 type Capture = Awaited<ReturnType<Engine['captureFrame']>>;
 
-/** The reference nearest a frame, and the pixels where the two differ. */
+/** The reference nearest a frame, and the pixels where the two differ by more than shading does. */
 function nearest(references: readonly Capture[], frame: Capture): [Capture, number] {
 	let best: [Capture, number] = [frame, Number.POSITIVE_INFINITY];
 	for (const reference of references) {
-		const pixels = differingPixels(reference.pixels, frame.pixels);
+		const pixels = differingPixels(reference.pixels, frame.pixels, MOTION_TOLERANCE);
 		if (pixels < best[1]) best = [reference, pixels];
 	}
 	return best;

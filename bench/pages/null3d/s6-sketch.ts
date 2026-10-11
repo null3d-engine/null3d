@@ -97,8 +97,11 @@ export default defineSketch(async (context) => {
 	for (const light of data.lights) scene.createPointLight(light);
 	const kit = await kitLoad;
 	const kitSeconds = seconds();
-	const moveCamera = followPath(camera, (t, position, target) =>
-		s6Camera(data, t, position, target),
+	// The camera's route time reaches its path in `route`, not as an argument, so no call boxes it
+	// whether the browser inlines the call or not.
+	const route = new Float64Array(1);
+	const moveCamera = followPath(camera, (_t, position, target) =>
+		s6Camera(data, route[0] as number, position, target),
 	);
 	moveCamera(0);
 
@@ -229,7 +232,6 @@ export default defineSketch(async (context) => {
 	}
 
 	let paused = false;
-	let drive = 0;
 	if (demo) debug.stats(true);
 	// The occlusion turns' camera: a move that the next frame makes, the seconds it adds to the
 	// clock's, or a held route time and the one it jumps to in every other frame, and whether the
@@ -250,8 +252,8 @@ export default defineSketch(async (context) => {
 			if (!loaded) stream(CREATED_PER_FRAME);
 			if (demo) {
 				if (input.wasPressed('Space')) paused = !paused;
-				if (!paused) drive += time.dt;
-				moveCamera(drive);
+				if (!paused) route[0] = (route[0] as number) + time.dt;
+				moveCamera(0);
 			} else {
 				if (move) {
 					const at = move.share * s6LoopSeconds(data);
@@ -261,8 +263,12 @@ export default defineSketch(async (context) => {
 					offset = at - time.now;
 					move = undefined;
 				}
-				const jumped = jumpTo !== undefined && time.frame % 2 === 1;
-				moveCamera(jumped ? (jumpTo as number) : (heldAt ?? time.now + offset));
+				// Each case writes its own time, so no number passes through a value that may be
+				// undefined, which would box it.
+				if (jumpTo !== undefined && time.frame % 2 === 1) route[0] = jumpTo;
+				else if (heldAt !== undefined) route[0] = heldAt;
+				else route[0] = time.now + offset;
+				moveCamera(0);
 			}
 			reportQuality();
 			if (answer) {
