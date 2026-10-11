@@ -8,7 +8,7 @@ summary: "The surface record; uniforms and textures; reflections; transmission; 
 
 # Surface functions
 
-> Ships in null3D 0.1, with typed uniforms, textures and values per row of a batch in 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures and values per row of a batch. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
