@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, clip weights, start times, 1D blends, l
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -93,7 +93,7 @@ return {
 | `time` | the first frame | Seconds into the clip at which it starts. A repeating clip wraps the time into its length. A clip that plays once holds the time within its length. |
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
 
-`crossFade(name, duration)` is `play` with a fade of `duration` seconds. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
@@ -295,7 +295,7 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
 | `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
 | `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
-| `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; `mesh.mesh.morphTargetNames` lists the names in order |
+| `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; the mesh geometry's `morphTargetNames`, such as `prefab.find('Face')?.mesh?.morphTargetNames`, lists the names in order |
 | `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
 | `geometry.morphAttributes.color` | `geometry.fromArrays({ ..., colors, morphTargets: { colors } })` |
 | `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |

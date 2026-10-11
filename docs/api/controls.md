@@ -8,7 +8,7 @@ summary: "Orbit and map controls (0.1); fly and first-person controls, with poin
 
 # Camera controls (@null3d/controls)
 
-> Orbit and map controls ship in null3D 0.1, and fly and first-person controls in null3D 0.2. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the fly and first-person controls. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -104,7 +104,7 @@ Call `controls.update(dt)` once per frame in `onUpdate`, with the step that `onU
 - Auto-rotation stops while the user asks for less motion. [Accessibility](../guides/accessibility.md) explains the preference.
 - If the camera has a parent, the parent must not be rotated. The controls turn the camera with `lookAt`, which assumes that.
 
-`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. Use them to drive the controls with keys or a gamepad:
+`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. `getDistance()`, `getPolarAngle()` and `getAzimuthalAngle()` read the camera's place, as in three.js. Use them to drive the controls with keys or a gamepad:
 
 ```ts
 const { input } = ctx;

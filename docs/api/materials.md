@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 

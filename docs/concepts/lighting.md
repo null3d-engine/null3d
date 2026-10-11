@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -223,7 +223,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
 - The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
 - Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
-- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 10 ms on a MacBook Pro. After each change of the sky, it makes the map again in 7 steps, one a frame. Each step takes under 1.1 ms on a MacBook Pro. The scene draws with the old map until the last step, so no frame waits for a whole map. A sky that changes in every frame pays one step in every frame.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After each change of the sky, it makes the map again in 20 stages, one a frame. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sky that changes in every frame pays one stage in every frame.
 - A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
