@@ -1,6 +1,6 @@
 # D-20: WebGPU skinning
 
-Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The compute pass stays for morphed meshes, for materials without SKIN builds, and behind `?skinning=compute`. The Mac's Safari and the owner's iPad are still to run, and cannot change the result. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
+Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The compute pass stays for morphed meshes, for materials without SKIN builds, and behind `?skinning=compute`. The Mac's Safari and the owner's iPad are still to run, and cannot change the result. Date: 2026-10-04, updated 2026-10-11. Task: M2-C3, M2-C8.
 
 Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones and 4.3% on a cloud iPad. On the timing page it costs 4% to 79% more on each phone, and 26% to 30% more on the iPad. So it fails the rule on all five devices measured. On 8 October 2026 the owner made the vertex shaders WebGPU's default. The compute pass still skins morphed meshes, and meshes whose material has no SKIN build, such as custom materials.
 
@@ -304,4 +304,15 @@ Options not taken:
 - The image tests that drew the vertex shaders with `?skinning=vertex` now draw the compute pass with `?skinning=compute`. They keep the same references. `skinning-normal-map-compute` joins them: it checks the pass's 8-bit tangents against the vertex shaders' floats.
 - The shader modules did not change, so the download sizes did not change either.
 
-The Mac's WebGPU timing of the new default waits for the fix of the multisampling regression from #389, and runs after it merges.
+### The new default on the Mac
+
+The Mac's Chrome ran S5 on 11 October 2026, with the change merged with main: 500 knights at High, governor off, 3 runs of 10 s each, the two pages in turns, at a load of 4.7 to 7.4. `null3d-webgpu` is the new default, and `null3d-webgpu-skin-compute` skins every knight in the pass, as the old default did (runs `20261011-074653-bench` and `20261011-074904-bench`).
+
+| Page | CPU ms per frame | GPU ms | Presented fps |
+| --- | --- | --- | --- |
+| Every knight walks: vertex shaders | 1.81 (1.32 to 1.97) | 5.31 | 120.0 |
+| Every knight walks: the pass | 2.40 (1.97 to 2.43) | 5.16 | 114.8 |
+| Half the knights still: vertex shaders | 1.64 (1.28 to 1.76) | 5.36 | 120.0 |
+| Half the knights still: the pass | 2.18 (1.81 to 2.40) | 5.20 | 118.1 |
+
+The pass saves 2.8% to 3.0% of the GPU time, under the rule's 10%, as before. The vertex shaders save 0.54 to 0.59 ms of CPU time per frame, and hold 120 frames per second, where the pass drops frames.
