@@ -29,7 +29,7 @@ Coding agents must never use an API whose page is `planned`. The null3D agent sk
 
 Each `api/` page links to its API reference, which the engine's doc comments generate, so it always matches the code.
 
-The version column in [All pages](pages.md) gives the first engine version with the page's feature. Version 0.1 is the first release.
+The step column in [All pages](pages.md) gives the roadmap step that adds the page's feature. The steps 0.1, 0.2 and 0.3 all ship in the first release, null3D 0.1.0.
 
 ## Where to start
 
@@ -42,4 +42,4 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 ## All pages
 
-[All pages](pages.md) lists every page by area, with its status and the version that brings its feature.
+[All pages](pages.md) lists every page by area, with its status and the roadmap step that adds its feature.

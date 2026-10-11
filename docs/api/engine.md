@@ -8,7 +8,7 @@ summary: "createEngine options and start errors; memory; capabilities and mode; 
 
 # Page API: createEngine
 
-> Ships in null3D 0.1, with `requestPointerLock` from null3D 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `requestPointerLock`. The API is experimental, so it can still change between versions.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 
