@@ -104,6 +104,29 @@ describe('frontMatterProblems', () => {
 			'id is "concepts/other"',
 		);
 	});
+
+	it('asks a written page to open its note with the release of its step', () => {
+		const page = (since: string, note: string) =>
+			`${renderFrontMatter([
+				['id', 'concepts/handles'],
+				['title', 'T'],
+				['status', 'experimental'],
+				['since', since],
+				['summary', 'S'],
+			])}\n# T\n\n> ${note}\n`;
+		const problems = (since: string, note: string) =>
+			frontMatterProblems('docs/concepts/handles.md', page(since, note), inventory).join('\n');
+		expect(problems('0.2', 'Roadmap step 0.2, first released in null3D 0.1.0. More.')).toBe('');
+		expect(problems('0.2', 'Ships in null3D 0.2.')).toContain(
+			'must start "Roadmap step 0.2, first released in null3D 0.1.0."',
+		);
+		expect(
+			problems(
+				'0.1',
+				'Roadmap step 0.1, first released in null3D 0.1.0, with picking from null3D 0.2.',
+			),
+		).toContain('names null3D 0.2, a roadmap step and not a release');
+	});
 });
 
 describe('pageList', () => {

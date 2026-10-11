@@ -8,7 +8,7 @@ summary: "page.post and page.onMessage in the sketch; engine.postToSketch and en
 
 # Messages between sketch and page
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 By default the sketch runs in a worker, and the page runs on the browser's main thread. They share no variables, so they talk through messages. The page keeps the HTML, and the sketch keeps the scene.
 

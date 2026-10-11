@@ -8,7 +8,7 @@ summary: "Custom effects and tone curves in WGSL; declaring passes; reading and 
 
 # Custom passes and render targets
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene and reflection passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom effects, custom tone curves, and scene and reflection passes that draw into textures with `render.addPass` and `textures.fromPass` are built. Full-screen passes of your own WGSL with `render.addPass` are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
