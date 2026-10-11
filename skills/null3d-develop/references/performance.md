@@ -22,8 +22,8 @@ A frame has three kinds of cost, and each has its own fixes.
 | Cost | Where it runs | Grows with | Typical fixes |
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
-| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs (0.2, not built yet), fewer point and spot lights |
-| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
+| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, fewer point and spot lights |
+| GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects, vertices of far meshes | Pixel-ratio cap, presets, cheaper materials, levels of detail with `mesh.setLevels` (0.2), fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
 
 On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
 
@@ -72,7 +72,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
 | Frame time grows with each skinned character (0.2) | Many skinned characters | On WebGPU, pause characters that wait with `setTimeScale(0)`, since a still pose costs no skinning work (`guides/performance`). Lower update rates far away, shared poses between identical characters and LODs are (0.2, not built yet) |
-| High "cull" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks; LODs (0.2, not built yet) |
+| High "cull" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | Low `occludedEntries` on WebGL2 though buildings merged into one mesh per material fill the view | A blocker mesh past 4,096 triangles blocks nothing | Merge by area as well as by material. Below that limit a merged mesh blocks part by part: each connected part by its own distance (`concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
