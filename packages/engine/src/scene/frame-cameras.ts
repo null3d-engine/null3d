@@ -472,17 +472,27 @@ function writeRay(e: Float64Array, at: number, point: Float64Array, out: Ray): v
 	const m = at + MATRIX;
 	const origin = out.origin;
 	const direction = out.direction;
-	for (let row = 0; row < 3; row++) {
-		const r = m + row * 4;
-		const a = e[r] as number;
-		const b = e[r + 1] as number;
-		const c = e[r + 2] as number;
-		origin[row] = a * ox + b * oy + c * oz + (e[r + 3] as number);
-		direction[row] = a * dx + b * dy - c;
-	}
-	const dirX = direction[0] as number;
-	const dirY = direction[1] as number;
-	const dirZ = direction[2] as number;
+	// Each row of the matrix in turn, written out with no loop or call: a loop would carry the
+	// fractions above across its turns, and the browser's middle tier makes a number object of
+	// each one it carries.
+	origin[0] =
+		(e[m] as number) * ox +
+		(e[m + 1] as number) * oy +
+		(e[m + 2] as number) * oz +
+		(e[m + 3] as number);
+	origin[1] =
+		(e[m + 4] as number) * ox +
+		(e[m + 5] as number) * oy +
+		(e[m + 6] as number) * oz +
+		(e[m + 7] as number);
+	origin[2] =
+		(e[m + 8] as number) * ox +
+		(e[m + 9] as number) * oy +
+		(e[m + 10] as number) * oz +
+		(e[m + 11] as number);
+	const dirX = (e[m] as number) * dx + (e[m + 1] as number) * dy - (e[m + 2] as number);
+	const dirY = (e[m + 4] as number) * dx + (e[m + 5] as number) * dy - (e[m + 6] as number);
+	const dirZ = (e[m + 8] as number) * dx + (e[m + 9] as number) * dy - (e[m + 10] as number);
 	const length = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
 	direction[0] = dirX / length;
 	direction[1] = dirY / length;

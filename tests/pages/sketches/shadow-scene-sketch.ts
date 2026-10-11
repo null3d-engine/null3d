@@ -3,11 +3,24 @@
 // side, so the shadow's far edge is one long straight line through the near and middle distance,
 // at a slant to the cascades' texels. The edge check measures its steps. The posts and boxes give
 // shorter edges. The edge crosses the seam between the first two cascades, and ?blend= sets the
-// share of each cascade that blends into the next, from the preset's otherwise.
+// share of each cascade that blends into the next, from the preset's otherwise. ?distance= places
+// the whole scene that many meters from the world's origin, along the large-world flights'
+// direction (lib/jitter.ts), so the checks measure the shadows of a large world; the page then
+// starts the engine with `largeWorld` on.
 import { defineSketch } from '@null3d/engine';
+import { FLIGHT_DIRECTION } from '../lib/jitter';
 import { SHADOW_SCENE } from '../lib/shadow-check';
 
-const blend = new URL(import.meta.url).searchParams.get('blend');
+const params = new URL(import.meta.url).searchParams;
+const blend = params.get('blend');
+const distance = Number(params.get('distance') ?? 0);
+if (!Number.isFinite(distance)) throw new Error('?distance= must be a number of meters');
+/** A place of the scene, moved to the scene's distance from the origin. */
+const at = ([x, y, z]: readonly number[]): [number, number, number] => [
+	(x ?? 0) + FLIGHT_DIRECTION[0] * distance,
+	(y ?? 0) + FLIGHT_DIRECTION[1] * distance,
+	(z ?? 0) + FLIGHT_DIRECTION[2] * distance,
+];
 
 export default defineSketch(({ scene, materials, geometry, quality }) => {
 	quality.set({ shadowFilter: 3, farCascadeInterval: 1 });
@@ -15,7 +28,13 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 	scene.setBackground('#101418');
 	const { position, target, fov } = SHADOW_SCENE.camera;
 	scene.setActiveCamera(
-		scene.createPerspectiveCamera({ fov, near: 0.1, far: 300, position, target }),
+		scene.createPerspectiveCamera({
+			fov,
+			near: 0.1,
+			far: 300,
+			position: at(position),
+			target: at(target),
+		}),
 	);
 	scene.createDirectionalLight({
 		direction: SHADOW_SCENE.sun,
@@ -28,7 +47,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 	scene.createMesh({
 		mesh: geometry.box({ width: 200, height: 0.2, depth: 200 }),
 		material: materials.standard({ color: '#9aa0a8' }),
-		position: [0, -0.1, 0],
+		position: at([0, -0.1, 0]),
 		receiveShadows: true,
 	});
 	const { center, length, height, yawDegrees } = SHADOW_SCENE.wall;
@@ -36,7 +55,7 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 	scene.createMesh({
 		mesh: geometry.box({ width: 0.3, height, depth: length }),
 		material: materials.standard({ color: '#c9b79c' }),
-		position: [center[0], height / 2, center[1]],
+		position: at([center[0], height / 2, center[1]]),
 		rotation: [0, Math.sin(yaw), 0, Math.cos(yaw)],
 		...both,
 	});
@@ -47,11 +66,11 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 	for (let k = 0; k < 6; k++) {
 		const across = -13 + k * 1.8;
 		const ahead = -4 - (k % 3) * 9;
-		scene.createMesh({ mesh: post, material: blue, position: [across, 1.5, ahead], ...both });
+		scene.createMesh({ mesh: post, material: blue, position: at([across, 1.5, ahead]), ...both });
 		scene.createMesh({
 			mesh: box,
 			material: red,
-			position: [across + 1, 0.6, ahead + 2.5],
+			position: at([across + 1, 0.6, ahead + 2.5]),
 			...both,
 		});
 	}

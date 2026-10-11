@@ -22,7 +22,7 @@ import {
 	S5_GROUND,
 	S5_ORBIT,
 	S5_VIEW_LIGHTS,
-	s5Camera,
+	s5CameraPath,
 	s5CharactersAt,
 } from '../../scenes/s5';
 import { S5_MODEL_URL } from '../lib/s5-model';
@@ -104,9 +104,7 @@ export default defineSketch(async (context) => {
 	};
 
 	if (demo) return playable();
-	const moveCamera = followPath(camera, (t, position, target) =>
-		s5Camera(data, t, position, target),
-	);
+	const moveCamera = followPath(camera, s5CameraPath(data));
 	const pose = (t: number): void => {
 		clock[0] = t;
 		moveCharacters();
@@ -124,7 +122,7 @@ export default defineSketch(async (context) => {
 	function playable() {
 		debug.stats(true);
 		const start = new Float64Array(3);
-		s5Camera(data, 0, start, new Float64Array(3));
+		s5CameraPath(data)(0, start, new Float64Array(3));
 		camera.setPosition(start[0] as number, start[1] as number, start[2] as number);
 		const controls = createOrbitControls(context, camera, {
 			target: [0, S5_ORBIT.lookHeight, 0],

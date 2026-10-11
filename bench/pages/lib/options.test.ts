@@ -5,10 +5,11 @@ import { readChoice, readRunOptions } from './options';
 describe('readRunOptions', () => {
 	const read = (query: string) => readRunOptions(new URLSearchParams(query));
 
-	test('reads hold, demo, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
+	test('reads hold, demo, keep, the count, the seconds, the soak, the shadow cascades, the far cascade interval, the governor, the anti-aliasing mode and the pixel ratio', () => {
 		expect(read('')).toEqual({
 			hold: null,
 			demo: false,
+			keep: false,
 			count: null,
 			seconds: null,
 			soak: null,
@@ -25,6 +26,7 @@ describe('readRunOptions', () => {
 		expect(read('?hold&n=1000&seconds=2.5&shadows=3&far=1')).toEqual({
 			hold: HOLD_TIME,
 			demo: false,
+			keep: false,
 			count: 1000,
 			seconds: 2.5,
 			soak: null,
@@ -38,6 +40,7 @@ describe('readRunOptions', () => {
 			maxPixelRatio: null,
 			governor: true,
 		});
+		expect(read('?keep&n=500')).toMatchObject({ demo: false, keep: true, count: 500 });
 		expect(read('?shadowCascades=2&shadowMapSize=1024&shadowFilter=5')).toMatchObject({
 			shadowCascades: 2,
 			shadowMapSize: 1024,

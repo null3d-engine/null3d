@@ -27,7 +27,7 @@ import {
 	S5_GROUND,
 	S5_SHADOW_DISTANCE,
 	S5_VIEW_LIGHTS,
-	s5Camera,
+	s5CameraPath,
 	s5CharactersAt,
 } from '../../scenes/s5';
 import { chosenPreset, twinSettings } from '../lib/preset';
@@ -122,7 +122,7 @@ runThreePage(
 					(mixers[i] as ThreeModule.AnimationMixer).update(dt);
 				}
 			},
-			camera: (t, position, target) => s5Camera(data, t, position, target),
+			camera: s5CameraPath(data),
 			...shadows,
 			maxPixelRatio: settings.maxPixelRatio,
 			report: { preset, settings },

@@ -480,7 +480,10 @@ export class PointerEvents {
 		}
 		if (!hovers) return;
 		let frame = -1;
-		for (const pointer of this.pointers) {
+		const { pointers } = this;
+		// Indexed loops: an iterator that a loop leaves early is an object in every frame.
+		for (let k = 0; k < pointers.length; k++) {
+			const pointer = pointers[k] as PointerState;
 			if (pointer.id < 0 || !pointer.over || pointer.seen === dispatch) continue;
 			if (frame === -1) frame = this.input?.presentedFrame() ?? 0;
 			this.cast(pointer, frame, report);
@@ -490,7 +493,9 @@ export class PointerEvents {
 	/** The state of pointer `id`, claimed for it on its first event; undefined when all are taken. */
 	private pointer(id: number, touch: boolean): PointerState | undefined {
 		let free: PointerState | undefined;
-		for (const pointer of this.pointers) {
+		const { pointers } = this;
+		for (let k = 0; k < pointers.length; k++) {
+			const pointer = pointers[k] as PointerState;
 			if (pointer.id === id) return pointer;
 			if (pointer.id < 0) free ??= pointer;
 		}

@@ -2,7 +2,8 @@
 // comes from the engine's hold mode, so it draws the same on every run. ?scene= names the scene's
 // sketch module from the server's root, with its own query; ?n= and ?shadows= go into that query,
 // as the benchmark pages pass them. ?at= is the sketch time to hold at, 2 s by default, and ?size=
-// the canvas in pixels. The engine reads its own switches, such as ?gpu= and ?preset=.
+// the canvas in pixels. The engine reads its own switches, such as ?gpu= and ?preset=. ?largeWorld
+// starts the engine with `largeWorld` on, for a scene far from the world's origin.
 //
 // The page draws the scene through the shadow check sketch (lib/shadow-check.ts): the frames of the
 // stability check, the reference for the edge and acne checks, then the normals view for the
@@ -61,6 +62,7 @@ run('visual', async () => {
 	const edge = numbers('edge', ',', 4) as PixelBox | undefined;
 	const withImages = params.has('images');
 	const moving = Number(params.get('moving') ?? MOVING_FRAMES);
+	const largeWorld = params.has('largeWorld');
 	const scene = scenePath();
 	let facts: Record<string, unknown> = {};
 	const images: Record<string, string> = {};
@@ -78,6 +80,7 @@ run('visual', async () => {
 			sketch: new URL(sketch, location.origin),
 			maxPixelRatio: 1,
 			hold: time,
+			largeWorld,
 		});
 		try {
 			facts = { tier: engine.capabilities.tier, mode: engine.mode };

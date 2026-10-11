@@ -3,7 +3,8 @@
 // test page (tests/pages/visual.ts) draws every frame in hold mode, so the figures do not depend on
 // how fast a device draws. The device runner's bench plan measures them beside its timings, and
 // `bun run test:bench` checks them in CI. tests/pages/lib/shadow-check.ts says what each figure
-// measures.
+// measures. In S5, the crowd's skinned knights cast the shadows, so its figures check skinned
+// shadows: they hold one pose, so that only the camera that places the cascades moves.
 
 import { S5_DEFAULT_COUNT } from '../scenes/s5';
 import { S6_FULL_COUNT } from '../scenes/s6';
@@ -33,6 +34,14 @@ export function sceneSketchPath(scene: BenchScene, count = SCENE_COUNTS[scene]):
 	return `/bench/pages/null3d/${scene}-sketch.ts?n=${count}`;
 }
 
+/**
+ * Switches that a scene's sketch takes on its visual page. The stability check compares frames at
+ * successive times, and an animation that plays would change pixels between them, which the check
+ * could not tell from cascades that shimmer. So S5's knights stand still in their first pose, which
+ * the GPU still skins, and the frames differ only by the camera's motion.
+ */
+const VISUAL_SKETCH_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'still=1' };
+
 /** Switches of the visual page of a benchmark scene, each left out when undefined. */
 export interface VisualSwitches {
 	/** The object count, or undefined for the scene's own. */
@@ -53,17 +62,24 @@ export function visualPagePath(
 	gpu: 'webgpu' | 'webgl2',
 	{ n, shadows, images }: VisualSwitches = {},
 ): string {
+	const switches = VISUAL_SKETCH_SWITCHES[scene];
 	const query = new URLSearchParams({
 		gpu,
-		scene: sceneSketchPath(scene, n),
+		scene: `${sceneSketchPath(scene, n)}${switches ? `&${switches}` : ''}`,
 		size: `${PARITY_CANVAS.width}x${PARITY_CANVAS.height}`,
 	});
 	if (shadows !== undefined) query.set('shadows', String(shadows));
 	return `/tests/pages/visual.html?${query}${images ? '&images' : ''}`;
 }
 
-/** The benchmark scenes whose sun casts shadows, which the visual checks of CI measure. */
-export const SHADOW_SCENES: readonly { scene: BenchScene; shadows?: number }[] = [
+/**
+ * The benchmark scenes whose sun casts shadows, which the visual checks of CI measure, with the
+ * switches of each. CI's software GPU draws S5 with as many knights as its image test does
+ * (D-88), as each of the visual page's twelve starts of the scene would take tens of seconds at
+ * its full count.
+ */
+export const SHADOW_SCENES: readonly { scene: BenchScene; shadows?: number; n?: number }[] = [
 	{ scene: 's2', shadows: 3 },
 	{ scene: 's4' },
+	{ scene: 's5', n: 100 },
 ];

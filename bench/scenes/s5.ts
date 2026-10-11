@@ -182,28 +182,24 @@ export function s5CharactersAt(
 	}
 }
 
-/** The radius and the height of the camera's orbit around a crowd whose outer ring is `outerRadius`. */
-export function s5Orbit(outerRadius: number): { radius: number; height: number } {
-	const radius = Math.max(S5_ORBIT.least, outerRadius * S5_ORBIT.reach);
-	return { radius, height: radius * S5_ORBIT.rise };
-}
-
 /**
- * Writes S5's camera at time t: an orbit of the crowd, one turn per `ORBIT_SECONDS`, that starts
- * on +X and looks at the crowd's center.
+ * S5's camera path: writes the camera at time t, an orbit of the crowd, one turn per
+ * `ORBIT_SECONDS`, that starts on +X and looks at the crowd's center. Its radius fits the outer
+ * ring, and its height rises with the radius. A page calls the path once per frame, so the path
+ * makes no object, and a page passes it on as it is, with no function around it.
  */
-export function s5Camera(
+export function s5CameraPath(
 	data: S5Data,
-	t: number,
-	outPosition: OutArray,
-	outTarget: OutArray,
-): void {
-	const { radius, height } = s5Orbit(data.outerRadius);
-	const angle = (TAU * t) / ORBIT_SECONDS;
-	outPosition[0] = radius * Math.cos(angle);
-	outPosition[1] = height;
-	outPosition[2] = -radius * Math.sin(angle);
-	outTarget[0] = 0;
-	outTarget[1] = S5_ORBIT.lookHeight;
-	outTarget[2] = 0;
+): (t: number, outPosition: OutArray, outTarget: OutArray) => void {
+	const radius = Math.max(S5_ORBIT.least, data.outerRadius * S5_ORBIT.reach);
+	const height = radius * S5_ORBIT.rise;
+	return (t, outPosition, outTarget) => {
+		const angle = (TAU * t) / ORBIT_SECONDS;
+		outPosition[0] = radius * Math.cos(angle);
+		outPosition[1] = height;
+		outPosition[2] = -radius * Math.sin(angle);
+		outTarget[0] = 0;
+		outTarget[1] = S5_ORBIT.lookHeight;
+		outTarget[2] = 0;
+	};
 }

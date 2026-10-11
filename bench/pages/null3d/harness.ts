@@ -148,6 +148,13 @@ export function runNull3dPage(
 		});
 		bindLabels(engine, Number(params.get('labels') ?? 0));
 		const whole = pageOptions.started?.(engine);
+		// Tools that sample a running scene, such as the soak and allocation checks, start only once
+		// the scene is whole, so a scene that streams in finishes loading in their warm-up.
+		const markWhole = () => {
+			(globalThis as { __null3dWhole?: boolean }).__null3dWhole = true;
+		};
+		if (whole) whole.then(markWhole, () => {});
+		else markWhole();
 		const log = pageOptions.trace ? new QualityLog() : undefined;
 		if (log) engine.onSketchMessage((name, data) => name === QUALITY_MESSAGE && log.add(data));
 		if (!filled) fitToWindow(canvas, size.width, size.height);
@@ -168,9 +175,10 @@ export function runNull3dPage(
 				},
 			}),
 		};
-		// A demo keeps the engine running until the page closes. A tool that watches a long run, such
-		// as the soak test, measures the engine through the page.
-		if (options.demo) {
+		// A demo keeps the engine running until the page closes, and so does `?keep`, which runs the
+		// scene as a timed run does. A tool that watches a long run, such as the soak test, measures
+		// the engine through the page.
+		if (options.demo || options.keep) {
 			(globalThis as { __null3dEngine?: Engine }).__null3dEngine = engine;
 			return report;
 		}

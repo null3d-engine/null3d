@@ -10,8 +10,12 @@
 // start to the end of the samples, it moves the mouse over the canvas and presses a key and the
 // mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
 // WebGL2 when `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole
-// grid cells, `--scene s3` runs S3, whose 256 point lights move every frame, and `--scene s4` runs
-// S4, the phone scene, with its shadows, street lights and quality governor. `--blend` makes
+// grid cells, `--scene s3` runs S3, whose 256 point lights move every frame, `--scene s4` runs
+// S4, the phone scene, with its shadows, street lights and quality governor, `--scene s5` runs S5,
+// the crowd of 500 animated knights that blend two clips and cast shadows, and `--scene s6` runs
+// S6, the city, with its occlusion culling, bloom, ambient occlusion, labels and picking. Each
+// scene runs at its own object count unless `--n` names one. A scene that streams in, as S6
+// does, is whole before the warm-up starts. `--blend` makes
 // S1's boxes see through, so each frame sorts every visible row for the transparent pass.
 // `--animated 64` adds 64 animated characters to S1, which play, cross-fade, blend a masked layer
 // and an additive one, play phase-synced blends and clips at weights that the sketch moves, and
@@ -44,6 +48,8 @@
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
 //   bun run bench:allocation --scene s3
 //   bun run bench:allocation --scene s4 --gpu webgl2
+//   bun run bench:allocation --scene s5 --gpu webgl2
+//   bun run bench:allocation --scene s6 --gpu webgl2
 //   bun run bench:allocation --blend --n 30000 --gpu webgl2
 //   bun run bench:allocation --animated 64 --gpu webgl2
 //   bun run bench:allocation --morphed 64 --gpu webgl2
@@ -75,7 +81,7 @@ import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
-import { S3_DEFAULT_COUNT } from './scenes/spec';
+import { SCENE_COUNTS } from './lib/visual';
 
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
@@ -94,6 +100,10 @@ const WARMUP_FRAMES = 3600;
  * event that happens once, such as the browser installing code it has just optimized, lands in one.
  */
 const SAMPLES = 2;
+/** The scenes that the check runs. */
+const ALLOCATION_SCENES = ['s1', 's1-cells', 's3', 's4', 's5', 's6'] as const;
+/** How long a scene that streams in may take to be whole, in milliseconds. */
+const WHOLE_TIMEOUT_MS = 300_000;
 /** The workers the check samples, by a part of their script's URL. */
 const WORKERS = ['sketch-worker', 'render-worker'] as const;
 
@@ -212,10 +222,10 @@ async function main(): Promise<void> {
 		const at = args.indexOf(name);
 		return at >= 0 ? Number(args[at + 1]) : fallback;
 	};
-	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
-	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3' && scene !== 's4')
-		throw new Error(`--scene takes s1, s1-cells, s3 or s4, not ${scene}`);
-	const n = option('--n', scene === 's3' ? S3_DEFAULT_COUNT : 100_000);
+	const named = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
+	const scene = ALLOCATION_SCENES.find((name) => name === named);
+	if (!scene) throw new Error(`--scene takes ${ALLOCATION_SCENES.join(', ')}, not ${named}`);
+	const n = option('--n', SCENE_COUNTS[scene]);
 	const seconds = option('--seconds', 5);
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
@@ -302,7 +312,12 @@ async function main(): Promise<void> {
 		const input = driveInput(page, () => driving);
 		// A failure is reported where the input is awaited, after the sample.
 		input.catch(() => {});
-		// Let the sketch run its setup and warm up before sampling.
+		// Let the sketch build its whole scene and warm up before sampling.
+		await page.waitForFunction(
+			() => (globalThis as { __null3dWhole?: boolean }).__null3dWhole === true,
+			undefined,
+			{ timeout: WHOLE_TIMEOUT_MS, polling: 1000 },
+		);
 		await sleep(warmup * 1000);
 		while ((await framesSoFar()) < WARMUP_FRAMES) await sleep(1000);
 		for (const sessionId of sessions.values())
