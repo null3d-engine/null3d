@@ -41,6 +41,7 @@ import { GRID_IMAGE } from '../../bench/scenes/standard-grid.ts';
 import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
+import { COMPARISONS } from '../../examples/compare/comparisons.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -1919,6 +1920,33 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: demo.hold,
 			...(demo.largeWorld && { switches: ['largeWorld'] }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+		}),
+	),
+	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
+	// draws its own references: the owner reviews the two frames side by side, as each draws each
+	// effect with its own technique for the same look. The instanced mode builds the same scene with
+	// batches of copies, so it borrows the scene graph's references.
+	...COMPARISONS.flatMap((comparison) =>
+		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
+			const name = `compare-${comparison.name}-${engine}`;
+			const test: ImageTest = {
+				name,
+				page: 'tests/pages/compare.html',
+				switches: [`compare=${comparison.name}`, `engine=${engine}`],
+				size: [640, 360],
+				hold: comparison.hold.seconds,
+				tiers: ['webgpu', 'webgl2'],
+				timeoutSeconds: 90,
+			};
+			return [
+				test,
+				{
+					...test,
+					name: `${name}-instanced`,
+					switches: [...(test.switches ?? []), 'mode=instanced'],
+					reference: name,
+				},
+			];
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
