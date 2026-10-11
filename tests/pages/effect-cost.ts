@@ -19,16 +19,12 @@
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
 import {
-	JOIN_TIMING_CHANNEL,
-	JOIN_TIMING_REQUEST,
-	type JoinTimingReport,
-} from '../../packages/engine/src/gpu/effect-join';
-import {
 	GL_TIMING_CHANNEL,
 	GL_TIMING_REQUEST,
 	type GlTimingReport,
 } from '../../packages/engine/src/gpu/webgl2/call-timing';
 import { featureCost } from './lib/feature-cost';
+import { requestJoinTiming } from './lib/join-timing';
 import { run } from './lib/result';
 
 /**
@@ -171,22 +167,5 @@ function requestGlTiming(): Promise<GlTimingReport | undefined> {
 			resolve(event.data);
 		};
 		channel.postMessage(GL_TIMING_REQUEST);
-	}).finally(() => channel.close());
-}
-
-/**
- * The joined shaders' build times that the thread that draws kept, or undefined when none comes:
- * a release build keeps none.
- */
-function requestJoinTiming(): Promise<JoinTimingReport | undefined> {
-	const channel = new BroadcastChannel(JOIN_TIMING_CHANNEL);
-	return new Promise<JoinTimingReport | undefined>((resolve) => {
-		const timeout = setTimeout(() => resolve(undefined), 2000);
-		channel.onmessage = (event: MessageEvent<JoinTimingReport>) => {
-			if (event.data?.type !== 'join-timing') return;
-			clearTimeout(timeout);
-			resolve(event.data);
-		};
-		channel.postMessage(JOIN_TIMING_REQUEST);
 	}).finally(() => channel.close());
 }

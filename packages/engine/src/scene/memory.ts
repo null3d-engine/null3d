@@ -32,6 +32,9 @@ export type ViewConstructor<T> = new (
 	length: number,
 ) => T;
 
+/** A typed array class whose views `CoreMemory.heap` keeps. */
+export type HeapConstructor<T> = ViewConstructor<T> & { readonly BYTES_PER_ELEMENT: number };
+
 /** The engine core and its memory, with view helpers. */
 export class CoreMemory {
 	private viewsOf: ArrayBufferLike;
@@ -45,6 +48,10 @@ export class CoreMemory {
 	private moved = 0;
 
 	private stoppedNow = false;
+
+	/** Views of the whole memory by typed array class, and the buffer they view. */
+	private readonly heaps = new Map<unknown, unknown>();
+	private heapsOf: ArrayBufferLike | undefined;
 
 	/**
 	 * `movedAddress` is the address of the core's count of moves of viewed arrays, or 0 for a core
@@ -109,6 +116,26 @@ export class CoreMemory {
 	view<T>(type: ViewConstructor<T>, address: number, length: number): T {
 		if (this.stoppedNow) throw stoppedError();
 		return new type(this.memory.buffer, address, length);
+	}
+
+	/**
+	 * A view of the whole memory as `type`, which `address / type.BYTES_PER_ELEMENT` indexes. Each
+	 * class's view stays until the memory's buffer changes, so a call in each frame allocates
+	 * nothing.
+	 */
+	heap<T>(type: HeapConstructor<T>): T {
+		if (this.stoppedNow) throw stoppedError();
+		const buffer = this.memory.buffer;
+		if (buffer !== this.heapsOf) {
+			this.heaps.clear();
+			this.heapsOf = buffer;
+		}
+		let view = this.heaps.get(type) as T | undefined;
+		if (view === undefined) {
+			view = new type(buffer, 0, buffer.byteLength / type.BYTES_PER_ELEMENT);
+			this.heaps.set(type, view);
+		}
+		return view;
 	}
 
 	f32(address: number, length: number): Float32Array {

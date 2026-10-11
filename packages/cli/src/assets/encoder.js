@@ -209,6 +209,17 @@ export async function encodeTexture(job) {
 	};
 }
 
+/**
+ * Encodes pixels as a KTX2 file with every mip level, on this thread.
+ *
+ * @param {Pixels} pixels
+ * @param {TextureKind} kind
+ * @param {Codec} codec
+ */
+export async function encodePixels(pixels, kind, codec) {
+	return encodeImage(await loadEncoder(), pixels, kind, codec, false);
+}
+
 /** The bytes of a KTX2 file before its level index: its identifier, header and data index. */
 const KTX2_INDEX_END = 80;
 

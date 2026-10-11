@@ -203,6 +203,12 @@ impl Lens {
         self.view_projection(&at_origin(world), aspect)
     }
 
+    /// The view matrix for positions relative to the camera, which
+    /// [`Lens::relative_view_projection`] multiplies by the projection.
+    pub fn relative_view(&self, world: &Affine) -> Mat4 {
+        view_matrix(&at_origin(world))
+    }
+
     /// How far positions relative to a camera with the given world transform lie along its view,
     /// and where the lens's near and far planes lie.
     pub fn depth(&self, world: &Affine) -> ViewDepth {

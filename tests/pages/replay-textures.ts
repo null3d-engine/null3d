@@ -36,12 +36,13 @@ type Tier = 'webgpu' | 'compat' | 'webgl2';
 const requested = new URLSearchParams(location.search).get('gpu');
 const tier: Tier = requested === 'compat' || requested === 'webgl2' ? requested : 'webgpu';
 
-// The page's own bind group layouts and templates, with ids that the engine's do not use.
+// The page's own bind group layouts, with ids that the engine's do not use, and its templates,
+// which take ids from the first custom template up, as compiled WGSL does.
 const LAYOUT_PARAMS = 100;
 const LAYOUT_TEXTURES = 101;
 const LAYOUT_DEPTHS = 102;
-const TEMPLATE_SAMPLE = 100;
-const TEMPLATE_SOLID = 101;
+const TEMPLATE_SAMPLE = G.TEMPLATE_CUSTOM_FIRST;
+const TEMPLATE_SOLID = G.TEMPLATE_CUSTOM_FIRST + 1;
 
 /** What a quad of the test shader shows: its SHOW_ values. */
 const SHOW = { color: 0, layer: 1, level: 2, flat: 3, depth: 4 } as const;

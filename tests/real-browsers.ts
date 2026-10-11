@@ -226,6 +226,7 @@ import {
 	type ItemResult,
 	inLanes,
 	keepsRefusingMemory,
+	moduleNote,
 	OOM_WINDOW_PAGES,
 	outOfMemory,
 	PAGES_PER_TAB,
@@ -247,6 +248,7 @@ import {
 	shardItems,
 	slug,
 	turnBatches,
+	unloadedModule,
 	waitForRunners,
 	writePlan,
 	writeRunnerFile,
@@ -1463,6 +1465,8 @@ async function runPlan(
 						...(item.endsTab && { progress: readResult(run, name, progressName(item.id)) }),
 					})
 				: [NO_RESULT];
+			const unloaded = verdict === 'skip' ? undefined : unloadedModule(verdict);
+			if (unloaded) note(await moduleNote(unloaded));
 			// Facts the runner page could not record go into the result itself.
 			const facts = {
 				...(braveShields !== undefined && { braveShields }),
