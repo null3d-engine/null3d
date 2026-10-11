@@ -431,7 +431,9 @@ export class Presenter {
 /**
  * Hold mode's loop, which runs no frame loop. When first asked, it draws the frame that the sketch
  * thread published, in the first animation frame callback after its pipelines are built, and it
- * draws nothing after.
+ * draws nothing after. Where the sketch thread asks it to draw the frame before the held one too,
+ * for passes that read the motion since the frame before, it draws each frame from that one in
+ * turn.
  */
 export class HoldLoop implements RenderLoop {
 	private readonly presenter: Presenter;
@@ -449,10 +451,13 @@ export class HoldLoop implements RenderLoop {
 
 	drawHeld(): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
+			let drawn = 0;
 			const attempt = (timestamp: number) => {
-				const frame = Atomics.load(this.slots, Slot.FramesPublished);
+				const published = Atomics.load(this.slots, Slot.FramesPublished);
+				const from = Atomics.load(this.slots, Slot.HeldFrom);
+				const frame = drawn > 0 ? drawn + 1 : from > 0 && from <= published ? from : published;
 				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
-				else if (frame === 0) reject(new Error('the sketch thread published no held frame'));
+				else if (published === 0) reject(new Error('the sketch thread published no held frame'));
 				else
 					try {
 						if (!this.presenter.ready(frame)) {
@@ -462,7 +467,9 @@ export class HoldLoop implements RenderLoop {
 						this.presenter.applyResize();
 						Atomics.store(this.slots, Slot.FramesTaken, frame);
 						this.presenter.draw(frame, timestamp);
-						resolve();
+						drawn = frame;
+						if (frame < published) requestAnimationFrame(attempt);
+						else resolve();
 					} catch (error) {
 						reject(error);
 					}

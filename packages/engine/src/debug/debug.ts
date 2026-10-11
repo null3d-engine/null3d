@@ -40,12 +40,19 @@ export interface DebugLightOptions {
 }
 
 /**
- * A debug view of `debug.view`: the materials' own shading with `'lit'`, or one debug shading in
- * place of every material.
+ * A debug view of `debug.view`: the materials' own shading with `'lit'`, one debug shading in
+ * place of every material, or each pixel's motion with `'motion'`.
  *
  * @category api/debug
  */
-export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows';
+export type DebugView =
+	| 'lit'
+	| 'normals'
+	| 'depth'
+	| 'wireframe'
+	| 'overdraw'
+	| 'shadows'
+	| 'motion';
 
 /**
  * Debug drawing and frame figures. The drawing calls draw lines that show where things are, such
@@ -89,8 +96,11 @@ export interface Debug {
 	 * covers a pixel, so bright pixels cost the most shading. `'wireframe'` draws each triangle's
 	 * edges in its material's color. `'shadows'` shows how much of the main directional light's
 	 * shadow falls on each surface, as a gray: black in full shadow, white in full light. Surfaces
-	 * that face away from the sun are black, and surfaces that receive no shadows are white. Debug
-	 * views clear to black and use no tone mapping. Only
+	 * that face away from the sun are black, and surfaces that receive no shadows are white.
+	 * `'motion'` shows how far each pixel's surface moved on the screen since the last frame, the
+	 * camera's move included: its direction as the hue, red to the right, and its length as the
+	 * brightness, full at 16 pixels. A still pixel is black. The other views clear to black. Debug
+	 * views use no tone mapping. Only
 	 * development builds draw them: in a release build the call does nothing. A view's first frame
 	 * builds its pipelines, so objects can be missing for a few frames after a change.
 	 */

@@ -109,3 +109,9 @@ export const JoinFailed = 31;
  * reads the engine memory that the list points at.
  */
 export const ReplayDelayMs = 32;
+/**
+ * In hold mode, the first frame that the thread that draws draws, up to the frame published: the
+ * held frame, or the frame before it where the held frame's passes read the motion since the frame
+ * before, as the motion debug view does. 0 draws the frame published alone.
+ */
+export const HeldFrom = 35;

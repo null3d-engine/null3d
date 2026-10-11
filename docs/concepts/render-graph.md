@@ -50,6 +50,9 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Late culling | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The world matrix and bounds of every object, and the depth pyramid | The view's visible instances and draw counts |
 | Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
+| Motion culling | Compute, on WebGPU only, while a pass reads the motion vectors | The world matrix of every opaque object and instance in this frame and the last | The instances that moved, with both matrices |
+| Motion | Scene, while a pass reads the motion vectors | The objects that moved, and the last frame's transforms, joints, morph weights and skinned vertices | The motion vectors, tested against the scene depth |
+| Motion view | Fullscreen, in development builds, with `debug.view('motion')` | The motion vectors and the scene depth | The scene color |
 | A sketch's scene pass | Scene, one per `render.addPass({ kind: 'scene' })`, with its culling and transparent passes | The view's visible instances, and the textures it names in `reads` | Its texture, which the graph keeps between frames |
 | Copy | Fullscreen, one per scene pass, on WebGPU only | The scene pass's image | Its texture, with the rows turned around |
 | Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 | The scene color | The canvas |
@@ -64,6 +67,20 @@ With GPU occlusion culling on, each camera view's culling pass keeps the objects
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. WebGPU draws an image's top row first, and materials sample the bottom row at v = 0, as three.js's render targets hold it. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already.
 
 Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
+
+## Motion vectors
+
+Motion vectors record how far each pixel's surface moved on the screen since the last frame. Temporal anti-aliasing, motion blur and reflections that reuse the last frame need them. Today the motion debug view, `debug.view('motion')`, reads them.
+
+The motion pass runs after the transparent pass. It draws only the opaque objects that moved into a target of two 16-bit floats per pixel, with the scene's depth as its depth test:
+
+- Objects that a setter or a parent moved, and instance batch rows that changed. On WebGPU a culling pass compares each instance's world matrix with the last frame's and keeps the ones that differ. On WebGL2 the pass draws the camera's draw calls again, without those that hold nothing that changed.
+- Skinned and morphed meshes, and custom materials with a vertex offset, in every frame. A vertex offset runs twice: with this frame's time and with the last frame's, so grass that sways in the wind records its sway.
+- Masked materials cut the same holes as in the opaque pass. See-through objects write no depth, so they draw no motion.
+
+The target holds each surface's own motion beyond what the camera's move explains, so a still surface needs no draw, and the target clears to 0. A reader adds the camera's part from the depth and the last frame's camera. The motion view shows the sum.
+
+To find the motion, the engine keeps the last frame's world matrices, joints, morph weights and skinned vertices on the GPU, and copies the changed parts there at the end of each frame. All of these passes are optional. While no pass reads the motion vectors, none of them runs, the engine keeps no last frame's data, and the motion shaders never download. With MSAA in compatibility mode, or on a WebGL2 device that cannot draw the target, no motion pass runs, and a reader gets the camera's part alone.
 
 ## Why passes are declarations
 

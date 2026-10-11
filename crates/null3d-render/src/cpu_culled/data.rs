@@ -180,6 +180,11 @@ impl SharedTextures {
         Ok(remade)
     }
 
+    /// The texel rows of the resident texture, 0 before it exists.
+    pub(super) fn resident_rows(&self) -> u32 {
+        self.rows[0]
+    }
+
     /// Forgets the textures, so each is made again, after the thread that draws replaced the GPU.
     pub(super) fn forget_gpu(&mut self) {
         self.rows = [0; 5];

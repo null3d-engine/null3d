@@ -116,10 +116,12 @@ function viewCode(view: DebugView): number {
 			return C.DEBUG_VIEW_WIREFRAME;
 		case 'shadows':
 			return C.DEBUG_VIEW_SHADOWS;
+		case 'motion':
+			return C.DEBUG_VIEW_MOTION;
 		default:
 			throw new EngineError(
 				'E1213',
-				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw' or 'shadows'.`,
+				`debug.view() got ${JSON.stringify(view)}, which is not 'lit', 'normals', 'depth', 'wireframe', 'overdraw', 'shadows' or 'motion'.`,
 			);
 	}
 }

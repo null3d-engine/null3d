@@ -91,6 +91,29 @@ fn caster_variant(shading: &Variant) -> Variant {
     }
 }
 
+/// The bits of a custom material's shading builds that its motion builds keep: the draw index,
+/// and row values, which a vertex offset may read.
+const MOTION_KEEPS: [&str; 2] = ["DRAW_INDEX", "ROW_VALUES"];
+
+/// The variant of a custom material's motion builds beside one of its shading variants: the same
+/// defs and targets, every build with the MOTION bit. The motion pass then draws the motion of the
+/// material's vertex offset, as the material's sway moves its surface (decision record D-140).
+fn motion_variant(shading: &Variant) -> Variant {
+    let mut permutations: Vec<String> = shading
+        .permutations
+        .iter()
+        .filter(|bit| MOTION_KEEPS.contains(&bit.as_str()))
+        .cloned()
+        .collect();
+    permutations.push("MOTION".to_owned());
+    Variant {
+        defs: shading.defs.clone(),
+        permutations,
+        required: vec!["MOTION".to_owned()],
+        targets: shading.targets.clone(),
+    }
+}
+
 /// The shader defs of every custom material's build: the custom material's built-in values, and
 /// the first texture coordinates.
 const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
@@ -551,11 +574,16 @@ impl Compiler {
             })
             .collect();
         if offsets {
-            let casters: Vec<(String, Variant)> = variants
+            let more: Vec<(String, Variant)> = variants
                 .iter()
-                .map(|(name, variant)| (format!("{name}_shadow"), caster_variant(variant)))
+                .flat_map(|(name, variant)| {
+                    [
+                        (format!("{name}_shadow"), caster_variant(variant)),
+                        (format!("{name}_motion"), motion_variant(variant)),
+                    ]
+                })
                 .collect();
-            variants.extend(casters);
+            variants.extend(more);
         }
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
         let source = format!("{}{own_source}{loader}{bindings}", template.source);

@@ -81,6 +81,7 @@ mod cull;
 mod data;
 mod layout;
 mod lights;
+mod motion;
 mod opaque;
 mod skin;
 mod transparent;
@@ -116,6 +117,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
+use crate::motion::MotionIds;
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
@@ -171,9 +173,13 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// The uniform buffer of the motion debug view's step.
+    pub const MOTION_VIEW: u32 = DOF + 1;
+    /// The motion pass's block: the last frame's view and clock.
+    pub const MOTION_BLOCK: u32 = MOTION_VIEW + 1;
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
-    pub const OBJECT_RANGES: u32 = DOF + 1;
+    pub const OBJECT_RANGES: u32 = MOTION_BLOCK + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = OBJECT_RANGES + 1;
 
@@ -223,8 +229,30 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
+    /// The texture of one texel that the motion debug view reads in place of the motion target
+    /// where the device draws none.
+    pub const BLANK_MOTION: u32 = STREAMED_VALUES + RING;
+    /// The two copies of the last frame's resident texture, joint texture and morph weights, one
+    /// for each frame parity.
+    const LAST_RESIDENT: u32 = BLANK_MOTION + 1;
+    const LAST_JOINTS: u32 = LAST_RESIDENT + 2;
+    const LAST_WEIGHTS: u32 = LAST_JOINTS + 2;
+
+    pub const fn last_resident(copy: usize) -> u32 {
+        LAST_RESIDENT + copy as u32
+    }
+    pub const fn last_joints(copy: usize) -> u32 {
+        LAST_JOINTS + copy as u32
+    }
+    pub const fn last_weights(copy: usize) -> u32 {
+        LAST_WEIGHTS + copy as u32
+    }
+
+    /// The texel that the motion view's frame groups bind in place of the last frame's joints or
+    /// morph weights before the scene has them.
+    pub const BLANK_LAST: u32 = LAST_WEIGHTS + 2;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STREAMED_VALUES + RING;
+    pub const TARGETS: u32 = BLANK_LAST + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -239,8 +267,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The sampler of the motion debug view's step.
+    pub const MOTION_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -274,8 +304,18 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of the motion debug view's step, after the copy's.
+    pub const MOTION_VIEW_GROUP: u32 = TRANSMISSION_GROUP + 1;
+    /// The motion pass's frame group for each frame parity and each slot of the streamed ring,
+    /// whose slot before it holds the last frame's dynamic rows.
+    const MOTION_FRAME_GROUPS: u32 = MOTION_VIEW_GROUP + 1;
+
+    pub const fn motion_frame_group(parity: usize, streamed: u32) -> u32 {
+        MOTION_FRAME_GROUPS + parity as u32 * RING + streamed
+    }
+
+    /// The bind groups of materials' maps, after the motion pass's.
+    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2 * RING;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -353,6 +393,13 @@ pub struct CpuCulledRenderer {
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
+    /// True when the scene's layout was built with the motion pipelines, while a pass reads the
+    /// motion.
+    layouts_moving: bool,
+    /// The motion pass's last frame's data.
+    motion: motion::Motion,
+    /// Whether each bucket of the scene's layout holds something that moved in the frame.
+    motion_moving: Vec<bool>,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
@@ -473,6 +520,12 @@ impl CpuCulledRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        motion: MotionIds {
+                            buffer: ids::MOTION_VIEW,
+                            group: ids::MOTION_VIEW_GROUP,
+                            sampler: ids::MOTION_SAMPLER,
+                            blank: ids::BLANK_MOTION,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -484,6 +537,9 @@ impl CpuCulledRenderer {
             outlined: Layout::new(Drawn::Outlined),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
+            layouts_moving: false,
+            motion: motion::Motion::default(),
+            motion_moving: Vec::new(),
             layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
@@ -606,12 +662,14 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. While
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
-    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects.
+    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects. With `motion`,
+    /// the scene's draws get their motion pipelines.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
         shadows: CasterPasses,
         outlines: bool,
+        motion: bool,
     ) -> Result<(), RecordError> {
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -632,10 +690,21 @@ impl CpuCulledRenderer {
         let targets = self.with_draw_index(self.graph.scene_targets());
         self.layout_prepass = self.graph.depth_prepass();
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
+        let motion_targets = motion.then(|| self.with_draw_index(self.graph.motion_targets()));
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
+            settings,
+            pipelines,
+            skins,
+            targets,
+            input,
+            limit,
+            multi_draw,
+            shadows,
+            prepass,
+            motion_targets,
         )?;
+        self.layouts_moving = motion;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
             let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
@@ -649,6 +718,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                None,
             )?;
         } else {
             self.casters.clear();
@@ -667,6 +737,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                None,
             )?;
         } else {
             self.outlined.clear();
@@ -823,6 +894,11 @@ impl CpuCulledRenderer {
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + sizes::OBJECT_RANGE_BYTES as usize
+            + if self.layouts_moving {
+                crate::motion::BLOCK_BYTES as usize
+            } else {
+                0
+            }
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -1096,6 +1172,17 @@ impl CpuCulledRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        let motion = self.settings.motion_wanted();
+        let motion_frame = match (motion, self.culling.frame(ViewId::CAMERA)) {
+            (true, Some(camera)) => Some(self.motion.advance(camera)),
+            _ => {
+                if !motion {
+                    self.motion.stop();
+                }
+                None
+            }
+        };
+        self.graph.set_motion(motion, motion_frame);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1229,6 +1316,25 @@ impl CpuCulledRenderer {
             false
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
+        let motion_on =
+            motion && self.layouts_moving && self.graph.motion_draws() && motion_frame.is_some();
+        if let (true, Some(motion_frame)) = (motion_on, motion_frame.as_ref()) {
+            let ranges = input.snapshot.uploads().len() + 1;
+            self.motion.reserve(ranges)?;
+            let buckets = self.layout.buckets.len();
+            self.motion_moving
+                .try_reserve(buckets.saturating_sub(self.motion_moving.len()))
+                .map_err(|_| RecordError::OutOfMemory {
+                    bytes: buckets as u32,
+                })?;
+            let resident_rows = self.textures.resident_rows();
+            let remade = rebuilt || new_texture;
+            self.motion
+                .prepare(list, resident_rows, &self.skins, remade)?;
+            self.motion
+                .mark(input, &self.layout, &mut self.motion_moving);
+            self.motion.upload(list, arena, motion_frame)?;
+        }
         self.skins.set_morph_cap(self.settings.morph_cap());
         let meshes = self.settings.meshes();
         self.skins
@@ -1332,6 +1438,10 @@ impl CpuCulledRenderer {
             }
         };
         let never = |_| false;
+        let motion_draws = motion_on && self.motion.draws();
+        let (motion_state, motion_moving, skins) =
+            (&mut self.motion, &self.motion_moving, &self.skins);
+        let motion_group = ids::motion_frame_group(input.parity(), self.streamed_slot.slot());
         // A cascade or a tile that does not draw keeps its depth: its render pass is left out.
         let skips = |role: Role| match role {
             Role::Shadow(view) if view.tile_index().is_some() => tile_culling.frame(view).is_none(),
@@ -1403,7 +1513,18 @@ impl CpuCulledRenderer {
                     let group = ids::frame_group(ViewId::CAMERA) + light_slot;
                     lines.record(list, group, &[slot, slot])
                 }
+                Role::Motion if motion_draws && culling.frame(ViewId::CAMERA).is_some() => {
+                    let starts = culling.culled(frame, ViewId::CAMERA).bucket_starts();
+                    let moving = motion_moving.as_slice();
+                    opaque.record_motion(list, arena, starts, layout, meshes, motion_group, moving)
+                }
                 _ => Ok(()),
+            },
+            |list| {
+                if motion_on {
+                    motion_state.finish(list, input.parity(), skins)?;
+                }
+                Ok(())
             },
         )?;
         self.tiles
@@ -1504,6 +1625,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
         };
         let outlines = self.settings.outline().is_some();
+        let motion = self.settings.motion_wanted();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
         let ao = self
@@ -1523,10 +1645,11 @@ impl FrameBuilder for CpuCulledRenderer {
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
+            || motion != self.layouts_moving
             || prepass_changed
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines)?;
+            self.rebuild_layout(input, shadows, outlines, motion)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -1681,6 +1804,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lights.forget_gpu();
         self.light_textures.forget_gpu();
         self.skins.forget_gpu();
+        self.motion.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
@@ -1710,5 +1834,9 @@ impl FrameBuilder for CpuCulledRenderer {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {
         let canvas = self.settings.switch_canvas(scene_color, antialias);
         self.graph.set_canvas(canvas);
+    }
+
+    fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
+        self.graph.allow_motion(one_sample, multisampled);
     }
 }

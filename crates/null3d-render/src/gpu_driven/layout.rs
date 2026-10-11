@@ -7,8 +7,10 @@
 //! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
 //! mesh alone, as the shadow cascades draw their depth. The outlined layout holds the objects that
 //! the sketch outlines, grouped by mesh alone, as the outline view draws them into the outline
-//! mask. Each of the two has a bucket table and bucket records of its own, and its culling reads
-//! the scene layout's matrices, layer table and cell order.
+//! mask. The motion layout holds every opaque object and instance row, grouped by mesh and by the
+//! material of a masked or swaying pair, as the motion view draws their motion (see
+//! [`crate::motion`]). Each of the three has a bucket table and bucket records of its own, and its
+//! culling reads the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -19,7 +21,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
@@ -29,6 +31,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
+use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -62,6 +65,9 @@ pub(super) enum Drawn {
     Casters,
     /// The objects that the sketch outlines, as the outline view draws them into the outline mask.
     Outlined,
+    /// The opaque objects and instance rows, as the motion view draws the motion of those that
+    /// move into the motion target.
+    Motion,
 }
 
 /// The material of every caster bucket and every outlined bucket: neither a caster's depth nor an
@@ -136,6 +142,9 @@ pub(super) struct Bucket {
     /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
     /// from copy `base` on.
     pub(super) indexed: bool,
+    /// In the motion layout, true when its instances move by themselves, as skinned and morphed
+    /// meshes and swaying custom materials do, so the motion view draws them in every frame.
+    pub(super) moves: bool,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -313,8 +322,18 @@ impl Layout {
     /// Bytes of each view's compacted instance buffer for this layout: a copy for each slot of the
     /// buckets that read copies, then an index entry for each slot of those that read indices.
     pub(super) fn compacted_bytes(&self) -> u32 {
-        (self.copied * sizes::INSTANCE_STRIDE + self.indexed * sizes::INDEX_STRIDE)
-            .max(sizes::INSTANCE_STRIDE)
+        let stride = self.copy_stride();
+        (self.copied * stride + self.indexed * sizes::INDEX_STRIDE).max(stride)
+    }
+
+    /// Bytes of each copy in a view's compacted instance buffer: the motion layout's copies hold the
+    /// last frame's matrix too.
+    pub(super) fn copy_stride(&self) -> u32 {
+        if self.drawn == Drawn::Motion {
+            sizes::MOTION_INSTANCE_STRIDE
+        } else {
+            sizes::INSTANCE_STRIDE
+        }
     }
 
     /// An empty layout of buckets that draw `drawn`, whose pipelines read their instances by index
@@ -333,6 +352,7 @@ impl Layout {
             Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
             Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
             Drawn::Outlined => (ids::OUTLINE_BUCKETS, ids::OUTLINE_RECORDS),
+            Drawn::Motion => (ids::MOTION_BUCKETS, ids::MOTION_RECORDS),
         }
     }
 
@@ -367,6 +387,11 @@ impl Layout {
         self.home_buckets
             .get(slot)
             .is_some_and(|&bucket| bucket != HIDDEN)
+    }
+
+    /// Bytes of the matrix buffer on the GPU, 0 before it exists.
+    pub(super) fn matrix_bytes(&self) -> u32 {
+        self.buffer_sizes[0]
     }
 
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
@@ -583,10 +608,16 @@ impl Layout {
             let depth_key = match drawn {
                 Drawn::Casters => Some(settings.caster_of(pipeline, material)),
                 Drawn::Outlined => Some((mask_keys(pipeline).0, 0)),
+                Drawn::Motion => Some(settings.motion_of(pipeline, material)?),
                 Drawn::Scene => None,
             };
             if let Some((key, group)) = depth_key {
-                let material = if key.template == template::SHADOW_DEPTH || drawn == Drawn::Outlined
+                // The motion template reads its material only to test a mask.
+                let unmasked_motion = key.template == template::MOTION
+                    && key.permutation & permutation::ALPHA_MASK == 0;
+                let material = if key.template == template::SHADOW_DEPTH
+                    || drawn == Drawn::Outlined
+                    || unmasked_motion
                 {
                     CASTER_MATERIAL
                 } else {
@@ -614,6 +645,7 @@ impl Layout {
                 Drawn::Scene => false,
                 Drawn::Casters => !shadows.any() || object & flags::CAST_SHADOWS == 0,
                 Drawn::Outlined => object & flags::OUTLINED == 0,
+                Drawn::Motion => false,
             };
             if left_out {
                 return None;
@@ -643,7 +675,7 @@ impl Layout {
             let bits = batch.shadows();
             match drawn {
                 Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
-                Drawn::Scene | Drawn::Casters => {
+                Drawn::Scene | Drawn::Casters | Drawn::Motion => {
                     let bounds = if batch.unculled() {
                         UNCULLED_BOUNDS
                     } else {
@@ -687,6 +719,7 @@ impl Layout {
                         )
                     }
                     Drawn::Casters => shadows.pipelines(pipelines, pipeline),
+                    Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0),
                     Drawn::Scene => pipelines.opaque(pipeline, targets, prepass),
                 };
                 self.waiting
@@ -714,6 +747,18 @@ impl Layout {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
+            let moves = drawn == Drawn::Motion
+                && (skin.is_some()
+                    || (pipeline.template >= template::CUSTOM_FIRST
+                        && pipeline.permutation & permutation::MOTION != 0));
+            // The motion template's pipelines bind a map's group after the frame's, and a blank
+            // one's where the pair has no map.
+            let group =
+                if drawn == Drawn::Motion && pipeline.template == template::MOTION && group == 0 {
+                    ids::BLANK_MAP_GROUP
+                } else {
+                    group
+                };
             // The mask's second pipeline binds as the depth template does.
             let (pipeline, prepass, prepass_own) = match drawn {
                 Drawn::Outlined => {
@@ -728,6 +773,7 @@ impl Layout {
                     let (cascades, tiles) = shadows.pipelines(pipelines, pipeline);
                     (cascades, tiles, false)
                 }
+                Drawn::Motion => (pipelines.id(pipeline.in_pass(targets)), 0, false),
                 Drawn::Scene => {
                     let own = pipeline.places_own_vertices();
                     let (pipeline, prepass) = pipelines.opaque(pipeline, targets, prepass);
@@ -750,6 +796,7 @@ impl Layout {
                 skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
                 indexed: by_index,
+                moves,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -832,7 +879,9 @@ impl Layout {
                 bucket.center[1].to_bits(),
                 bucket.center[2].to_bits(),
                 bucket.first_joint,
-                u32::from(bucket.indexed),
+                // The motion layout's buckets never read by index: the word marks those whose
+                // instances move by themselves.
+                u32::from(bucket.indexed || bucket.moves),
             ]);
         }
         self.built = true;
@@ -886,10 +935,13 @@ impl Layout {
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
             if size > 0 && *made < size {
                 *made = grown_size(size, binding_bytes);
-                list.push(
-                    Op::CreateBuffer,
-                    &[id, *made, usage::STORAGE | usage::COPY_DST],
-                )?;
+                // The motion pass copies the matrices into its last frame's copies.
+                let flags = if id == ids::MATRICES {
+                    usage::STORAGE | usage::COPY_DST | usage::COPY_SRC
+                } else {
+                    usage::STORAGE | usage::COPY_DST
+                };
+                list.push(Op::CreateBuffer, &[id, *made, flags])?;
                 recreated = true;
                 self.order_uploaded &= id != ids::ORDER;
             }
@@ -1057,17 +1109,27 @@ impl Layout {
     }
 
     /// Uploads changed world matrices straight from the core's world buffers of this parity, or
-    /// every matrix after the layout changed.
+    /// every matrix after the layout changed. While the motion pass draws, `changed` takes the
+    /// byte ranges of the matrix buffer that the frame writes.
     pub(super) fn upload_matrices(
         &self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
         parity: usize,
         everything: bool,
+        mut changed: Option<&mut ChangedRanges>,
     ) -> Result<(), RecordError> {
+        if (everything || input.snapshot.overflowed())
+            && let Some(changed) = changed.as_deref_mut()
+        {
+            changed.add_everything();
+        }
         let mut upload = |base: u32, matrices: &[f32], start: u32, count: u32| {
             let floats =
                 &matrices[start as usize * MATRIX_FLOATS..(start + count) as usize * MATRIX_FLOATS];
+            if let Some(changed) = changed.as_deref_mut() {
+                changed.add((base + start) * MATRIX_BYTES, count * MATRIX_BYTES);
+            }
             list.push(
                 Op::WriteBuffer,
                 &[

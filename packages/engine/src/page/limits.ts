@@ -66,6 +66,7 @@ export interface DeviceReport {
 			rgba16f: FloatTarget;
 			rgba32f?: { complete: boolean };
 			r11fG11fB10f?: FloatTarget;
+			rg16f?: FloatTarget;
 		} | null;
 	};
 }
@@ -117,6 +118,12 @@ export interface CoreDevice {
 	 * WebGPU, and on WebGL2 where the 32-bit and the 16-bit float targets pass the device check.
 	 */
 	occlusionTargets: boolean;
+	/**
+	 * Whether the device draws the motion target, two 16-bit floats per pixel, with one sample, and
+	 * with MSAA's samples: both on WebGPU, one sample only in compatibility mode, which cannot
+	 * multisample float targets, and on WebGL2 where `RG16F` passes the device check.
+	 */
+	motionTargets: readonly [oneSample: boolean, multisampled: boolean];
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
 	/**
@@ -301,6 +308,22 @@ export function webgl2DrawsOcclusion(report: DeviceReport['webgl2']): boolean {
 }
 
 /**
+ * Whether the device draws the motion target with one sample, and with MSAA's samples (see
+ * `CoreDevice.motionTargets`).
+ */
+export function motionTargets(
+	tier: Tier,
+	report: DeviceReport,
+): readonly [oneSample: boolean, multisampled: boolean] {
+	if (tier === 'webgpu') return [true, true];
+	if (tier === 'webgpu-compat') return [true, false];
+	// The motion pass copies the last frame's matrices, which needs 32-bit float targets too.
+	const targets = report.webgl2.floatRenderTargets;
+	if (targets?.rgba32f?.complete !== true) return [false, false];
+	return [webgl2Draws(targets.rg16f, 'fxaa'), webgl2Draws(targets.rg16f, 'msaa')];
+}
+
+/**
  * The format of the target that scene passes draw into. Both GPU paths draw HDR color, in the
  * packed small float format, which takes half the bytes, where the device draws into it and the
  * canvas needs no alpha, and in 16-bit floats elsewhere. WebGPU takes the small format by default,
@@ -387,6 +410,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		effectsSceneColor: effects.sceneColor,
 		effectsAntialias: ANTIALIAS_CODES[effects.antialias],
 		occlusionTargets: tier !== 'webgl2' || webgl2DrawsOcclusion(report.webgl2),
+		motionTargets: motionTargets(tier, report),
 		transparent: options.transparent,
 		cellCulling: options.cells,
 		joinEffects: options.join,

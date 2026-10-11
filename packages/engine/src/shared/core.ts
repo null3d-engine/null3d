@@ -601,6 +601,16 @@ export interface CoreGlue extends CoreErrors {
 	 * code, from the next frame on.
 	 */
 	setCanvasOutput(sceneColor: number, antialias: number): number;
+	/**
+	 * Says whether the device draws the motion target with one sample, and with MSAA's samples, as
+	 * the page's device check found.
+	 */
+	allowMotion(oneSample: boolean, multisampled: boolean): number;
+	/**
+	 * 1 when the frame's passes read the motion since the frame before, as the motion debug view
+	 * does, so a held frame needs the frame before it drawn first, else 0.
+	 */
+	holdsFrameBefore(): number;
 	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
 	setRenderScaling(scaling: boolean): number;
 	/** The device pixels per CSS pixel of the canvas, which size sprites given in screen pixels. */
@@ -857,6 +867,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'allowMotion',
+	'holdsFrameBefore',
 	'setDof',
 	'setDofTaps',
 	'setSoftwareOcclusion',

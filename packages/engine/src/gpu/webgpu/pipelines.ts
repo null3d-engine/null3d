@@ -26,12 +26,15 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_MOTION_FRAME,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
+	PERMUTATION_ALPHA_MASK,
 	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_INSTANCE_INDEX,
+	PERMUTATION_MOTION,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
@@ -39,6 +42,7 @@ import {
 	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
+	SIZE_MOTION_INSTANCE_STRIDE,
 	STATE_ALPHA_TO_COVERAGE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -82,6 +86,8 @@ import {
 	TEMPLATE_LIGHT_WRITE,
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
+	TEMPLATE_MOTION,
+	TEMPLATE_MOTION_VIEW,
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
@@ -108,6 +114,7 @@ import {
 	DEBUG_LINES_SHADER,
 	DEBUG_VIEW_SHADER,
 	type DeviceShaders,
+	MOTION_VIEW_SHADER,
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
@@ -163,6 +170,14 @@ export interface RenderTemplate {
 	 * vertices, in slot 0, where each pipeline's vertex format places them.
 	 */
 	readonly meshLocations?: readonly number[];
+	/** For a template that tests masks: the mesh locations that only its ALPHA_MASK builds read. */
+	readonly maskLocations?: readonly number[];
+	/**
+	 * True for the motion template, which reads each vertex's place in the last frame from vertex
+	 * buffer slot 2 at location 4: the last frame's copy of a skinned region, or the mesh's own
+	 * vertices.
+	 */
+	readonly lastVertices?: boolean;
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 	/**
@@ -239,6 +254,26 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 		],
 	},
 ];
+
+/**
+ * The motion view's compacted instance: the matrix rows and the ids, then the rows of the last
+ * frame's matrix at locations 13 to 15.
+ */
+const MOTION_INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
+	{
+		arrayStride: SIZE_MOTION_INSTANCE_STRIDE,
+		stepMode: 'instance',
+		attributes: [
+			...(INSTANCE_BUFFERS[0] as GPUVertexBufferLayout).attributes,
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 4, offset: 64, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 5, offset: 80, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 6, offset: 96, format: 'float32x4' },
+		],
+	},
+];
+
+/** The location of the last frame's place of each vertex in the motion template. */
+const LAST_POSITION_LOCATION = 4;
 
 /**
  * The compacted index that a mesh draw's instances read in the builds that read their instances by
@@ -328,7 +363,9 @@ const NARROW_DIRECTIONS_ID = 1100;
 
 /** The mesh locations that a template's variant reads, or undefined for a template without meshes. */
 function meshLocations(t: RenderTemplate, permutation: number): number[] | undefined {
-	return t.meshLocations && variantLocations(t.meshLocations, permutation);
+	if (!t.meshLocations) return undefined;
+	const masked = t.maskLocations && permutation & PERMUTATION_ALPHA_MASK ? t.maskLocations : [];
+	return variantLocations([...t.meshLocations, ...masked], permutation);
 }
 
 /**
@@ -344,7 +381,12 @@ function vertexBuffers(
 ): GPUVertexBufferLayout[] {
 	const locations = meshLocations(t, permutation);
 	if (!locations) return t.vertexBuffers;
-	const instances = permutation & PERMUTATION_INSTANCE_INDEX ? INDEX_BUFFERS : t.vertexBuffers;
+	const instances =
+		permutation & PERMUTATION_INSTANCE_INDEX
+			? INDEX_BUFFERS
+			: permutation & PERMUTATION_MOTION
+				? MOTION_INSTANCE_BUFFERS
+				: t.vertexBuffers;
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
@@ -356,7 +398,15 @@ function vertexBuffers(
 		stepMode: 'vertex',
 		attributes,
 	};
-	return [mesh, ...instances];
+	if (!t.lastVertices) return [mesh, ...instances];
+	const position = attributes.find((attribute) => attribute.shaderLocation === 0);
+	if (!position) throw new Error(`vertex format ${vertexFormat} has no position`);
+	const last: GPUVertexBufferLayout = {
+		arrayStride: mesh.arrayStride,
+		stepMode: 'vertex',
+		attributes: [{ ...position, shaderLocation: LAST_POSITION_LOCATION }],
+	};
+	return [mesh, ...instances, last];
 }
 
 /**
@@ -406,6 +456,8 @@ export class Pipelines {
 	 * occlusion feature's shader file.
 	 */
 	private readonly occlusion: ShaderVariants;
+	/** The motion view's culling build, which arrives with the motion feature's shader file. */
+	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
@@ -494,6 +546,25 @@ export class Pipelines {
 			{ binding: 13, visibility: fragment, sampler: {} },
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			rowValues,
+			objectRanges,
+		]);
+		// The motion pass's frame group: the depth group's entries, then the motion block and the last
+		// frame's joints, which vertex shaders read, and the table of object ranges for custom
+		// materials that read object ids.
+		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
+			...frameEntries,
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
+			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+			{
+				binding: 5,
+				visibility: GPUShaderStage.VERTEX,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 			rowValues,
 			objectRanges,
 		]);
@@ -801,7 +872,28 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
+		// The motion of moving objects: the last frame's matrices after each instance's copy, and the
+		// last frame's place of each vertex in slot 2. Masked builds read the texture coordinates and
+		// the base color map, whose group, or a blank one's, every build binds.
+		this.defineTemplate(TEMPLATE_MOTION, {
+			label: 'mesh motion',
+			shader: shaders.motion,
+			pipeline: 'main',
+			layouts: [LAYOUT_MOTION_FRAME, LAYOUT_TEXTURES],
+			meshLocations: [0],
+			maskLocations: [2, 3],
+			vertexBuffers: MOTION_INSTANCE_BUFFERS,
+			lastVertices: true,
+		});
 		if (DEV) {
+			this.defineTemplate(TEMPLATE_MOTION_VIEW, {
+				label: 'motion view',
+				shader: MOTION_VIEW_SHADER,
+				pipeline: 'main',
+				layouts: [LAYOUT_EFFECT],
+				multisampledLayouts: [LAYOUT_EFFECT_DEPTH_MS],
+				vertexBuffers: [],
+			});
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
 				shader: DEBUG_LINES_SHADER,
@@ -821,6 +913,7 @@ export class Pipelines {
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
 		this.occlusion = shaders.cull_occlusion;
+		this.cullMotion = shaders.cull_motion;
 		this.pyramid = shaders.pyramid;
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
@@ -987,19 +1080,23 @@ export class Pipelines {
 		const multisampled =
 			t.multisampledLayouts !== undefined && (permutation & PERMUTATION_DEPTH_MULTISAMPLED) !== 0;
 		// A custom material's shadow caster draws in the shadow passes, whose views bind the depth
-		// template's group in place of the frame group.
+		// template's group in place of the frame group, and its motion build in the motion pass,
+		// whose view binds the motion frame group there.
 		const caster = (permutation & PERMUTATION_CASTER) !== 0;
+		const motion = template !== TEMPLATE_MOTION && (permutation & PERMUTATION_MOTION) !== 0;
 		const key =
-			template * 16 +
+			template * 32 +
 			(skins ? 1 : 0) +
 			(byIndex ? 2 : 0) +
 			(multisampled ? 4 : 0) +
-			(caster ? 8 : 0);
+			(caster ? 8 : 0) +
+			(motion ? 16 : 0);
 		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
 			const own = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
+			const first = caster ? LAYOUT_DEPTH : motion ? LAYOUT_MOTION_FRAME : undefined;
 			const groups = [
-				...(caster ? [LAYOUT_DEPTH, ...own.slice(1)] : own),
+				...(first === undefined ? own : [first, ...own.slice(1)]),
 				...(skins ? [LAYOUT_JOINTS] : []),
 				...(byIndex ? [LAYOUT_INSTANCE_INDEX] : []),
 			];
@@ -1117,9 +1214,10 @@ export class Pipelines {
 	 * or one of occlusion culling's, or undefined for a template whose shader the device's module of
 	 * the start holds.
 	 */
-	computeVariants(template: number): ShaderVariants | undefined {
+	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
@@ -1139,6 +1237,15 @@ export class Pipelines {
 				label: `skin${tangent}${color}`,
 				layout: this.skinLayout,
 				compute: { module: this.module('skin', shader), entryPoint: 'main', constants },
+			};
+		}
+		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) {
+			const shader = variantFor(this.cullMotion, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
+			return {
+				label: 'cull motion',
+				layout: this.cullLayout,
+				compute: { module: this.module('cull motion', shader), entryPoint: CULL_ENTRY_POINT },
 			};
 		}
 		if (template === TEMPLATE_CULL) {

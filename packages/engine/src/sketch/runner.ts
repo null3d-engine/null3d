@@ -334,6 +334,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		if (glue.allowMotion(...device.motionTargets) !== 0) throw coreFailure(glue, 'createEngine');
 		const {
 			shadowTiles,
 			shadowTileSize,
@@ -885,27 +886,35 @@ export class SketchRunner {
 	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
-	 * loss, textures included. It waits for every texture image to reach that thread first. The
-	 * first failure in the sketch or the core stops the hold with E1408.
+	 * loss, textures included. It waits for every texture image to reach that thread first. Where a
+	 * pass reads the motion since the frame before, that thread draws the frame before the last one
+	 * first, which then creates the objects and uploads the scene, so the last frame has a frame
+	 * before it one step earlier. The first failure in the sketch or the core stops the hold with
+	 * E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
 		const { slots } = this.sketch.control;
 		const { glue } = this.sketch;
 		let frame = 0;
+		let first = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
-				if (step === steps) {
+				// A held frame whose passes read the motion since the frame before it, as the motion
+				// debug view does, has the thread that draws draw the frame before it first.
+				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
+				if (first === 0 && (before || step === steps)) {
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
-					// earlier frames' lists created, so the last frame records as it does after a GPU
-					// loss.
+					// earlier frames' lists created, so the first frame that it draws records as it
+					// does after a GPU loss.
 					this.gpuEpoch = -1;
 				}
 				frame = this.frame();
+				if (first === 0 && (before || step === steps)) first = frame;
 			}
 		} catch (error) {
 			throw new EngineError(
@@ -915,6 +924,7 @@ export class SketchRunner {
 		} finally {
 			this.holding = false;
 		}
+		Atomics.store(slots, Slot.HeldFrom, first);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
 	}

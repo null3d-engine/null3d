@@ -367,9 +367,13 @@ pub mod format {
     /// Four 32-bit unsigned integers per texel: data of several kinds in one data texture, such as
     /// WebGL2's light grid and light records, which shaders read as integers or turn into floats.
     pub const RGBA32_UINT: u32 = 23;
+    /// Two 16-bit floats per texel: the screen motion of each pixel's surface, which the motion
+    /// pass draws. Multisampled, it needs `Capabilities::MSAA_FLOAT16`, as `RGBA16_FLOAT` does.
+    /// WebGL2 calls it `RG16F`, and draws into it with `EXT_color_buffer_float`.
+    pub const RG16_FLOAT: u32 = 24;
 
     /// Every format.
-    pub const ALL: [u32; 24] = [
+    pub const ALL: [u32; 25] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -394,6 +398,7 @@ pub mod format {
         BC6H_RGB_UFLOAT,
         DEPTH16_UNORM,
         RGBA32_UINT,
+        RG16_FLOAT,
     ];
 
     /// One past the highest format code, the length of the tables that the replay loop indexes by
@@ -466,7 +471,7 @@ pub mod format {
     pub const fn block_bytes(format: u32) -> u32 {
         match format {
             CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
-            | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT => 4,
+            | RG11B10_UFLOAT | RGB9E5_UFLOAT | R32_FLOAT | RG16_FLOAT => 4,
             DEPTH16_UNORM => 2,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
@@ -738,6 +743,11 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 0 of the motion pass's pipelines: [`DEPTH`]'s bindings, then the motion block at
+    /// binding 4 and the last frame's joint texture at 5. On WebGL2 the group also holds the last
+    /// frame's morph weights at 6 and the last frame's matrix rows at 7 and 9, resident and
+    /// streamed.
+    pub const MOTION_FRAME: u32 = 38;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -827,9 +837,15 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The build draws or culls for the motion pass. A custom material's template draws a moving
+    /// object's motion: the vertex shader places each vertex in this frame and in the last, moved
+    /// by the material's vertex offset at each frame's time, and the fragment shader writes the
+    /// difference. Only custom materials with a vertex offset build it. The culling shader keeps
+    /// the instances whose world matrix changed since the last frame, and writes both matrices.
+    pub const MOTION: u32 = 1 << 29;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 25] = [
+    pub const NAMES: [(&str, u32); 26] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -855,6 +871,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("MOTION", MOTION),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -879,8 +896,10 @@ pub mod permutation {
     /// which never reads instances by index. Row values come from instance batches, which neither
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
-    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
-    pub const APART: [(u32, u32); 17] = [
+    /// A caster's build writes depth alone, so it has none of the bits that shade or tone map. A
+    /// motion build writes motion alone: it has none of them either, and a skinned or morphed
+    /// custom material draws its motion through the motion template, without its vertex offset.
+    pub const APART: [(u32, u32); 27] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -898,6 +917,16 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (MOTION, TONE_MAP),
+        (MOTION, VERTEX_COLOR),
+        (MOTION, ALPHA_MASK),
+        (MOTION, RECEIVE_SHADOWS),
+        (MOTION, SKIN),
+        (MOTION, MORPH),
+        (MOTION, TRANSMISSION),
+        (MOTION, PREPASS),
+        (MOTION, INSTANCE_INDEX),
+        (MOTION, CASTER),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1338,6 +1367,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
+    /// Bytes per compacted instance of the motion view: [`INSTANCE_STRIDE`]'s, then the three rows
+    /// of the last frame's world matrix.
+    pub const MOTION_INSTANCE_STRIDE: u32 = 112;
     /// Bytes per compacted instance that a vertex shader reads by index: the source's index in a
     /// whole 16-byte entry, which the culling shader writes as one vector.
     pub const INDEX_STRIDE: u32 = 16;
@@ -1563,6 +1595,16 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// The motion of moving objects, from the motion view: each vertex placed in this frame and in
+    /// the last, and the difference of the two places on the screen, beyond what the camera's
+    /// move explains, as two half floats. Masked materials test their alpha as masked casters
+    /// do, with their base color map where it has an image. Its group 0 is
+    /// [`super::layout::MOTION_FRAME`], and group 1 the map's.
+    pub const MOTION: u32 = 48;
+    /// The motion debug view: one triangle over the scene color, which shows each pixel's whole
+    /// motion, the camera's part from the depth and the surface's own from the motion target. It
+    /// binds as a custom effect that reads depth does.
+    pub const MOTION_VIEW: u32 = 63;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1753,6 +1795,7 @@ pub fn typescript_constants() -> String {
                 ("BC6H_RGB_UFLOAT", format::BC6H_RGB_UFLOAT),
                 ("DEPTH16_UNORM", format::DEPTH16_UNORM),
                 ("RGBA32_UINT", format::RGBA32_UINT),
+                ("RG16_FLOAT", format::RG16_FLOAT),
             ],
         ),
         (
@@ -1851,6 +1894,7 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("MOTION_FRAME", layout::MOTION_FRAME),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1944,6 +1988,8 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("MOTION", template::MOTION),
+                ("MOTION_VIEW", template::MOTION_VIEW),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -1975,6 +2021,7 @@ pub fn typescript_constants() -> String {
             "SIZE",
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
+                ("MOTION_INSTANCE_STRIDE", sizes::MOTION_INSTANCE_STRIDE),
                 ("INDEX_STRIDE", sizes::INDEX_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),

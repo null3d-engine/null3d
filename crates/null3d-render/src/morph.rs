@@ -397,6 +397,12 @@ impl MorphTexture {
         [self.deltas, self.weights]
     }
 
+    /// The rows of the texture of weights, 0 before it exists, which the motion pass's copies of
+    /// the last frame's weights take too.
+    pub(crate) fn weight_rows(&self) -> u32 {
+        self.weight_rows
+    }
+
     /// True once both textures exist.
     pub(crate) fn exists(&self) -> bool {
         self.delta_rows > 0 && self.weight_rows > 0
@@ -574,7 +580,8 @@ impl MorphTexture {
 /// Records the creation of a morph texture of `rows` rows of [`TEXTURE_WIDTH`] texels in `format`,
 /// under id `id`.
 fn create(list: &mut DrawList, id: u32, rows: u32, format: u32) -> Result<(), RecordError> {
-    let usage = texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST;
+    // The motion pass copies the weights into its copies of the last frame's.
+    let usage = texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST | texture_usage::COPY_SRC;
     let words = [id, TEXTURE_WIDTH, rows, 1, format, usage, 1, 1, view::D2];
     list.push(Op::CreateTexture, &words)?;
     Ok(())

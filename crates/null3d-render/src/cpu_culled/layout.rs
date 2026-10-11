@@ -21,7 +21,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, Op, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -76,6 +76,9 @@ pub(super) struct Bucket {
     pub(super) group: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     pub(super) shift: u32,
+    /// While the motion pass draws, true when the bucket's instances move by themselves, as skinned
+    /// and morphed meshes and swaying custom materials do.
+    pub(super) moves: bool,
 }
 
 /// One draw: a part of a bucket's mesh, which draws every instance that the bucket lists.
@@ -90,6 +93,10 @@ pub(super) struct Draw {
     pub(super) prepass: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(super) textures: u32,
+    /// While the motion pass draws, the id of the render pipeline that draws its motion, or 0 for
+    /// a draw with none, and the bind group of the map that that pipeline reads, or 0.
+    pub(super) motion: u32,
+    pub(super) motion_textures: u32,
     pub(super) page: u32,
     pub(super) bucket: u32,
     pub(super) index_count: u32,
@@ -239,7 +246,8 @@ impl Layout {
     /// that `skins` skins draw with pipelines that skin in the vertex shader; those that it hides get
     /// no bucket, and the layout asks only for their pipelines. With a `prepass`, the
     /// scene's draws that the depth prepass draws get its pipelines too. The caller marks the
-    /// layout built once the room it needs is made.
+    /// layout built once the room it needs is made. While the motion pass draws into `motion`'s
+    /// targets, the scene's draws get their motion pipelines too.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -252,6 +260,7 @@ impl Layout {
         multi_draw: bool,
         shadows: CasterPasses,
         prepass: Prepass,
+        motion: Option<PassTargets>,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -437,6 +446,17 @@ impl Layout {
         self.second_draws.clear();
         for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let motion_key = motion
+                .filter(|_| drawn == Drawn::Scene)
+                .and_then(|targets| Some((settings.motion_of(pipeline, material)?, targets)));
+            let (motion_pipeline, motion_textures) = motion_key
+                .map_or((0, 0), |((key, group), targets)| {
+                    (pipelines.id(key.in_pass(targets)), group)
+                });
+            let moves = motion_key.is_some_and(|((key, _), _)| {
+                pipeline.permutation & (permutation::SKIN | permutation::MORPH) != 0
+                    || key.permutation & permutation::MOTION != 0
+            });
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let second = (drawn == Drawn::Outlined)
                 .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
@@ -447,12 +467,15 @@ impl Layout {
                     material,
                     group,
                     shift,
+                    moves,
                 });
                 for part in meshes.parts(slot) {
                     let draw = Draw {
                         pipeline,
                         prepass,
                         textures,
+                        motion: motion_pipeline,
+                        motion_textures,
                         page: part.page,
                         bucket,
                         index_count: part.index_count,
@@ -542,6 +565,8 @@ pub(super) fn run_end(draws: &[Draw], start: usize) -> usize {
             d.pipeline != first.pipeline
                 || d.prepass != first.prepass
                 || d.textures != first.textures
+                || d.motion != first.motion
+                || d.motion_textures != first.motion_textures
                 || d.page != first.page
         })
         .map_or(draws.len(), |n| start + n)

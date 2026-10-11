@@ -102,6 +102,15 @@
 //! into buffers of its own, and its bundle draws them into the outline mask. Outlining an object,
 //! or turning outlines on or off, rebuilds the layouts, as casting shadows does.
 //!
+//! # Motion
+//!
+//! While a pass reads the motion target, a fourth layout holds every opaque object and instance
+//! row (see [`crate::motion`]). The motion view culls it with the camera's frustum and layers, and
+//! keeps the sources whose matrices changed since the last frame, or whose buckets move by
+//! themselves. Its bundle draws them into the motion target. The builder keeps the last frame's
+//! matrices, joints and skinned vertices in two copies, one for each frame parity (see
+//! [`motion`]).
+//!
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
 //! that the camera's opaque pass draws after its bundle, or before it while a bucket writes no
 //! depth, is [`crate::background`]. The render graph ([`crate::frame_graph`]) orders the passes and
@@ -117,6 +126,7 @@
 mod cull;
 mod layout;
 mod lights;
+mod motion;
 mod opaque;
 mod pyramid;
 mod shadow;
@@ -150,6 +160,7 @@ use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{CameraLights, LightGrid, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
+use crate::motion::MotionIds;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
@@ -278,8 +289,11 @@ mod ids {
     /// reads.
     pub const OUTLINE_BUCKETS: u32 = AO + 1;
     pub const OUTLINE_RECORDS: u32 = OUTLINE_BUCKETS + 1;
+    /// The motion layout's bucket table and bucket records, which the motion view's culling reads.
+    pub const MOTION_BUCKETS: u32 = OUTLINE_RECORDS + 1;
+    pub const MOTION_RECORDS: u32 = MOTION_BUCKETS + 1;
     /// The uniform buffer of the background's values.
-    pub const BACKGROUND: u32 = OUTLINE_RECORDS + 1;
+    pub const BACKGROUND: u32 = MOTION_RECORDS + 1;
     /// Each camera view's buffers of occlusion culling: its depth pyramid and the pyramid's level
     /// parameters, two ids from `OCCLUSION + 2 * view`.
     const OCCLUSION: u32 = BACKGROUND + 1;
@@ -298,10 +312,34 @@ mod ids {
     pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
-    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    /// The motion pass's block: the last frame's view and clock.
+    pub const MOTION_BLOCK: u32 = DOF + 1;
+    /// The uniform buffer of the motion debug view's step.
+    pub const MOTION_VIEW: u32 = MOTION_BLOCK + 1;
+    /// The two copies of the last frame's world matrices, one for each frame parity.
+    const LAST_MATRICES: u32 = MOTION_VIEW + 1;
+
+    pub const fn last_matrices(copy: usize) -> u32 {
+        LAST_MATRICES + copy as u32
+    }
+
+    /// The two copies of each skinned vertex buffer's last frame, one for each frame parity.
+    const LAST_SKINNED: u32 = LAST_MATRICES + 2;
+
+    pub const fn last_skinned(copy: usize, buffer: u32) -> u32 {
+        LAST_SKINNED + copy as u32 * super::skin::MAX_SKINNED_BUFFERS + buffer
+    }
+
+    /// The copy of the last frame's vertices of the skinned vertex buffer `id` that a frame of
+    /// `parity` reads: the other parity's.
+    pub const fn last_skinned_of(id: u32, parity: usize) -> u32 {
+        last_skinned(1 - parity, id - SKINNED)
+    }
+
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
-    pub const OBJECT_RANGES: u32 = DOF + 1;
+    pub const OBJECT_RANGES: u32 = LAST_SKINNED + 2 * super::skin::MAX_SKINNED_BUFFERS;
+    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = OBJECT_RANGES + 1;
 
     /// three.js's table of the split-sum terms of specular light.
@@ -333,8 +371,23 @@ mod ids {
     /// The row values of instance batches, two texels per source, which the vertex shaders of rows
     /// with row values read.
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// The two copies of the last frame's joint texture, one for each frame parity.
+    const LAST_JOINTS: u32 = ROW_VALUES + 1;
+
+    pub const fn last_joints(copy: usize) -> u32 {
+        LAST_JOINTS + copy as u32
+    }
+
+    /// The texel that the motion view's frame groups bind in place of the last frame's joints
+    /// before the scene skins.
+    pub const BLANK_JOINTS: u32 = LAST_JOINTS + 2;
+    /// The texture of one texel that the motion debug view reads in place of the motion target
+    /// where the device draws none.
+    pub const BLANK_MOTION: u32 = BLANK_JOINTS + 1;
+    /// The map of one texel that the motion view's buckets without a map bind.
+    pub const BLANK_MAP: u32 = BLANK_MOTION + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = ROW_VALUES + 1;
+    pub const TARGETS: u32 = BLANK_MAP + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -351,8 +404,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 6;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 7;
+    /// The sampler of the motion view's blank map and of the motion debug view's step.
+    pub const MOTION_SAMPLER: u32 = 8;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 8;
+    pub const SAMPLERS: u32 = 9;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -369,6 +424,8 @@ mod ids {
     pub const OCCLUSION_EARLY: u32 = 9;
     pub const OCCLUSION_LATE: u32 = 10;
     pub const PYRAMID: u32 = 11;
+    /// The motion view's culling pipeline.
+    pub const CULL_MOTION: u32 = 12;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -412,8 +469,18 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of the motion debug view's step, and of the blank map of the motion view.
+    pub const MOTION_VIEW_GROUP: u32 = TRANSMISSION_GROUP + 1;
+    pub const BLANK_MAP_GROUP: u32 = MOTION_VIEW_GROUP + 1;
+    /// The motion view's frame group for each frame parity.
+    const MOTION_FRAME_GROUPS: u32 = BLANK_MAP_GROUP + 1;
+
+    pub const fn motion_frame_group(parity: usize) -> u32 {
+        MOTION_FRAME_GROUPS + parity as u32
+    }
+
+    /// The bind groups of materials' maps, after the motion view's.
+    pub const TEXTURE_GROUPS: u32 = MOTION_FRAME_GROUPS + 2;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -421,6 +488,16 @@ mod ids {
     /// Each camera view's bundle of its depth prepass, after every view's bundle.
     pub const fn prepass_bundle(view: ViewId) -> u32 {
         1 + MAX_VIEW_IDS as u32 + view.index() as u32
+    }
+
+    /// The motion view's bundle for each frame parity: its own, and the place of a depth prepass's
+    /// bundle, which the motion view has none of.
+    pub const fn motion_bundle(parity: usize) -> u32 {
+        if parity == 0 {
+            bundle(ViewId::MOTION)
+        } else {
+            prepass_bundle(ViewId::MOTION)
+        }
     }
 }
 
@@ -497,6 +574,14 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
+    /// The motion layout, which the motion view draws while a pass reads the motion.
+    moving: Layout,
+    /// True when the layouts were built while a pass reads the motion.
+    layouts_moving: bool,
+    /// True once the motion view's culling buffers exist.
+    motion_made: bool,
+    /// The motion view's objects and the last frame's data.
+    motion: motion::Motion,
     /// The shadow passes of the frame that the layouts were built for.
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
@@ -620,6 +705,12 @@ impl GpuDrivenRenderer {
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
                         }),
+                        motion: MotionIds {
+                            buffer: ids::MOTION_VIEW,
+                            group: ids::MOTION_VIEW_GROUP,
+                            sampler: ids::MOTION_SAMPLER,
+                            blank: ids::BLANK_MOTION,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -630,6 +721,10 @@ impl GpuDrivenRenderer {
             layout: Layout::new(Drawn::Scene, config.index_instances),
             casters: Layout::new(Drawn::Casters, config.index_instances),
             outlined: Layout::new(Drawn::Outlined, config.index_instances),
+            moving: Layout::new(Drawn::Motion, false),
+            layouts_moving: false,
+            motion_made: false,
+            motion: motion::Motion::default(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
@@ -756,6 +851,7 @@ impl GpuDrivenRenderer {
         };
         let shadows = passes.any();
         let outlines = self.settings.outline().is_some();
+        let motion = self.settings.motion_wanted();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
         let ao = self
@@ -774,6 +870,7 @@ impl GpuDrivenRenderer {
             || !self.layout.built
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
+            || motion != self.layouts_moving
             || self.graph.depth_prepass() != self.layout_prepass
             || skinned_appear;
         if upload_everything {
@@ -853,6 +950,24 @@ impl GpuDrivenRenderer {
                 self.outlined.clear();
             }
             self.layouts_outlined = outlines;
+            // The motion layout holds buckets only while a pass reads the motion.
+            if motion {
+                self.moving.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    self.graph.motion_targets(),
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    passes,
+                    Prepass::Off,
+                    &self.skinning,
+                )?;
+            } else {
+                self.moving.clear();
+            }
+            self.layouts_moving = motion;
             // The cell order holds every object that a view or a cascade culls: blended casters
             // have no bucket in the scene's layout, as the transparent pass draws them, but cast
             // all the same. Blended objects can be outlined too.
@@ -879,6 +994,9 @@ impl GpuDrivenRenderer {
             cull::create_pipeline(list)?;
             lights::create_pipelines(list)?;
         }
+        if motion {
+            created_pipelines |= self.motion.create_pipeline(list)?;
+        }
         self.lines.request_pipeline(
             &input.lines,
             &mut self.pipelines,
@@ -899,6 +1017,16 @@ impl GpuDrivenRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        let motion_frame = match (motion, camera.as_ref()) {
+            (true, Some(frame)) => Some(self.motion.advance(frame)),
+            _ => {
+                if !motion {
+                    self.motion.stop();
+                }
+                None
+            }
+        };
+        self.graph.set_motion(motion, motion_frame);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1131,6 +1259,51 @@ impl GpuDrivenRenderer {
             }
             (false, false)
         };
+        // The motion view draws while a pass reads the motion and the device draws its target. Its
+        // bundles and culling groups name the copies of the last frame's data, which can grow.
+        let motion_on = motion && self.graph.motion_draws();
+        if motion_on {
+            let mut motion_new = false;
+            if !self.motion_made {
+                self.culling.add_view(list, ViewId::MOTION)?;
+                self.motion_made = true;
+                motion_new = true;
+            }
+            if upload_everything {
+                self.moving.apply(list, arena, binding_bytes)?;
+            } else {
+                self.moving.update_membership(list, arena, input, parity)?;
+            }
+            self.motion.reserve(input.snapshot.uploads().len() + 1)?;
+            let stale = self.motion.prepare(
+                list,
+                &self.layout,
+                &self.skinning,
+                upload_everything,
+                values_remade,
+            )?;
+            let records =
+                motion_new || stale || upload_everything || buffers_remade || groups_remade;
+            let last = [ids::last_matrices(1), ids::last_matrices(0)];
+            self.culling.apply_motion(
+                list,
+                &self.moving,
+                records || shared_recreated,
+                binding_bytes,
+                last,
+            )?;
+            if records {
+                let targets = self.graph.motion_targets();
+                let (moving, meshes) = (&self.moving, &self.meshes);
+                for parity in 0..2 {
+                    let kind = Bundle::Motion(parity);
+                    let view = ViewId::MOTION;
+                    opaque::record_bundle(list, view, moving, meshes, targets, kind, 0, &|_| {
+                        false
+                    })?;
+                }
+            }
+        }
         // A view's bundle names the buffers, the bind groups and the layout it draws, so each new
         // view, and every view after a new layout, new mesh buffers or new map groups, records its
         // bundle.
@@ -1227,8 +1400,9 @@ impl GpuDrivenRenderer {
             };
             opaque::record_bundle(list, view, casters, meshes, targets, kind, 0, &|_| false)?;
         }
+        let changed = motion_on.then_some(self.motion.changed_matrices());
         self.layout
-            .upload_matrices(list, input, parity, upload_everything)?;
+            .upload_matrices(list, input, parity, upload_everything, changed)?;
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
         self.layout.upload_object_ranges(list, arena)?;
@@ -1238,6 +1412,9 @@ impl GpuDrivenRenderer {
         }
         if outlines {
             self.outlined.update_skinned(list, arena, input.scene)?;
+        }
+        if motion_on {
+            self.moving.update_skinned(list, arena, input.scene)?;
         }
         self.skinning.begin_frame();
         self.layout
@@ -1283,6 +1460,25 @@ impl GpuDrivenRenderer {
                 &frame,
                 layout,
                 outlined,
+                input.scene,
+                cells,
+                None,
+            )?;
+        }
+        if let (true, Some(frame), Some(motion_frame)) = (
+            motion_on,
+            self.frames[ViewId::CAMERA.index()],
+            motion_frame.as_ref(),
+        ) {
+            self.motion.upload(list, arena, &frame, motion_frame)?;
+            let (layout, moving, cells) = (&self.layout, &self.moving, &self.cells);
+            self.culling.upload(
+                list,
+                arena,
+                ViewId::MOTION,
+                &frame,
+                layout,
+                moving,
                 input.scene,
                 cells,
                 None,
@@ -1384,6 +1580,8 @@ impl GpuDrivenRenderer {
         let occluding =
             occlusion && self.layout.occluders() > 0 && self.pyramids.built(input.pipelines_built);
         let outlined = &self.outlined;
+        let moving = &self.moving;
+        let motion_draws = motion_on && self.motion.draws();
         let (frames, cascade_frames, tiles) = (&self.frames, &self.cascade_frames, &self.tiles);
         let (background, light_clusters) = (&self.background, &self.light_clusters);
         let skinning = &self.skinning;
@@ -1391,10 +1589,12 @@ impl GpuDrivenRenderer {
             (Some(cascade), _) => cascade_frames[cascade].is_some(),
             (_, Some(tile)) => tiles.frame(tile).is_some(),
             _ if view == ViewId::OUTLINE => outline_drawn && frames[0].is_some(),
+            _ if view == ViewId::MOTION => motion_draws && frames[0].is_some(),
             _ => frames[view.index()].is_some(),
         };
         let layout_of = |view: ViewId| match view {
             ViewId::OUTLINE => outlined,
+            ViewId::MOTION => moving,
             view if view.is_camera() => layout,
             _ => casters,
         };
@@ -1406,6 +1606,7 @@ impl GpuDrivenRenderer {
         };
         let (sorted, transparent) = (&self.sorted, &self.transparent);
         let (settings, meshes) = (&self.settings, &self.meshes);
+        let motion_state = &mut self.motion;
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -1413,6 +1614,12 @@ impl GpuDrivenRenderer {
             |list, role| match role {
                 Role::LightClusters => light_clusters.record(list),
                 Role::Skin => skinning.record(list),
+                Role::Cull(ViewId::MOTION) if drawn(ViewId::MOTION) => {
+                    culling.record(list, ViewId::MOTION, moving, Phase::Motion(parity))
+                }
+                Role::Motion if drawn(ViewId::MOTION) => {
+                    opaque::record(list, ViewId::MOTION, Bundle::Motion(parity))
+                }
                 Role::Cull(view) if drawn(view) => {
                     let phase = if occluding && culling.occludes(view) {
                         Phase::Early
@@ -1447,6 +1654,12 @@ impl GpuDrivenRenderer {
                     transparent.record(list, view, sorted, skinning, settings, meshes)
                 }
                 _ => Ok(()),
+            },
+            |list| {
+                if motion_on {
+                    motion_state.finish(list, parity, layout, skinning)?;
+                }
+                Ok(())
             },
         )?;
         self.tiles
@@ -1534,11 +1747,19 @@ impl GpuDrivenRenderer {
         } else {
             0
         };
-        let views = camera_views * (per_view(&self.layout) + pyramids) + per_view(&self.outlined);
+        let motion = if self.layouts_moving {
+            per_view(&self.moving) + crate::motion::BLOCK_BYTES as usize
+        } else {
+            0
+        };
+        let views =
+            camera_views * (per_view(&self.layout) + pyramids) + per_view(&self.outlined) + motion;
         let tiles = self.settings.tile_settings().tiles as usize;
         let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
-        let tables =
-            self.layout.upload_bound() + self.casters.upload_bound() + self.outlined.upload_bound();
+        let tables = self.layout.upload_bound()
+            + self.casters.upload_bound()
+            + self.outlined.upload_bound()
+            + self.moving.upload_bound();
         let lights = self.lights.upload_room();
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         let sorted = Transparent::upload_bound(&self.sorted, camera_views);
@@ -1574,6 +1795,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.layout.reserve(sources)?;
         self.casters.reserve(sources)?;
         self.outlined.reserve(sources)?;
+        self.moving.reserve(sources)?;
         let added = sources.saturating_sub(self.layout.sources);
         let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
@@ -1615,6 +1837,9 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.casters.forget_gpu();
         self.outlined.forget_gpu();
         self.outline_made = false;
+        self.moving.forget_gpu();
+        self.motion_made = false;
+        self.motion.forget_gpu();
         self.culling.forget_gpu();
         self.pyramids.forget_gpu();
         self.views_made = 0;
@@ -1658,5 +1883,9 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias) {
         let canvas = self.settings.switch_canvas(scene_color, antialias);
         self.graph.set_canvas(canvas);
+    }
+
+    fn allow_motion(&mut self, one_sample: bool, multisampled: bool) {
+        self.graph.allow_motion(one_sample, multisampled);
     }
 }

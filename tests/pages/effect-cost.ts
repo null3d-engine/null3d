@@ -1,7 +1,8 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
-// bloom's scene. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
-// otherwise the preset's.
+// ?effect=dof, ?effect=effects or ?effect=motion names it. Effects adds ?count= custom effects, 4
+// by default, to bloom's scene. Motion measures the motion vectors with their debug view, so it
+// runs in development builds only. With dof, ?taps= sets the quality setting dofSamples, the
+// gather's taps, which is otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
@@ -35,6 +36,7 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	motion: './sketches/motion-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
