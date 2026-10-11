@@ -61,3 +61,20 @@ How the data was produced: `bun run bench:run --compare` on the Mac, the records
 - The nightly run takes a build of main and the check, on the Mac, in each quiet window. The maintainers' script keeps its base and its log out of git.
 - A pull request that changes shaders costs its author one run of the check on a Mac, after both builds. Branches that change those files and were open when this rule merged need the trailer before they merge.
 - Phones, tablets and Safari are still not checked for GPU time on each change. Device sessions cover them, as before.
+
+## Addendum, 2026-10-11: two steps and a shared baseline
+
+The coordinator asked on 11 October 2026 for a shorter quiet window per check. Helpers queue each check as a timing run, which holds the Mac alone, and checks waited up to 45 minutes for their turn.
+
+Most of a check's window went to builds, not to timing. Each of the two presets built both checkouts' benchmark pages with Vite, about 20 s each, so 4 page builds per check. A new copy of the repository also built its own worktree of main's merge base, with `bun install` and a full Rust build, beside the checkout. The logs of 8 October show windows of 14.3 minutes (5.4 of them for the builds), 9 minutes with a new base and 6.6 minutes with a base that built only the changes. A recheck with nothing to build took 3.7 minutes. 14 such base worktrees sat beside the helpers' checkouts, 1.3 GB each, for 8 distinct commits.
+
+The timing itself cannot get shorter without a looser check. 3 rounds is the fewest that the comparison rules judge, and the run and warm-up times are part of the noise work on S6.
+
+Decision:
+
+- The check has two steps. `--prepare` builds everything with the CPU only: the checkout, its pages and the baseline. `--measure` builds nothing and only times. It fails when a build it needs is missing or older than its sources, and names the step to run. With neither option, the check runs both. Helpers run `--prepare` in the CPU lane and only `--measure` as a timing run.
+- The baseline is a prepared build of the merge base's pages, in one cache that every copy of the repository on the computer shares: `~/.cache/null3d/gpu-check-baselines/<commit>`. One builder worktree in the cache builds each new commit of main in turn, so it rebuilds only what changed. A lock lets one check build at a time. The cache keeps the 6 baselines used last, and never removes one used in the last 2 hours.
+- A comparison keeps each checkout's build of the pages with a stamp of its sources, and builds it again only when they change. So the two presets build the pages once, and in `--prepare`, before the window.
+- `--prepare` removes the checkout's old `-gpu-check-base` worktree.
+
+GPU_CHECK_ADDENDUM_FIGURES

@@ -135,6 +135,23 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 
 On a computer with a GPU of its own, such as a Mac, Chrome times the GPU, so the comparison judges GPU time too. That catches a change that slows only the GPU, which CI's job cannot see. For a change to shaders or to how the engine draws, `bun run bench:gpu-check` compares the pages with the most GPU work with main. [The GPU check](pull-requests.md#the-gpu-check) says when a pull request must run it.
 
+A comparison keeps each checkout's build of the pages in `target/bench-pages-baseline` and `target/bench-pages-new`, with a stamp of the sources that it came from. The stamp covers the commit, the changes that git sees, the files that git does not track yet, and the engine's build. The next comparison builds the pages again only when the stamp changed.
+
+### The GPU check's two steps
+
+The GPU check needs a quiet computer only while it times. So it runs in two steps, and only the second needs the quiet computer ([D-109](decisions/D-109-gpu-time-guard.md#addendum-2026-10-11-two-steps-and-a-shared-baseline)).
+
+- `bun run bench:gpu-check --prepare` uses only the CPU. It runs `bun run build` in the checkout, unless `--no-build` is given. It builds the checkout's pages. Then it makes sure that the shared cache holds a prepared baseline of the checkout's merge base with origin/main.
+- `bun run bench:gpu-check --measure` builds nothing. It fails when the cache lacks the merge base's baseline, or when the checkout's pages are older than its sources. The message names the step to run again.
+- With neither option, the check runs both steps in turn.
+- The cache is `~/.cache/null3d/gpu-check-baselines/`, or the folder that `NULL3D_BASELINE_CACHE` names. It holds one folder per commit of main: that commit's production build of the pages, about 110 MB, and `baseline.json`. The record gives the commit, its subject and the switches that its comparison gives every page. Every copy of the repository on the computer uses the same cache. So the checks of all branches on one main commit build that commit once.
+- The `builder` worktree in the cache checks out each new commit, installs, and builds the engine and the pages. It keeps its Rust build and its packages from the commit before, so a new commit of main rebuilds only what changed. A lock lets one check build at a time, and another check waits for it. A check whose baseline is in the cache does not wait.
+- The cache keeps the 6 baselines that checks used last. It removes older ones, but never one that a check used in the last 2 hours, since that check may still be timing it.
+- Older checks built a worktree of the merge base beside each checkout, named after it with `-gpu-check-base`. Each took 1.3 GB, and each new copy of the repository built main from nothing. `--prepare` removes the checkout's old one.
+- `bun run bench:run --compare <dir>,.` also takes a prepared baseline's folder as its baseline.
+
+GPU_CHECK_FIGURES
+
 Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser, and fails only when the records miss a page: the verdict is in `summary.json`.
 
 ## Visual figures and captured frames
