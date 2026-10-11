@@ -7,6 +7,10 @@
 // that changed. A uniform's new value goes to the core with its effect's other uniforms, through
 // the core's block of effect values, so setting a uniform every frame allocates nothing.
 //
+// An effect's WGSL can declare textures of its own, as a custom material's can, which the
+// `textures` option gives: textures from files or data, or the textures of render passes. Such an
+// effect draws in a pass of its own.
+//
 // The chain also joins effects (D-71). An effect that reads its input image at its own pixel alone
 // joins the group of the effect before it, so the group draws in one pass, and the last group
 // folds into the final pass. The chain gives each group and the fold a template of its own, whose
@@ -16,15 +20,16 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
-import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX } from '../generated/core';
+import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX, EFFECT_TEXTURES } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces, PieceBuilds } from '../gpu/effect-join';
 import { fromHex } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
 import type { CoreMemory } from './memory';
-import type { CompiledWgsl } from './resources';
+import { type CompiledWgsl, textureSlots } from './resources';
 import type { ShaderTemplates } from './shader-templates';
-import type { UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
+import type { Texture } from './textures';
+import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
 /**
  * Options of `post.addEffect`: the effect's WGSL, the first values of its uniforms, and its place
@@ -51,6 +56,14 @@ export interface EffectOptions<Wgsl extends string | CompiledWgsl = string | Com
 			: UniformValues<Wgsl>
 	>;
 	/**
+	 * The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: a texture
+	 * from files or data, or a render pass's texture from `textures.fromPass`. The WGSL samples it
+	 * as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A texture samples as white until its
+	 * image is on the GPU, and a declared texture without one stays white. An effect with textures
+	 * draws in a pass of its own. The textures are fixed when the effect is added.
+	 */
+	textures?: NoInfer<TextureValues<Wgsl>>;
+	/**
 	 * The effect's place among the effects: effects run from the lowest order to the highest, and
 	 * effects of the same order run in the order they were added. It is 0 by default.
 	 */
@@ -66,6 +79,8 @@ export interface EffectOptions<Wgsl extends string | CompiledWgsl = string | Com
 export class Effect<Values = UniformValues<string>> {
 	/** @internal The values of its uniforms, as the shader build placed them. */
 	readonly values = new Float32Array(EFFECT_FLOATS);
+	/** @internal The handle of each texture that its WGSL declares, or 0. */
+	readonly textures = new Uint32Array(EFFECT_TEXTURES);
 	/** @internal Its place in the run order, or -1 once it was removed. */
 	place = -1;
 	declare private readonly uniformValues: Values;
@@ -78,6 +93,8 @@ export class Effect<Values = UniformValues<string>> {
 		readonly depth: boolean,
 		/** @internal True when it joins the effect before it: it reads its own pixel alone. */
 		readonly joins: boolean,
+		/** @internal True when its WGSL declares textures, so it draws in a pass of its own. */
+		readonly alone: boolean,
 		/** @internal The WGSL that its pieces add to a group's host and to the final pass's. */
 		readonly pieceSizes: PieceSizes,
 		/** @internal Its uniforms by name. */
@@ -102,11 +119,12 @@ interface EffectUniform {
 }
 
 /** A custom effect's WGSL as the plugin compiles it. */
-interface CompiledEffect extends CompiledWgsl {
+export interface CompiledEffect extends CompiledWgsl {
 	readonly kind: 'effect';
 	readonly uniforms: readonly EffectUniform[];
 	readonly depth: boolean;
 	readonly joins: boolean;
+	readonly textures: readonly { readonly name: string; readonly offset: number }[];
 	readonly variants: ShaderVariants;
 	readonly pieces: EffectPieces;
 }
@@ -208,7 +226,7 @@ function checkUniform(uniform: EffectUniform, value: UniformValue, call: string)
  * which becomes linear. Development builds check the value first. It allocates nothing: an array
  * goes in through the typed array's own copy, which reads no element into a number of its own.
  */
-function writeUniform(
+export function writeUniform(
 	out: Float32Array,
 	uniform: EffectUniform,
 	value: UniformValue,
@@ -240,9 +258,8 @@ export class EffectChain {
 	private readonly chain: Effect[] = [];
 	/** How many effects were added, which orders effects of the same order value. */
 	private added = 0;
-	/** The core's block of one effect's uniforms, through a view made again after memory grew. */
-	private block: Float32Array | undefined;
-	private generation = -1;
+	/** The core's blocks of one effect's uniforms and textures. */
+	private readonly blocks: EffectBlocks;
 	/** The custom tone curve, which a fold holds: its first template and its pieces' size. */
 	private curve: { readonly template: number; readonly sizes: PieceSizes } | undefined;
 	/** The size of each compiled effect's or curve's pieces, found once. */
@@ -255,7 +272,9 @@ export class EffectChain {
 		private readonly templates: ShaderTemplates,
 		/** False when each effect draws in a pass of its own, as ?join=off asks. */
 		private readonly join = true,
-	) {}
+	) {
+		this.blocks = new EffectBlocks(core);
+	}
 
 	/** True while at least one effect runs. */
 	get any(): boolean {
@@ -278,19 +297,12 @@ export class EffectChain {
 				`${call}() got effect ${this.chain.length + 1}, and at most ${EFFECT_MAX} effects run at once. Remove an effect first, or join effects that read only their own pixel into one WGSL function.`,
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
-		const template = this.templates.of(compiled, () => [
-			{
-				kind: 'effect',
-				variants: compiled.variants,
-				locations: [],
-				textures: 0,
-				pieces: compiled.pieces,
-			},
-		]);
+		const template = effectTemplate(this.templates, compiled);
 		const effect = new Effect(
 			template,
 			compiled.depth,
 			compiled.joins,
+			compiled.textures.length > 0,
 			this.sizesOf(compiled, compiled.pieces),
 			uniforms,
 			order,
@@ -302,6 +314,7 @@ export class EffectChain {
 			if (value !== undefined)
 				writeUniform(effect.values, uniformOf(effect, name, call), value, call);
 		}
+		writeTextures(compiled, options.textures, effect.values, effect.textures, call);
 		this.added++;
 		let place = this.chain.length;
 		while (place > 0 && (this.chain[place - 1] as Effect).order > order) place--;
@@ -401,8 +414,9 @@ export class EffectChain {
 		let last = 0;
 		while (place < chain.length) {
 			let end = place + 1;
-			let size = (chain[place] as Effect).pieceSizes.group;
-			while (this.join && end < chain.length) {
+			const first = chain[place] as Effect;
+			let size = first.pieceSizes.group;
+			while (this.join && !first.alone && end < chain.length) {
 				const next = chain[end] as Effect;
 				if (!next.joins || size + next.pieceSizes.group > GROUP_PIECES_CAP) break;
 				size += next.pieceSizes.group;
@@ -416,7 +430,8 @@ export class EffectChain {
 			place = end;
 		}
 		let fold = 0;
-		if (this.join && chain.length > 0) {
+		const folds = chain.slice(last).every((effect) => !effect.alone);
+		if (this.join && chain.length > 0 && folds) {
 			let size = this.curve?.sizes.fold ?? 0;
 			for (let k = last; k < chain.length; k++) size += (chain[k] as Effect).pieceSizes.fold;
 			if (size <= FOLD_PIECES_CAP) fold = this.joinedTemplate('effectFold', last, chain.length);
@@ -459,17 +474,78 @@ export class EffectChain {
 		this.sendJoins(call);
 	}
 
-	/** Gives the core one effect at its place, with its uniforms. */
+	/** Gives the core one effect at its place, with its uniforms and textures. */
 	private send(effect: Effect, call: string): void {
 		const { core } = this;
-		if (!this.block || this.generation !== core.generation) {
-			this.block = core.f32(core.glue.effectValues(), EFFECT_FLOATS);
-			this.generation = core.generation;
-		}
-		this.block.set(effect.values);
+		this.blocks.write(effect.values, effect.textures);
 		const flags = effect.depth ? EFFECT_DEPTH : 0;
 		core.check(core.glue.setEffect(effect.place, effect.template, flags), call, undefined, true);
 	}
+}
+
+/**
+ * The core's blocks of one effect's or full-screen pass's uniforms and texture handles, which the
+ * sketch's thread writes before the call that takes them. Views of them are made again after the
+ * core's memory grew. Writing allocates nothing.
+ */
+export class EffectBlocks {
+	private values: Float32Array | undefined;
+	private textures: Uint32Array | undefined;
+	private generation = -1;
+
+	constructor(private readonly core: CoreMemory) {}
+
+	/** Writes `values` and `textures` into the core's blocks. */
+	write(values: Float32Array, textures: Uint32Array): void {
+		const { core } = this;
+		if (!this.values || !this.textures || this.generation !== core.generation) {
+			this.values = core.f32(core.glue.effectValues(), EFFECT_FLOATS);
+			this.textures = core.u32(core.glue.effectTextures(), EFFECT_TEXTURES);
+			this.generation = core.generation;
+		}
+		this.values.set(values);
+		this.textures.set(textures);
+	}
+}
+
+/**
+ * The template of a compiled effect, which an effect and a full-screen pass share: the effect
+ * template's variants with the WGSL, and its textures in a second bind group.
+ */
+export function effectTemplate(templates: ShaderTemplates, compiled: CompiledEffect): number {
+	return templates.of(compiled, () => [
+		{
+			kind: 'effect',
+			variants: compiled.variants,
+			locations: [],
+			textures: compiled.textures.length,
+			pieces: compiled.pieces,
+		},
+	]);
+}
+
+/**
+ * Writes the handle of each texture that `compiled` declares from the `textures` option into
+ * `handles`, and -1 into the float of `values` that holds the layer of each declared texture that
+ * the option leaves out, so it samples as white. Throws E1216 for a name that the WGSL does not
+ * declare, and for a value that is not a texture of one layer.
+ */
+export function writeTextures(
+	compiled: CompiledEffect,
+	given: Readonly<Record<string, Texture | undefined>> | undefined,
+	values: Float32Array,
+	handles: Uint32Array,
+	call: string,
+): Texture[] {
+	const declared = compiled.textures;
+	const slots = textureSlots(declared, given ?? {}, call);
+	const used: Texture[] = [];
+	slots.forEach((texture, slot) => {
+		handles[slot] = texture?.handle ?? 0;
+		if (texture) used.push(texture);
+		else values[(declared[slot] as { offset: number }).offset] = -1;
+	});
+	return used;
 }
 
 /** The uniform `name` of an effect, or throws E1216. */

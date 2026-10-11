@@ -29,7 +29,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
 | Replaces three.js lighting | Full shader with `null3d::lighting` helpers; rare, so confirm it is needed |
-| Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`, section 6) |
+| Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a render target of its own (0.2, `references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
 
 Surface functions keep instancing, shadows, fog and both backends working, and skinning when it comes in 0.2. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, uniforms or standard values.

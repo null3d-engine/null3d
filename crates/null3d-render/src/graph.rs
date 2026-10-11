@@ -188,6 +188,10 @@ pub enum Size {
     },
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
+    /// The canvas halved this many times each way, rounding up, which a pass fills whole at any
+    /// render scale: the texture of a pass that materials sample from 0 to 1 across, whatever the
+    /// render scale. 0 is the whole canvas.
+    Share(u8),
     /// A fixed size in pixels, such as a shadow map's.
     Fixed {
         /// Width in pixels.
@@ -210,7 +214,7 @@ impl Size {
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         match self {
             Self::Full | Self::Canvas => canvas,
-            Self::Halved(times) => Self::halve(canvas, times),
+            Self::Halved(times) | Self::Share(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
             Self::ShortSide { texels, halvings } => {
                 let short = canvas.0.min(canvas.1);
@@ -244,7 +248,9 @@ impl Size {
         match self {
             Self::Full => render,
             Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } => self.extent(canvas),
+            Self::Canvas | Self::Share(_) | Self::Fixed { .. } | Self::ShortSide { .. } => {
+                self.extent(canvas)
+            }
         }
     }
 
@@ -262,7 +268,10 @@ impl Size {
             Self::Halved(1) => "half size".into(),
             Self::Halved(2) => "quarter size".into(),
             Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
-            Self::Canvas => "canvas size".into(),
+            Self::Canvas | Self::Share(0) => "canvas size".into(),
+            Self::Share(1) => "half canvas size".into(),
+            Self::Share(2) => "quarter canvas size".into(),
+            Self::Share(times) => format!("1/{} canvas size", 1u64 << times.min(63)),
             Self::Fixed { width, height } => format!("{width} x {height}"),
             Self::ShortSide { texels, halvings } => {
                 format!(

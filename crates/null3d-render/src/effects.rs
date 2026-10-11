@@ -17,6 +17,11 @@
 //! the inverse of the camera's projection and the effect's uniforms. A frame uploads a block only
 //! when it changed, so effects whose uniforms stay still upload nothing.
 //!
+//! An effect's WGSL can declare textures of its own, as a custom material's can ([`EffectMaps`]):
+//! the effect binds them in a second bind group of the material maps' layout, and their layers
+//! take the last floats of its uniforms. Such an effect draws in a pass of its own: it never joins
+//! a group, and nothing folds it into the final pass.
+//!
 //! Effects can also join: a group of them draws in one pass, with a shader that the engine joins
 //! from the effects' pieces at run time (`effect_group.wgsl`), which the sketch's thread gives a
 //! template of its own ([`EffectJoins`]). A group binds the whole uniform buffer, and each of its
@@ -28,6 +33,8 @@ use null3d_gpu::drawlist::{
     DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
     permutation, resource_kind, state_flags, texture_usage, view,
 };
+
+use null3d_core::handle::Handle;
 
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
@@ -46,12 +53,55 @@ pub(crate) const FORMAT: u32 = format::RGBA16_FLOAT;
 
 /// Bytes between two effects' blocks in the uniform buffer: the offset alignment that bind groups
 /// need for a buffer range.
-const BLOCK: usize = 256;
+pub(crate) const BLOCK: usize = 256;
 
 /// The identity matrix, the inverse projection of a frame without a camera.
 const IDENTITY: Mat4 = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
+
+/// The most textures that an effect's WGSL declares, as the shader build allows a custom
+/// material's.
+pub const MAX_TEXTURES: usize = 6;
+
+/// The textures that an effect's or a full-screen pass's WGSL samples, and the bind group that
+/// binds them, which the scene settings find each frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EffectMaps {
+    /// The texture of each slot, in the order the WGSL declares them, or [`Handle::NONE`].
+    pub textures: [Handle; MAX_TEXTURES],
+    /// The GPU id of the bind group of the material maps' layout that binds them, or 0 while the
+    /// WGSL declares none.
+    pub group: u32,
+    /// The views whose targets the textures show, as a mask of their places: the pass that draws
+    /// with them reads those targets.
+    pub views: u32,
+}
+
+impl Default for EffectMaps {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
+impl EffectMaps {
+    /// No textures.
+    pub const NONE: Self = Self {
+        textures: [Handle::NONE; MAX_TEXTURES],
+        group: 0,
+        views: 0,
+    };
+
+    /// True when the WGSL declares textures, which bind in a group of their own.
+    pub fn any(&self) -> bool {
+        self.textures.iter().any(|texture| !texture.is_none())
+    }
+
+    /// The float of the values that holds the layer of texture `slot`: from the last one down.
+    pub const fn layer_float(slot: usize) -> usize {
+        EFFECT_FLOATS - 1 - slot
+    }
+}
 
 /// One effect, as the sketch sets it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,21 +110,27 @@ pub struct Effect {
     pub template: u32,
     /// True when the effect reads the scene's depth.
     pub depth: bool,
-    /// The effect's uniforms, where the shader build placed each.
+    /// The effect's uniforms, where the shader build placed each, and its textures' layers in the
+    /// last floats.
     pub values: [f32; EFFECT_FLOATS],
+    /// The textures that the effect samples.
+    pub maps: EffectMaps,
 }
 
 /// An effect's block, as `effect.wgsl` lays out its `EffectBlock` struct.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Block {
-    size: [f32; 4],
-    clock: [f32; 4],
-    inverse_projection: Mat4,
-    values: [f32; EFFECT_FLOATS],
+pub(crate) struct Block {
+    pub(crate) size: [f32; 4],
+    pub(crate) clock: [f32; 4],
+    pub(crate) inverse_projection: Mat4,
+    pub(crate) values: [f32; EFFECT_FLOATS],
+    /// The output's size and its texture's height, and 1 for a full-screen pass of the render
+    /// graph, or zeros for an effect, whose output has the input image's sizes.
+    pub(crate) drawn: [f32; 4],
 }
 
-const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
+pub(crate) const BLOCK_BYTES: usize = std::mem::size_of::<Block>();
 const _: () = assert!(BLOCK_BYTES <= BLOCK);
 
 /// Bytes of the uniform buffer: a block for each effect that can run.
@@ -310,6 +366,7 @@ impl EffectPass {
                 clock: [clock[0], clock[1], 0.0, 0.0],
                 inverse_projection: inverse_projection.unwrap_or(IDENTITY),
                 values: effect.values,
+                drawn: [0.0; 4],
             };
             if self.uploaded[index] != Some(block) {
                 let (at, bytes) = arena.push(bytes_of(&block))?;
@@ -405,6 +462,24 @@ impl EffectPass {
         )?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
         Ok(())
+    }
+
+    /// Records a unit as [`EffectPass::record`] does, binding the textures of `maps` too when its
+    /// lone effect samples textures of its own. An effect whose textures have no group yet draws
+    /// nothing.
+    pub(crate) fn record_with_maps(
+        &self,
+        list: &mut DrawList,
+        unit: Unit,
+        maps: &EffectMaps,
+    ) -> Result<(), RecordError> {
+        if maps.any() {
+            if maps.group == 0 {
+                return Ok(());
+            }
+            list.push(Op::SetBindGroup, &[1, maps.group, 0])?;
+        }
+        self.record(list, unit)
     }
 
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
@@ -506,6 +581,7 @@ mod tests {
             template,
             depth,
             values,
+            maps: EffectMaps::NONE,
         }
     }
 

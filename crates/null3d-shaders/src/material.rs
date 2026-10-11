@@ -22,7 +22,7 @@ use null3d_gpu::drawlist::vertex;
 use crate::manifest::{Manifest, Pipeline, Shader, Target, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
-use crate::textures::{self, Texture};
+use crate::textures::{self, Texture, TextureOwner};
 use crate::uniforms::{self, Owner, Uniform};
 use crate::{
     BuildError, Compiler, Inputs, MANIFEST_PATH, Position, Problem, VariantOutput, features,
@@ -412,7 +412,7 @@ impl Compiler {
             })
             .collect();
         problems.extend(directive_problems(material));
-        let found = textures::read(&tokens, &material.source, path, false);
+        let found = textures::read(&tokens, &material.source, path, TextureOwner::Material);
         let (texture_fields, own_source, bindings) = match found {
             Ok(found) => (found.fields, found.source, found.declarations),
             Err(found) => {
@@ -534,9 +534,12 @@ impl Compiler {
     ) -> Result<MaterialOutput, BuildError> {
         let path = material.path.as_str();
         let mut problems = directive_problems(material);
-        if let Err(found) =
-            textures::read(&tokenize(&material.source), &material.source, path, true)
-        {
+        if let Err(found) = textures::read(
+            &tokenize(&material.source),
+            &material.source,
+            path,
+            TextureOwner::FullShader,
+        ) {
             problems.extend(found);
         }
         let (&[vertex_entry], &[fragment_entry]) = (vertex_entries, fragment_entries) else {

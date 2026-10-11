@@ -72,6 +72,7 @@ pub mod fog;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
+pub(crate) mod fullscreen;
 pub mod geometry;
 pub mod gpu_driven;
 pub mod grading;

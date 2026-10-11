@@ -514,6 +514,29 @@ function minimapTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the full-screen pass tests. */
+export const FULLSCREEN_SKETCH = 'tests/pages/sketches/fullscreen-sketch.ts';
+
+/**
+ * Full-screen passes on every tier. The first test chains a scene pass at a quarter of the
+ * canvas's size into a full-screen pass that posterizes it, and paints a second texture from
+ * nothing, which shows upright: red at its top. The glow test blurs the outline mask at half size
+ * and adds it to the scene's color through an effect's texture. The echo test shows the scene
+ * color of the frame before on a screen, through a pass that reads it.
+ */
+function fullscreenTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FULLSCREEN_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('fullscreen-passes', ''),
+		test('fullscreen-glow', '?glow'),
+		test('fullscreen-echo', '?echo'),
+	];
+}
+
 /** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
 export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
 
@@ -1016,6 +1039,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...fullscreenTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),

@@ -94,7 +94,7 @@ export default shader;
 });
 
 describe('the declarations of effects and tone curves', () => {
-	it('gives an effect the type of each uniform', () => {
+	it('gives an effect the type of each uniform and the names of its textures', () => {
 		const effect: CompiledEffect = {
 			kind: 'effect',
 			uniforms: [
@@ -102,22 +102,26 @@ describe('the declarations of effects and tone curves', () => {
 				{ name: 'tint', type: 'vec3f', offset: 4 },
 			],
 			depth: false,
-			joins: true,
+			joins: false,
+			textures: [{ name: 'glow', offset: 31 }],
 			variants: {},
 			pieces: { group: {}, fold: {} },
 		};
 		expect(wgslDeclaration('/project/src/glow.wgsl', effect)).toBe(`${HEADER}\
 import type { CompiledEffect } from '@null3d/vite-plugin';
 
-declare const shader: CompiledEffect<{
-	readonly amount: 'f32';
-	readonly tint: 'vec3f';
-}>;
+declare const shader: CompiledEffect<
+	{
+		readonly amount: 'f32';
+		readonly tint: 'vec3f';
+	},
+	'glow'
+>;
 export default shader;
 `);
-		const plain: CompiledEffect = { ...effect, uniforms: [] };
+		const plain: CompiledEffect = { ...effect, uniforms: [], textures: [] };
 		expect(wgslDeclaration('glow.wgsl', plain)).toContain(
-			'declare const shader: CompiledEffect<Record<never, never>>;',
+			'declare const shader: CompiledEffect<Record<never, never>, never>;',
 		);
 	});
 
