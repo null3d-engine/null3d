@@ -183,6 +183,24 @@ function webglBlockLimit(three: Three, renderer: ThreeModule.WebGLRenderer, most
 	return fit;
 }
 
+/** three.js's own chunk that starts the lighting, before CSM puts its copy in its place. */
+let standardLightsBegin: string | undefined;
+const LIGHTS_FROM = 'IncidentLight directLight;';
+
+/**
+ * CSM's copy of the chunk that starts the lighting, with the lines before its lights taken from
+ * three.js's own chunk. In three.js 0.186.1 the copy lacks the standard material's energy terms,
+ * which every direct light's specular and the environment's reflection multiply by. Without them,
+ * a material that CSM sets up shows no highlights and no reflections on WebGLRenderer.
+ */
+function withCurrentLightSetup(csmChunk: string, standard: string): string {
+	const csmAt = csmChunk.indexOf(LIGHTS_FROM);
+	const standardAt = standard.indexOf(LIGHTS_FROM);
+	if (csmAt < 0 || standardAt < 0 || standard.slice(0, standardAt) === csmChunk.slice(0, csmAt))
+		return csmChunk;
+	return standard.slice(0, standardAt) + csmChunk.slice(csmAt);
+}
+
 /** Builds Night town's three.js half. */
 export async function buildNightTown({
 	three,
@@ -228,6 +246,7 @@ export async function buildNightTown({
 	if (effects.shadows) {
 		if (kind === 'webgl') {
 			const { CSM } = await import('three/addons/csm/CSM.js');
+			standardLightsBegin ??= three.ShaderChunk.lights_fragment_begin;
 			const csm = new CSM({
 				camera,
 				parent: scene,
@@ -243,6 +262,10 @@ export async function buildNightTown({
 				light.shadow.normalBias = NORMAL_BIAS;
 			}
 			scene.remove(moon);
+			three.ShaderChunk.lights_fragment_begin = withCurrentLightSetup(
+				three.ShaderChunk.lights_fragment_begin,
+				standardLightsBegin,
+			);
 			setup = (material) => csm.setupMaterial(material);
 			updateShadows = () => {
 				camera.updateMatrixWorld();
