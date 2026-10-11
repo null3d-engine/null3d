@@ -42,7 +42,7 @@ beforeAll(async () => {
 
 /** Parses a file whose buffers are all inside it, with `decoder`. */
 function parse(file: Uint8Array, decoder: MeshoptDecode | undefined = decode): GltfData {
-	return parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, decoder);
+	return parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, { meshopt: decoder });
 }
 
 /** The code and message of the error that parsing a file throws. */
@@ -342,7 +342,7 @@ describe('meshopt data', () => {
 		file.buffers[1].uri = 'fallback.bin';
 		const container = readContainer(new TextEncoder().encode(JSON.stringify(file)), URL_OF);
 		expect([...container.external]).toEqual([[0, 'https://example.com/models/test.bin']]);
-		const data = parseGltf(container, new Map([[0, b.bytes()]]), URL_OF, decode);
+		const data = parseGltf(container, new Map([[0, b.bytes()]]), URL_OF, { meshopt: decode });
 		expect(data).toEqual(parse(b.glb()));
 	});
 
