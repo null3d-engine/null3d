@@ -1,5 +1,5 @@
 //! Backgrounds: what the camera's view draws behind every object, as three.js draws
-//! `scene.background`. A background is one of four sources:
+//! `scene.background`. A background is one of five sources:
 //!
 //! - A texture, which covers the whole view and stretches to its size, with its first row at the
 //!   bottom, as it sits on a plane.
@@ -9,6 +9,8 @@
 //!   mirrored across x, as three.js's `CubeTextureLoader` maps are seen from inside the cube.
 //! - three.js's analytic sky (`Sky` in its examples), from the sun's position, the air's
 //!   scattering and the clouds.
+//! - The physical sky ([`crate::physical_sky`]), from its tables, which its own pass draws and
+//!   binds. It draws once every table holds the frame's sky.
 //!
 //! Each draws at the far plane in the camera's opaque pass, after the opaque objects and before
 //! the transparent ones, with the depth test on and no depth write. It shades only the pixels
@@ -46,6 +48,7 @@ use null3d_gpu::drawlist::{
 use crate::bloom::bytes_of;
 use crate::environment::inverse_rotation;
 use crate::frame::{RecordError, SceneSettings, UploadArena, bind_frame_group};
+use crate::physical_sky::Atmosphere;
 use crate::pipelines::{DepthBias, DrawKey, PassTargets, PipelineCache};
 
 /// What a background shows, and the texture it reads.
@@ -59,6 +62,8 @@ pub enum BackgroundSource {
     Cubemap(Handle),
     /// three.js's analytic sky.
     Sky(Sky),
+    /// The physical sky.
+    Atmosphere(Atmosphere),
 }
 
 /// The scene's background as the sketch sets it.
@@ -206,7 +211,7 @@ impl BackdropUniform {
                 uniform.cloud_place = [sky.cloud_elevation, sky.time, heading, elevation];
                 uniform.params[3] = sky.second_sky_weight;
             }
-            BackgroundSource::Texture(_) => {}
+            BackgroundSource::Texture(_) | BackgroundSource::Atmosphere(_) => {}
         }
         uniform
     }
@@ -261,6 +266,8 @@ enum Shape {
     Texture { group: u32, layer: u32 },
     /// The box around the camera of a cube map or the sky.
     Box,
+    /// The box around the camera of the physical sky, with the bind group of its tables.
+    Physical { group: u32 },
 }
 
 /// The draw of one frame's background.
@@ -324,6 +331,7 @@ impl BackgroundPass {
                     BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture),
                 ) if live(texture) => template::BACKGROUND_CUBE,
                 Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
+                Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
                 _ => 0,
             };
         self.place = place;
@@ -349,17 +357,26 @@ impl BackgroundPass {
     /// Finds the frame's draw once the frame recorded its texture work, and makes what it binds:
     /// the uniform buffer when the GPU lacks it, the values when they changed, and the group when
     /// the cube texture it binds changed. A texture or cube map draws once its texels are on the
-    /// GPU.
+    /// GPU, and the physical sky once its pass gives `sky_group`, the bind group of its tables.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         settings: &SceneSettings,
+        sky_group: Option<u32>,
     ) -> Result<(), RecordError> {
         self.draw = None;
         let Some(background) = settings.background().filter(|_| self.pipeline != 0) else {
             return Ok(());
         };
+        if let BackgroundSource::Atmosphere(_) = background.source {
+            self.draw = sky_group.map(|group| Draw {
+                pipeline: self.pipeline,
+                shape: Shape::Physical { group },
+                place: self.place,
+            });
+            return Ok(());
+        }
         let textures = settings.textures();
         let blank = (self.ids.blank_cube, Handle::NONE);
         let (shape, cube, levels) = match background.source {
@@ -377,7 +394,7 @@ impl BackgroundPass {
                 };
                 (Shape::Box, (cube, texture), levels)
             }
-            BackgroundSource::Sky(_) => (Shape::Box, blank, 1),
+            BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_) => (Shape::Box, blank, 1),
         };
         let ids = self.ids;
         if !self.created {
@@ -456,6 +473,10 @@ impl BackgroundPass {
             }
             Shape::Box => {
                 list.push(Op::SetBindGroup, &[1, self.ids.group, 0])?;
+                list.push(Op::Draw, &[36, 1, 0, 0])?;
+            }
+            Shape::Physical { group } => {
+                list.push(Op::SetBindGroup, &[1, group, 0])?;
                 list.push(Op::Draw, &[36, 1, 0, 0])?;
             }
         }

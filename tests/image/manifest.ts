@@ -1572,6 +1572,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// The physical sky at four times of day from `timeOfDay` with the physical model: its tables,
+	// its background with clouds, the moon and the stars, its environment, and the aerial
+	// perspective on a row of pillars out to 20 kilometres. Then the afternoon with the analytic sky
+	// standing in, as on Low, the afternoon without the aerial perspective, and the night on the
+	// 8-bit path, where the sky's own shader tone maps its color (D-143).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `physical-sky-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	...(
+		[
+			['physical-sky-analytic', 'analytic'],
+			['physical-sky-no-haze', 'haze=0'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=afternoon&${query}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	{
+		name: 'physical-sky-night-8-bit',
+		sketch: 'tests/pages/sketches/physical-sky-sketch.ts?time=night',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. Then the same floor under a hemisphere light. The

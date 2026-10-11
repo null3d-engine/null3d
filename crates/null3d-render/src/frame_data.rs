@@ -5,6 +5,7 @@ use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 use crate::camera::Mat4;
 use crate::environment::EnvironmentUniform;
 use crate::fog::FogUniform;
+use crate::physical_sky::AerialUniform;
 use crate::output::OutputUniform;
 
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
@@ -56,6 +57,9 @@ pub struct FrameUniform {
     /// first, `n.y` times the second and `n.z` times the third (see
     /// [`null3d_core::lights::FrameLights::hemisphere`]).
     pub hemisphere: [[f32; 4]; 3],
+    /// The physical sky's air between the camera and each surface: see
+    /// [`crate::physical_sky::AerialUniform`].
+    pub aerial: AerialUniform,
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

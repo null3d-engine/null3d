@@ -142,6 +142,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'atmosphere',
+		group: 'Light, materials and effects',
+		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),
+		title: 'Atmosphere',
+		scene: 'Valley of ridges',
+		summary:
+			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
+		hold: 6,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'camera-lens',
 		group: 'Light, materials and effects',
 		sketch: new URL('./camera-lens/sketch.ts', import.meta.url),

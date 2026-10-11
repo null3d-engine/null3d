@@ -118,6 +118,7 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
+use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
@@ -172,7 +173,10 @@ mod ids {
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = DOF + 1;
+    /// The uniform buffer of the physical sky's values.
+    pub const PHYSICAL_SKY: u32 = DOF + 1;
+    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    pub const PAGES: u32 = PHYSICAL_SKY + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -220,8 +224,10 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
+    /// The physical sky's tables and panorama.
+    pub const SKY_TABLES: u32 = STREAMED_VALUES + RING;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STREAMED_VALUES + RING;
+    pub const TARGETS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -236,8 +242,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The physical sky's samplers.
+    pub const SKY_SAMPLERS: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -271,8 +279,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The physical sky's bind groups, after the copy's.
+    pub const SKY_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the physical sky's.
+    pub const TEXTURE_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -379,6 +389,8 @@ pub struct CpuCulledRenderer {
     sorted: SortedLayout,
     transparent: Transparent,
     background: BackgroundPass,
+    /// The physical sky's tables.
+    physical_sky: PhysicalSkyPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -504,6 +516,12 @@ impl CpuCulledRenderer {
                 group: ids::BACKGROUND_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
+            physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
+                buffer: ids::PHYSICAL_SKY,
+                textures: ids::SKY_TABLES,
+                samplers: ids::SKY_SAMPLERS,
+                groups: ids::SKY_GROUPS,
             }),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
@@ -819,6 +837,7 @@ impl CpuCulledRenderer {
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + PhysicalSkyPass::UPLOAD_BYTES
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -1092,6 +1111,8 @@ impl CpuCulledRenderer {
             self.graph.scene_targets(),
             Place::of(self.layout.depthless),
         );
+        self.physical_sky
+            .request_pipeline(&mut self.pipelines, self.settings.physical_sky().is_some());
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -1175,7 +1196,20 @@ impl CpuCulledRenderer {
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
-        self.settings.record_materials(input, list, arena, table)?;
+        let camera_y = self
+            .culling
+            .frame(ViewId::CAMERA)
+            .map_or(0.0, |frame| frame.uniform.camera_world[1]);
+        let panorama = physical_sky::record_frame(
+            &mut self.physical_sky,
+            &mut self.settings,
+            (&self.pipelines, input.pipelines_built),
+            camera_y,
+            list,
+            arena,
+        )?;
+        self.settings
+            .record_materials(input, list, arena, table, panorama)?;
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
@@ -1200,7 +1234,8 @@ impl CpuCulledRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(list, arena, &self.settings)?;
+        self.background
+            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let new_views = first_new < views
             || first_new_cascade < cascades
             || first_new_tile < tiles
@@ -1647,6 +1682,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.background.reset_gpu();
+        self.physical_sky.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

@@ -45,6 +45,8 @@ use crate::materials::{
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
 use crate::outline::Outline;
+use crate::physical_sky::{AerialUniform, Atmosphere};
+use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
@@ -52,7 +54,7 @@ use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
-use crate::sky_maps::SkyMaps;
+use crate::sky_maps::{MapSky, SkyMaps};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -640,6 +642,13 @@ pub struct SceneSettings {
     used_materials: Vec<bool>,
     /// What the camera's view draws behind every object, over the background color.
     background: Option<Background>,
+    /// The CPU model of the physical sky's air, once the scene drew a physical sky.
+    air: Option<AirModel>,
+    /// True while the quality settings draw the physical sky, else the analytic sky stands in.
+    physical_sky: bool,
+    /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
+    /// quality settings turn the physical sky off.
+    stand_in: Option<(crate::background::Sky, f32)>,
     /// The views, the camera's first.
     views: Vec<View>,
     /// The names that each view gives the render graph, by view.
@@ -720,6 +729,9 @@ impl SceneSettings {
             shared_map_units: 0,
             used_materials: Vec::new(),
             background: None,
+            air: None,
+            physical_sky: true,
+            stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
             lighting: Lighting {
@@ -1088,8 +1100,9 @@ impl SceneSettings {
         });
         match ready {
             Some((mut environment, (map, levels))) => {
-                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                if let Some((sh, gain)) = self.sky_maps.light(environment.texture) {
                     environment.sh = sh;
+                    environment.intensity *= gain;
                 }
                 (
                     map,
@@ -1202,22 +1215,99 @@ impl SceneSettings {
     }
 
     /// What the camera's view draws behind every object, or none for the background color alone,
-    /// as in every debug view.
+    /// as in every debug view. While the quality settings turn the physical sky off, the analytic
+    /// sky stands in for it.
     pub fn background(&self) -> Option<Background> {
-        self.background.filter(|_| !self.debug_view.is_debug())
+        let background = self.background.filter(|_| !self.debug_view.is_debug())?;
+        match (background.source, self.stand_in) {
+            (BackgroundSource::Atmosphere(_), Some((sky, gain))) => Some(Background {
+                source: BackgroundSource::Sky(sky),
+                intensity: background.intensity * gain,
+                ..background
+            }),
+            _ => Some(background),
+        }
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
-        if let Some(Background {
-            source: BackgroundSource::Sky(sky),
-            ..
-        }) = background
-        {
-            self.sky_maps.set_sky(sky);
-        }
         self.background = background;
+        self.update_sky();
+    }
+
+    /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality
+    /// settings choose.
+    pub fn set_physical_sky(&mut self, on: bool) {
+        if self.physical_sky != on {
+            self.physical_sky = on;
+            self.update_sky();
+        }
+    }
+
+    /// The physical sky's settings while the scene's background is one, whichever sky draws.
+    fn atmosphere(&self) -> Option<&Atmosphere> {
+        match &self.background {
+            Some(Background {
+                source: BackgroundSource::Atmosphere(atmosphere),
+                ..
+            }) => Some(atmosphere),
+            _ => None,
+        }
+    }
+
+    /// The physical sky's settings and its background's intensity while its own tables draw it:
+    /// the scene's background is the physical sky, the quality settings draw it, and no debug view
+    /// draws.
+    pub(crate) fn physical_sky(&self) -> Option<(&Atmosphere, f32)> {
+        let intensity = self.background()?.intensity;
+        match &self.background()?.source {
+            BackgroundSource::Atmosphere(_) => Some((self.atmosphere()?, intensity)),
+            _ => None,
+        }
+    }
+
+    /// Brings the sky maps, the air's model and the analytic stand-in in line with the background
+    /// and the quality settings.
+    fn update_sky(&mut self) {
+        self.stand_in = None;
+        let Some(background) = self.background else {
+            return;
+        };
+        match background.source {
+            BackgroundSource::Sky(sky) => self.sky_maps.set_sky(MapSky::analytic(sky)),
+            BackgroundSource::Atmosphere(atmosphere) => {
+                let air = atmosphere.air();
+                match &mut self.air {
+                    Some(model) => model.set_air(air),
+                    None => self.air = Some(AirModel::new(air)),
+                }
+                let model = self.air.as_ref().expect("the model was just made");
+                if self.physical_sky {
+                    let height = match self.sky_maps.sky() {
+                        Some(MapSky::Physical { height, .. }) => height,
+                        _ => atmosphere.height_of(0.0),
+                    };
+                    self.sky_maps.set_sky(MapSky::Physical { atmosphere, height });
+                } else {
+                    let (sky, gain) = analytic_stand_in(&atmosphere, model);
+                    self.stand_in = Some((sky, gain));
+                    self.sky_maps.set_sky(MapSky::Analytic { sky, gain });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The aerial perspective's values for a camera at height `y` in the world, in a frame whose
+    /// exposure is `exposure`: all zero without a physical sky.
+    fn aerial(&self, y: f32, exposure: f32) -> AerialUniform {
+        match (self.atmosphere(), &self.air, self.background) {
+            (Some(atmosphere), Some(model), Some(background)) if !self.debug_view.is_debug() => {
+                AerialUniform::of(atmosphere, model, y, background.intensity * exposure)
+            }
+            _ => AerialUniform::default(),
+        }
     }
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
@@ -1231,6 +1321,7 @@ impl SceneSettings {
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
+        panorama: (bool, u32),
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -1240,7 +1331,13 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
-        self.sky_maps.record(&self.textures, list)?;
+        self.sky_maps.record(
+            &self.textures,
+            list,
+            panorama.0,
+            panorama.1,
+            self.air.as_ref(),
+        )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(
@@ -1959,6 +2056,7 @@ impl SceneSettings {
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
             fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
+            aerial: self.aerial(y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],

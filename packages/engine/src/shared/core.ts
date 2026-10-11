@@ -488,6 +488,8 @@ export interface CoreGlue extends CoreErrors {
 	 * scale of their own take.
 	 */
 	setReflectionScale(scale: number): number;
+	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
+	setPhysicalSky(on: boolean): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
 	removeScenePass(place: number): number;
 	/** Switches the scene pass of a view place on or off. */
@@ -839,6 +841,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'clearShadowCamera',
 	'addPass',
 	'setReflectionScale',
+	'setPhysicalSky',
 	'removeScenePass',
 	'setScenePassEnabled',
 	'createPassTexture',

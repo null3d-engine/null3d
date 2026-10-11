@@ -157,14 +157,17 @@ pub enum Op {
     /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
     /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
-    /// [texture id, image id, stage, then the sky's settings as 16 floats: the sun's position and
+    /// [texture id, image id, stage, the physical sky's panorama texture id or 0 for the analytic
+    /// sky, then the analytic sky's settings as 16 floats: the sun's position and
     /// a spare, the turbidity, Rayleigh, Mie coefficient and Mie directional g, the cloud scale,
     /// speed, coverage and density, and the cloud elevation, the time and two spares]: runs one
     /// stage of a sky map on the cube texture that the generator under the image id filled. The
     /// backend's plan of the stages says what each one draws: the first ones draw the sky into
     /// the generator's own chain of levels, a face each; the next ones filter the map's levels for
     /// their roughness from the chain, a few faces each; the last copies the finished levels into
-    /// the texture at once. Only stage 0 reads the settings, which hold for the whole refresh.
+    /// the texture at once. Only stage 0 reads the settings, which hold for the whole refresh. A
+    /// stage that names a panorama reads the panorama, a 2D texture of 16-bit floats, in place of
+    /// the analytic sky's model, as the generator reads a panorama file.
     /// The stages before the copy write nothing that a frame reads, so a map can refresh over
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
@@ -738,6 +741,11 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// The physical sky's group: at binding 0 its uniform block, at bindings 1, 2 and 3 its
+    /// transmittance, multiple scattering and sky view tables, at binding 4 a linear sampler that
+    /// clamps, and at binding 5 one that repeats across the width. Group 0 of its tables' steps,
+    /// group 1 of its background.
+    pub const ATMOSPHERE: u32 = 39;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1344,8 +1352,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, and the hemisphere lights' three vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 560;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, and the physical sky's
+    /// aerial perspective's six.
+    pub const FRAME_UNIFORM_BYTES: u32 = 656;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1453,6 +1462,13 @@ pub mod template {
     /// The depth of instanced shadow casters, drawn from a light into a layer of a shadow map.
     /// Casters between the light and the layer's view flatten onto its near face.
     pub const SHADOW_DEPTH: u32 = 8;
+    /// The physical sky's tables and its panorama: one triangle over the whole target, whose first
+    /// vertex names the step, three times the table's index. Its group 0 has layout
+    /// [`ATMOSPHERE`](super::layout::ATMOSPHERE).
+    pub const SKY_TABLE: u32 = 10;
+    /// The physical sky behind every object, drawn as [`BACKGROUND_SKY`] is, from its tables. Its
+    /// group 1 has layout [`ATMOSPHERE`](super::layout::ATMOSPHERE).
+    pub const BACKGROUND_ATMOSPHERE: u32 = 11;
     /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
     /// samples a layer of a texture array. The bind group of index 0 is the frame's, that of index
     /// 1 the texture's and that of index 2 the background's, of layout
@@ -1846,6 +1862,7 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("ATMOSPHERE", layout::ATMOSPHERE),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1929,6 +1946,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DENOISE", template::AO_DENOISE),
                 ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
                 ("BACKGROUND_SKY", template::BACKGROUND_SKY),
+                ("SKY_TABLE", template::SKY_TABLE),
+                ("BACKGROUND_ATMOSPHERE", template::BACKGROUND_ATMOSPHERE),
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),

@@ -522,9 +522,12 @@ export class WebGPUBackend {
 		const id = words[a + 1] as number;
 		const code = this.images.generatorCodeFor<CubeGenerator>(id);
 		this.generators = code;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.device, this.commandEncoder(), texture, words, floats, a, this.gpuMemory);
-		else code.run(this.device, texture, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const panorama = words[a + 3] as number;
+			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
+			const encoder = this.commandEncoder();
+			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {

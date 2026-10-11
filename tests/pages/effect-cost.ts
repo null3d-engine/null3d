@@ -1,5 +1,7 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
+// ?effect=dof, ?effect=effects or ?effect=sky names it. The physical sky's side is measured against
+// three.js's analytic sky, or a color with ?base=none, with the sun still, or moving in every frame
+// with ?moving. The last adds ?count= custom effects, 4 by default, to
 // bloom's scene. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
 // otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
@@ -39,6 +41,7 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	sky: './sketches/sky-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -47,6 +50,8 @@ const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
+const moving = params.has('moving');
+const base = params.get('base');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
@@ -67,7 +72,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,

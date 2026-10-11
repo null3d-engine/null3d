@@ -1,5 +1,5 @@
 #define_import_path null3d::globals
-#import null3d::fog::Fog
+#import null3d::fog::{Fog, Aerial}
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
@@ -53,6 +53,8 @@ struct Frame {
     hemisphere_x: vec4f,
     hemisphere_y: vec4f,
     hemisphere_z: vec4f,
+    /// The physical sky's air between the camera and each surface, all zero without one.
+    aerial: Aerial,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

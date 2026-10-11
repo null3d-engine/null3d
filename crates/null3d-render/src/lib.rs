@@ -85,6 +85,8 @@ pub mod occlusion;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
+pub mod physical_sky;
+pub mod physical_sky_light;
 pub mod pipelines;
 pub mod queries;
 pub mod shadow_tiles;

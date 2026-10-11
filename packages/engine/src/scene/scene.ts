@@ -39,6 +39,7 @@ import {
 	type BackgroundOptions,
 	type BackgroundSource,
 	Cubemap,
+	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
 } from './background';
@@ -3521,7 +3522,8 @@ export class Scene {
 	/**
 	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
 	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
-	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * map from `assets.loadCubemap`, three.js's sky with `{ sky: { sunPosition } }`, or the physical
+	 * sky with `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture
 	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
 	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
 	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
@@ -3541,7 +3543,8 @@ export class Scene {
 			background instanceof Texture ||
 			background instanceof Environment ||
 			background instanceof Cubemap ||
-			isSkyBackground(background)
+			isSkyBackground(background) ||
+			isAtmosphereBackground(background)
 		) {
 			this.sceneBackground.set(background, options);
 			return;

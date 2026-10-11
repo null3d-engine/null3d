@@ -162,6 +162,50 @@ describe('timeOfDay', () => {
 		expect((Math.asin(low[1]) * 180) / Math.PI).toBeCloseTo(30, 5);
 	});
 
+	test('matches the physical sky with the physical model', () => {
+		const physical = (hours: number | TimeOfDayPreset) => timeOfDay(hours, { model: 'physical' });
+		const noon = physical(12);
+		expect(noon.skyIntensity).toBe(1);
+		expect(noon.exposure).toBe(1);
+		// A high sun's light through the air: about 3.2, a little warm.
+		expect(noon.light.intensity).toBeGreaterThan(3);
+		expect(noon.light.intensity).toBeLessThan(3.6);
+		expect(noon.light.color[2]).toBeLessThan(noon.light.color[0]);
+		expect(noon.atmosphere.sunPosition).toEqual(timeOfDay(12).atmosphere.sunPosition);
+		expect(noon.atmosphere.moonIntensity).toBe(0);
+		expect(noon.atmosphere.stars).toBe(0);
+		// A setting sun reddens, and the night has the moon and the stars.
+		const golden = physical('goldenHour');
+		expect(golden.light.color[2]).toBeLessThan(0.5 * golden.light.color[0]);
+		const night = physical('night');
+		expect(night.atmosphere.moonIntensity).toBeGreaterThan(0);
+		expect(night.atmosphere.stars).toBe(1);
+		expect(night.light.color).toEqual(timeOfDay('night').light.color);
+		// The exposure rises through dusk, within its limit, and settles under the moon.
+		const blue = physical('blueHour');
+		expect(blue.exposure).toBeGreaterThan(golden.exposure);
+		expect(blue.exposure).toBeLessThanOrEqual(200);
+		expect(night.exposure).toBeLessThan(blue.exposure);
+		expect(night.exposure).toBeGreaterThan(1);
+	});
+
+	test('changes the physical values with no jump as the day passes', () => {
+		// Steps of 2 minutes through dusk and dawn: each value changes by a small share.
+		for (const [start, end] of [
+			[17, 19.5],
+			[4.5, 7],
+		]) {
+			let before = timeOfDay(start as number, { model: 'physical' });
+			for (let h = (start as number) + 1 / 30; h <= (end as number); h += 1 / 30) {
+				const day = timeOfDay(h, { model: 'physical' });
+				const change = (a: number, b: number) => Math.abs(a - b) / Math.max(a, b, 1e-6);
+				expect(change(day.exposure, before.exposure)).toBeLessThan(0.4);
+				expect(change(luminance(day.ambient.color) * day.ambient.intensity, luminance(before.ambient.color) * before.ambient.intensity)).toBeLessThan(0.5);
+				before = day;
+			}
+		}
+	});
+
 	test('refuses an hour that is not a finite number, and an unknown preset', () => {
 		expect(() => timeOfDay(Number.NaN)).toThrow(RangeError);
 		expect(() => timeOfDay('dawn' as TimeOfDayPreset)).toThrow(

@@ -239,6 +239,7 @@ describe('SketchQuality.lower', () => {
 			aoScale: low.aoScale,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -266,6 +267,7 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
+			'physicalSky',
 			'softwareOcclusion',
 		]);
 	});

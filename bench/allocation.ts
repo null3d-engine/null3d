@@ -40,7 +40,9 @@
 // turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
-// the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
+// the sky's environment too, which refreshes one stage a frame while the sun moves. `--atmosphere`
+// and `--atmosphere-environment` do the same with the physical sky, whose sky view table draws
+// again in every frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
@@ -467,9 +469,18 @@ async function main(): Promise<void> {
 		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
-		const skyLight = args.includes('--sky-environment');
-		const sky = skyLight ? '&sky=light' : args.includes('--sky') ? '&sky' : '';
-		if (sky && scene !== 's1') throw new Error('--sky and --sky-environment draw behind S1 only');
+		const physicalLight = args.includes('--atmosphere-environment');
+		const physical = physicalLight || args.includes('--atmosphere');
+		const skyLight = physicalLight || args.includes('--sky-environment');
+		const sky = physical
+			? `&sky=${physicalLight ? 'physical-light' : 'physical'}`
+			: skyLight
+				? '&sky=light'
+				: args.includes('--sky')
+					? '&sky'
+					: '';
+		if (sky && scene !== 's1')
+			throw new Error('--sky, --atmosphere and their environments draw behind S1 only');
 		const reflection = args.includes('--reflection') ? '&reflection' : '';
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';

@@ -1679,9 +1679,12 @@ export class WebGL2Backend {
 		this.beforeGenerator();
 		const target = texture.texture as WebGLTexture;
 		const { width, mips } = texture;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
-		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const from = words[a + 3] as number;
+			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			const host = this.programHost;
+			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}
 
