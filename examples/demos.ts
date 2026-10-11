@@ -142,6 +142,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'contact-shadows',
+		group: 'Light, materials and effects',
+		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
+		title: 'Contact shadows',
+		scene: 'Stone garden',
+		summary:
+			'A stone garden at golden hour, with 600 pebbles in one batch. Contact shadows give each pebble and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'camera-lens',
 		group: 'Light, materials and effects',
 		sketch: new URL('./camera-lens/sketch.ts', import.meta.url),

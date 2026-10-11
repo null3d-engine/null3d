@@ -8,6 +8,7 @@ import {
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
+	FEWEST_CONTACT_STEPS,
 	FRAME_US,
 	FULL_SCALE,
 	farIntervalSteps,
@@ -406,6 +407,33 @@ describe('the bloom steps', () => {
 		controller.setAo(true, 0);
 		expect(controller.maxSteps).toBe(1);
 		expect(LOWEST_AO_SCALE).toBe(250);
+	});
+
+	it('give contact shadows their fewest steps last, while the sun casts shadows', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, 500);
+		controller.setContact(16);
+		// Without a light that casts shadows, contact shadows have no step.
+		expect(controller.maxSteps).toBe(1);
+		controller.setCasters(1, false);
+		expect(controller.contactSteps).toBe(16);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.aoScale} ${controller.contactSteps}`);
+		}
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then contact
+		// shadows take their fewest steps.
+		expect(seen).toEqual(['950 500 16', '950 250 16', '950 250 4']);
+		expect(controller.maxSteps).toBe(2);
+		// Ambient occlusion turned off takes its place, and contact shadows keep their step.
+		controller.setAo(false, 500);
+		expect([controller.steps, controller.aoScale, controller.contactSteps]).toEqual([1, 500, 4]);
+		// The fewest steps have no step, and none draw nothing to step.
+		controller.setContact(4);
+		controller.setContact(0);
+		expect(controller.maxSteps).toBe(0);
+		expect(FEWEST_CONTACT_STEPS).toBe(4);
 	});
 
 	it('take no step from the smallest base', () => {

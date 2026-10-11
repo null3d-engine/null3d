@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1, with the light from the sky and the light of hemisphere lights from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with the light from the sky, the light of hemisphere lights and contact shadows from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -165,7 +165,11 @@ const lamp = scene.createSpotLight({
 });
 ```
 
-Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra. [Shadows](../concepts/shadows.md) explains cascades, the shadow atlas of spot and point lights, each setting and its default, and the biases.
+Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra.
+
+The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0, as on High and Ultra.
+
+[Shadows](../concepts/shadows.md) explains cascades, contact shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 
 ## Coming from three.js
 

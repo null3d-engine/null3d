@@ -10,7 +10,21 @@
 //   writes how open the surface is, with the normal.
 // - `denoise` is three.js's PoissonDenoiseShader: a blur over a disk of taps that keeps the taps on
 //   the pixel's own surface, by their occlusion, their distance from its plane and their normal. It
-//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao).
+//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao). It is the
+//   last step, so it also marches the sun's contact shadows through the depth copy and writes
+//   them in the fourth channel. When only contact shadows draw, the frame runs the depth step and
+//   this step alone: this step then writes no occlusion, and its second texture is the depth copy.
+//
+// The last step's target holds one value per channel: the occlusion, the depth, the length of a
+// reflected ray (written by a step of screen-space reflections, which this step copies through, or
+// 0 for none), and the share of the sun that contact shadows let through (1 for all of it).
+//
+// Contact shadows are short shadows found in the camera's depth. From the surface at each texel, a
+// ray goes toward the sun for a short reach. It steps across the depth copy between the ray's two
+// ends on the screen, where the depth value changes linearly. A step whose ray lies behind the
+// surface that the copy holds, by more than a small bias and less than a thickness, is in shadow.
+// They close the lit gap that the cascades' texels and biases leave where small objects meet the
+// ground. Each texel jitters its steps with interleaved gradient noise.
 //
 // Positions are in the camera's view space, from texture coordinates of the render size that count
 // from the top left. A texel of the steps stands for the pixel of the scene under its center.
@@ -33,10 +47,18 @@ struct Settings {
     shape: vec4f,
     /// The denoise's luma, depth and normal phi, and its radius in texels of the steps.
     denoise: vec4f,
+    /// xyz: the unit direction toward the sun, in view space. w: how far contact shadows reach, in
+    /// meters.
+    contact: vec4f,
+    /// x: the steps of each contact shadow's march, 0 for none. y: how thick the march takes each
+    /// surface of the depth copy to be, in meters. z: 1 while ambient occlusion draws, else 0.
+    /// w: a spare.
+    march: vec4f,
 }
 
 // Binding 1 is the scene's depth target in the depth step, and the steps' copy of the depth in the
-// others. Binding 2 is the horizon step's target, which only the denoise reads.
+// others. Binding 2 is the horizon step's target, which only the denoise reads. Without ambient
+// occlusion, the denoise's binding 2 is the depth copy, which it does not read.
 @group(0) @binding(0) var<uniform> settings: Settings;
 #ifdef MULTISAMPLED
 @group(0) @binding(1) var source: texture_multisampled_2d<f32>;
@@ -221,19 +243,27 @@ fn horizon_at(texel: vec2i) -> vec4f {
     return textureLoad(horizons, vec2i(inside.x, turned(inside.y, settings.extents.w)), 0);
 }
 
-@fragment
-fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let texel = corner_texel(position);
-    let depth = depth_at(texel);
+/// Interleaved gradient noise (Jimenez 2014) at a texel: a value from 0 to 1 that changes from each
+/// texel to the next with little low-frequency pattern.
+fn gradient_noise(texel: vec2i) -> f32 {
+    return fract(52.9829189 * fract(dot(vec2f(texel), vec2f(0.06711056, 0.00583715))));
+}
+
+/// three.js's Poisson denoise of the horizon step's occlusion at `texel`, whose copied depth is
+/// `depth`: 1 where ambient occlusion does not draw, at the far plane, and where the horizon step
+/// found no surface.
+fn blurred_occlusion(texel: vec2i, depth: f32) -> f32 {
+    if settings.march.z <= 0.0 {
+        return 1.0;
+    }
     let found = horizon_at(texel);
     if depth <= 0.0 || dot(found.yzw, found.yzw) == 0.0 {
-        return vec4f(1.0, depth, 0.0, 1.0);
+        return 1.0;
     }
     let center = position_at(texel);
     let normal = found.yzw;
     // Interleaved gradient noise turns the disk at each texel, where three.js reads a noise texture.
-    let p = vec2f(texel);
-    let noise = fract(52.9829189 * fract(dot(p, vec2f(0.06711056, 0.00583715))));
+    let noise = gradient_noise(texel);
     let swing = vec2f(sin(noise * 2.0 * PI), cos(noise * 2.0 * PI));
     // three.js's matrix from its noise, as its shader builds it.
     let turn = mat2x2f(swing.x, -swing.y, swing.x, swing.y);
@@ -257,5 +287,77 @@ fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
         sum += held.x * weight;
         total += weight;
     }
-    return vec4f(sum / total, depth, 0.0, 1.0);
+    return sum / total;
+}
+
+/// The share of the march's reach, at its far end, over which a hit's shadow fades out, so each
+/// contact shadow ends softly rather than at a hard line.
+const CONTACT_FADE: f32 = 0.5;
+/// The bias of the march as a share of the surface's distance from the camera: a ray must lie
+/// this far behind a surface of the depth copy before it counts as hidden. It covers the depth
+/// copy's texels, which each hold the depth at one point of their area.
+const CONTACT_BIAS: f32 = 0.004;
+/// The share of the depth copy's corner, at each edge, over which contact shadows fade out, as
+/// the copy holds no surfaces past its edges.
+const CONTACT_EDGE: f32 = 0.05;
+
+/// The distance along the camera's view of the surface at texture coordinates `uv` whose depth
+/// value is `depth`.
+fn view_distance(uv: vec2f, depth: f32) -> f32 {
+    return -view_position(uv, depth, settings.inverse_projection).z;
+}
+
+/// The texture coordinates, from the top left, of a point in clip space.
+fn clip_uv(clip: vec4f) -> vec2f {
+    let ndc = clip.xy / clip.w;
+    return vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+}
+
+/// The share of the sun that reaches the surface at `texel`, whose copied depth is `depth`, past
+/// its contact shadows: 1 for all of it, and 1 where contact shadows do not draw.
+fn contact_light(texel: vec2i, depth: f32) -> f32 {
+    let steps = u32(settings.march.x);
+    if steps == 0u || depth <= 0.0 {
+        return 1.0;
+    }
+    let corner = settings.corners.zw;
+    let start = position_at(texel);
+    let to_sun = settings.contact.xyz;
+    // A ray toward the camera stops short of the camera's plane, where it would leave the view.
+    var reach = settings.contact.w;
+    if to_sun.z > 0.0 {
+        reach = min(reach, -0.9 * start.z / to_sun.z);
+    }
+    let near = settings.projection * vec4f(start, 1.0);
+    let far = settings.projection * vec4f(start + to_sun * reach, 1.0);
+    let first = clip_uv(near);
+    let last = clip_uv(far);
+    let depths = vec2f(near.z / near.w, far.z / far.w);
+    let thickness = settings.march.y;
+    let bias = CONTACT_BIAS * -start.z;
+    let jitter = gradient_noise(texel);
+    // Every texel runs the same steps, as the step count comes from the settings: a loop whose
+    // count differs between the pixels of a work group runs wrongly on Adreno 830's driver.
+    var shadow = 0.0;
+    for (var k = 0u; k < steps; k++) {
+        let t = (f32(k) + jitter) / f32(steps);
+        let uv = mix(first, last, t);
+        let inside = all(uv >= vec2f(0.0)) && all(uv < vec2f(1.0));
+        let held = depth_at(vec2i(floor(uv * corner)));
+        let gap = view_distance(uv, mix(depths.x, depths.y, t)) - view_distance(uv, held);
+        let hidden = inside && held > 0.0 && gap > bias && gap < thickness;
+        let strength = 1.0 - smoothstep(1.0 - CONTACT_FADE, 1.0, t);
+        shadow = max(shadow, select(0.0, strength, hidden));
+    }
+    // Toward the copy's edges, where the ray may leave the surfaces it holds, the shadow fades.
+    let edges = min(min(last, 1.0 - last), min(first, 1.0 - first));
+    let edge = saturate(min(edges.x, edges.y) / CONTACT_EDGE);
+    return 1.0 - shadow * edge;
+}
+
+@fragment
+fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = corner_texel(position);
+    let depth = depth_at(texel);
+    return vec4f(blurred_occlusion(texel, depth), depth, 0.0, contact_light(texel, depth));
 }

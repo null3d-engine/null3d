@@ -111,13 +111,17 @@ pub mod value {
     /// The distance in meters from the camera, along its view, out to which a directional light's
     /// shadows fall. The default is 200.
     pub const SHADOW_DISTANCE: u32 = 9;
+    /// How far a directional light's contact shadows reach from each surface toward the light, in
+    /// meters: short shadows found in the camera's depth, which close the lit gap that the
+    /// cascades leave where small objects meet the ground. 0 draws none. The default is 0.3.
+    pub const SHADOW_CONTACT: u32 = 10;
     /// The last number.
-    pub const LAST: u32 = SHADOW_DISTANCE;
+    pub const LAST: u32 = SHADOW_CONTACT;
 }
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
-    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0,
+    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0, 0.3,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -243,6 +247,9 @@ pub struct SunShadow {
     pub normal_bias: f32,
     /// The distance along the camera's view out to which its shadows fall.
     pub distance: f32,
+    /// How far its contact shadows reach toward the light from each surface, in meters: 0 for
+    /// none.
+    pub contact: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
 }
@@ -257,6 +264,7 @@ impl SunShadow {
             bias: values[value::SHADOW_BIAS as usize],
             normal_bias: values[value::SHADOW_NORMAL_BIAS as usize],
             distance: values[value::SHADOW_DISTANCE as usize],
+            contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
         }
     }
