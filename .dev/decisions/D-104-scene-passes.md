@@ -85,7 +85,7 @@ Tests:
 - The core's `another_view_gathers_the_lights_it_sees_and_leaves_the_camera_s_lists_alone`.
 - The render crate's scene pass tests on both paths. A lamp that only the pass sees lights the pass alone, and both paths list the same lights. Each WebGPU view with lamps fills its own grid. A pass that sees no lamp makes no grid. A pass reads the camera's tiles from its own camera.
 - The no-allocation test with a moving lamp and a pass, on both paths.
-- The `minimap-lamps` image test on all three tiers, in both reference sets.
+- The `minimap-lamps` image test on all three tiers, in both reference sets, and `reflection-lamps`: a dark scene whose point light and spot light light the boxes and their reflections alike.
 
 Reflection passes ([D-120](D-120-planar-reflections.md)) merged while this task waited, with the same limit and the same warning. A reflection's view is a camera view like a scene pass's, so it gets the same pick of lamps and its own grid. Its grid's tiles come from its own matrix, which is the mirrored, oblique one that its shaders find their clusters with, so the clusters match. Its camera stands where the main camera stands, so its shadow offset is 0.
 
