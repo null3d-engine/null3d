@@ -147,6 +147,11 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 ];
 /** Time for a page to start, beyond its warm-up and measured seconds. */
 const START_MARGIN_MS = 60_000;
+/**
+ * More time to start for a scene that streams in before its warm-up. S6's whole city took more than
+ * the start margin on CI's Mac machines, so every run of its pages failed there.
+ */
+const STREAM_MARGIN_MS: Partial<Record<BenchScene, number>> = { s6: 240_000 };
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
 /** A comparison of two builds needs this many runs of each page per build, or more. */
@@ -180,10 +185,10 @@ const runSeconds = (seconds: number | null) => ({
 	measure: seconds ?? MEASURE_SECONDS,
 });
 
-/** How long a page may take to publish its result. */
-function pageTimeoutMs(seconds: number | null): number {
+/** How long a page of a scene may take to publish its result. */
+function pageTimeoutMs(seconds: number | null, scene: BenchScene): number {
 	const { warmup, measure } = runSeconds(seconds);
-	return (warmup + measure) * 1000 + START_MARGIN_MS;
+	return (warmup + measure) * 1000 + START_MARGIN_MS + (STREAM_MARGIN_MS[scene] ?? 0);
 }
 
 function list<T extends string>(
@@ -301,7 +306,6 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const timeoutMs = pageTimeoutMs(seconds);
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
 	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
@@ -321,7 +325,7 @@ async function runProtocol(
 					const result = await runPage(
 						browser,
 						`${baseUrl}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						pageTimeoutMs(seconds, scene),
 					);
 					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
 					// A page that ran with another job worker count would put its times under the wrong count.
@@ -384,7 +388,6 @@ async function runSweep(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds ?? 5;
-	const timeoutMs = 2 * seconds * 1000 + START_MARGIN_MS;
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
 	const chartPage = await newParkedPage(browser, { viewport: { width: 1200, height: 800 } });
@@ -397,7 +400,7 @@ async function runSweep(
 				const result = await runPage(
 					browser,
 					`${baseUrl}${pagePath(scene, kind, withSwitches([`seconds=${seconds}`, `n=${n}`], options))}`,
-					timeoutMs,
+					pageTimeoutMs(seconds, scene),
 				);
 				writeFileSync(
 					join(dir, `sweep-${scene}-${kind}-${n}.json`),
@@ -541,7 +544,6 @@ async function runComparison(
 		],
 		options,
 	);
-	const timeoutMs = pageTimeoutMs(options.seconds);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];
 	try {
@@ -563,13 +565,13 @@ async function runComparison(
 					const result = await runPage(
 						browser,
 						`${urls[build]}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						pageTimeoutMs(options.seconds, scene),
 					);
 					const name = `${build}-${scene}-${kind}-${round}`;
 					writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
 					results.push({ build, scene, kind, round, result });
 					console.log(
-						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}`,
+						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}${result.load ? `, whole after ${(result.load.wholeMs / 1000).toFixed(1)} s` : ''}`,
 					);
 				}
 	} finally {

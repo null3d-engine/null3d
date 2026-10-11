@@ -137,7 +137,7 @@ function parseOutcome(file: Uint8Array, change: string, decode?: MeshoptDecode):
 	const start = performance.now();
 	let outcome: string;
 	try {
-		parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, decode);
+		parseGltf(readContainer(file, URL_OF), new Map(), URL_OF, { meshopt: decode });
 		outcome = 'read';
 	} catch (error) {
 		if (!(error instanceof GltfError))
