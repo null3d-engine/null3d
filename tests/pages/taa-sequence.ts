@@ -1,7 +1,7 @@
 // Captures consecutive frames of a sketch for the temporal anti-aliasing prototype (M2-EX18).
 // ?sketch= names the sketch's path from the site's root and ?args= its own switches, which should
 // hold `frames` and `step`, so the sketch posts each frame's number and steps 1/60 s per frame.
-// ?size=WxH sets the canvas in CSS pixels, drawn at a pixel ratio of 1. ?start= is the sketch
+// ?antialias= sets the engine's mode. ?size=WxH sets the canvas in CSS pixels, drawn at a pixel ratio of 1. ?start= is the sketch
 // frame to wait for, ?count= the captures, and ?down= a factor that shrinks each capture by
 // averaging blocks of pixels in linear light, for references drawn larger. Run it with the
 // engine's ?fps= switch low enough that a capture finishes before the next frame, so the captures
@@ -80,6 +80,8 @@ run('taa-sequence', async () => {
 		canvas,
 		sketch,
 		maxPixelRatio: 1,
+		// ?antialias= replaces the preset's mode, as for TAA with no MSAA under it.
+		antialias: (params.get('antialias') as 'msaa' | 'fxaa' | 'none' | null) ?? undefined,
 		onSketchMessage: (name, data) => {
 			if (name === 'frame') heard.push(data as number);
 		},
