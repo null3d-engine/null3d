@@ -9,10 +9,14 @@ import { readGrowthSwitches, WASM_MOST_MIB } from '../pages/lib/tab-memory.ts';
 import { parseArgs, planItems } from '../real-browsers.ts';
 import { ENGINE_MODES } from './engine-checks.ts';
 import {
+	benchSummary,
 	checksPlan,
 	judge,
 	NONE_MISSING,
+	SHOWCASE_SCENES,
 	SMOKE_IMAGE_TESTS,
+	SUSTAINED_REST_SECONDS,
+	showcasePlan,
 	smokePlan,
 	soakPlan,
 	soakSummary,
@@ -209,6 +213,21 @@ describe('the soak plan', () => {
 		expect(soaks[0]?.timeoutSeconds).toBe(20 * 60 + 180);
 	});
 
+	it('soaks the scenes it names on each path, after the same GPU losses', () => {
+		const named = soakPlan({ minutes: 20, scenes: ['s5', 's6'] });
+		expect(named).toHaveLength(2 * ENGINE_MODES.length + 4);
+		expect(named.slice(-4).map((item) => item.id)).toEqual([
+			'soak-s5-webgpu',
+			'soak-s5-webgl2',
+			'soak-s6-webgpu',
+			'soak-s6-webgl2',
+		]);
+		expect(named.at(-1)?.path).toMatch(/\/bench\/pages\/null3d\/s6\.html\?.*soak=20/);
+		expect(planItems(parseArgs(['--plan', 'soak', '--scenes', 's5,s6']))?.at(-1)?.id).toBe(
+			'soak-s6-webgl2',
+		);
+	});
+
 	const minute = (n: number, presentedFps: number, gpuLosses = 0): SoakMinute => ({
 		minute: n,
 		presentedFps,
@@ -269,9 +288,102 @@ describe('the soak plan', () => {
 				?.split('\n')
 				.slice(2),
 		).toEqual([
-			'| webgpu | low (check: medium 41.7 fps, low 60.3 fps) | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
-			'| webgl2 | no result; the runner stopped before this page | | | | | | |',
+			'| s4 | webgpu | low (check: medium 41.7 fps, low 60.3 fps) | 3 of 3 | 1 (minutes 2) | 59.0 | 52.0 (minute 2) | 0.0 MiB | none |',
+			'| s4 | webgl2 | no result; the runner stopped before this page | | | | | | |',
 		]);
+	});
+});
+
+describe('the showcase plan', () => {
+	const items = showcasePlan({ runs: 2 });
+	const sustained = items.filter(({ id }) => id.startsWith('sustained-'));
+
+	it('runs each showcase scene for 10 minutes on each path, resting before each run but the first', () => {
+		expect(SHOWCASE_SCENES).toEqual(['s4', 's5', 's6']);
+		expect(sustained.map(({ id }) => id)).toEqual([
+			'sustained-s4-webgpu',
+			'sustained-s4-webgl2',
+			'sustained-s5-webgpu',
+			'sustained-s5-webgl2',
+			'sustained-s6-webgpu',
+			'sustained-s6-webgl2',
+		]);
+		expect(items.slice(0, 6)).toEqual(sustained);
+		expect(sustained[0]?.path).toMatch(
+			/^\/__null3d\/load\/warm\/.*\/bench\/pages\/null3d\/s4\.html\?gpu=webgpu&seconds=300$/,
+		);
+		expect(sustained[0]?.restSeconds).toBeUndefined();
+		expect(sustained[0]?.timeoutSeconds).toBe(2 * 300 + 60);
+		for (const item of sustained.slice(1)) {
+			expect(item.restSeconds).toBe(SUSTAINED_REST_SECONDS);
+			expect(item.timeoutSeconds).toBe(2 * 300 + 60 + SUSTAINED_REST_SECONDS);
+		}
+	});
+
+	it('then times each scene against its three.js twins, the pages in turns', () => {
+		const compared = items.slice(6);
+		expect(compared).toHaveLength(2 * 3 * 4);
+		expect(compared.slice(0, 4).map(({ id }) => id)).toEqual([
+			'bench-s4-null3d-webgpu-1',
+			'bench-s4-null3d-webgl2-1',
+			'bench-s4-threejs-webgpu-1',
+			'bench-s4-threejs-webgl-1',
+		]);
+		expect(compared.at(-1)?.id).toBe('bench-s6-threejs-webgl-2');
+		expect(
+			planItems(parseArgs(['--plan', 'showcase', '--scenes', 's5', '--seconds', '60']))?.map(
+				({ id }) => id,
+			),
+		).toEqual([
+			'sustained-s5-webgpu',
+			'sustained-s5-webgl2',
+			...[1, 2, 3, 4, 5].flatMap((run) =>
+				['null3d-webgpu', 'null3d-webgl2', 'threejs-webgpu', 'threejs-webgl'].map(
+					(page) => `bench-s5-${page}-${run}`,
+				),
+			),
+		]);
+	});
+
+	const second = (fps: number) => ({
+		presentedFps: fps,
+		completedFps: fps,
+		renderScale: 1,
+		steps: 0,
+	});
+	const run = (fps: number[], refreshHz: number | null = 60) => ({
+		ok: true,
+		frames: 1000,
+		cpuMs: { median: 4 },
+		mode: { jobWorkers: 3 },
+		stats: { refreshHz },
+		trace: fps.map(second),
+	});
+	const check = sustained[0]?.check;
+
+	it('passes a run that holds the target in 95% of its seconds, and fails one that does not', () => {
+		if (!check) throw new Error('the plan has no sustained run');
+		const held = [...Array(19).fill(60), 40];
+		expect(judge(check, run(held), NONE_MISSING)).toEqual([]);
+		expect(judge(check, run([...Array(18).fill(60), 40, 50]), NONE_MISSING)).toEqual([
+			'18 of 20 seconds held 60 fps (90%), under 95%',
+		]);
+		// A 30 Hz display sets a target of 30 frames a second.
+		expect(judge(check, run(Array(20).fill(30), 30), NONE_MISSING)).toEqual([]);
+		expect(judge(check, run(held, null), NONE_MISSING)).toEqual([
+			'the page knew no refresh rate to set the target',
+		]);
+		expect(judge(check, { ...run(held), trace: [] }, NONE_MISSING)).toEqual([
+			'the run recorded no trace of its seconds',
+		]);
+	});
+
+	it('is a timed plan whose sustained runs get a row of their own in the summary', () => {
+		const results: Record<string, ItemResult> = {
+			'sustained-s4-webgpu': { ...run(Array(20).fill(60)), scene: 's4', renderer: 'null3d', n: 1 },
+		};
+		const summary = benchSummary(items, (id) => results[id]) ?? '';
+		expect(summary).toContain('| s4 | null3d-webgpu sustained | 20 | 60 | 20 (100%) |');
 	});
 });
 
