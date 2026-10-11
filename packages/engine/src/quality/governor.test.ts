@@ -565,7 +565,7 @@ describe('the governor in the frame loop', () => {
 	 * A metrics buffer whose render and completion rings the test writes as frames go, and a scene
 	 * whose shadows and loading the test sets. The frame loop's clock starts at `start` ms.
 	 */
-	function loop(refreshHz = 60, fps?: number, start = 0) {
+	function loop(refreshHz = 60, maxTargetHz?: number, start = 0) {
 		const metrics = createMetricsBuffer(false, 0);
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
@@ -575,7 +575,7 @@ describe('the governor in the frame loop', () => {
 			shadowCasters: () => scene.casters,
 			loading: () => scene.loading,
 		};
-		const resolution = new GovernorLoop(new Governor(), metrics, reads, fps);
+		const resolution = new GovernorLoop(new Governor(), metrics, reads, maxTargetHz);
 		resolution.governor.setRange(500, FULL_SCALE);
 		let now = start;
 		let frame = 0;
@@ -673,14 +673,19 @@ describe('the governor in the frame loop', () => {
 		expect(run(intervals, BUDGET / 4, RAISE_AFTER_MS)).toBe(950);
 	});
 
-	it('takes the rate that ?fps= holds as the target', () => {
+	it('takes the highest target that the page and ?fps= allow', () => {
 		// Frames 33 ms apart hold a rate of 30 on a 60 hertz display.
 		const held = loop(60, 30);
 		expect(held.run(2 * BUDGET, BUDGET, GRACE_MS + 4000)).toBe(FULL_SCALE);
 		expect(held.run(3 * BUDGET, BUDGET, 3000)).toBeLessThan(FULL_SCALE);
-		// A held rate above the highest target rate keeps that target.
-		const fast = loop(120, 90);
-		expect(fast.run(2 * BUDGET, BUDGET, GRACE_MS + 3000)).toBeLessThan(FULL_SCALE);
+		// Where the page defends the display's full rate, 60 frames a second miss 120 hertz.
+		const full = loop(120, Number.POSITIVE_INFINITY);
+		expect(full.run(BUDGET / 2, BUDGET / 4, GRACE_MS + 4000)).toBe(FULL_SCALE);
+		expect(full.run(BUDGET, BUDGET / 2, 3000)).toBeLessThan(FULL_SCALE);
+		// A cap between the two is the target.
+		const capped = loop(120, 90);
+		expect(capped.run(1000 / 90, BUDGET / 2, GRACE_MS + 4000)).toBe(FULL_SCALE);
+		expect(capped.run(BUDGET, BUDGET / 2, 3000)).toBeLessThan(FULL_SCALE);
 	});
 
 	it('reads the shadows of the scene, and takes no step while the scene loads', () => {

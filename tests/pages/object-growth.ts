@@ -53,9 +53,11 @@ run('object-growth', async () => {
 			odd: number;
 			sequence: string;
 			latency: string;
+			scales: number[];
 			failures: string[];
 		}
 	> = {};
+	const play = new URLSearchParams(location.search).get('play-ms');
 	for (const [k, mode] of ['grow', 'reference'].entries()) {
 		const canvas = canvases[k];
 		if (!canvas) throw new Error('the page has fewer than two canvases');
@@ -63,10 +65,13 @@ run('object-growth', async () => {
 		// new URL with import.meta.url, and its query would reach the sketch unfilled.
 		const sketch = new URL('./sketches/object-growth-sketch.ts', import.meta.url);
 		sketch.searchParams.set('mode', mode);
+		if (play !== null) sketch.searchParams.set('play-ms', play);
+		// A named preset skips the preset check, whose choice follows how fast the frames run.
 		const engine = await createEngine({
 			canvas,
 			sketch,
 			maxPixelRatio: 1,
+			preset: 'low',
 			expectedObjects: mode === 'grow' ? START : undefined,
 		});
 		const failures: string[] = [];
@@ -79,11 +84,12 @@ run('object-growth', async () => {
 					resolve(data);
 				});
 			});
-		await message('before');
+		const scales = [((await message('before')) as { renderScale: number }).renderScale];
 		const before = toBase64((await engine.captureFrame()).pixels);
-		let done: { objects: number } | undefined;
+		let done: { objects: number; renderScale: number } | undefined;
 		const after = message('after').then((data) => {
-			done = data as { objects: number };
+			done = data as { objects: number; renderScale: number };
+			scales.push(done.renderScale);
 		});
 		engine.postToSketch('grow', null);
 		// Frames back to back while the tables grow: the thread that draws replays each frame's
@@ -92,16 +98,23 @@ run('object-growth', async () => {
 		while (done === undefined) during.push(toBase64((await engine.captureFrame()).pixels));
 		await after;
 		const picture = toBase64((await engine.captureFrame()).pixels);
+		// Each odd picture gets a number, so a failure shows whether the odd frames agree.
+		const odd: string[] = [];
+		const label = (each: string) => {
+			if (each === before) return 'B';
+			if (each === picture) return 'A';
+			if (!odd.includes(each)) odd.push(each);
+			return String(odd.indexOf(each) + 1);
+		};
 		pictures[mode] = {
 			before,
 			after: picture,
 			objects: done.objects,
 			during: during.length,
 			odd: during.filter((each) => each !== before && each !== picture).length,
-			sequence: during
-				.map((each) => (each === before ? 'B' : each === picture ? 'A' : 'X'))
-				.join(''),
+			sequence: during.map(label).join(','),
 			latency: engine.mode.latency,
+			scales,
 			failures,
 		};
 		await engine.destroy();

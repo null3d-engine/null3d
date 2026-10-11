@@ -89,6 +89,12 @@ export function parseDownloadsPath(url: string): Load | undefined {
 export const runnerKey = (name: string) => `{run}.{runner}.${name}`;
 
 /**
+ * The benchmark pages' production build, which timed runs load under one address prefix of the
+ * runner's own, so they measure the engine as a developer ships it: without development checks.
+ */
+export const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+
+/**
  * A plan item's address with the run, the runner and the item's own name filled in, where it has
  * `{run}`, `{runner}` and `{item}`.
  */

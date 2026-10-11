@@ -48,7 +48,8 @@ import {
 	SUM_RECORDS,
 } from '../shared/metrics';
 import * as Role from '../shared/role';
-import { HELD_PERCENT, TARGET_CAP_HZ } from '../shared/stats';
+import { HELD_PERCENT } from '../shared/stats';
+import { CHECK_MAX_FPS, checkTargetFps } from './check';
 import { QUALITY_SETTINGS } from './presets';
 
 /** The render scale of the whole canvas, in thousandths. */
@@ -583,25 +584,28 @@ export class GovernorLoop {
 	private readonly presented: RingSums;
 	private readonly completed: RingSums;
 	private readonly refresh: RefreshRate;
-	/** The highest frame rate the governor aims for, in hertz: `TARGET_CAP_HZ`, or less under ?fps=. */
-	private readonly targetHz: number;
+	/** The highest frame rate the governor aims for, in hertz, as the preset check's target allows. */
+	private readonly maxTargetHz: number;
 	/**
 	 * The window's start and the last frame's time, in ms, or -1 before the first frame, then the
 	 * origin of the governor's clock on the frame loop's clock.
 	 */
 	private readonly times = new Float64Array([-1, -1, 0]);
 
-	/** `fps` is the frame rate that ?fps= holds, or undefined where the display's rate sets it. */
+	/**
+	 * `maxTargetHz` is the highest target: 60 by default, the page's `targetFps` setting, infinity
+	 * for the display's full rate, and at most the rate that ?fps= holds.
+	 */
 	constructor(
 		readonly governor: Governor,
 		metrics: ArrayBufferLike,
 		private readonly scene: GovernorScene,
-		fps?: number,
+		maxTargetHz = CHECK_MAX_FPS,
 	) {
 		this.presented = new RingSums(metrics, Role.Render);
 		this.completed = new RingSums(metrics, Role.Completion);
 		this.refresh = new RefreshRate(metrics);
-		this.targetHz = Math.min(fps ?? TARGET_CAP_HZ, TARGET_CAP_HZ);
+		this.maxTargetHz = maxTargetHz;
 	}
 
 	/**
@@ -643,12 +647,12 @@ export class GovernorLoop {
 				const shownMs = (shown[SUM_INTERVAL_MS] as number) / shownFrames;
 				const doneMs = doneFrames > 0 ? (done[SUM_INTERVAL_MS] as number) / doneFrames : 0;
 				const delayMs = doneFrames > 0 ? (done[SUM_BUSY_MS] as number) / doneFrames : 0;
-				const hz = this.refresh.hz;
-				const target = this.targetHz;
 				window[WINDOW_END] = this.clock(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
-				window[BUDGET_US] = Math.round(1_000_000 / (hz > 0 ? Math.min(hz, target) : target));
+				window[BUDGET_US] = Math.round(
+					1_000_000 / checkTargetFps(this.refresh.hz, this.maxTargetHz),
+				);
 				governor.judge();
 			}
 		}

@@ -46,6 +46,10 @@ pub mod batch_field {
     pub const SIZES: u32 = 4;
     /// A sprite batch's atlas frames, one 32-bit integer a row.
     pub const FRAMES: u32 = 5;
+    /// The rows marked dirty since the last batch update, one bit a row, in 64-bit words.
+    pub const DIRTY_WORDS: u32 = 6;
+    /// An instance batch's own values, 4 floats a row, which shaders read.
+    pub const VALUES: u32 = 7;
 }
 
 /// Fields of `debugLineArrays`.
@@ -94,6 +98,15 @@ pub mod shading {
     /// Where a custom shading holds the number of textures that its WGSL declares, from 0 to the
     /// map slots of a row, in 3 bits.
     pub const CUSTOM_TEXTURE_SHIFT: u32 = 25;
+    /// The bit of a custom shading whose WGSL has the builds that let light through, which a
+    /// material with the transmission feature draws with.
+    pub const CUSTOM_TRANSMISSION: u32 = 1 << 28;
+    /// The bit of a custom shading built from the standard material's template, which has the
+    /// builds that draw the rows of instance batches with row values.
+    pub const CUSTOM_ROW_VALUES: u32 = 1 << 29;
+    /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
+    /// shadow caster that moves by it.
+    pub const CUSTOM_CASTER: u32 = 1 << 30;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -157,8 +170,19 @@ pub mod post_value {
     /// The vignette's falloff and roundness.
     pub const VIGNETTE_FALLOFF: u32 = 39;
     pub const VIGNETTE_ROUNDNESS: u32 = 40;
+    /// Depth of field's focus distance, aperture as an f-number, focal length in millimetres (0
+    /// for the camera's), largest blur as a share of the image's height, and aperture blades, in
+    /// this order.
+    pub const DOF_FOCUS_DISTANCE: u32 = 41;
+    pub const DOF_APERTURE: u32 = 42;
+    pub const DOF_FOCAL_LENGTH: u32 = 43;
+    pub const DOF_MAX_BLUR: u32 = 44;
+    pub const DOF_BLADES: u32 = 45;
+    /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
+    pub const DOF_FOCUS_POINT: u32 = 46;
+    pub const DOF_FOCUS_ON_POINT: u32 = 49;
     /// The values in the block.
-    pub const COUNT: u32 = 41;
+    pub const COUNT: u32 = 50;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -199,8 +223,11 @@ pub mod background_value {
     pub const TIME: u32 = 17;
     /// 1 where the sky shows the sun's disc, else 0.
     pub const SUN_DISC: u32 = 18;
+    /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
+    pub const SECOND_SUN_POSITION: u32 = 19;
+    pub const SECOND_SKY_WEIGHT: u32 = 22;
     /// The values in the block.
-    pub const COUNT: u32 = 19;
+    pub const COUNT: u32 = 23;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -559,6 +586,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
                 ("OUTLINED", flags::OUTLINED),
                 ("OCCLUDER", flags::OCCLUDER),
+                ("TRACKED", flags::TRACKED),
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
@@ -613,6 +641,8 @@ pub fn typescript() -> String {
                 ("COLORS", batch_field::COLORS),
                 ("SIZES", batch_field::SIZES),
                 ("FRAMES", batch_field::FRAMES),
+                ("DIRTY_WORDS", batch_field::DIRTY_WORDS),
+                ("VALUES", batch_field::VALUES),
             ],
         ),
         (
@@ -776,6 +806,9 @@ pub fn typescript() -> String {
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
                 ("CUSTOM_TEXTURE_SHIFT", shading::CUSTOM_TEXTURE_SHIFT),
+                ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
+                ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
+                ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -795,6 +828,7 @@ pub fn typescript() -> String {
                 ("ALPHA_TO_COVERAGE", feature::ALPHA_TO_COVERAGE),
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
+                ("TRANSMISSION", feature::TRANSMISSION),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -852,6 +886,11 @@ pub fn typescript() -> String {
                 ("REFLECTANCE", param::REFLECTANCE as u32),
                 ("SPECULAR_COLOR", param::SPECULAR_COLOR as u32),
                 ("SPECULAR_INTENSITY", param::SPECULAR_INTENSITY as u32),
+                ("TRANSMISSION", param::TRANSMISSION as u32),
+                ("THICKNESS", param::THICKNESS as u32),
+                ("IOR", param::IOR as u32),
+                ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
+                ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
@@ -896,6 +935,13 @@ pub fn typescript() -> String {
                 ("OUTLINE_WIDTH", post_value::OUTLINE_WIDTH),
                 ("BLOOM_BLEND", post_value::BLOOM_BLEND),
                 ("BLOOM_WEIGHTS", post_value::BLOOM_WEIGHTS),
+                ("DOF_FOCUS_DISTANCE", post_value::DOF_FOCUS_DISTANCE),
+                ("DOF_APERTURE", post_value::DOF_APERTURE),
+                ("DOF_FOCAL_LENGTH", post_value::DOF_FOCAL_LENGTH),
+                ("DOF_MAX_BLUR", post_value::DOF_MAX_BLUR),
+                ("DOF_BLADES", post_value::DOF_BLADES),
+                ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
+                ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
                 ("COUNT", post_value::COUNT),
             ],
         ),
@@ -926,6 +972,8 @@ pub fn typescript() -> String {
                 ("CLOUD_ELEVATION", background_value::CLOUD_ELEVATION),
                 ("TIME", background_value::TIME),
                 ("SUN_DISC", background_value::SUN_DISC),
+                ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
+                ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
                 ("COUNT", background_value::COUNT),
             ],
         ),

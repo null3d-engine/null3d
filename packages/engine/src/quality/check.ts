@@ -9,8 +9,9 @@
 import type { QualityPreset } from './presets';
 
 /**
- * The highest frame rate that the check asks a preset to hold. A display that refreshes faster
- * still gets this target, as a preset that holds it plays smoothly there too.
+ * The highest frame rate that the check asks a preset to hold, unless the page asks for more. A
+ * display that refreshes faster still gets this target, as a preset that holds it plays smoothly
+ * there too. It is also the target before the display's rate is measured.
  */
 export const CHECK_MAX_FPS = 60;
 /** A preset holds its target when the measured rate reaches this share of it. */
@@ -51,7 +52,10 @@ export interface PresetCheckRound {
 export interface PresetCheck {
 	/** The preset that the engine chose from the device before the check. */
 	from: QualityPreset;
-	/** The frame rate that each preset had to hold: the display's refresh rate, at most 60. */
+	/**
+	 * The frame rate that each preset had to hold: the display's refresh rate, at most 60 or at
+	 * most the page's `targetFps` option.
+	 */
 	targetFps: number;
 	/**
 	 * Each preset that the check measured, from `from` down. The last is the preset that the engine
@@ -66,13 +70,29 @@ export interface PresetCheck {
 }
 
 /**
- * The frame rate that a preset must hold: the display's refresh rate, at most `CHECK_MAX_FPS` and
- * at most `maxFps` when a frame rate cap is set. A refresh rate of 0, not measured yet, counts as
- * the highest target.
+ * The frame rate that the engine defends, as `createEngine`'s `targetFps` option and the
+ * `?target-fps=` switch name it: `display` for the display's full refresh rate, or a whole number
+ * of frames per second that caps the target. Without it, the target is at most 60.
+ *
+ * @category api/quality
  */
-export function checkTargetFps(refreshHz: number, maxFps = CHECK_MAX_FPS): number {
-	const target = Math.min(CHECK_MAX_FPS, maxFps);
-	return refreshHz > 0 ? Math.min(target, refreshHz) : target;
+export type TargetFps = 'display' | number;
+
+/**
+ * The highest target that a `targetFps` setting and a frame rate cap such as `?fps=` allow:
+ * `CHECK_MAX_FPS` without a setting, and infinity for `display` without a cap.
+ */
+export function maxTargetFps(target: TargetFps | undefined, fpsCap: number | undefined): number {
+	const highest = target === 'display' ? Number.POSITIVE_INFINITY : (target ?? CHECK_MAX_FPS);
+	return Math.min(highest, fpsCap ?? Number.POSITIVE_INFINITY);
+}
+
+/**
+ * The frame rate that a preset must hold: the display's refresh rate, at most `highest`. A refresh
+ * rate of 0, not measured yet, counts as `CHECK_MAX_FPS`, or `highest` when that is lower.
+ */
+export function checkTargetFps(refreshHz: number, highest = CHECK_MAX_FPS): number {
+	return Math.min(highest, refreshHz > 0 ? refreshHz : CHECK_MAX_FPS);
 }
 
 /**
@@ -81,8 +101,8 @@ export function checkTargetFps(refreshHz: number, maxFps = CHECK_MAX_FPS): numbe
  * target never falls during a check. Each round that the check lowered then missed the target that
  * the check reports.
  */
-export function raiseTarget(targetFps: number, refreshHz: number, maxFps = CHECK_MAX_FPS): number {
-	return Math.max(targetFps, checkTargetFps(refreshHz, maxFps));
+export function raiseTarget(targetFps: number, refreshHz: number, highest = CHECK_MAX_FPS): number {
+	return Math.max(targetFps, checkTargetFps(refreshHz, highest));
 }
 
 /** A rate from a count of frames and the time they covered, in ms; 0 when they covered none. */

@@ -188,7 +188,7 @@ CI's software GPU drew 8 spheres at 1 to 6 frames per second, so the check lower
 ### Open for the owner
 
 - The grace and the window. A 1.5 s grace would let the scene above settle before the measurement, and would add about 1.25 s to each start that checks. Shorter windows cut the cost, and measure fewer frames.
-- The target on 120 Hz displays. With 60, the iPad keeps a preset that holds 60 but not 120.
+- The target on 120 Hz displays. With 60, the iPad keeps a preset that holds 60 but not 120. Settled on 10 October 2026 by [D-124](D-124-target-frame-rate.md): the default stays at 60, and a page can defend the display's full rate with the `targetFps` option.
 - Dynamic resolution (M1-G4) lets a preset hold its target at a lower render scale. The check measures at the full scale, so it may lower a preset that dynamic resolution could have saved. M1-G6's S4 traces gave no reason to change the target or the share ("The preset values" below).
 
 ### The live shadow-map resize test

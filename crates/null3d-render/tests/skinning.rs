@@ -585,10 +585,10 @@ fn webgl2_skins_in_the_vertex_shader_of_every_pass_that_draws_a_skinned_object()
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
         // Every instance group binds the joint texture, the texture of first joints and the morph
-        // textures of deltas and weights after the instance textures.
+        // textures of deltas and weights after the instance textures, then the row values textures.
         let groups = instance_groups(&first);
         assert!(!groups.is_empty());
-        assert!(groups.iter().all(|g| g[2] == 8));
+        assert!(groups.iter().all(|g| g[2] == 10));
         let (joints, firsts) = (bound(&groups[0], 4), bound(&groups[0], 5));
         let textures = operands(&first, Op::CreateTexture);
         let created = |id: u32| textures.iter().find(|t| t[0] == id).unwrap().clone();
@@ -651,13 +651,14 @@ fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgl2() {
 
 #[test]
 fn webgl2_draws_unskinned_objects_without_the_skin_textures() {
-    // The common world skins nothing: its instance groups bind the instance textures alone.
+    // The common world skins nothing: its instance groups bind the instance textures and the row
+    // values textures alone.
     let mut world = webgl2(true);
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
     let groups = instance_groups(&first);
     assert!(!groups.is_empty());
-    assert!(groups.iter().all(|g| g[2] == 4));
+    assert!(groups.iter().all(|g| g[2] == 6));
 
     // A column that stops being skinned draws its mesh as it is, with the plain build.
     let mut world = webgl2(true);
@@ -712,7 +713,7 @@ fn an_outlined_skinned_object_draws_its_mask_with_the_skinning_builds_on_webgl2(
     let camera_groups = instance_groups(&plain.step(&mut MockBackend::default(), true)).len();
     let groups = instance_groups(&first);
     assert_eq!(groups.len(), 2 * camera_groups);
-    assert!(groups.iter().all(|g| g[2] == 8));
+    assert!(groups.iter().all(|g| g[2] == 10));
 }
 
 /// Skinned copies of one mesh, as many as the meshes of a crowd of 500 characters of 10 meshes.

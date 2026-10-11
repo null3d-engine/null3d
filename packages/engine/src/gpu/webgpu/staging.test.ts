@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { BUFFER_BYTES, GpuMemory } from '../memory';
 import { MAX_CAPACITY, MIN_CAPACITY, StagingRing, WINDOW_FRAMES } from './staging';
 
 const MIB = 1024 * 1024;
@@ -53,14 +54,20 @@ async function frame(ring: StagingRing, sizes: number[]): Promise<boolean[]> {
 describe('StagingRing', () => {
 	it('replaces a buffer far larger than recent frames need with a smaller one', async () => {
 		const { device, buffers } = fakeDevice();
-		const ring = new StagingRing(device);
+		const memory = new GpuMemory();
+		const ring = new StagingRing(device, memory);
 		await frame(ring, [6 * MIB]);
 		expect(ring.capacities()).toEqual([8 * MIB]);
+		expect(memory.bytes[BUFFER_BYTES]).toBe(8 * MIB);
 		for (let f = 0; f < 2 * WINDOW_FRAMES; f++) await frame(ring, [4096]);
 		expect(ring.capacities()).toEqual([MIN_CAPACITY]);
 		expect(buffers.filter((buffer) => !buffer.destroyed).map((buffer) => buffer.size)).toEqual([
 			MIN_CAPACITY,
 		]);
+		// The memory total follows the buffers that the ring made and destroyed.
+		expect(memory.bytes[BUFFER_BYTES]).toBe(MIN_CAPACITY);
+		ring.destroy();
+		expect(memory.bytes[BUFFER_BYTES]).toBe(0);
 	});
 
 	it('keeps a buffer that recent frames still need', async () => {

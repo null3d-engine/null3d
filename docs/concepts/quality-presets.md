@@ -95,6 +95,19 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 
 The [rules of the preset check](quality-preset-tables.md#rules-of-the-preset-check) give its target frame rate, the share of the target that passes, and its times.
 
+### The target frame rate
+
+The preset check and the [frame-budget governor](#the-frame-budget-governor) defend one target frame rate. By default it is the display's refresh rate, at most 60 frames per second. The engine still draws at the display's full rate when the GPU allows it. So a 120 Hz display can show 120 frames per second, and the engine lowers the quality only when frames fall below 60. A preset that holds 60 plays smoothly on a faster display. A higher target would push 120 Hz tablets and laptops to lighter presets.
+
+A game on a fast display can defend the display's full rate instead. The `targetFps` option of `createEngine` sets the target:
+
+```ts
+// 120 on a 120 Hz display, 144 on a 144 Hz one, and 60 on a 60 Hz one.
+const engine = await createEngine({ canvas, sketch, targetFps: 'display' });
+```
+
+A whole number, such as `targetFps: 90`, caps the target at that rate. The target never goes above the display's rate. A higher target costs quality: the check picks a lighter preset where the GPU cannot hold it, and the governor lowers the render scale sooner. The `?target-fps=display` or `?target-fps=90` switch sets the target from the page's address, and wins over the option. Until the engine has measured the display's rate, the target is 60, or the option's rate when that is lower. The [stats overlay](../api/debug.md#stats-overlay-and-frame-figures) shows the display's rate beside the target.
+
 The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
 
 ### Repeat visits
@@ -103,12 +116,12 @@ The engine stores the check's result in the page's `localStorage`, one for each 
 
 A stored result applies only while the start matches the one that the check measured:
 
-- The engine would check the same preset, on the same GPU path, with the same `?fps=` switch.
+- The engine would check the same preset, on the same GPU path, with the same `?fps=` switch and the same target setting.
 - The browser reports the same GPU, the same device hints and the same screen pixel ratio.
 - The canvas's area is within a quarter of the measured one, either way.
 - The check ran within the last week, and the last start of the sketch did not crash the tab.
 
-Otherwise the engine measures again and stores the new result. It stores no result that it measured against a target below 60 frames per second. A display that saves power with a lower refresh rate gives such a target. The settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. When the browser refuses the storage, each start measures. The `?check=fresh` switch makes the engine measure again too.
+Otherwise the engine measures again and stores the new result. It stores no result that it measured against a target below 60 frames per second, or below the lower target that the page set. A display that saves power with a lower refresh rate gives such a target. The settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. When the browser refuses the storage, each start measures. The `?check=fresh` switch makes the engine measure again too.
 
 The check measures the scene as the setup left it. So build the scene in the setup, and load its textures there: the check waits while textures upload. A scene that the setup leaves empty passes the check on any GPU.
 
@@ -218,7 +231,7 @@ During play, the engine moves the scale between the `minRenderScale` and `maxRen
 
 - It watches how often frames reach the screen and how often the GPU finishes one. It also watches how long the GPU takes to finish each frame.
 - A second of frames is over budget when its frame rate, on average, is under 95% of the target rate. At a target of 60, that is under 57 frames per second. The engine's benchmark reports count such a second as a miss too. Each quarter of the second must also run at least 2% slower than the target, so one short stall amid full-rate frames does not count. A second is over budget too when the GPU finishes each frame two frames late or later.
-- The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds. Safari calls a drawing worker from a timer, which slows when the GPU falls behind. There the engine takes the display's rate from the page's frame callbacks.
+- The target is the [target frame rate](#the-target-frame-rate): the display's refresh rate, at most 60 frames per second unless the page asks for more. The `?fps=` switch caps it at the rate that it holds. Safari calls a drawing worker from a timer, which slows when the GPU falls behind. There the engine takes the display's rate from the page's frame callbacks.
 - After a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
 - After 5 seconds at the target rate on average, with the GPU done with each frame within about one frame, the scale rises by 0.05. The average covers the whole 5 seconds. In Safari, some frames wait an extra callback even at the full rate.
 - Frames at 57 to 59 frames per second hold the target but have no time to spare, so the scale stays where it is.
@@ -267,7 +280,7 @@ Dynamic resolution is the first part of the frame-budget governor. A sketch can 
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 
-Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
+Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the [target frame rate](#the-target-frame-rate): by default the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
 
 `quality.governor` reports what the governor lowered, and the `quality.onChange` handlers run after each shadow step. So a sketch can lighten its own work at the same time: [Quality API](../api/quality.md#the-frame-budget-governor) shows how. `quality.set({ governor: false })` turns the governor off. The scene then draws at `maxRenderScale`, with the shadow settings as set, as a benchmark or a recorded video needs. Hold mode has no governor.
 
