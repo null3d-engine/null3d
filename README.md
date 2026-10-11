@@ -315,7 +315,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 | Version | What it adds |
 | --- | --- |
 | 0.1, built | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
-| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines, large worlds and an add-on for particles |
+| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes and order-independent transparency. Stand-in images and merged meshes for far objects, light through leaves and skin, and add-ons for particles and terrain |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, global illumination, and add-ons for Gaussian splats, MSDF text and physics |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
 
