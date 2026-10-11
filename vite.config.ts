@@ -95,8 +95,17 @@ const config: UserConfig = {
 			],
 		},
 	},
+	// The scan for dependencies to prebundle starts at the pages, and it does not follow a page into
+	// its workers. The comparisons' three.js workers are entries of their own, so the scan finds
+	// their imports before any page loads. A dependency found later makes the dev server bundle
+	// again and reload every open page, the pages of other tests among them.
 	optimizeDeps: {
-		entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html', 'examples/**/*.html'],
+		entries: [
+			'tests/pages/**/*.html',
+			'bench/pages/**/*.html',
+			'examples/**/*.html',
+			'examples/compare/*/three.ts',
+		],
 	},
 	// The production builds of the test pages, which the production browser tests serve.
 	build: {

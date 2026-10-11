@@ -93,6 +93,22 @@ describe('PageMemorySampler', () => {
 		);
 	});
 
+	it('counts a measurement that throws at once as a refusal', async () => {
+		Object.defineProperty(performance, 'measureUserAgentSpecificMemory', {
+			configurable: true,
+			value: () => {
+				throw new Error('performance.measureUserAgentSpecificMemory is not available.');
+			},
+		});
+		const sampler = new PageMemorySampler();
+		sampler.start();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(sampler.failure).toBe(
+			'the browser refused the measurement: performance.measureUserAgentSpecificMemory is not available.',
+		);
+		expect(sampler.page).toBeNull();
+	});
+
 	/**
 	 * Gives the page a measurement that answers only when the test says so, and counts its
 	 * requests.

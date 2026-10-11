@@ -24,6 +24,7 @@ export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
 export const FLAG_OUTLINED = 64;
 export const FLAG_OCCLUDER = 128;
+export const FLAG_TRACKED = 256;
 
 export const LAYERS_DEFAULT = 1;
 

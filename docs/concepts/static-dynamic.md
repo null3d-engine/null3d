@@ -8,7 +8,7 @@ summary: "When to mark objects static; setters versus direct array writes; dirty
 
 # Static and dynamic objects
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Direct array writes to a single object are not built yet: move a single object with its setters.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Direct array writes to a single object are not built yet: move a single object with its setters.
 
 ```mermaid
 flowchart TB
@@ -48,6 +48,24 @@ Grid cells are 1,024 m wide, so a scene within 512 m of the origin fits in one c
 
 - A static object that is never culled, after `setFrustumCulled(false)`, keeps its whole cell in view.
 - A static object that a setter moves grows its cell's box. The box shrinks again only when an object changes cells or the draw tables rebuild.
+
+## Hidden objects
+
+An object under a hidden object draws nothing, so the engine stops recomputing it, dynamic or static. It recomputes it in the first two frames after the hide, once for each of its two world buffers, and then leaves it alone. Such an object uploads nothing, and its moves cost only the setter calls. In the frame that shows the hidden object again, every object under it is recomputed, so it draws in its right place at once.
+
+```ts
+const spares = scene.createGroup();
+spares.setVisible(false);
+// 10,000 moving parts under the hidden group cost almost nothing per frame.
+const arm = scene.createMesh({ mesh: armMesh, material: steel, parent: spares, dynamic: true });
+```
+
+Two things still work under a hidden object:
+
+- The world getters, such as `getWorldPosition`, give the object's place. They work it out from the local transforms of the object and its parents when you call them.
+- A camera keeps moving with its parents, so a camera on a hidden body still gives its view. Its parents keep updating too.
+
+The object that you hide keeps updating as before. Only the objects under it stop.
 
 ## Setters and direct writes
 

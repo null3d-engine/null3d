@@ -3,12 +3,12 @@ id: shaders/wgsl-rules
 title: WGSL rules for portable shaders
 status: experimental
 since: "0.1"
-summary: "The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check."
+summary: "The three shared language features; optional features; flat interpolation; a warning for atomic compare-exchange; limits budget; rules the build cannot check."
 ---
 
 # WGSL rules for portable shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine draws custom materials with [surface functions](surface-functions.md) and [full shaders](../guides/custom-shaders.md#full-shaders). It draws no other shader of your own yet, so coding agents must not write one.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine draws custom materials with [surface functions](surface-functions.md) and [full shaders](../guides/custom-shaders.md#full-shaders). It draws no other shader of your own yet, so coding agents must not write one.
 
 One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports.
 
@@ -55,6 +55,12 @@ The build also rejects a copy of an array out of a uniform buffer. Such a copy i
 ## Flat interpolation
 
 Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of a triangle can give the value. `@interpolate(flat)` means `flat, first`: the first vertex of each triangle gives the value. WebGL2 and WebGPU's compatibility mode cannot provide that, so the build rejects `@interpolate(flat)` and `@interpolate(flat, first)`.
+
+## Atomic compare-exchange
+
+The build warns when a shader calls `atomicCompareExchangeWeak`. Safari 27.0 cannot compile such a shader, on atomics in any address space, so it fails to load on every Apple device with that version. Other browsers run it. WebKit has fixed the fault (321006@main), but no Safari release that has the fix is out yet. The shader still builds, so you choose whether to keep the call. The engine's own shaders never call it.
+
+To claim a slot, store your value into a free slot with `atomicStore`. Then call `workgroupBarrier()`, and read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also compile on every target browser.
 
 ## Directives
 

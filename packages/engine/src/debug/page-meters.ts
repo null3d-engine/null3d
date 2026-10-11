@@ -88,7 +88,13 @@ const browser = {
 function requestMeasurement(measure: MeasureMemory): Promise<MemoryMeasurement> | undefined {
 	if (browser.silent) return undefined;
 	if (browser.pending) return browser.pending;
-	const pending = measure.call(performance);
+	// Some builds of Chromium, such as its headless shell, throw at once in place of a rejection.
+	let pending: Promise<MemoryMeasurement>;
+	try {
+		pending = measure.call(performance);
+	} catch (error) {
+		pending = Promise.reject(error);
+	}
 	browser.pending = pending;
 	const limit = browser.answered
 		? undefined

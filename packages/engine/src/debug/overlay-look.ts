@@ -339,8 +339,11 @@ function svg<K extends keyof SVGElementTagNameMap>(
 	return node;
 }
 
-/** How the engine's threads share a frame's work, as the card explains it. */
-export type FrameMode = 'pipelined' | 'low' | 'single';
+/**
+ * How the threads share a frame's work, as the card explains it: null3D's two latency modes, its
+ * single-thread build, and a renderer that runs on one thread of its own, such as three.js.
+ */
+export type FrameMode = 'pipelined' | 'low' | 'single' | 'one-thread';
 
 /** Each mode's symbol, its button's label and its tooltip. */
 const MODE_NOTES: Readonly<
@@ -360,6 +363,11 @@ const MODE_NOTES: Readonly<
 		symbol: 'clock',
 		label: 'Single-thread mode: what it means',
 		tip: "Single-thread mode: without shared memory, the engine runs on the page's thread alone. Each frame is prepared and drawn in the same frame interval, so your code, the engine's sketch steps and the drawing run one after another. They share one bar and must fit the target together.",
+	},
+	'one-thread': {
+		symbol: 'clock',
+		label: 'One thread: what it means',
+		tip: "One thread: the renderer prepares and draws each frame on one thread, in the same frame interval. Your code, the renderer's own work and the drawing run one after another, so they share one bar and must fit the target together.",
 	},
 };
 

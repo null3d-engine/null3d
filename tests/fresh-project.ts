@@ -10,9 +10,9 @@
 // address holds. Last, the project's service worker caches the build on a first visit, and the
 // page must start the threaded engine again with the server stopped, on both GPU paths. Then the
 // project builds a page of its own layout around a copy of this repository's examples folder, as a
-// website that holds the repository as a submodule does, and two demos must start from that build.
-// Run
-// `bun run build` first, for the WebAssembly files. Run from the repository root:
+// website that holds the repository as a submodule does. Two demos, and a comparison in each
+// engine, must start from that build. Run `bun run build` first, for the WebAssembly files. Run
+// from the repository root:
 //   bun run test:packages [--keep]    --keep leaves the project's folder in place after a pass
 import { spawnSync } from 'node:child_process';
 import {
@@ -48,11 +48,14 @@ const DEPENDENCIES = ['@null3d/engine', '@null3d/controls'];
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
 /** Tools from npm, at the versions that the repository pins. */
 const TOOLS = ['vite', 'typescript'];
+/** Packages that the examples import besides null3D's, at the versions that the examples pin. */
+const EXAMPLE_DEPENDENCIES = ['three'];
 
 /** The project's package manifest, with each package from its tarball. */
 export function projectManifest(
 	packed: readonly PackedPackage[],
 	pinned: Readonly<Record<string, string>>,
+	examplesPinned: Readonly<Record<string, string>>,
 ): object {
 	const tarball = (name: string) => {
 		const found = packed.find((pkg) => pkg.name === name);
@@ -68,7 +71,15 @@ export function projectManifest(
 		// npm may not have the packed version of a package that another one names, such as the
 		// engine that the controls name, so every copy comes from its tarball.
 		overrides: versions([...DEPENDENCIES, ...DEV_DEPENDENCIES], tarball),
-		dependencies: versions(DEPENDENCIES, tarball),
+		// A website that shows the comparisons with three.js installs three.js too.
+		dependencies: {
+			...versions(DEPENDENCIES, tarball),
+			...versions(EXAMPLE_DEPENDENCIES, (name) => {
+				const version = examplesPinned[name];
+				if (!version) throw new Error(`examples/package.json pins no ${name}`);
+				return version;
+			}),
+		},
 		devDependencies: {
 			...versions(DEV_DEPENDENCIES, tarball),
 			...versions(TOOLS, (name) => {
@@ -251,13 +262,22 @@ async function playsOffline(dist: string): Promise<void> {
 	}
 }
 
-/** The demos that the website's build must start: ones that make their content in code. */
-const BUILT_DEMOS = ['instances', 'security-camera'];
+/**
+ * The pages that the website's build must start: demos that make their content in code, and a
+ * comparison with three.js in each engine. The Low preset keeps a demo's start short on a software
+ * GPU; the check is that it starts.
+ */
+const BUILT_PAGES = [
+	'demo=instances&preset=low',
+	'demo=security-camera&preset=low',
+	'compare=factory&engine=null3d',
+	'compare=factory&engine=threejs',
+];
 
 /**
- * A website's page that shows one demo in a layout of its own. It imports only the list of demos
- * and the function that starts one, as the website does, and marks the root element with how the
- * start ended.
+ * A website's page that shows one demo or one comparison in a layout of its own. It imports only
+ * the lists and the functions that start each, as the website does, and marks the root element
+ * with how the start ended.
  */
 const SITE_PAGE = {
 	'index.html': [
@@ -270,21 +290,30 @@ const SITE_PAGE = {
 		'',
 	],
 	'main.ts': [
+		"import { COMPARISONS } from '../null3d/examples/compare/comparisons';",
 		"import { DEMOS } from '../null3d/examples/demos';",
+		"import { startComparison } from '../null3d/examples/lib/compare';",
 		"import { startDemo } from '../null3d/examples/lib/run';",
 		'',
-		"const name = new URLSearchParams(location.search).get('demo');",
-		'const demo = DEMOS.find((candidate) => candidate.name === name);',
+		'const params = new URLSearchParams(location.search);',
+		"const demo = DEMOS.find((candidate) => candidate.name === params.get('demo'));",
+		"const comparison = COMPARISONS.find((candidate) => candidate.name === params.get('compare'));",
 		'const root = document.documentElement;',
-		"if (!demo) root.dataset.demo = 'no demo named ' + name;",
-		'else {',
-		"\t(document.querySelector('h1') as HTMLElement).textContent = demo.title;",
-		"\tconst canvas = document.querySelector('canvas') as HTMLCanvasElement;",
-		'\tstartDemo({ canvas, demo }).then(',
+		"const canvas = document.querySelector('canvas') as HTMLCanvasElement;",
+		"const shown = (title: string) => ((document.querySelector('h1') as HTMLElement).textContent = title);",
+		'const started = (start: Promise<unknown>) =>',
+		'\tstart.then(',
 		"\t\t() => (root.dataset.demo = 'running'),",
 		'\t\t(error) => (root.dataset.demo = String(error)),',
 		'\t);',
-		'}',
+		'if (demo) {',
+		'\tshown(demo.title);',
+		'\tstarted(startDemo({ canvas, demo }));',
+		'} else if (comparison) {',
+		'\tshown(comparison.title);',
+		"\tconst engine = params.get('engine') === 'threejs' ? 'threejs' : 'null3d';",
+		'\tstarted(startComparison({ canvas, comparison, engine }));',
+		"} else root.dataset.demo = 'no demo named ' + location.search;",
 		'',
 	],
 	'vite.config.ts': [
@@ -304,7 +333,7 @@ const SITE_PAGE = {
 /**
  * Builds a website's page of its own layout around a copy of the repository's examples folder, as
  * a website does that holds the repository as a submodule and installs the packages from npm. The
- * build takes the packages from the project's tarballs, and each demo of BUILT_DEMOS must start.
+ * build takes the packages from the project's tarballs, and each page of BUILT_PAGES must start.
  */
 async function buildsExamples(project: string): Promise<void> {
 	const copy = join(project, 'null3d');
@@ -331,9 +360,8 @@ async function buildsExamples(project: string): Promise<void> {
 	const browser = await launchBrowser(defaultEnvironment());
 	try {
 		const page = await browser.newPage();
-		for (const demo of BUILT_DEMOS) {
-			// The Low preset keeps a demo's start short on a software GPU; the check is that it starts.
-			await page.goto(`${server.url.href}?demo=${demo}&preset=low`);
+		for (const demo of BUILT_PAGES) {
+			await page.goto(`${server.url.href}?${demo}`);
 			const state = await page
 				.waitForFunction(
 					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.demo,
@@ -342,7 +370,7 @@ async function buildsExamples(project: string): Promise<void> {
 				)
 				.then((handle) => handle.jsonValue());
 			if (state !== 'running')
-				throw new Error(`the website build did not start the ${demo} demo: ${state}`);
+				throw new Error(`the website build did not start ?${demo}: ${state}`);
 		}
 	} finally {
 		await browser.close();
@@ -362,9 +390,12 @@ async function main(): Promise<void> {
 	try {
 		cpSync(TEMPLATE, project, { recursive: true });
 		const pinned = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).devDependencies;
+		const examplesPinned = JSON.parse(
+			readFileSync(join(ROOT, 'examples/package.json'), 'utf8'),
+		).devDependencies;
 		writeFileSync(
 			join(project, 'package.json'),
-			`${JSON.stringify(projectManifest(packed, pinned), null, '\t')}\n`,
+			`${JSON.stringify(projectManifest(packed, pinned, examplesPinned), null, '\t')}\n`,
 		);
 		step('Install', project, 'bun', ['install']);
 		// The installed command, as `bunx @null3d/cli` runs it in a project that installs the tool.

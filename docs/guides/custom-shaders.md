@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1, with typed uniforms, textures and hot reload in 0.2. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures and hot reload. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
 
 ```mermaid
 flowchart LR

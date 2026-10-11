@@ -8,7 +8,7 @@ summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleto
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. `debug.skeleton` and `@null3d/engine/stats` ship in null3D 0.2. So do the stats overlay's page switches, its options and card, and its figures of GPU time, triangles, objects and memory. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `debug.skeleton` and `@null3d/engine/stats`. It also adds the stats overlay's page switches, its options and card, and its figures of GPU time, triangles, objects and memory. The API is experimental, so it can still change between versions.
 
 Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
@@ -57,6 +57,8 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
 | `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint, as three.js's `SkeletonHelper` draws them | Blue at the joint, green at its parent |
 
+`grid` takes `center`, `color` and `centerColor`, gray (`'#888888'`) and darker gray (`'#444444'`) by default. `light` takes `position`, `size` in meters (1 by default) and `color`.
+
 Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
@@ -69,7 +71,7 @@ Debug drawing works in development builds only. In a production build, every dra
 
 ### Limits
 
-- Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md) in null3D 0.2.
+- Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md), from step 0.2.
 - A frame draws at most 131,072 lines. The engine leaves out the lines after that, and warns once in the console.
 - A frame without debug drawing runs no debug pass, uploads nothing and allocates nothing.
 
@@ -289,46 +291,62 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 
 ### The same overlay for another engine
 
-`@null3d/engine/stats` exports a text layout of the overlay's figures, the figure types and the page's meters. A page that draws with another engine, such as three.js, prints its own figures in the same layout. The same code measures both engines' page figures, so a comparison of the two stays fair.
+`@null3d/engine/stats` exports the overlay's panel, its figure types, a text layout of the figures and the page's meters. A page that draws with another engine, such as three.js, shows its own figures in the same panel. The same code measures both engines' page figures, so a comparison of the two stays fair.
+
+`new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. `collapsed: true` starts it closed. `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
+
+- `showRate(frames, fps, refreshHz, maxTargetFps?)` shows the frame rate in the header.
+- `update(figures, frame)` shows a set of figures in the card. `frame` gives the display's refresh rate, whether the GPU's work is timed, and how the threads share each frame. A renderer that prepares and draws each frame on one thread passes `mode: 'one-thread'`. It names that thread in `bothSteps`.
+- `follow()` keeps the panel on the canvas's corner. Call it as the figures come.
+- `setCollapsed(collapsed)` opens or closes the card from code, and `remove()` takes the panel off the page.
+
+The panel judges the figures against the engine's own target: the display's refresh rate, at most 60 frames a second. A page that sets null3D's `targetFps` to a higher rate passes the same highest target as `maxTargetFps`, in `showRate` and in `frame`. A figure that the page does not know is `null`, and the card leaves it out.
 
 ```ts
 import {
-  MainThreadWindow,
   PageMemorySampler,
   pageHeapBytes,
-  statsText,
+  StatsPanel,
 } from '@null3d/engine/stats';
 
-const element = document.querySelector('#stats') as HTMLElement;
-const mainThread = new MainThreadWindow();
+const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 const pageMemory = new PageMemorySampler();
-pageMemory.start();
+const panel = new StatsPanel(canvas, {
+  collapsed: true,
+  onToggle: (collapsed) => (collapsed ? pageMemory.stop() : pageMemory.start()),
+});
 
-// Call it twice a second with the figures that your own frame loop collected.
+// Call it four times a second with the figures that your own frame loop collected.
 function showFigures(fps: number, cpuMs: number, info: { calls: number; triangles: number }) {
-  element.textContent = statsText({
-    heading: 'three.js WebGLRenderer',
-    frames: 30,
-    presentedFps: fps,
-    completedFps: null,
-    cpuMs,
-    threads: [{ name: 'main', busyMs: cpuMs }],
-    gpuMs: null,
-    drawCalls: info.calls,
-    uploadBytes: null,
-    triangles: info.triangles,
-    objects: null,
-    memory: {
-      wasmBytes: null,
-      gpuTextureBytes: null,
-      gpuBufferBytes: null,
-      jsHeapBytes: pageHeapBytes(),
-      page: pageMemory.page,
+  panel.follow();
+  panel.update(
+    {
+      heading: 'three.js WebGLRenderer',
+      frames: 30,
+      presentedFps: fps,
+      completedFps: null,
+      cpuMs,
+      threads: [{ name: 'main', busyMs: cpuMs }],
+      gpuMs: null,
+      drawCalls: info.calls,
+      uploadBytes: null,
+      triangles: info.triangles,
+      objects: null,
+      memory: {
+        wasmBytes: null,
+        gpuTextureBytes: null,
+        gpuBufferBytes: null,
+        jsHeapBytes: pageHeapBytes(),
+        page: pageMemory.page,
+      },
+      mainThread: null,
     },
-    mainThread: mainThread.take(),
-  });
+    { refreshHz: 60, gpuTimer: false, mode: 'one-thread', bothSteps: 'main' },
+  );
 }
 ```
+
+`statsText(figures)` lays out the same figures as lines of text, for a page that prints them in an element of its own or in a log.
 
 ## Frame measurement
 
