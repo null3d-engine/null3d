@@ -380,7 +380,21 @@ describe('the showcase plan', () => {
 
 	it('is a timed plan whose sustained runs get a row of their own in the summary', () => {
 		const results: Record<string, ItemResult> = {
-			'sustained-s4-webgpu': { ...run(Array(20).fill(60)), scene: 's4', renderer: 'null3d', n: 1 },
+			'sustained-s4-webgpu': {
+				...run(Array(20).fill(60)),
+				scene: 's4',
+				renderer: 'null3d',
+				n: 1,
+				cpuMs: { median: 4, p95: 5, p99: 6 },
+				intervalMs: { median: 16.7, p95: 17, p99: 18 },
+				stats: {
+					refreshHz: 60,
+					cpuMsAllThreads: { median: 6 },
+					uploadBytes: { median: 4800 },
+					drawCalls: { median: 40 },
+					threads: {},
+				},
+			},
 		};
 		const summary = benchSummary(items, (id) => results[id]) ?? '';
 		expect(summary).toContain('| s4 | null3d-webgpu sustained | 20 | 60 | 20 (100%) |');
