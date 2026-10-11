@@ -47,7 +47,7 @@ Five packages are public. Each one's `prepack` script runs `bun tools/build-pack
 | `@null3d/engine` | `lib/`, the built JavaScript and declarations. Both WebAssembly builds in `dist/wasm/`, the KTX2 transcoder and the meshopt decoder in `vendor/`, and a copy of `docs/` | The shader modules, then `lib/` and the copy of the docs |
 | `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
 | `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
-| `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm
