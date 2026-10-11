@@ -338,15 +338,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 9, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/9 }
-          - { part: shard 2 of 9, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/9 }
-          - { part: shard 3 of 9, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/9 }
-          - { part: shard 4 of 9, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/9 }
-          - { part: shard 5 of 9, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/9 }
-          - { part: shard 6 of 9, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/9 }
-          - { part: shard 7 of 9, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/9 }
-          - { part: shard 8 of 9, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/9 }
-          - { part: shard 9 of 9, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/9 }
+          - { part: shard 1 of 10, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/10 }
+          - { part: shard 2 of 10, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/10 }
+          - { part: shard 3 of 10, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/10 }
+          - { part: shard 4 of 10, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/10 }
+          - { part: shard 5 of 10, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/10 }
+          - { part: shard 6 of 10, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/10 }
+          - { part: shard 7 of 10, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/10 }
+          - { part: shard 8 of 10, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/10 }
+          - { part: shard 9 of 10, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/10 }
+          - { part: shard 10 of 10, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/10 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -367,7 +368,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "162:249:437:158:94:175:177:121:244"
+          PWTEST_SHARD_WEIGHTS: "90:213:427:181:160:121:115:174:120:244"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.

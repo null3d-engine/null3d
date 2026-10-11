@@ -1,11 +1,15 @@
 // The examples page of a clone. A sidebar lists the demos by group, and the panel beside it runs
-// the demo that ?demo=<name> names, on a canvas that fills the panel. Each link loads the page
+// the demo that ?demo=<name> names, or the comparison with three.js that ?compare=<name> names
+// (compare-page.ts), on a canvas that fills the panel. Each link loads the page
 // afresh, so the engine of the last demo stops with its workers and memory. Without ?demo=, the
 // panel shows a short welcome. In a narrow window, the sidebar is a drawer that the menu button
 // opens. The engine reads its own switches from the address: ?hold=2 draws the frame at 2 seconds
 // that the demo's image test holds, and ?gpu=webgl2 forces a GPU path. The page's links are
 // relative, so it runs under any address prefix. It is one layout of the demos: another page can
 // show them its own way with the list and startDemo.
+
+import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
+import { runComparison } from './compare-page';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { startDemo } from './lib/run';
 import { sourceUrl } from './lib/source';
@@ -13,6 +17,8 @@ import { sourceUrl } from './lib/source';
 const params = new URLSearchParams(location.search);
 const name = params.get('demo');
 const current = DEMOS.find((demo) => demo.name === name);
+const compareName = params.get('compare');
+const comparison = COMPARISONS.find((entry) => entry.name === compareName);
 
 const nav = document.querySelector('nav') as HTMLElement;
 const menu = document.querySelector('.menu') as HTMLButtonElement;
@@ -44,6 +50,16 @@ function heading(demo: Demo): (string | HTMLElement)[] {
 function listDemos(): void {
 	for (const group of DEMO_GROUPS) {
 		const list = element('ul');
+		// The comparisons with three.js have a group of their own, each linked to its null3D page.
+		if (group === COMPARE_GROUP) {
+			for (const entry of COMPARISONS) {
+				const link = element('a', entry.title, `?compare=${entry.name}`);
+				if (entry === comparison) link.setAttribute('aria-current', 'page');
+				const item = element('li');
+				item.append(link);
+				list.append(item);
+			}
+		}
 		for (const demo of DEMOS) {
 			if (demo.group !== group) continue;
 			const link = element('a', '', demoLink(demo));
@@ -158,5 +174,6 @@ async function runDemo(demo: Demo): Promise<void> {
 
 listDemos();
 handleDrawer();
-if (current) void runDemo(current);
-else welcome(name ?? undefined);
+if (comparison) void runComparison(stage, comparison);
+else if (current) void runDemo(current);
+else welcome(compareName ?? name ?? undefined);
