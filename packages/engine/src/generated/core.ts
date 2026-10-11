@@ -159,6 +159,12 @@ export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;
 export const TONE_MAPPING_NONE = 3;
 
+export const PARTICLE_RECORD_BYTES = 32;
+export const PARTICLE_PARAM_FLOATS = 128;
+export const PARTICLE_FRAME_FLOATS = 4;
+export const PARTICLE_MAX_SYSTEMS = 256;
+export const PARTICLE_MAX_RECORDS = 4194304;
+
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
@@ -166,6 +172,7 @@ export const SHADING_UNLIT_MAP = 3;
 export const SHADING_SPRITE = 4;
 export const SHADING_LINE = 5;
 export const SHADING_LINE_LIT = 7;
+export const SHADING_PARTICLE = 8;
 export const SHADING_CUSTOM_FIRST = 64;
 export const SHADING_CUSTOM_ATTRIBUTE_SHIFT = 16;
 export const SHADING_CUSTOM_BASE_COLOR = 16777216;

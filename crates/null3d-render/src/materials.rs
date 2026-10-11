@@ -68,6 +68,12 @@ pub enum Shading {
     Sprite,
     /// A sprite material with its map, at each sprite's frame of the atlas; nothing creates it.
     SpriteMap,
+    /// Particles of a particle system of the particles add-on: a soft dot for each record of the
+    /// system, whose shader moves it to its age (see [`crate::particles`]). With a live map the
+    /// material draws as [`Shading::ParticleMap`].
+    Particle,
+    /// A particle material with its map, a flipbook atlas; nothing creates it.
+    ParticleMap,
     /// Wide lines, as three.js's `LineMaterial` draws them: a quad with round ends for each
     /// segment of a line batch, in the base color times the segment's colors, with dashes that the
     /// material's custom values set.
@@ -130,6 +136,8 @@ impl Shading {
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
             Shading::Sprite => template::SPRITE,
             Shading::SpriteMap => template::SPRITE_MAP,
+            Shading::Particle => template::PARTICLE,
+            Shading::ParticleMap => template::PARTICLE_MAP,
             Shading::Line => template::LINE,
             Shading::LineLit => template::LINE_LIT,
             Shading::Custom(custom) => custom.template,
@@ -140,7 +148,12 @@ impl Shading {
     /// needs to draw with it.
     pub const fn attributes(self) -> u32 {
         match self {
-            Shading::Lit | Shading::Unlit | Shading::Line | Shading::LineLit => 0,
+            Shading::Lit
+            | Shading::Unlit
+            | Shading::Line
+            | Shading::LineLit
+            | Shading::Particle
+            | Shading::ParticleMap => 0,
             Shading::TexCoords
             | Shading::UnlitMap
             | Shading::StandardMaps
@@ -164,7 +177,7 @@ impl Shading {
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
         match self {
-            Shading::TexCoords => false,
+            Shading::TexCoords | Shading::Particle | Shading::ParticleMap => false,
             Shading::Custom(custom) => custom.base_color,
             _ => true,
         }

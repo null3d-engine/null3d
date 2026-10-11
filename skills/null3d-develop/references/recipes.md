@@ -23,6 +23,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
 19. Water and mirror floors with a reflection (0.2)
+20. Fire, smoke and sparks with particles (0.2)
 
 ## 1. Start a new project
 
@@ -590,3 +591,72 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 ```
 
 The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky and the sun's light and shadows, but no point or spot lights yet. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
+
+## 20. Fire, smoke and sparks with particles (0.2)
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createParticles, particleTextures } from '@null3d/particles';
+
+export default defineSketch(async ({ scene, geometry, materials, textures, post }) => {
+  post.set({ bloom: { intensity: 0.4, threshold: 1 } });
+  scene.setBackground('#10131a');
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.8, 5], target: [0, 0.8, 0] }));
+  scene.createAmbientLight({ intensity: 0.3 });
+  const ground = scene.createMesh({ mesh: geometry.plane({ width: 20, height: 20 }), material: materials.standard({ color: '#2a2622' }) });
+  ground.setRotationEuler(-Math.PI / 2, 0, 0);
+  const fire = await createParticles(scene, {
+    ...particleTextures.flame(textures),
+    rate: 60,
+    lifetime: [0.5, 0.8],
+    shape: { type: 'cone', radius: 0.25, angle: 0.2 },
+    speed: [0.8, 1.4],
+    size: [0.5, 0.7],
+    sizeOverLife: [1, 0.7, 0.2],
+    colors: ['#ffb35c', '#ff7a2a'],
+    intensity: 4,
+    alphaOverLife: [0, 1, 0],
+    softness: 0.3,
+  });
+  const smoke = await createParticles(scene, {
+    ...particleTextures.smoke(textures),
+    blending: 'normal',
+    position: [0, 0.8, 0],
+    rate: 10,
+    lifetime: 4,
+    shape: { type: 'disc', radius: 0.2 },
+    speed: 0.6,
+    drag: 0.5,
+    wind: [0.4, 0.5, 0],
+    turbulence: 0.3,
+    size: [0.6, 0.8],
+    sizeOverLife: [0.6, 2.5],
+    colors: ['#3a3a40', '#2c2c30'],
+    alphaOverLife: [0, 0.5, 0],
+  });
+  const sparks = await createParticles(scene, {
+    ...particleTextures.spark(textures),
+    rate: 30,
+    lifetime: [1, 1.6],
+    shape: { type: 'cone', radius: 0.2, angle: 0.5 },
+    speed: [1.5, 3],
+    gravity: [0, -2, 0],
+    turbulence: 0.2,
+    facing: 'velocity',
+    stretch: 0.05,
+    size: [0.02, 0.03],
+    colors: ['#ffb347', '#ff8c30'],
+    intensity: 6,
+    colorOverLife: ['#ffffff', '#ff5020'],
+    alphaOverLife: [1, 0],
+  });
+  const systems = [fire, smoke, sparks];
+  return {
+    onLateUpdate(dt) {
+      for (const system of systems) system.update(dt);
+    },
+  };
+});
+```
+
+Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. `follow: object` emits from a moving object and leaves the particles in the world, as a torch's smoke trail. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.

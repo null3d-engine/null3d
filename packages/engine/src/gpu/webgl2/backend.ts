@@ -188,6 +188,8 @@ function glAttribute(
 	format: GPUVertexFormat,
 ): [number, number, boolean] {
 	switch (format) {
+		case 'uint32':
+			return [1, gl.UNSIGNED_INT, false];
 		case 'float32x2':
 			return [2, gl.FLOAT, false];
 		case 'float32x3':
@@ -2404,17 +2406,25 @@ export class WebGL2Backend {
 		if (!vao) throw new Error('WebGL2 could not create a vertex array');
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		// An attribute of the instance's step moves on once for each instance. Integer formats
+		// reach the shader as integers.
+		const divisor = layout.stepMode === 'instance' ? 1 : 0;
 		for (const attribute of layout.attributes) {
 			const [size, type, normalized] = glAttribute(gl, attribute.format);
-			gl.enableVertexAttribArray(attribute.shaderLocation);
-			gl.vertexAttribPointer(
-				attribute.shaderLocation,
-				size,
-				type,
-				normalized,
-				layout.arrayStride,
-				attribute.offset,
-			);
+			const location = attribute.shaderLocation;
+			gl.enableVertexAttribArray(location);
+			if (attribute.format.startsWith('uint') || attribute.format.startsWith('sint'))
+				gl.vertexAttribIPointer(location, size, type, layout.arrayStride, attribute.offset);
+			else
+				gl.vertexAttribPointer(
+					location,
+					size,
+					type,
+					normalized,
+					layout.arrayStride,
+					attribute.offset,
+				);
+			gl.vertexAttribDivisor(location, divisor);
 		}
 		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
 		return vao;

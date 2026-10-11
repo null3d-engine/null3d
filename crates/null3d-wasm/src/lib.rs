@@ -1915,6 +1915,7 @@ pub fn create_material(
         shading::SPRITE => Shading::Sprite,
         shading::LINE => Shading::Line,
         shading::LINE_LIT => Shading::LineLit,
+        shading::PARTICLE => Shading::Particle,
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
@@ -2769,6 +2770,63 @@ pub fn set_bloom(on: bool) -> u32 {
             weights: std::array::from_fn(|level| e.post_value(place::BLOOM_WEIGHTS + level as u32)),
         });
         e.renderer.settings_mut().set_bloom(bloom);
+        0
+    })
+}
+
+/// Makes a particle system of `capacity` records for the object in scene slot `slot`, whose
+/// material has the particle shading, and returns its id: 0 when the scene holds the most systems
+/// already. The records and values start at 0, which draws nothing.
+#[wasm_bindgen(js_name = createParticles)]
+pub fn create_particles(slot: u32, capacity: u32) -> u32 {
+    value_with_engine(|e| {
+        let bytes = u64::from(capacity) * u64::from(null3d_render::particles::RECORD_BYTES);
+        e.renderer
+            .settings_mut()
+            .particles_mut()
+            .create(slot, capacity)
+            .map_err(|_| out_of_memory(bytes))
+    })
+}
+
+/// Forgets a particle system. Its object draws nothing from then on.
+#[wasm_bindgen(js_name = destroyParticles)]
+pub fn destroy_particles(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().destroy(id);
+        0
+    })
+}
+
+/// The address of a particle system's records in engine memory, or 0 for no such system.
+#[wasm_bindgen(js_name = particleRecords)]
+pub fn particle_records(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().records_address(id)))
+}
+
+/// The address of a particle system's values in engine memory, then its frame's values, or 0 for
+/// no such system.
+#[wasm_bindgen(js_name = particleValues)]
+pub fn particle_values(id: u32) -> u32 {
+    value_with_engine(|e| Ok(e.renderer.settings().particles().values_address(id)))
+}
+
+/// Marks `count` records of a particle system from `start` on, which TypeScript wrote, for the
+/// next frame's upload.
+#[wasm_bindgen(js_name = markParticleRecords)]
+pub fn mark_particle_records(id: u32, start: u32, count: u32) -> u32 {
+    with_engine(|e| {
+        let table = e.renderer.settings_mut().particles_mut();
+        table.mark_records(id, start, count);
+        0
+    })
+}
+
+/// Marks a particle system's values, which TypeScript wrote, for the next frame's upload.
+#[wasm_bindgen(js_name = markParticleValues)]
+pub fn mark_particle_values(id: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().mark_values(id);
         0
     })
 }
