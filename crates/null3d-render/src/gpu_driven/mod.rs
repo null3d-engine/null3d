@@ -1109,7 +1109,7 @@ impl GpuDrivenRenderer {
             Some(Some(frame)) => frame.uniform.camera_world[1],
             _ => 0.0,
         };
-        let panorama = physical_sky::record_frame(
+        physical_sky::record_frame(
             &mut self.physical_sky,
             &mut self.settings,
             (&self.pipelines, input.pipelines_built),
@@ -1117,9 +1117,9 @@ impl GpuDrivenRenderer {
             list,
             arena,
         )?;
-        let groups_remade = self
-            .settings
-            .record_materials(input, list, arena, table, panorama)?;
+        let groups_remade =
+            self.settings
+                .record_materials(input, list, arena, table, &self.physical_sky)?;
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);

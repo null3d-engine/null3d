@@ -1,8 +1,8 @@
 // The physical sky at a time of day: `?time=afternoon`, `goldenHour`, `blueHour` or `night`, from
 // `timeOfDay` with the physical model. The sky background, the sky's environment, the main light
 // and the exposure come from it, with clouds and, at night, the moon and the stars. Spheres from
-// mirror to rough show the sky's light, and a row of white pillars that reach 20 kilometres away
-// shows the aerial perspective: each farther pillar takes more of the air's color. `?analytic`
+// mirror to rough show the sky's light, and a row of dark pillars that reach 20 kilometres away
+// shows the aerial perspective: each farther pillar takes more of the air's color, which shows best on a dark surface. `?analytic`
 // turns the quality setting `physicalSky` off, so the analytic sky stands in, as on Low.
 // `?haze=0` turns the aerial perspective off.
 import { defineSketch, type TimeOfDayPreset, timeOfDay } from '@null3d/engine';
@@ -51,18 +51,20 @@ export default defineSketch(async ({ scene, assets, geometry, materials, post, q
 		scene.createMesh({ mesh: sphere, material: metal, position: [x, 1.9, 0] });
 		scene.createMesh({ mesh: sphere, material: plastic, position: [x, 0.6, 0] });
 	}
-	// Pillars at 20 to 2,000 units, 200 metres to 20 kilometres, each as tall as it is far over 40,
-	// so each fills about the same height of the view.
+	// Pillars at 20 to 2,000 units, 200 metres to 20 kilometres, each as tall as a sixth of its
+	// distance, so each fills about the same height of the view. The near four stand left of the
+	// spheres and the far four right of them, each a few degrees from the last.
 	const pillar = geometry.box();
-	const white = materials.standard({ color: '#f0f0f0', roughness: 0.7 });
+	const dark = materials.standard({ color: '#2c362c', roughness: 0.9 });
 	for (let k = 0; k < 8; k++) {
 		const distance = 20 * 100 ** (k / 7);
-		const size = distance / 40;
+		const size = distance / 12;
+		const angle = (k < 4 ? -37 + 5 * k : 22 + 5 * (k - 4)) * (Math.PI / 180);
 		scene.createMesh({
 			mesh: pillar,
-			material: white,
-			position: [-3 - distance * 0.35, size, -distance],
-			scale: [size * 0.6, size * 2, size * 0.6],
+			material: dark,
+			position: [distance * Math.tan(angle), size, -distance],
+			scale: [size * 0.5, size * 2, size * 0.5],
 		});
 	}
 });

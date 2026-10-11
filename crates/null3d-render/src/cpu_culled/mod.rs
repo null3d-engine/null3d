@@ -1211,7 +1211,7 @@ impl CpuCulledRenderer {
             .culling
             .frame(ViewId::CAMERA)
             .map_or(0.0, |frame| frame.uniform.camera_world[1]);
-        let panorama = physical_sky::record_frame(
+        physical_sky::record_frame(
             &mut self.physical_sky,
             &mut self.settings,
             (&self.pipelines, input.pipelines_built),
@@ -1220,7 +1220,7 @@ impl CpuCulledRenderer {
             arena,
         )?;
         self.settings
-            .record_materials(input, list, arena, table, panorama)?;
+            .record_materials(input, list, arena, table, &self.physical_sky)?;
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);

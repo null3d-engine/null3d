@@ -186,7 +186,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
 		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
-		hold: 6,
+		hold: 2,
 		timeoutSeconds: 60,
 	},
 	{

@@ -46,7 +46,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
-use crate::physical_sky::{AerialUniform, Atmosphere};
+use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
@@ -1346,7 +1346,7 @@ impl SceneSettings {
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
-        panorama: (bool, u32),
+        sky: &PhysicalSkyPass,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -1356,11 +1356,15 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
+        // A map of the physical sky starts a fill from the panorama of the sky as it is now, which
+        // the pass draws once the frame's texture work has made the map ready, so a held frame,
+        // whose first frame makes it, fills it too.
+        let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
         self.sky_maps.record(
             &self.textures,
             list,
-            panorama.0,
-            panorama.1,
+            drawn,
+            sky.panorama(),
             self.air.as_ref(),
         )?;
         let layers_changed = self.textures.take_layers_changed();

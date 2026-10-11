@@ -7,11 +7,11 @@
 import { defineSketch, type MeshArrays, math, timeOfDay } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
-// Seconds per day, the share of the day at time 0 (about 16:00), and how much dawn and dusk slow
-// the clock (0 for an even clock).
+// Seconds per day, the share of the day at time 0, and how much dawn and dusk slow the clock (0
+// for an even clock). The slower dusk puts time 0 at about 17:15.
 const [DAY, START, LINGER] = [60, 16 / 24, 0.75];
-/** The sun's path turned about +Y, so that it sets beyond the valley. */
-const HEADING = -0.25;
+/** The sun's path turned about +Y, so that the evening sun lights the ridges from the right. */
+const HEADING = -2.63;
 /** Quads along each side of the land, its width in metres, and the lake's height. */
 const QUADS = 200;
 const WIDTH = 24000;
@@ -77,9 +77,9 @@ function clock(seconds: number): number {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
-	// The air of a clear evening: a little haze, high clouds, and three times the real air between
-	// the camera and the land, so that the ridges fade in fewer kilometres.
-	const air = { haze: 1.6, cloudCoverage: 0.32, cloudElevation: 0.8, aerialPerspective: 3 };
+	// The air of a clear evening: a little haze, high clouds, and twice the real air between the
+	// camera and the land, so that the ridges fade in fewer kilometres.
+	const air = { haze: 1.2, cloudCoverage: 0.32, cloudElevation: 0.8, aerialPerspective: 2 };
 	const environment = await assets.skyEnvironment();
 	scene.setEnvironment(environment);
 	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 2 }, vignette: {} });

@@ -286,11 +286,10 @@ impl AerialUniform {
     }
 }
 
-/// Records a frame's physical sky for a frame builder: the tables of `settings`' physical sky,
-/// seen from the camera at height `y` in the world, with the pipelines of `pipelines` that the
-/// thread that draws built by frame `pipelines_built`, then the panorama when a sky map starts a
-/// fill. Returns whether it drew the panorama, and the panorama's GPU id, which the frame's texture
-/// work takes.
+/// Records a frame's physical sky tables for a frame builder: the tables of `settings`' physical
+/// sky, seen from the camera at height `y` in the world, with the pipelines of `pipelines` that the
+/// thread that draws built by frame `pipelines_built`. The frame's texture work draws the panorama
+/// later, once it knows which sky maps are ready ([`crate::frame::SceneSettings::record_materials`]).
 pub(crate) fn record_frame(
     pass: &mut PhysicalSkyPass,
     settings: &mut SceneSettings,
@@ -298,7 +297,7 @@ pub(crate) fn record_frame(
     y: f32,
     list: &mut DrawList,
     arena: &mut UploadArena,
-) -> Result<(bool, u32), RecordError> {
+) -> Result<(), RecordError> {
     let sky = settings
         .physical_sky()
         .map(|(atmosphere, intensity)| (*atmosphere, intensity));
@@ -313,9 +312,7 @@ pub(crate) fn record_frame(
     if let Some(height) = pass.height() {
         settings.sky_maps_mut().set_height(height);
     }
-    let drawn =
-        settings.sky_maps().wants_panorama(settings.textures()) && pass.record_panorama(list)?;
-    Ok((drawn, pass.panorama()))
+    Ok(())
 }
 
 /// The tables' sizes, and the panorama's.
