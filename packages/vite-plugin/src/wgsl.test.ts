@@ -665,7 +665,9 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			expect(sketch?.code).toContain('#version 300 es');
 			expect(sketch?.code).not.toContain('-> @builtin(position) vec4f {');
 			const file = await server.transformRequest('/src/shaders/glow.wgsl');
-			expect(file?.code).toStartWith(`export default ${UNPACK}({"kind":"shader","webgpu":`);
+			expect(file?.code).toStartWith(
+				`export default ${UNPACK}("{\\"kind\\":\\"shader\\",\\"webgpu\\":`,
+			);
 			const error = await server.transformRequest('/src/broken.ts').then(
 				() => null,
 				(e: { plugin?: string; loc?: unknown; frame?: string }) => e,
