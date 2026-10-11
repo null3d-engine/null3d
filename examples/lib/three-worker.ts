@@ -30,9 +30,9 @@ export interface ThreeLook {
 	exposure: number;
 	environmentIntensity: number;
 	/**
-	 * three.js's Sky behind the scene, with the settings of its uniforms, its light scaled by
-	 * `intensity`, and the scene's environment made from it. Without it, the room environment
-	 * lights the scene.
+	 * three.js's Sky behind the scene, with the settings of its uniforms and its light scaled by
+	 * `intensity`. The scene's environment is made from the same sky, at `environmentIntensity`.
+	 * Without it, the room environment lights the scene.
 	 */
 	sky?: { settings: Readonly<Record<string, number | readonly number[]>>; intensity: number };
 	/**
@@ -315,12 +315,11 @@ class ThreeRuntime {
 			const lightScene = new three.Scene();
 			lightScene.add(await this.makeSky(look.sky.settings, 1));
 			scene.environment = pmrem.fromScene(lightScene, 0, 0.1, 1000).texture;
-			scene.environmentIntensity = intensity;
 		} else {
 			const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
 			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-			scene.environmentIntensity = look.environmentIntensity;
 		}
+		scene.environmentIntensity = look.environmentIntensity;
 		pmrem.dispose();
 	}
 

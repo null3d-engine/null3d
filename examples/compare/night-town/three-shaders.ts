@@ -158,7 +158,8 @@ uniform sampler2D townNormal;`,
 	float curtain = mod( pick * 7.0, 1.0 ) < 0.35 ? ( tile.x > 0.5 ? 1.0 : 0.35 ) : 1.0;
 	float depthFade = 0.55 + 0.45 * smoothstep( 0.1, 0.8, fract( coord.y ) );
 	float strength = ground ? townShopLight : townWindowLight * ( 0.5 + pick );
-	vec3 townGlow = room * strength * lit * curtain * depthFade * ( 0.7 + 0.6 * kind );
+	float shelves = ground ? ( 0.45 + 0.55 * step( 0.14, fract( coord.y * 4.0 ) ) ) * ( 0.75 + 0.25 * sin( coord.x * 37.0 + pick * 20.0 ) ) : 1.0;
+	vec3 townGlow = room * strength * lit * curtain * depthFade * shelves * ( 0.7 + 0.6 * kind );
 	vec3 tar = vec3( 0.035, 0.036, 0.04 ) * ( 0.8 + 0.4 * fract( sin( dot( floor( vTownWorld.xz * 2.0 ), vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) );
 	diffuseColor.rgb = roof ? tar : diffuseColor.rgb * texel.rgb;
 	roughnessFactor = roof ? 0.45 : orm.g;
@@ -230,6 +231,7 @@ function facadeNodes(
 		normalWorldGeometry,
 		normalize,
 		smoothstep,
+		step,
 		sin,
 		mod,
 		cameraViewMatrix,
@@ -289,7 +291,25 @@ function facadeNodes(
 		float(settings.shopLight),
 		pick.add(0.5).mul(settings.windowLight),
 	);
-	const glow = room.mul(strength).mul(lit).mul(curtain).mul(depthFade).mul(kind.mul(0.6).add(0.7));
+	const shelves = select(
+		ground,
+		step(0.14, fract(coord.y.mul(4)))
+			.mul(0.55)
+			.add(0.45)
+			.mul(
+				sin(coord.x.mul(37).add(pick.mul(20)))
+					.mul(0.25)
+					.add(0.75),
+			),
+		float(1),
+	);
+	const glow = room
+		.mul(strength)
+		.mul(lit)
+		.mul(curtain)
+		.mul(depthFade)
+		.mul(shelves)
+		.mul(kind.mul(0.6).add(0.7));
 	const cell = floor(positionWorld.xz.mul(2));
 	const tar = vec3(0.035, 0.036, 0.04).mul(
 		fract(sin(cell.dot(vec2(12.9898, 78.233))).mul(43758.5453))
@@ -366,7 +386,7 @@ const GLSL_STREET = /* glsl */ `
 	vec3 waterNormal = normalize( vec3( tilt.x, 1.0, tilt.y ) );
 	vec3 townWorldNormal = normalize( mix( roughNormal, waterNormal, puddle ) );
 	diffuseColor.rgb *= paint * mix( townWetDarken, 0.35, puddle );
-	roughnessFactor = mix( orm.g * 0.62, 0.03, puddle );
+	roughnessFactor = mix( orm.g * 0.42, 0.03, puddle );
 	metalnessFactor = 0.0;
 `;
 
@@ -538,7 +558,7 @@ function streetNodes(
 	const waterNormal = normalize(vec3(tilt.x, 1, tilt.y));
 	const worldNormal = normalize(mix(roughNormal, waterNormal, puddle));
 	material.colorNode = paint.mul(mix(float(settings.wetDarken), float(0.35), puddle));
-	material.roughnessNode = mix(orm.g.mul(0.62), float(0.03), puddle);
+	material.roughnessNode = mix(orm.g.mul(0.42), float(0.03), puddle);
 	material.metalnessNode = float(0);
 	material.normalNode = normalize(cameraViewMatrix.mul(vec4(worldNormal, 0)).xyz);
 	if (reflection?.node) {

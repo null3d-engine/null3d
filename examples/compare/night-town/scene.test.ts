@@ -79,14 +79,16 @@ describe('Night town', () => {
 		expect(NIGHT_HOLD.count % LIGHTS_PER_BLOCK).toBe(0);
 	});
 
-	test('the look is the night of timeOfDay, with the moon low in the north-west', () => {
+	test('the look is the night of timeOfDay, with clearer air and the moon low in the north-west', () => {
 		const night = timeOfDay(NIGHT_LOOK.time.hours, {
 			heading: NIGHT_LOOK.time.heading,
 			noonElevation: NIGHT_LOOK.time.noonElevation,
 		});
 		expect(night.sky.sunPosition).toEqual([...NIGHT_LOOK.sky.sunPosition]);
-		expect(night.sky.turbidity).toBe(NIGHT_LOOK.sky.turbidity);
-		expect(night.sky.rayleigh).toBe(NIGHT_LOOK.sky.rayleigh);
+		// Less haze than the time of day's own sky, so the sky stays dark and blue over the town.
+		expect(NIGHT_LOOK.sky.turbidity).toBeLessThan(night.sky.turbidity);
+		expect(NIGHT_LOOK.sky.mieCoefficient).toBeLessThan(night.sky.mieCoefficient as number);
+		expect(NIGHT_LOOK.skyShown).toBeLessThan(1);
 		expect(night.skyIntensity).toBeCloseTo(NIGHT_LOOK.skyIntensity, 12);
 		expect(night.light.direction).toEqual([...NIGHT_LOOK.moon.direction]);
 		expect(night.light.color).toEqual([...NIGHT_LOOK.moon.color]);

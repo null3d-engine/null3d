@@ -166,7 +166,10 @@ export default defineSketch(
 		}
 
 		// The moonlit sky, the light it gives, the moon and the haze.
-		scene.setBackground({ sky: { ...look.sky, time: 0 } }, { intensity: look.skyIntensity });
+		scene.setBackground(
+			{ sky: { ...look.sky, time: 0 } },
+			{ intensity: look.skyIntensity * look.skyShown },
+		);
 		scene.setEnvironment(await assets.skyEnvironment(), { intensity: look.skyIntensity });
 		if (effects.fog) scene.setFog({ curve: 'exponential', ...look.fog });
 		scene.createDirectionalLight({

@@ -909,7 +909,7 @@ export async function buildNightTown({
 		look: {
 			exposure: look.exposure,
 			environmentIntensity: look.skyIntensity,
-			sky: { settings: { ...look.sky, time: 0 }, intensity: look.skyIntensity },
+			sky: { settings: { ...look.sky, time: 0 }, intensity: look.skyIntensity * look.skyShown },
 			fog: {
 				color: look.fog.color,
 				density: look.fog.density,

@@ -437,8 +437,8 @@ export const LAMP = { inset: 1.2, height: 6.2, arm: 1.7, lightDrop: 0.3 } as con
 
 /** A neon blade sign: a board that stands out from a shop's front, with tubes on both faces. */
 export const SIGN = {
-	height: 3.2,
-	depth: 1.15,
+	height: 4.4,
+	depth: 1.5,
 	thickness: 0.16,
 	bottom: GROUND_FLOOR + 0.6,
 	inset: 1.1,
@@ -525,7 +525,7 @@ function awningMesh(width: number): MeshData {
  * of straight strokes inside it.
  */
 function signTubesMesh(shape: number): MeshData {
-	const t = 0.07;
+	const t = 0.1;
 	const parts: MeshData[] = [];
 	const { height, depth, thickness } = SIGN;
 	for (const face of [-1, 1]) {
@@ -960,7 +960,7 @@ export const EXHAUST_PER_CAR = 6;
 export const GLOWS_PER_BLOCK = LAMPS_PER_BLOCK + SIGNS_PER_BLOCK + CARS_PER_BLOCK * 3;
 export const RAIN_DROPS = 4_000;
 /** The box of rain around the camera: its half width and its height. */
-export const RAIN_BOX = { half: 26, height: 22, speed: 11, size: 0.55 } as const;
+export const RAIN_BOX = { half: 26, height: 22, speed: 11, size: 0.3 } as const;
 
 const STEAM_LIFE = 5.5;
 const EXHAUST_LIFE = 1.4;
@@ -1008,7 +1008,7 @@ export function writeSteam(town: NightTown, seconds: number, rows: ParticleRows)
 				x = (town.center[b * 2] as number) + BLOCK_PITCH / 2 + 2.2;
 				y = 0.05;
 				z = (town.center[b * 2 + 1] as number) + 6;
-				scale = 1.3;
+				scale = 1.8;
 			} else {
 				const l = v - 1;
 				lotPlace(town, b, l, pose);
@@ -1175,8 +1175,10 @@ export function writeRain(seconds: number, camera: OutArray, rows: ParticleRows)
 		const x = wrap(hash01(NIGHT_SEED, i, 1) * side, cx);
 		const z = wrap(hash01(NIGHT_SEED, i, 2) * side, cz);
 		const fall = (hash01(NIGHT_SEED, i, 3) * height + seconds * speed) % height;
-		const top = cy + height / 2;
-		emit(rows, i, x, top - fall, z, size, rain.color[0], rain.color[1], rain.color[2], rain.alpha);
+		const y = cy + height / 2 - fall;
+		// Drops fade out as they near the camera, where a streak would fill the view.
+		const near = smoothstep((Math.hypot(x - cx, y - cy, z - cz) - 1.5) / 4);
+		emit(rows, i, x, y, z, size, rain.color[0], rain.color[1], rain.color[2], rain.alpha * near);
 	}
 	return RAIN_DROPS;
 }
@@ -1437,14 +1439,14 @@ export const FACADE_LIT_SHARE: Readonly<Record<FacadeKind, number>> = {
 export const NIGHT_LOOK = {
 	/** `timeOfDay(23, { heading, noonElevation })`: the moon low in the north-west. */
 	time: { hours: 23, heading: 0.9, noonElevation: 0.5 },
-	/** The sky of that time, which three.js's Sky draws with the same settings. */
+	/** That time's sky with clearer air and fewer clouds, which three.js's Sky draws alike. */
 	sky: {
 		sunPosition: [-0.5031257909720012, 0.4630895095203464, -0.7296660500742812] as const,
-		turbidity: 2.5,
-		rayleigh: 1.2,
-		mieCoefficient: 0.005,
-		mieDirectionalG: 0.8,
-		cloudCoverage: 0.45,
+		turbidity: 2,
+		rayleigh: 2,
+		mieCoefficient: 0.002,
+		mieDirectionalG: 0.6,
+		cloudCoverage: 0.3,
 		cloudDensity: 0.5,
 		cloudElevation: 0.5,
 		cloudScale: 0.0002,
@@ -1452,6 +1454,8 @@ export const NIGHT_LOOK = {
 	},
 	/** The factor of the sky's light, which dims the moon's day-for-night sky. */
 	skyIntensity: 0.0028115538168475454,
+	/** The share of that light that the sky shows behind the town, which keeps the night sky dark. */
+	skyShown: 0.25,
 	/** The moon: its direction of travel, linear color and intensity. */
 	moon: {
 		direction: [0.5031257909720012, -0.4630895095203464, 0.7296660500742812] as const,
@@ -1466,14 +1470,14 @@ export const NIGHT_LOOK = {
 		density: 0.011,
 		height: 0,
 		heightFalloff: 0.045,
-		sunGlow: 0.35,
+		sunGlow: 0.15,
 		sunGlowExponent: 6,
 	},
 	background: '#05080f' as Hex,
 	camera: { fov: 50, near: 0.1, far: 900 },
 	/** Lights, in candela as three.js's units since r155. */
-	lamp: { intensity: 38, range: 17, decay: 2, lens: 9 },
-	sign: { intensity: 16, range: 10, decay: 2, tubes: 7 },
+	lamp: { intensity: 26, range: 17, decay: 2, lens: 9 },
+	sign: { intensity: 36, range: 12, decay: 2, tubes: 5 },
 	headlight: {
 		color: '#fff3dc' as Hex,
 		intensity: 90,
@@ -1485,26 +1489,26 @@ export const NIGHT_LOOK = {
 	},
 	tail: { color: '#ff1a10' as Hex, intensity: 3, range: 5, decay: 2, lens: 5 },
 	/** The windows' light, scaled per window by the facade shader. */
-	windows: { intensity: 1.6, shops: 2.4 },
+	windows: { intensity: 0.3, shops: 0.22 },
 	/** The awnings' stripes. */
 	awning: {
 		colors: ['#7a1420', '#1b4d5c', '#6b4a12', '#24452a'] as const satisfies readonly Hex[],
 	},
-	steam: { color: [0.2, 0.19, 0.18] as const, alpha: 0.32 },
-	exhaust: { color: [0.16, 0.16, 0.16] as const, alpha: 0.22 },
-	rain: { color: [0.32, 0.36, 0.42] as const, alpha: 0.3 },
+	steam: { color: [0.24, 0.24, 0.26] as const, alpha: 0.4 },
+	exhaust: { color: [0.2, 0.2, 0.21] as const, alpha: 0.3 },
+	rain: { color: [0.14, 0.16, 0.2] as const, alpha: 0.4 },
 	glow: {
 		lamp: 0.22,
 		lampSize: 4.5,
-		sign: 0.22,
-		signSize: 5.5,
+		sign: 0.3,
+		signSize: 6,
 		head: 0.5,
 		headSize: 1.4,
 		tail: 0.35,
 		tailSize: 0.9,
 	},
 	/** The street's wetness: how dark wet asphalt turns, and the puddles' share. */
-	street: { puddleShare: 0.4, wetDarken: 0.55 },
+	street: { puddleShare: 0.5, wetDarken: 0.25 },
 	/** Bloom, as UnrealBloomPass's settings; the others map it as Factory's look does. */
 	bloom: { threshold: 1, strength: 0.6, radius: 0.5 },
 	bloomChain: {
@@ -1517,8 +1521,8 @@ export const NIGHT_LOOK = {
 	grade: {
 		contrast: 1.1,
 		saturation: 1.1,
-		lift: [0.0, 0.012, 0.03],
-		gamma: [1.02, 1.0, 0.97],
+		lift: [0.0, 0.012, 0.055],
+		gamma: [1, 1, 1],
 		gain: [1.05, 1.0, 0.95],
 	} satisfies GradeLook,
 } as const;
@@ -1529,7 +1533,7 @@ export const NIGHT_LOOK = {
 export const NIGHT_CAMERA: CameraLoop = {
 	seconds: 60,
 	positions: [
-		80, 46, 92, 18, 40, 112, -62, 30, 82, -50, 12, 38, -21, 2.2, 28, -21, 1.9, 0, -21, 2.3, -28, -6,
+		80, 46, 92, 18, 40, 112, -62, 30, 82, -50, 12, 38, -21, 2.8, 28, -21, 2.6, 0, -21, 2.8, -28, -6,
 		14, -62, 42, 30, -72, 92, 40, 22,
 	],
 	targets: [
@@ -1540,7 +1544,7 @@ export const NIGHT_CAMERA: CameraLoop = {
 
 /** The camera loop's wide shot over the town and its shot down a street, in simulation seconds. */
 export const WIDE_SHOT = 3;
-export const STREET_SHOT = 30;
+export const STREET_SHOT = 33;
 
 // What the comparison page needs to know about the scene.
 

@@ -70,7 +70,9 @@ fn surface(input: SurfaceInput) -> Surface {
     let curtain = select(1.0, select(0.35, 1.0, tile.x > 0.5), pick * 7.0 % 1.0 < 0.35);
     let depth = 0.55 + 0.45 * smoothstep(0.1, 0.8, fy);
     let strength = select(material.windowLight * (0.5 + pick), material.shopLight, ground);
-    let glow = room * strength * lit * curtain * depth * (0.7 + 0.6 * kind);
+    // A shop shows rows of shelves, with goods of uneven brightness along each.
+    let shelves = select(1.0, (0.45 + 0.55 * step(0.14, fract(coord.y * 4.0))) * (0.75 + 0.25 * sin(coord.x * 37.0 + pick * 20.0)), ground);
+    let glow = room * strength * lit * curtain * depth * shelves * (0.7 + 0.6 * kind);
 
     let roof = n.y > 0.5;
     let tar = vec3f(0.035, 0.036, 0.04) * (0.8 + 0.4 * fract(sin(dot(floor(input.worldPosition.xz * 2.0), vec2f(12.9898, 78.233))) * 43758.5453));
@@ -151,7 +153,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let water_normal = normalize(vec3f(tilt.x, 1.0, tilt.y));
     s.normal = normalize(mix(rough_normal, water_normal, puddle));
     s.baseColor = s.baseColor * color * mix(material.wetDarken, 0.35, puddle);
-    s.roughness = mix(orm.g * 0.62, 0.03, puddle);
+    s.roughness = mix(orm.g * 0.42, 0.03, puddle);
     s.metalness = 0.0;
 
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
