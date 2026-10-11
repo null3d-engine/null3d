@@ -37,8 +37,8 @@
 // The `ssr` switch puts a polished floor under the swarm and turns screen-space reflections on, for
 // the allocation sample and the cost of their steps, the copy of the opaque colors that they read,
 // and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
-// `ssr=quarter` give their grid that share of the render size, and the switch alone takes the
-// preset's.
+// `ssr=quarter` give their grid that share of the render size, `ssr=off` keeps the floor with the
+// reflections off, and the switch alone takes the preset's.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -329,7 +329,7 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 }
 
 /** The reflections' grid as a share of the render size, by the `ssr` switch's value. */
-const SSR_SCALES = { half: 0.5, quarter: 0.25 } as const;
+const SSR_SCALES = { half: 0.5, quarter: 0.25, off: 0 } as const;
 
 /**
  * Adds the `ssr` switch's polished floor under the swarm, and turns screen-space reflections on,
@@ -340,7 +340,7 @@ function createPolishedFloor(
 	size: string,
 ) {
 	const scale = SSR_SCALES[size as keyof typeof SSR_SCALES];
-	if (scale) quality.set({ ssrScale: scale });
+	if (scale !== undefined) quality.set({ ssrScale: scale });
 	post.set({ ssr: { maxDistance: 400, thickness: 2 } });
 	const floor = scene.createMesh({
 		mesh: geometry.plane({ width: 1200, height: 1200 }),

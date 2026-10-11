@@ -2081,11 +2081,13 @@ impl FrameGraph {
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
-        let ssr_built = self.ssr.is_some() && ao_built && {
-            let steps = self.ssr_steps();
-            steps.request_pipelines(pipelines);
-            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
-        };
+        let ssr_built = self.ssr.is_some()
+            && {
+                let steps = self.ssr_steps();
+                steps.request_pipelines(pipelines);
+                pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+            }
+            && ao_built;
         let ao_built = ao_built && self.ao.is_some();
         if ao_built != self.ao_built {
             let was = self.ao_draws();
@@ -4402,6 +4404,7 @@ mod tests {
             // The first frame has no copy to read, so it reflects nothing; the next one reads the
             // copy that the first made, through the first frame's view.
             let mut uniform = FrameUniform::default();
+            uniform.view_proj[0] = 2.0;
             frames.write_screen_values(&mut uniform, [0.0; 3]);
             assert_eq!(uniform.reflection[0], 0.0);
             assert_eq!(uniform.occlusion[0], 0.0, "no ambient occlusion draws");
@@ -4409,7 +4412,6 @@ mod tests {
                 uniform.occlusion[2], 0.5,
                 "the grid has half the render size"
             );
-            uniform.view_proj[0] = 2.0;
             let mut next = FrameUniform::default();
             frames.write_screen_values(&mut next, [1.0, 0.0, 0.0]);
             assert_eq!(next.reflection[0], 1.0);
