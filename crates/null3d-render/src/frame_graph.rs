@@ -2764,6 +2764,7 @@ mod tests {
             self.sync_views(views, &names);
         }
     }
+    use null3d_gpu::drawlist::template::CUSTOM_FIRST as CUSTOM;
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
@@ -3504,7 +3505,11 @@ mod tests {
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        let chain = [effect(64, false), effect(65, true), effect(66, false)];
+        let chain = [
+            effect(CUSTOM, false),
+            effect(CUSTOM + 1, true),
+            effect(CUSTOM + 2, false),
+        ];
         frames.set_effects(&chain, &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         frames.sync(&[View::default()]);
@@ -3529,12 +3534,16 @@ mod tests {
         let keys = pipelines.keys();
         let templates: Vec<(u32, u32)> = keys
             .iter()
-            .filter(|key| key.template >= 64)
+            .filter(|key| key.template >= CUSTOM)
             .map(|key| (key.template, key.permutation))
             .collect();
         assert_eq!(
             templates,
-            [(64, 0), (65, permutation::DEPTH_MULTISAMPLED), (66, 0)]
+            [
+                (CUSTOM, 0),
+                (CUSTOM + 1, permutation::DEPTH_MULTISAMPLED),
+                (CUSTOM + 2, 0)
+            ]
         );
         let mut arena = UploadArena::default();
         arena.reset(frames.upload_bound());
@@ -3608,7 +3617,7 @@ mod tests {
         assert_eq!(frames.upload_bound(), bound);
 
         let effect = Effect {
-            template: 64,
+            template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };
@@ -3716,9 +3725,13 @@ mod tests {
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        let chain = [effect(64, false), effect(65, false), effect(66, true)];
+        let chain = [
+            effect(CUSTOM, false),
+            effect(CUSTOM + 1, false),
+            effect(CUSTOM + 2, true),
+        ];
         let mut joins = EffectJoins::default();
-        joins.groups[1] = (2, 90);
+        joins.groups[1] = (2, CUSTOM + 10);
         let mut pipelines = PipelineCache::default();
         // Frames after the first: a pipeline draws once a frame drew with it built.
         let frame = |frames: &mut FrameGraph,
@@ -3743,7 +3756,12 @@ mod tests {
         // them, and then as one.
         let names = frame(&mut frames, &mut pipelines, &joins, 5, &mut list);
         assert_eq!(effect_passes(&names), 3);
-        assert!(pipelines.keys().iter().all(|key| key.template != 90));
+        assert!(
+            pipelines
+                .keys()
+                .iter()
+                .all(|key| key.template != CUSTOM + 10)
+        );
         let names = frame(&mut frames, &mut pipelines, &joins, 6, &mut list);
         assert_eq!(effect_passes(&names), 3);
         let names = frame(&mut frames, &mut pipelines, &joins, 7, &mut list);
@@ -3751,7 +3769,7 @@ mod tests {
         let group = pipelines
             .keys()
             .iter()
-            .find(|key| key.template == 90)
+            .find(|key| key.template == CUSTOM + 10)
             .expect("the group asked for its pipeline");
         assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
         let mut arena = UploadArena::default();
@@ -3769,7 +3787,7 @@ mod tests {
 
         // Folded, the group's effects leave their passes, and the final pass reads the first
         // effect's target with its fold build, once that build's pipeline is built.
-        joins.fold = Some((1, 91));
+        joins.fold = Some((1, CUSTOM + 11));
         let names = frame(&mut frames, &mut pipelines, &joins, 8, &mut list);
         assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
         let names = frame(&mut frames, &mut pipelines, &joins, 9, &mut list);
@@ -3777,7 +3795,7 @@ mod tests {
         let fold = pipelines
             .keys()
             .iter()
-            .position(|key| key.template == 91)
+            .position(|key| key.template == CUSTOM + 11)
             .expect("the final pass asked for its fold build") as u32
             + 1;
         let mut arena = UploadArena::default();
@@ -3806,11 +3824,15 @@ mod tests {
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         let names = frame(&mut frames, &mut pipelines, &joins, 10, &mut list);
         assert_eq!(effect_passes(&names), 2);
-        joins.fold = Some((1, 92));
+        joins.fold = Some((1, CUSTOM + 12));
         let names = frame(&mut frames, &mut pipelines, &joins, 11, &mut list);
         assert_eq!(effect_passes(&names), 2);
-        let asked =
-            |pipelines: &PipelineCache| pipelines.keys().iter().any(|key| key.template == 92);
+        let asked = |pipelines: &PipelineCache| {
+            pipelines
+                .keys()
+                .iter()
+                .any(|key| key.template == CUSTOM + 12)
+        };
         assert!(!asked(&pipelines), "a fold beside bloom builds nothing");
         frames.set_bloom(None, ChainFrame::default());
         let names = frame(&mut frames, &mut pipelines, &joins, 12, &mut list);
@@ -3824,7 +3846,7 @@ mod tests {
     fn the_8_bit_path_runs_no_effects() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         let effect = Effect {
-            template: 64,
+            template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };

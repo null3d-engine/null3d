@@ -491,6 +491,7 @@ fn create_objects(list: &mut DrawList, ids: EffectIds) -> Result<(), RecordError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use null3d_gpu::drawlist::template::CUSTOM_FIRST as CUSTOM;
 
     const IDS: EffectIds = EffectIds {
         buffer: 1,
@@ -557,7 +558,7 @@ mod tests {
     #[test]
     fn each_effect_uploads_its_block_and_binds_its_sources_once() {
         let mut pass = EffectPass::new(IDS, false);
-        let effects = [effect(64, false, 0.5), effect(65, true, 2.0)];
+        let effects = [effect(CUSTOM, false, 0.5), effect(CUSTOM + 1, true, 2.0)];
         let list = prepare(&mut pass, &effects, true);
         let writes = operands(&list, Op::WriteBuffer);
         assert_eq!(writes.len(), 2);
@@ -574,7 +575,7 @@ mod tests {
         assert!(operands(&again, Op::WriteBuffer).is_empty());
         assert!(operands(&again, Op::CreateBindGroup).is_empty());
 
-        let changed = [effect(64, false, 0.75), effects[1]];
+        let changed = [effect(CUSTOM, false, 0.75), effects[1]];
         let list = prepare(&mut pass, &changed, false);
         assert_eq!(operands(&list, Op::WriteBuffer).len(), 1);
     }
@@ -582,7 +583,7 @@ mod tests {
     #[test]
     fn a_multisampled_depth_takes_its_layout_and_its_build() {
         let mut pass = EffectPass::new(IDS, true);
-        let effects = [effect(64, true, 0.0), effect(65, false, 0.0)];
+        let effects = [effect(CUSTOM, true, 0.0), effect(CUSTOM + 1, false, 0.0)];
         let mut cache = PipelineCache::default();
         pass.request_pipelines(&mut cache, &effects, &EffectJoins::default(), 0);
         let keys = cache.keys();
@@ -605,12 +606,12 @@ mod tests {
     fn a_group_binds_every_block_and_reads_depth_when_one_of_its_effects_does() {
         let mut pass = EffectPass::new(IDS, true);
         let effects = [
-            effect(64, false, 0.0),
-            effect(65, false, 0.0),
-            effect(66, true, 0.0),
+            effect(CUSTOM, false, 0.0),
+            effect(CUSTOM + 1, false, 0.0),
+            effect(CUSTOM + 2, true, 0.0),
         ];
         let mut cache = PipelineCache::default();
-        let joins = joined(1, 2, 90);
+        let joins = joined(1, 2, CUSTOM + 10);
         // Before the first frame, which waits for every pipeline, the group asks at once.
         let mut first = EffectPass::new(IDS, true);
         first.request_pipelines(&mut PipelineCache::default(), &effects, &joins, 0);
@@ -631,7 +632,7 @@ mod tests {
         let key = cache.keys()[group as usize - 1];
         assert_eq!(
             (key.template, key.permutation),
-            (90, permutation::DEPTH_MULTISAMPLED)
+            (CUSTOM + 10, permutation::DEPTH_MULTISAMPLED)
         );
         assert!(pass.group_pipeline(0).is_none());
 
@@ -662,7 +663,7 @@ mod tests {
     #[test]
     fn units_join_a_group_once_its_pipeline_is_built_and_leave_the_fold_out() {
         let mut units = [Unit::default(); MAX_EFFECTS];
-        let joins = joined(1, 3, 90);
+        let joins = joined(1, 3, CUSTOM + 10);
         let plan = |built: bool, fold: Option<usize>, units: &mut [Unit; MAX_EFFECTS]| {
             let count = plan_units(5, &joins, |place| built && place == 1, fold, units);
             units[..count]
@@ -679,12 +680,12 @@ mod tests {
         assert_eq!(plan(true, Some(4), &mut units), [(0, 1), (1, 3)]);
         assert_eq!(plan(true, Some(3), &mut units), [(0, 1), (1, 1), (2, 1)]);
         // A group past the effects that run, or of one effect, joins nothing.
-        let past = joined(3, 3, 90);
+        let past = joined(3, 3, CUSTOM + 10);
         assert_eq!(past.group_at(3, 5), None);
-        assert_eq!(joined(1, 1, 90).group_at(1, 5), None);
+        assert_eq!(joined(1, 1, CUSTOM + 10).group_at(1, 5), None);
         assert_eq!(
             EffectJoins {
-                fold: Some((5, 91)),
+                fold: Some((5, CUSTOM + 11)),
                 ..EffectJoins::default()
             }
             .fold_of(5),
