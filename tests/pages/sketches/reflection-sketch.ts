@@ -5,12 +5,25 @@
 // its surface's reflection. With the default, the plane is a smooth metal mirror, so each box's
 // reflection hangs below it on its own side and the sky fills the rest. ?water ripples the plane
 // with a few waves and gives it water's color and reflectance. ?quarter draws the reflection at a
-// quarter of the render size, and ?every=3 draws it in one frame of three. ?half draws the frame
-// at a render scale of 0.5. The magenta box must never show: the pass clips everything below the
-// plane, and the reflection spec checks it.
+// quarter of the render size, and ?every=3 draws it in one frame of three. ?lamps sets a dark
+// background in place of the sky, dims the sun and lights the boxes with a warm point light in
+// front of the red box and a blue spot light on the green box, which the reflection draws as the
+// camera's view does. ?half draws the frame at a render scale of 0.5. ?batches builds each box from
+// an instance batch of four smaller boxes: the red batch with a custom material, the green one with
+// a standard material, both made after the plane's material, so the pass must draw both kinds of
+// batch after the plane's draws, which it leaves out. The magenta box must never show: the pass
+// clips everything below the plane, and the reflection spec checks it.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
+
+const redWgsl = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = vec3f(0.75, 0.04, 0.04);
+    return s;
+}
+`;
 
 const mirrorWgsl = /* wgsl */ `
 #import null3d::reflection::{reflection_uv}
@@ -62,20 +75,38 @@ fn surface(input: SurfaceInput) -> Surface {
 export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
 	if (params.has('half'))
 		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
-	scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85], cloudCoverage: 0 } });
+	const lamps = params.has('lamps');
+	scene.setBackground(
+		lamps ? '#0a0c14' : { sky: { sunPosition: [0.4, 0.35, -0.85], cloudCoverage: 0 } },
+	);
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,
 		position: [0, 2.6, 9],
 		target: [0, 0.6, 0],
 	});
 	scene.setActiveCamera(camera);
-	scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: 2.5 });
-	scene.createAmbientLight({ intensity: 0.5 });
+	scene.createDirectionalLight({ direction: [-0.4, -1, -0.5], intensity: lamps ? 0.2 : 2.5 });
+	scene.createAmbientLight({ intensity: lamps ? 0.1 : 0.5 });
+	if (lamps) {
+		scene.createPointLight({ position: [-1.6, 0.8, 2], color: '#ffb060', intensity: 30, range: 6 });
+		scene.createSpotLight({
+			position: [3.4, 3.2, 2.6],
+			target: [2.4, 0.8, 0.5],
+			color: '#60c8ff',
+			intensity: 200,
+			range: 8,
+			angle: 0.5,
+			penumbra: 0.2,
+		});
+	}
 
 	const box = geometry.box({ width: 1.2, height: 1.6, depth: 1.2 });
 	const solid = (color: string) => materials.standard({ color, roughness: 0.6 });
-	scene.createMesh({ mesh: box, material: solid('#e03030'), position: [-2.4, 0.8, 0.5] });
-	scene.createMesh({ mesh: box, material: solid('#30c040'), position: [2.4, 0.8, 0.5] });
+	const batches = params.has('batches');
+	if (!batches) {
+		scene.createMesh({ mesh: box, material: solid('#e03030'), position: [-2.4, 0.8, 0.5] });
+		scene.createMesh({ mesh: box, material: solid('#30c040'), position: [2.4, 0.8, 0.5] });
+	}
 	scene.createMesh({
 		mesh: geometry.sphere({ radius: 0.9 }),
 		material: solid('#3050e0'),
@@ -124,5 +155,24 @@ export default defineSketch(({ scene, materials, geometry, textures, render, qua
 		material: plane,
 	});
 	floor.setRotationEuler(-Math.PI / 2, 0, 0);
+
+	// The batches' materials come after the floor's, so the pass draws them after the floor's
+	// draws, which it leaves out.
+	if (batches) {
+		const red = materials.shader({ wgsl: redWgsl, roughness: 0.6 });
+		const column = geometry.box({ width: 0.55, height: 1.6, depth: 0.55 });
+		for (const [x, material] of [
+			[-2.4, red],
+			[2.4, solid('#30c040')],
+		] as const) {
+			const batch = scene.createInstances(column, 4, { material });
+			for (let k = 0; k < 4; k++)
+				batch.positions.set(
+					[x + (k % 2) * 0.6 - 0.3, 0.8, 0.5 + Math.floor(k / 2) * 0.6 - 0.3],
+					k * 3,
+				);
+			batch.markDirty();
+		}
+	}
 	return {};
 });

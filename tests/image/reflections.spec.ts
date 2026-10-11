@@ -72,6 +72,7 @@ for (const name of [
 	'reflection-water',
 	'reflection-quarter',
 	'reflection-scale-50',
+	'reflection-batches',
 ])
 	test(`${name}: the reflection hangs below each box on its own side, and nothing below the plane shows`, async ({
 		page,

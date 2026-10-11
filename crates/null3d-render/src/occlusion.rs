@@ -318,6 +318,17 @@ impl Occluders {
         }
     }
 
+    /// Makes the mesh with id `id`, which counts from 0, block nothing from now on, after its
+    /// vertices changed: a blocker built from its old shape would hide what it no longer covers.
+    /// Building one again at each change would cost more than its culling saves. A removal of the
+    /// mesh gives the id a blocker again.
+    pub fn stop_blocking(&mut self, id: u32) {
+        self.forget(&[id]);
+        if let Some(entry) = self.by_mesh.get_mut(id as usize + 1) {
+            *entry = NOT_BLOCKER;
+        }
+    }
+
     /// Gives back the places of a mesh's parts, by its id that counts from 1.
     fn release(&mut self, id: usize) {
         let entry = self.by_mesh[id];

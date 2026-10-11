@@ -93,6 +93,30 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'extra-shapes',
+		group: 'Building scenes',
+		sketch: new URL('./extra-shapes/sketch.ts', import.meta.url),
+		title: 'Extra shapes',
+		scene: 'Mirror floor at dusk',
+		summary:
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'vertex-updates',
+		group: 'Building scenes',
+		sketch: new URL('./vertex-updates/sketch.ts', import.meta.url),
+		title: 'Vertex updates',
+		scene: 'Pool at golden hour',
+		summary:
+			"A glowing float leaves rings on a pool. Each frame the sketch rewrites the water's positions and normals and passes them to mesh.updateVertices, which allocates nothing.",
+		controls: `${CAMERA} Move the mouse, or tap, to lead the float.`,
+		hold: 2.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'objects',
 		group: 'Building scenes',
 		sketch: new URL('./objects/sketch.ts', import.meta.url),
@@ -323,6 +347,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the center of the wave.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'forest',
+		group: 'Scale',
+		sketch: new URL('./forest/sketch.ts', import.meta.url),
+		title: 'Levels of detail',
+		scene: 'Pine forest',
+		summary:
+			'40,000 pines over rolling hills at golden hour, and 8,000 on phones, in one instance batch. Each pine has four levels of detail, from 6,400 triangles down to 40, and every tree picks its own in each frame by its size on the screen. Near a switch the two levels share the pixels, so no tree pops.',
+		controls: `${CAMERA} Press L to draw every tree at its full detail, and again to bring the levels back.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},

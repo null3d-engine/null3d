@@ -124,3 +124,75 @@ The first run, on 9 October 2026, measured the first build: a null3D tree agains
 ## Device sitting before Factory goes on the page
 
 Factory's ramp on the Mac in Chrome (at 120 Hz) and Safari, the Galaxy S24+, a Pixel, the iPad, and a WebGL-only iPhone, each with the runs recorded in [tested devices](../tested-devices.md).
+
+## Battle
+
+Built 2026-10-11, task M2-EX6. Battle is the second comparison, and the comparison of ready-made assets. Two armies of animated soldiers and mechs, with tanks behind each line, meet on a cratered field at dusk. Its mechanism is S5's: three.js pays per animated character on one thread. The count is the soldiers and mechs of both armies.
+
+### The models
+
+- Both engines load the same two files from the [sample content](../sample-content.md). The soldier is Quaternius's CC0 Character Soldier. The sample-assets repository keeps the source as published, and its script `scripts/battle-soldier.ts` builds `characters/battle-soldier` from it. The body's parts, head and shoulder pads become one skinned mesh with vertex colors. The AK stays a mesh of its own under the right hand's joint, and the other 13 weapons go. The four clips that the battle plays stay, as idle, run, shoot and die.
+- The rifle stays in the file, because null3D attaches a rigid mesh to a joint only from the file: its joints are not objects. three.js's `SkeletonUtils.clone` keeps the mesh under the bone. So the weapon follows the hand the same way in both engines.
+- The mech is Quaternius's CC0 George, as the old repository converted it: one skinned mesh of 3,000 triangles with four clips. The old repository's source links on Google Drive refused downloads on 11 October 2026 (quota exceeded), and no other copy of George was found. The sample-assets entry `characters/quaternius-mech` records the conversion and the source file's SHA-256.
+- A search on 11 October 2026 found no CC0 soldier or mech that is more realistic and ready to use. Quaternius's Universal Base Characters have human proportions and a CC0 animation library, but no helmet, rifle or uniform. The CC0 soldiers on OpenGameArt have rigs and no clips. The one more detailed CC0 mech, Colorado Stark's on OpenGameArt, has no clips. So Battle keeps the two Quaternius models.
+- The soldier keeps the source's detail: 5,828 triangles for the body and 1,122 for the rifle, about three times the old repository's simplified soldier. A comparison of ready-made assets draws them as made.
+- The skinned body's node in the source has a scale and a turn. The glTF rules ignore a skinned mesh's node transform, and three.js's loader applies it. The script bakes it into the vertices and into the inverse bind matrices, and puts the node at the origin. So both readings draw the same model. Baking it into the vertices alone drew each soldier 58 times too large and bent out of shape.
+
+### How each engine builds it
+
+- **Scene graph**, the default. null3D makes each unit a copy of its model with `scene.instantiate`. The copy is a group with the skinned body and the rifle, and an animator that runs on the job workers. When the battle changes a unit's clip, the sketch cross-fades to it. three.js makes each unit a `SkeletonUtils.clone` with its own `AnimationMixer`, as its animation examples build characters. Each frame, the unit's two clips in play take their times and weights from the shared simulation. Then `mixer.update(0)` blends them into the bones. That is the work of `mixer.update(delta)` with a cross-fade, and a held frame shows the state's exact pose. Each tank is a tree of three objects in both engines: the hull, the turret on it and the barrel on the turret.
+- **Instanced.** three.js takes the route of its crowd example (`webgpu_skinning_instancing_individual`). One mixer per model poses each unit in turn, and one draw per model skins every unit from a table of bone matrices. The example's compute pass stores each copy's skinned vertices, which would take gigabytes at 20,000 soldiers. So the skinning runs as the units draw, as the old repository did. The rifles are an `InstancedMesh`, each placed by its hand's joint. The route needs WebGPURenderer. The comparison's entry names it for the mode. So on the WebGL2 path, three.js runs WebGPURenderer in its WebGL2 mode, with the tables in float textures. null3D has one way to draw animated characters: an object per character, which it already draws in batches. So it builds the units as in the scene graph mode. Each tank part is one batch of copies in both engines, posed in closed form.
+- Tracers, shells and particles are batches in both modes, as games draw effects.
+- null3D's joints are not objects, so neither engine turns the torso toward its aim, as the old repository's three.js poser did. Each unit turns its whole body toward its target. A switch in the scene's description (`AIM_WITH_WHOLE_BODY`) keeps the body's heading instead, for when joint overrides (task M2-EX24) turn the spine.
+
+### The look
+
+The owner raised the bar on 11 October 2026: every comparison meets the look bar of the feature demos and showcases ([Examples](../examples.md#the-look)). The owner approved Battle's look the same evening, from frames of both engines at 21 seconds and a wide shot at 85 seconds. Battle's look is made from features that both engines have today, each by its own technique:
+
+| Part | null3D | three.js |
+| --- | --- | --- |
+| Sky | The generated sky, with clouds, as the background | `Sky` on WebGLRenderer, `SkyMesh` on WebGPURenderer |
+| Light from the sky | `assets.skyEnvironment()`, which leaves out the sun's disc | `PMREMGenerator.fromScene` of a sky without the sun's disc |
+| Sun shadows | The directional light's 3 cascades over 320 m | The CSM add-on, or the CSM shadow node, with the same reach |
+| Fog | Height fog with a glow toward the sun | The same formula in GLSL chunks or a fog node, with the glow |
+| Ground | A surface function that mixes five layers made in code: grass, earth, wet mud, scorched earth and rock. Each layer has a color map and a normal map. The terrain's vertex colors give the shares of grass, mud and scorch, and how dry the grass is. Rock shows on steep and high ground. Each layer shows through the one over it where its heights rise higher | The same mix in GLSL added to `MeshStandardMaterial`, or in a node material, from the same textures |
+| Rocks, ruins, tank paint, bark | Surfaces made in code (`rock`, `masonry`, `camo`, `bark`) | The same textures |
+| Scenery | Rough hills with meadow and bare stone, 1,400 pines in clumps, broadleaf and dead trees, rubble on the crater rims, ruins, tank traps and grass, all from the shared description. The trees follow the Creek's: a trunk in bark under cards of needles or leaves, which their textures cut out with a mask | The same meshes, places and textures, cut out with `alphaTest` |
+| Soldiers, mechs and rifles | A surface function on each army's material reads each vertex color's surface class, which the sample files carry in alpha, and texture coordinates projected along each vertex's main axis. Cloth shows a woven texture made in code, with its normal map and worn patches. Helmets and the mech's armor are painted steel that chips to bare metal, and the armor shows panels with seams. Metal's roughness varies. Mud climbs the legs, and soot darkens patches above it. The mech's vents glow. The palette is darker and less saturated than the models' colors, and a soft rim of the dusk sky's light outlines each unit | The same in GLSL added to `MeshStandardMaterial`, or in node materials, which the crowd's own material takes too |
+| Tanks | One detailed model made in code: armor with bevelled edges, bolted plates on the glacis and the turret's cheeks, access panels, turned road wheels with tyres and hubs, a toothed drive sprocket, track links with grousers and guide horns, skirts in bolted panels, a cupola with vision blocks, smoke dischargers and a muzzle brake | The same mesh |
+| Tracers | Two thin crossed strips that narrow and fade toward the tail, glowing and added to what lies behind | The same mesh, with additive blending |
+| Grass and flags in the wind, embers on wrecks | WGSL vertex offsets and a surface function | GLSL added to `MeshStandardMaterial`, or node materials |
+| Smoke, fire, sparks, muzzle flashes | Sprite batches, from the shared rows of `examples/lib/particles.ts` | An instanced quad that faces the camera, from the same rows |
+| Light of each blast and fire | A pool of 6 point lights for the newest blasts, and one light for each of the 7 fires on wrecks and in craters | The same lights |
+| Bloom, ambient occlusion, curve, grade | null3D's chain, AO, AgX and grading table | As for Factory |
+
+- Each sprite atlas keeps its frames as an upright image, top row first. null3D reads it that way. A three.js `DataTexture` without a flip puts the top row at v = 0. So the three.js sprite shader turns each frame's v around, to draw it upright too.
+- three.js draws a layer's sprites in one draw, unsorted. null3D sorts blended sprites from back to front. Smoke is soft enough that the order shows little.
+- The particles add-on (D-131) will take the null3D side of each layer. The scene's rows and the three.js side stay.
+- The sky's clouds are a broken deck of heavy cloud, low and large, which the dusk light leaves dark.
+- The sky's clouds stand still in both engines. Moving clouds would refresh null3D's sky light every frame, and three.js's PMREM pass would need to run again.
+
+### Battle's figures on the Mac
+
+The runs are from 12 October 2026, measured as for Factory, on the approved look. Each count had room for that count only. The ramps had room for 40,000 units and started at 200. The [run's record](../tested-devices/macbook-pro-chrome/20261012-002614-battle-modes.md) has each figure.
+
+| Mode | Engine and path | Held | 1,000 units | 4,000 | 10,000 | Page memory at 4,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Scene graph | null3D, WebGPU, High | 3,698 | 64.6 fps | 42.4 fps | 58.2 fps | 516 MiB |
+| Scene graph | null3D, WebGL2, Medium | 200 | 55.8 fps | 30.0 fps | 26.8 fps | 341 MiB |
+| Scene graph | three.js, WebGLRenderer | 0 | 8.0 fps | 1.9 fps | 1.0 fps | 435 MiB |
+| Scene graph | three.js, WebGPURenderer | 0 | 7.5 fps | 1.7 fps | 0.7 fps | 630 MiB |
+| Instanced | null3D, WebGPU, High | 7,668 | 64.7 fps | 53.1 fps | 35.8 fps | 560 MiB |
+| Instanced | null3D, WebGL2, Medium | 0 | 54.6 fps | 26.9 fps | 25.8 fps | 341 MiB |
+| Instanced | three.js, WebGPURenderer | 240 | 87.5 fps | 29.3 fps | 11.1 fps | 58 MiB |
+
+- In the scene graph mode, null3D drew 7 to 58 times the frames of three.js's faster renderer. three.js spent 95% of its frame in its render calls: each soldier is a skinned mesh that it poses and draws on its own.
+- In the instanced mode, three.js drew more frames at 1,000 units, and null3D more from 4,000 up. three.js's frame time grows with the count, as its one thread poses every unit.
+- null3D's GPU sets its rate. At 1,000 units its busiest thread took 3.5 ms a frame, yet it drew 65 frames a second. The two ramps of the same null3D scene held 3,698 and 7,668 units, as a GPU-bound rate wanders.
+- null3D's page took 6 to 10 times three.js's memory in the instanced mode.
+
+### Image tests and memory
+
+- Hold mode draws every frame up to the held one. On SwiftShader, CI's software GPU, Battle's held frame at 600 units took 17 to 72 seconds a test. So the SwiftShader references hold 120 units (`swiftShaderHoldCount`), and the Mac's hold 600.
+- With the approved look, the three.js tests still took 22 to 58 seconds each at 120 units. That was on SwiftShader on the Mac, one test at a time. The null3D tests took 25 to 33 seconds, six tests at once. Factory's tests took 2.2 to 3.5 times as long in CI as on the Mac. So Battle's image tests may take 240 seconds (`holdTimeoutSeconds`), not the default 90.
+- The page's memory at 400 soldiers was 304 MB in null3D, with the effects off, and the browser's whole use 425 MB. Factory took 50 MB at 400 parts. The memory task looks into what takes it.

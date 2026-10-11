@@ -20,8 +20,9 @@ use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// Where a view's culling parameters hold the runs of the cell order: after the planes.
-const RANGES: u32 = 112;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
+/// level choice's inputs.
+const RANGES: u32 = 128;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -663,7 +664,7 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
     // The planes, then the runs of the cell order that the view culls: the far cell's still
     // objects and the batch's moving rows, which follow them, joined into one. The offsets from
     // the camera to the two cells in use go into the view's row of the offsets texture.
-    let params = vec![(0, 112), (RANGES, 16)];
+    let params = vec![(0, RANGES), (RANGES, 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
     let texture = offsets_texture(&world.commands());
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
@@ -711,7 +712,7 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
         cull_params_writes(&world.commands(), buffer),
-        vec![(0, 112)]
+        vec![(0, RANGES)]
     );
     let texture = offsets_texture(&world.commands());
     assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 1)]);
@@ -736,7 +737,7 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     // moved object's cell, out of view, lies between them.
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112), (RANGES, 2 * 16)]
+        vec![(0, RANGES), (RANGES, 2 * 16)]
     );
     assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
 }
