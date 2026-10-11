@@ -135,7 +135,7 @@ The first version of `occlusion-on` required the same pixels as the `occlusion-o
 
 ## Decision
 
-Build masked software occlusion culling on the job workers, with the conservative coverage above, for the camera's view on WebGL2. The `softwareOcclusion` setting turns it on and off during play, and the `?occlusion=on|off` switch and the `softwareOcclusion` option of `createEngine` set it for a page. It starts on from Medium up, the value proposed before any measurement, until T-36 measures it on the S24+ and the iPad. A scene without blockers pays only one pass over the scene's flags per frame.
+Build masked software occlusion culling on the job workers, with the conservative coverage above, for the camera's view on WebGL2. The `softwareOcclusion` setting turns it on and off during play, and the `?occlusion=on|off` switch and the `softwareOcclusion` option of `createEngine` set it for a page. It starts on from Medium up, the value proposed before any measurement, until T-36 measures it on the S24+ and the iPad. T-36's runs turned it off on every preset on 2026-10-11 ([D-22](D-22-occlusion-presets.md#decision)). A scene without blockers pays only one pass over the scene's flags per frame.
 
 three.js has no occlusion culling in its core; it culls each object against the frustum alone. Babylon.js offers occlusion queries per mesh, whose answers arrive frames later.
 

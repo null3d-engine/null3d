@@ -1,10 +1,12 @@
 // What the occlusion pages share: the figures of a measurement with occlusion culling off or on,
-// the medians of their rounds, the count of pixels where two frames differ, and S6's occlusion
+// the medians of their rounds, the counts of pixels where two frames differ, and S6's occlusion
 // turns (T-36): the order of each round's two sides, and the two popping figures. Wrongly hidden
 // at rest compares frames with culling off and on at stops along the route, with the camera still.
 // Late in motion counts the objects that show frames late while the camera flies, from the visual
 // check's popping figure. The device runner judges and tables the turns' results with the same
 // rules (tests/lib/occlusion-s6.ts). Nothing here needs the engine or a browser.
+import { compareImages, TOLERANCE } from '../../../packages/cli/src/compare.js';
+
 /** The middle of some numbers, nulls left out, or null without any. */
 export function median(values: readonly (number | null)[]): number | null {
 	const sorted = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
@@ -21,6 +23,25 @@ export function differingPixels(a: Uint8Array, b: Uint8Array): number {
 	for (let i = 0; i < a.length; i += 4)
 		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
 	return count;
+}
+
+/**
+ * Pixels that differ between two RGBA frames of the same size by the image tests' rule: the color
+ * moves past their threshold, off anti-aliased edges. Some GPUs shade a few pixels a step or two
+ * differently when culling changes the draws, with nothing hidden; a hidden object moves far more.
+ */
+export function visiblyDifferingPixels(
+	a: Uint8Array,
+	b: Uint8Array,
+	width: number,
+	height: number,
+): number {
+	const { share } = compareImages(
+		{ width, height, data: a },
+		{ width, height, data: b },
+		TOLERANCE.threshold,
+	);
+	return Math.round(share * width * height);
 }
 
 /**

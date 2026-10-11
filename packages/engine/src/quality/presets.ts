@@ -183,10 +183,11 @@ export const QUALITY_SETTINGS = {
 		values: 'flag',
 	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
-	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
-	// measured yet, so these values follow the plan until device runs settle them (D-41).
+	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
+	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
+	// scene that measures a gain turns it on.
 	softwareOcclusion: {
-		presets: [false, true, true, true],
+		presets: [false, false, false, false],
 		changes: 'live',
 		values: 'flag',
 	},
@@ -470,7 +471,8 @@ export interface QualitySettings {
 	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
 	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every
 	 * object that lies wholly behind them. It costs the job workers time for each blocker, and
-	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
+	 * saves drawing what they hide. Every preset leaves it off, and the `softwareOcclusion` option
+	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
 }

@@ -94,7 +94,7 @@ use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
-    DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage, format, permutation, sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -172,9 +172,11 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
-    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    /// The table of object ranges, which the vertex shaders of custom materials that read an
+    /// instance's index or an object's id search.
+    pub const OBJECT_RANGES: u32 = DOF + 1;
     /// The uniform buffer of the physical sky's values.
-    pub const PHYSICAL_SKY: u32 = DOF + 1;
+    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = PHYSICAL_SKY + 1;
 
@@ -838,6 +840,7 @@ impl CpuCulledRenderer {
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + PhysicalSkyPass::UPLOAD_BYTES
+            + sizes::OBJECT_RANGE_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -859,6 +862,14 @@ impl CpuCulledRenderer {
                 1,
                 1,
                 view::D2,
+            ],
+        )?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::OBJECT_RANGES,
+                sizes::OBJECT_RANGE_BYTES,
+                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
             ],
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
@@ -1258,6 +1269,7 @@ impl CpuCulledRenderer {
             .upload(list, arena, input.animations, input.morphs, meshes)?;
         self.clusters
             .upload(list, arena, &self.layout, &self.casters)?;
+        self.layout.upload_object_ranges(list, arena)?;
         self.light_textures
             .upload(list, arena, &mut self.lights, input.frame)?;
 

@@ -1,6 +1,6 @@
 # null3D recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A version in parentheses marks a recipe whose APIs arrive after 0.1. Check the docs status before using them.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Check the docs status before using a part.
 
 ## Contents
 
@@ -22,7 +22,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
-19. Water and mirror floors with a reflection (0.2)
+19. Water and mirror floors with a reflection
 
 ## 1. Start a new project
 
@@ -40,7 +40,7 @@ import null3d from '@null3d/vite-plugin';
 export default defineConfig({ plugins: [null3d()] });
 ```
 
-Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. Templates from `bunx @null3d/cli create` come in 0.3. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
@@ -554,7 +554,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 `onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
 
-## 19. Water and mirror floors with a reflection (0.2)
+## 19. Water and mirror floors with a reflection
 
 ```ts
 import { defineSketch } from '@null3d/engine';

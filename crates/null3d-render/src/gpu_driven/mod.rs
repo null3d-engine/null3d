@@ -299,9 +299,11 @@ mod ids {
     pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
-    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    /// The table of object ranges, which the vertex shaders of custom materials that read an
+    /// instance's index or an object's id search.
+    pub const OBJECT_RANGES: u32 = DOF + 1;
     /// The uniform buffer of the physical sky's values.
-    pub const PHYSICAL_SKY: u32 = DOF + 1;
+    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = PHYSICAL_SKY + 1;
 
@@ -1263,6 +1265,7 @@ impl GpuDrivenRenderer {
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
+        self.layout.upload_object_ranges(list, arena)?;
         self.layout.update_skinned(list, arena, input.scene)?;
         if shadows {
             self.casters.update_skinned(list, arena, input.scene)?;
@@ -1526,6 +1529,14 @@ impl GpuDrivenRenderer {
                 1,
                 1,
                 view::D2,
+            ],
+        )?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::OBJECT_RANGES,
+                sizes::OBJECT_RANGE_BYTES,
+                usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
         dfg::create(list, ids::DFG)?;

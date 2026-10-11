@@ -189,6 +189,13 @@ export interface RenderTemplate {
  */
 const ROW_VALUES_BINDING = 16;
 
+/**
+ * The binding of the table of object ranges in the frame group and in the depth template's group,
+ * which the vertex shaders of custom materials that read an instance's index or an object's id
+ * search.
+ */
+const OBJECT_RANGES_BINDING = 17;
+
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
 
@@ -423,8 +430,8 @@ export class Pipelines {
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
 		// The frame's constants and the material table, which depth-only pipelines read too, then
-		// the materials' custom values and the row values of instance batches, which the vertex
-		// shaders of custom materials' shadow casters read too.
+		// the materials' custom values, the row values of instance batches and the table of object
+		// ranges, which the vertex shaders of custom materials' shadow casters read too.
 		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
@@ -438,6 +445,11 @@ export class Pipelines {
 			visibility: GPUShaderStage.VERTEX,
 			texture: { sampleType: 'unfilterable-float' },
 		};
+		const objectRanges: GPUBindGroupLayoutEntry = {
+			binding: OBJECT_RANGES_BINDING,
+			visibility: GPUShaderStage.VERTEX,
+			buffer: { type: 'uniform' },
+		};
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
@@ -446,6 +458,7 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
+			objectRanges,
 		]);
 		// The materials' custom values, the table of specular terms, then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
@@ -454,7 +467,7 @@ export class Pipelines {
 		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
 		// four texels of the shadow map at once, the copy of the opaque color that surfaces which
 		// let light through sample with the environment's sampler, and the row values of instance
-		// batches, which only vertex shaders read.
+		// batches and the table of object ranges, which only vertex shaders read.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -485,6 +498,7 @@ export class Pipelines {
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			rowValues,
+			objectRanges,
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },

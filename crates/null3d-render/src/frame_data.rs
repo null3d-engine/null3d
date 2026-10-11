@@ -57,6 +57,12 @@ pub struct FrameUniform {
     /// first, `n.y` times the second and `n.z` times the third (see
     /// [`null3d_core::lights::FrameLights::hemisphere`]).
     pub hemisphere: [[f32; 4]; 3],
+    /// The view matrix for positions relative to the camera, which custom materials read as
+    /// `camera.view`: `projection` times it is `view_proj`. Zero in the views of lights.
+    pub view: Mat4,
+    /// The projection matrix, with reversed depth, which custom materials read as
+    /// `camera.projection`. Zero in the views of lights.
+    pub projection: Mat4,
     /// The physical sky's air between the camera and each surface: see
     /// [`crate::physical_sky::AerialUniform`].
     pub aerial: AerialUniform,
