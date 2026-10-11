@@ -149,7 +149,12 @@ impl LevelRule {
         let reach = scale * self.factor;
         let mut before = home;
         let mut level = home;
-        let mut next = links[home as usize].next;
+        // A rule without a factor keeps every source at its base level.
+        let mut next = if self.on() {
+            links[home as usize].next
+        } else {
+            NO_LINK
+        };
         while next != NO_LINK && links[next as usize].error * reach < distance {
             before = level;
             level = next;
@@ -242,9 +247,16 @@ mod tests {
         let rule = LevelRule::new(1000.0, 0.2, true, 1.0, 0.0);
         let distance = rule.distance([1e5, 0.0, 0.0]);
         assert_eq!(distance, 1.0);
-        assert_eq!(rule.pick(&links, 0, 1.0, distance), Picked::One(0));
-        assert_eq!(rule.pick(&links, 0, 0.5, distance), Picked::One(0));
-        assert_eq!(rule.pick(&links, 0, 0.25, distance), Picked::One(1));
+        // An error passes while it covers less than a pixel: level 1's 1 cm covers exactly one
+        // pixel at scale 1, so the base level draws, and half a pixel at scale 0.5.
+        let cases = [(1.0, 0), (0.5, 1), (0.2, 2), (0.04, 3)];
+        for (scale, level) in cases {
+            assert_eq!(
+                rule.pick(&links, 0, scale, distance),
+                Picked::One(level),
+                "{scale}"
+            );
+        }
     }
 
     #[test]
