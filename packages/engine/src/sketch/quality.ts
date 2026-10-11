@@ -94,9 +94,14 @@ export interface QualityGovernor {
 	readonly bloomSize: number;
 	/**
 	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
-	 * governor's last step while ambient occlusion draws.
+	 * governor's step while ambient occlusion draws.
 	 */
 	readonly aoScale: number;
+	/**
+	 * The size of screen-space reflections' grid now: `settings.ssrScale`, or a quarter of the
+	 * render size after the governor's last step while reflections draw.
+	 */
+	readonly ssrScale: number;
 }
 
 /**
@@ -387,6 +392,9 @@ export class SketchQuality implements Quality {
 			},
 			get aoScale() {
 				return settings.aoScale;
+			},
+			get ssrScale() {
+				return settings.ssrScale;
 			},
 		};
 	}

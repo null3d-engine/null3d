@@ -424,6 +424,9 @@ export class SketchRunner {
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
 				},
+				get ssrScale() {
+					return governor.ssrScale / FULL_SCALE;
+				},
 			},
 			textures.memory,
 		);
