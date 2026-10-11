@@ -84,6 +84,7 @@ pub mod materials;
 pub mod meshes;
 pub mod mirror;
 pub mod morph;
+pub mod object_ranges;
 pub mod occlusion;
 pub mod outline;
 pub mod output;

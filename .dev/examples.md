@@ -10,7 +10,8 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
-| `examples/<name>/sketch.ts` | One demo, under 150 lines |
+| `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
+| `examples/<name>/<scenery>.ts` | A demo's scenery, when the look bar needs more code than the sketch's 150 lines leave. The sketch imports it from the same folder, such as the particles demo's `glade.ts` ([D-142](decisions/D-142-more-techniques-before-1-0.md#the-days-other-rulings)) |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
 | `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
@@ -62,8 +63,8 @@ The examples page is the clone's own layout of the demos. The website has a layo
 
 `sourceUrl(demo, ref)` gives the GitHub address of a demo's code at a branch or a tag, and `ref` is `main` when a page names none. The clone's page names none. The website names the release tag that it builds from, so its link shows the code that it runs.
 
-- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Every feature demo is one sketch, so the reader lands on the code at once.
-- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
+- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Most feature demos are one sketch, so the reader lands on the code at once.
+- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A feature demo with its scenery in a file of its own does the same, such as `shader-inputs/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
 
 The address comes from the demo's entry, not from its `sketch` field. A build gives each sketch a hashed address of its own. `REPOSITORY_URL` in the same module holds the repository's address. A unit test checks it against the `repository` field of the root `package.json`.
 
@@ -122,11 +123,14 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| extra-shapes | The shapes, as in the generators demo |
+| vertex-updates | The glowing float, which leaves its rings where it goes |
 | time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
 | camera-lens | The focus, on the point of a piece or the board that a raycast finds |
 | morph-flowers | The tulips near the pointed point, which open |
 | input | Nothing: the keys, a gamepad and the camera gestures drive it. The right stick turns the camera before and after the hand-over |
 | walk-and-fly | Nothing: the keys, the drag and the locked mouse drive first-person and fly controls |
+| shader-inputs | Nothing: the camera only. A hover or a tap on a stone lights it, through the stone's `shaderId` in a uniform |
 | The others | Nothing: the camera only. Picking keeps its hover and its click, and the engine gives no click after a drag of more than 2 CSS pixels |
 
 Three demos need more than the shared rules:
@@ -317,6 +321,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The crystal spiral's scenery (11 October 2026)
+
+The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
+
+- A dusk sky with the sun low behind the stones. The sky's own environment gives the light, so the reflections on the crystals match the sky.
+- A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
+- A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
+- The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
+- The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
@@ -326,7 +340,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
-- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md) and [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md). The table below lists them.
+- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
 
 ### Engine features for the showcase
@@ -340,7 +354,7 @@ Each feature gets a decision record of its own when it is built.
 | Planar reflections | Water that reflects its banks | M2-EX15 ([D-120](decisions/D-120-planar-reflections.md)) | D-117 |
 | Transmission | Water that shows its bed | M2-EX16 ([D-122](decisions/D-122-transmission.md)) | D-117 |
 | Depth of field | A focus on the subject | M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)) | D-117 |
-| Temporal anti-aliasing, a prototype first | Dense grass without shimmer in motion | M2-EX18 | D-117 |
+| Temporal anti-aliasing, a prototype first | Dense grass without shimmer in motion | M2-EX18, not for 1.0 ([D-129](decisions/D-129-temporal-anti-aliasing.md)) | D-117 |
 | Batch shadows | Grass and plants that cast and receive shadows | M2-R6 ([D-115](decisions/D-115-batch-shadows.md)) | D-117 |
 | The particles add-on | Spray, leaves and fireflies; sparks, smoke and debris; rain and steam | M2-EX20 | D-132 |
 | Light shafts and lit fog | Sun through trees, and a glow around lamps and headlights | M2-EX21 | D-132 |
@@ -348,8 +362,34 @@ Each feature gets a decision record of its own when it is built.
 | Contact shadows | No light gap where an object meets the ground | M2-F12 | D-132 |
 | Bump and displacement maps | Detail on stones, bark and ground | M2-J4 | D-132 |
 | LOD groups | Dense, complex geometry far from the camera | M2-I4 | D-132 |
+| Joint overrides, with a look-at helper | Soldiers that aim and heads that turn, on top of their animation | M2-EX24 | D-142 |
+| Per-object motion vectors | The base for a later temporal anti-aliasing, motion blur and better screen-space reflections | M2-EX25 | D-142 |
+| Physical sky and atmosphere | Skies of every scene, with distant objects tinted by the sun's angle | M2-EX26 | D-142 |
+| Projected decals | Craters and scorch marks, street paint and puddles, moss on rocks | M2-EX27 | D-142 |
+| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142 |
+| Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
+| Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
+| Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
+| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 | D-142 |
+| Weighted blended transparency | Smoke and fire, and glass | M2-EX33 | D-142 |
+| Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
+| Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
+| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 
 Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+## The demos of the geometry package (M2-P2)
+
+The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| extra-shapes: Mirror floor at dusk | A shape from each function of `@null3d/geometry`, in three rows over a polished stone floor at dusk. A reflection pass mirrors them in the floor. The shapes run from gold, chrome and copper to blue-tinted glass and glazed clay. The flat heart glows enough to bloom |
+| vertex-updates: Pool at golden hour | A raised stone pool on a deck. A glowing float with a light of its own drifts over the water, and leaves a ring every 0.35 s on a slow swell. Each frame rewrites the water's heights and normals, and `updateVertices` uploads them |
+
+- The water's normals come from the heights of each vertex's neighbors, not from closed-form slopes. Twelve rings and a swell, each with its own slopes, took more lines than the 150-line limit left.
+- The rings start at fixed ticks of sketch time, from the float's path at each tick. So the hold-mode image is the same however many frames lead to it. While the pointer leads the float, each ring starts at the float's place instead.
+- The water's update writes into arrays that the sketch keeps, so it allocates nothing in a frame, as the demo's summary says.
 
 ## Groups and titles (owner, 9 October 2026)
 
@@ -357,8 +397,8 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 
 | Group | Demos |
 | --- | --- |
-| Building scenes | generators, mesh-arrays, objects, layers |
-| Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
+| Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
+| Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |

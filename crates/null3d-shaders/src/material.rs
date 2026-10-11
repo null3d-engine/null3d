@@ -95,6 +95,63 @@ fn caster_variant(shading: &Variant) -> Variant {
 /// the first texture coordinates.
 const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
 
+/// An input of custom materials that costs something, which only WGSL that reads it gets.
+struct Input {
+    /// The shader def that makes the template fill it.
+    def: &'static str,
+    /// The fields whose reading turns it on, each after the value that it belongs to, or after any
+    /// value with `None`.
+    fields: &'static [(Option<&'static str>, &'static str)],
+}
+
+/// The shader def of the inputs that find an instance's index in its batch and its object's id.
+const OBJECT_IDS_DEF: &str = "OBJECT_IDS";
+
+/// The inputs that cost something: the second texture coordinates, a vertex attribute; the
+/// instance's index and the object's id, which the vertex shader finds in the table of object
+/// ranges; and the object's matrices, which pass to the fragment shader as three more values.
+const INPUTS: [Input; 3] = [
+    Input {
+        def: "CUSTOM_UV1",
+        fields: &[(None, "uv1")],
+    },
+    Input {
+        def: OBJECT_IDS_DEF,
+        fields: &[(None, "instance"), (Some("object"), "id")],
+    },
+    Input {
+        def: "OBJECT_MATRICES",
+        fields: &[
+            (Some("object"), "worldMatrix"),
+            (Some("object"), "normalMatrix"),
+        ],
+    },
+];
+
+/// True when the WGSL reads `field` of a value: a `.` and the field's name, after `owner` where it
+/// names one.
+fn reads_field(tokens: &[Token], owner: Option<&str>, field: &str) -> bool {
+    tokens.windows(3).any(|three| {
+        three[1].text == "."
+            && three[2].text == field
+            && owner.is_none_or(|owner| three[0].text == owner)
+    })
+}
+
+/// The defs of the inputs that cost something which the WGSL reads.
+fn read_inputs(tokens: &[Token]) -> Vec<&'static str> {
+    INPUTS
+        .iter()
+        .filter(|input| {
+            input
+                .fields
+                .iter()
+                .any(|&(owner, field)| reads_field(tokens, owner, field))
+        })
+        .map(|input| input.def)
+        .collect()
+}
+
 /// What a problem in the template's own lines says after its message.
 const TEMPLATE_NOTE: &str = "The problem is in the engine's standard material, which your WGSL joins. Check that your WGSL does not declare a name that the engine's code uses, or import a module whole under a name that it uses. Import the items you use by name instead, as in `#import null3d::noise::{fbm3}`.";
 
@@ -296,6 +353,9 @@ pub struct MaterialOutput {
     /// True when the shader reads the material's base color and opacity in its `VERTEX_COLOR` and
     /// `ALPHA_MASK` builds: the template does, and a full shader reads colors itself.
     pub base_color: bool,
+    /// True when the WGSL reads an instance's index or an object's id, which the vertex shader
+    /// finds in the table of object ranges that the engine then keeps.
+    pub object_ids: bool,
 }
 
 /// The entry points of a full shader: its `@vertex` function's name and the `@fragment` ones'.
@@ -439,6 +499,7 @@ impl Compiler {
 
         let transmits = sets_transmission(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
+        let inputs = read_inputs(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
             .variants
             .iter()
@@ -446,6 +507,7 @@ impl Compiler {
                 let mut defs = variant.defs.clone();
                 defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
+                defs.extend(inputs.iter().map(|&def| def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
                     defs.push(TEXTURES_DEF.to_owned());
@@ -512,6 +574,9 @@ impl Compiler {
         template.place_problems(&mut errors, path, &material.source, TEMPLATE_NOTE);
         let vertex_entry = template.pipelines.values().next().map(|p| p.vertex.clone());
         let (locations, attributes) = built_inputs(&built, &vertex_entry.unwrap_or_default());
+        // A mesh without second texture coordinates offers its first set in their place, so the
+        // second set is no attribute that a mesh needs.
+        let attributes = attributes & !vertex::UV1;
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
@@ -520,6 +585,7 @@ impl Compiler {
             locations,
             attributes,
             base_color: true,
+            object_ids: inputs.contains(&OBJECT_IDS_DEF),
         })
     }
 
@@ -604,6 +670,7 @@ impl Compiler {
             locations,
             attributes,
             base_color: false,
+            object_ids: false,
         })
     }
 }

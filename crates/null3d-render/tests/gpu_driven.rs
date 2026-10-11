@@ -1208,6 +1208,7 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             transmission: false,
             row_values: false,
             caster: false,
+            object_ids: false,
         });
         world.add_object(&common::grid(1, 1), custom);
         let mut mock = MockBackend::default();

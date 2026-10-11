@@ -22,7 +22,7 @@ use null3d_core::levels::{LevelLink, NO_LINK};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, permutation, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, permutation, sizes, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -32,6 +32,7 @@ use crate::frame::{
     put_u32,
 };
 use crate::levels::{BucketKey, expand_level_keys, is_fade_key, links_of};
+use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
@@ -150,6 +151,10 @@ pub(super) struct Layout {
     /// clusters each.
     pub(super) cluster_rows: u32,
     pub(super) batches: Vec<BatchSlot>,
+    /// The table of object ranges, which the scene's layout builds when it changes while a live
+    /// material reads ids, and true while the GPU lacks its last build.
+    object_ranges: ObjectRanges,
+    ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
     /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
     /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
@@ -196,6 +201,20 @@ impl Layout {
             drawn,
             ..Self::default()
         }
+    }
+
+    /// Uploads the table of object ranges after the layout built it again.
+    pub(super) fn upload_object_ranges(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !std::mem::take(&mut self.ranges_pending) {
+            return Ok(());
+        }
+        let (at, bytes) = arena.push(self.object_ranges.bytes())?;
+        list.push(Op::WriteBuffer, &[ids::OBJECT_RANGES, 0, at, bytes])?;
+        Ok(())
     }
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
@@ -284,6 +303,12 @@ impl Layout {
         [self.resident_value_rows, self.streamed_value_rows] = value_rows;
         self.cluster_rows = clusters.saturating_mul(CLUSTER_ROWS);
         self.largest_static = largest_static;
+        if self.drawn == Drawn::Scene && settings.materials().reads_object_ids() {
+            let key = |slot: &BatchSlot| slot.base | if slot.dynamic { STREAMED_KEY } else { 0 };
+            let ranges = self.batches.iter().map(|slot| (key(slot), slot.id));
+            self.object_ranges.build(self.scene_rows, ranges);
+            self.ranges_pending = true;
+        }
 
         let meshes = settings.meshes();
         let drawn = self.drawn;

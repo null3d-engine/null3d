@@ -301,7 +301,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `occludedEntries` | On WebGL2, the entries per frame that blockers hid after the frustum test. It is null on WebGPU |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
-| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none, and neither does a new render scale |
+| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none. A new render scale makes some only while a reflection pass draws: its texture, and the bind groups made again with it |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |

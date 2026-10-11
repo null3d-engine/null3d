@@ -81,6 +81,8 @@ impl Mirror {
         };
         Some(MirrorView {
             view_proj: multiply(&projection, &view),
+            view,
+            projection,
             eye,
             depth: ViewDepth {
                 row: [-view[2], -view[6], -view[10], -view[14]],
@@ -107,6 +109,8 @@ impl Mirror {
         let mirrored = self.view(&world, cell.absolute(), lens, aspect)?;
         Some(CameraTransform {
             view_proj: mirrored.view_proj,
+            view: mirrored.view,
+            projection: mirrored.projection,
             eye: mirrored.eye,
             cell,
             depth: mirrored.depth,
@@ -119,6 +123,10 @@ impl Mirror {
 pub struct MirrorView {
     /// The view-projection matrix, with the plane as its near plane.
     pub view_proj: Mat4,
+    /// The mirrored view matrix, and the projection with the plane as its near plane:
+    /// `view_proj` is their product.
+    pub view: Mat4,
+    pub projection: Mat4,
     /// Where the mirrored camera stands, as [`Lens::eye`] gives a camera's place: the camera's
     /// reflection for a perspective camera, and the reflection of its backward direction, at
     /// infinity, for an orthographic camera.

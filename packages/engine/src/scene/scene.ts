@@ -118,6 +118,8 @@ export type Vec3 = readonly [number, number, number];
 export type Quat = readonly [number, number, number, number];
 
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
+/** The bit of the ids that custom materials read for the rows of instance batches, above every slot. */
+const BATCH_SHADER_ID = 1 << C.HANDLE_SLOT_BITS;
 
 /**
  * Options every node takes when it is created.
@@ -1111,6 +1113,15 @@ export class Mesh extends Object3D {
 	 */
 	morphJoint = -1;
 
+	/**
+	 * The number that a custom material's WGSL reads as `object.id` for this mesh. No other live
+	 * mesh or batch has it. Pass it to a uniform to pick out this mesh in a shader. It is 0 once the
+	 * mesh is destroyed.
+	 */
+	get shaderId(): number {
+		return this.row;
+	}
+
 	/** @internal */
 	override twin(handle: number): Object3D {
 		const twin = super.twin(handle) as Mesh;
@@ -1902,6 +1913,14 @@ export class InstanceBatch {
 	/** @internal The batch, as error messages name it. */
 	describe(): string {
 		return `${this.face ? 'a sprite or point batch' : 'an instance batch'} of ${this.count} rows`;
+	}
+
+	/**
+	 * The number that a custom material's WGSL reads as `object.id` for every row of the batch.
+	 * No other live batch or mesh has it. The WGSL tells the rows apart by `input.instance`.
+	 */
+	get shaderId(): number {
+		return BATCH_SHADER_ID | (this.id & SLOT_MASK);
 	}
 
 	/**

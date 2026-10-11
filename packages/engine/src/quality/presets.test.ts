@@ -251,7 +251,7 @@ describe('presetSettings', () => {
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
 			...full,
-			bloomSize: 128,
+			bloomSize: 64,
 			aoScale: 0,
 			dofSamples: 0,
 			reflectionScale: 0.25,
