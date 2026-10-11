@@ -74,7 +74,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time } = ctx;
-	const dusk = timeOfDay(17.4, { heading: -1.45 });
+	const dusk = timeOfDay(17.4, { heading: 0.5 });
 	scene.setBackground({ sky: dusk.sky }, { intensity: dusk.skyIntensity });
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
 	scene.createAmbientLight({ color: dusk.fog.color, intensity: 0.5 });
