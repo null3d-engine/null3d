@@ -95,7 +95,7 @@ Both become `materials.standard` with `metalness: 0`. The standard material adds
 
 ## 5. MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials (0.2, built) and the camera's view matrix, `camera.view` (0.2, not built yet).
+Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions cannot read the scene's lights yet, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It needs textures in custom materials (0.2, built) and the camera's view matrix, `camera.view` (0.2, built).
 
 ## 6. Other three.js materials
 
@@ -132,7 +132,7 @@ Texture formats: `loadTexture` decodes PNG, JPEG, WebP and AVIF files. It also l
 
 ## 8. Recipes
 
-The toon, clipping and alpha map recipes work now. The matcap recipe waits for `camera.view` (0.2, not built yet).
+The toon, clipping and alpha map recipes work now. The matcap recipe works with `camera.view` (0.2).
 
 Toon shading with three bands:
 
@@ -154,7 +154,7 @@ const toon = materials.shader({
 });
 ```
 
-Matcap, which waits for `camera.view` (0.2, not built yet):
+Matcap, with `camera.view` (0.2):
 
 ```ts
 const matcap = materials.shader({

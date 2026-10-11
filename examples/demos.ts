@@ -130,6 +130,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'shader-inputs',
+		group: 'Light, materials and effects',
+		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
+		code: 'shader-inputs/',
+		title: 'Custom shader inputs',
+		scene: 'Crystal spiral',
+		summary:
+			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
+		controls: `${CAMERA} Hover over a stone, or tap it, to light it.`,
+		hold: 1,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),
