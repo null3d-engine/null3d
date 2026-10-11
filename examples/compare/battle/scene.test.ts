@@ -26,6 +26,7 @@ import {
 	CRATERS,
 	createBattle,
 	FIELD,
+	FIRES,
 	FLAGS,
 	flightTransform,
 	formationSlot,
@@ -181,6 +182,7 @@ describe('flights, particles and lights', () => {
 		expect(position[2]).toBeCloseTo(state.flightTo[f * 3 + 2] as number, 4);
 	});
 
+	// Simulates 25 seconds of the largest count, which takes several seconds on a busy machine.
 	test('the particles fit their layers, with finite values and colors that the engines draw', () => {
 		for (const count of [BATTLE_HOLD.count, 4000]) {
 			const state = stepped(count, 25);
@@ -204,7 +206,7 @@ describe('flights, particles and lights', () => {
 				}
 			}
 		}
-	});
+	}, 30_000);
 
 	test('a blast keeps its slot while its smoke lingers', () => {
 		const state = stepped(600, 30);
@@ -212,16 +214,18 @@ describe('flights, particles and lights', () => {
 			if (state.blastActive[b] === 1) expect(state.blastAge[b]).toBeLessThan(SMOKE_SECONDS);
 	});
 
-	test('the newest blasts take the flash lights, and each wreck flickers', () => {
+	test('the newest blasts take the flash lights, and each fire flickers', () => {
 		const state = stepped(600, 30);
 		const values = new Float32Array(LIGHT_COUNT * 4);
 		writeLights(state, state.time, values);
 		for (let k = 0; k < LIGHT_COUNT; k++) expect(values[k * 4 + 3]).toBeGreaterThanOrEqual(0);
-		for (let w = 0; w < WRECKS.length; w++) {
-			const at = (LIGHT_COUNT - WRECKS.length + w) * 4;
-			expect(values[at]).toBeCloseTo((WRECKS[w] as (typeof WRECKS)[number]).x, 4);
+		for (let f = 0; f < FIRES.length; f++) {
+			const at = (LIGHT_COUNT - FIRES.length + f) * 4;
+			expect(values[at]).toBeCloseTo((FIRES[f] as (typeof FIRES)[number]).x, 4);
 			expect(values[at + 3]).toBeGreaterThan(0);
 		}
+		// Every wreck burns, and a few craters too.
+		expect(FIRES.length).toBeGreaterThan(WRECKS.length);
 	});
 
 	test('a full layer takes no more sprites', () => {

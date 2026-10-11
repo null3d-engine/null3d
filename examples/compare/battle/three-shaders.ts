@@ -131,9 +131,10 @@ function glslShaders(three: Three): BattleShaders {
 						`#include <color_fragment>
 	vec3 emberP = vEmberWorld * 2.7;
 	float emberA = sin( emberP.x * 1.7 + sin( emberP.z * 2.3 ) ) * sin( emberP.z * 1.9 + sin( emberP.y * 2.9 ) );
-	float emberCracks = pow( 1.0 - abs( emberA ), 10.0 );
+	float emberCracks = pow( 1.0 - abs( emberA ), 22.0 );
 	float emberPulse = 0.55 + 0.45 * sin( battleTime * 2.6 + emberP.x * 0.7 + emberP.z * 0.5 );
-	float emberLow = clamp( 1.4 - ( vEmberWorld.y - vEmberBase ) * 0.6, 0.0, 1.0 );`,
+	float emberLow = clamp( 1.4 - ( vEmberWorld.y - vEmberBase ) * 0.6, 0.0, 1.0 );
+	float emberPatches = smoothstep( 0.25, 0.85, sin( emberP.x * 0.45 + 1.3 ) * sin( emberP.z * 0.5 + emberP.y * 0.3 ) );`,
 					)
 					.replace(
 						'#include <roughnessmap_fragment>',
@@ -141,7 +142,7 @@ function glslShaders(three: Three): BattleShaders {
 					)
 					.replace(
 						'#include <emissivemap_fragment>',
-						'#include <emissivemap_fragment>\ntotalEmissiveRadiance += emberColor * ( emberGlow * emberCracks * emberPulse * emberLow );',
+						'#include <emissivemap_fragment>\ntotalEmissiveRadiance += emberColor * ( emberGlow * emberCracks * emberPulse * emberLow * emberPatches );',
 					);
 			};
 			material.customProgramCacheKey = () => 'battle-embers';
@@ -198,7 +199,7 @@ async function nodeShaders(three: Three): Promise<BattleShaders> {
 			const a = tsl
 				.sin(p.x.mul(1.7).add(tsl.sin(p.z.mul(2.3))))
 				.mul(tsl.sin(p.z.mul(1.9).add(tsl.sin(p.y.mul(2.9)))));
-			const cracks = tsl.pow(tsl.float(1).sub(a.abs()), 10);
+			const cracks = tsl.pow(tsl.float(1).sub(a.abs()), 22);
 			const pulse = tsl
 				.sin(time.mul(2.6).add(p.x.mul(0.7)).add(p.z.mul(0.5)))
 				.mul(0.45)
@@ -208,10 +209,15 @@ async function nodeShaders(three: Three): Promise<BattleShaders> {
 				0,
 				1,
 			);
+			const patches = tsl.smoothstep(
+				0.25,
+				0.85,
+				tsl.sin(p.x.mul(0.45).add(1.3)).mul(tsl.sin(p.z.mul(0.5).add(p.y.mul(0.3)))),
+			);
 			const emberColor = new three.Color(ember);
 			material.emissiveNode = tsl
 				.vec3(emberColor.r, emberColor.g, emberColor.b)
-				.mul(cracks.mul(pulse).mul(low).mul(glow));
+				.mul(cracks.mul(pulse).mul(low).mul(patches).mul(glow));
 			material.roughnessNode = tsl.mix(tsl.float(roughness), tsl.float(1), cracks);
 			return material as unknown as ThreeModule.Material;
 		},

@@ -37,7 +37,9 @@ void main() {
 	gl_Position = projectionMatrix * viewMatrix * vec4( transformed, 1.0 );
 	float column = mod( spriteFrame, atlas.x );
 	float row = floor( spriteFrame / atlas.x );
-	vUv = ( vec2( column, row ) + uv ) / atlas;
+	// The atlas's texel rows run from the image's top, which an unflipped texture puts at v = 0, so
+	// the quad's top corners read each frame's first rows.
+	vUv = ( vec2( column, row ) + vec2( uv.x, 1.0 - uv.y ) ) / atlas;
 	vColor = spriteColor;
 	#include <fog_vertex>
 }
@@ -127,7 +129,8 @@ export async function threeSprites(
 		const rows = tsl.float(atlas.rows);
 		const column = tsl.mod(frame, columns);
 		const row = tsl.floor(frame.div(columns));
-		const uv = tsl.vec2(column, row).add(tsl.uv()).div(tsl.vec2(columns, rows));
+		const corners = tsl.vec2(tsl.uv().x, tsl.uv().y.oneMinus());
+		const uv = tsl.vec2(column, row).add(corners).div(tsl.vec2(columns, rows));
 		const texel = tsl.texture(map, uv);
 		node.colorNode = texel.rgb.mul(color.rgb);
 		node.opacityNode = texel.a.mul(color.a);

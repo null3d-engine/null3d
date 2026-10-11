@@ -452,6 +452,25 @@ export function taperedCylinder(
 	return { position, normal, uv, index };
 }
 
+/** A pine: a trunk under tiers of cones that narrow toward the top. `seed` picks its height. */
+export function pineTree(seed: number): MeshData {
+	const height = 8 + 6 * hash01(seed, 1);
+	const parts: (MeshData | [MeshData, Placement])[] = [
+		[taperedCylinder(0.22, 0.1, height * 0.4, 6), { position: [0, height * 0.2, 0] }],
+	];
+	const tiers = 4;
+	for (let t = 0; t < tiers; t++) {
+		const base = height * (0.22 + 0.17 * t);
+		const tall = height * (0.36 - 0.04 * t);
+		const radius = (2.3 - 0.45 * t) * (0.85 + 0.3 * hash01(seed, t, 2));
+		parts.push([
+			taperedCylinder(radius, 0.05, tall, 9),
+			{ position: [0, base + tall / 2, 0], rotation: turn(0, 1, 0, hash01(seed, t, 3) * Math.PI) },
+		]);
+	}
+	return merged(parts);
+}
+
 /** A Czech hedgehog: three steel beams crossed at the middle, standing on their ends. */
 export function hedgehog(): MeshData {
 	const beam = boxGeometry(0.16, 1.9, 0.16);
@@ -511,48 +530,140 @@ export function ruinedWall(length: number, height: number, seed: number, windows
 
 /** The tank's parts: hull and tracks, turret, and barrel. Each part's pivot is its origin. */
 export function tankParts(): { hull: MeshData; turret: MeshData; barrel: MeshData } {
-	const wheel = placed(cylinderGeometry(0.42, 0.32, 14), { rotation: turn(0, 0, 1, Math.PI / 2) });
+	const axle = turn(0, 0, 1, Math.PI / 2);
+	const along = turn(1, 0, 0, Math.PI / 2);
+	const wheel = placed(cylinderGeometry(0.42, 0.32, 14), { rotation: axle });
+	const hub = placed(cylinderGeometry(0.16, 0.44, 8), { rotation: axle });
+	const sprocket = placed(cylinderGeometry(0.46, 0.36, 12), { rotation: axle });
+	const link = boxGeometry(0.62, 0.07, 0.16);
 	const parts: (MeshData | [MeshData, Placement])[] = [
 		// The hull, with a sloped front and back.
 		[taperedBox(2.6, 1.0, 6.2, 2.4, 4.6, 0.2), { position: [0, 1.15, 0] }],
-		// Track skirts over the wheels.
-		[taperedBox(0.55, 0.7, 6.6, 0.55, 6.0), { position: [-1.45, 0.75, 0] }],
-		[taperedBox(0.55, 0.7, 6.6, 0.55, 6.0), { position: [1.45, 0.75, 0] }],
 		// The tracks' lower run.
-		[boxGeometry(0.6, 0.35, 5.6), { position: [-1.45, 0.2, 0] }],
-		[boxGeometry(0.6, 0.35, 5.6), { position: [1.45, 0.2, 0] }],
-		// Exhausts and a rear box.
+		[boxGeometry(0.6, 0.3, 5.6), { position: [-1.45, 0.18, 0] }],
+		[boxGeometry(0.6, 0.3, 5.6), { position: [1.45, 0.18, 0] }],
+		// The engine deck: a rear box with grilles, two exhausts and two fuel cans.
 		[boxGeometry(1.8, 0.45, 0.6), { position: [0, 1.4, -3.05] }],
 		[
-			placed(cylinderGeometry(0.11, 0.6, 8), { rotation: turn(1, 0, 0, Math.PI / 2) }),
+			placed(cylinderGeometry(0.11, 0.6, 8), { rotation: along }),
 			{ position: [-0.7, 1.45, -3.45] },
 		],
+		[placed(cylinderGeometry(0.11, 0.6, 8), { rotation: along }), { position: [0.7, 1.45, -3.45] }],
+		[boxGeometry(0.34, 0.46, 0.16), { position: [-1.15, 1.25, -2.95] }],
+		[boxGeometry(0.34, 0.46, 0.16), { position: [-0.78, 1.25, -2.95] }],
+		// The bow: two headlights in guards, tow hooks and a hull gun.
 		[
-			placed(cylinderGeometry(0.11, 0.6, 8), { rotation: turn(1, 0, 0, Math.PI / 2) }),
-			{ position: [0.7, 1.45, -3.45] },
+			placed(cylinderGeometry(0.11, 0.12, 10), { rotation: along }),
+			{ position: [-0.9, 1.62, 2.55] },
 		],
+		[
+			placed(cylinderGeometry(0.11, 0.12, 10), { rotation: along }),
+			{ position: [0.9, 1.62, 2.55] },
+		],
+		[boxGeometry(0.3, 0.05, 0.22), { position: [-0.9, 1.76, 2.5] }],
+		[boxGeometry(0.3, 0.05, 0.22), { position: [0.9, 1.76, 2.5] }],
+		[boxGeometry(0.16, 0.22, 0.3), { position: [-0.85, 0.7, 3.1] }],
+		[boxGeometry(0.16, 0.22, 0.3), { position: [0.85, 0.7, 3.1] }],
+		[sphereGeometry(0.15, 10, 6), { position: [0.6, 1.38, 2.86] }],
+		[placed(cylinderGeometry(0.035, 0.6, 6), { rotation: along }), { position: [0.6, 1.38, 3.12] }],
 	];
-	for (const side of [-1, 1])
-		for (let w = 0; w < 6; w++)
+	// Spare track links across the glacis, as crews hang them for armor.
+	for (let k = 0; k < 6; k++)
+		parts.push([
+			link,
+			{
+				position: [-0.95 + k * 0.38, 1.5, 2.66],
+				rotation: then(turn(0, 1, 0, Math.PI / 2), turn(1, 0, 0, -0.95)),
+			},
+		]);
+	// Grilles over the engine: slats across the rear deck.
+	for (let k = 0; k < 7; k++)
+		parts.push([boxGeometry(1.5, 0.04, 0.08), { position: [0, 1.67, -1.4 - k * 0.2] }]);
+	for (const side of [-1, 1]) {
+		// Road wheels with hubs, the drive sprocket in front and the idler behind.
+		for (let w = 0; w < 6; w++) {
 			parts.push([wheel, { position: [side * 1.48, 0.42, -2.3 + w * 0.92] }]);
+			parts.push([hub, { position: [side * 1.5, 0.42, -2.3 + w * 0.92] }]);
+		}
+		parts.push([sprocket, { position: [side * 1.48, 0.62, 2.95] }]);
+		parts.push([sprocket, { position: [side * 1.48, 0.56, -2.95] }]);
+		// Track links on the lower run, and over the sprocket and the idler.
+		for (let k = 0; k < 34; k++)
+			parts.push([link, { position: [side * 1.45, 0.02, -2.75 + k * 0.167] }]);
+		for (const [z, y, sign] of [
+			[2.95, 0.62, 1],
+			[-2.95, 0.56, -1],
+		] as const)
+			for (let k = 0; k < 7; k++) {
+				const a = -Math.PI / 2 + (k / 6) * Math.PI;
+				parts.push([
+					link,
+					{
+						position: [side * 1.45, y + Math.sin(a) * 0.52, z + sign * Math.cos(a) * 0.52],
+						rotation: turn(1, 0, 0, -sign * a),
+					},
+				]);
+			}
+		// Track skirts in five panels, each hung a little out of line.
+		for (let k = 0; k < 5; k++)
+			parts.push([
+				boxGeometry(0.08, 0.62, 1.26),
+				{
+					position: [side * 1.76, 0.86, -2.6 + k * 1.3],
+					rotation: turn(0, 0, 1, side * (0.04 + 0.03 * ((k * 7) % 3))),
+				},
+			]);
+		parts.push([boxGeometry(0.62, 0.06, 6.7), { position: [side * 1.47, 1.2, 0] }]);
+	}
 	const hull = merged(parts);
 	const turret = merged([
 		[taperedBox(2.2, 0.85, 3.0, 1.7, 2.3, -0.1), { position: [0, 0.42, -0.1] }],
-		// The mantlet in front, a hatch with its cupola, and an antenna.
+		// The mantlet in front, the commander's cupola with its gun, the loader's hatch, sights and an
+		// antenna.
 		[boxGeometry(0.8, 0.6, 0.4), { position: [0, 0.45, 1.45] }],
 		[cylinderGeometry(0.36, 0.25, 14), { position: [0.45, 0.97, -0.5] }],
 		[cylinderGeometry(0.3, 0.08, 12), { position: [0.45, 1.13, -0.5] }],
+		[boxGeometry(0.12, 0.14, 0.34), { position: [0.45, 1.24, -0.32] }],
+		[placed(cylinderGeometry(0.03, 0.9, 6), { rotation: along }), { position: [0.45, 1.27, 0.1] }],
+		[cylinderGeometry(0.28, 0.06, 12), { position: [-0.45, 0.88, -0.6] }],
+		[boxGeometry(0.22, 0.2, 0.26), { position: [-0.35, 0.95, 0.55] }],
+		[placed(cylinderGeometry(0.1, 0.5, 8), { rotation: axle }), { position: [-1.0, 0.75, 0.55] }],
+		[placed(cylinderGeometry(0.1, 0.5, 8), { rotation: axle }), { position: [1.0, 0.75, 0.55] }],
 		[cylinderGeometry(0.018, 2.4, 4), { position: [-0.7, 2.0, -1.0] }],
-		// Stowage boxes on the turret's sides.
+		// Stowage boxes on the turret's sides, and a rack of kit behind it.
 		[boxGeometry(0.25, 0.4, 1.2), { position: [-1.0, 0.4, -0.5] }],
 		[boxGeometry(0.25, 0.4, 1.2), { position: [1.0, 0.4, -0.5] }],
+		[boxGeometry(1.7, 0.05, 0.6), { position: [0, 0.3, -1.85] }],
+		[boxGeometry(1.7, 0.05, 0.05), { position: [0, 0.62, -2.13] }],
+		[boxGeometry(0.6, 0.32, 0.45), { position: [-0.45, 0.48, -1.85] }],
+		[placed(cylinderGeometry(0.2, 1.1, 10), { rotation: axle }), { position: [0.35, 0.53, -1.85] }],
+		// Smoke dischargers: three tubes on each side of the turret's front, aimed out and up.
+		...[-1, 1].flatMap((side) =>
+			[0, 1, 2].map((k): [MeshData, Placement] => [
+				placed(cylinderGeometry(0.07, 0.34, 8), { rotation: along }),
+				{
+					position: [side * (0.82 + 0.02 * k), 0.62 + k * 0.12, 0.95 - k * 0.06],
+					rotation: then(turn(0, 1, 0, side * 0.5), turn(1, 0, 0, -0.35)),
+				},
+			]),
+		),
 	]);
 	const tube = (radius: number, length: number, z: number) =>
 		placed(cylinderGeometry(radius, length, 12), {
 			position: [0, 0, z],
-			rotation: turn(1, 0, 0, Math.PI / 2),
+			rotation: along,
 		});
-	// The barrel points along +Z from its pivot at the mantlet.
-	const barrel = merged([tube(0.12, 3.6, 1.8), tube(0.17, 0.7, 2.2), tube(0.19, 0.45, 3.7)]);
+	// The barrel points along +Z from its pivot at the mantlet: a thermal sleeve in sections, the
+	// fume extractor and a muzzle brake with ports on both sides.
+	const barrel = merged([
+		tube(0.12, 3.6, 1.8),
+		tube(0.14, 0.5, 0.6),
+		tube(0.14, 0.5, 1.25),
+		tube(0.17, 0.7, 2.2),
+		tube(0.14, 0.5, 2.95),
+		[boxGeometry(0.34, 0.26, 0.2), { position: [0, 0, 3.62] }],
+		[boxGeometry(0.34, 0.26, 0.14), { position: [0, 0, 3.86] }],
+		[boxGeometry(0.2, 0.26, 0.26), { position: [0, 0, 3.74] }],
+	]);
 	return { hull, turret, barrel };
 }

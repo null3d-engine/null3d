@@ -28,6 +28,7 @@ import { threeSprites } from '../../lib/particles-three';
 import { sampleUrl } from '../../lib/samples';
 import { runThreeWorker, type Three } from '../../lib/three-worker';
 import {
+	ALL_ROCKS,
 	ARMIES,
 	activeTanks,
 	BATTLE_CAMERA,
@@ -35,12 +36,14 @@ import {
 	BATTLE_MATERIALS,
 	BATTLE_SEED,
 	type BattleMaterial,
+	BURNING_LIGHT,
 	barrelRecoil,
 	battleMeshes,
 	battleUnits,
 	CLIP_NAMES,
 	createBattle,
 	FIRE_LIGHT,
+	FIRES,
 	FLAG_POLE_HEIGHT,
 	FLAGS,
 	flightTransform,
@@ -48,9 +51,9 @@ import {
 	LIGHT_COUNT,
 	MODELS,
 	type ModelName,
+	PINES,
 	type Placed,
 	particleCapacity,
-	ROCKS,
 	RUINS,
 	SURFACE_SIZE,
 	setActiveUnits,
@@ -63,7 +66,6 @@ import {
 	UnitKind,
 	unitKindOf,
 	WIND,
-	WRECK_LIGHT,
 	WRECK_LOOK,
 	WRECKS,
 	writeLights,
@@ -247,25 +249,27 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 		batch.computeBoundingSphere();
 		return still(withShadows(batch, spec));
 	};
-	const rock = material(M.rock);
-	data.rocks.forEach((mesh, v) => {
-		scatter(
-			toGeometry(three, mesh),
-			ROCKS.filter((p) => p.variant === v),
-			rock,
-			M.rock,
-			-0.1,
-		);
-	});
-	const tree = material(M.tree);
-	data.trees.forEach((mesh, v) => {
-		scatter(
-			toGeometry(three, mesh),
-			TREES.filter((p) => p.variant === v),
-			tree,
-			M.tree,
-		);
-	});
+	/** Each variant's mesh scattered at the places of the list that name it. */
+	const scatterVariants = (
+		meshes: MeshData[],
+		list: readonly Placed[],
+		spec: BattleMaterial,
+		lift = 0,
+	) => {
+		const made = material(spec);
+		meshes.forEach((mesh, v) => {
+			scatter(
+				toGeometry(three, mesh),
+				list.filter((p) => p.variant === v),
+				made,
+				spec,
+				lift,
+			);
+		});
+	};
+	scatterVariants(data.rocks, ALL_ROCKS, M.rock, -0.1);
+	scatterVariants(data.trees, TREES, M.tree);
+	scatterVariants(data.pines, PINES, M.pine);
 	scatter(toGeometry(three, data.single.trap), TANK_TRAPS, material(M.trap), M.trap);
 	const grass = shaders.grass({
 		color: M.grass.color,
@@ -584,7 +588,7 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 
 	// The fire lights: the blasts' pool and the wrecks.
 	const lights = Array.from({ length: LIGHT_COUNT }, (_, k) => {
-		const spec = k < LIGHT_COUNT - WRECKS.length ? FIRE_LIGHT : WRECK_LIGHT;
+		const spec = k < LIGHT_COUNT - FIRES.length ? FIRE_LIGHT : BURNING_LIGHT;
 		const light = new three.PointLight(spec.color, 0, spec.range, spec.decay);
 		scene.add(light);
 		return light;

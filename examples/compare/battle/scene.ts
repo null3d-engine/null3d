@@ -39,6 +39,7 @@ import {
 	hedgehog,
 	heightGrid,
 	merged,
+	pineTree,
 	placed,
 	rockGeometry,
 	ruinedWall,
@@ -175,7 +176,13 @@ export function landHeight(x: number, z: number): number {
 	const behind = Math.max(0, Math.abs(x) - 260);
 	const hills = 0.0006 * flank * flank + 0.00025 * behind * behind;
 	const ridges = (flank + behind) * 0.03 * (Math.sin(x * 0.013) + Math.sin(z * 0.017 + 1.7) + 2);
-	return swell + Math.min(hills + ridges, 90);
+	// Knolls, gullies and spurs break up the hills' slopes, more as the hills climb.
+	const rough =
+		0.55 * fieldNoise(x, z, 0.006, 6) +
+		0.3 * fieldNoise(x, z, 0.015, 7) +
+		0.15 * fieldNoise(x, z, 0.035, 8);
+	const relief = Math.min(1, (flank + behind) / 80) * 26 * (rough - 0.45);
+	return swell + Math.min(hills + ridges, 90) + relief;
 }
 
 /** The crater's change of height at (x, z): a bowl with a raised rim. */
@@ -231,20 +238,26 @@ function fieldNoise(x: number, z: number, scale: number, seed: number): number {
  */
 export function groundColor(x: number, z: number, y: number): [number, number, number] {
 	const n = 0.6 * fieldNoise(x, z, 0.05, 3) + 0.4 * fieldNoise(x, z, 0.21, 4);
-	const grass: [number, number, number] = [0.17, 0.17, 0.07];
-	const dry: [number, number, number] = [0.3, 0.24, 0.12];
-	const dirt: [number, number, number] = [0.26, 0.19, 0.12];
-	const burnt: [number, number, number] = [0.045, 0.04, 0.035];
+	const broad = fieldNoise(x, z, 0.012, 5);
+	const grass: [number, number, number] = [0.075, 0.09, 0.032];
+	const dry: [number, number, number] = [0.2, 0.15, 0.075];
+	const dirt: [number, number, number] = [0.15, 0.105, 0.065];
+	const burnt: [number, number, number] = [0.028, 0.025, 0.022];
+	const stone: [number, number, number] = [0.15, 0.14, 0.12];
 	const trampled =
 		clamp(1 - (Math.abs(z) - 30) / 50, 0, 1) * clamp(1 - (Math.abs(x) - 120) / 80, 0, 1);
 	const s = scorch(x, z);
 	const mix = (a: readonly number[], b: readonly number[], t: number) =>
 		[0, 1, 2].map((k) => lerp(a[k] as number, b[k] as number, t)) as [number, number, number];
-	let c = mix(grass, dry, smoothstep(n));
+	let c = mix(grass, dry, smoothstep(clamp((n - 0.5) * 2.2 + 0.5 + (broad - 0.5) * 0.8, 0, 1)));
 	c = mix(c, dirt, trampled * (0.55 + 0.4 * n));
 	c = mix(c, burnt, s * 0.92);
-	// The hills darken a little with height, and the bottom of each bowl holds ash.
-	const shade = 1 - clamp(y / 120, 0, 0.35);
+	// The hills carry dark meadow in broad patches, and turn to bare stone as they climb.
+	const hill = smoothstep(clamp((y - 4) / 20, 0, 1));
+	const meadow = smoothstep(clamp((fieldNoise(x, z, 0.009, 10) - 0.35) * 3, 0, 1));
+	c = mix(c, [0.045, 0.06, 0.028], hill * meadow * 0.85);
+	c = mix(c, stone, smoothstep(clamp((y - 22) / 40 + (broad - 0.5) * 0.8, 0, 1)) * 0.75);
+	const shade = 1 - clamp(y / 160, 0, 0.3);
 	return [c[0] * shade, c[1] * shade, c[2] * shade];
 }
 
@@ -321,6 +334,21 @@ export const ROCKS: readonly Placed[] = Array.from({ length: 140 }, (_, k) => {
 	return placeAt(x, z, hash01(BATTLE_SEED, k, 16) * TAU, scale, k % ROCK_VARIANTS);
 });
 
+/** Clods and stones that the shells threw out: a ring of them on each crater's rim. */
+export const RUBBLE: readonly Placed[] = CRATERS.flatMap((c, k) =>
+	Array.from({ length: 3 + Math.floor(c.radius) }, (_, r) => {
+		const angle = hash01(BATTLE_SEED, k * 32 + r, 51) * TAU;
+		const out = c.radius * (0.95 + 0.6 * hash01(BATTLE_SEED, k * 32 + r, 52));
+		const x = c.x + Math.cos(angle) * out;
+		const z = c.z + Math.sin(angle) * out;
+		const scale = 0.12 + 0.3 * hash01(BATTLE_SEED, k * 32 + r, 53) ** 2;
+		return placeAt(x, z, hash01(BATTLE_SEED, k * 32 + r, 54) * TAU, scale, (k + r) % ROCK_VARIANTS);
+	}),
+);
+
+/** Every rock that the rock batches draw: the boulders on the flanks and the rubble. */
+export const ALL_ROCKS: readonly Placed[] = [...ROCKS, ...RUBBLE];
+
 export const TREES: readonly Placed[] = Array.from({ length: 46 }, (_, k) => {
 	const { x, z } = flankPoint(k, 20, 320, 70, 240);
 	return placeAt(
@@ -331,6 +359,30 @@ export const TREES: readonly Placed[] = Array.from({ length: 46 }, (_, k) => {
 		k % TREE_VARIANTS,
 	);
 });
+
+/** Woods of pine on the hills around the field, in clumps where a slow noise is high. */
+export const PINES: readonly Placed[] = (() => {
+	const out: Placed[] = [];
+	for (let k = 0; out.length < 1400 && k < 20_000; k++) {
+		const x = (hash01(BATTLE_SEED, k, 71) * 2 - 1) * 520;
+		const z = (hash01(BATTLE_SEED, k, 72) * 2 - 1) * 420;
+		const away = Math.max(Math.abs(z) - 125, Math.abs(x) - 290);
+		if (away < 0) continue;
+		const wood = fieldNoise(x, z, 0.011, 9);
+		if (hash01(BATTLE_SEED, k, 73) > smoothstep(clamp((wood - 0.45) * 6, 0, 1))) continue;
+		out.push(
+			placeAt(
+				x,
+				z,
+				hash01(BATTLE_SEED, k, 74) * TAU,
+				0.9 + 0.6 * hash01(BATTLE_SEED, k, 75),
+				k % 3,
+			),
+		);
+	}
+	return out;
+})();
+export const PINE_VARIANTS = 3;
 
 export const TANK_TRAPS: readonly Placed[] = Array.from({ length: 70 }, (_, k) => {
 	// Rows of traps along each flank, a little ragged.
@@ -382,6 +434,22 @@ export const WRECKS: readonly (Placed & { tilt: number })[] = [
 	{ ...placeAt(-8, 26, 0.7, 1), tilt: 0.12 },
 	{ ...placeAt(22, -34, 2.5, 1), tilt: -0.18 },
 	{ ...placeAt(-44, -18, 4.2, 1), tilt: 0.08 },
+];
+
+/** A fire that burns all through the battle: its base, and its size against a wreck's fire. */
+export interface Fire {
+	x: number;
+	y: number;
+	z: number;
+	size: number;
+}
+
+/** The fires: one on each wreck, and a few in craters where spilled fuel still burns. */
+export const FIRES: readonly Fire[] = [
+	...WRECKS.map((w) => ({ x: w.x, y: w.y + 1.5, z: w.z, size: 1 })),
+	...CRATERS.filter((c) => c.radius > 4 && Math.abs(c.x) < 50)
+		.slice(0, 4)
+		.map((c) => ({ x: c.x, y: terrainHeight(c.x, c.z) + 0.1, z: c.z, size: 0.55 })),
 ];
 
 /** Flags on poles: a row behind each army's line. */
@@ -999,6 +1067,7 @@ export type BattleMesh =
 	| 'land'
 	| 'rock'
 	| 'tree'
+	| 'pine'
 	| 'trap'
 	| 'grass'
 	| 'wall'
@@ -1014,9 +1083,10 @@ export type BattleMesh =
 
 /** One mesh per kind of thing, with variants where the kind has several. Setup code. */
 export function battleMeshes(): {
-	single: Record<Exclude<BattleMesh, 'rock' | 'tree' | 'wall' | 'grass'>, MeshData>;
+	single: Record<Exclude<BattleMesh, 'rock' | 'tree' | 'pine' | 'wall' | 'grass'>, MeshData>;
 	rocks: MeshData[];
 	trees: MeshData[];
+	pines: MeshData[];
 	walls: MeshData[];
 	grass: MeshData[];
 } {
@@ -1045,11 +1115,12 @@ export function battleMeshes(): {
 				],
 			]),
 			// A tracer is a thin streak of light along +Z; a shell a short dark slug.
-			tracer: boxGeometry(0.07, 0.07, 2.4),
+			tracer: boxGeometry(0.05, 0.05, 3),
 			shell: placed(cylinderGeometry(0.1, 0.5, 8), { rotation: turn(1, 0, 0, Math.PI / 2) }),
 		},
 		rocks: Array.from({ length: ROCK_VARIANTS }, (_, k) => rockGeometry(BATTLE_SEED * 13 + k)),
 		trees: Array.from({ length: TREE_VARIANTS }, (_, k) => deadTree(BATTLE_SEED * 17 + k)),
+		pines: Array.from({ length: PINE_VARIANTS }, (_, k) => pineTree(BATTLE_SEED * 23 + k)),
 		walls: RUINS.map((wall, k) =>
 			ruinedWall(wall.length, wall.height, BATTLE_SEED + k, wall.height > 3),
 		),
@@ -1090,8 +1161,9 @@ export function battleTriangles(count: number, meshes: ReturnType<typeof battleM
 		tanks * tank +
 		triangleCount(single.field) +
 		triangleCount(single.land) +
-		placedTriangles(ROCKS, meshes.rocks) +
+		placedTriangles(ALL_ROCKS, meshes.rocks) +
 		placedTriangles(TREES, meshes.trees) +
+		placedTriangles(PINES, meshes.pines) +
 		placedTriangles(GRASS, meshes.grass) +
 		meshes.walls.reduce((sum, m) => sum + triangleCount(m), 0) +
 		TANK_TRAPS.length * triangleCount(single.trap) +
@@ -1132,6 +1204,7 @@ export const BATTLE_MATERIALS = {
 	ground: { color: '#ffffff', surface: 'ground', repeat: 0.35, vertexColors: true },
 	rock: { color: '#8a8378', surface: 'rock', repeat: 0.5 },
 	tree: { color: '#3a3029', roughness: 0.9, metalness: 0 },
+	pine: { color: '#1f2a18', roughness: 0.9, metalness: 0 },
 	trap: { color: '#6b4a36', surface: 'paint', repeat: 2 },
 	wall: { color: '#b8ab95', surface: 'masonry' },
 	pole: { color: '#4a3b2c', roughness: 0.8, metalness: 0 },
@@ -1140,7 +1213,7 @@ export const BATTLE_MATERIALS = {
 		roughness: 1,
 		metalness: 0,
 		emissive: '#ffcf7a',
-		emissiveIntensity: 40,
+		emissiveIntensity: 14,
 		noShadow: true,
 	},
 	shell: { color: '#2b2b2b', roughness: 0.4, metalness: 0.8, noShadow: true },
@@ -1155,7 +1228,7 @@ export const WRECK_LOOK = {
 	metalness: 0.4,
 	/** The embers' color and their brightest glow. */
 	ember: '#ff5a14' as Hex,
-	emberIntensity: 6,
+	emberIntensity: 7,
 } as const;
 
 /** Grass and flags sway with the wind (the sway shader): how far, and how fast. */
@@ -1170,8 +1243,8 @@ export const SURFACE_SIZE = 256;
 // The look: a dusk sky, the low sun with cascaded shadows, the sky's light, height fog with a
 // glow toward the sun, bloom on the fire and tracers, ambient occlusion, AgX and a grade.
 
-/** A point toward the low sun: behind army 0's left flank, about 7 degrees up. */
-export const SUN_POSITION = [-0.62, 0.125, -0.775] as const;
+/** A point toward the low sun: behind army 0's left flank, about 5 degrees up. */
+export const SUN_POSITION = [-0.62, 0.08, -0.78] as const;
 
 export const BATTLE_LOOK = {
 	camera: { fov: 46, near: 0.3, far: 2400 },
@@ -1179,10 +1252,10 @@ export const BATTLE_LOOK = {
 	exposure: 1.15,
 	sky: {
 		sunPosition: SUN_POSITION,
-		turbidity: 9,
-		rayleigh: 2.6,
-		mieCoefficient: 0.006,
-		mieDirectionalG: 0.82,
+		turbidity: 8,
+		rayleigh: 3.2,
+		mieCoefficient: 0.003,
+		mieDirectionalG: 0.85,
 		cloudCoverage: 0.42,
 		cloudDensity: 0.5,
 		cloudElevation: 0.55,
@@ -1205,12 +1278,12 @@ export const BATTLE_LOOK = {
 	/** A fill from the sky's blue side, so the shadowed sides keep some color. */
 	hemisphere: { sky: '#6a7da8' as Hex, ground: '#4a3a28' as Hex, intensity: 0.35 },
 	fog: {
-		color: '#9a8a86' as Hex,
-		density: 0.0045,
+		color: '#8f7c74' as Hex,
+		density: 0.0014,
 		height: 0,
-		heightFalloff: 0.045,
-		sunGlow: 1.1,
-		sunGlowExponent: 6,
+		heightFalloff: 0.03,
+		sunGlow: 0.35,
+		sunGlowExponent: 16,
 	},
 	/** Bloom, as UnrealBloomPass's settings; null3D's chain takes the mapped settings below. */
 	bloom: { threshold: 1, strength: 0.45, radius: 0.35 },
@@ -1230,20 +1303,20 @@ export const BATTLE_LOOK = {
 	} satisfies GradeLook,
 } as const;
 
-/** The explosion and wreck fire lights: a pool of point lights, given to the newest blasts. */
+/** The explosions' lights, a pool given to the newest blasts, and a light for each fire. */
 export const BLAST_LIGHTS = 6;
 export const FIRE_LIGHT = { color: '#ff8a3c' as Hex, intensity: 900, range: 26, decay: 2 } as const;
-export const WRECK_LIGHT = {
+export const BURNING_LIGHT = {
 	color: '#ff7a2c' as Hex,
 	intensity: 160,
 	range: 14,
 	decay: 2,
 } as const;
-export const LIGHT_COUNT = BLAST_LIGHTS + WRECKS.length;
+export const LIGHT_COUNT = BLAST_LIGHTS + FIRES.length;
 
 /**
  * Writes the lights' positions and intensities at `seconds`: the newest blasts' flashes first, then
- * the wrecks' flicker. Four floats per light: x, y, z and intensity. Allocates nothing.
+ * the fires' flicker. Four floats per light: x, y, z and intensity. Allocates nothing.
  */
 export function writeLights(s: BattleState, seconds: number, out: Float32Array): void {
 	out.fill(0);
@@ -1261,14 +1334,14 @@ export function writeLights(s: BattleState, seconds: number, out: Float32Array):
 		out[light * 4 + 3] = FIRE_LIGHT.intensity * fade;
 		light++;
 	}
-	for (let w = 0; w < WRECKS.length; w++) {
-		const wreck = WRECKS[w] as (typeof WRECKS)[number];
-		const at = (BLAST_LIGHTS + w) * 4;
-		const flicker = 0.75 + 0.15 * Math.sin(seconds * 13 + w * 2) + 0.1 * Math.sin(seconds * 31 + w);
-		out[at] = wreck.x;
-		out[at + 1] = wreck.y + 2.4;
-		out[at + 2] = wreck.z;
-		out[at + 3] = WRECK_LIGHT.intensity * flicker;
+	for (let f = 0; f < FIRES.length; f++) {
+		const fire = FIRES[f] as Fire;
+		const at = (BLAST_LIGHTS + f) * 4;
+		const flicker = 0.75 + 0.15 * Math.sin(seconds * 13 + f * 2) + 0.1 * Math.sin(seconds * 31 + f);
+		out[at] = fire.x;
+		out[at + 1] = fire.y + 0.9 * fire.size;
+		out[at + 2] = fire.z;
+		out[at + 3] = BURNING_LIGHT.intensity * fire.size * fire.size * flicker;
 	}
 }
 
@@ -1278,11 +1351,13 @@ export function writeLights(s: BattleState, seconds: number, out: Float32Array):
 const FLASH_SECONDS = 0.45;
 export const SMOKE_SECONDS = 5;
 const FIREBALLS_PER_BLAST = 5;
-const SPARKS_PER_BLAST = 14;
+const SPARKS_PER_BLAST = 20;
 const SMOKE_PER_BLAST = 7;
-const SMOKE_PER_WRECK = 26;
-const EMBERS_PER_WRECK = 10;
+const SMOKE_PER_FIRE = 26;
+const EMBERS_PER_FIRE = 10;
 const DUST_PER_TANK = 6;
+/** Banks of haze that drift low over the field: the battle's smoke, spread thin. */
+const HAZE_SPRITES = 48;
 const MUZZLE_FLASH_SECONDS = 0.06;
 
 /** The particle layers' capacities for a state's pools. */
@@ -1291,10 +1366,14 @@ export function particleCapacity(s: BattleState): { fire: number; smoke: number 
 	return {
 		fire:
 			s.blasts * (FIREBALLS_PER_BLAST + SPARKS_PER_BLAST) +
-			WRECKS.length * (EMBERS_PER_WRECK + 2) +
+			FIRES.length * (EMBERS_PER_FIRE + 2) +
 			tanks +
 			Math.min(s.flights, 4096),
-		smoke: s.blasts * SMOKE_PER_BLAST + WRECKS.length * SMOKE_PER_WRECK + tanks * DUST_PER_TANK,
+		smoke:
+			s.blasts * SMOKE_PER_BLAST +
+			FIRES.length * SMOKE_PER_FIRE +
+			tanks * DUST_PER_TANK +
+			HAZE_SPRITES,
 	};
 }
 
@@ -1334,7 +1413,8 @@ export function writeParticles(
 		if (s.blastActive[b] === 0) continue;
 		writeBlast(s, b, fire, smoke);
 	}
-	for (let w = 0; w < WRECKS.length; w++) writeWreck(w, seconds, fire, smoke);
+	for (let f = 0; f < FIRES.length; f++) writeFire(f, seconds, fire, smoke);
+	writeHaze(seconds, smoke);
 	// Dust behind each moving tank.
 	const tanks = activeTanks(s) * 2;
 	for (let t = 0; t < tanks; t++) {
@@ -1384,8 +1464,8 @@ function writeBlast(s: BattleState, b: number, fire: SpriteRows, smoke: SpriteRo
 			const angle = hash01(serial, k, 1) * TAU;
 			const out = k === 0 ? 0 : 0.8 + 1.2 * hash01(serial, k, 2);
 			const frame = Math.min(FIRE_FRAMES.ballFrames - 1, Math.floor(t * FIRE_FRAMES.ballFrames));
-			const size = (k === 0 ? 5.5 : 3.5) * (0.45 + 0.75 * Math.sqrt(t));
-			const glow = 3.2 * (1 - life * 0.6);
+			const size = (k === 0 ? 7.5 : 4.5) * (0.45 + 0.75 * Math.sqrt(t));
+			const glow = 4 * (1 - life * 0.6);
 			addSprite(
 				fire,
 				x + Math.cos(angle) * out * (0.5 + t),
@@ -1449,24 +1529,55 @@ function writeBlast(s: BattleState, b: number, fire: SpriteRows, smoke: SpriteRo
 	}
 }
 
-function writeWreck(w: number, seconds: number, fire: SpriteRows, smoke: SpriteRows): void {
-	const wreck = WRECKS[w] as (typeof WRECKS)[number];
+function writeHaze(seconds: number, smoke: SpriteRows): void {
+	// Each bank drifts downwind across the field and fades in and out at the ends of its run.
+	const run = 2 * FIELD.halfX;
+	for (let k = 0; k < HAZE_SPRITES; k++) {
+		const speed = 1.2 + 1.2 * hash01(BATTLE_SEED, k, 61);
+		const travel = (hash01(BATTLE_SEED, k, 62) * run + seconds * speed) % run;
+		const x = travel - FIELD.halfX;
+		const wrap = 2 * FIELD.halfZ;
+		const drift = (hash01(BATTLE_SEED, k, 63) + (seconds * speed * 0.3) / wrap) % 1;
+		const z = (drift - 0.5) * wrap * 0.9;
+		const edge =
+			smoothstep(clamp(Math.min(travel, run - travel) / 40, 0, 1)) *
+			smoothstep(clamp(Math.min(drift, 1 - drift) * 10, 0, 1));
+		const alpha = (0.04 + 0.05 * hash01(BATTLE_SEED, k, 64)) * edge;
+		const shade = 0.42 + 0.12 * hash01(BATTLE_SEED, k, 65);
+		addSprite(
+			smoke,
+			x,
+			landHeight(x, z) + 2.5 + 3 * hash01(BATTLE_SEED, k, 66),
+			z,
+			16 + 18 * hash01(BATTLE_SEED, k, 67),
+			hash01(BATTLE_SEED, k, 68) * TAU + seconds * 0.01,
+			shade,
+			shade * 0.9,
+			shade * 0.82,
+			alpha,
+			k % 4,
+		);
+	}
+}
+
+function writeFire(f: number, seconds: number, fire: SpriteRows, smoke: SpriteRows): void {
+	const { x, y, z, size } = FIRES[f] as Fire;
 	const life = 7;
 	// A column of smoke that leans with the wind, made of puffs on a loop of their own.
-	for (let k = 0; k < SMOKE_PER_WRECK; k++) {
-		const cycle = seconds / life + k / SMOKE_PER_WRECK + w * 0.37;
+	for (let k = 0; k < SMOKE_PER_FIRE; k++) {
+		const cycle = seconds / life + k / SMOKE_PER_FIRE + f * 0.37;
 		const born = Math.floor(cycle);
 		const t = cycle - born;
-		const wobble = hash01(w * 1000 + k, born, 1) - 0.5;
+		const wobble = hash01(f * 1000 + k, born, 1) - 0.5;
 		const alpha = 0.7 * smoothstep(t * 6) * (1 - t) ** 1.1;
 		const shade = 0.05 + 0.1 * t;
 		addSprite(
 			smoke,
-			wreck.x + t * 14 + wobble * 2,
-			wreck.y + 1.6 + t * 22,
-			wreck.z + t * 5 + wobble * 1.5,
-			1.6 + t * 9,
-			hash01(w, k, born) * TAU + t * wobble,
+			x + (t * 14 + wobble * 2) * size,
+			y + 0.1 + t * 22 * size,
+			z + (t * 5 + wobble * 1.5) * size,
+			(1.6 + t * 9) * size,
+			hash01(f, k, born) * TAU + t * wobble,
 			shade,
 			shade * 0.95,
 			shade * 0.9,
@@ -1476,14 +1587,14 @@ function writeWreck(w: number, seconds: number, fire: SpriteRows, smoke: SpriteR
 	}
 	// Flames at the base and embers that rise and fade.
 	for (let k = 0; k < 2; k++) {
-		const flicker = 0.8 + 0.2 * Math.sin(seconds * (11 + k * 4) + w);
-		const frame = 3 + Math.floor((seconds * 9 + k * 5 + w * 3) % 5);
+		const flicker = 0.8 + 0.2 * Math.sin(seconds * (11 + k * 4) + f);
+		const frame = 3 + Math.floor((seconds * 9 + k * 5 + f * 3) % 5);
 		addSprite(
 			fire,
-			wreck.x + (k - 0.5) * 1.2,
-			wreck.y + 1.5 + k * 0.4,
-			wreck.z,
-			2.6 * flicker,
+			x + (k - 0.5) * 1.2 * size,
+			y + k * 0.4 * size,
+			z,
+			2.6 * flicker * size,
 			seconds * 0.5 + k,
 			2.4 * flicker,
 			2.4 * flicker,
@@ -1492,17 +1603,17 @@ function writeWreck(w: number, seconds: number, fire: SpriteRows, smoke: SpriteR
 			frame,
 		);
 	}
-	for (let k = 0; k < EMBERS_PER_WRECK; k++) {
+	for (let k = 0; k < EMBERS_PER_FIRE; k++) {
 		const emberLife = 2.2;
-		const cycle = seconds / emberLife + k / EMBERS_PER_WRECK + w * 0.21;
+		const cycle = seconds / emberLife + k / EMBERS_PER_FIRE + f * 0.21;
 		const born = Math.floor(cycle);
 		const t = cycle - born;
 		const glow = 10 * (1 - t);
 		addSprite(
 			fire,
-			wreck.x + (hash01(w, k, born) - 0.5) * 2 + t * 3,
-			wreck.y + 1.6 + t * 6,
-			wreck.z + (hash01(w, k, born + 1) - 0.5) * 2 + t,
+			x + ((hash01(f, k, born) - 0.5) * 2 + t * 3) * size,
+			y + 0.1 + t * 6 * size,
+			z + ((hash01(f, k, born + 1) - 0.5) * 2 + t) * size,
 			0.14,
 			0,
 			glow,

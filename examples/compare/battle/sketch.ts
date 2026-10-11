@@ -45,6 +45,7 @@ import { createSpriteRows, fireAtlas, smokeAtlas } from '../../lib/particles';
 import { null3dSprites } from '../../lib/particles-null3d';
 import { sampleUrl } from '../../lib/samples';
 import {
+	ALL_ROCKS,
 	ARMIES,
 	activeTanks,
 	BATTLE_CAMERA,
@@ -53,6 +54,7 @@ import {
 	BATTLE_MATERIALS,
 	BATTLE_SEED,
 	type BattleMaterial,
+	BURNING_LIGHT,
 	barrelRecoil,
 	battleMeshes,
 	battleUnits,
@@ -61,6 +63,7 @@ import {
 	Clip,
 	createBattle,
 	FIRE_LIGHT,
+	FIRES,
 	FLAG_POLE_HEIGHT,
 	FLAGS,
 	flightTransform,
@@ -68,9 +71,9 @@ import {
 	LIGHT_COUNT,
 	MODELS,
 	type ModelName,
+	PINES,
 	type Placed,
 	particleCapacity,
-	ROCKS,
 	RUINS,
 	SURFACE_SIZE,
 	setActiveUnits,
@@ -83,7 +86,6 @@ import {
 	UnitKind,
 	unitKindOf,
 	WIND,
-	WRECK_LIGHT,
 	WRECK_LOOK,
 	WRECKS,
 	writeLights,
@@ -130,10 +132,12 @@ fn surface(input: SurfaceInput) -> Surface {
     var s = defaultSurface(input);
     let p = input.worldPosition * 2.7;
     let a = sin(p.x * 1.7 + sin(p.z * 2.3)) * sin(p.z * 1.9 + sin(p.y * 2.9));
-    let cracks = pow(1.0 - abs(a), 10.0);
+    let cracks = pow(1.0 - abs(a), 22.0);
     let pulse = 0.55 + 0.45 * sin(frame.time * 2.6 + p.x * 0.7 + p.z * 0.5);
+    // The embers gather in a few hot patches rather than over the whole hull.
+    let patches = smoothstep(0.25, 0.85, sin(p.x * 0.45 + 1.3) * sin(p.z * 0.5 + p.y * 0.3));
     let low = clamp(1.4 - (input.worldPosition.y - object.position.y) * 0.6, 0.0, 1.0);
-    s.emissive = material.ember * (material.glow * cracks * pulse * low);
+    s.emissive = material.ember * (material.glow * cracks * pulse * low * patches);
     s.roughness = mix(s.roughness, 1.0, cracks);
     return s;
 }
@@ -210,7 +214,7 @@ export default defineSketch(
 			intensity: look.hemisphere.intensity,
 		});
 		const lights: PointLight[] = Array.from({ length: LIGHT_COUNT }, (_, k) => {
-			const fire = k < LIGHT_COUNT - WRECKS.length ? FIRE_LIGHT : WRECK_LIGHT;
+			const fire = k < LIGHT_COUNT - FIRES.length ? FIRE_LIGHT : BURNING_LIGHT;
 			return scene.createPointLight({
 				color: fire.color,
 				intensity: 0,
@@ -320,25 +324,27 @@ export default defineSketch(
 			batch.markDirty();
 			return batch;
 		};
-		const rock = material(M.rock);
-		data.rocks.forEach((mesh, v) => {
-			scatter(
-				toMesh(mesh),
-				ROCKS.filter((p) => p.variant === v),
-				rock,
-				M.rock,
-				-0.1,
-			);
-		});
-		const tree = material(M.tree);
-		data.trees.forEach((mesh, v) => {
-			scatter(
-				toMesh(mesh),
-				TREES.filter((p) => p.variant === v),
-				tree,
-				M.tree,
-			);
-		});
+		/** Each variant's mesh scattered at the places of the list that name it. */
+		const scatterVariants = (
+			meshes: MeshData[],
+			list: readonly Placed[],
+			spec: BattleMaterial,
+			lift = 0,
+		) => {
+			const made = material(spec);
+			meshes.forEach((mesh, v) => {
+				scatter(
+					toMesh(mesh),
+					list.filter((p) => p.variant === v),
+					made,
+					spec,
+					lift,
+				);
+			});
+		};
+		scatterVariants(data.rocks, ALL_ROCKS, M.rock, -0.1);
+		scatterVariants(data.trees, TREES, M.tree);
+		scatterVariants(data.pines, PINES, M.pine);
 		scatter(toMesh(data.single.trap), TANK_TRAPS, material(M.trap), M.trap);
 		const grass = materials.shader({
 			wgsl: swayGrass,
