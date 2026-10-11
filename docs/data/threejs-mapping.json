@@ -175,7 +175,7 @@
       "three": "renderer.setViewport / setScissor (split screens, picture in picture)",
       "status": "post-1.0",
       "since": null,
-      "target": "A render-to-texture pass plus a final effect, for minimaps and picture in picture (0.2)",
+      "target": "A scene pass whose texture (textures.fromPass) a mesh or sprites show, for minimaps and picture in picture (0.2)",
       "notes": "Several full views (scene.createView), such as split screens, come after 1.0.",
       "docs": "guides/multiple-views",
       "detect": "\\.set(Scissor|Viewport)(Test)?\\s*\\("
@@ -429,7 +429,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "onUpdate / onLateUpdate, or a declared pass (0.2)",
-      "notes": "The engine draws from lists that the sketch records, so it calls no sketch code per draw. Move per-object work into onUpdate or onLateUpdate. Declared passes come in 0.2.",
+      "notes": "The engine draws from lists that the sketch records, so it calls no sketch code per draw. Move per-object work into onUpdate or onLateUpdate. Declared passes come with step 0.2.",
       "docs": "api/sketch",
       "detect": "\\.on(Before|After)Render\\s*="
     },
@@ -459,10 +459,10 @@
       "id": "override-material",
       "category": "Scene graph",
       "three": "scene.overrideMaterial",
-      "status": "changed",
-      "since": "0.2",
-      "target": "render.addPass({ kind: 'scene', materialOverride }) or debug.view('normals')",
-      "notes": "",
+      "status": "post-1.0",
+      "since": null,
+      "target": "debug.view('normals' | 'depth' | 'wireframe') while you debug",
+      "notes": "A material override for a whole pass comes after 1.0.",
       "docs": "guides/custom-passes",
       "detect": "\\.overrideMaterial\\s*="
     },
@@ -538,7 +538,7 @@
       "three": "CubeCamera (dynamic reflections)",
       "status": "post-1.0",
       "since": null,
-      "target": "A static environment map, or reflection probes baked offline",
+      "target": "A static environment map, or a reflection pass for a flat mirror: render.addPass({ kind: 'reflection', writes, plane }) (0.2)",
       "notes": "",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bCubeCamera\\b"
@@ -591,7 +591,7 @@
       "id": "hemi-light",
       "category": "Lights and shadows",
       "three": "HemisphereLight",
-      "status": "direct",
+      "status": "changed",
       "since": "0.2",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
       "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. It lights surfaces as three.js's does, diffuse only, and its light adds to the environment's. Any number of them cost the same per pixel.",
@@ -693,7 +693,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "The same generators from @null3d/geometry",
-      "notes": "Same parameters as three.js; Shape and Path objects are ported too.",
+      "notes": "Not built yet. Until then, build the vertices with three.js's generator and pass the arrays to geometry.fromArrays. Same parameters as three.js; Shape and Path objects are ported too.",
       "docs": "api/geometry",
       "detect": "\\b(TorusKnot|Icosahedron|Octahedron|Tetrahedron|Dodecahedron|Polyhedron|Lathe|Extrude|Shape|Tube)Geometry\\b|\\bnew\\s+(THREE\\.)?Shape\\s*\\("
     },
@@ -715,7 +715,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "meshAsset.updateVertices(name, data, start, count)",
-      "notes": "For many moving objects, use instances instead of rewriting vertices.",
+      "notes": "Not built yet. Until then, move vertices with a vertex-offset function, or make a new mesh with geometry.fromArrays and mesh.setMesh. For many moving objects, use instances instead of rewriting vertices.",
       "docs": "api/geometry",
       "detect": "\\.attributes\\.\\w+\\.needsUpdate|\\.setUsage\\s*\\(|DynamicDrawUsage"
     },
@@ -745,10 +745,10 @@
       "id": "geo-text",
       "category": "Geometry",
       "three": "TextGeometry / FontLoader / troika-three-text",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "0.3",
       "target": "DOM labels (ui.trackLabel), a texture with pre-rendered text, or a text mesh baked into glTF",
-      "notes": "SDF text rendering comes after 1.0.",
+      "notes": "Not built yet. An add-on that draws text with MSDF fonts comes in step 0.3. Until then, use the target's options.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bTextGeometry\\b|\\bFontLoader\\b|troika-three-text"
     },
@@ -869,7 +869,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl }) with a surface function or a vertex-offset function",
-      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. Texture maps on a custom material come in 0.2.",
+      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option (0.2).",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
     },
@@ -979,7 +979,7 @@
       "status": "direct",
       "since": "0.2",
       "target": "materials.shadowCatcher({ opacity })",
-      "notes": "",
+      "notes": "Not built yet. Until then, give a plane receiveShadows and a material whose color matches the background.",
       "docs": "api/materials",
       "detect": "\\bShadowMaterial\\b"
     },
@@ -1001,7 +1001,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump`",
-      "notes": "Normal maps are cheaper at run time and look the same or better.",
+      "notes": "Not built yet. Until then, make the normal map from the bump map in an image tool. Normal maps are cheaper at run time and look the same or better.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bbump(Map|Scale)\\b"
     },
@@ -1055,7 +1055,7 @@
       "three": "material.toneMapped = false",
       "status": "post-1.0",
       "since": null,
-      "target": "Put the objects on a layer drawn by a declared pass after the post chain (render graph, 0.2)",
+      "target": "Tune the color so that tone mapping gives the value you want, or draw the item in the page's HTML",
       "notes": "A per-material flag comes after 1.0; tone mapping runs once for the whole image.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\btoneMapped\\s*[:=]\\s*false"
@@ -1122,7 +1122,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer until custom materials take textures (0.2). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }).",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer, and custom materials take textures of one layer only. Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }).",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1242,7 +1242,7 @@
       "three": "DRACOLoader + setDecoderPath",
       "status": "changed",
       "since": "0.2",
-      "target": "Draco files load, but convert them to meshopt with `bunx @null3d/cli assets optimize`",
+      "target": "Convert Draco files to meshopt with `bunx @null3d/cli assets optimize`. The engine does not load Draco files (E1417)",
       "notes": "meshopt decodes faster and needs no separate decoder download.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bDRACOLoader\\b|setDecoderPath"
@@ -1264,8 +1264,8 @@
       "three": "FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader",
       "status": "changed",
       "since": "0.2",
-      "target": "Convert to glTF before release (`bunx @null3d/cli assets convert`, or Blender)",
-      "notes": "The engine loads glTF only.",
+      "target": "Convert to glTF before release, with Blender or another converter",
+      "notes": "Not built yet. `bunx @null3d/cli assets convert` (0.2) will convert them. The engine loads glTF only.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(FBX|OBJ|MTL|Collada|STL|PLY|3DM|USDZ|TDS|VRML|VTK|Rhino3dm)Loader\\b"
     },
@@ -1309,7 +1309,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from 0.2; 0.1 stores it only). Prefabs from glTF models come in 0.2. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from step 0.2). scene.createInstances(prefab, count) instances a glTF model (0.2). castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2).",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1342,7 +1342,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `bunx @null3d/cli assets optimize --lod`",
-      "notes": "The engine picks levels on job workers or on the GPU, per instance.",
+      "notes": "Not built yet. `bunx @null3d/cli assets optimize --lod` writes the levels into the file, but the engine draws the full mesh. Until then, swap meshes by distance with mesh.setMesh. The engine will pick levels on job workers or on the GPU, per instance.",
       "docs": "concepts/lod",
       "detect": "new\\s+(THREE\\.)?LOD\\s*\\(|\\.addLevel\\s*\\("
     },
@@ -1375,7 +1375,7 @@
       "status": "manual",
       "since": "0.2",
       "target": "Author the skeleton in a modeling tool and export glTF: const hero = scene.instantiate(await assets.loadGltf(url)); hero.animator().play('walk')",
-      "notes": "Building skeletons in code is not supported, and joints are not objects. Meshes that hang on bones, such as a sword in a hand, follow their joints when the file puts them under the bone. Procedural aiming with anim.setJointOverride comes later in 0.2.",
+      "notes": "Building skeletons in code is not supported, and joints are not objects. Meshes that hang on bones, such as a sword in a hand, follow their joints when the file puts them under the bone. Joint overrides for procedural aiming (0.2) are not built yet.",
       "docs": "api/animation",
       "detect": "\\bSkinnedMesh\\b|new\\s+(THREE\\.)?(Skeleton|Bone)\\s*\\("
     },
@@ -1385,7 +1385,7 @@
       "three": "AnimationUtils.subclip / makeClipAdditive",
       "status": "changed",
       "since": "0.2",
-      "target": "anim.play(name, { additive: true }) for makeClipAdditive; `bunx @null3d/cli assets` splits clips offline",
+      "target": "anim.play(name, { additive: true }) for makeClipAdditive. Split clips for subclip in the modeling tool",
       "notes": "An additive play adds the clip's change from its first frame, as makeClipAdditive does with its default reference frame. The engine makes the additive form once, at the first additive play.",
       "docs": "api/animation",
       "detect": "\\bAnimationUtils\\b"
@@ -1614,10 +1614,10 @@
       "id": "ssr",
       "category": "Post-processing",
       "three": "SSRPass / ReflectorForSSRPass",
-      "status": "post-1.0",
-      "since": null,
+      "status": "changed",
+      "since": "0.2",
       "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
-      "notes": "Screen-space reflections come after 1.0. A flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
+      "notes": "Not built yet. Until then, a flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
@@ -1649,9 +1649,9 @@
       "three": "Lensflare / LensflareElement (addons)",
       "status": "manual",
       "since": "0.2",
-      "target": "Screen-space sprites positioned with camera.worldToScreen (cookbook recipe)",
+      "target": "Screen-space sprites placed with camera.worldToScreen",
       "notes": "",
-      "docs": "porting/threejs-unsupported",
+      "docs": "api/sprites",
       "detect": "\\bLensflare(Element)?\\b"
     },
     {
@@ -1749,7 +1749,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step",
-      "notes": "WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0.",
+      "notes": "WebAssembly physics builds run in workers. An official Rapier adapter, @null3d/rapier, comes in step 0.3. It is not built yet.",
       "docs": "guides/physics",
       "detect": "from\\s+['\"](cannon-es|cannon|@dimforge/rapier3d(-compat)?|ammo\\.js|oimo|@react-three/rapier|@react-three/cannon)['\"]"
     },
