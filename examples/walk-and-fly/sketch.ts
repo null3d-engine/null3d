@@ -25,7 +25,13 @@ export default defineSketch(async (ctx) => {
 	scene.setBackground({ sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
 	scene.setFog({ color: day.fog.color, density: 0.012, sunGlow: day.fog.sunGlow });
-	post.set({ exposure: day.exposure, bloom: { threshold: 1 }, ao: {}, vignette: {} });
+	post.set({
+		toneMapping: 'aces',
+		exposure: day.exposure,
+		bloom: { threshold: 1 },
+		ao: {},
+		vignette: {},
+	});
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 50 } });
 	const camera = scene.createPerspectiveCamera({ fov: 60, far: 5000 });
 	scene.setActiveCamera(camera);
