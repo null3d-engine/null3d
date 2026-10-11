@@ -254,9 +254,8 @@ describe('SketchQuality.lower', () => {
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
-		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size
-		// and software occlusion culling did.
+		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps
+		// and the reflections' size did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -265,7 +264,6 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
-			'softwareOcclusion',
 		]);
 	});
 });
@@ -295,13 +293,14 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale, following of moving casters, cascade blend
-		// and governor, and Low and Medium the same ambient occlusion scale.
+		// Every preset has the same highest render scale, following of moving casters, cascade blend,
+		// software occlusion culling and governor, and Low and Medium the same ambient occlusion scale.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
 			'shadowCascadeBlend',
 			'aoScale',
+			'softwareOcclusion',
 			'governor',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));
