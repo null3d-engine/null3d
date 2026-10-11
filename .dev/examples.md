@@ -124,6 +124,8 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| extra-shapes | The shapes, as in the generators demo |
+| vertex-updates | The glowing float, which leaves its rings where it goes |
 | time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
 | camera-lens | The focus, on the point of a piece or the board that a raycast finds |
 | morph-flowers | The tulips near the pointed point, which open |
@@ -203,7 +205,7 @@ The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
-- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Scene passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task)). So the crystal's glow comes from bloom, not from a lamp.
+- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
 - The hold mode demo draws 400 meshes, not one instance batch, because batches cast no shadows yet. Its physics moved into `onFixedUpdate`, at 120 steps a second. At the default 60, a 120 Hz display would show the balls stand still in every other frame. Hold mode runs the same steps on every run, so the held frame stays the same.
 - The objects demo turned the table and the crates by adding up the frame steps. Now each turn comes from the sketch time. A crate on the stage spins at its own speed plus the table's, so its spin goes on with no jump when it steps off.
@@ -328,7 +330,7 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
 - A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
-- On WebGL2, the reflection pass leaves out an instance batch with a custom material, so the floor there mirrors the stones and the sky. It leaves out the crystals. The fault was on main before this demo; a main build of 9 October shows it with a plain test scene.
+- The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
 
 ## Showcase scenes
 
@@ -465,6 +467,19 @@ With the stand-ins, on 10 October 2026, at a load of 3 to 7:
 
 Then WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
 
+## The demos of the geometry package (M2-P2)
+
+The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| extra-shapes: Mirror floor at dusk | A shape from each function of `@null3d/geometry`, in three rows over a polished stone floor at dusk. A reflection pass mirrors them in the floor. The shapes run from gold, chrome and copper to blue-tinted glass and glazed clay. The flat heart glows enough to bloom |
+| vertex-updates: Pool at golden hour | A raised stone pool on a deck. A glowing float with a light of its own drifts over the water, and leaves a ring every 0.35 s on a slow swell. Each frame rewrites the water's heights and normals, and `updateVertices` uploads them |
+
+- The water's normals come from the heights of each vertex's neighbors, not from closed-form slopes. Twelve rings and a swell, each with its own slopes, took more lines than the 150-line limit left.
+- The rings start at fixed ticks of sketch time, from the float's path at each tick. So the hold-mode image is the same however many frames lead to it. While the pointer leads the float, each ring starts at the float's place instead.
+- The water's update writes into arrays that the sketch keeps, so it allocates nothing in a frame, as the demo's summary says.
+
 ## Groups and titles (owner, 9 October 2026)
 
 The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos. Compare with three.js lists the comparisons of `examples/compare/comparisons.ts`, Factory first, and Showcase waits for its scenes.
@@ -472,7 +487,7 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Group | Demos |
 | --- | --- |
 | Showcase | creek |
-| Building scenes | generators, mesh-arrays, objects, layers |
+| Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
@@ -515,7 +530,7 @@ The owner's bar for every feature demo is the reworked generators demo. Eight mo
 
 The rules that these demos follow, and why:
 
-- Scene passes and reflection passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
+- Until 11 October 2026 scene passes and reflection passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass, made before then, use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
 - A glowing material, a sprite and a line all draw in a reflection pass. The pool in the sprites demo reflects the sparks, the helix and the dashes.
 - The `'night'` preset of `timeOfDay` gives a black sky: three.js's sky model goes dark once its sun is 2 degrees under the horizon. So the two night scenes take `'blueHour'`, which gives a deep blue sky and the moon as the main light. They keep their exposure low, 2 and 1.4, below the preset's 2.9. At the preset's exposure, the neon of the sprites demo turned white and lost its colors.
 - Fog that thins with height measures its height from the world's origin. The large world's road is 6,378 km above it, so fog with a height falloff would be clear there. The large world uses plain fog, which thickens with distance alone.

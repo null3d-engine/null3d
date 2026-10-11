@@ -136,6 +136,30 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'extra-shapes',
+		group: 'Building scenes',
+		sketch: new URL('./extra-shapes/sketch.ts', import.meta.url),
+		title: 'Extra shapes',
+		scene: 'Mirror floor at dusk',
+		summary:
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'vertex-updates',
+		group: 'Building scenes',
+		sketch: new URL('./vertex-updates/sketch.ts', import.meta.url),
+		title: 'Vertex updates',
+		scene: 'Pool at golden hour',
+		summary:
+			"A glowing float leaves rings on a pool. Each frame the sketch rewrites the water's positions and normals and passes them to mesh.updateVertices, which allocates nothing.",
+		controls: `${CAMERA} Move the mouse, or tap, to lead the float.`,
+		hold: 2.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'objects',
 		group: 'Building scenes',
 		sketch: new URL('./objects/sketch.ts', import.meta.url),

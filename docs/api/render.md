@@ -61,7 +61,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a scene pass draws
 
-A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background, and it culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
+A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there. In this version a pass draws no ambient occlusion and no sky background. It culls each frame in one pass, without occlusion culling. Its texture clears to `clearColor` instead of the sky.
 
 ## Reflection passes
 
@@ -138,13 +138,13 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a reflection draws
 
-A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient and hemisphere lights, the environment's light and the fog. In this version a reflection draws no point or spot lights and no ambient occlusion, as scene passes do not. A lamp's glowing material still shows in the reflection. The light that the lamp casts on the objects around it does not. Development builds warn once when the scene has point or spot lights.
+A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient and hemisphere lights, the environment's light and the fog. It draws the point and spot lights that the mirrored view sees, as a scene pass does. A light casts its shadow in the reflection when the camera's view gives it one. In this version a reflection draws no ambient occlusion, as scene passes do not.
 
 Devices that draw 8-bit color apply the tone curve twice to a reflection, as to a scene pass's texture. The reflected sky looks a little grayer there.
 
 ### Cost of a reflection
 
-A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the render size each way it shades a quarter of the pixels. Each quality preset gives it a share of the render size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms. Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
+A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the render size each way it shades a quarter of the pixels. Each quality preset gives it a share of the render size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. When the engine lowers the render scale to keep up, the reflection's texture shrinks with it, so the reflection costs less too. Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms. Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
 
 ### Switching and removing passes
 
