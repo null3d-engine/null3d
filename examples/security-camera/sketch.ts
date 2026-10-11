@@ -2,9 +2,9 @@
 // where the pointer points, and a scene pass draws its view into a texture. A monitor on the near
 // side of the wall shows it as a night camera does: gray, brightened, with rolling scan lines. The
 // robot that patrols out of the main camera's sight shows there. The pass never draws an object
-// that shows its own texture, so the monitor stays out of its own picture. Scene passes draw no
-// point or spot lights yet, so the floodlight is the scene's directional light, which the pass
-// draws with its shadows, and the night sky fills the shade. The puddles come from code.
+// that shows its own texture, so the monitor stays out of its own picture. The floodlight is the
+// scene's directional light, which the pass draws with its shadows, and the night sky fills the
+// shade. The puddles come from code.
 import { defineSketch, type Material, math, timeOfDay, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
