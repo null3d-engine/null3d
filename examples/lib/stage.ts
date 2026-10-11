@@ -43,6 +43,8 @@ export interface StageOptions {
 	fogDensity: number;
 	/** The share of the sky that clouds cover, from 0 to 1. */
 	cloudCoverage: number;
+	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
+	haze?: Partial<Record<Exclude<Mood, 'Studio'>, number>>;
 }
 
 /** True for a mood name. */
@@ -54,7 +56,7 @@ export function createMoods(
 	sun: DirectionalLight,
 	sky: Environment,
 	room: Environment,
-	{ heading, fogDensity, cloudCoverage }: StageOptions,
+	{ heading, fogDensity, cloudCoverage, haze = {} }: StageOptions,
 ): (mood: Mood) => void {
 	return (mood) => {
 		if (mood === 'Studio') {
@@ -74,7 +76,8 @@ export function createMoods(
 		sun.setDirection(day.light.direction[0], day.light.direction[1], day.light.direction[2]);
 		sun.setColor(day.light.color);
 		sun.setIntensity(day.light.intensity);
-		scene.setFog({ color: day.fog.color, density: fogDensity, sunGlow: day.fog.sunGlow });
+		const density = fogDensity * (haze[mood] ?? 1);
+		scene.setFog({ color: day.fog.color, density, sunGlow: day.fog.sunGlow });
 		post.set({ exposure: day.exposure * EXPOSURE[mood] });
 	};
 }

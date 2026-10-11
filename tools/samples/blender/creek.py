@@ -7,7 +7,7 @@
 #
 # It writes three binary glTF files into the output folder, and prints each model's triangles:
 #   trees.glb   oak, beech and birch, each a wood node and a leaves node
-#   plants.glb  fern, hosta and shrub, one node each
+#   plants.glb  fern, hosta, shrub and flowers, one node each
 #   cave.glb    cave, one node
 # Leaves, fronds and plant leaves are cards whose texture's alpha cuts their outline, so their
 # materials are masked and double sided. The wood, the plants and the rock carry ambient occlusion
@@ -166,10 +166,24 @@ def leaf_color(s, t, tone, rng_noise):
     return tone[None, None, :] * shade[..., None] + np.array([0.05, 0.06, 0.0]) * midrib[..., None]
 
 
+def fitted(base, angle, length, margin=0.04):
+    """A leaf's length, shortened so that its tip stays a margin inside its cell."""
+    tip = (base[0] + math.cos(angle) * length, base[1] + math.sin(angle) * length)
+    room = 1.0
+    for value, start, step in ((tip[0], base[0], math.cos(angle)), (tip[1], base[1], math.sin(angle))):
+        if value > 1 - margin and step > 0:
+            room = min(room, (1 - margin - start) / (step * length))
+        if value < margin and step < 0:
+            room = min(room, (margin - start) / (step * length))
+    return length * max(room, 0.2)
+
+
 def leaf_atlas(size, rng):
     """
     Four clusters of broad leaves on twigs, in the cells of a 2 x 2 atlas. Each twig runs up its
-    cell from the middle of its bottom edge, so a card's base sits on its branch.
+    cell from the middle of its bottom edge, so a card's base sits on its branch. Every leaf stays
+    inside its cell, so no card shows a straight edge, and each edge fades over two texels, which
+    alpha to coverage turns into a soft outline.
     """
     cell = size // 2
     out = np.zeros((size, size, 4), np.float32)
@@ -184,18 +198,20 @@ def leaf_atlas(size, rng):
         # The twig: a thin brown line up the middle, which the leaves cover.
         dist = np.abs(px - twig(py)) - 0.008 * (1 - py)
         over(tile, np.array([0.30, 0.24, 0.16]), np.clip(-dist * cell + 0.5, 0, 1) * (py < 0.82))
-        leaves = 15 + int(rng.random() * 4)
+        leaves = 22 + int(rng.random() * 6)
         for j in range(leaves):
-            v = 0.1 + 0.72 * j / leaves + 0.04 * rng.random()
+            v = 0.08 + 0.74 * j / leaves + 0.04 * rng.random()
             side = 1 if j % 2 else -1
-            angle = math.pi / 2 - side * (0.75 + 0.6 * rng.random()) * (1 - 0.35 * v)
-            length = (0.24 + 0.09 * rng.random()) * (1.05 - 0.35 * abs(v - 0.45))
-            coverage, s, t = leaf_mask(px, py, (twig(v), v), angle, length, 0.36 + 0.06 * rng.random(), 0.02, cell)
+            angle = math.pi / 2 - side * (0.6 + 0.8 * rng.random()) * (1 - 0.3 * v)
+            length = (0.19 + 0.08 * rng.random()) * (1.05 - 0.35 * abs(v - 0.45))
+            length = fitted((twig(v), v), angle, length)
+            coverage, s, t = leaf_mask(px, py, (twig(v), v), angle, length, 0.36 + 0.06 * rng.random(), 0.02, cell / 2)
             tone = tones[k] * (0.85 + 0.3 * rng.random())
             color = leaf_color(s, t, tone, mottle[oy:oy + cell, ox:ox + cell])
             over(tile, color, coverage)
         # The top leaf continues the twig.
-        coverage, s, t = leaf_mask(px, py, (twig(0.78), 0.78), math.pi / 2 + bend, 0.22, 0.36, 0.02, cell)
+        top = fitted((twig(0.78), 0.78), math.pi / 2 + bend, 0.2)
+        coverage, s, t = leaf_mask(px, py, (twig(0.78), 0.78), math.pi / 2 + bend, top, 0.36, 0.02, cell / 2)
         over(tile, leaf_color(s, t, tones[k], mottle[oy:oy + cell, ox:ox + cell]), coverage)
         out[oy:oy + cell, ox:ox + cell] = tile
     return dilate(out)
@@ -286,6 +302,47 @@ def broad_leaf(size, rng):
     color = np.array([0.22, 0.40, 0.16])[None, None] * shade[..., None]
     color = color * (1 - rim[..., None]) + np.array([0.50, 0.55, 0.26]) * rim[..., None]
     over(out, color, coverage)
+    return dilate(out)
+
+
+def flower_atlas(size, rng):
+    """
+    Wildflowers in a 2 x 2 atlas: a daisy, a buttercup and a cornflower, each seen from above, and a
+    cell of green with a leaf blade on its left and a stem stripe on its right.
+    """
+    cell = size // 2
+    out = np.zeros((size, size, 4), np.float32)
+    py, px = np.mgrid[0:cell, 0:cell].astype(np.float32) / cell
+    dx, dy = px - 0.5, py - 0.5
+    r = np.hypot(dx, dy) / 0.46
+    theta = np.arctan2(dy, dx)
+    mottle = value_noise(cell, cell, 16, 16, rng)
+    kinds = [
+        # Petals, their reach, their width, their color, the disc's size and color, notched tips.
+        (16, 1.0, 0.11, [0.95, 0.94, 0.88], 0.26, [0.95, 0.72, 0.1], 0.0),
+        (5, 0.9, 0.55, [0.98, 0.8, 0.08], 0.2, [0.75, 0.6, 0.1], 0.0),
+        (10, 0.95, 0.3, [0.22, 0.38, 0.92], 0.18, [0.2, 0.15, 0.45], 0.25),
+    ]
+    for k, (petals, reach, width, color, disc, center, notch) in enumerate(kinds):
+        tile = np.zeros((cell, cell, 4), np.float32)
+        nearest = np.abs(((theta * petals / (2 * np.pi)) + 0.5) % 1 - 0.5) * 2 * np.pi / petals
+        along = np.clip(r / reach, 0, 1)
+        half = width * np.maximum(np.sin(np.pi * along ** 0.8), 0) ** 0.6
+        tip = 1 - notch * np.maximum(np.cos(nearest * petals * 3), 0) * smoothstep(0.7, 1.0, along)
+        coverage = np.clip((half - nearest * r) * cell / 2 + 0.5, 0, 1) * (r < reach * tip)
+        shade = 0.8 + 0.25 * along + 0.1 * (mottle - 0.5)
+        over(tile, np.array(color)[None, None] * shade[..., None], coverage)
+        disc_cover = np.clip((disc - r) * cell / 2 + 0.5, 0, 1)
+        over(tile, np.array(center)[None, None] * (0.75 + 0.4 * mottle[..., None]), disc_cover)
+        oy, ox = (k // 2) * cell, (k % 2) * cell
+        out[oy:oy + cell, ox:ox + cell] = tile
+    # The green cell: a leaf blade up its left part, and a stem stripe at its right edge.
+    tile = np.zeros((cell, cell, 4), np.float32)
+    coverage, s, t = leaf_mask(px, py, (0.3, 0.02), math.pi / 2, 0.95, 0.12, 0.0, cell / 2)
+    over(tile, leaf_color(s, t, np.array([0.2, 0.38, 0.1]), mottle), coverage)
+    stem = np.clip((0.04 - np.abs(px - 0.82)) * cell / 2 + 0.5, 0, 1)
+    over(tile, np.array([0.24, 0.4, 0.12])[None, None] * (0.8 + 0.3 * py[..., None]), stem)
+    out[cell:, cell:] = tile
     return dilate(out)
 
 
@@ -427,18 +484,18 @@ def tube(builder, points, radii, sides, uv_scale, color_of, flare=None):
 
 TREES = {
     'oak': dict(
-        height=7.2, radius=0.3, flare=0.7, crown=0.34, children=(6, 4, 4), angles=(62, 48, 42),
-        ratio=(0.6, 0.55, 0.5), tropism=(0.12, 0.08, 0.0), wobble=0.22, cards=13, card=0.9,
+        height=7.2, radius=0.3, flare=0.7, crown=0.34, children=(7, 5, 4), angles=(62, 48, 42),
+        ratio=(0.6, 0.55, 0.5), tropism=(0.12, 0.08, 0.0), wobble=0.22, cards=16, card=0.8,
         tint=(0.86, 0.95, 0.82), bark='oak', sides=(12, 7, 5, 3),
     ),
     'beech': dict(
-        height=8.6, radius=0.24, flare=0.45, crown=0.3, children=(7, 4, 4), angles=(44, 40, 36),
-        ratio=(0.5, 0.55, 0.5), tropism=(0.25, 0.15, 0.05), wobble=0.14, cards=13, card=0.85,
+        height=8.6, radius=0.24, flare=0.45, crown=0.3, children=(8, 5, 4), angles=(44, 40, 36),
+        ratio=(0.5, 0.55, 0.5), tropism=(0.25, 0.15, 0.05), wobble=0.14, cards=16, card=0.75,
         tint=(1.0, 1.0, 0.88), bark='beech', sides=(10, 6, 4, 3),
     ),
     'birch': dict(
-        height=7.8, radius=0.14, flare=0.3, crown=0.32, children=(8, 3, 3), angles=(48, 52, 58),
-        ratio=(0.46, 0.6, 0.55), tropism=(0.1, -0.12, -0.28), wobble=0.18, cards=10, card=0.7,
+        height=7.8, radius=0.14, flare=0.3, crown=0.32, children=(9, 4, 3), angles=(48, 52, 58),
+        ratio=(0.46, 0.6, 0.55), tropism=(0.1, -0.12, -0.28), wobble=0.18, cards=13, card=0.62,
         tint=(1.08, 1.06, 0.72), bark='birch', sides=(9, 5, 4, 3),
     ),
 }
@@ -707,11 +764,54 @@ def build_shrub(mat, rng):
     return b
 
 
+def build_flowers(mat, rng):
+    """
+    A clump of wildflowers: blades from the ground, and stems that carry daisies, buttercups and
+    cornflowers, each head a small card that faces up and out. One atlas gives all of them.
+    """
+    b = Builder()
+    for k in range(7):
+        az = k * 2.39996 + rng.random() * 0.5
+        heading = Vector((math.cos(az), math.sin(az), 0))
+        side = Vector((-math.sin(az), math.cos(az), 0))
+        length = 0.16 + 0.12 * rng.random()
+        rise = math.radians(55 + 25 * rng.random())
+        points = []
+        p, d = Vector((0, 0, 0)), (heading * math.cos(rise) + Vector((0, 0, math.sin(rise)))).normalized()
+        for i in range(4):
+            points.append(p.copy())
+            d = (d + Vector((0, 0, -0.5)) * 0.25).normalized()
+            p = p + d * (length / 3)
+        strip(b, points, [0.035, 0.03, 0.022, 0.01], [side] * 4, 0.1, lambda t: (0.55 + 0.45 * t,) * 3, (0.5, 0.5, 0.75, 1.0), 1)
+    for k in range(16):
+        species = min(2, int(rng.random() ** 1.4 * 3))
+        az = rng.random() * 2 * math.pi
+        foot = Vector((math.cos(az), math.sin(az), 0)) * 0.14 * math.sqrt(rng.random())
+        height = 0.3 + 0.25 * rng.random()
+        lean = Vector((rng.normal(0, 0.12), rng.normal(0, 0.12), 1)).normalized()
+        top = foot + lean * height
+        side = frame_of(lean)[0]
+        stem = [foot.lerp(top, t) + Vector((0, 0, 0.0)) for t in (0, 0.5, 1)]
+        strip(b, stem, [0.008] * 3, [side] * 3, 0.0, lambda t: (0.6 + 0.4 * t,) * 3, (0.89, 0.5, 0.93, 1.0), 0)
+        # The head: a card that faces up, tipped a little toward the stem's lean.
+        facing = (Vector((0, 0, 1)) + (lean - Vector((0, 0, lean.z))) * 2.5).normalized()
+        across, ahead = frame_of(facing)
+        size = 0.08 + 0.05 * rng.random()
+        cu, cv = (species % 2) * 0.5, (species // 2) * 0.5
+        ids = []
+        for row in (0, 1):
+            for col in (0, 1):
+                q = top + across * (col - 0.5) * size + ahead * (row - 0.5) * size
+                ids.append(b.vertex(q, (cu + col * 0.5, cv + row * 0.5), (1, 1, 1), facing))
+        b.face(ids[0], ids[1], ids[3], ids[2])
+    return b
+
+
 # ---------------------------------------------------------------------------------------------
 # The cave mouth
 # ---------------------------------------------------------------------------------------------
 
-CAVE_SIZE = (8.0, 6.0, 4.6)
+CAVE_SIZE = (8.4, 6.6, 4.8)
 CAVE_TRIANGLES = 7000
 
 
@@ -752,12 +852,14 @@ def build_cave(mat, rng):
     ]
     # Metaballs shrink to about 0.57 of their semi-axes where they stand alone, so the tunnel's
     # chain is larger than the hole it leaves.
+    # It runs deep, and bends to the right at its back, so no light reaches its end.
     tunnel = [
-        ((-0.4, -4.0, 0.5), (2.3, 1.6, 2.3)),
-        ((-0.35, -2.8, 0.5), (2.3, 1.6, 2.3)),
-        ((-0.25, -1.6, 0.45), (2.1, 1.6, 2.2)),
-        ((-0.1, -0.4, 0.4), (1.8, 1.5, 1.9)),
-        ((0.1, 0.7, 0.35), (1.4, 1.2, 1.5)),
+        ((-0.4, -4.2, 0.6), (3.0, 1.6, 3.0)),
+        ((-0.35, -2.9, 0.6), (3.0, 1.6, 3.0)),
+        ((-0.25, -1.6, 0.55), (2.7, 1.6, 2.8)),
+        ((-0.05, -0.3, 0.5), (2.3, 1.5, 2.4)),
+        ((0.35, 0.9, 0.45), (1.9, 1.3, 2.0)),
+        ((0.9, 1.8, 0.4), (1.5, 1.1, 1.6)),
     ]
     bulk = [(co, tuple(1.35 * x for x in size)) for co, size in masses]
     solid = link(bpy.data.objects.new('cave', metaball_mesh('cave-masses', bulk, 0.16)))
@@ -788,7 +890,7 @@ def build_cave(mat, rng):
         plates = float(smoothstep(0.0, 0.18, cells[1] - cells[0]))
         shift = 0.42 * broad + 0.16 * ridge ** 3 + 0.12 * smoothstep(0.55, 0.95, layers) + 0.22 * plates
         # Centered on the metaballs' surface, and gentler in the tunnel, which it would close.
-        inside = 1.0 if abs(p.x + 0.25) < 1.6 and p.z < 2.0 and p.y > -3.2 else 0.0
+        inside = 1.0 if abs(p.x + 0.2) < 2.0 and p.z < 2.4 and p.y > -3.4 else 0.0
         v.co = p + v.normal * (shift - 0.35) * (1 - 0.65 * inside)
     # The cut at the ground: the model's foot sinks into the land.
     bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, -0.5), plane_no=(0, 0, 1), clear_inner=True)
@@ -816,6 +918,26 @@ def build_cave(mat, rng):
     bpy.data.meshes.remove(mesh)
     mesh = low_mesh
     mesh.name = 'cave'
+
+    # Boulders and fallen rocks around the mouth: noisy squashed spheres, sunk into the ground.
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    boulders = [
+        ((-2.3, -3.2, -0.1), 0.95, 0.7), ((-3.3, -2.6, -0.2), 0.7, 0.8), ((1.6, -3.3, -0.15), 0.85, 0.65),
+        ((2.6, -3.0, -0.2), 0.6, 0.75), ((-1.4, -4.1, -0.2), 0.45, 0.6), ((0.9, -4.3, -0.2), 0.38, 0.55),
+        ((-0.2, -3.9, -0.25), 0.3, 0.5), ((3.5, -1.8, -0.2), 0.75, 0.8),
+    ]
+    for k, (at, size, squash) in enumerate(boulders):
+        made = bmesh.ops.create_icosphere(bm, subdivisions=3, radius=size)
+        for v in made['verts']:
+            d = v.co.normalized()
+            bump = 1 + 0.22 * noise.fractal(d * 1.7 + Vector((k * 3.1, k, 0)), 0.6, 2.0, 3)
+            cells = noise.voronoi(d * 2.2 + Vector((k, 0, 0)), distance_metric='DISTANCE')[0]
+            flat = 0.9 + 0.1 * float(smoothstep(0.0, 0.25, cells[1] - cells[0]))
+            v.co = Vector((d.x * 1.15, d.y, d.z * squash)) * size * bump * flat + Vector(at)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, -0.5), plane_no=(0, 0, 1), clear_inner=True)
+    bm.to_mesh(mesh)
+    bm.free()
 
     # Box-projected UVs, 2.5 meters to a tile, from each face's main axis.
     bm = bmesh.new()
@@ -849,12 +971,16 @@ def build_cave(mat, rng):
             hit = tree.ray_cast(v.co + n * 0.03, ray, 5.0)
             if hit[0] is not None:
                 hits += 1 - hit[3] / 5.0
-        ao = max(0.08, 1 - 1.25 * hits / len(dirs))
+        ao = max(0.02, 1 - 1.5 * hits / len(dirs)) ** 1.3
         p = v.co
-        moss = float(smoothstep(0.45, 0.85, n.z + 0.35 * noise.noise(p * 0.8))) * float(smoothstep(0.3, 1.2, p.z))
-        damp = 0.75 + 0.25 * float(smoothstep(-0.5, 0.6, p.z))
+        # Moss on the faces that look up, in patches, thickest over the mouth and on the boulders'
+        # crowns, and none deep in the tunnel.
+        patch = noise.noise(p * 0.8) + 0.5 * noise.noise(p * 2.7)
+        moss = float(smoothstep(0.15, 0.7, n.z + 0.4 * patch)) * float(smoothstep(-0.3, 0.6, p.z))
+        moss *= float(smoothstep(0.15, 0.5, ao))
+        damp = 0.7 + 0.3 * float(smoothstep(-0.5, 0.6, p.z))
         stone = np.array([1.0, 0.98, 0.95]) * damp
-        green = np.array([0.42, 0.55, 0.22])
+        green = np.array([0.36, 0.52, 0.16]) * (0.85 + 0.3 * float(smoothstep(-1, 1, patch)))
         colors[v.index, :3] = ao * (stone * (1 - moss) + green * moss)
     bm.free()
     attr = mesh.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
@@ -959,7 +1085,7 @@ def main():
         bpy.data.objects.remove(o)
     rng = np.random.default_rng(SEED)
 
-    atlas = image('leaves', leaf_atlas(1024, rng))
+    atlas = image('leaves', leaf_atlas(2048, rng))
     leaf_mat = material('leaves', atlas, cutout=True, roughness=0.65)
     barks = {}
     for kind in ('oak', 'beech', 'birch'):
@@ -979,10 +1105,12 @@ def main():
     fern_mat = material('fern', image('fern', fern_frond(256, 1024, rng)), cutout=True, roughness=0.7)
     hosta_mat = material('hosta', image('hosta', broad_leaf(512, rng)), cutout=True, roughness=0.8)
     shrub_mat = material('shrub', atlas, cutout=True, roughness=0.65)
+    flower_mat = material('flowers', image('flowers', flower_atlas(512, rng)), cutout=True, roughness=0.6)
     plants = [
         build_fern(fern_mat, rng).build('fern', fern_mat),
         build_hosta(hosta_mat, rng).build('hosta', hosta_mat),
         build_shrub(shrub_mat, rng).build('shrub', shrub_mat),
+        build_flowers(flower_mat, rng).build('flowers', flower_mat),
     ]
 
     color, height, rough = rock_texture(1024, rng)
@@ -996,7 +1124,7 @@ def main():
 
     report = {}
     report.update(export(os.path.join(out, 'trees.glb'), tree_objects, {'leaves'}))
-    report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub'}))
+    report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub', 'flowers'}))
     report.update(export(os.path.join(out, 'cave.glb'), [cave], set()))
     for name, triangles in report.items():
         print(f'CREEK {name}: {triangles} triangles')

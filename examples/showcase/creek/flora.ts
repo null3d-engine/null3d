@@ -10,6 +10,7 @@ import {
 	type SpriteBatch,
 } from '@null3d/engine';
 import { random, within } from '../../lib/procedural';
+import type { Crown } from './air';
 import { groundHeight, streamHalf, streamZ, WATER } from './land';
 import { type Models, PLANT_KINDS, type PlantKind, placed, type TreeKind } from './models';
 import { CAVE } from './stones';
@@ -21,18 +22,39 @@ const RUN = 56;
 /** Fireflies at night. */
 const FIREFLIES = 90;
 /** Ferns over the banks, before the ones at the cave's mouth. */
-const FERNS = 18;
+const FERNS = 30;
+/** Clumps of wildflowers over the banks, in patches. */
+const FLOWERS = 90;
 /** How far each plant's leaves reach from its middle, in meters at its own size: grass stays out. */
-const PLANT_REACH: Record<PlantKind, number> = { fern: 0.45, hosta: 0.55, shrub: 0.6 };
-/** The trees: each one's place along the stream, its distance from the stream's middle, and its kind. */
-const TREES: readonly (readonly [number, number, TreeKind])[] = [
-	[-3, -8.5, 'oak'],
-	[5.5, -10, 'beech'],
-	[15, -7.5, 'birch'],
-	[-16, -9, 'beech'],
-	[13, 8.5, 'oak'],
-	[-9, -12, 'birch'],
-	[21, -10, 'oak'],
+const PLANT_REACH: Record<PlantKind, number> = {
+	fern: 0.45,
+	hosta: 0.55,
+	shrub: 0.6,
+	flowers: 0.2,
+};
+/**
+ * The trees: each one's place along the stream, its distance from the stream's middle, its kind
+ * and its size. Groves stand on the far bank behind the cave, with young trees among them, and a
+ * few trees on the near bank frame the view.
+ */
+const TREES: readonly (readonly [number, number, TreeKind, number])[] = [
+	[-3, -8.5, 'oak', 0.85],
+	[5.5, -10, 'beech', 0.85],
+	[15, -7.5, 'birch', 0.8],
+	[-16, -9, 'beech', 0.9],
+	[13, 8.5, 'oak', 0.85],
+	[-9, -12, 'birch', 0.75],
+	[21, -10, 'oak', 0.9],
+	[1, -13.5, 'beech', 1],
+	[8.5, -14, 'oak', 0.95],
+	[18, -13, 'beech', 0.9],
+	[24, -6, 'birch', 0.7],
+	[-20, -6, 'oak', 0.8],
+	[2, -6.8, 'birch', 0.5],
+	[17, 6.5, 'birch', 0.65],
+	[22, 9, 'beech', 0.85],
+	[8, 9.5, 'oak', 0.75],
+	[-14, 7.5, 'birch', 0.7],
 ];
 
 /** A plant's place, its turn about y and its size. */
@@ -87,6 +109,7 @@ export async function createFlora(
 	update(t: number): void;
 	nightLights(on: boolean): void;
 	clear(x: number, z: number): boolean;
+	crowns: Crown[];
 }> {
 	const next = random(61);
 	const leafMesh = geometry.fromArrays(leaf());
@@ -106,11 +129,12 @@ export async function createFlora(
 
 	const shadow = { castShadows: true, receiveShadows: true };
 	// Trees on the banks, away from the water, each turned and sized a little differently.
-	const treeSpots = TREES.map(([x, dz, kind]) => {
+	const treeSpots = TREES.map(([x, dz, kind, grown]) => {
 		const z = streamZ(x) + dz;
-		const at = [x, groundHeight(x, z) - 0.1, z] as const;
+		const ground = groundHeight(x, z);
+		const at = [x, ground - 0.1, z] as const;
 		const yaw = next() * Math.PI * 2;
-		const size = 0.72 + 0.18 * next();
+		const size = grown * (0.92 + 0.16 * next());
 		const { wood, leaves } = models.trees[kind];
 		for (const part of [wood, leaves])
 			scene.createMesh({
@@ -119,12 +143,12 @@ export async function createFlora(
 				...placed(part, at, yaw, size),
 				...shadow,
 			});
-		return { x, z };
+		return { x, z, top: ground + 6.5 * size, reach: 2.6 * size };
 	});
 
 	// Plants: hostas at the water's edge, ferns over the banks and at the cave's mouth, and shrubs
 	// at the trees' feet. Each kind is one instance batch.
-	const plantSpots: Record<PlantKind, Spot[]> = { fern: [], hosta: [], shrub: [] };
+	const plantSpots: Record<PlantKind, Spot[]> = { fern: [], hosta: [], shrub: [], flowers: [] };
 	const add = (kind: PlantKind, x: number, z: number, size: number) => {
 		if (groundHeight(x, z) > WATER + 0.05)
 			plantSpots[kind].push({ x, z, yaw: next() * Math.PI * 2, size });
@@ -138,10 +162,38 @@ export async function createFlora(
 		const side = next() < 0.5 ? -1 : 1;
 		add('fern', x, streamZ(x) + side * streamHalf(x) * (1.3 + 2.4 * next()), 0.8 + 0.5 * next());
 	}
-	// Ferns flank the cave's mouth, on either side of its opening.
+	// Ferns flank the cave's mouth and grow among its boulders.
 	const [ax, az] = [Math.sin(CAVE.yaw), Math.cos(CAVE.yaw)];
-	for (const across of [-3.4, -2.6, 2.5, 3.3])
-		add('fern', CAVE.x + 2.6 * ax + across * az, CAVE.z + 2.6 * az - across * ax, 1 + 0.3 * next());
+	for (const [out, across] of [
+		[2.6, -3.4],
+		[2.6, -2.6],
+		[2.6, 2.5],
+		[2.6, 3.3],
+		[3.6, -4.2],
+		[3.8, 4.0],
+		[1.2, -4.4],
+		[1.0, 4.4],
+	] as const)
+		add(
+			'fern',
+			CAVE.x + out * ax + across * az,
+			CAVE.z + out * az - across * ax,
+			0.9 + 0.4 * next(),
+		);
+	// Wildflowers in patches: a spot joins a patch where a slow wave over the banks runs high.
+	for (let k = 0, tries = 0; k < FLOWERS && tries < FLOWERS * 20; tries++) {
+		const x = -18 + 36 * next();
+		const side = next() < 0.5 ? -1 : 1;
+		const z = streamZ(x) + side * streamHalf(x) * (1.3 + 3.5 * next());
+		if (Math.sin(x * 0.45 + 1.7) + Math.sin(z * 0.6 - x * 0.2) < 0.6) continue;
+		add('flowers', x, z, 1.1 + 0.5 * next());
+		k++;
+	}
+	// A patch on the near bank, in the camera's usual view.
+	for (let k = 0; k < 24; k++) {
+		const x = -3 + 9 * next();
+		add('flowers', x, streamZ(x) + streamHalf(x) * (1.25 + 1.6 * next()), 1.1 + 0.5 * next());
+	}
 	for (const { x, z } of treeSpots)
 		for (let k = 0; k < 2; k++) {
 			const a = next() * Math.PI * 2;
@@ -197,6 +249,7 @@ export async function createFlora(
 		),
 	];
 	return {
+		crowns: treeSpots,
 		clear: within(footprints),
 		nightLights(on) {
 			lit = on;

@@ -8,13 +8,15 @@
 // The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
 // depth of field, which focuses on the point that the camera orbits. For held frames, the sketch's
 // address takes them too: `?mood=Night&dslr`.
-import { defineSketch, type QualityPreset } from '@null3d/engine';
+import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
 import { interact } from '../../lib/interact';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
+import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass, INLAND_LAYER } from './grass';
 import { createLand, WATER } from './land';
 import { loadModels } from './models';
+import { createShafts } from './shafts';
 import { createStones } from './stones';
 import { createWater } from './water';
 
@@ -31,6 +33,16 @@ const DETAIL: Record<
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
 const DSLR_FOCAL_LENGTH = 50;
+/** The turn of the sun's path, so that it sets low over the stream, ahead of the camera. */
+const HEADING = Math.PI + 0.5;
+/** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
+const CAUSTICS: Record<Mood, [number, number, number]> = {
+	Afternoon: [0.32, 0.3, 0.25],
+	Golden: [0.3, 0.18, 0.08],
+	Blue: [0, 0, 0],
+	Night: [0, 0, 0],
+	Studio: [0.08, 0.08, 0.08],
+};
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
 
@@ -63,28 +75,45 @@ export default defineSketch(async (ctx) => {
 	});
 
 	createLand(ctx, detail.land, detail.texture);
-	createWater(ctx, detail.water);
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
+	const water = createWater(ctx, detail.water, stones.obstacles);
 	const flora = await createFlora(ctx, models);
+	const air = await createAir(ctx, flora.crowns);
+	const shafts = createShafts(ctx, camera);
 	const grass = createGrass(ctx, (x, z) => stones.clear(x, z) || flora.clear(x, z));
 	const fit = () => {
 		grass.fit(quality.preset);
 		stones.fit(quality.preset);
 	};
 	fit();
-	quality.onChange(fit);
 
 	// The mood and the lens: from the address at the start, then from the page's buttons.
-	// The sun sets low over the stream, ahead of the camera.
+	// Golden hour has a haze, and shafts of light through the trees; dusk has more mist.
 	const setMood = createMoods(ctx, sun, sky, room, {
-		heading: Math.PI + 0.5,
+		heading: HEADING,
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
+		haze: { Golden: 2.2, Blue: 1.5 },
+	});
+	const golden = timeOfDay('goldenHour', { heading: HEADING });
+	let current: Mood = 'Afternoon';
+	// Shafts of light at golden hour, at High and above: below, their march costs too much.
+	const light = () => {
+		const on = current === 'Golden' && (quality.preset === 'high' || quality.preset === 'ultra');
+		shafts.set(on ? golden.light.direction : undefined, [1.0, 0.62, 0.3]);
+	};
+	quality.onChange(() => {
+		fit();
+		light();
 	});
 	const choose = (mood: Mood) => {
+		current = mood;
 		setMood(mood);
 		flora.nightLights(mood === 'Night' || mood === 'Blue');
+		air.setMood(mood);
+		water.setCaustics(CAUSTICS[mood]);
+		light();
 	};
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
@@ -120,6 +149,10 @@ export default defineSketch(async (ctx) => {
 			view.update(dt);
 			if (dslr) post.set(lens);
 			flora.update(t);
+			air.update(t);
+		},
+		onLateUpdate() {
+			shafts.update();
 		},
 	};
 });

@@ -50,7 +50,7 @@ Some showcase models are organic shapes that code in a sketch would make poorly,
 
 | Script | Builds |
 | --- | --- |
-| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub and a cave mouth. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, three barks and a rock. The vertex colors hold ambient occlusion and moss |
+| `creek.py` | The Creek's models: oak, beech and birch trees, a fern, a hosta, a shrub, a clump of wildflowers and a cave mouth with boulders. numpy paints every texture: leaf clusters, fern fronds, a hosta leaf, flowers, three barks and a rock. The vertex colors hold ambient occlusion and moss |
 | `creek.ts` | Runs `creek.py` in Blender, optimizes each model with the asset tool, and packs each model's KTX2 textures into its own file |
 
 Build the Creek's models with `bun tools/samples/blender/creek.ts <folder>`. It needs Blender 5.2, at the macOS app's place or where `BLENDER` names it, and takes about 10 seconds. It prints each part's triangles and each file's size. To publish them:
@@ -66,13 +66,13 @@ Each model draws with few triangles, so a scene can place many copies:
 
 | Part | Triangles |
 | --- | --- |
-| Oak: wood, leaves | 3,712, 5,088 |
-| Beech: wood, leaves | 3,956, 5,936 |
-| Birch: wood, leaves | 2,806, 2,976 |
-| Fern, hosta, shrub | 416, 560, 252 |
-| Cave mouth | 6,999 |
+| Oak: wood, leaves | 5,048, 9,100 |
+| Beech: wood, leaves | 5,276, 10,400 |
+| Birch: wood, leaves | 3,882, 5,760 |
+| Fern, hosta, shrub, wildflowers | 416, 560, 252, 244 |
+| Cave mouth | 9,863 |
 
-The trees file takes 1,027 KB, the plants file 209 KB, and the cave file 725 KB. The trees' leaves are cards: each card holds a cluster of leaves in a 2 by 2 atlas, and its alpha cuts their outline. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided.
+The trees file takes 1,476 KB, the plants file 443 KB, and the cave file 778 KB. The trees' leaves are cards: each card holds a cluster of 22 to 28 small leaves in a 2 by 2 atlas of 2048 texels, and its alpha cuts their outline. The alpha fades over two texels at each leaf's edge, which softens the outline where alpha to coverage runs. The cards' normals bend away from the crown's middle, so the crown shades as one soft mass. The materials of the cards are masked and double sided.
 
 ## The sample check
 
@@ -82,7 +82,7 @@ The trees file takes 1,027 KB, the plants file 209 KB, and the cave file 725 KB.
 
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY only. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 183 MB now.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 300 MB in all. They are 186 MB now.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -100,7 +100,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 183 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 186 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.

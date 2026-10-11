@@ -10,11 +10,14 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
-import { fromStream, groundHeight, streamHalf, streamZ } from './land';
+import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
 import { type Part, placed } from './models';
+import type { Obstacle } from './water';
 
 /** Pebbles at each preset, over all their batches. */
 const PEBBLES: Record<QualityPreset, number> = { low: 1200, medium: 3000, high: 4800, ultra: 6000 };
+/** Rocks nearer the stream's middle than this many half widths are wet. */
+const WET = 1.25;
 /** The shapes of rock, each one batch. */
 const ROCK_SHAPES = 4;
 /**
@@ -88,31 +91,44 @@ export function createStones(
 	detail: number,
 	textureSize: number,
 	cave: Part,
-): { clear(x: number, z: number): boolean; fit(preset: QualityPreset): void } {
+): {
+	clear(x: number, z: number): boolean;
+	fit(preset: QualityPreset): void;
+	obstacles: Obstacle[];
+} {
 	const maps = textureSet(textures, textureSize, rockTexel);
-	const stone = materials.standard({
-		vertexColors: true,
-		roughness: 1,
-		...maps,
-		uvTransform: { repeat: [2, 1] },
-	});
+	const look = { vertexColors: true, ...maps, uvTransform: { repeat: [2, 1] } } as const;
+	const dry = materials.standard({ ...look, roughness: 1 });
+	// Stones in the stream and at its edge are wet: darker, and glossy, so they catch the light.
+	const wet = materials.standard({ ...look, color: '#8f8a82', roughness: 0.32 });
 	const next = random(43);
 	const places = rockPlaces();
+	const obstacles: Obstacle[] = [];
 	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
 		const squash = [1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const;
 		const mesh = geometry.fromArrays(mossy(rock(300 + shape, detail, squash), 50 + shape));
-		const mine = places.filter((_, k) => k % ROCK_SHAPES === shape);
-		const batch = scene.createInstances(mesh, mine.length, {
-			material: stone,
-			castShadows: true,
-			receiveShadows: true,
-		});
-		mine.forEach(({ x, z, size }, row) => {
-			batch.positions.set([x, groundHeight(x, z) - size * 0.2, z], row * 3);
-			batch.rotations.set(yaw(next() * Math.PI * 2), row * 4);
-			batch.scales.set([size, size, size], row * 3);
-		});
-		batch.markDirty();
+		const mine = places
+			.filter((_, k) => k % ROCK_SHAPES === shape)
+			.map((place) => ({ ...place, yaw: next() * Math.PI * 2 }));
+		for (const wetness of [true, false]) {
+			const group = mine.filter(({ x, z }) => fromStream(x, z) < WET === wetness);
+			if (group.length === 0) continue;
+			const batch = scene.createInstances(mesh, group.length, {
+				material: wetness ? wet : dry,
+				castShadows: true,
+				receiveShadows: true,
+			});
+			group.forEach(({ x, z, size, yaw: turn }, row) => {
+				const y = groundHeight(x, z) - size * 0.2;
+				batch.positions.set([x, y, z], row * 3);
+				batch.rotations.set(yaw(turn), row * 4);
+				batch.scales.set([size, size, size], row * 3);
+				// Where the stone meets the water's plane, the water foams around it.
+				const below = (WATER - y) / (size * squash[1]);
+				if (Math.abs(below) < 0.9) obstacles.push({ x, z, r: size * Math.sqrt(1 - below * below) });
+			});
+			batch.markDirty();
+		}
 	}
 
 	// The cave mouth: the floor of its tunnel meets the ground at the opening, and the back of the
@@ -134,7 +150,8 @@ export function createStones(
 		tints.map((color) => {
 			const capacity = Math.ceil(PEBBLES.ultra / 6);
 			const batch = scene.createInstances(mesh, capacity, {
-				material: materials.standard({ color, roughness: 0.7, ...maps }),
+				// Wet pebbles: glossy, at the water's edge and under it.
+				material: materials.standard({ color, roughness: 0.35, ...maps }),
 				receiveShadows: true,
 			});
 			for (let row = 0; row < capacity; ) {
@@ -157,6 +174,7 @@ export function createStones(
 		{ x: CAVE.x, z: CAVE.z, r: CAVE.reach },
 	];
 	return {
+		obstacles,
 		clear: within(footprints),
 		fit(preset) {
 			for (const batch of pebbleBatches) batch.setActiveCount(Math.ceil(PEBBLES[preset] / 6));

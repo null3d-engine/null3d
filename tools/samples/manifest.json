@@ -5087,7 +5087,7 @@
 		{
 			"id": "showcase/creek",
 			"title": "Creek trees, plants and cave",
-			"purpose": "The organic models of the engine's Creek showcase scene: oak, beech and birch trees, a fern, a hosta, a shrub and a rocky cave mouth",
+			"purpose": "The organic models of the engine's Creek showcase scene: oak, beech and birch trees, a fern, a hosta, a shrub, wildflowers and a rocky cave mouth",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5107,18 +5107,18 @@
 			"files": [
 				{
 					"path": "sources/showcase/creek/cave.glb",
-					"bytes": 742284,
-					"sha256": "bff374bd8c7670104986ce8351dbe0fcb0d10a82e72d42d17f64f08598c6b689"
+					"bytes": 796728,
+					"sha256": "278c2e22e3e6de40b2a0bbc2138a6f48f2cb4dfa1d4b361618f42a012bf5eafd"
 				},
 				{
 					"path": "sources/showcase/creek/plants.glb",
-					"bytes": 213640,
-					"sha256": "f5bc40382aebbcbac928f917a2d949c0de0da74249911d2f05c9c04a0398d975"
+					"bytes": 453632,
+					"sha256": "5914339906c581a994f3bc4b98942b98c01ec1a3027b660e5286e725df51fec4"
 				},
 				{
 					"path": "sources/showcase/creek/trees.glb",
-					"bytes": 1051244,
-					"sha256": "ec9a252823568e741420fde73226c06bc39dd99e037a75587c6ccd3119be4d7f"
+					"bytes": 1511108,
+					"sha256": "fc667827a4ba443d826316225ecbbe09aff3a92245194c2af3a6ae4f368442b2"
 				}
 			]
 		}

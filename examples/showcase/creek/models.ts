@@ -1,4 +1,4 @@
-// The creek's organic models: three broadleaf trees, three plants for the banks and the cave mouth.
+// The creek's organic models: three broadleaf trees, four plants for the banks and the cave mouth.
 // A script builds them in Blender (tools/samples/blender/creek.py), and the asset tool optimizes
 // them, so they load as a developer ships models: quantized meshes and KTX2 textures. They live in
 // the sample-assets repository. Each tree has a wood part and a leaves part, and each plant and the
@@ -16,7 +16,7 @@ import { sampleUrl } from '../../lib/samples';
 
 export const TREE_KINDS = ['oak', 'beech', 'birch'] as const;
 export type TreeKind = (typeof TREE_KINDS)[number];
-export const PLANT_KINDS = ['fern', 'hosta', 'shrub'] as const;
+export const PLANT_KINDS = ['fern', 'hosta', 'shrub', 'flowers'] as const;
 export type PlantKind = (typeof PLANT_KINDS)[number];
 
 /** A part of a model: its mesh, its material, and its place within its file. */
