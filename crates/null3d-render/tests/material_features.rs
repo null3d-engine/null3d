@@ -349,10 +349,11 @@ fn check_custom_values<B: FrameBuilder>(
 
 #[test]
 fn custom_values_upload_to_a_texture_of_their_own_on_webgpu() {
-    // The custom values' texture is the builder's texture 2, after three.js's table of terms.
+    // The custom values' texture is the builder's texture 3, after the light tables and the
+    // blank probes array.
     check_custom_values(
         World::new(),
-        |(op, o)| (*op == Op::WriteTexture && o[0] == 2).then(|| o[3]),
+        |(op, o)| (*op == Op::WriteTexture && o[0] == 3).then(|| o[3]),
         |_| 1,
     );
 }

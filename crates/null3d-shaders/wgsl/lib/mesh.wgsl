@@ -10,6 +10,8 @@ enable draw_index;
 #import null3d::vertex::{transform_normal, transform_point}
 #ifdef WEBGL2
 #import null3d::tables::{materials}
+#else
+#import null3d::tables::{custom_values}
 #endif
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
@@ -147,9 +149,6 @@ struct CellOffsets {
 #endif
 #else
 @group(0) @binding(1) var<storage, read> materials: array<MaterialRow>;
-/// The materials' custom values: row `id` holds material `id`'s, one texel per `vec4f`. Vertex
-/// shaders read them too, and read no storage buffers, so they have a data texture of their own.
-@group(0) @binding(2) var custom_values: texture_2d<f32>;
 #ifdef ROW_VALUES
 /// The row values of every source, two texels each, which the vertex stage reads.
 @group(0) @binding(16) var row_values: texture_2d<f32>;

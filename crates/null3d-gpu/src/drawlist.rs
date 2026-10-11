@@ -201,12 +201,25 @@ pub enum Op {
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
     SkyMapStep = 55,
+    /// [probes texture id, chain texture id, layer, image id, then the six faces' texture ids]:
+    /// makes one reflection probe's map from what its six capture views drew (decision record
+    /// D-149), in the frame's commands, ahead of its passes, with the code of the generator that
+    /// the backend holds under the image id. The probes texture is a 2D array of `RGBA16_FLOAT`
+    /// with mip levels down to 4 texels across, and the chain a 2D array of six layers of
+    /// `RGBA16_FLOAT` with every mip level, both with `RENDER_ATTACHMENT` and `TEXTURE_BINDING`
+    /// usage. Each face texture is a one-layer array that a capture view drew into, its first row
+    /// at the view's bottom edge. The backend copies face `k` into layer `k` of the chain, in the
+    /// cube map table that every GPU path shares, makes the chain's levels, then fills each level
+    /// of the probe's layer with the chain's light filtered for the level's roughness, as an
+    /// octahedral map. Level `i` of `n` holds perceptual roughness `1 - sqrt(1 - i / (n - 1))`,
+    /// as an environment map's levels do.
+    ProbeFilter = 56,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 43] = [
+    pub const ALL: [Op; 44] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -249,6 +262,7 @@ impl Op {
         Op::ReadBuffer,
         Op::GenerateTexture,
         Op::SkyMapStep,
+        Op::ProbeFilter,
         Op::Submit,
     ];
 
@@ -300,6 +314,7 @@ impl Op {
             Op::ReadBuffer => "READ_BUFFER",
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
+            Op::ProbeFilter => "PROBE_FILTER",
             Op::Submit => "SUBMIT",
         }
     }

@@ -88,6 +88,12 @@ import {
 } from './pointer-events';
 import type { InstancingTemplate, PartTemplate, Prefab, TemplateNode } from './prefab';
 import {
+	type ProbeHost,
+	type ReflectionProbe,
+	type ReflectionProbeOptions,
+	ReflectionProbes,
+} from './probes';
+import {
 	type OverlapHit,
 	type QueryOptions,
 	type RaycastBatchHits,
@@ -4120,6 +4126,29 @@ export class Scene implements ViewHolder {
 	setEnvironment(environment: Environment | null, options?: EnvironmentOptions): void {
 		this.sceneEnvironment ??= new SceneEnvironment(this.core);
 		this.sceneEnvironment.set(environment, options);
+	}
+
+	/** @internal What reflection probes need from the sketch, which the sketch runner gives. */
+	probeHost?: ProbeHost;
+	/** The scene's reflection probes, made with the first. */
+	private reflectionProbes?: ReflectionProbes;
+
+	/**
+	 * Makes a reflection probe: the scene around a point, which the engine captures on the GPU and
+	 * filters for each roughness, as an environment's map. It lights the surfaces inside its box in
+	 * place of the environment, with reflections that meet the box's sides, as a room's walls or a
+	 * street's houses stand. A probe captures in a frame soon after it is made, and frames before
+	 * that draw with the environment. A scene has at most 16 probes. Their captures take 6 of the
+	 * 32 views that the scene and its passes share. Throws E1430 past those limits, E1203 for a
+	 * number that is not finite, E1108 for a negative blend or intensity or a box whose min does not
+	 * lie below its max, and E1213 for an option that probes do not take.
+	 */
+	createReflectionProbe(options: ReflectionProbeOptions): ReflectionProbe {
+		this.reflectionProbes ??= new ReflectionProbes(
+			this.core,
+			this.probeHost ?? { sendGenerator: () => {}, floatTargets: true, time: this.time },
+		);
+		return this.reflectionProbes.create(options, 'scene.createReflectionProbe');
 	}
 
 	/**

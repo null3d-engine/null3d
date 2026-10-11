@@ -896,6 +896,37 @@ impl MockBackend {
         Ok(())
     }
 
+    fn probe_filter(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        check(o.len() == 10, op, "a probe's filter takes 10 words")?;
+        let drawn = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
+        let probes = self.texture(op, o[0])?;
+        let chain = self.texture(op, o[1])?;
+        for texture in [probes, chain] {
+            check(
+                texture.format == format::RGBA16_FLOAT && texture.usage & drawn == drawn,
+                op,
+                "a probe's textures are RGBA16_FLOAT that passes draw into and bind",
+            )?;
+        }
+        check(
+            o[2] < probes.layers,
+            op,
+            "the probe's layer lies in the probes texture",
+        )?;
+        check(chain.layers == 6, op, "the chain holds six faces")?;
+        if !self.generators.contains(&o[3]) {
+            return Err(missing(op, "generator", o[3]));
+        }
+        for &face in &o[4..10] {
+            self.texture(op, face)?;
+            self.use_resource(Resource::Texture(face));
+        }
+        self.use_resource(Resource::Texture(o[0]));
+        self.use_resource(Resource::Texture(o[1]));
+        Ok(())
+    }
+
     fn create_sampler(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         check(
             o[1..4].iter().all(|&mode| mode <= address::MIRROR_REPEAT),
@@ -1164,6 +1195,7 @@ impl MockBackend {
                     self.texture(op, o[3])?;
                 }
             }
+            Op::ProbeFilter => self.probe_filter(op, o)?,
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);

@@ -140,6 +140,7 @@ use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::probe_grid;
+use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
@@ -147,7 +148,7 @@ use crate::ssr::SsrIds;
 use crate::subsurface::SubsurfaceIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
-use crate::view::{ViewFrame, ViewId};
+use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::weighted::WeightedIds;
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
@@ -208,8 +209,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    /// Each camera view's list of reflection probes, one slot per view.
+    pub const PROBE_LISTS: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the subsurface blur's steps.
-    pub const SUBSURFACE: u32 = OBJECT_RANGES + 1;
+    pub const SUBSURFACE: u32 = PROBE_LISTS + 1;
     /// The uniform buffer of the physical sky's values.
     pub const PHYSICAL_SKY: u32 = SUBSURFACE + 1;
     /// The uniform buffer of the full-screen passes' blocks.
@@ -291,8 +294,13 @@ mod ids {
     /// The light tables: the area lights' tables (see [`crate::light_tables`]). WebGL2 reads the
     /// split-sum table beside the material table instead.
     pub const LIGHT_TABLES: u32 = STREAMED_VALUES + RING;
+    /// The blank texture array that frame groups bind while the scene has no reflection probe.
+    pub const BLANK_PROBES: u32 = LIGHT_TABLES + 1;
+    /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
+    /// through (see [`crate::probes::ProbeTextures`]).
+    pub const PROBE_TEXTURES: u32 = BLANK_PROBES + 1;
     /// The texel that particle systems bind in place of a view's depth copy.
-    pub const BLANK_PARTICLE_DEPTH: u32 = LIGHT_TABLES + 1;
+    pub const BLANK_PARTICLE_DEPTH: u32 = PROBE_TEXTURES + 4;
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
     pub const BLANK_MOTION: u32 = BLANK_PARTICLE_DEPTH + 1;
@@ -600,6 +608,12 @@ pub struct CpuCulledRenderer {
     bound_environment: u32,
     /// The 3D texture that the frame groups bind: the grid's, or the blank one.
     bound_probe_grid: u32,
+    /// The reflection probes' array that the camera views' frame groups bind, with its
+    /// generation, or `None` for the blank one.
+    bound_probes: Option<(u32, u32)>,
+    /// True when the last frame wrote a view's list of probes, so the next writes the lists
+    /// again even when the scene has no probe left.
+    probes_listed: bool,
 }
 
 impl CpuCulledRenderer {
@@ -808,6 +822,8 @@ impl CpuCulledRenderer {
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
             bound_probe_grid: ids::BLANK_PROBE_GRID,
+            bound_probes: None,
+            probes_listed: false,
         }
     }
 
@@ -1270,6 +1286,7 @@ impl CpuCulledRenderer {
             } else {
                 0
             }
+            + views * probes::LIST_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -1307,6 +1324,18 @@ impl CpuCulledRenderer {
         self.settings
             .light_tables_mut()
             .create(list, ids::LIGHT_TABLES)?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::PROBE_LISTS,
+                MAX_VIEWS as u32 * probes::LIST_STRIDE,
+                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
+            ],
+        )?;
+        probes::create_blank(list, ids::BLANK_PROBES)?;
+        self.settings.probes_mut().set_textures(ProbeTextures {
+            first: ids::PROBE_TEXTURES,
+        });
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -1613,6 +1642,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
+        self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
@@ -1636,6 +1666,9 @@ impl CpuCulledRenderer {
             probe_grid: self.bound_probe_grid,
             lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
+            probes: self
+                .bound_probes
+                .map_or(ids::BLANK_PROBES, |(array, _)| array),
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1719,6 +1752,7 @@ impl CpuCulledRenderer {
         )?;
         self.settings
             .record_materials(input, list, arena, table, &self.physical_sky)?;
+        self.graph.set_probe_filter(self.settings.probes().filter());
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
         self.settings.update_post_layers();
@@ -1726,10 +1760,14 @@ impl CpuCulledRenderer {
             .set_post_values(self.settings.effects(), self.settings.views());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
+        // So may the reflection probes' array, which the probes' work makes again.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
-        if environment != self.bound_environment {
+        let probes = self.settings.probes().array();
+        if environment != self.bound_environment || probes != self.bound_probes {
             self.bound_environment = environment;
+            self.bound_probes = probes;
             lit.environment = environment;
+            lit.probes = probes.map_or(ids::BLANK_PROBES, |(array, _)| array);
             for index in 0..self.opaque.views() {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
@@ -1746,6 +1784,17 @@ impl CpuCulledRenderer {
             for index in 0..self.opaque.views() {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
+            }
+        }
+        let list_probes = self.probes_listed || probes.is_some();
+        self.probes_listed = probes.is_some();
+        for index in 0..views.min(MAX_VIEWS) {
+            let view = ViewId::from_index(index);
+            if let (true, Some(frame)) = (list_probes, self.culling.frame(view)) {
+                let listed = self.settings.probe_list(view, frame);
+                let (at, bytes) = arena.push(listed.as_bytes())?;
+                let offset = index as u32 * probes::LIST_STRIDE;
+                list.push(Op::WriteBuffer, &[ids::PROBE_LISTS, offset, at, bytes])?;
             }
         }
         for index in 0..views {
@@ -2266,6 +2315,8 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
+        // The capture views of a probe that captures in this frame cull with the others.
+        self.settings.prepare_probe_capture(input.frame);
         let (scene, parity, canvas, scale) = (
             input.scene,
             input.parity(),
@@ -2535,6 +2586,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.bound_probe_grid = ids::BLANK_PROBE_GRID;
+        self.bound_probes = None;
+        self.probes_listed = false;
         self.background.reset_gpu();
         self.particles.reset_gpu();
         self.physical_sky.reset_gpu();
@@ -2567,6 +2620,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.settings.textures_mut().reset_gpu();
         self.settings.light_tables_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
+        self.settings.probes_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

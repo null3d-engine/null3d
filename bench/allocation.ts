@@ -68,7 +68,9 @@
 // skin pass draws again and the subsurface blur's steps spread.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
+// frame. `--reflection-probes` places two reflection probes over S1 that capture again in turns in
+// every frame, so each frame draws six capture views and runs a probe's filter.
+// `--ssr` puts a polished floor under S1 with screen-space reflections on, which draw a
 // depth pyramid, trace it and copy the opaque colors in every frame.
 // `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
 // materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
@@ -141,6 +143,7 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --reflection-probes --gpu webgl2
 //   bun run bench:allocation --translucency --gpu webgl2
 //   bun run bench:allocation --subsurface --gpu webgl2
 //   bun run bench:allocation --ssr --gpu webgl2
@@ -351,6 +354,30 @@ export const SETTER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, num
 };
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with
+ * `--reflection-probes`: the encoders of the six capture views' culling passes, render passes and
+ * the passes that copy their images upright, at bloom's allowance per pass.
+ */
+const PROBES_REPLAY_BUDGET = 6 * 3 * 64;
+
+/**
+ * The bytes per frame that a reflection probe's filter may allocate on WebGPU with
+ * `--reflection-probes`: the encoder of each of its render passes, at bloom's allowance per pass. A
+ * filter of probes 256 texels across draws 6 passes that copy the views' images, 42 that make the
+ * chain's levels and 7 that fill the probe's levels.
+ */
+const PROBE_FILTER_BUDGET = 55 * 64;
+
+/** The budgets that `--reflection-probes` adds to a frame's places. */
+const PROBE_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {},
+	'render-worker': {
+		'replay webgpu/backend.ts': PROBES_REPLAY_BUDGET,
+		'draw webgpu/probes.ts': PROBE_FILTER_BUDGET,
+	},
+};
+
+/**
  * Places that allocate with `--calls`, on top of `BUDGETS`: the sketch's own step, which makes the
  * calls that the engine's docs promise allocate nothing, and the figure places that its read of
  * `debug.frameStats` turns on, which are `STATS_BUDGETS`'.
@@ -531,7 +558,11 @@ export const PAGE_SWITCHES: readonly PageSwitch[] = [
 	{ flag: '--row-values', query: '&rowValues' },
 	{ flag: '--levels', query: '&levels' },
 	{ flag: '--environment', query: '&environment' },
-	{ flag: '--probes', query: '&probes' },
+	{
+		flag: '--reflection-probes',
+		query: '&reflectionProbes=always',
+		budgets: PROBE_BUDGETS,
+	},
 	{ flag: '--hemisphere', query: '&hemisphere', budgets: SETTER_BUDGETS },
 	{ flag: '--area-lights', query: '&areaLights' },
 	{ flag: '--setters', query: '&setters', budgets: SETTER_BUDGETS },

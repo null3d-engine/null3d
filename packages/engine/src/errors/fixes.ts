@@ -120,6 +120,8 @@ export const ERROR_FIXES = {
 		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
+	E1430:
+		"Destroy a probe that you no longer need before you make another, or let one probe's box cover more of the scene. Probes blend where their boxes overlap, so a few large boxes with a blend distance often look as good as many small ones. For the views, remove a scene pass or a reflection pass before you make the first probe.",
 	E1431:
 		"Serve the engine's area-light-tables.bin file at the address that the message names. A build with the null3D Vite plugin copies it beside the engine's code: deploy it with the rest of the build. When the engine's files come from another origin, that server must send Access-Control-Allow-Origin, and the page's connect-src must allow the origin.",
 	E1501:

@@ -516,6 +516,11 @@ export class SketchRunner {
 			this.input,
 		);
 		geometry.users = scene;
+		scene.probeHost = {
+			sendGenerator: (id) => textures.sendProbeGenerator(id),
+			floatTargets: device.occlusionTargets,
+			time: this.recorded,
+		};
 		this.post = new Post(
 			this.core,
 			device.effectsSceneColor !== FORMAT_CANVAS,
@@ -854,6 +859,7 @@ export class SketchRunner {
 			glue.setFogSlices(settings.fogSlices) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setProbeSize(settings.probeSize) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
@@ -1042,7 +1048,8 @@ export class SketchRunner {
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
 	 * loss, textures included. It waits for the area lights' tables to load and for every texture
 	 * image to reach that thread first. When that frame draws with what the frame before it drew, as
-	 * screen-space reflections read the frame before's color, it steps the sketch once more at the
+	 * screen-space reflections read the frame before's color, or a reflection probe waits for its
+	 * capture, it steps the sketch once more at the
 	 * same time, and that thread draws both frames in turn. The first failure in the sketch or the
 	 * core stops the hold with E1408.
 	 */
@@ -1072,8 +1079,11 @@ export class SketchRunner {
 				frame = this.frame();
 				if (first === 0 && (before || step === steps)) first = frame;
 			}
+			// A reflection probe captures in one frame and lights surfaces from then on, and the
+			// capture views take one probe a frame, so a second frame at the same time captures the
+			// next. The thread that draws keeps two frames' lists.
 			Atomics.store(slots, Slot.HeldFrom, frame);
-			if (glue.readsLastFrame() !== 0) {
+			if (glue.readsLastFrame() !== 0 || glue.probesWaiting() !== 0) {
 				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}

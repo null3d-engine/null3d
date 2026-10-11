@@ -74,6 +74,12 @@ The screen-space reflection tests draw boxes, a ball and a lamp on a steel floor
 
 The reflections read the frame before's colors, and hold mode draws only its last frame. So when the last frame reads the frame before, hold mode steps the sketch once more at the same time, and the thread that draws draws both frames in turn: the control slot `HeldFrom` names the first. Without that, every held frame showed no reflections.
 
+## The probe tests
+
+The probe tests draw a closed room whose walls glow a color each, with a mirror floor and a chrome ball, and a reflection probe that fills the room ([D-149](decisions/D-149-reflection-probes.md)). Variants blur the floor, turn box projection off, and split the room into two probes that blend. `probes.spec.ts` checks that the ball reflects the green wall on its left and the red wall on its right, and that the floor reflects the lit room rather than the black of a scene with no environment. A probe whose faces land on the wrong sides, or whose map never fills, fails it.
+
+A probe captures in one frame and lights surfaces from then on, one probe a frame. So hold mode records the held frame once more while a probe waits for its capture, and the thread that draws draws both frames in turn. It keeps two frames' lists, so a held frame shows at most two probes. A test or a demo with more probes shows the environment in the rest of their boxes.
+
 ## The cookbook's recipes
 
 Each recipe on the docs' cookbook page, `docs/cookbook/index.md`, is a complete sketch. The tests of the skills' sketches run them too (`tests/lib/skill-sketches.ts`): the unit test type checks each one against the engine, and `tests/image/skill-sketches.spec.ts` draws each one in hold mode on every GPU tier. A recipe that picks a camera must draw more than its background. The tests compare no reference image, so a recipe can change without new references in both sets. The demos in `examples/` carry the reference images instead.

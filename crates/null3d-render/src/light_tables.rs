@@ -1,9 +1,8 @@
 //! The light tables: one 2D array texture of half floats, at binding 3 of the frame's group on
 //! both GPU paths (`null3d::tables`), which the environment's filtering sampler reads.
 //!
-//! - Layer 0 holds three.js's split-sum table ([`crate::dfg`]) in its corner: the scale and the
-//!   bias of each entry, then two zeros. WebGPU reads it there. WebGL2 reads its copy beside the
-//!   material table, which takes no texture unit of its own.
+//! - Layer 0 is spare. WebGPU reads three.js's split-sum table ([`crate::dfg`]) in the materials'
+//!   custom values, and WebGL2 beside the material table, so no layer holds it.
 //! - Layers 1 and 2 hold the two tables of area lights in their corner, 64 x 64 texels: the values
 //!   of the inverse matrices that fit GGX by linearly transformed cosines, and the scale and bias
 //!   of their Fresnel terms, with two zeros. They load on first use. Until they arrive both layers
@@ -23,8 +22,7 @@
 
 use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, view};
 
-use crate::dfg;
-use crate::frame::{RecordError, UploadArena, address};
+use crate::frame::{RecordError, address};
 
 /// Texels along each side of each area table.
 pub const TABLE_SIZE: u32 = 64;
@@ -42,10 +40,6 @@ pub const IMAGE_HALVES: usize = 4 * (4usize.pow(IMAGE_LEVELS) - 1) / 3;
 pub const FIRST_IMAGE_LAYER: u32 = 3;
 /// The most lights with images at once.
 pub const MAX_IMAGES: usize = 32;
-/// Bytes that [`upload_dfg`] copies into a frame's upload arena: the split-sum table as
-/// `RGBA16_FLOAT` texels.
-pub const DFG_BYTES: usize = (8 * dfg::SIZE * dfg::SIZE) as usize;
-
 /// The size, layers and mip levels of the light tables' texture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Shape {
@@ -278,35 +272,6 @@ impl LightTables {
 fn halves_as_bytes(halves: &[u16]) -> &[u8] {
     // SAFETY: a u16 has no padding bytes, and the slice covers exactly the halves' bytes.
     unsafe { std::slice::from_raw_parts(halves.as_ptr().cast::<u8>(), size_of_val(halves)) }
-}
-
-/// Records the upload of the split-sum table into the corner of layer 0 of `texture`.
-pub(crate) fn upload_dfg(
-    list: &mut DrawList,
-    arena: &mut UploadArena,
-    texture: u32,
-) -> Result<(), RecordError> {
-    let (at, texels) = arena.push_zeroed(DFG_BYTES)?;
-    for (texel, entry) in texels.as_chunks_mut::<8>().0.iter_mut().zip(dfg::entries()) {
-        texel[..2].copy_from_slice(&entry[0].to_le_bytes());
-        texel[2..4].copy_from_slice(&entry[1].to_le_bytes());
-    }
-    list.push(
-        Op::WriteTexture,
-        &[
-            texture,
-            0,
-            0,
-            0,
-            0,
-            dfg::SIZE,
-            dfg::SIZE,
-            1,
-            at,
-            DFG_BYTES as u32,
-        ],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]

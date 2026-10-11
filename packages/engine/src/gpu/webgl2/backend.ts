@@ -38,6 +38,7 @@ import {
 } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import type { CubeGenerator } from './environment';
+import type { Generators, ProbeTexture } from './probes';
 import {
 	buildPermutation,
 	createProgram,
@@ -645,7 +646,10 @@ export class WebGL2Backend {
 		this.depth = setDepthMode(gl, depthMode);
 		this.programHost = programHost(gl, this.depth, this.parallel);
 		const host = this.programHost;
-		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(host));
+		this.images.warmGeneratorsWith((code) => {
+			const { environment, probes } = code as Generators;
+			return Promise.all([environment.prepare(host), probes.prepare(host)]);
+		});
 		this.depthFunc = this.nearerPasses();
 		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
 		this.clearDepth = this.depth.standard ? 0 : 1;
@@ -957,6 +961,9 @@ export class WebGL2Backend {
 					break;
 				case G.OP_DESTROY_PIPELINE:
 					this.destroyPipeline(words[a] as number);
+					break;
+				case G.OP_PROBE_FILTER:
+					this.filterProbe(words, a);
 					break;
 				case G.OP_GENERATE_TEXTURE:
 				case G.OP_SKY_MAP_STEP:
@@ -1763,7 +1770,7 @@ export class WebGL2Backend {
 	private generateTexture(op: number, words: Uint32Array, floats: Float32Array, a: number): void {
 		const texture = this.textureOf(words[a] as number);
 		const id = words[a + 1] as number;
-		const code = this.images.generatorCodeFor<CubeGenerator>(id);
+		const code = this.images.generatorCodeFor<Generators>(id).environment;
 		this.generators = code;
 		this.beforeGenerator();
 		const target = texture.texture as WebGLTexture;
@@ -1774,6 +1781,25 @@ export class WebGL2Backend {
 			const host = this.programHost;
 			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
 		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		this.afterGenerator();
+	}
+
+	/** The six capture views' images of the probe that a filter makes, kept so it allocates none. */
+	private readonly probeFaces: ProbeTexture[] = [];
+
+	/**
+	 * Makes a reflection probe's map from its six capture views' images, ahead of the frame's
+	 * passes, with the filter of the generators' code under the command's image id.
+	 */
+	private filterProbe(words: Uint32Array, a: number): void {
+		const probes = this.textureOf(words[a] as number);
+		const chain = this.textureOf(words[a + 1] as number);
+		const code = this.images.generatorCodeFor<Generators>(words[a + 3] as number).probes;
+		for (let face = 0; face < 6; face++)
+			this.probeFaces[face] = this.textureOf(words[a + 4 + face] as number);
+		this.beforeGenerator();
+		const layer = words[a + 2] as number;
+		code.run(this.programHost, probes, chain, layer, this.probeFaces, this.gpuMemory);
 		this.afterGenerator();
 	}
 

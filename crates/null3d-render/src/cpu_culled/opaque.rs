@@ -43,8 +43,6 @@ const ROW_VALUES_BINDING: u32 = 8;
 /// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
 /// declare it.
 pub(super) const OBJECT_RANGES_BINDING: u32 = 8;
-/// The binding of the light tables in the frame group (see [`crate::light_tables`]).
-const LIGHT_TABLES_BINDING: u32 = 3;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 pub(super) const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
@@ -72,6 +70,8 @@ pub(super) struct LitTextures {
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
     pub(super) transmission: u32,
+    /// The reflection probes' texture array, or the blank one.
+    pub(super) probes: u32,
 }
 
 /// The ring slots a view's frame draws from.
@@ -317,10 +317,11 @@ impl Opaque {
     /// each slot of the light textures' ring. Each also binds the shadow map of `lit` with the
     /// comparison sampler, the shadow settings block, which holds the cascades' settings beside the
     /// shadow tiles', the slot's texture of `lit`'s ring of light data textures, the shadow atlas
-    /// of `lit`, the light probe grid's 3D texture, the texture of ambient occlusion, the light
-    /// tables' texture, the environment's cube texture of `lit` with its sampler, and the copy of
-    /// the opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or
-    /// a shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
+    /// of `lit`, the light probe grid's 3D texture, the texture of ambient occlusion, the
+    /// environment's cube texture of `lit` with its sampler, the copy of the opaque color of
+    /// `lit`, which the environment's sampler reads too, and the reflection probes' array of
+    /// `lit`, which it reads as well, with the view's list of probes. A shadow cascade's or a
+    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
     /// it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
@@ -361,6 +362,7 @@ impl Opaque {
             probe_grid,
             lights,
             transmission: copy,
+            probes,
         }) = lit
         else {
             let mut words = [0; 23];
@@ -369,7 +371,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 68 + environment::ENTRY_WORDS];
+        let mut words = [0; 73 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
         words[23..43].copy_from_slice(&[
             4,
@@ -395,7 +397,7 @@ impl Opaque {
         ]);
         words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 15]);
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 16]);
             words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
             words[58..63].copy_from_slice(&[
@@ -405,14 +407,19 @@ impl Opaque {
                 0,
                 0,
             ]);
-            words[63..68].copy_from_slice(&[
-                LIGHT_TABLES_BINDING,
+            words[63..73].copy_from_slice(&[
+                crate::probes::ARRAY_BINDING,
                 resource_kind::TEXTURE,
-                ids::LIGHT_TABLES,
+                probes,
                 0,
                 0,
+                crate::probes::LIST_BINDING_WEBGL2,
+                resource_kind::BUFFER,
+                ids::PROBE_LISTS,
+                view.index() as u32 * crate::probes::LIST_STRIDE,
+                crate::probes::LIST_BYTES,
             ]);
-            words[68..]
+            words[73..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }
