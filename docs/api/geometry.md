@@ -8,7 +8,7 @@ summary: "Generators with three.js parameters; meshes from arrays; morph targets
 
 # Geometry
 
-> Ships in null3D 0.1. Integer attributes, joints and weights, and morph targets ship in 0.2. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds integer attributes, joints and weights, and morph targets. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
 
 ```mermaid
 flowchart LR
