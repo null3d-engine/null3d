@@ -3,7 +3,8 @@
 // depth, in a loop, as a sketch's god rays do. A loop in an effect once made the WebGL2 fold's
 // shader define the final pass's main twice, so the fold failed and the effect drew a pass of its
 // own. Bloom reads the effects' image, so the fold builds and draws only once the page's
-// 'bloom-off' message turns bloom off.
+// 'bloom-off' message turns bloom off. The render scale stays whole, as the fold draws only at the
+// canvas's size, and the governor would lower it on a slow GPU.
 import { defineSketch } from '@null3d/engine';
 
 const rays = /* wgsl */ `
@@ -25,7 +26,8 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, post, page }) => {
+export default defineSketch(({ scene, materials, geometry, post, page, quality }) => {
+	quality.set({ governor: false, minRenderScale: 1, maxRenderScale: 1 });
 	post.set({
 		bloom: { intensity: 0.4, threshold: 1 },
 		vignette: { intensity: 0.5, size: 1.2, roundness: 1 },

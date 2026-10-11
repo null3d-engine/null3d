@@ -6,8 +6,9 @@
 // reports the joined shaders that built, failed or stayed unbuilt. A failed fold leaves the effect
 // in a pass of its own, so the image alone cannot tell.
 //
-// ?antialias= sets the engine's anti-aliasing mode. With ?gpu=compat, MSAA starts on the 8-bit
-// path, and the effect moves the engine to FXAA for good, beside which effects never fold.
+// The engine runs without anti-aliasing. Where a device cannot multisample float targets, as in
+// compatibility mode or on a software GPU, MSAA starts on the 8-bit path, and the effect moves the
+// engine to FXAA for good, beside which effects never fold.
 import { createEngine } from '@null3d/engine';
 import type { JoinTimingReport } from '../../packages/engine/src/gpu/effect-join';
 import { requestJoinTiming } from './lib/join-timing';
@@ -19,11 +20,6 @@ const BUILD_WAIT_MS = 30_000;
 /** How long the page plays with bloom on, longer than a fold's build takes. */
 const BLOOM_PLAY_SECONDS = 2;
 
-/** The anti-aliasing mode from ?antialias=, or the preset's. */
-const ANTIALIAS = (['msaa', 'fxaa', 'none'] as const).find(
-	(mode) => mode === new URLSearchParams(location.search).get('antialias'),
-);
-
 run('effect-fold', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
@@ -31,7 +27,7 @@ run('effect-fold', async () => {
 		canvas,
 		sketch: new URL('./sketches/effect-fold-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
-		antialias: ANTIALIAS,
+		antialias: 'none',
 	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
@@ -47,8 +43,10 @@ run('effect-fold', async () => {
 	const withoutBloom = await requestJoinTiming();
 	await engine.destroy();
 	const kinds = (report: JoinTimingReport | undefined) => report?.builds.map((b) => b.kind) ?? [];
+	const { tier, features } = engine.capabilities;
 	return {
-		tier: engine.capabilities.tier,
+		tier,
+		backgroundCompiles: tier !== 'webgl2' || features.includes('KHR_parallel_shader_compile'),
 		builtWithBloom: kinds(withBloom),
 		built: kinds(withoutBloom),
 		failed: withoutBloom?.failed ?? null,
