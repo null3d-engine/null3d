@@ -160,6 +160,7 @@ export const PERMUTATION_ALPHA_HASH = 4194304;
 export const PERMUTATION_TRANSMISSION = 8388608;
 export const PERMUTATION_ROW_VALUES = 16777216;
 export const PERMUTATION_CASTER = 33554432;
+export const PERMUTATION_TRANSLUCENCY = 268435456;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -270,7 +271,7 @@ export const SIZE_GRID_WORDS_PER_TEXTURE_ROW = 4096;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
-export const SIZE_MATERIAL_BYTES = 176;
+export const SIZE_MATERIAL_BYTES = 192;
 export const SIZE_MAP_SLOTS = 8;
 export const SIZE_SHARED_MAP_UNITS = 6;
 export const SIZE_MAX_CELLS = 512;

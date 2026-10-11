@@ -827,9 +827,14 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The surface lets light through to its other side, as glTF's diffuse transmission does: the
+    /// light that reaches its back shows on its front through the material's transmission color,
+    /// as leaves, petals and ears show the sun behind them. The material's row holds its values in
+    /// one more `vec4f`.
+    pub const TRANSLUCENCY: u32 = 1 << 28;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 25] = [
+    pub const NAMES: [(&str, u32); 26] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -855,6 +860,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("TRANSLUCENCY", TRANSLUCENCY),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -880,7 +886,9 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
-    pub const APART: [(u32, u32); 17] = [
+    /// Transmission wins over light through a thin surface, as glTF orders them, and only the test
+    /// switch reads instances by index, which no build of such a surface needs.
+    pub const APART: [(u32, u32); 20] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -898,6 +906,9 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (TRANSLUCENCY, TRANSMISSION),
+        (TRANSLUCENCY, CASTER),
+        (TRANSLUCENCY, INSTANCE_INDEX),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1394,9 +1405,9 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eleven `vec4f`s. On WebGL2 each row is a
-    /// row of eleven `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 176;
+    /// Bytes of one material's row in the material table: twelve `vec4f`s. On WebGL2 each row is a
+    /// row of twelve `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 192;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;

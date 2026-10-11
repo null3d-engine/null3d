@@ -154,6 +154,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'translucency',
+		group: 'Light, materials and effects',
+		sketch: new URL('./translucency/sketch.ts', import.meta.url),
+		code: 'translucency/',
+		title: 'Light through leaves',
+		scene: 'Garden at golden hour',
+		summary:
+			'Broad leaves and coral petals let the low sun behind them through, with the shade of the leaves in front and darker veins, and a paper lantern glows from the lamp inside it.',
+		controls: `${CAMERA} Move the mouse, or tap, and the lantern follows.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),

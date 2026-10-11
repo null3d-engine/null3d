@@ -89,8 +89,8 @@
 #            device with one of them belongs to the feature, such as the final pass's BLOOM builds.
 #
 # A build with no feature stays in the device modules of the start. A build of a feature's shader
-# belongs to that feature, and any other build to the feature of its lowest bit that a feature
-# names. The template of custom materials stays at the start. The size check holds each module of
+# belongs to that feature. Any other build belongs to the feature of its highest bit whose feature
+# claims shared builds, or else to the feature of its lowest bit that a feature names. The template of custom materials stays at the start. The size check holds each module of
 # a feature to the start shader file's own limit after Brotli.
 #
 # Device modules are plain JavaScript, which the main module imports by address, so a production
@@ -135,25 +135,29 @@
 # instance batches with row values: each row's color multiplies the vertex color, and custom
 # materials read each row's values. It builds without skins, morph targets, alpha to coverage, the
 # alpha hash, transmission and index-read instances, which batches with row values never draw
-# with, and loads on first use.
+# with, and loads on first use. TRANSLUCENCY lets light through a thin surface to its other side,
+# as glTF's diffuse transmission does (null3d::translucency); it builds without transmission and
+# index-read instances, and loads on first use. Custom materials build it only where their WGSL
+# names the surface's diffuse transmission or its color.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the
+# TRANSLUCENCY builds the specular maps' slots hold the diffuse transmission maps instead.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material.
+# RECEIVE_SHADOWS, TRANSMISSION and TRANSLUCENCY act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
@@ -391,6 +395,13 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 [first_use.transmission]
 shaders = ["transmission_copy"]
 bits = ["TRANSMISSION"]
+claims_shared_builds = true
+
+# A page downloads the builds that let light through a thin surface with its first material that
+# does. It takes the builds that it shares with skinning, morph targets, alpha to coverage, the
+# alpha hash and row values, so their files do not grow.
+[first_use.translucency]
+bits = ["TRANSLUCENCY"]
 claims_shared_builds = true
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position

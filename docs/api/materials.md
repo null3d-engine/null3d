@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, and light through thin surfaces. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -63,9 +63,11 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `thickness` | 0 or more | 0 | The thickness of the volume under a surface that lets light through, in the mesh's own units |
 | `attenuationColor` | A [color](#color) | White | The color that white light takes inside the volume over `attenuationDistance` |
 | `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
+| `diffuseTransmission` | 0 to 1 | 0 | How much of the surface's diffuse light passes through to its other side, for leaves, petals and ears. See "Light through thin surfaces" |
+| `diffuseTransmissionColor` | A [color](#color) | White | Tints the light that passes through to the other side |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
-The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor` and the four transmission values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
+The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor` and the four transmission values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. three.js has no diffuse transmission, so its two values take the names and defaults of glTF's `KHR_materials_diffuse_transmission`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
 
 ## Specular reflection and index of refraction
 
@@ -125,6 +127,40 @@ After the camera's view draws its opaque objects, the engine copies their colors
 
 Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
 
+## Light through thin surfaces
+
+A surface with `diffuseTransmission` lets the light that reaches its back through to its front, as glTF's `KHR_materials_diffuse_transmission` describes. A leaf, a petal, a lampshade or an ear then glows where the sun or a lamp shines behind it. The light from behind spreads out evenly, as the diffuse light does, so the surface does not show what lies behind it. For glass and water, which do, use `transmission`.
+
+| Value | What it does |
+| --- | --- |
+| `diffuseTransmission` | The share of the surface's diffuse light that passes through to the other side. The front keeps the rest, and the specular reflection stays. 0 lets nothing through, and 1 lets all the diffuse light through, as a sheet of paper does |
+| `diffuseTransmissionColor` | Tints the light that passes through. The base color does not tint it, so give a leaf its green here |
+| `thickness`, `attenuationColor`, `attenuationDistance` | A volume under the surface, which takes the volume's color over its thickness, as for transmission |
+
+```ts
+// sketch.ts: leaves that glow yellow green against a low sun, and a red lampshade.
+const leaves = materials.standard({
+  color: '#3f7a2a', roughness: 0.6, doubleSided: true, alphaMode: 'mask', map: leafTexture,
+  diffuseTransmission: 0.7, diffuseTransmissionColor: '#c8e070',
+});
+const shade = materials.standard({
+  color: '#f4e6d0', doubleSided: true,
+  diffuseTransmission: 0.5, diffuseTransmissionColor: '#ff9a5c',
+});
+```
+
+Give `diffuseTransmission` when you create the material, even as 0, to change it later with `set`. The option picks the shaders that light the back. A material created without it lets no light through to its other side.
+
+- Shadows fall on the light from behind. A leaf in the shade of another leaf shows no sun through it.
+- The sun, the lamps, the ambient and hemisphere lights and the scene's environment all shine through from the surface's far side.
+- Thin surfaces such as leaves and paper usually draw both faces, so give them `doubleSided`. A closed mesh, such as an ear or a candle, lets the light through the face that the light reaches. Give it a `thickness` with `attenuationColor` and `attenuationDistance` to tint the light by how deep it goes.
+- A surface with both `transmission` and `diffuseTransmission` lets light through by transmission alone.
+- `diffuseTransmissionMap` and `diffuseTransmissionColorMap` vary the two values across the surface. They take the places of the specular maps, which such a material does not take. See "Texture maps".
+
+### Cost of light through thin surfaces
+
+Nothing of it runs, and none of its shaders download, until the first material with `diffuseTransmission` exists. Its shaders then load on first use. To load them before the first frame instead, list `'translucency'` in `createEngine`'s `preload` option. Each pixel of such a surface adds one product per light, and one more reading of the ambient light and the environment, from behind. The sun's shadow lookup runs on both faces of such a surface, where other surfaces skip it on the side away from the sun.
+
 ## Texture maps
 
 Maps are textures that vary a material across a surface. `assets.loadTexture` and the `textures` calls make them, as [Textures](textures.md) explains. Give color maps the `srgb` color space and data maps the `linear` one.
@@ -155,6 +191,10 @@ const brick = materials.standard({
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
 | `specularIntensityMap` | Standard | A, linear | Its alpha multiplies `specularIntensity` |
 | `specularColorMap` | Standard | RGB, sRGB | Multiplies `specularColor` |
+| `diffuseTransmissionMap` | Standard with `diffuseTransmission` | A, linear | Its alpha multiplies `diffuseTransmission` |
+| `diffuseTransmissionColorMap` | Standard with `diffuseTransmission` | RGB, sRGB | Multiplies `diffuseTransmissionColor` |
+
+A material with `diffuseTransmission` takes the two diffuse transmission maps in the places of the specular maps, and takes no specular maps. A material without it takes no diffuse transmission maps. Development builds throw E1217 for either.
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
 
@@ -201,6 +241,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
+| `diffuseTransmission` | Standard | None | Given at all, even as 0, lets light through to the surface's other side, and `set` can then change its value. See "Light through thin surfaces" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
@@ -374,7 +415,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission` and `diffuseTransmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

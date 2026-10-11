@@ -432,6 +432,18 @@ fn sets_transmission(tokens: &[Token]) -> bool {
         .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
 }
 
+/// True when a custom material's WGSL sets or reads the surface's diffuse transmission or its
+/// color, so the material can let light through a thin surface.
+fn names_diffuse_transmission(tokens: &[Token]) -> bool {
+    tokens.windows(2).any(|pair| {
+        pair[0].text == "."
+            && matches!(
+                pair[1].text,
+                "diffuseTransmission" | "diffuseTransmissionColor"
+            )
+    })
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -498,6 +510,7 @@ impl Compiler {
         }
 
         let transmits = sets_transmission(&tokens);
+        let translucent = names_diffuse_transmission(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let inputs = read_inputs(&tokens);
         let mut variants: BTreeMap<String, Variant> = template
@@ -522,7 +535,9 @@ impl Compiler {
                 // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
-                // through, so other materials keep their builds as few as before. Every material
+                // through, and only WGSL that names its diffuse transmission has the builds that
+                // let light through a thin surface, so other materials keep their builds as few
+                // as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies.
                 let skins = !variant.targets.contains(&Target::Wgsl);
@@ -539,6 +554,7 @@ impl Compiler {
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
+                    .filter(|bit| translucent || *bit != "TRANSLUCENCY")
                     .cloned()
                     .collect();
                 let variant = Variant {

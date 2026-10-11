@@ -3,10 +3,11 @@
 //!
 //! # Rows
 //!
-//! Each material has one row of [`MATERIAL_FLOATS`] floats, eleven `vec4f`s, which the WGSL struct
+//! Each material has one row of [`MATERIAL_FLOATS`] floats, twelve `vec4f`s, which the WGSL struct
 //! `MaterialRow` in `null3d::globals` mirrors field for field. Shaders copy the first nine into a
-//! `Material`, and only the builds that let light through read the last two, the transmission's
-//! values. The [`param`] module names where each
+//! `Material`. Only the builds that let light through read the next two, the transmission's values,
+//! and only the builds that let light through a thin surface read the last one, the diffuse
+//! transmission's values. The [`param`] module names where each
 //! value sits. A row also holds the texture array layer of each of its maps, which the table
 //! writes once the map's image is on the GPU, and [`NO_MAP`] until then. Where a standard
 //! material's maps share a few units of their bind group, as on WebGL2, each map's value is its
@@ -164,6 +165,16 @@ impl Shading {
         }
     }
 
+    /// True when its shader has the builds that let light through a thin surface: the standard
+    /// material's, with or without maps, and a custom material's. A custom material has the
+    /// feature only when its WGSL has such builds, which the engine checks when it creates it.
+    pub const fn translucent(self) -> bool {
+        matches!(
+            self,
+            Shading::Lit | Shading::StandardMaps | Shading::Custom(_)
+        )
+    }
+
     /// True when its shader reads the material's base color and opacity, which vertex colors
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
@@ -241,6 +252,14 @@ pub mod feature {
     /// material's transmission value sets how much light passes. It takes no mask, so it wins over
     /// [`ALPHA_MASK`].
     pub const TRANSMISSION: u32 = 8192;
+    /// Light that reaches the surface's back shows on its front, as glTF's diffuse transmission
+    /// draws a leaf, a petal or an ear against the light. The material's diffuse transmission
+    /// value sets how much of its diffuse light passes through, and its transmission color tints
+    /// it. It picks the shader builds that light the back, so a material without it pays nothing
+    /// for them. In such a material, the specular maps' slots hold the diffuse transmission maps,
+    /// which read the same channels ([`MapSlot::DIFFUSE_TRANSMISSION`]). [`TRANSMISSION`] wins
+    /// over it.
+    pub const TRANSLUCENCY: u32 = 262144;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -255,7 +274,8 @@ pub mod feature {
         | NO_FOG
         | ALPHA_HASH
         | SINGLE_PASS
-        | TRANSMISSION;
+        | TRANSMISSION
+        | TRANSLUCENCY;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -313,7 +333,7 @@ const fn row_flags(features: u32) -> u32 {
     flags
 }
 
-/// Floats in each material's row: eleven `vec4f`s.
+/// Floats in each material's row: twelve `vec4f`s.
 pub const MATERIAL_FLOATS: usize = sizes::MATERIAL_BYTES as usize / 4;
 /// Floats of a row of custom values that a custom material's uniforms and texture layers use: eight
 /// `vec4f`s, as the shader compiler packs them. The rest of the row stays unused.
@@ -377,16 +397,28 @@ pub mod param {
     /// The distance through the volume over which light takes [`ATTENUATION_COLOR`], in world
     /// units, or 0 for light that the volume does not absorb.
     pub const ATTENUATION_DISTANCE: usize = 43;
+    /// The color that tints the light that passes through a thin surface, linear: 3 floats, in
+    /// materials with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION_COLOR: usize = 44;
+    /// How much of the surface's diffuse light passes through it to its other side, from 0 to 1.
+    pub const DIFFUSE_TRANSMISSION: usize = 47;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
     pub const fn width(at: usize) -> Option<usize> {
         match at {
-            COLOR | EMISSIVE | UV_U | UV_V | SPECULAR_COLOR | ATTENUATION_COLOR => Some(3),
+            COLOR
+            | EMISSIVE
+            | UV_U
+            | UV_V
+            | SPECULAR_COLOR
+            | ATTENUATION_COLOR
+            | DIFFUSE_TRANSMISSION_COLOR => Some(3),
             NORMAL_SCALE => Some(2),
             OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
             | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY | ENV_INTENSITY | REFLECTANCE
-            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE => Some(1),
+            | SPECULAR_INTENSITY | TRANSMISSION | THICKNESS | IOR | ATTENUATION_DISTANCE
+            | DIFFUSE_TRANSMISSION => Some(1),
             _ => None,
         }
     }
@@ -431,6 +463,17 @@ pub enum MapSlot {
     SpecularIntensity = 6,
     /// The specular color, in sRGB, which multiplies the specular color value.
     SpecularColor = 7,
+}
+
+impl MapSlot {
+    /// The slot that holds the diffuse transmission map of a material with the translucency
+    /// feature: its alpha scales the diffuse transmission, in linear color, as the specular
+    /// intensity map's alpha scales the specular intensity.
+    pub const DIFFUSE_TRANSMISSION: MapSlot = MapSlot::SpecularIntensity;
+    /// The slot that holds the diffuse transmission color map of a material with the translucency
+    /// feature: its sRGB color scales the transmission color, as the specular color map's scales
+    /// the specular color.
+    pub const DIFFUSE_TRANSMISSION_COLOR: MapSlot = MapSlot::SpecularColor;
 }
 
 /// The number of map slots in a row.
@@ -483,9 +526,10 @@ impl MapSlot {
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, a white specular color at full intensity with glTF's
-/// index of refraction, no maps, and no transmission through a thin wall that absorbs nothing. The
-/// metalness and roughness are three.js's `MeshStandardMaterial` defaults; the alpha cutoff, the
-/// index of refraction and the volume's values are glTF's.
+/// index of refraction, no maps, no transmission through a thin wall that absorbs nothing, and no
+/// diffuse transmission, with a white transmission color. The metalness and roughness are three.js's
+/// `MeshStandardMaterial` defaults; the alpha cutoff, the index of refraction, the volume's values
+/// and the diffuse transmission's values are glTF's.
 const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut row = [0.0; MATERIAL_FLOATS];
     let mut k = 0;
@@ -518,6 +562,11 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     let mut k = 0;
     while k < 3 {
         row[param::ATTENUATION_COLOR + k] = 1.0;
+        k += 1;
+    }
+    let mut k = 0;
+    while k < 3 {
+        row[param::DIFFUSE_TRANSMISSION_COLOR + k] = 1.0;
         k += 1;
     }
     row
@@ -1042,6 +1091,12 @@ mod tests {
             &[1.0; 3]
         );
         assert_eq!(row[param::SPECULAR_INTENSITY], 1.0);
+        // No diffuse transmission, and glTF's white transmission color.
+        assert_eq!(row[param::DIFFUSE_TRANSMISSION], 0.0);
+        assert_eq!(
+            &row[param::DIFFUSE_TRANSMISSION_COLOR..param::DIFFUSE_TRANSMISSION_COLOR + 3],
+            &[1.0; 3]
+        );
     }
 
     #[test]
@@ -1064,6 +1119,13 @@ mod tests {
             (param::MAP_LAYERS, MAP_SLOTS),
             (param::SPECULAR_COLOR, 3),
             (param::SPECULAR_INTENSITY, 1),
+            (param::TRANSMISSION, 1),
+            (param::THICKNESS, 1),
+            (param::IOR, 1),
+            (param::ATTENUATION_COLOR, 3),
+            (param::ATTENUATION_DISTANCE, 1),
+            (param::DIFFUSE_TRANSMISSION_COLOR, 3),
+            (param::DIFFUSE_TRANSMISSION, 1),
         ];
         starts.sort();
         for pair in starts.windows(2) {

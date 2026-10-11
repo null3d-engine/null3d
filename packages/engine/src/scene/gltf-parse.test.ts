@@ -532,6 +532,62 @@ describe('materials, textures and lights', () => {
 		});
 	});
 
+	test('KHR_materials_diffuse_transmission gives its factors, maps and volume', () => {
+		const b = specularBuilder()
+			.uses('KHR_materials_diffuse_transmission')
+			.uses('KHR_materials_volume')
+			.uses('KHR_materials_transmission');
+		const [leaf, shiny, glass] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		leaf.extensions = {
+			KHR_materials_diffuse_transmission: {
+				diffuseTransmissionFactor: 0.75,
+				diffuseTransmissionColorFactor: [0.5, 1, 0.25],
+				diffuseTransmissionTexture: { index: 0 },
+				diffuseTransmissionColorTexture: { index: 1 },
+			},
+			KHR_materials_volume: {
+				thicknessFactor: 0.2,
+				attenuationColor: [1, 0.5, 0.5],
+				attenuationDistance: 0.1,
+			},
+		};
+		shiny.extensions = {
+			KHR_materials_diffuse_transmission: { diffuseTransmissionFactor: 1 },
+			KHR_materials_specular: { specularTexture: { index: 0 } },
+		};
+		glass.extensions = {
+			KHR_materials_diffuse_transmission: { diffuseTransmissionFactor: 1 },
+			KHR_materials_transmission: { transmissionFactor: 1 },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.diffuseTransmission).toEqual({
+			factor: 0.75,
+			color: [0.5, 1, 0.25],
+			thickness: 0.2,
+			attenuationColor: [1, 0.5, 0.5],
+			attenuationDistance: 0.1,
+		});
+		const map = first?.maps.diffuseTransmissionMap ?? -1;
+		const colorMap = first?.maps.diffuseTransmissionColorMap ?? -1;
+		expect(data.textures[map]?.colorSpace).toBe('linear');
+		expect(data.textures[colorMap]?.colorSpace).toBe('srgb');
+		// The diffuse transmission maps take the specular maps' slots, so those maps stay out.
+		expect(second?.diffuseTransmission?.factor).toBe(1);
+		expect(second?.maps.specularIntensityMap).toBeUndefined();
+		// Transmission wins where a material has both.
+		expect(third?.transmission?.factor).toBe(1);
+		expect(third?.diffuseTransmission).toBeUndefined();
+		expect(data.notes).toEqual(
+			expect.arrayContaining([
+				"material 1's specularIntensityMap, which a material with diffuse transmission does not take",
+				"material 2's diffuse transmission, which its transmission replaces in the engine",
+			]),
+		);
+		// A material without the extension lets no light through to its other side.
+		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
+	});
+
 	test('specular and ior values outside their ranges give E1416', () => {
 		const withExtensions = (extensions: GltfJson) => {
 			const b = shipBuilder().uses('KHR_materials_specular').uses('KHR_materials_ior');

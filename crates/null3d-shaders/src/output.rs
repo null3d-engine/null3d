@@ -87,15 +87,21 @@ impl FirstUseFeatures {
     }
 
     /// The bits that features name, in the order in which they take builds: the bits of features
-    /// that claim shared builds, lowest first, then the others, lowest first.
+    /// that claim shared builds, highest first, then the others, lowest first. A build with the
+    /// bits of two claiming features, such as a surface that lets light through a thin surface
+    /// with alpha to coverage, goes with the higher bit, the rarer feature, so the common
+    /// feature's file does not grow for it.
     pub fn bit_order(&self) -> impl Iterator<Item = (u32, &String)> {
-        let claiming = |claims: bool| {
-            self.bits
-                .iter()
-                .filter(move |(bit, _)| self.claiming.contains(bit) == claims)
-                .map(|(&bit, feature)| (bit, feature))
-        };
-        claiming(true).chain(claiming(false))
+        let claiming = self
+            .bits
+            .iter()
+            .rev()
+            .filter(|(bit, _)| self.claiming.contains(bit));
+        let others = self
+            .bits
+            .iter()
+            .filter(|(bit, _)| !self.claiming.contains(bit));
+        claiming.chain(others).map(|(&bit, feature)| (bit, feature))
     }
 }
 
@@ -174,7 +180,7 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH};
+    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH, TRANSLUCENCY};
 
     use super::*;
 
@@ -202,5 +208,18 @@ mod tests {
             Some("alpha_hash")
         );
         assert_eq!(first_use.feature_of("lit", MORPH), Some("morph"));
+        // Of two features that claim shared builds, the higher bit takes the build.
+        first_use
+            .bits
+            .insert(TRANSLUCENCY, "translucency".to_owned());
+        first_use.claiming.insert(TRANSLUCENCY);
+        assert_eq!(
+            first_use.feature_of("lit", MORPH | ALPHA_HASH | TRANSLUCENCY),
+            Some("translucency")
+        );
+        assert_eq!(
+            first_use.feature_of("lit", MORPH | ALPHA_HASH),
+            Some("alpha_hash")
+        );
     }
 }

@@ -41,7 +41,7 @@ pub struct Manifest {
 
 /// A feature whose shader builds go into files of their own, which a page loads the first time a
 /// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
-/// the feature of its lowest permutation bit that a feature with `claims_shared_builds` names, or
+/// the feature of its highest permutation bit that a feature with `claims_shared_builds` names, or
 /// else to that of its lowest bit that any feature names.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]

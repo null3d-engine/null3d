@@ -124,6 +124,10 @@ pub mod map_slot {
     pub const LIGHT: u32 = MapSlot::Light as u32;
     pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
+    /// The diffuse transmission map's slot in a material with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION: u32 = MapSlot::DIFFUSE_TRANSMISSION as u32;
+    /// The diffuse transmission color map's slot in a material with the translucency feature.
+    pub const DIFFUSE_TRANSMISSION_COLOR: u32 = MapSlot::DIFFUSE_TRANSMISSION_COLOR as u32;
 }
 
 /// The flags of an effect that `setEffect` takes.
@@ -835,6 +839,7 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("TRANSLUCENCY", feature::TRANSLUCENCY),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -870,6 +875,11 @@ pub fn typescript() -> String {
                 ("LIGHT", map_slot::LIGHT),
                 ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
                 ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
+                ("DIFFUSE_TRANSMISSION", map_slot::DIFFUSE_TRANSMISSION),
+                (
+                    "DIFFUSE_TRANSMISSION_COLOR",
+                    map_slot::DIFFUSE_TRANSMISSION_COLOR,
+                ),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -897,6 +907,11 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                (
+                    "DIFFUSE_TRANSMISSION_COLOR",
+                    param::DIFFUSE_TRANSMISSION_COLOR as u32,
+                ),
+                ("DIFFUSE_TRANSMISSION", param::DIFFUSE_TRANSMISSION as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which

@@ -68,7 +68,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. `KHR_materials_diffuse_transmission` loads into `diffuseTransmission` and `diffuseTransmissionColor` (0.2), which light leaves and petals from behind; three.js's `GLTFLoader` ignores that extension. The other extensions are planned for after 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |

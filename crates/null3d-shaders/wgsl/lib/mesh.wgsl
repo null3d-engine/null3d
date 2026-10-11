@@ -369,9 +369,35 @@ fn material_of(id: u32) -> Material {
 #endif
 }
 
+#ifdef TRANSLUCENCY
+/// The diffuse transmission's values of material `id`: the linear color that tints the light that
+/// passes through a thin surface, then how much of its diffuse light passes. Only the builds that
+/// let light through a thin surface read them.
+fn material_translucency(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(11u, id), 0);
+#else
+    return materials[id].translucency;
+#endif
+}
+#endif
+
 #ifdef TRANSMISSION
 /// The values of material `id` that let light through, which only the builds that let light
 /// through read.
+fn material_transmission(id: u32) -> MaterialTransmission {
+#ifdef WEBGL2
+    return MaterialTransmission(
+        textureLoad(materials, vec2u(9u, id), 0),
+        textureLoad(materials, vec2u(10u, id), 0),
+    );
+#else
+    return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
+#endif
+}
+#else ifdef TRANSLUCENCY
+/// The same values for the builds that let light through a thin surface, whose volume dims that
+/// light. The two kinds of builds never meet.
 fn material_transmission(id: u32) -> MaterialTransmission {
 #ifdef WEBGL2
     return MaterialTransmission(
@@ -615,6 +641,16 @@ fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
     return transform_direction(transform_of(found), direction);
+}
+
+/// The instance's scale along each of its object's axes: the length that its world matrix gives
+/// each unit axis.
+fn axis_scales(found: Instance) -> vec3f {
+    return vec3f(
+        length(world_direction(found, vec3f(1.0, 0.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 1.0, 0.0))),
+        length(world_direction(found, vec3f(0.0, 0.0, 1.0))),
+    );
 }
 
 /// How far a caster's back face that faces straight away from the light moves toward it, in

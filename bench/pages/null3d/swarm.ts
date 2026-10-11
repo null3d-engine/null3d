@@ -43,14 +43,22 @@ export function createSwarm(
 	dynamic: boolean,
 	instanceAt = s1InstanceAt,
 	blend = false,
-	{ shadows = false, rowValues = false }: { shadows?: boolean; rowValues?: boolean } = {},
+	{
+		shadows = false,
+		rowValues = false,
+		translucent = false,
+	}: { shadows?: boolean; rowValues?: boolean; translucent?: boolean } = {},
 ): Swarm {
 	const data = createS1(count);
+	// The boxes that let light through to their other side light their backs too.
+	const through = translucent
+		? { diffuseTransmission: 0.5, diffuseTransmissionColor: S1_COLOR }
+		: {};
 	const material = rowValues
 		? materials.shader({ wgsl: SWAY, color: S1_COLOR })
 		: blend
 			? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
-			: materials.standard({ color: S1_COLOR });
+			: materials.standard({ color: S1_COLOR, ...through });
 	const batch = scene.createInstances(
 		geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE }),
 		count,

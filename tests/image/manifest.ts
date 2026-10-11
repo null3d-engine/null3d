@@ -542,6 +542,8 @@ function reflectionTests(): ImageTest[] {
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** Panels and leaf cards that let the light behind them through to the camera's side. */
+const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1898,6 +1900,52 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Four panels with a low sun behind them let 0, 1/3, 2/3 and all of their diffuse light through
+	// to the camera's side (glTF's diffuse transmission). A box's shadow shows through the last
+	// panel, and an orange lamp lights the second from behind. The translucency spec measures each.
+	// The first use of these shaders compiles slowly on SwiftShader: on the Mac, with six tests at
+	// once, four of eighteen runs passed 30 s, so the tests take 60 s.
+	{
+		name: 'translucency',
+		sketch: TRANSLUCENCY_SKETCH,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The same panels with a custom material whose surface function sets the diffuse transmission:
+	// they draw as the standard material does, so the references are copies of the first test's.
+	{
+		name: 'translucency-custom',
+		sketch: `${TRANSLUCENCY_SKETCH}?custom`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+		reference: 'translucency',
+	},
+	// The last panel's diffuse transmission map and color map in stripes, a thick red volume that
+	// tints the light through every panel, and masked leaf cards with alpha to coverage, whose cut
+	// outlines cast shadows.
+	{
+		name: 'translucency-maps',
+		sketch: `${TRANSLUCENCY_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-volume',
+		sketch: `${TRANSLUCENCY_SKETCH}?volume`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'translucency-leaves',
+		sketch: `${TRANSLUCENCY_SKETCH}?leaves`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

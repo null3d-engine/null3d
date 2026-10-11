@@ -9,6 +9,9 @@
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
+#ifdef TRANSLUCENCY
+#import null3d::translucency::{gather_back_light, lit_side}
+#endif
 
 // The point and spot lights of clustered forward shading. Each frame the engine cuts the camera's
 // view into clusters: tiles across the view, in slices along it that grow with distance. For each
@@ -111,7 +114,9 @@ fn cluster_lights(relative: vec3f) -> vec2u {
 /// The light that a PBR surface reflects toward the camera from the point and spot lights of its
 /// cluster, as three.js's `RE_Direct_Physical` gives it for each of them. `relative` is the
 /// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
-/// direction toward the camera. `compensation` comes from `multiscatter_compensation`.
+/// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
+/// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
+/// from the side that it falls on (null3d::translucency).
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
@@ -136,7 +141,12 @@ fn clustered_light(
 #ifdef RECEIVE_SHADOWS
         let tile = light.penumbra.w;
         if tile > 0.5 && strength > 0.0 {
+#ifdef TRANSLUCENCY
+            let side = lit_side(normal, to_light);
+            strength *= light_shadow(u32(tile) - 1u, relative, side, to_light, gap);
+#else
             strength *= light_shadow(u32(tile) - 1u, relative, normal, to_light, gap);
+#endif
         }
 #endif
         let reflected = direct_light(
@@ -147,6 +157,9 @@ fn clustered_light(
             light.color_decay.rgb * strength,
             compensation,
         );
+#ifdef TRANSLUCENCY
+        gather_back_light(normal, to_light, light.color_decay.rgb * strength);
+#endif
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }

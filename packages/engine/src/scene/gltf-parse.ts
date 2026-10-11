@@ -56,6 +56,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_ior',
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
+	'KHR_materials_diffuse_transmission',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
 	'KHR_meshopt_compression',
@@ -248,6 +249,14 @@ function transmissionOf(
 	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
 	if (transmission?.transmissionTexture !== undefined || volume.thicknessTexture !== undefined)
 		notes.push(`${what}'s transmission and thickness textures, which the engine does not draw yet`);
+	return { factor, ...volumeOf(volume, what) };
+}
+
+/**
+ * The volume under a surface, from its KHR_materials_volume extension: a thin wall that absorbs
+ * nothing where the material has none.
+ */
+function volumeOf(volume: Entry, what: string): VolumeData {
 	const color = numbers(volume.attenuationColor, 3, [1, 1, 1], `${what}'s attenuationColor`);
 	if (color.some((c) => c < 0 || c > 1))
 		broken(`${what}'s attenuationColor has a component outside 0 to 1`);
@@ -256,10 +265,45 @@ function transmissionOf(
 	if (!(distance > 0))
 		broken(`${what}'s attenuationDistance is ${distance}, and it takes more than 0`);
 	return {
-		factor,
 		thickness: unit(volume.thicknessFactor ?? 0, `${what}'s thicknessFactor`, Infinity),
 		attenuationColor: [color[0] as number, color[1] as number, color[2] as number],
 		attenuationDistance: distance,
+	};
+}
+
+/**
+ * How a material lets light through to its other side, from its
+ * KHR_materials_diffuse_transmission and KHR_materials_volume extensions, or none without the
+ * extension. KHR_materials_transmission wins where the material lets light through that way too,
+ * and `notes` says so.
+ */
+function diffuseTransmissionOf(
+	extensions: Entry,
+	what: string,
+	transmits: boolean,
+	notes: string[],
+): DiffuseTransmissionData | undefined {
+	const diffuse = extensions.KHR_materials_diffuse_transmission as Entry | undefined;
+	if (diffuse === undefined) return undefined;
+	if (transmits) {
+		notes.push(`${what}'s diffuse transmission, which its transmission replaces in the engine`);
+		return undefined;
+	}
+	const color = numbers(
+		diffuse.diffuseTransmissionColorFactor,
+		3,
+		[1, 1, 1],
+		`${what}'s diffuseTransmissionColorFactor`,
+	);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s diffuseTransmissionColorFactor has a component outside 0 to 1`);
+	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+	if (volume.thicknessTexture !== undefined)
+		notes.push(`${what}'s thickness texture, which the engine does not draw yet`);
+	return {
+		factor: unit(diffuse.diffuseTransmissionFactor ?? 0, `${what}'s diffuseTransmissionFactor`),
+		color: [color[0] as number, color[1] as number, color[2] as number],
+		...volumeOf(volume, what),
 	};
 }
 
@@ -378,16 +422,31 @@ export interface TextureUse {
 	mipmaps: boolean;
 }
 
-/** How a material lets light through, as KHR_materials_transmission and KHR_materials_volume give it. */
-export interface TransmissionData {
-	/** The transmission factor, above 0. */
-	factor: number;
+/** The volume under a surface, as KHR_materials_volume gives it. */
+export interface VolumeData {
 	/** The volume's thickness factor, in the mesh's own units: 0 for a thin wall. */
 	thickness: number;
 	/** The color that white light takes after the attenuation distance: linear RGB. */
 	attenuationColor: [number, number, number];
 	/** The attenuation distance in world units, or `Infinity` for a volume that absorbs nothing. */
 	attenuationDistance: number;
+}
+
+/** How a material lets light through, as KHR_materials_transmission and KHR_materials_volume give it. */
+export interface TransmissionData extends VolumeData {
+	/** The transmission factor, above 0. */
+	factor: number;
+}
+
+/**
+ * How a material lets light through to its other side, as KHR_materials_diffuse_transmission and
+ * KHR_materials_volume give it.
+ */
+export interface DiffuseTransmissionData extends VolumeData {
+	/** The diffuse transmission factor, from 0 to 1. */
+	factor: number;
+	/** The diffuse transmission color factor: linear RGB. */
+	color: [number, number, number];
 }
 
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
@@ -425,6 +484,11 @@ export interface MaterialData {
 	 * that lets light through: none for a factor of 0.
 	 */
 	transmission?: TransmissionData;
+	/**
+	 * KHR_materials_diffuse_transmission's values, with KHR_materials_volume's, for a material
+	 * that has the extension and does not let light through by transmission.
+	 */
+	diffuseTransmission?: DiffuseTransmissionData;
 	maps: {
 		map?: number;
 		metalnessRoughnessMap?: number;
@@ -433,6 +497,8 @@ export interface MaterialData {
 		emissiveMap?: number;
 		specularIntensityMap?: number;
 		specularColorMap?: number;
+		diffuseTransmissionMap?: number;
+		diffuseTransmissionColorMap?: number;
 	};
 	uvTransform?: UvTransformData;
 }
@@ -964,6 +1030,7 @@ export function parseGltf(
 		);
 		if (specularColor.some((c) => c < 0))
 			broken(`${what}'s specularColorFactor has a component below 0`);
+		const diffuse = (extensions.KHR_materials_diffuse_transmission ?? {}) as Entry;
 		const slots = {
 			map: useTexture(pbr.baseColorTexture, 'srgb', `${what}'s baseColorTexture`),
 			metalnessRoughnessMap: useTexture(
@@ -984,6 +1051,16 @@ export function parseGltf(
 				'srgb',
 				`${what}'s specularColorTexture`,
 			),
+			diffuseTransmissionMap: useTexture(
+				diffuse.diffuseTransmissionTexture,
+				'linear',
+				`${what}'s diffuseTransmissionTexture`,
+			),
+			diffuseTransmissionColorMap: useTexture(
+				diffuse.diffuseTransmissionColorTexture,
+				'srgb',
+				`${what}'s diffuseTransmissionColorTexture`,
+			),
 		};
 		const maps: MaterialData['maps'] = {};
 		let transform: Entry | undefined;
@@ -998,6 +1075,22 @@ export function parseGltf(
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
 		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
+		const diffuseTransmission = diffuseTransmissionOf(
+			extensions,
+			what,
+			transmission !== undefined,
+			notes,
+		);
+		// The diffuse transmission maps take the specular maps' slots, so a material with both keeps
+		// the diffuse transmission maps, which change its look more, and leaves out the others.
+		const translucent = diffuseTransmission !== undefined;
+		for (const key of ['specularIntensityMap', 'specularColorMap'] as const)
+			if (translucent && maps[key] !== undefined) {
+				delete maps[key];
+				notes.push(`${what}'s ${key}, which a material with diffuse transmission does not take`);
+			}
+		for (const key of ['diffuseTransmissionMap', 'diffuseTransmissionColorMap'] as const)
+			if (!translucent) delete maps[key];
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -1028,6 +1121,7 @@ export function parseGltf(
 			maps,
 		};
 		if (transmission) data.transmission = transmission;
+		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);

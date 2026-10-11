@@ -33,7 +33,8 @@
 // the switch alone takes the preset's.
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
-// shading.
+// shading. The `translucency` switch makes the swarm's boxes let half their diffuse light through
+// to their other side, for the allocation sample and the cost of the builds that light their backs.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -65,6 +66,7 @@ export default defineSketch(async (context) => {
 			: createSwarm(context, count, true, undefined, switches.has('blend'), {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
+					translucent: switches.has('translucency'),
 				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));

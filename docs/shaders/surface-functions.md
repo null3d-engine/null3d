@@ -3,7 +3,7 @@ id: shaders/surface-functions
 title: Surface functions
 status: experimental
 since: "0.1"
-summary: "The surface record; uniforms and textures; reflections; transmission; vertex-offset functions; values per row of a batch; second texture coordinates, pixel position and instance index."
+summary: "The surface record; uniforms and textures; reflections; transmission; light through thin surfaces; vertex-offset functions; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
@@ -81,8 +81,10 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `reflection` | `vec4f` | Light from the mirror direction in `rgb`, such as a reflection pass's color, and in `a` how much of it takes the place of the environment's reflection, from 0 to 1 ([Reflections](#reflections)) |
 | `transmission` | `f32` | How much of the light behind the point passes through it, from 0 to 1, in a material that lets light through ([Transmission](#transmission)) |
 | `thickness` | `f32` | The thickness of the volume under the point, in the mesh's own units, which bends the light that passes through |
+| `diffuseTransmission` | `f32` | How much of the point's diffuse light passes through to the other side, from 0 to 1, in a material that lets light through thin surfaces ([Light through thin surfaces](#light-through-thin-surfaces)) |
+| `diffuseTransmissionColor` | `vec3f` | The linear color that tints the light that passes through to the other side |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission and the thickness are the material's. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color are the material's. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -232,6 +234,28 @@ const water = materials.shader({
 - Only WGSL that sets or reads the surface's `transmission` builds the shaders that let light through. The material also needs the `transmission` option at creation. Without the WGSL, the option throws E1217.
 - The engine bends the light by the surface's normal, so ripples move what shows through.
 - The light from behind takes the place of that share of the diffuse light, times the base color, and the reflections stay.
+
+## Light through thin surfaces
+
+A leaf, a petal or a blade of grass lets the light behind it through to its front, as [Light through thin surfaces](../api/materials.md#light-through-thin-surfaces) on the Materials page describes. A surface function sets how much passes with the surface's `diffuseTransmission`, and its tint with `diffuseTransmissionColor`. Grass whose tips let more of the sun through than its roots:
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.diffuseTransmission = mix(0.2, 0.8, input.uv.y);
+    s.diffuseTransmissionColor = s.baseColor * 1.6;
+    return s;
+}
+```
+
+```ts
+const grass = materials.shader({
+  wgsl: blades, color: '#4f8a2e', doubleSided: true, diffuseTransmission: 0.5,
+});
+```
+
+- Only WGSL that sets or reads the surface's `diffuseTransmission` or `diffuseTransmissionColor` builds the shaders that light the back. The material also needs the `diffuseTransmission` option at creation. Without the WGSL, the option throws E1217.
+- The base color does not tint the light from behind. To tint it, set the color from the base color, as above.
 
 ## Vertex offsets
 

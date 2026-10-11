@@ -5,6 +5,8 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_DIFFUSE_TRANSMISSION,
+	MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR,
 	MAP_SLOT_EMISSIVE,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_METAL_ROUGH,
@@ -24,12 +26,15 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
 	MATERIAL_PARAM_COLOR,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION,
+	MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -70,6 +75,7 @@ import {
 import {
 	PERMUTATION_CASTER,
 	PERMUTATION_ROW_VALUES,
+	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
@@ -906,6 +912,23 @@ export interface StandardValues extends MaterialOptions {
 	 * `Infinity`.
 	 */
 	attenuationDistance?: number;
+	/**
+	 * How much of the surface's diffuse light passes through it to its other side, from 0 to 1, as
+	 * glTF's `KHR_materials_diffuse_transmission` gives it. Light that reaches the back, such as the
+	 * sun behind a leaf, a petal or an ear, then shows on the front through
+	 * `diffuseTransmissionColor`, and the front keeps the rest of its diffuse light. Shadows fall on
+	 * that light too. Give it when you create the material, even as 0, to change it later. A
+	 * material created without it lets no light through to its other side. Over `thickness`, the
+	 * volume's `attenuationColor` tints the light. `transmission` wins where a material has both.
+	 * The default is 0.
+	 */
+	diffuseTransmission?: number;
+	/**
+	 * The color that tints the light that passes through to the surface's other side, in the forms
+	 * that `color` takes. The base color does not tint it, as glTF says, so give a leaf its green
+	 * here. The default is white.
+	 */
+	diffuseTransmissionColor?: ColorInput;
 }
 
 /**
@@ -952,6 +975,18 @@ export interface StandardMaps {
 	specularIntensityMap?: Texture;
 	/** The specular color, in sRGB. Its color multiplies `specularColor`. */
 	specularColorMap?: Texture;
+	/**
+	 * The diffuse transmission in alpha, in linear color. Its alpha multiplies
+	 * `diffuseTransmission`. Only a material created with `diffuseTransmission` takes it, and such
+	 * a material takes no specular maps.
+	 */
+	diffuseTransmissionMap?: Texture;
+	/**
+	 * The diffuse transmission color, in sRGB. Its color multiplies `diffuseTransmissionColor`.
+	 * Only a material created with `diffuseTransmission` takes it, and such a material takes no
+	 * specular maps.
+	 */
+	diffuseTransmissionColorMap?: Texture;
 }
 
 /**
@@ -1173,7 +1208,8 @@ type Ranged =
 	| 'specularIntensity'
 	| 'envIntensity'
 	| 'transmission'
-	| 'thickness';
+	| 'thickness'
+	| 'diffuseTransmission';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -1198,6 +1234,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
 	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
+	['diffuseTransmission', MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1, 'diffuseTransmission'],
 ];
 
 /** The core's slot of each map option. */
@@ -1210,7 +1247,30 @@ const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
 	['lightMap', MAP_SLOT_LIGHT],
 	['specularIntensityMap', MAP_SLOT_SPECULAR_INTENSITY],
 	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
+	['diffuseTransmissionMap', MAP_SLOT_DIFFUSE_TRANSMISSION],
+	['diffuseTransmissionColorMap', MAP_SLOT_DIFFUSE_TRANSMISSION_COLOR],
 ];
+
+/** The maps that share their slots with the diffuse transmission maps. */
+const SPECULAR_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
+	'specularIntensityMap',
+	'specularColorMap',
+]);
+
+/** The maps that only a material that lets light through to its other side takes. */
+const TRANSLUCENCY_MAPS: ReadonlySet<keyof StandardMaps> = new Set([
+	'diffuseTransmissionMap',
+	'diffuseTransmissionColorMap',
+]);
+
+/**
+ * True when a map option does not fit a material with `features`: the diffuse transmission maps
+ * without diffuse transmission, and the specular maps with it, which would take the same slots.
+ */
+function skipsMap(key: keyof StandardMaps, features: number): boolean {
+	const translucent = (features & MATERIAL_FEATURE_TRANSLUCENCY) !== 0;
+	return translucent ? SPECULAR_MAPS.has(key) : TRANSLUCENCY_MAPS.has(key);
+}
 
 /** Throws E1108 for a pair or a transform with a number that is not finite. */
 function checkNumbers(values: AnyValues, call: string): void {
@@ -1266,6 +1326,7 @@ function writeValues(
 	emissive: readonly number[] | undefined,
 	specular: readonly number[] | undefined,
 	attenuation: readonly number[] | undefined,
+	through: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -1291,6 +1352,13 @@ function writeValues(
 			attenuation[0] as number,
 			attenuation[1] as number,
 			attenuation[2] as number,
+		);
+	if (through)
+		write(
+			MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR,
+			through[0] as number,
+			through[1] as number,
+			through[2] as number,
 		);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
@@ -1363,6 +1431,15 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
  */
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
+	const features = featureBits(options);
+	for (const [key] of MAP_OPTIONS)
+		if (options[key] && skipsMap(key, features))
+			throw new EngineError(
+				'E1217',
+				SPECULAR_MAPS.has(key)
+					? `${call}() got ${key} with diffuseTransmission; a material that lets light through to its other side keeps its diffuse transmission maps in the specular maps' place, so it takes no specular maps.`
+					: `${call}() got ${key} without diffuseTransmission; give diffuseTransmission, even as 0, to create a material that takes it.`,
+			);
 	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
 		throw new EngineError(
 			'E1217',
@@ -1400,7 +1477,8 @@ function featureBits(options: StandardOptions): number {
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
 			: 0) |
 		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0) |
-		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0)
+		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0) |
+		(options.diffuseTransmission !== undefined ? MATERIAL_FEATURE_TRANSLUCENCY : 0)
 	);
 }
 
@@ -1422,6 +1500,7 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'ior',
 	'attenuationColor',
 	'attenuationDistance',
+	'diffuseTransmissionColor',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1567,7 +1646,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const emissive = linearOrNone(values.emissive, call);
 		const specular = specularOrNone(values.specularColor, call);
 		const attenuation = linearOrNone(values.attenuationColor, call);
-		writeValues(core, id, call, values, color, emissive, specular, attenuation);
+		const through = linearOrNone(values.diffuseTransmissionColor, call);
+		writeValues(core, id, call, values, color, emissive, specular, attenuation, through);
 	}
 
 	/**
@@ -1654,6 +1734,7 @@ export class Materials {
 		const emissive = linearOrNone(options.emissive, call);
 		const specular = specularOrNone(options.specularColor, call);
 		const attenuation = linearOrNone(options.attenuationColor, call);
+		const through = linearOrNone(options.diffuseTransmissionColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
@@ -1663,6 +1744,7 @@ export class Materials {
 		// The shaders that let light through load on first use: the download starts with the
 		// material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		else if (features & MATERIAL_FEATURE_TRANSLUCENCY) this.shaders.need('translucency');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
@@ -1670,10 +1752,11 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive, specular, attenuation);
+		writeValues(core, id, call, values, undefined, emissive, specular, attenuation, through);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
-			if (!map) continue;
+			// A production build leaves out a map that would take another map's slot.
+			if (!map || skipsMap(key, features)) continue;
 			const second = map.uvSet === 1 ? 1 : 0;
 			core.checkGrowth(
 				core.glue.setMaterialMap(id, slot, map.handle, second),
@@ -1714,8 +1797,9 @@ export class Materials {
 	 * `InstanceIn`. Throws E1216 for a uniform or a texture that the WGSL does not declare, for a
 	 * value of the wrong kind, and for a uniform named as a standard value, such as `color`. Throws
 	 * E1217 for the `hash` alpha mode and for `alphaToCoverage`, which custom materials do not take,
-	 * and for `transmission` where the WGSL never sets the surface's `transmission`: only WGSL that
-	 * sets it has the builds that let light through.
+	 * for `transmission` where the WGSL never sets the surface's `transmission`, and for
+	 * `diffuseTransmission` where it never names the surface's `diffuseTransmission` or
+	 * `diffuseTransmissionColor`: only WGSL that does has the builds that let light through.
 	 * When
 	 * TypeScript can see the WGSL, a wrong name or a value of the wrong kind also fails the type
 	 * check.
@@ -1734,6 +1818,12 @@ export class Materials {
 			throw new EngineError(
 				'E1217',
 				`${call}() got transmission, but its WGSL never sets the surface's transmission, so it has no builds that let light through. Set it in fn surface, such as s.transmission = 1.0.`,
+			);
+		const translucent = builds(compiled, PERMUTATION_TRANSLUCENCY);
+		if (DEV && options.diffuseTransmission !== undefined && !translucent)
+			throw new EngineError(
+				'E1217',
+				`${call}() got diffuseTransmission, but its WGSL never names the surface's diffuseTransmission, so it has no builds that let light through to its other side. Set it in fn surface, such as s.diffuseTransmission = 0.5.`,
 			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
@@ -1754,7 +1844,14 @@ export class Materials {
 			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
 			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0) |
 			(compiled.objectIds ? SHADING_CUSTOM_OBJECT_IDS : 0);
-		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
+		// A production build draws such a material without the light through it, as it has no
+		// builds for it.
+		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
+		const id = this.createId(
+			shading,
+			{ ...options, alphaToCoverage: false, diffuseTransmission },
+			call,
+		);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);
 		const { core } = this;
