@@ -56,7 +56,14 @@ export type ToThree =
 	| { type: 'stop' };
 
 export type FromThree =
-	| { type: 'started'; renderer: string; version: string; gpuTimer: boolean }
+	| {
+			type: 'started';
+			renderer: string;
+			version: string;
+			gpuTimer: boolean;
+			/** The most of the count that three.js can draw on this device, and why, or null. */
+			limit: { count: number; reason: string } | null;
+	  }
 	| { type: 'failed'; message: string }
 	| {
 			type: 'measured';

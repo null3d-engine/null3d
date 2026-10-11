@@ -29,7 +29,29 @@ export type Three = typeof ThreeModule;
 export interface ThreeLook {
 	exposure: number;
 	environmentIntensity: number;
-	fog: { color: Hex; density: number; height: number; heightFalloff: number };
+	/**
+	 * three.js's Sky behind the scene, with the settings of its uniforms, its light scaled by
+	 * `intensity`, and the scene's environment made from it. Without it, the room environment
+	 * lights the scene.
+	 */
+	sky?: { settings: Readonly<Record<string, number | readonly number[]>>; intensity: number };
+	/**
+	 * Height fog. With `glow`, the fog also scatters the main light toward the camera, as null3D's
+	 * fog does: brightest toward the light, by `glow.amount` and `glow.exponent`.
+	 */
+	fog: {
+		color: Hex;
+		density: number;
+		height: number;
+		heightFalloff: number;
+		glow?: {
+			amount: number;
+			exponent: number;
+			/** The direction the light travels, and its linear color times its intensity. */
+			direction: readonly [number, number, number];
+			color: readonly [number, number, number];
+		};
+	};
 	/** UnrealBloomPass's settings. */
 	bloom: { threshold: number; strength: number; radius: number };
 	/** Ambient occlusion's search radius in meters, and its targets' share of the render size. */
@@ -42,6 +64,8 @@ export interface ThreeSceneBuild {
 	scene: ThreeModule.Scene;
 	camera: ThreeModule.PerspectiveCamera;
 	look: ThreeLook;
+	/** The most of the count that three.js can draw here, and why, where the scene finds a limit. */
+	limit?: { count: number; reason: string };
 	/** Shows `count` of the scene, in the scene's own unit. */
 	setCount(count: number): void;
 	/** Runs one simulation step. */
@@ -56,6 +80,8 @@ export interface ThreeBuildContext {
 	options: ThreeStart;
 	/** The texture anisotropy that the renderer offers, at most 8, as null3D's preset caps it. */
 	anisotropy: number;
+	/** The renderer, for scenes that set up its lighting or shadows, or test what it can build. */
+	renderer: ThreeModule.WebGLRenderer;
 }
 
 export type ThreeBuilder = (
@@ -204,7 +230,12 @@ class ThreeRuntime {
 		renderer.shadowMap.enabled = options.effects.shadows;
 		renderer.shadowMap.type = three.PCFShadowMap;
 		const anisotropy = Math.min(8, renderer.capabilities?.getMaxAnisotropy?.() ?? 8);
-		const build = await this.builder({ three, options, anisotropy });
+		const build = await this.builder({
+			three,
+			options,
+			anisotropy,
+			renderer: renderer as ThreeModule.WebGLRenderer,
+		});
 		this.build = build;
 		const { look, scene, camera } = build;
 		renderer.toneMapping = three.AgXToneMapping;
@@ -235,6 +266,7 @@ class ThreeRuntime {
 			renderer: name,
 			version: `three.js ${THREE_VERSION}`,
 			gpuTimer: this.gpuTimer !== null,
+			limit: build.limit ?? null,
 		});
 		if (options.hold !== null) {
 			await this.hold(three, renderer);
@@ -271,13 +303,68 @@ class ThreeRuntime {
 		return { three, renderer, name: 'WebGLRenderer' };
 	}
 
-	/** The room environment, prefiltered by the PMREMGenerator of the renderer's build. */
+	/**
+	 * The scene's environment, prefiltered by the PMREMGenerator of the renderer's build: three.js's
+	 * Sky where the look has one, which also draws behind the scene, or else the room environment.
+	 */
 	private async addEnvironment(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
-		const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
 		const pmrem = new three.PMREMGenerator(this.renderer as ThreeModule.WebGLRenderer);
-		scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-		scene.environmentIntensity = look.environmentIntensity;
+		if (look.sky) {
+			const { intensity } = look.sky;
+			scene.add(await this.makeSky(look.sky.settings, intensity));
+			const lightScene = new three.Scene();
+			lightScene.add(await this.makeSky(look.sky.settings, 1));
+			scene.environment = pmrem.fromScene(lightScene, 0, 0.1, 1000).texture;
+			scene.environmentIntensity = intensity;
+		} else {
+			const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
+			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+			scene.environmentIntensity = look.environmentIntensity;
+		}
 		pmrem.dispose();
+	}
+
+	/**
+	 * three.js's Sky with the look's settings and its light times `intensity`: the Sky add-on's
+	 * shader on WebGLRenderer, and SkyMesh's nodes on WebGPURenderer.
+	 */
+	private async makeSky(
+		settings: Readonly<Record<string, number | readonly number[]>>,
+		intensity: number,
+	): Promise<ThreeModule.Mesh> {
+		const apply = (value: { value: unknown }, setting: number | readonly number[]) => {
+			if (typeof setting === 'number') value.value = setting;
+			else (value.value as ThreeModule.Vector3).set(...(setting as [number, number, number]));
+		};
+		if (this.options.renderer === 'webgpu') {
+			const { SkyMesh } = await import('three/addons/objects/SkyMesh.js');
+			const sky = new SkyMesh();
+			const uniforms = sky as unknown as Record<string, { value: unknown }>;
+			for (const [name, setting] of Object.entries(settings)) {
+				const uniform = uniforms[name];
+				if (uniform) apply(uniform, setting);
+			}
+			const material = sky.material as unknown as { colorNode: { mul(k: number): unknown } };
+			material.colorNode = material.colorNode.mul(intensity) as typeof material.colorNode;
+			sky.scale.setScalar(500);
+			return sky as unknown as ThreeModule.Mesh;
+		}
+		const { Sky } = await import('three/addons/objects/Sky.js');
+		const sky = new Sky();
+		const material = sky.material as ThreeModule.ShaderMaterial;
+		for (const [name, setting] of Object.entries(settings)) {
+			const uniform = material.uniforms[name];
+			if (uniform) apply(uniform, setting);
+		}
+		material.uniforms.skyIntensity = { value: intensity };
+		material.fragmentShader = material.fragmentShader
+			.replace('uniform float time;', 'uniform float time;\nuniform float skyIntensity;')
+			.replace(
+				'gl_FragColor = vec4( texColor, 1.0 );',
+				'gl_FragColor = vec4( texColor * skyIntensity, 1.0 );',
+			);
+		sky.scale.setScalar(500);
+		return sky;
 	}
 
 	/**
@@ -286,7 +373,7 @@ class ThreeRuntime {
 	 * down into the haze sees more of it than a view across.
 	 */
 	private async addFog(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
-		const { color, density, height, heightFalloff } = look.fog;
+		const { color, density, height, heightFalloff, glow } = look.fog;
 		if (this.options.renderer === 'webgpu') {
 			const tsl = await import('three/tsl');
 			const ray = tsl.positionWorld.sub(tsl.cameraPosition);
@@ -302,7 +389,19 @@ class ThreeRuntime {
 			const atCamera = tsl.exp(tsl.cameraPosition.y.sub(height).mul(-heightFalloff));
 			const path = ray.length().mul(atCamera).mul(ratio);
 			const factor = tsl.float(1).sub(tsl.exp(path.mul(-density)));
-			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(tsl.color(color), factor);
+			const base = tsl.color(color);
+			let fogColor: unknown = base;
+			if (glow) {
+				const toward = tsl.max(
+					tsl.dot(tsl.normalize(ray), tsl.vec3(...glow.direction).negate()),
+					0,
+				);
+				fogColor = tsl
+					.vec3(...glow.color)
+					.mul(tsl.pow(toward, glow.exponent).mul(glow.amount))
+					.add(base);
+			}
+			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(fogColor as typeof base, factor);
 			return;
 		}
 		const chunks = three.ShaderChunk as unknown as Record<string, string>;
@@ -318,6 +417,10 @@ class ThreeRuntime {
 	vFogWorld = ( modelMatrix * fogWorld ).xyz;
 #endif`;
 		const f = heightFalloff.toFixed(6);
+		const vec = (v: readonly number[]) => `vec3( ${v.map((c) => c.toFixed(6)).join(', ')} )`;
+		const glowGlsl = glow
+			? `\n	fogGlowColor += ${vec(glow.color)} * ( ${glow.amount.toFixed(6)} * pow( max( dot( normalize( fogRay ), - ${vec(glow.direction)} ), 0.0 ), ${glow.exponent.toFixed(6)} ) );`
+			: '';
 		chunks.fog_pars_fragment = `#ifdef USE_FOG
 	uniform vec3 fogColor;
 	varying vec3 vFogWorld;
@@ -328,7 +431,8 @@ class ThreeRuntime {
 	float fogClimb = ${f} * fogRay.y;
 	float fogRatio = abs( fogClimb ) < 0.01 ? 1.0 + fogClimb * ( fogClimb / 6.0 - 0.5 ) : ( 1.0 - exp( min( - fogClimb, 40.0 ) ) ) / fogClimb;
 	float fogPath = length( fogRay ) * exp( - ${f} * ( cameraPosition.y - ${height.toFixed(6)} ) ) * fogRatio;
-	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, 1.0 - exp( - fogDensity * fogPath ) );
+	vec3 fogGlowColor = fogColor;${glowGlsl}
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogGlowColor, 1.0 - exp( - fogDensity * fogPath ) );
 #endif`;
 		scene.fog = new three.FogExp2(color, density);
 	}
@@ -650,28 +754,22 @@ async function makeDrawer(
 	return { render: () => composer.render(), setSize };
 }
 
-/** Runs the worker's side of a comparison with a scene's builder. */
-export function runThreeWorker(builder: ThreeBuilder): void {
-	const scope = self as unknown as {
-		postMessage(message: FromThree, transfer?: Transferable[]): void;
-		onmessage: ((event: MessageEvent<ToThree>) => void) | null;
-		close(): void;
-	};
+/**
+ * The side of a comparison that runs three.js: it takes the page's messages and posts its replies.
+ * `close` ends the thread it runs on, where it has one of its own.
+ */
+export function threeHandler(
+	builder: ThreeBuilder,
+	post: (message: FromThree, transfer?: Transferable[]) => void,
+	close: () => void,
+): (message: ToThree) => void {
 	let runtime: ThreeRuntime | null = null;
 	const fail = (error: unknown) =>
-		scope.postMessage({
-			type: 'failed',
-			message: error instanceof Error ? error.message : String(error),
-		});
-	scope.onmessage = ({ data: message }) => {
+		post({ type: 'failed', message: error instanceof Error ? error.message : String(error) });
+	return (message) => {
 		switch (message.type) {
 			case 'start':
-				runtime = new ThreeRuntime(
-					message.canvas,
-					message.options,
-					(reply, transfer) => scope.postMessage(reply, transfer ?? []),
-					builder,
-				);
+				runtime = new ThreeRuntime(message.canvas, message.options, post, builder);
 				runtime.start().catch(fail);
 				return;
 			case 'count':
@@ -689,8 +787,23 @@ export function runThreeWorker(builder: ThreeBuilder): void {
 			case 'stop':
 				runtime?.stop();
 				runtime = null;
-				scope.close();
+				close();
 				return;
 		}
 	};
+}
+
+/** Runs the worker's side of a comparison with a scene's builder. */
+export function runThreeWorker(builder: ThreeBuilder): void {
+	const scope = self as unknown as {
+		postMessage(message: FromThree, transfer?: Transferable[]): void;
+		onmessage: ((event: MessageEvent<ToThree>) => void) | null;
+		close(): void;
+	};
+	const handle = threeHandler(
+		builder,
+		(reply, transfer) => scope.postMessage(reply, transfer ?? []),
+		() => scope.close(),
+	);
+	scope.onmessage = ({ data }) => handle(data);
 }

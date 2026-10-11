@@ -11,8 +11,14 @@
 // - three.js on the renderer that the GPU path names, in one worker with an OffscreenCanvas.
 
 import { createEngine, type Engine } from '@null3d/engine';
-import { type PageMemory, PageMemorySampler } from '@null3d/engine/stats';
+import {
+	MainThreadWindow,
+	type PageMemory,
+	PageMemorySampler,
+	type StatsMainThread,
+} from '@null3d/engine/stats';
 import type { Comparison } from '../compare/comparisons';
+import { threeBuildOf } from '../compare/three-builds';
 import { allEffects, type CompareMode, type Effects, effectsToText } from './compare-scene';
 import {
 	type DeviceClass,
@@ -25,6 +31,7 @@ import {
 } from './ramp';
 import { ThreeStatsMeter } from './stats-three';
 import type { FromThree, ThreeRenderer, ThreeStart, ToThree } from './three-protocol';
+import { threeHandler } from './three-worker';
 
 export type EngineName = 'null3d' | 'threejs';
 
@@ -92,6 +99,11 @@ export interface ComparisonMeasurement {
 	cpuMs: number | null;
 	/** The engine's own figures, for a closer look: per thread and phase, draws, uploads, memory. */
 	detail?: Record<string, unknown>;
+	/**
+	 * The page thread's long tasks, its longest task and its longest input delay over the
+	 * measurement, where the browser reports them.
+	 */
+	mainThread?: StatsMainThread | null;
 }
 
 /** A comparison that runs, with one engine. */
@@ -118,6 +130,12 @@ export interface ComparisonRun {
 	measureMemory(): Promise<PageMemory | null>;
 	/** Opens or closes the stats panel's card; the ramp runs with it closed. */
 	collapseStats(collapsed: boolean): void;
+	/**
+	 * The most of the count that this engine can draw on this device, and why, where it finds a
+	 * limit below the ramp's maximum: three.js's WebGLRenderer holds only so many lights in a
+	 * shader. The ramp and `setCount` stop there.
+	 */
+	limit?: { count: number; reason: string };
 	/** The held frame, RGBA8 rows from the top, for a run started with `hold`. */
 	held?: { width: number; height: number; pixels: Uint8Array };
 	/** Stops the engine and frees its memory. */
@@ -184,17 +202,18 @@ async function gpuPath(choice: GpuChoice): Promise<'webgpu' | 'webgl2'> {
 
 /**
  * three.js's renderer on a GPU path: WebGLRenderer on WebGL2, and the faster of its two renderers
- * on WebGPU. In Chrome on the Mac, WebGLRenderer took a quarter of WebGPURenderer's CPU time per
- * frame on Factory, so it is the default until a device sitting shows otherwise; `?renderer=webgpu`
- * picks the other.
+ * for the comparison on WebGPU, which `?renderer=` can change. In Chrome on the Mac, WebGLRenderer
+ * took a quarter of WebGPURenderer's CPU time per frame on Factory. Night town needs
+ * WebGPURenderer's clustered lighting for its hundreds of lights.
  */
-function threeRendererFor(gpu: 'webgpu' | 'webgl2', asked?: ThreeRenderer): ThreeRenderer {
+function threeRendererFor(
+	comparison: Comparison,
+	gpu: 'webgpu' | 'webgl2',
+	asked?: ThreeRenderer,
+): ThreeRenderer {
 	if (gpu === 'webgl2') return 'webgl';
-	return asked ?? FASTER_THREE_RENDERER;
+	return asked ?? comparison.fasterThree;
 }
-
-/** three.js's faster renderer on a WebGPU device, from the measured ramps. */
-export const FASTER_THREE_RENDERER: ThreeRenderer = 'webgl';
 
 /** Starts a comparison with one engine, and resolves once it draws. */
 export async function startComparison(options: ComparisonOptions): Promise<ComparisonRun> {
@@ -212,7 +231,7 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 	const common = { comparison, mode, count, effects, plan, pixelRatio, cls, gpu };
 	return options.engine === 'null3d'
 		? startNull3d(canvas, options, common)
-		: startThree(canvas, options, common, threeRendererFor(gpu, options.threeRenderer));
+		: startThree(canvas, options, common, threeRendererFor(comparison, gpu, options.threeRenderer));
 }
 
 interface Common {
@@ -271,7 +290,10 @@ async function startNull3d(
 			engine.postToSketch('count', shown);
 		},
 		async measure(seconds) {
+			const watch = new MainThreadWindow();
 			const metrics = await engine.measure(seconds);
+			const mainThread = watch.take();
+			watch.stop();
 			const threads = Object.fromEntries(
 				Object.entries(metrics.threads).map(([name, { busyMs, phases }]) => [
 					name,
@@ -286,6 +308,7 @@ async function startNull3d(
 			return {
 				fps: metrics.presentedFps,
 				cpuMs: metrics.cpuMs.mean,
+				mainThread,
 				detail: {
 					threads,
 					cpuMsAllThreads: metrics.cpuMsAllThreads.mean,
@@ -312,13 +335,65 @@ async function startNull3d(
 	return run;
 }
 
+/** The thread that runs three.js: a worker of its own, or the page's own thread. */
+interface ThreeThread {
+	/** True when three.js runs on the page's thread and draws into the canvas itself. */
+	onPage: boolean;
+	postMessage(message: ToThree, transfer?: Transferable[]): void;
+	onmessage: ((event: { data: FromThree }) => void) | null;
+	onerror: ((event: ErrorEvent) => void) | null;
+	terminate(): void;
+}
+
+/**
+ * Starts the thread that runs a comparison's three.js half: its worker, or, for a comparison that
+ * runs three.js on the page's thread as three.js's own examples do, the same code on the page.
+ */
+async function threeThread(comparison: Comparison): Promise<ThreeThread> {
+	if (comparison.threeOnPage) {
+		const builder = await threeBuildOf(comparison);
+		const thread: ThreeThread = {
+			onPage: true,
+			onmessage: null,
+			onerror: null,
+			postMessage: (message) => handle(message),
+			terminate: () => {},
+		};
+		// Replies arrive as a worker's would, after the call that caused them returns.
+		const handle = threeHandler(
+			builder,
+			(reply) => queueMicrotask(() => thread.onmessage?.({ data: reply })),
+			() => {},
+		);
+		return thread;
+	}
+	const worker = comparison.startThree();
+	return {
+		onPage: false,
+		postMessage: (message, transfer) => worker.postMessage(message, transfer ?? []),
+		set onmessage(listener: ThreeThread['onmessage']) {
+			worker.onmessage = listener as Worker['onmessage'];
+		},
+		get onmessage() {
+			return worker.onmessage as ThreeThread['onmessage'];
+		},
+		set onerror(listener: ThreeThread['onerror']) {
+			worker.onerror = listener;
+		},
+		get onerror() {
+			return worker.onerror;
+		},
+		terminate: () => worker.terminate(),
+	};
+}
+
 async function startThree(
 	canvas: HTMLCanvasElement,
 	options: ComparisonOptions,
 	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
 	renderer: ThreeRenderer,
 ): Promise<ComparisonRun> {
-	const worker = comparison.startThree();
+	const worker = await threeThread(comparison);
 	const send = (message: ToThree, transfer: Transferable[] = []) =>
 		worker.postMessage(message, transfer);
 	const held = options.hold !== undefined;
@@ -348,20 +423,25 @@ async function startThree(
 		// starts with the panel open.
 		gpuTimer: stats === 'open',
 	};
-	const offscreen = canvas.transferControlToOffscreen();
+	// A worker draws into the canvas's offscreen twin; three.js on the page draws into the canvas.
+	const offscreen = worker.onPage
+		? (canvas as unknown as OffscreenCanvas)
+		: canvas.transferControlToOffscreen();
 	const measurements = new Map<number, (result: ComparisonMeasurement) => void>();
 	let nextMeasurement = 0;
 	let started: (value: { label: string; held?: ComparisonRun['held'] }) => void;
 	let failed: (error: Error) => void;
+	let limit: ComparisonRun['limit'];
 	const ready = new Promise<{ label: string; held?: ComparisonRun['held'] }>((resolve, reject) => {
 		started = resolve;
 		failed = reject;
 	});
 	let label = '';
-	worker.onmessage = ({ data }: MessageEvent<FromThree>) => {
+	worker.onmessage = ({ data }) => {
 		switch (data.type) {
 			case 'started':
 				label = `${data.version}, ${data.renderer}`;
+				limit = data.limit && data.limit.count < plan.max ? data.limit : undefined;
 				meter?.started(data.renderer, data.version, data.gpuTimer);
 				if (!held) started({ label });
 				return;
@@ -388,7 +468,7 @@ async function startThree(
 		}
 	};
 	worker.onerror = (event) => failed(new Error(event.message || 'the three.js worker failed'));
-	send({ type: 'start', canvas: offscreen, options: start }, [offscreen]);
+	send({ type: 'start', canvas: offscreen, options: start }, worker.onPage ? [] : [offscreen]);
 	const resize = new ResizeObserver(() => {
 		const w = canvas.clientWidth;
 		const h = canvas.clientHeight;
@@ -401,27 +481,33 @@ async function startThree(
 		worker.terminate();
 		throw error;
 	});
-	let shown = count;
+	const runPlan = limit ? { ...plan, max: limit.count } : plan;
+	let shown = Math.min(count, runPlan.max);
 	return {
 		engine: 'threejs',
 		mode,
 		label: result.label,
 		gpu,
 		deviceClass: cls,
-		plan,
+		plan: runPlan,
+		limit,
 		pixelRatio,
 		held: result.held,
 		get count() {
 			return shown;
 		},
 		setCount(next) {
-			shown = Math.min(plan.max, next);
+			shown = Math.min(runPlan.max, next);
 			send({ type: 'count', count: shown });
 		},
 		measure(seconds) {
 			const id = nextMeasurement++;
+			const watch = new MainThreadWindow();
 			return new Promise((resolve) => {
-				measurements.set(id, resolve);
+				measurements.set(id, (result) => {
+					resolve({ ...result, mainThread: watch.take() });
+					watch.stop();
+				});
 				send({ type: 'measure', id, seconds });
 			});
 		},

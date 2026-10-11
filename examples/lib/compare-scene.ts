@@ -391,6 +391,57 @@ export function translated(mesh: MeshData, x: number, y: number, z: number): Mes
 	};
 }
 
+/**
+ * A copy of the mesh turned by `yaw` radians about +Y and then moved by (x, y, z). Texture
+ * coordinates stay as they are.
+ */
+export function placed(mesh: MeshData, yaw: number, x: number, y: number, z: number): MeshData {
+	const c = Math.cos(yaw);
+	const s = Math.sin(yaw);
+	const position = new Float32Array(mesh.position.length);
+	const normal = new Float32Array(mesh.normal.length);
+	for (let i = 0; i < position.length; i += 3) {
+		const px = mesh.position[i] as number;
+		const pz = mesh.position[i + 2] as number;
+		position[i] = c * px + s * pz + x;
+		position[i + 1] = (mesh.position[i + 1] as number) + y;
+		position[i + 2] = -s * px + c * pz + z;
+		const nx = mesh.normal[i] as number;
+		const nz = mesh.normal[i + 2] as number;
+		normal[i] = c * nx + s * nz;
+		normal[i + 1] = mesh.normal[i + 1] as number;
+		normal[i + 2] = -s * nx + c * nz;
+	}
+	return { position, normal, uv: Float32Array.from(mesh.uv), index: Uint16Array.from(mesh.index) };
+}
+
+/** One mesh of all the given meshes' triangles. Throws past 65,536 vertices, the index's limit. */
+export function mergeMeshes(meshes: readonly MeshData[]): MeshData {
+	let vertices = 0;
+	let indices = 0;
+	for (const mesh of meshes) {
+		vertices += mesh.position.length / 3;
+		indices += mesh.index.length;
+	}
+	if (vertices > 65_536)
+		throw new RangeError(`A merged mesh holds ${vertices} vertices, over 65,536.`);
+	const position = new Float32Array(vertices * 3);
+	const normal = new Float32Array(vertices * 3);
+	const uv = new Float32Array(vertices * 2);
+	const index = new Uint16Array(indices);
+	let v = 0;
+	let k = 0;
+	for (const mesh of meshes) {
+		position.set(mesh.position, v * 3);
+		normal.set(mesh.normal, v * 3);
+		uv.set(mesh.uv, v * 2);
+		for (let i = 0; i < mesh.index.length; i++) index[k + i] = (mesh.index[i] as number) + v;
+		v += mesh.position.length / 3;
+		k += mesh.index.length;
+	}
+	return { position, normal, uv, index };
+}
+
 // Textures made in code: tileable noise, turned into a color map, a map of occlusion, roughness and
 // metalness (packed as glTF packs them, which both engines read), and a normal map.
 
@@ -412,7 +463,7 @@ export interface SurfaceMaps {
 }
 
 /** Value noise that tiles over `period` lattice cells, from 0 to 1. */
-function tiledNoise(x: number, y: number, period: number, seed: number): number {
+export function tiledNoise(x: number, y: number, period: number, seed: number): number {
 	const x0 = Math.floor(x);
 	const y0 = Math.floor(y);
 	const fx = x - x0;
@@ -427,7 +478,7 @@ function tiledNoise(x: number, y: number, period: number, seed: number): number 
 }
 
 /** Fractal noise over `octaves`, tiling across the texture, from about 0 to 1. */
-function fbm(
+export function fbm(
 	u: number,
 	v: number,
 	base: number,
@@ -544,7 +595,7 @@ const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 };
 
 /** The byte of a value from 0 to 1. */
-const byte = (value: number) => Math.round(clamp(value, 0, 1) * 255);
+export const byte = (value: number) => Math.round(clamp(value, 0, 1) * 255);
 
 /**
  * The color, packed and normal maps of a surface, `size` texels a side, from a seed. The color map
@@ -641,14 +692,25 @@ export function gradeTable(look: GradeLook, size = 33): GradeTable {
 
 // The effects that each comparison can switch, and the settings that both engines share.
 
-/** The effects of a comparison. Each is a switch, on in both engines or off in both. */
-export const EFFECT_NAMES = ['shadows', 'fog', 'bloom', 'ao', 'grade'] as const;
+/**
+ * The effects of a comparison. Each is a switch, on in both engines or off in both. A comparison
+ * lists the ones its scene draws, and a page shows a switch for each of them.
+ */
+export const EFFECT_NAMES = [
+	'shadows',
+	'fog',
+	'bloom',
+	'ao',
+	'grade',
+	'reflections',
+	'particles',
+] as const;
 export type EffectName = (typeof EFFECT_NAMES)[number];
 export type Effects = Record<EffectName, boolean>;
 
 /** Every effect on. */
 export function allEffects(): Effects {
-	return { shadows: true, fog: true, bloom: true, ao: true, grade: true };
+	return Object.fromEntries(EFFECT_NAMES.map((name) => [name, true])) as Effects;
 }
 
 /** The effect switches as address text, such as `shadows,fog`. */
@@ -659,7 +721,7 @@ export function effectsToText(effects: Effects): string {
 /** Reads effect switches from address text: null gives every effect, and unknown names throw. */
 export function effectsFromText(text: string | null): Effects {
 	if (text === null) return allEffects();
-	const effects = { shadows: false, fog: false, bloom: false, ao: false, grade: false };
+	const effects = Object.fromEntries(EFFECT_NAMES.map((name) => [name, false])) as Effects;
 	for (const part of text.split(',')) {
 		const name = part.trim();
 		if (name === '') continue;
