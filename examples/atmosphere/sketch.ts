@@ -95,7 +95,7 @@ export default defineSketch(async (ctx) => {
 	});
 
 	math.seed(11);
-	const ground = materials.standard({ color: '#ffffff', roughness: 0.95 });
+	const ground = materials.standard({ vertexColors: true, roughness: 0.95 });
 	scene.createMesh({ mesh: geometry.fromArrays(land()), material: ground, receiveShadows: true });
 	// The lake mirrors the sky's environment, smooth and dark.
 	const lake = materials.standard({ color: '#0b1a22', roughness: 0.06, metalness: 0.1 });
