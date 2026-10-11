@@ -172,6 +172,25 @@ The owner raised the bar on 11 October 2026: every comparison meets the look bar
 - The sky's clouds are a broken deck of heavy cloud, low and large, which the dusk light leaves dark.
 - The sky's clouds stand still in both engines. Moving clouds would refresh null3D's sky light every frame, and three.js's PMREM pass would need to run again.
 
+### Battle's figures on the Mac
+
+The runs are from 12 October 2026, measured as for Factory, on the approved look. Each count had room for that count only. The ramps had room for 40,000 units and started at 200. The [run's record](../tested-devices/macbook-pro-chrome/20261012-002614-battle-modes.md) has each figure.
+
+| Mode | Engine and path | Held | 1,000 units | 4,000 | 10,000 | Page memory at 4,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Scene graph | null3D, WebGPU, High | 3,698 | 64.6 fps | 42.4 fps | 58.2 fps | 516 MiB |
+| Scene graph | null3D, WebGL2, Medium | 200 | 55.8 fps | 30.0 fps | 26.8 fps | 341 MiB |
+| Scene graph | three.js, WebGLRenderer | 0 | 8.0 fps | 1.9 fps | 1.0 fps | 435 MiB |
+| Scene graph | three.js, WebGPURenderer | 0 | 7.5 fps | 1.7 fps | 0.7 fps | 630 MiB |
+| Instanced | null3D, WebGPU, High | 7,668 | 64.7 fps | 53.1 fps | 35.8 fps | 560 MiB |
+| Instanced | null3D, WebGL2, Medium | 0 | 54.6 fps | 26.9 fps | 25.8 fps | 341 MiB |
+| Instanced | three.js, WebGPURenderer | 240 | 87.5 fps | 29.3 fps | 11.1 fps | 58 MiB |
+
+- In the scene graph mode, null3D drew 7 to 58 times the frames of three.js's faster renderer. three.js spent 95% of its frame in its render calls: each soldier is a skinned mesh that it poses and draws on its own.
+- In the instanced mode, three.js drew more frames at 1,000 units, and null3D more from 4,000 up. three.js's frame time grows with the count, as its one thread poses every unit.
+- null3D's GPU sets its rate. At 1,000 units its busiest thread took 3.5 ms a frame, yet it drew 65 frames a second. The two ramps of the same null3D scene held 3,698 and 7,668 units, as a GPU-bound rate wanders.
+- null3D's page took 6 to 10 times three.js's memory in the instanced mode.
+
 ### Image tests and memory
 
 - Hold mode draws every frame up to the held one. On SwiftShader, CI's software GPU, Battle's held frame at 600 units took 17 to 72 seconds a test. So the SwiftShader references hold 120 units (`swiftShaderHoldCount`), and the Mac's hold 600.
