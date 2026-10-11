@@ -282,6 +282,20 @@ run('replay', async () => {
 		G.COMPARE_NONE,
 		1,
 	);
+	// The copy of the opaque color that surfaces which let light through sample, which the frame
+	// group binds: one texel of one layer, which no surface here reads.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		8,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA8_UNORM,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D_ARRAY,
+	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
@@ -300,7 +314,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		15,
+		17,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -317,6 +331,9 @@ run('replay', async () => {
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],
 		...[13, G.RESOURCE_SAMPLER, 2, 0, 0],
 		...[14, G.RESOURCE_SAMPLER, 3, 0, 0],
+		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
+		// The row values of instance batches, which only shaders built for them read.
+		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

@@ -8,16 +8,15 @@ import type { PerspectiveCamera as Perspective, SketchContext } from '@null3d/en
 import { MOUSE, OrthographicCamera, PerspectiveCamera, TOUCH } from 'three';
 import { MapControls as ThreeMapControls } from 'three/addons/controls/MapControls.js';
 import { OrbitControls as ThreeOrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ScriptedInput } from '../../../tests/pages/lib/scripted-input';
 import {
 	STAND_IN_FOV as FOV,
 	StandInCamera,
 	StandInOrthographic,
 	STAND_IN_VIEW_HEIGHT as VIEW_HEIGHT,
 } from '../../../tests/pages/lib/stand-in-cameras';
-import { InputRing } from '../../engine/src/page/input-ring';
+import type { InputRing } from '../../engine/src/page/input-ring';
 import {
-	controlViews,
-	createControlBuffer,
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
@@ -29,10 +28,9 @@ import {
 	FLAG_PRIMARY,
 	FLAG_SHIFT,
 	FLAG_TOUCH,
-	Slot,
 } from '../../engine/src/shared/control';
 import { KEY_CODES } from '../../engine/src/shared/key-codes';
-import { InputReader } from '../../engine/src/sketch/input';
+import type { InputReader } from '../../engine/src/sketch/input';
 import {
 	createMapControls,
 	createOrbitControls,
@@ -133,18 +131,11 @@ class Twin {
 		this.threeCamera = orthographic
 			? new OrthographicCamera(-half * aspect, half * aspect, half, -half, 0.1, 1000)
 			: new PerspectiveCamera(FOV, aspect, 0.1, 1000);
-		const buffer = createControlBuffer(false);
-		const views = controlViews(buffer);
-		views.slotFloats[Slot.CanvasCssWidth] = WIDTH;
-		views.slotFloats[Slot.CanvasCssHeight] = HEIGHT;
-		this.ring = new InputRing(buffer);
-		this.reader = new InputReader(views, KEY_CODES);
+		const input = new ScriptedInput(WIDTH, HEIGHT);
+		this.ring = input.ring;
+		this.reader = input.reader;
 		this.camera.setPosition(...position);
-		const context = {
-			input: this.reader,
-			engine: { viewport: { width: WIDTH, height: HEIGHT, pixelRatio: 1 } },
-			preferences: { reducedMotion: false },
-		} as unknown as SketchContext;
+		const context = input.context;
 		const create = kind === 'map' ? createMapControls : createOrbitControls;
 		this.controls = create(context, this.camera as unknown as Perspective, options);
 
@@ -836,23 +827,18 @@ describe('orbit controls', () => {
 	});
 
 	it('stop auto-rotation while the user asks for less motion', () => {
-		const buffer = createControlBuffer(false);
-		const reader = new InputReader(controlViews(buffer), KEY_CODES);
+		const input = new ScriptedInput(WIDTH, HEIGHT);
 		const camera = new StandInCamera();
 		camera.setPosition(0, 0, 5);
 		const preferences = { reducedMotion: true };
-		const context = {
-			input: reader,
-			engine: { viewport: { width: WIDTH, height: HEIGHT, pixelRatio: 1 } },
-			preferences,
-		} as unknown as SketchContext;
+		const context = { ...input.context, preferences } as unknown as SketchContext;
 		const controls = createOrbitControls(context, camera as unknown as Perspective, {
 			autoRotate: true,
 		});
-		reader.beginFrame(1);
+		input.beginFrame();
 		expect(controls.update(0.5)).toBe(false);
 		preferences.reducedMotion = false;
-		reader.beginFrame(2);
+		input.beginFrame();
 		expect(controls.update(0.5)).toBe(true);
 		// Auto-rotation turns the camera to its left: the azimuth falls.
 		expect(controls.getAzimuthalAngle()).toBeCloseTo(-(2 * Math.PI * 2 * 0.5) / 60, 9);

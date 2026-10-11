@@ -37,22 +37,26 @@ export const EVENT_GAMEPAD_AXIS = 8;
  * fields are those of a pointer event.
  */
 export const EVENT_POINTER_LEAVE = 9;
+/** The pointer lock began or ended. Its code is 1 while the canvas holds the lock, and 0 after. */
+export const EVENT_POINTER_LOCK = 10;
 
 /** An input event's type: one of the `EVENT_` numbers. */
-export type InputEventType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type InputEventType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 /*
  * Int32 offsets of the fields of an input record. What a field holds depends on the event:
  *
- * | Field | Pointer | Wheel | Key | Gamepad button | Gamepad axis |
- * | --- | --- | --- | --- | --- | --- |
- * | `FIELD_X`, `FIELD_Y` (floats) | position in CSS pixels | scroll in pixels | | `X`: value | `X`: value |
- * | `FIELD_CODE` | the button that changed | | key number | button number | axis number |
- * | `FIELD_ID` | pointer id | | | pad number | pad number |
- * | `FIELD_BUTTONS` | the buttons held | | | 1 while pressed | |
- * | `FIELD_FLAGS` | `FLAG_` bits | modifiers | modifiers | | |
+ * | Field | Pointer | Wheel | Key | Gamepad button | Gamepad axis | Pointer lock |
+ * | --- | --- | --- | --- | --- | --- | --- |
+ * | `FIELD_X`, `FIELD_Y` (floats) | position in CSS pixels | scroll in pixels | | `X`: value | `X`: value | |
+ * | `FIELD_CODE` | the button that changed | | key number | button number | axis number | 1 locked, 0 not |
+ * | `FIELD_ID` | pointer id | | | pad number | pad number | |
+ * | `FIELD_BUTTONS` | the buttons held | | | 1 while pressed | | |
+ * | `FIELD_FLAGS` | `FLAG_` bits | modifiers | modifiers | | | |
  *
- * Every record holds the frame on screen when the page wrote it, at `FIELD_FRAME`.
+ * While the pointer is locked, a pointer record holds the movement since the pointer's previous
+ * event in place of a position, and `FLAG_LOCKED`. Every record holds the frame on screen when the
+ * page wrote it, at `FIELD_FRAME`.
  */
 export const FIELD_TYPE = 0;
 export const FIELD_FRAME = 1;
@@ -72,6 +76,8 @@ export const FLAG_PEN = 16;
 export const FLAG_TOUCH = 32;
 /** The pointer is the mouse, a pen, or the first finger of a touch. */
 export const FLAG_PRIMARY = 64;
+/** The pointer is locked to the canvas: the record's X and Y hold movement, not a position. */
+export const FLAG_LOCKED = 128;
 
 /** Byte size of the control buffer's slots and input ring, after which the label tables start. */
 const CONTROL_BYTES =

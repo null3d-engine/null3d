@@ -322,6 +322,7 @@ impl Compiler {
                 let variant = Variant {
                     defs,
                     permutations,
+                    required: Vec::new(),
                     targets: variant.targets.clone(),
                 };
                 (name.clone(), variant)
@@ -429,6 +430,7 @@ impl Compiler {
                 let variant = Variant {
                     defs,
                     permutations,
+                    required: Vec::new(),
                     targets: variant.targets.clone(),
                 };
                 (name.clone(), variant)

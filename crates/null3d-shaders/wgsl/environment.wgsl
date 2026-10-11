@@ -12,6 +12,9 @@
 // - `blur` blurs the traced room by a Gaussian over the sphere, as three.js's examples blur it.
 // - `panorama` maps an equirectangular panorama onto the cube, averaging directions over each
 //   texel.
+// - `sky` draws three.js's sky of null3d::atmosphere into one level of the cube, without the sun's
+//   disc, averaging directions over each texel. Every level of the sky's chain comes from the sky
+//   itself, so no level waits for another.
 // - `half` makes a level of the chain, the blurred room or the panorama on the cube, from the
 //   level before it.
 // - `prefilter` filters the chain for one roughness, with the GGX distribution.
@@ -21,6 +24,8 @@
 // face's level of a shared-exponent cube texture, which the next draws sample with a linear
 // filter.
 
+#import null3d::atmosphere::{SkySettings, second_sun, sky_light, sky_whole}
+
 struct Step {
     /// The texels across a side of each face at the level that the draw fills.
     size: u32,
@@ -28,7 +33,8 @@ struct Step {
     samples: u32,
     /// The texels across a side of the source's largest level.
     source_size: u32,
-    spare: u32,
+    /// The first row of the level in the target: levels of the sky's chain lie one under another.
+    row: u32,
     /// The blur's sigma in radians, the source level that `half` reads, or the prefilter's
     /// perceptual roughness.
     value: f32,
@@ -46,6 +52,8 @@ struct Step {
 @group(0) @binding(3) var panorama: texture_2d<f32>;
 /// Repeats across the panorama's width and clamps at its top and bottom rows.
 @group(0) @binding(4) var panorama_sampler: sampler;
+/// The sky's settings, which the `sky` step reads.
+@group(0) @binding(5) var<uniform> sky_settings: SkySettings;
 
 const PI: f32 = 3.14159265358979;
 
@@ -93,7 +101,7 @@ struct FaceTexel {
 fn face_texel(position: vec2f) -> FaceTexel {
     let column = floor(position);
     let face = min(u32(column.x) / params.size, 5u);
-    return FaceTexel(face, vec2f(column.x - f32(face * params.size), column.y));
+    return FaceTexel(face, vec2f(column.x - f32(face * params.size), column.y - f32(params.row)));
 }
 
 /// The unit direction through the center of the texel under the fragment.
@@ -461,6 +469,37 @@ fn fs_panorama(@builtin(position) position: vec4f) -> @location(0) vec4f {
         for (var i = 0u; i < count; i++) {
             let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
             sum += panorama_light(normalize(face_direction(at.face, sc, tc)));
+        }
+    }
+    return pack(sum * (params.gain / f32(count * count)));
+}
+
+/// The sky's light without the sun's disc, averaged over `samples` x `samples` directions spread
+/// evenly over the texel. The sun's direct light comes from the scene's directional light, and its
+/// disc is far smaller than a texel.
+@fragment
+fn fs_sky(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let at = face_texel(position.xy);
+    let texel = at.texel;
+    let whole = sky_whole(sky_settings.sun.xyz, sky_settings.scattering);
+    // A second sky, of a second sun, adds its light at its weight.
+    let second_sky_weight = sky_settings.sun.w;
+    var second = whole;
+    if second_sky_weight > 0.0 {
+        second = sky_whole(second_sun(sky_settings.cloud_place), sky_settings.scattering);
+    }
+    let count = params.samples;
+    let spacing = 2.0 / (f32(params.size) * f32(count));
+    var sum = vec3f(0.0);
+    for (var j = 0u; j < count; j++) {
+        let tc = (texel.y * f32(count) + f32(j) + 0.5) * spacing - 1.0;
+        for (var i = 0u; i < count; i++) {
+            let sc = (texel.x * f32(count) + f32(i) + 0.5) * spacing - 1.0;
+            let d = normalize(face_direction(at.face, sc, tc));
+            sum += sky_light(d, whole, sky_settings, 0.0);
+            if second_sky_weight > 0.0 {
+                sum += second_sky_weight * sky_light(d, second, sky_settings, 0.0);
+            }
         }
     }
     return pack(sum * (params.gain / f32(count * count)));

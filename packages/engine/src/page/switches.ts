@@ -4,17 +4,21 @@
 // set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
 // ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU,
 // ?cells=off for culling without grid cells, ?prepass=on or off for the depth prepass,
-// ?occlusion=on or off for occlusion culling, ?skinning= for how WebGPU skins (vertex for the
+// ?occlusion=on or off for occlusion culling, ?occlusion-buffer= for the size of software occlusion
+// culling's buffer, such as 384x216, ?skinning= for how WebGPU skins (vertex for the
 // vertex shader of each pass, or full, skip or narrow for the skinning pass with fewer of its
 // savings), ?instances=index for vertex shaders that read instance data by index on core WebGPU,
 // ?shadowdepth=32 for shadow cascades in 32-bit float depth instead of 16-bit depth,
 // ?texture-cache=off for KTX2 files that transcode on every load, and ?join=off for custom effects
 // in a pass each, none joined. ?replay-delay= makes the thread that draws wait before it replays
 // each frame's list, for a test of memory that the sketch thread frees while the list may still
-// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, ?bench
-// publishes the running engine for benchmark tools, and ?gl-timing times each WebGL call for
-// benchmark pages.
+// point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
+// ?target-fps= sets the frame rate that the engine defends, ?bench publishes the running engine
+// for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, and ?stats shows the
+// stats overlay.
 
+import type { StatsRequest } from '../debug/stats-options';
+import type { TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
@@ -165,6 +169,13 @@ export interface Switches {
 	 * culling on WebGPU and software occlusion culling on WebGL2.
 	 */
 	occlusion: boolean | undefined;
+	/**
+	 * The pixels that ?occlusion-buffer= asks software occlusion culling's buffer to hold, as a
+	 * size such as 384x216: the buffer takes about that many pixels in the drawn target's shape.
+	 * Undefined for the core's default of 256 x 144. Device runs measure the sizes against each
+	 * other.
+	 */
+	occlusionBuffer: number | undefined;
 	/** How ?skinning= makes WebGPU skin, `lean` without the switch. */
 	skinning: SkinningSwitch;
 	/**
@@ -189,8 +200,14 @@ export interface Switches {
 	 */
 	fps: number | undefined;
 	/**
-	 * The job workers that ?jobs= asks for, or undefined for the count from the device's cores. The
-	 * engine starts no more than the device has logical cores (`jobWorkerCount`).
+	 * The target frame rate setting from ?target-fps=: `display` or a whole number, which wins over
+	 * the page's `targetFps` option, or undefined without the switch or with another value.
+	 */
+	targetFps: TargetFps | undefined;
+	/**
+	 * The most job workers that ?jobs= lets the engine start, or undefined for the count from the
+	 * device's cores. The engine starts them as the work grows, and no more than the device has
+	 * logical cores (`jobWorkerCount`).
 	 */
 	jobs: number | undefined;
 	/**
@@ -217,6 +234,12 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
+	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
+	 * options when ?stats=collapsed or ?stats=open shows it collapsed or open, and undefined without
+	 * the switch. It wins over the page's option.
+	 */
+	stats: StatsRequest | undefined;
+	/**
 	 * How ?gl-timing asks the WebGL2 path to time each WebGL call on the thread that draws, for a
 	 * benchmark page to read: `calls` for a bare ?gl-timing, `sync` for ?gl-timing=sync, or
 	 * undefined to time none.
@@ -239,9 +262,9 @@ const RESERVED_CORES = 2;
 const MEMORY_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values;
 
 /**
- * The job workers of a threaded engine on a device with `cores` logical cores: the count that
+ * The most job workers of a threaded engine on a device with `cores` logical cores: the count that
  * ?jobs= asks for, up to `cores`, or else the cores that the sketch and render workers leave free,
- * and at least one.
+ * and at least one. The engine starts them as the work grows.
  */
 export function jobWorkerCount(fromSwitch: number | undefined, cores: number): number {
 	return fromSwitch !== undefined
@@ -260,6 +283,13 @@ function onOff(value: string | null): boolean | undefined {
 	return value === 'on' ? true : value === 'off' ? false : undefined;
 }
 
+/** ?stats: on for a bare switch or `on`, off for `off`, or the start state for `collapsed` or `open`. */
+function statsSwitch(value: string | null): StatsRequest | undefined {
+	return value === 'collapsed' || value === 'open'
+		? { collapsed: value === 'collapsed' }
+		: value === '' || onOff(value);
+}
+
 /** A number above 0, or undefined for a missing or unusable value. */
 function positive(value: string | null): number | undefined {
 	const n = Number(value);
@@ -270,6 +300,16 @@ function positive(value: string | null): number | undefined {
 function whole(value: string | null, max = Number.MAX_SAFE_INTEGER): number | undefined {
 	const n = positive(value);
 	return n !== undefined && Number.isInteger(n) && n <= max ? n : undefined;
+}
+
+/** The largest buffer that ?occlusion-buffer= asks for, in pixels: 1024 x 1024. */
+const MAX_OCCLUSION_BUFFER_PIXELS = 1024 * 1024;
+
+/** The pixels of a size such as `384x216`, or undefined for a missing or unusable value. */
+function pixelsOf(value: string | null): number | undefined {
+	const [width, height, ...rest] = value?.split('x') ?? [];
+	const pixels = rest.length === 0 ? (whole(width ?? null) ?? 0) * (whole(height ?? null) ?? 0) : 0;
+	return pixels > 0 && pixels <= MAX_OCCLUSION_BUFFER_PIXELS ? pixels : undefined;
 }
 
 /** `value` when it lies from `min` to `max`, else undefined. */
@@ -303,18 +343,21 @@ export function parseSwitches(search: string): Switches {
 		join: params.get('join') !== 'off',
 		prepass: onOff(params.get('prepass')),
 		occlusion: onOff(params.get('occlusion')),
+		occlusionBuffer: pixelsOf(params.get('occlusion-buffer')),
 		skinning:
 			oneOf(params.get('skinning'), ['vertex', 'full', 'skip', 'narrow'] as const) ?? 'lean',
 		indexInstances: params.get('instances') === 'index',
 		shadowDepthBits: params.get('shadowdepth') === '32' ? 32 : 16,
 		textureCache: params.get('texture-cache') !== 'off',
 		fps: positive(params.get('fps')),
+		targetFps: params.get('target-fps') === 'display' ? 'display' : whole(params.get('target-fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
+		stats: statsSwitch(params.get('stats')),
 		glTiming: !params.has('gl-timing')
 			? undefined
 			: params.get('gl-timing') === 'sync'

@@ -293,6 +293,16 @@ function plainNodes(doc) {
 }
 
 /**
+ * True when the mesh's extras ask to keep its positions as floats, as `"quantizePositions": false`
+ * does. A mesh that spreads small parts over a large space, such as a city's merged buildings,
+ * would otherwise take steps too coarse for its parts' corners.
+ *
+ * @param {Mesh} mesh
+ */
+const keepsFloatPositions = (mesh) =>
+	/** @type {Record<string, unknown>} */ (mesh.getExtras()).quantizePositions === false;
+
+/**
  * Quantizes each position stream into a volume, as unsigned integers of {@link POSITION_BITS}
  * bits, and each morph target's position offsets as signed 16-bit integers at the same step.
  *
@@ -465,7 +475,8 @@ function quantizeGroupPositions(doc) {
 		const positions = [
 			...new Set(prims.map((prim) => /** @type {Accessor} */ (prim.getAttribute('POSITION')))),
 		];
-		if (positions.length === 0 || !positions.every(isFloat)) continue;
+		if (positions.length === 0 || !positions.every(isFloat) || group.some(keepsFloatPositions))
+			continue;
 		const users = group.flatMap(
 			(mesh) => /** @type {Node[]} */ (mesh.listParents().filter((p) => p.propertyType === 'Node')),
 		);
@@ -571,7 +582,7 @@ function quantizeWeights(accessor) {
  * Stores vertices in the integer types of KHR_mesh_quantization: positions in 14-bit steps of
  * their mesh's volume, normals and tangents in signed bytes, texture coordinates from 0 to 1 in
  * 16 bits, colors from 0 to 1 in 8 bits, and joint weights in bytes. Streams of other values keep
- * their floats.
+ * their floats, and so do the positions of a mesh whose extras ask for floats.
  *
  * @param {Document} doc
  */

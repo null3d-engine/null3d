@@ -14,7 +14,7 @@
 
 /// The first column of the split-sum table in the material table's texture: one past a
 /// material's texels.
-const DFG_COLUMN: u32 = 9u;
+const DFG_COLUMN: u32 = 11u;
 #else
 /// three.js's table of the split-sum terms of specular light, at binding 3 of the frame's group.
 @group(0) @binding(3) var dfg_table: texture_2d<f32>;
