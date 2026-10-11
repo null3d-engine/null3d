@@ -172,6 +172,7 @@ mesh.setRenderOrder(n);                                             // blended o
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 mesh.setMorphWeight('Smile', 0.8);   mesh.getMorphWeight(0);       // (0.2) by name or number; E1218 for a target it lacks
 mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
+mesh.shaderId;                       // (0.2) the number a custom material reads as object.id
 ```
 
 - Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions.
@@ -197,6 +198,7 @@ rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
 rocks.scales;      // Float32Array, 3 floats per row
 rocks.colors;      // Float32Array, 4 floats per row, when colors: true
 rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
+rocks.shaderId;    // (0.2) every row's object.id in custom WGSL; input.instance is the row
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
