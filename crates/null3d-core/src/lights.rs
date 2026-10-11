@@ -753,10 +753,10 @@ mod tests {
             Err(CoreError::OutOfRange { value: 0, limit: 5 })
         );
         assert_eq!(
-            table.set_value(light, 10, 1.0),
+            table.set_value(light, value::LAST + 1, 1.0),
             Err(CoreError::OutOfRange {
-                value: 10,
-                limit: 9
+                value: value::LAST + 1,
+                limit: value::LAST
             })
         );
         assert_eq!(

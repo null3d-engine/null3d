@@ -313,6 +313,22 @@ fn clip_uv(clip: vec4f) -> vec2f {
     return vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 }
 
+/// The change of the copied depth per unit of texture coordinates at `texel`, whose copied depth is
+/// `depth`. On each axis it takes the neighbour whose depth is nearer, so a surface's edge does not
+/// bend it. Depth values change linearly across the screen over a flat surface, so this predicts
+/// the depth of the surface between the copy's points.
+fn depth_slope(texel: vec2i, depth: f32) -> vec2f {
+    let x = vec2i(1, 0);
+    let y = vec2i(0, 1);
+    let left = depth - depth_at(texel - x);
+    let right = depth_at(texel + x) - depth;
+    let up = depth - depth_at(texel - y);
+    let down = depth_at(texel + y) - depth;
+    let across = select(right, left, abs(left) < abs(right));
+    let along = select(down, up, abs(up) < abs(down));
+    return vec2f(across, along) / (texel_uv(texel + x + y) - texel_uv(texel));
+}
+
 /// The share of the sun that reaches the surface at `texel`, whose copied depth is `depth`, past
 /// its contact shadows: 1 for all of it, and 1 where contact shadows do not draw.
 fn contact_light(texel: vec2i, depth: f32) -> f32 {
@@ -335,6 +351,7 @@ fn contact_light(texel: vec2i, depth: f32) -> f32 {
     let depths = vec2f(near.z / near.w, far.z / far.w);
     let thickness = settings.march.y;
     let bias = CONTACT_BIAS * -start.z;
+    let slope = depth_slope(texel, depth);
     let jitter = gradient_noise(texel);
     // Every texel runs the same steps, as the step count comes from the settings: a loop whose
     // count differs between the pixels of a work group runs wrongly on Adreno 830's driver.
@@ -343,8 +360,12 @@ fn contact_light(texel: vec2i, depth: f32) -> f32 {
         let t = (f32(k) + jitter) / f32(steps);
         let uv = mix(first, last, t);
         let inside = all(uv >= vec2f(0.0)) && all(uv < vec2f(1.0));
-        let held = depth_at(vec2i(floor(uv * corner)));
-        let gap = view_distance(uv, mix(depths.x, depths.y, t)) - view_distance(uv, held);
+        // The copy holds each texel's depth at one point. Toward the ray's own point, the depth
+        // follows the start's slope, so a flat surface at a grazing angle does not hide the ray.
+        let at = vec2i(floor(uv * corner));
+        let held = depth_at(at);
+        let surface = held + dot(slope, uv - texel_uv(at));
+        let gap = view_distance(uv, mix(depths.x, depths.y, t)) - view_distance(uv, surface);
         let hidden = inside && held > 0.0 && gap > bias && gap < thickness;
         let strength = 1.0 - smoothstep(1.0 - CONTACT_FADE, 1.0, t);
         shadow = max(shadow, select(0.0, strength, hidden));
