@@ -3,12 +3,12 @@ id: concepts/instances
 title: Instances and batching
 status: experimental
 since: "0.1"
-summary: "createInstances; typed-array views; markDirty; automatic batching; per-instance attributes."
+summary: "createInstances; typed-array views; markDirty; automatic batching; per-row colors and values."
 ---
 
 # Instances and batching
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Three parts are not built yet: drawing each row in its own color, shadows of batch rows, and custom per-instance attributes. Coding agents must not use them.
+> Ships in null3D 0.1, with shadows of batch rows, row colors and row values in 0.2. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -50,7 +50,8 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | --- | --- | --- |
 | `material` | None: it is required | The material of every row |
 | `dynamic` | `false` | `true` recomputes and uploads every row in use, in every frame. A static batch updates only the rows that you mark. |
-| `colors` | `false` | `true` adds a `colors` array |
+| `colors` | `false` | `true` adds a `colors` array: a color for each row, which tints it |
+| `values` | `false` | `true` adds a `values` array: four numbers for each row, which a custom material reads |
 | `layers` | `1`, layer 0 | The [layers](render-layers.md) of every row, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every row's position is relative to, kept at full precision: [Batch origins](large-worlds.md#batch-origins) |
 
@@ -64,6 +65,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `rotations` | 4 | The rotation as a quaternion (x, y, z, w) | 0, 0, 0, 1 |
 | `scales` | 3 | The scale on each axis | 1, 1, 1 |
 | `colors` | 4 | A linear color (r, g, b, a), with `colors: true` only | 1, 1, 1, 1 |
+| `values` | 4 | Four numbers of your own, with `values: true` only | 0, 0, 0, 0 |
 
 Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` in an array of 4. Rows have no parent, so each position is in world space, relative to the batch's `origin`. Far from the world's origin, give the batch an origin near its rows, so their 32-bit positions stay small and precise.
 
@@ -125,7 +127,7 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 8,192 drawn rows of each static batch with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
 ## Pools: draw only the rows in use
 
@@ -167,7 +169,7 @@ Each row has its own bounding sphere. The sphere's center is the row's position,
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects that receive shadows draw with other pipelines than batch rows, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
 
 The difference is the sketch's own work on the CPU:
 
@@ -177,20 +179,82 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change, apart from a batch's `setCastShadows` and `setReceiveShadows`. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 
-- Batch rows neither cast nor receive shadows in this version. Use separate objects from `scene.createMesh` for copies that need shadows.
+- Every row of a batch casts and receives shadows alike: give `castShadows` and `receiveShadows` to `createInstances`, or call `batch.setCastShadows(true)` and `batch.setReceiveShadows(true)`. Both are false by default. [Shadows](shadows.md) explains them. Sprite, point and line batches take no shadows.
 - An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
-- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The scene's 16,384 object slots always count toward it too, used or not. So the batches of a scene hold at most the limit less 16,384 rows. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
-- Each row takes about 210 bytes of engine memory, or about 260 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
-- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576, which leaves 1,032,192 rows for batches. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
+- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The places in the scene's object tables count toward it too, used or not. They start at 1,024 and double as the scene grows. So the batches of a scene hold at most the limit less those places. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
+- Each row takes about 210 bytes of engine memory, or about 300 with colors or values. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md). Rows with colors or values also take 32 bytes each of GPU memory.
+- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
 
 ## Per-row colors
 
-`colors: true` adds a `colors` array, with a linear RGBA color for each row, white at first. Convert an sRGB color, such as a hex string, with the color helpers in [Math helpers](../api/math.md). This version keeps the colors but does not draw them yet: every row shows its material's color.
+`colors: true` adds a `colors` array, with a linear RGBA color for each row, white at first. The color multiplies the material's base color and opacity, as a mesh's vertex colors do. So a white material shows each row's color, and a row's alpha below a masked material's cutoff hides the row. Convert an sRGB color, such as a hex string, with the color helpers in [Math helpers](../api/math.md).
+
+```ts
+import { color, defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 4, 12], target: [0, 0, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  const balls = scene.createInstances(geometry.sphere({ radius: 0.4 }), 10, {
+    material: materials.standard({ color: '#ffffff' }),
+    colors: true,
+  });
+  const rgba = new Float32Array([1, 1, 1, 1]); // a scratch color, made once
+  for (let i = 0; i < balls.count; i++) {
+    balls.positions[i * 3] = (i - 4.5) * 1.1;
+    color.fromHsl(rgba, i / balls.count, 0.8, 0.5); // a linear color
+    balls.colors?.set(rgba, i * 4);
+  }
+});
+```
+
+A static batch draws a new color after `markDirty`, as it draws a new position. A material that lets light through draws its rows in its own color.
+
+## Per-row values
+
+`values: true` adds a `values` array, with four numbers for each row, 0 at first. A [custom material](../guides/custom-shaders.md) reads its row's numbers as `object.values`, a `vec4f`, in its `vertexOffset` and `surface` functions. Use them for whatever changes from row to row: a phase of the wind, an age, a tint or a size. Objects from `scene.createMesh`, and batches without values, read zeros.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+const grass = /* wgsl */ `
+fn vertexOffset(input: VertexInput) -> vec3f {
+    // Each blade sways in its own phase, more at its tip.
+    let bend = sin(frame.time * 2.0 + object.values.x) * 0.2 * input.uv.y * input.uv.y;
+    return vec3f(bend, 0.0, 0.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor *= mix(vec3f(0.2, 0.5, 0.1), vec3f(0.8, 0.7, 0.2), object.values.y);
+    return s;
+}
+`;
+
+export default defineSketch(({ scene, geometry, materials }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 3, 8], target: [0, 0, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3, castShadows: true });
+  const blades = scene.createInstances(geometry.plane({ width: 0.05, height: 0.6, heightSegments: 4 }), 10_000, {
+    material: materials.shader({ wgsl: grass, color: '#ffffff', doubleSided: true }),
+    values: true,
+    castShadows: true,
+  });
+  const { positions, values } = blades;
+  for (let i = 0; i < blades.count; i++) {
+    positions.set([(Math.random() - 0.5) * 30, 0.3, (Math.random() - 0.5) * 30], i * 3);
+    values?.set([Math.random() * Math.PI * 2, Math.random(), 0, 0], i * 4);
+  }
+});
+```
+
+A batch that casts shadows casts them with its material's vertex offset, so the shadows of the grass sway with the grass. The shadows of such a material draw again in every frame, as the shadows of moving objects do.
+
+Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. With colors or values, a masked material tests its alpha against its cutoff, with neither alpha to coverage nor the alpha hash.
 
 ## Related pages
 
@@ -201,4 +265,4 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 - [Sprites](../api/sprites.md): batches of quads that face the camera, with the same rows, marks and limits.
 - [Points](../api/points.md): batches of squares of one size that face the camera, made of sprite rows.
 - [Lines](../api/lines.md): batches of segments between points, with marks and limits of the same kind.
-- [The instance batch demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances): 10,000 boxes in one batch that the sketch moves in each frame.
+- [The instance batch demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances): 100,000 columns in one batch, whose heights the sketch writes in each frame.

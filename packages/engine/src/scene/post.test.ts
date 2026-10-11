@@ -3,6 +3,7 @@ import * as C from '../generated/core';
 import { Lut } from './lut';
 import type { CoreMemory } from './memory';
 import { exposureOfEv100, Post, type PostSettings } from './post';
+import type { ShaderPreloads } from './shader-preloads';
 import type { Texture } from './textures';
 
 /**
@@ -15,6 +16,8 @@ function post(
 	occlusionTargets = true,
 ): {
 	post: Post;
+	dofs: [boolean, ...number[]][];
+	needs: string[];
 	calls: [number, number][];
 	blooms: [boolean, ...number[]][];
 	aos: [boolean, ...number[]][];
@@ -29,12 +32,15 @@ function post(
 	const luts: number[][] = [];
 	const vignettes: [boolean, ...number[]][] = [];
 	const outlines: number[][] = [];
+	const dofs: [boolean, ...number[]][] = [];
+	const needs: string[] = [];
 	const block = Float32Array.of(
 		...[1, 0.15, 0, 0.1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
 		...[0.25, 1, 1, 1, 1, 16, 1],
 		...[1, 1, 1, 1, 1, 1, 0, 2],
 		...[0, 0.28, 0.1872, 0.1359, 0.1012, 0.0754, 0.0562, 0.0419, 0.1223, 0, 0],
 		...[2, 0],
+		...[10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
 	);
 	expect(block.length).toBe(C.POST_VALUE_COUNT);
 	let views = 0;
@@ -87,6 +93,12 @@ function post(
 				]);
 				return 0;
 			},
+			setDof(on: boolean) {
+				const first = C.POST_VALUE_DOF_FOCUS_DISTANCE;
+				const values = [...block.subarray(first, C.POST_VALUE_DOF_FOCUS_ON_POINT + 1)];
+				dofs.push([on, ...values.map((v) => Math.round(v * 1e4) / 1e4)]);
+				return 0;
+			},
 			setOutline(on: boolean) {
 				const first = C.POST_VALUE_OUTLINE_COLOR;
 				const values = [...block.subarray(first, C.POST_VALUE_OUTLINE_WIDTH + 1)];
@@ -96,8 +108,11 @@ function post(
 		},
 		check: (result: number) => result,
 	} as unknown as CoreMemory;
+	const shaders = { need: (feature: string) => needs.push(feature) } as unknown as ShaderPreloads;
 	return {
-		post: new Post(core, hdrEffects, occlusionTargets),
+		post: new Post(core, hdrEffects, occlusionTargets, shaders),
+		dofs,
+		needs,
 		calls,
 		blooms,
 		aos,
@@ -212,6 +227,67 @@ describe('post.set', () => {
 		]);
 		expect(blooms).toEqual([]);
 		expect(output.aoOn).toBe(true);
+	});
+
+	it('turns depth of field on with a lens and a focus, follows a focus point, and loads its shaders only when on', () => {
+		const { post: output, dofs, needs } = post();
+		output.set({ dof: false });
+		expect(output.needsHdr).toBe(false);
+		output.set({ dof: {} });
+		output.set({ dof: { aperture: 1.8, focalLength: 85, focusPoint: [1, 2, -3] } });
+		// A new focus distance stops the focus on the point, and 'camera' takes the camera's lens.
+		output.set({ dof: { focusDistance: 4, focalLength: 'camera', maxBlur: 0.05, blades: 6 } });
+		output.set({ dof: { focusPoint: [0, 1, -8] } });
+		output.set({ dof: { focusPoint: false } });
+		expect(output.needsHdr).toBe(true);
+		output.set({ dof: false });
+		expect(dofs).toEqual([
+			[false, 10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
+			[true, 10, 2.8, 0, 0.02, 0, 0, 0, 0, 0],
+			[true, 10, 1.8, 85, 0.02, 0, 1, 2, -3, 1],
+			[true, 4, 1.8, 0, 0.05, 6, 1, 2, -3, 0],
+			[true, 4, 1.8, 0, 0.05, 6, 0, 1, -8, 1],
+			[true, 4, 1.8, 0, 0.05, 6, 0, 1, -8, 0],
+			[false, 4, 1.8, 0, 0.05, 6, 0, 1, -8, 0],
+		]);
+		expect(needs.filter((feature) => feature === 'dof')).toHaveLength(5);
+		expect(output.needsHdr).toBe(false);
+	});
+
+	it('refuses depth of field settings it does not know and values out of range', () => {
+		const { post: output } = post();
+		const bad = (settings: unknown) => () => output.set({ dof: settings } as PostSettings);
+		expect(bad({ fStop: 2 })).toThrow('E1213');
+		expect(bad({ focusDistance: 0 })).toThrow('E1213');
+		expect(bad({ focusDistance: -1 })).toThrow('E1213');
+		expect(bad({ aperture: 0 })).toThrow('E1213');
+		expect(bad({ focalLength: 0 })).toThrow('E1213');
+		expect(bad({ focalLength: 'wide' })).toThrow('E1203');
+		expect(bad({ maxBlur: 0.2 })).toThrow('E1213');
+		expect(bad({ blades: 2 })).toThrow('E1213');
+		expect(bad({ blades: 5.5 })).toThrow('E1213');
+		expect(bad({ focusPoint: [0, Number.NaN, 0] })).toThrow('E1213');
+		expect(bad({ focusPoint: 3 })).toThrow('E1213');
+		expect(bad({ aperture: Number.POSITIVE_INFINITY })).toThrow('E1203');
+		expect(bad(true)).toThrow('E1213');
+		expect(() => output.set({ dof: { blades: 0, focusPoint: false } })).not.toThrow();
+	});
+
+	it('keeps depth of field off and its shaders unloaded where the device has no HDR target', () => {
+		const { post: output, dofs, needs } = post(false);
+		const warnings: unknown[] = [];
+		const warn = console.warn;
+		console.warn = (message: unknown) => warnings.push(message);
+		try {
+			output.set({ dof: {} });
+			output.set({ dof: { aperture: 2 } });
+		} finally {
+			console.warn = warn;
+		}
+		expect(warnings).toHaveLength(1);
+		expect(String(warnings[0])).toContain('depth of field');
+		expect(needs).toEqual([]);
+		expect(dofs.map(([on]) => on)).toEqual([true, true]);
 	});
 
 	it('warns once where the device has no float targets, and keeps ambient occlusion off', () => {

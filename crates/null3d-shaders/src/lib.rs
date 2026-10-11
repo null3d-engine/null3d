@@ -345,6 +345,7 @@ impl Compiler {
         let base = Variant {
             defs: variant.defs.clone(),
             permutations: Vec::new(),
+            required: Vec::new(),
             targets: variant.targets.clone(),
         };
         let Some(build) = base.builds(name).into_iter().next() else {

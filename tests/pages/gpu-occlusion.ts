@@ -12,6 +12,7 @@
 // spheres that the walls hide. The device runner's occlusion plan runs it that way.
 import { createEngine, type Engine } from '@null3d/engine';
 import { hiddenShare, ROOM_VIEWS } from '../../bench/scenes/room';
+import { differingPixels, median } from './lib/occlusion';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -25,16 +26,6 @@ const ANTIALIAS = (['msaa', 'fxaa', 'none'] as const).find(
 );
 /** Seconds of play before the first measurement of each engine. */
 const WARM_UP_SECONDS = 1;
-
-/** The middle of some numbers, or null without any. */
-function median(values: number[]): number | null {
-	const sorted = [...values].sort((a, b) => a - b);
-	if (sorted.length === 0) return null;
-	const middle = Math.floor(sorted.length / 2);
-	return sorted.length % 2
-		? (sorted[middle] as number)
-		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
-}
 
 /** Starts an engine on a new canvas, with or without occlusion culling. */
 async function start(gpuOcclusion: boolean): Promise<Engine> {
@@ -91,14 +82,6 @@ async function framesOf(gpuOcclusion: boolean, failures: string[]) {
 	return { frames, facts };
 }
 
-/** Pixels whose color differs between two frames of the same size. */
-function differing(a: Uint8Array, b: Uint8Array): number {
-	let count = 0;
-	for (let i = 0; i < a.length; i += 4)
-		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
-	return count;
-}
-
 /** Each side's medians of GPU time, frame interval and CPU time in view 0, in turns. */
 async function cost() {
 	const sides = {
@@ -142,8 +125,8 @@ run('gpu-occlusion', async () => {
 	const failures: string[] = [];
 	const off = await framesOf(false, failures);
 	const on = await framesOf(true, failures);
-	const differingPixels = off.frames.map((frame, view) =>
-		differing(frame, on.frames[view] ?? frame),
+	const differing = off.frames.map((frame, view) =>
+		differingPixels(frame, on.frames[view] ?? frame),
 	);
 	const images =
 		off.facts.image && on.facts.image ? { off: off.facts.image, on: on.facts.image } : undefined;
@@ -152,7 +135,7 @@ run('gpu-occlusion', async () => {
 		occlusion: { off: off.facts.occlusion, on: on.facts.occlusion },
 		...(images && { images }),
 		views: ROOM_VIEWS.length,
-		differingPixels,
+		differingPixels: differing,
 		...(SECONDS > 0 && { cost: await cost() }),
 		failures,
 	};

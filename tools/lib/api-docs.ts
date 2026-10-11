@@ -21,6 +21,7 @@ export interface ApiPackage {
  */
 export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
+	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
@@ -340,7 +341,13 @@ export function readApi(root: string): ApiReference {
 	const exported = new Set(exports.map((e) => e.symbol));
 	const symbols: ApiSymbol[] = [];
 	const problems: string[] = [];
+	// An export that two entry points share, such as a type of the engine's stats module, goes
+	// into the reference once.
+	const listed = new Map<ts.Symbol, string[]>();
 	for (const { name, alias, symbol } of exports) {
+		const names = listed.get(symbol) ?? [];
+		if (names.includes(name)) continue;
+		listed.set(symbol, [...names, name]);
 		const declaration = symbol.declarations?.[0];
 		if (!declaration) continue;
 		const where = `${name} (${relative(root, declaration.getSourceFile().fileName)})`;

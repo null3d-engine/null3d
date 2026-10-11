@@ -5,17 +5,24 @@
 // whole city's objects at its start. It binds the labels that the sketch
 // tracks, and waits for the city to stream in before a timed run warms up. The report gives the
 // load: milliseconds from the page's start to the first frame and to the whole city, the sketch's
-// seconds for each stage, and the bytes that the sketch's thread downloaded.
+// seconds for each stage, and the bytes that the sketch's thread downloaded. With
+// `?occlusion-turns`, it runs the occlusion turns of T-36 in place of the timed run
+// (../lib/s6-occlusion.ts).
 import type { Engine } from '@null3d/engine';
 import { S6_ENGINE_OBJECTS, S6_FULL_COUNT, S6_MESSAGES, S6_PICKED_LABEL } from '../../scenes/s6';
 import { labelLayer, labelTag, pickedText } from '../lib/s6-labels';
+import { occlusionTurns } from '../lib/s6-occlusion';
 import { runNull3dPage } from './harness';
+
+const params = new URLSearchParams(location.search);
 
 runNull3dPage('s6', new URL('./s6-sketch.ts', import.meta.url), S6_FULL_COUNT, undefined, {
 	fillWindow: true,
 	trace: true,
 	engine: { gpuOcclusion: true, expectedObjects: S6_ENGINE_OBJECTS },
 	started: watchCity,
+	measure: (engine, log) =>
+		params.has('occlusion-turns') ? occlusionTurns(engine, params, log) : undefined,
 });
 
 /** Binds the sketch's labels, and resolves with the load's figures once the city is whole. */

@@ -33,6 +33,7 @@ async function started(role = 'job 3') {
 		quality: () => {},
 		stats: () => {},
 		labelSlot: () => {},
+		jobsWanted: () => {},
 	});
 	fake.reply({ type: 'ready', role: 'job', index: 3, threaded: true, version: 'test' });
 	await engineWorker.ready();
@@ -95,6 +96,7 @@ test('a loop that fails before the worker is ready fails the start', async () =>
 		quality: () => {},
 		stats: () => {},
 		labelSlot: () => {},
+		jobsWanted: () => {},
 	});
 	fake.reply({ type: 'fault', role: 'sketch', message: 'Unable to create texture' });
 	await expect(engineWorker.ready()).rejects.toThrow('Unable to create texture');

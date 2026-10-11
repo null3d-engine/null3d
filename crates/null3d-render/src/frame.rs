@@ -32,6 +32,7 @@ use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
+use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
@@ -51,6 +52,7 @@ use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
+use crate::sky_maps::SkyMaps;
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -281,6 +283,9 @@ pub trait FrameBuilder {
     /// Turns software occlusion culling on or off from the next frame on, where the builder culls
     /// on the CPU. Elsewhere it does nothing.
     fn set_software_occlusion(&mut self, _on: bool) {}
+    /// Sets the pixels that software occlusion culling's buffer holds about, or 0 for the core's
+    /// default, where the builder culls on the CPU. Elsewhere it does nothing.
+    fn set_occlusion_buffer(&mut self, _pixels: u32) {}
     /// Gives mesh `mesh`, by its id that counts from 1, a blocker of its own for software
     /// occlusion culling, where the builder culls on the CPU. Elsewhere it does nothing. Fails
     /// only when memory cannot grow.
@@ -593,6 +598,9 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     ambient: [f32; 4],
+    /// The light that the hemisphere lights add along each world axis, as the frame's uniform
+    /// holds it.
+    hemisphere: [[f32; 4]; 3],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
     shadow_quality: ShadowQuality,
@@ -654,12 +662,18 @@ pub struct SceneSettings {
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
     /// quality settings set: 0 draws none.
     ao_scale: f32,
+    /// Depth of field's settings while the sketch turns it on.
+    dof: Option<Dof>,
+    /// The taps of depth of field's gather, which the quality settings set.
+    dof_taps: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The environment maps of the scene's sky.
+    sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
     outline: Option<Outline>,
     /// The sketch's custom effects, in the order they run.
@@ -682,6 +696,9 @@ pub struct SceneSettings {
     /// The camera object and lens that fit the main directional light's cascades in place of the
     /// camera's view, for the debug API's shadow camera.
     shadow_camera: Option<(Handle, Lens)>,
+    /// How many times the targets of mirror views without a size of their own halve the render
+    /// size, which the quality settings set.
+    mirror_halvings: u8,
 }
 
 impl SceneSettings {
@@ -707,6 +724,7 @@ impl SceneSettings {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
+                hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
@@ -722,9 +740,12 @@ impl SceneSettings {
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
+            dof: None,
+            dof_taps: dof::TAP_COUNTS[1],
             lut: None,
             vignette: None,
             environment: None,
+            sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
             effect_joins: EffectJoins::default(),
@@ -735,6 +756,7 @@ impl SceneSettings {
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
             shadow_camera: None,
+            mirror_halvings: 1,
         }
     }
 
@@ -958,6 +980,66 @@ impl SceneSettings {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
     }
 
+    /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,
+    /// and no debug view draws.
+    pub fn dof(&self) -> Option<Dof> {
+        self.dof
+            .filter(|_| self.dof_taps > 0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns depth of field on with its settings, or off with `None`, from the next recorded frame
+    /// on.
+    pub fn set_dof(&mut self, dof: Option<Dof>) {
+        self.dof = dof;
+    }
+
+    /// Sets the taps of depth of field's gather, one of [`dof::TAP_COUNTS`] or 0, which draws none,
+    /// from the next recorded frame on. A count above 0 changes only the gather's block, so it
+    /// makes no GPU object.
+    pub fn set_dof_taps(&mut self, taps: u32) {
+        self.dof_taps = taps;
+    }
+
+    /// What depth of field draws with in a frame of `scene`'s positions of `parity`, for the
+    /// camera's view of a canvas of `canvas` pixels, or `None` while it is off or without a camera.
+    /// With a focus point, the focus is the point's distance along the camera's view in this frame,
+    /// so the focus follows the camera and the point. Without a focal length, the lens takes the
+    /// camera's field of view on a full-frame sensor, or 50 mm for an orthographic camera.
+    pub(crate) fn dof_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<DofFrame> {
+        let settings = self.dof()?;
+        let view = self.views.first()?;
+        let (_, lens) = view.camera()?;
+        let (_, inverse_projection) = self.camera_projection(canvas)?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        let focus = match settings.focus_point {
+            Some(point) => {
+                let at = camera.cell.absolute();
+                let row = camera.depth.row;
+                (0..3).fold(row[3], |sum, k| sum + row[k] * (point[k] - at[k]) as f32)
+            }
+            None => settings.focus_distance,
+        };
+        let focal_length = match (settings.focal_length, lens) {
+            (mm, _) if mm > 0.0 => mm,
+            (_, Lens::Perspective(lens)) => dof::focal_length_of_fov(lens.fov_degrees),
+            (_, Lens::Orthographic(_)) => 50.0,
+        };
+        Some(DofFrame {
+            dof: settings,
+            lens: dof::Lens::new(focal_length, settings.aperture, focus),
+            near: camera.depth.near,
+            far: camera.depth.far,
+            inverse_projection,
+            taps: self.dof_taps,
+        })
+    }
+
     /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without
     /// a camera.
     pub(crate) fn camera_projection(&self, canvas: (u32, u32)) -> Option<(Mat4, Mat4)> {
@@ -985,6 +1067,15 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// The environment maps of the scene's sky.
+    pub fn sky_maps(&self) -> &SkyMaps {
+        &self.sky_maps
+    }
+
+    pub fn sky_maps_mut(&mut self) -> &mut SkyMaps {
+        &mut self.sky_maps
+    }
+
     /// The GPU id of the environment's cube texture, once its texels are on the GPU, or `blank`
     /// while the scene has no environment to draw, with the environment's part of the frame
     /// uniform, whose intensity takes the frame's exposure. A frame builder asks after the frame's
@@ -994,10 +1085,15 @@ impl SceneSettings {
             Some((environment, self.textures.ready_cube(environment.texture)?))
         });
         match ready {
-            Some((environment, (map, levels))) => (
-                map,
-                environment.uniform(levels, self.drawn_output().exposure),
-            ),
+            Some((mut environment, (map, levels))) => {
+                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                    environment.sh = sh;
+                }
+                (
+                    map,
+                    environment.uniform(levels, self.drawn_output().exposure),
+                )
+            }
             None => (blank, EnvironmentUniform::default()),
         }
     }
@@ -1112,6 +1208,13 @@ impl SceneSettings {
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
+        if let Some(Background {
+            source: BackgroundSource::Sky(sky),
+            ..
+        }) = background
+        {
+            self.sky_maps.set_sky(sky);
+        }
         self.background = background;
     }
 
@@ -1135,6 +1238,7 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
+        self.sky_maps.record(&self.textures, list)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(
@@ -1365,6 +1469,35 @@ impl SceneSettings {
         }
     }
 
+    /// Sets how many times the targets of mirror views without a size of their own halve the
+    /// render size, from the next frame on.
+    pub fn set_mirror_halvings(&mut self, halvings: u8) {
+        self.mirror_halvings = halvings;
+    }
+
+    /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
+    /// has its own, and the preset's size unless it has its own, and each view that draws once in
+    /// several frames moves its turn on. A builder calls it once per frame, before it syncs its
+    /// graph with the views.
+    pub(crate) fn pace_views(&mut self) {
+        let camera_layers = self.views[ViewId::CAMERA.index()].layers();
+        let halvings = self.mirror_halvings;
+        for view in self.views.iter_mut().skip(1) {
+            view.follow_camera(halvings, camera_layers);
+            view.target_mut().pace();
+        }
+    }
+
+    /// True when a view draws the scene's background behind its objects: the camera's view, and
+    /// each mirror view, whose image shows the sky as a mirror does.
+    pub(crate) fn draws_background(&self, view: ViewId) -> bool {
+        view == ViewId::CAMERA
+            || self
+                .views
+                .get(view.index())
+                .is_some_and(|view| view.mirrored().is_some())
+    }
+
     /// Switches a view other than the camera's on or off. A view switched off keeps the last
     /// image it drew.
     pub fn set_view_enabled(&mut self, view: ViewId, enabled: bool) {
@@ -1412,7 +1545,7 @@ impl SceneSettings {
             .iter()
             .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
-            && drawn.target().enabled
+            && drawn.target().draws()
             && (self.textures.shown_views() & bit != 0 || read)
     }
 
@@ -1448,11 +1581,18 @@ impl SceneSettings {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
 
+    /// The exposed light that the hemisphere lights add along each world axis, x, y and z (see
+    /// [`null3d_core::lights::FrameLights::hemisphere`]). Their part that every direction gets
+    /// belongs in the ambient light.
+    pub fn set_hemisphere(&mut self, axes: [[f32; 3]; 3]) {
+        self.lighting.hemisphere = axes.map(|[r, g, b]| [r, g, b, 0.0]);
+    }
+
     /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
     /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
-    /// main directional light and the ambient lights become the light the shaders read, and the
-    /// light table's visible list holds the point and spot lights the camera sees. Every light's
-    /// color takes the exposure that frames draw with.
+    /// main directional light, the ambient lights and the hemisphere lights become the light the
+    /// shaders read, and the light table's visible list holds the point and spot lights the camera
+    /// sees. Every light's color takes the exposure that frames draw with.
     pub fn gather_lights(
         &mut self,
         lights: &mut LightTable,
@@ -1470,6 +1610,7 @@ impl SceneSettings {
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
+        self.set_hemisphere(lit.hemisphere);
         self.set_sun_shadow(lit.sun_shadow);
     }
 
@@ -1547,14 +1688,21 @@ impl SceneSettings {
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);
         }
-        self.moving_casters.update(scene, input.structure_changed);
+        let materials = &self.materials;
+        self.moving_casters
+            .update(scene, input.batches, input.structure_changed, |material| {
+                sways(materials, material)
+            });
         let moving = &self.moving_casters;
         let drawn = self.shadow_schedule.plan(
             &mut cascades,
             absolute,
             shadow.map_size,
             quality.far_interval,
-            |bounds| quality.follow_movers && moving.touch(scene, parity, shadow.layers, bounds),
+            |bounds| {
+                quality.follow_movers
+                    && moving.touch(scene, input.batches, parity, shadow.layers, bounds)
+            },
         );
         Some(ShadowFrame {
             cascades,
@@ -1563,6 +1711,7 @@ impl SceneSettings {
             layers: shadow.layers,
             drawn,
             depth: self.cascade_depth,
+            clock: self.clock,
         })
     }
 
@@ -1573,13 +1722,28 @@ impl SceneSettings {
     /// moves what the camera sees, so the caster draws without it. A masked material of the
     /// engine's mesh templates cuts the holes of its mask, alpha to coverage or alpha hash into its
     /// shadow, with the alpha of its vertex colors and its base color map where it has them. A
-    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape.
+    /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape. A
+    /// custom material with a vertex offset casts with its own template's caster builds
+    /// ([`permutation::CASTER`]), which move each vertex by the offset, read the rows' values where
+    /// the pair reads them, and bind the material's textures.
     pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
         let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
         } else {
             (state_flags::CULL_FRONT, permutation::CASTER_OFFSET)
         };
+        if self.sways(material) && pipeline.template >= template::CUSTOM_FIRST {
+            let key = DrawKey {
+                template: pipeline.template,
+                permutation: permutation
+                    | permutation::CASTER
+                    | (pipeline.permutation & permutation::ROW_VALUES),
+                vertex_format: pipeline.vertex_format,
+                state: faces,
+                bias: DepthBias::NONE,
+            };
+            return (key, self.texture_group(material, pipeline));
+        }
         let mut template = template::SHADOW_DEPTH;
         let mut group = 0;
         let masked = pipeline.permutation & permutation::ALPHA_MASK != 0;
@@ -1602,6 +1766,13 @@ impl SceneSettings {
             bias: DepthBias::NONE,
         };
         (key, group)
+    }
+
+    /// True when the material, by engine id, moves its vertices by a vertex offset of its own WGSL,
+    /// which its shadows follow: its casters draw again whenever their shadow maps draw, as moving
+    /// casters do.
+    pub fn sways(&self, material: u32) -> bool {
+        sways(&self.materials, material)
     }
 
     /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
@@ -1674,8 +1845,24 @@ impl SceneSettings {
     /// draws with the shader variant that discards fragments, with alpha to coverage where the
     /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
+    /// A material that lets light through draws with the shader variant that samples the copy of
+    /// the opaque objects behind it, in the transparent pass too, where its shading has one.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
+        self.rows_pipeline_of(mesh, material, false)
+    }
+
+    /// What the pair of an instance batch asks of the pipeline that draws its rows: as
+    /// [`Self::pipeline_of`] for its mesh and material, with the builds that read each row's color
+    /// and values ([`permutation::ROW_VALUES`]) where its rows have them and the shading has such
+    /// builds. Those builds test a mask against its cutoff, with neither alpha to coverage nor the
+    /// alpha hash, and a pair that lets light through draws its rows without their values.
+    pub fn batch_pipeline_of(&self, batch: &InstanceBatch) -> Option<DrawKey> {
+        self.rows_pipeline_of(batch.mesh(), batch.material(), batch.has_row_values())
+    }
+
+    /// As [`Self::pipeline_of`], with the builds that read row values when `row_values` is set.
+    fn rows_pipeline_of(&self, mesh: u32, material: u32, row_values: bool) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
@@ -1699,7 +1886,9 @@ impl SceneSettings {
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
-        let own_way = masked && tests_alpha_its_way(shading);
+        let transmits = has(feature::TRANSMISSION) && shading.transmits();
+        let rows = row_values && shading.reads_row_values() && !transmits;
+        let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
@@ -1711,7 +1900,9 @@ impl SceneSettings {
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
                 | bit(masked, permutation::ALPHA_MASK)
                 | bit(hashed, permutation::ALPHA_HASH)
-                | bit(tangents, permutation::VERTEX_TANGENT),
+                | bit(tangents, permutation::VERTEX_TANGENT)
+                | bit(transmits, permutation::TRANSMISSION)
+                | bit(rows, permutation::ROW_VALUES),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
@@ -1747,7 +1938,13 @@ impl SceneSettings {
             _ => (canvas, self.pixel_ratio),
         };
         let aspect = pixels.0 as f32 / pixels.1.max(1) as f32;
-        let camera = view.transform(scene, parity, aspect)?;
+        let camera = match view.mirrored() {
+            Some(mirror) => {
+                let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+                mirror.transform(scene, parity, camera, &lens, aspect)?
+            }
+            None => view.transform(scene, parity, aspect)?,
+        };
         let [x, y, z] = camera.cell.absolute().map(|v| v as f32);
         let (width, height) = (width as f32, height as f32);
         let output = self.drawn_output();
@@ -1757,6 +1954,7 @@ impl SceneSettings {
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
             fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
             clock: self.clock,
@@ -1783,6 +1981,15 @@ impl SceneSettings {
             view.layers(),
         ))
     }
+}
+
+/// True when the material of `materials` with engine id `material` moves its vertices by a vertex
+/// offset of its own WGSL, which its shadows follow.
+fn sways(materials: &MaterialTable, material: u32) -> bool {
+    material != NO_MATERIAL
+        && materials
+            .shading(material - 1)
+            .is_ok_and(Shading::casts_its_own_way)
 }
 
 /// Collects the bucket key of every scene slot, shown or hidden, with a count of one, and of every

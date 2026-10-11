@@ -22,7 +22,12 @@ const HOST: DebugHost = {
 	showStats: () => {},
 	metrics: new ArrayBuffer(0),
 	threads: [],
-	sources: { tier: 'webgpu', preset: () => 'high', renderScaleThousandths: () => 1000 },
+	sources: {
+		tier: 'webgpu',
+		preset: () => 'high',
+		renderScaleThousandths: () => 1000,
+		wasmBytes: () => 0,
+	},
 };
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));

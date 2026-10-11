@@ -1,4 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Glob } from 'bun';
+import {
+	BUDGETS,
+	SKY_ENVIRONMENT_BUDGETS,
+	STATS_BUDGETS,
+	SWIFTSHADER_BUDGETS,
+} from '../allocation.ts';
 import {
 	burstBytes,
 	byPlace,
@@ -113,5 +122,39 @@ describe('bursts of installed code', () => {
 			'wakeUp render/loop.ts',
 			{ perFrame: 163.84, most: 204.8, callers: '(root)' },
 		]);
+	});
+});
+
+describe('budgets', () => {
+	const root = join(import.meta.dirname, '../..');
+	const sources = ['packages/*/src/**/*.ts', 'bench/pages/**/*.ts'].flatMap((pattern) => [
+		...new Glob(pattern).scanSync(root),
+	]);
+
+	/** Whether a source defines a function, method or arrow function of a name. */
+	function defines(source: string, name: string): boolean {
+		const modifiers =
+			'(?:(?:export|async|static|private|public|protected|get|set|function|const|let)\\s+)*';
+		return new RegExp(`^\\s*${modifiers}${name}\\s*[(<=:]`, 'm').test(source);
+	}
+
+	test('name a function that its file still defines, so a moved function keeps its budget', () => {
+		const stale: string[] = [];
+		for (const table of [BUDGETS, STATS_BUDGETS, SKY_ENVIRONMENT_BUDGETS, SWIFTSHADER_BUDGETS]) {
+			for (const places of Object.values(table)) {
+				for (const place of Object.keys(places)) {
+					const [name, file] = place.split(' ');
+					if (!name || !file || file === '(built-in)') continue;
+					const found = sources
+						.filter((path) => path.endsWith(`/${file}`))
+						.some(
+							(path) =>
+								name === '(anonymous)' || defines(readFileSync(join(root, path), 'utf8'), name),
+						);
+					if (!found) stale.push(place);
+				}
+			}
+		}
+		expect(stale).toEqual([]);
 	});
 });

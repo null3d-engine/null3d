@@ -24,6 +24,20 @@
 //! object records the frame number in its changed stamp; [`SceneStorage::changed`] turns this
 //! frame's stamps into a bitset for uploads.
 //!
+//! # Hidden subtrees
+//!
+//! An object below a hidden ancestor draws nothing, so the update leaves it alone, dynamic or
+//! not, once both world buffers hold it hidden. Its rows then keep the hidden radius, and its
+//! stamp stays old, so the frame uploads nothing for it. Until then it is recomputed as usual,
+//! which writes the hidden radius into each buffer in turn and tells the renderer once. When the
+//! ancestor shows again, its recompute stamps it with the frame, so every object below it is
+//! recomputed in that frame: dynamic ones always, static ones because their parent changed.
+//!
+//! A [`flags::TRACKED`] object and its ancestors are the exception: they keep updating while
+//! hidden, as a camera below a hidden object still gives its view. [`SceneStorage::absolute_world_matrix`]
+//! composes the world matrix of an object below a hidden parent from the local transforms, since
+//! its row can be old.
+//!
 //! # Hierarchy order
 //!
 //! Roots form level 0; the children of level `n` objects form level `n + 1`. Within each level,
@@ -73,11 +87,11 @@
 //!
 //! Structural changes arrive as 16-byte [`Command`] records, applied in one batch per frame by
 //! [`SceneStorage::apply_commands`]. The operation word holds the operation number in its low
-//! byte; for [`op::CREATE`] the next byte holds the object's [`flags`].
+//! byte; for [`op::CREATE`] the next two bytes hold the object's [`flags`].
 //!
 //! | Operation | `a` | `b` |
 //! | --- | --- | --- |
-//! | [`op::CREATE`] (flags in bits 8 to 15 of `op`) | parent handle, or 0 | mesh id |
+//! | [`op::CREATE`] (flags in bits 8 to 23 of `op`) | parent handle, or 0 | mesh id |
 //! | [`op::DESTROY`] | unused | unused |
 //! | [`op::SET_PARENT`] | parent handle, or 0 | [`op::KEEP_WORLD`], or 0 |
 //! | [`op::SET_MESH`] | mesh id | unused |
@@ -149,11 +163,17 @@ pub mod flags {
     pub const TABLES: u32 = SHADOWS | OUTLINED;
     /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
     pub const SETTABLE: u32 = TABLES | BOUNDS | OCCLUDER;
+    /// Keeps its world transform current while an ancestor hides it, because the frame reads it
+    /// even then, as a view reads its camera's. Set at creation only. Its ancestors stay current
+    /// too, since its transform needs theirs.
+    pub const TRACKED: u32 = 1 << 8;
+    /// The bits that a create command carries.
+    pub const CREATE: u32 = 0xFFFF;
 }
 
 /// Operation numbers of [`Command`] records (the low byte of [`Command::op`]).
 pub mod op {
-    /// Creates a reserved object. `a`: parent handle or 0. `b`: mesh id. Bits 8 to 15 of the
+    /// Creates a reserved object. `a`: parent handle or 0. `b`: mesh id. Bits 8 to 23 of the
     /// operation word: the object's flags.
     pub const CREATE: u32 = 1;
     /// Destroys an object and frees its slot.
@@ -228,7 +248,7 @@ impl Command {
     /// Creates `handle` under `parent` ([`Handle::NONE`] for a root) with a mesh and flags.
     pub const fn create(handle: Handle, parent: Handle, mesh: u32, flags: u32) -> Command {
         Command {
-            op: op::CREATE | ((flags & 0xFF) << 8),
+            op: op::CREATE | ((flags & flags::CREATE) << 8),
             handle: handle.raw(),
             a: parent.raw(),
             b: mesh,
@@ -494,6 +514,7 @@ macro_rules! update_context {
             origin_only: $scene.table.origin_only(),
             moved: SharedMut::new($scene.moved.words_mut()),
             moved_any: &$scene.moved_any,
+            tracked: $scene.tracked.words(),
         }
     };
 }
@@ -534,6 +555,9 @@ pub struct SceneStorage {
     dirty: Bitset,
     /// Objects with at least one child, rebuilt with the hierarchy order.
     branches: Bitset,
+    /// Objects that keep updating below a hidden ancestor: the [`flags::TRACKED`] ones and their
+    /// ancestors, rebuilt with the hierarchy order.
+    tracked: Bitset,
     /// Objects that the late update recomputes: the moved ones, then the ones below them.
     late: Bitset,
     world: [WorldArrays; 2],
@@ -598,6 +622,7 @@ impl SceneStorage {
             depths: vec![0; rows],
             dirty: Bitset::new(rows as u32),
             branches: Bitset::new(rows as u32),
+            tracked: Bitset::new(rows as u32),
             late: Bitset::new(rows as u32),
             world: [WorldArrays::new(rows, false), WorldArrays::new(rows, false)],
             retired: Vec::new(),
@@ -679,6 +704,7 @@ impl SceneStorage {
             &mut self.moved,
             &mut self.dirty,
             &mut self.branches,
+            &mut self.tracked,
             &mut self.late,
             &mut self.changed,
             &mut self.dead_pending,
@@ -733,6 +759,7 @@ impl SceneStorage {
             &mut self.moved,
             &mut self.dirty,
             &mut self.branches,
+            &mut self.tracked,
             &mut self.late,
             &mut self.changed,
             &mut self.dead_pending,
@@ -1084,9 +1111,18 @@ impl SceneStorage {
     }
 
     /// The world matrix of an object in the current frame's buffer, with its translation relative
-    /// to the origin in 64-bit floats.
+    /// to the origin in 64-bit floats. An object below a hidden parent may have an old row, as
+    /// the update leaves it alone, so its matrix comes from the local transforms of the object
+    /// and its ancestors as they are now.
     pub fn absolute_world_matrix(&self, handle: Handle) -> Result<[f64; 12], CoreError> {
         let slot = self.slots.resolve(handle)?;
+        let parent = self.parents[slot as usize];
+        if parent != NO_PARENT
+            && self.current_world().radii()[parent as usize] == HIDDEN_RADIUS
+            && !self.tracked.get(slot)
+        {
+            return Ok(self.world_matrix64(slot));
+        }
         let position = self.cell_position(slot, self.parity()).absolute();
         let mut matrix = self.current_world().matrix(slot as usize).map(f64::from);
         (matrix[3], matrix[7], matrix[11]) = (position[0], position[1], position[2]);
@@ -1240,7 +1276,7 @@ impl SceneStorage {
                 let s = slot as usize;
                 self.parents[s] = parent;
                 self.meshes[s] = command.b;
-                self.flags[s] = (command.op >> 8) & 0xFF;
+                self.flags[s] = (command.op >> 8) & flags::CREATE;
                 self.materials[s] = 0;
                 self.created.set(slot);
                 self.dirty.set(slot);
@@ -1445,11 +1481,21 @@ impl SceneStorage {
         let offsets = &mut self.child_offsets[..high];
         offsets.fill(0);
         self.branches.clear_all();
+        self.tracked.clear_all();
         for slot in self.created.iter_ones() {
             let parent = self.parents[slot as usize];
             if parent != NO_PARENT {
                 offsets[parent as usize] += 1;
                 self.branches.set(parent);
+            }
+            // A tracked object marks its ancestors too. The walk stops at an object that an
+            // earlier walk marked, since that walk marked its ancestors.
+            if self.flags[slot as usize] & flags::TRACKED != 0 {
+                let mut at = slot;
+                while at != NO_PARENT && !self.tracked.get(at) {
+                    self.tracked.set(at);
+                    at = self.parents[at as usize];
+                }
             }
         }
         let mut running = 0;
@@ -1755,6 +1801,8 @@ struct UpdateContext<'a> {
     /// The words of the bitset of objects found in a new cell, for [`SceneStorage::move_cells`].
     moved: SharedMut<u64>,
     moved_any: &'a AtomicBool,
+    /// The words of the bitset of objects that keep updating below a hidden ancestor.
+    tracked: &'a [u64],
 }
 
 impl UpdateContext<'_> {
@@ -1764,7 +1812,10 @@ impl UpdateContext<'_> {
         let dynamic_count = level.dynamic_end - level.start;
         let dynamic = range.start.min(dynamic_count)..range.end.min(dynamic_count);
         for i in dynamic {
-            self.compute(self.order[(level.start + i) as usize], root);
+            let slot = self.order[(level.start + i) as usize];
+            if root || !self.stays_hidden(slot as usize) {
+                self.compute(slot, root);
+            }
         }
         let previous_frame = crate::frames::previous_frame(self.frame);
         for i in range.start.max(dynamic_count)..range.end.max(dynamic_count) {
@@ -1782,13 +1833,30 @@ impl UpdateContext<'_> {
                 (parent, self.changed_frames.read(s))
             };
             if dirty || parent_stamp == self.frame {
-                self.compute(slot, root);
+                if root || !self.stays_hidden(s) {
+                    self.compute(slot, root);
+                }
             } else if own_stamp == previous_frame {
                 // SAFETY: only this chunk touches row `s`, and the previous frame's buffer is
                 // not written during this update.
                 unsafe { self.out.copy_row(&self.previous, s) };
             }
         }
+    }
+
+    /// True when the object in slot `s`, which has a parent, needs no recompute: its parent's row
+    /// in this frame is hidden, both of its own rows are hidden already, and it is not tracked.
+    /// See "Hidden subtrees" in the module documentation.
+    #[inline(always)]
+    fn stays_hidden(&self, s: usize) -> bool {
+        // SAFETY: the parent sits in an earlier level, which finished before this loop, only this
+        // chunk touches row `s`, and nothing writes the previous frame's buffer during the update.
+        let hidden = unsafe {
+            self.out.radius(self.parents[s] as usize) == HIDDEN_RADIUS
+                && self.out.radius(s) == HIDDEN_RADIUS
+                && self.previous.radius(s) == HIDDEN_RADIUS
+        };
+        hidden && self.tracked[s / 64] & (1 << (s % 64)) == 0
     }
 
     /// [`UpdateContext::compute`] in a function of its own, for the late update, which recomputes
@@ -2103,7 +2171,7 @@ mod tests {
             let slots = scene.slots.generations().len() * 2
                 + (scene.capacity() as usize + 1) * 4
                 + scene.capacity() as usize * 4;
-            let bits = 8 * (scene.capacity() as usize + 1).div_ceil(8);
+            let bits = 9 * (scene.capacity() as usize + 1).div_ceil(8);
             floats.iter().sum::<usize>()
                 + words.iter().sum::<usize>()
                 + world
@@ -2361,6 +2429,148 @@ mod tests {
             .unwrap();
         scene.update_transforms(&jobs);
         assert_eq!(radius(&scene, child), 1.0);
+    }
+
+    /// A hidden root with a dynamic child, a static grandchild under it, and a dynamic
+    /// grandchild under the static one, in frame 1. The root is static, as a hidden part of a
+    /// level is.
+    fn hidden_tree(scene: &mut SceneStorage, jobs: &JobSystem) -> [Handle; 4] {
+        let (root, c1) = object(scene, [10.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (arm, c2) = object(scene, [0.0, 1.0, 0.0], root, MOVING);
+        let (crate_, c3) = object(scene, [0.0, 0.0, 1.0], arm, SHOWN);
+        let (finger, c4) = object(scene, [1.0, 0.0, 0.0], crate_, MOVING);
+        scene.apply_commands(&[c1, c2, c3, c4], 1).unwrap();
+        scene.update_transforms(jobs);
+        [root, arm, crate_, finger]
+    }
+
+    fn radius_in(scene: &SceneStorage, parity: usize, h: Handle) -> f32 {
+        scene.world(parity).radii()[scene.resolve(h).unwrap() as usize]
+    }
+
+    #[test]
+    fn objects_below_a_hidden_ancestor_stop_updating_once_both_buffers_hide_them() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let [root, arm, crate_, finger] = hidden_tree(&mut scene, &jobs);
+
+        scene
+            .apply_commands(&[Command::set_visible(root, false)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        // The first two frames write the hidden rows into each buffer, and upload them.
+        for h in [root, arm, crate_, finger] {
+            assert!(recomputed(&scene, h));
+        }
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        assert!(recomputed(&scene, arm) && recomputed(&scene, finger));
+        for h in [arm, crate_, finger] {
+            assert_eq!(radius_in(&scene, 0, h), HIDDEN_RADIUS);
+            assert_eq!(radius_in(&scene, 1, h), HIDDEN_RADIUS);
+        }
+
+        // From then on the dynamic objects below the hidden root update no more, even moved.
+        for frame in 4..8 {
+            scene.set_position(arm, [0.0, frame as f32, 0.0]).unwrap();
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+            for h in [arm, crate_, finger] {
+                assert!(!recomputed(&scene, h), "frame {frame}");
+                assert_eq!(radius_in(&scene, 0, h), HIDDEN_RADIUS);
+                assert_eq!(radius_in(&scene, 1, h), HIDDEN_RADIUS);
+            }
+        }
+        assert!(!scene.changed().any());
+    }
+
+    #[test]
+    fn objects_below_a_hidden_ancestor_take_their_place_in_the_frame_it_shows() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let [root, arm, crate_, finger] = hidden_tree(&mut scene, &jobs);
+        scene
+            .apply_commands(&[Command::set_visible(root, false)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        for frame in 3..6 {
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+        }
+        // Moves while hidden: the root, the dynamic arm and the static crate.
+        scene.set_position(root, [20.0, 0.0, 0.0]).unwrap();
+        scene.set_position(arm, [0.0, 2.0, 0.0]).unwrap();
+        scene.set_position(crate_, [0.0, 0.0, 3.0]).unwrap();
+        scene.begin_frame(6);
+        scene.update_transforms(&jobs);
+
+        // Shown again in an even frame, then an odd one: each buffer gets every row.
+        for frame in [7, 8] {
+            let commands = if frame == 7 {
+                vec![Command::set_visible(root, true)]
+            } else {
+                vec![]
+            };
+            scene.apply_commands(&commands, frame).unwrap();
+            scene.update_transforms(&jobs);
+            for h in [arm, crate_, finger] {
+                assert!(recomputed(&scene, h), "frame {frame}");
+            }
+            for h in [root, arm, crate_, finger] {
+                assert_eq!(radius_in(&scene, scene.parity(), h), 1.0);
+            }
+            assert_eq!(translation(&scene, arm), [20.0, 2.0, 0.0]);
+            assert_eq!(translation(&scene, crate_), [20.0, 2.0, 3.0]);
+            assert_eq!(translation(&scene, finger), [21.0, 2.0, 3.0]);
+        }
+    }
+
+    #[test]
+    fn a_tracked_object_and_its_ancestors_keep_updating_below_a_hidden_one() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (body, c1) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        let (head, c2) = object(&mut scene, [0.0, 1.5, 0.0], body, MOVING);
+        let (camera, c3) = object(&mut scene, [0.0, 0.1, 0.0], head, MOVING | flags::TRACKED);
+        let (hand, c4) = object(&mut scene, [0.5, 1.0, 0.0], body, MOVING);
+        scene.apply_commands(&[c1, c2, c3, c4], 1).unwrap();
+        scene.update_transforms(&jobs);
+        scene
+            .apply_commands(&[Command::set_visible(body, false)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        for frame in 3..6 {
+            scene.set_position(head, [0.0, 1.5, frame as f32]).unwrap();
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+            assert!(recomputed(&scene, head) && recomputed(&scene, camera));
+            assert!(frame == 3 || !recomputed(&scene, hand), "frame {frame}");
+            assert_eq!(translation(&scene, camera), [0.0, 1.6, frame as f32]);
+        }
+    }
+
+    #[test]
+    fn the_world_matrix_of_an_object_below_a_hidden_ancestor_follows_its_moves() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let [root, arm, _, finger] = hidden_tree(&mut scene, &jobs);
+        scene
+            .apply_commands(&[Command::set_visible(root, false)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        for frame in 3..6 {
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+        }
+        scene.set_position(arm, [0.0, 5.0, 0.0]).unwrap();
+        scene.begin_frame(6);
+        scene.update_transforms(&jobs);
+        assert!(!recomputed(&scene, arm));
+        let m = scene.absolute_world_matrix(finger).unwrap();
+        assert_eq!([m[3], m[7], m[11]], [11.0, 5.0, 1.0]);
+        // The hidden root itself still updates, so its row gives its matrix.
+        let m = scene.absolute_world_matrix(root).unwrap();
+        assert_eq!([m[3], m[7], m[11]], [10.0, 0.0, 0.0]);
     }
 
     #[test]

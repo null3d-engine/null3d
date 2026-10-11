@@ -13,12 +13,13 @@ export function loadDrawModule(): Promise<DrawModule> {
 }
 
 /**
- * Starts the download of the device's shaders once the renderer has loaded, for a thread that
- * loads the renderer through `draw`. The renderer reports a failure of either when it starts.
+ * Starts the downloads of the device's shaders and of its GPU path's renderers once the renderer
+ * has loaded, for a thread that loads the renderer through `draw`. The renderer reports a failure
+ * of either when it starts.
  */
-export function preloadShaders(draw: Promise<DrawModule>, tier: Tier, bits: number): void {
+export function preloadDeviceFiles(draw: Promise<DrawModule>, tier: Tier, bits: number): void {
 	draw.then(
-		(module) => module.preloadDeviceShaders(tier, bits),
+		(module) => module.preloadDeviceFiles(tier, bits),
 		() => undefined,
 	);
 }

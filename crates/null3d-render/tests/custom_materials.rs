@@ -25,6 +25,9 @@ fn custom(textures: u32) -> Shading {
         attributes: vertex::UV0,
         base_color: true,
         textures,
+        transmission: false,
+        row_values: false,
+        caster: false,
     })
 }
 

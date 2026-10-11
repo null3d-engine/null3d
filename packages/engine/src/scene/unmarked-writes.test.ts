@@ -9,6 +9,7 @@ import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { Scene } from './scene';
+import { UnmarkedRows } from './unmarked-writes';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -30,13 +31,34 @@ function fakeScene() {
 		C.SCENE_FIELD_DIRTY_WORDS,
 	];
 	const ring = [C.RING_FIELD_RECORDS, C.RING_FIELD_WRITE_INDEX, C.RING_FIELD_READ_INDEX];
+	// Each batch's fields in 512-byte parts of a block of its own, after the scene's and the ring's.
+	const batchArrays = (id: number, field: number) =>
+		block(scene.length + ring.length + id) + 512 * field;
+	const batchDirty = (id: number) =>
+		new Uint32Array(memory.buffer, batchArrays(id, C.BATCH_FIELD_DIRTY_WORDS), 2);
 	let slots = 0;
+	let batches = 0;
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => block(scene.indexOf(field)),
 		commandRing: (field: number) =>
 			field === C.RING_FIELD_CAPACITY ? RING : block(scene.length + ring.indexOf(field)),
 		reserveObject: () => ++slots,
+		createBatch: (count: number) => {
+			const id = ++batches;
+			// The core's rows start dirty.
+			batchDirty(id)[0] = 2 ** count - 1;
+			return id;
+		},
+		batchArrays,
+		setBatchActiveCount: () => 0,
+		markBatchDirty: (id: number, start: number, count: number) => {
+			const dirty = batchDirty(id);
+			for (let row = start; row < start + count; row++)
+				dirty[0] = (dirty[0] as number) | (1 << row);
+			return 0;
+		},
+		destroyBatch: () => 0,
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
@@ -49,6 +71,18 @@ function fakeScene() {
 		scene: s,
 		/** Creates a mesh with a name. */
 		create: (name: string, dynamic = false) => s.createMesh({ name, mesh, material, dynamic }),
+		/** Creates an instance batch of 4 rows. */
+		createBatch: (dynamic = false) => s.createInstances(mesh, 4, { material, dynamic }),
+		/**
+		 * Runs a frame's batch check, then clears every batch's dirty rows as the batch update does.
+		 */
+		batchFrame(): string | undefined {
+			time.frame++;
+			core.refresh();
+			const error = s.unmarkedRows?.check();
+			for (let id = 1; id <= batches; id++) batchDirty(id).fill(0);
+			return error?.message;
+		},
 		/** Runs a frame's check, then clears the dirty bits as the transform update does. */
 		frame(): string | undefined {
 			time.frame++;
@@ -219,5 +253,99 @@ describe('unmarked writes to static objects', () => {
 		expect(frame()).toBeUndefined();
 		scene.views.scales[crate.slot * 3] = 2;
 		expect(frame()).toStartWith('E1110: the scale of "Crate" (slot 1) changed');
+	});
+});
+
+describe('unmarked writes to static batch rows', () => {
+	test('a row written without markDirty is reported once, with its row', () => {
+		const { createBatch, batchFrame } = fakeScene();
+		const batch = createBatch();
+		expect(batchFrame()).toBeUndefined();
+		batch.positions[2 * 3 + 1] = 5;
+		expect(batchFrame()).toStartWith(
+			'E1110: row 2 of an instance batch of 4 rows changed without markDirty.',
+		);
+		expect(batchFrame()).toBeUndefined();
+	});
+
+	test('counts the other rows, in every field', () => {
+		const { createBatch, batchFrame } = fakeScene();
+		const batch = createBatch();
+		batchFrame();
+		batch.rotations[1 * 4 + 3] = 0.5;
+		batch.scales[3 * 3] = 2;
+		expect(batchFrame()).toStartWith(
+			'E1110: row 1 of an instance batch of 4 rows changed without markDirty. 1 more row changed that way too.',
+		);
+	});
+
+	test('rows that markDirty marks are not reported', () => {
+		const { createBatch, batchFrame } = fakeScene();
+		const batch = createBatch();
+		batchFrame();
+		batch.positions[0] = 1;
+		batch.positions[3 * 3] = 1;
+		batch.markDirty(0, 1);
+		batch.markDirty(3, 1);
+		expect(batchFrame()).toBeUndefined();
+	});
+
+	test('dynamic batches, rows past the active count and destroyed batches are not checked', () => {
+		const { createBatch, batchFrame } = fakeScene();
+		const dynamic = createBatch(true);
+		const fewer = createBatch();
+		const gone = createBatch();
+		batchFrame();
+		dynamic.positions[0] = 1;
+		fewer.setActiveCount(2);
+		fewer.positions[3 * 3] = 1;
+		gone.destroy();
+		expect(batchFrame()).toBeUndefined();
+	});
+});
+
+describe('unmarked writes to the rows of a large batch', () => {
+	/** A batch of 8 rows of one word each, whose check hashes 3 rows a frame. */
+	function largeBatch() {
+		const rows = new Int32Array(8);
+		const dirty = new Int32Array(2);
+		const core = {
+			generation: 0,
+			glue: { batchArrays: (_id: number, field: number) => field },
+			i32: (address: number) => (address === C.BATCH_FIELD_DIRTY_WORDS ? dirty : rows),
+		};
+		const check = new UnmarkedRows(core, 3);
+		check.watch({ id: 1, count: 8, activeRows: 8, describe: () => 'the batch' }, [
+			[C.BATCH_FIELD_POSITIONS, 1],
+		]);
+		return {
+			rows,
+			mark: (row: number) => {
+				dirty[0] = (dirty[0] as number) | (1 << row);
+			},
+			/** Runs a frame's check, then clears the marks as the batch update does. */
+			frame: () => {
+				const message = check.check()?.message;
+				dirty.fill(0);
+				return message;
+			},
+		};
+	}
+
+	test('finds a write within the frames that one turn over the rows takes', () => {
+		const { rows, frame } = largeBatch();
+		for (let k = 0; k < 3; k++) expect(frame()).toBeUndefined();
+		rows[7] = 1;
+		expect([frame(), frame(), frame()].filter(Boolean)).toEqual([
+			expect.stringContaining('row 7 of the batch changed without markDirty.'),
+		]);
+	});
+
+	test('keeps a mark until its row comes round, so a marked write is never reported', () => {
+		const { rows, mark, frame } = largeBatch();
+		for (let k = 0; k < 3; k++) frame();
+		rows[7] = 1;
+		mark(7);
+		for (let k = 0; k < 6; k++) expect(frame()).toBeUndefined();
 	});
 });

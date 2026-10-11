@@ -162,12 +162,16 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
     assert_eq!(frame[&6].0, resource_kind::BUFFER);
     let depth_groups = bind_groups(&commands, layout::DEPTH);
     assert_eq!(depth_groups.len(), 3);
+    // They bind the frame uniform and the material table, and for the vertex shaders of custom
+    // materials' casters the custom values and the row values, but never the shadow map.
     for group in &depth_groups {
-        assert!(
-            group
-                .values()
-                .all(|(kind, _)| *kind == resource_kind::BUFFER)
-        );
+        assert!(group.values().all(|&(_, id)| id != map[0]));
+        let kinds: Vec<u32> = group.values().map(|&(kind, _)| kind).collect();
+        let buffers = kinds
+            .iter()
+            .filter(|&&k| k == resource_kind::BUFFER)
+            .count();
+        assert_eq!((buffers, kinds.len()), (2, 4));
     }
 
     // Casters draw their back faces into depth alone. Lit receivers read the shadow maps; the
@@ -743,4 +747,42 @@ fn far_cascades_cull_and_draw_in_turn_and_keep_their_layers_in_between() {
     world.scene.apply_commands(&still, world.frame).unwrap();
     world.step(&mut mock, true);
     assert_eq!(drawn(&world.step(&mut mock, false)).0.len(), 2);
+}
+
+#[test]
+fn a_batch_that_casts_draws_into_each_cascade_and_one_that_receives_reads_the_map() {
+    let mut world = World::new();
+    world.renderer.settings_mut().set_sun_shadow(Some(SUN));
+    let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_shadows(both);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+
+    // No scene object casts, so each cascade's bundle draws the batch alone.
+    let bundles = bundles(&commands);
+    let cascades: Vec<_> = bundles
+        .values()
+        .filter(|(formats, _)| formats[0] == format::NONE)
+        .collect();
+    assert_eq!(cascades.len(), 3);
+    for (_, draws) in cascades {
+        assert_eq!(*draws, 1, "the batch's draw");
+    }
+    let pipelines = operands(&commands, Op::CreateRenderPipeline);
+    assert!(pipelines.iter().any(|p| p[1] == template::SHADOW_DEPTH));
+    let receiving = |p: &&Vec<u32>| p[2] & permutation::RECEIVE_SHADOWS != 0;
+    assert!(
+        pipelines
+            .iter()
+            .filter(|p| p[1] == template::INSTANCED_LIT)
+            .any(|p| receiving(&p)),
+        "the batch reads the shadow map"
+    );
 }

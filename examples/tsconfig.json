@@ -4,5 +4,6 @@
 		"types": ["@webgpu/types"],
 		"noUncheckedIndexedAccess": false
 	},
-	"include": ["**/*.ts"]
+	"include": ["**/*.ts"],
+	"exclude": ["vite.build.config.ts", "node_modules", "**/*.test.ts"]
 }

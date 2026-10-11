@@ -1,0 +1,235 @@
+# D-116: The stats overlay's memory, triangle and object figures
+
+Status: decided, 2026-10-08. Date: 2026-10-08. Task: M2-EX2.
+
+Summary: The page can now turn the stats overlay on, as the sketch could. The overlay adds GPU time, triangles, objects, memory and the page thread's load. Triangles and objects count every draw of every pass, as three.js's `renderer.info` counts triangles. On WebGPU the GPU-culled draws' counts come back from the GPU on one frame in eleven. The page memory counts the shared WebAssembly memory once. `@null3d/engine/stats` exports the layout, so a three.js page prints its figures the same way. The overlay always sits at the canvas's top right (the owner's ruling), and collapses to a frame-rate pill. The pill opens a card of work bars against the engine's target frame rate. Collapsed, it samples nothing. The GPU memory figures count every texture and buffer that the engine holds, as running totals on the thread that draws. The whole-page line hides when the browser leaves its first request unanswered for two minutes.
+
+## Question
+
+The examples and the three.js comparison pages need one overlay that any page can show. It must report memory, triangles and objects drawn, the page thread's load and GPU time. What does each figure count, and how does the engine get it at almost no cost while the overlay is hidden?
+
+## Rule
+
+- With the overlay hidden, a frame pays at most a few operations per draw call, and allocates nothing.
+- Each figure means the same in null3D and in a three.js page, so the comparison pages compare like with like.
+- A figure that the browser does not give is left out, never shown as 0.
+- The overlay's code stays within the 16 KB budget of a file that loads on first use ([D-14](D-14-js-budget.md)).
+
+## Data
+
+All runs are from 8 October 2026, in Chrome on the owner's Mac (Apple M5 Max), on the stats test page and on S1.
+
+**How Chrome counts the shared memory.** `performance.measureUserAgentSpecificMemory` on the stats test page, threaded build, pipelined:
+
+| GPU path | WebAssembly memory | Browser's figure | Parts that hold the memory | Counted once |
+| --- | --- | --- | --- | --- |
+| WebGPU, High | 22.1 MiB | 116.1 MiB | 3: the page 28.5, the sketch worker 32.3, the render worker 54.8 MiB | 71.8 MiB |
+| WebGL2, Medium | 22.4 MiB | 99.0 MiB | 3: the page 28.8, the sketch worker 32.6, the render worker 37.2 MiB | 54.2 MiB |
+
+The page's own JavaScript heap was 5.5 MiB, so the page's part is the shared memory plus its heap. The 16 job workers gave no part, and each measurement took 58 s, which is Chrome's time limit for workers that do not answer.
+
+**What the engine's start downloads.** After Brotli, against main's build:
+
+| File | Main | First build of this change | Final |
+| --- | --- | --- | --- |
+| `page.js` | 31,263 B | 31,767 B (+1.6%) | 31,394 B (+0.4%) |
+| `page-renderer.js` | 32,091 B | 32,987 B (+2.8%) | 32,426 B (+1.0%) |
+| `sketch-worker.js` | 45,641 B | | 45,907 B (+0.6%) |
+| `sketch-worker-renderer.js` | 32,439 B | 33,279 B (+2.6%) | 32,732 B (+0.9%) |
+| `render-worker.js` | 34,902 B | 35,794 B (+2.6%) | 35,235 B (+1.0%) |
+| Pipelined start | 136.1 KB (97.2%) | 137.8 KB (98.4%) | 136.8 KB (97.7%) |
+
+The first build kept the reader of the culled draws' counts in each renderer, and the page thread's windows and the page memory sampler in `page.js`. The final build loads the reader at the first frame that samples, about 1 KB in each thread that draws. The page's meters moved into the overlay's file, which grew from 882 B to 2,245 B.
+
+**Allocation with the overlay shown.** `bun run bench:allocation --stats` on S1, bytes per frame of the render worker in the sample where each place allocated least:
+
+| Place | WebGPU, 100,000 instances | WebGPU, 20,000 instances | Budget |
+| --- | --- | --- | --- |
+| GPU timer: `copyOut` | 14.2 | 12.1 | 24 more |
+| GPU timer: `read` | 10.5 | 12.2 | 16 more |
+| GPU timer: `afterSubmit` | 8.9 | 11.7 | 16 more |
+| Culled counts: `afterSubmit` | 12.2 | 12.7 | 16 more |
+| Culled counts: `read` | 5.9 | 5.2 | 12 more |
+| Culled counts: the view of the mapped range | 3.5 | 4.8 | 8 more |
+
+The GPU timer's places are the timer's own, which only showed once the check could run with sampling on. Its first run found an array and an iterator for each pass that the timer read, and an array for each submit. The timer now reads the words one by one and submits through the shared list. What remains are objects that the browser returns: a command buffer, a promise and its reaction, and a view of each mapped range. Each mapped range is new memory, so no pool can keep these objects. They come once in eleven frames, and the culled counts make about half of what the timer makes. The smaller scene allocates no more per readback; it draws more frames a second. WebGL2 with the overlay shown allocated nothing more that the profiler saw, and both paths with the overlay hidden passed their old budgets.
+
+**Browser tests.** The stats test passes on both GPU paths, in every thread mode and from the `?stats` switch: 14 of 14. It ran in Chrome on the Mac's GPU and in the production build. The demo interaction test passes with the overlay on the demos: 2 of 2.
+
+## Decision
+
+1. **Turning it on.** `createEngine({ stats: true })`, `engine.stats(show)` and the `?stats` switch show the overlay from the page. Each also takes options, as [the overlay's layout and rules](#the-overlays-layout-and-rules) says. The sketch's `debug.stats` shows the same overlay, and the last call from either side wins. Each sketch call reaches the page, which may have changed the overlay since. Production builds read the switch only with the Vite plugin's `urlSwitches`, as they read every switch. A held engine shows no overlay, since it presents no frames.
+2. **Sampling.** The overlay, a measurement and the sketch's first `debug.frameStats()` each turn on sampling, and the engine samples while any of them wants it. Sampling times one frame in eleven on the GPU, with the measurement's timer code. The overlay and the sketch's figures also want what only they show, and a second count in the header says so. On WebGPU the engine then reads back the counts of the culled draws on the timed frames. The code that reads them back loads at the first frame with such a reader, so a page that only measures never downloads it. The sketch thread also publishes the memory of textures and meshes in the header, in the first frame that samples and then every eighth frame. Without sampling, none of this runs.
+3. **Triangles and objects.** The thread that draws counts every draw of every pass: shadow maps, the depth prepass, the passes that shade and post effects. A draw of triangles adds its vertices or indices over 3, times its instances. A draw of lines adds none. Each draw adds its instances to the objects. three.js's `renderer.info.update` counts triangles the same way, per draw call, shadow maps included, so the figures compare. A three.js page gets the same object count by adding each call's instance count.
+4. **Counts on WebGPU's GPU-culled path.** The culling shaders write the instance count of each indirect draw on the GPU, so the CPU never sees it. Two counts were possible:
+   - The submitted count: every source in the buckets, before culling. It is known on the CPU, but it measures the scene, not what the GPU drew, and differs from WebGL2's count of the same scene.
+   - The drawn count: the instance counts that the culling wrote. Only the GPU knows them.
+
+   The engine reads the drawn count back, because only it matches WebGL2 and three.js. On a sampled frame, the backend notes each indirect draw that it replays. At the frame's end it copies the noted draws' arguments into a mappable buffer, with one copy for each buffer of draws. It sums them once the buffer maps. Each frame adds the newest sums to its own direct counts. Every indirect buffer gains `COPY_SRC` usage for these copies, which WebKit's argument copies already needed. Until the first counts come back, a counter in each frame's record marks its triangles and objects as not known. The window's means leave such frames out. Without that, the first window after the overlay shows counted only the direct draws. In CI's SwiftShader it gave 11.8 triangles per frame for the stats page's box of 12.
+5. **Memory.** The overlay shows the WebAssembly memory's size and the GPU bytes of every texture and buffer that the engine holds ([GPU memory](#gpu-memory)). It also shows the page thread's JavaScript heap from `performance.memory`, and the whole page from `performance.measureUserAgentSpecificMemory`. The browser adds a shared memory to the figure of each thread that holds it. So the browser's figure counts the engine's memory once per engine thread that answered. The overlay counts it once: it subtracts the memory's size for each holder past the first. A holder is a part of the breakdown at least as large as the shared memory, since no thread's own heap comes near it. The overlay also shows the browser's own figure. The measurement waits for every worker to run it, or about a minute. Job workers never return to their event loop, so in the threaded build each measurement takes about a minute. A browser that never answers hides the line after two minutes ([The whole-page line](#the-whole-page-line-when-the-browser-never-answers)).
+6. **The page's own thread.** The class `MainThreadWindow` watches the page thread's long tasks and longest input delay. A long task takes 50 ms or more. `@null3d/engine/stats` exports the class for other engines' pages. The overlay's final design shows neither, so the overlay no longer runs it.
+7. **Figures only the page has.** The JavaScript heap and the page memory stay on the overlay and out of `debug.frameStats()`. A worker cannot measure them.
+8. **The shared layout.** `@null3d/engine/stats` exports `statsText`, the figure types, `MainThreadWindow`, `PageMemorySampler` and `pageHeapBytes`, with the percentile helpers. The package now builds the module, so a page outside the repository can import it.
+
+9. **The start's cost.** The start holds only what runs each frame: the per-draw counts and the memory figures' writes. The overlay's own file holds the page's meters. The reader of the culled draws' counts loads on first use. A measurement with `engine.measure` keeps its own small meters of the page thread and the page memory in the start. They repeat about 20 lines of the overlay's meters. That costs less than moving the meters into the start. The overlay's file loads none of the page's modules that the start holds. When it did, Vite's build split shared modules out of `page.js` into files of their own.
+
+## The overlay's layout and rules
+
+The owner asked on 8 October 2026 for the overlay at the top right, collapsible to the frame rate, with a chevron. The owner then picked a design from five mockups and refined it in a series of rulings the same day. This section records the final design and the reasons.
+
+### Options and defaults
+
+- **Always at the top right.** The overlay always sits at the canvas's top-right corner, and no option moves it. The owner ruled this on 8 October 2026, for two reasons. First, there is one place to look for it, on every page. Second, the top right keeps it clear of the demos' caption, which sits at the top left. An earlier draft of this record gave a `corner` option with four corners and a top-left default. It argued that stats.js and drei's `<Stats>` sit at the top left, and that lil-gui and Tweakpane sit at the top right. The owner dropped the option for the two reasons above. A page with a tweak panel at the top right can move the panel instead.
+- **Collapsed.** The `collapsed` option starts the overlay with its card closed. The engine's default is open: a developer who turns the overlay on wants the figures. The examples start collapsed, so a visitor sees the demo, with the frame rate in a small pill.
+- **Requests add up.** `true` shows the overlay with the options so far, and options change only the fields they name, on a shown overlay too. An overlay that shows again keeps the start state that the last requests gave. The `?stats=collapsed` and `?stats=open` switches set the start state on top of the page's option, for tests and benchmarks.
+
+### The look
+
+- **Header.** A light pill: a ring gauge of the frame rate as a share of the target, the frame rate, such as `58 fps`, and a chevron. The chevron points down while the card is closed and up while it is open. The header is a real `<button>` with `aria-expanded`, and Enter and Space toggle it. A click with the pointer hands the focus back to the page. So a key that the sketch reads, such as Space, does not press the button again. The button stops Enter and Space from reaching the sketch's keyboard input.
+- **The button stays in its corner.** The overlay keeps its right edge on the canvas's right edge, and the panel is a flex column whose items align to the right. So the card opens under the header, and opening it never moves the header. The stats test checks the place and the button in every thread mode.
+- **Card.** A light card (`rgba(250, 251, 253, 0.95)`, radius 16, a soft shadow): the frame work, the memory, then the counts. A muted last line keeps the GPU path, the preset and the render scale from the earlier overlay. The design drops the page thread's long tasks and input delay, so the overlay no longer measures them. `MainThreadWindow` stays in `@null3d/engine/stats` for other pages.
+- **Contrast.** The mockup colors each work figure's text with the bar's green, amber or red. On the card over a black scene, those give 2.6, 2.0 and 3.5 to 1 against the 4.5 to 1 that small text needs. The text uses darker shades of the same hues instead: `#15703f`, `#875400` and `#b3302a`, at least 5.2 to 1 over any scene. The bars and the ring keep the bright colors, since the figure beside each bar carries its value. The dark and muted text of the card gives 16.0 and 5.1 to 1 over black, and more over light scenes.
+- **Isolation.** The overlay lives in an open shadow root with its own style sheet. The page's styles do not reach it, such as a page's own `button` rules, and its styles do not reach the page. The style sheet is made in script (`CSSStyleSheet.replaceSync`), which no browser blocks under a Content Security Policy without `'unsafe-inline'`. A browser without such style sheets gets a `<style>` element instead.
+
+### The rules
+
+1. **Target.** The overlay judges frames against the engine's own target: the one that the preset check and the quality governor aim at. It is the display's refresh rate, at most 60 frames a second, or a lower cap such as `?fps=` (`checkTargetFps`). The overlay neither invents a target nor measures one. A 120 Hz display shows a target of 60 fps; a 30 fps cap shows 30. Since [D-124](D-124-target-frame-rate.md) (10 October 2026), the card shows the display's rate beside a lower target, such as `120 Hz ≥60 fps · 16.7 ms`, with a faint second mark on each bar. The page's `targetFps` option can raise the target to the display's rate.
+2. **Scale.** Every work bar spans twice the target's interval, so the target's mark sits in the middle of each.
+3. **Work colors.** A thread's or the GPU's time is green below 80% of the target's interval, amber up to it, and red past it.
+4. **Frame-rate colors.** The ring is green from 90% of the target, the share that a preset must hold in the preset check (`CHECK_HOLD_SHARE`). It is amber from 75%, and red below.
+5. **Stack only where the parts add up to the total shown.** A thread's phases run one after another, so its bar stacks them. The sketch's `update` phase shows as "your code". Every other phase, and the thread's untimed rest, shows as "engine". Threads run side by side, and the GPU works beside them, so each has a bar of its own and none stack together. The memory bar's parts add up to the total in its heading. The browser's whole-page figure counts a shared memory once per thread that holds it. So it is not that sum, and it gets a line of its own.
+6. **Job workers.** The engine starts one job worker per CPU core less two, at least one, and `?jobs=` can lower it. They share one parallel step of the frame, and the frame waits for the slowest of them. So they show as one bar, `Jobs ×N`, with the slowest worker's time. A sum or a mean would mislead.
+7. **Bars by thread mode.** The bars come in the order Sketch, Drawing, Jobs, Page, GPU, and a thread that the mode does not run has none. In low latency and in the single-thread build, one thread prepares and then draws each frame. There one bar, `Sketch + drawing`, stacks your code, the engine's sketch steps, then the drawing (the `upload` and `replay` phases, in a lighter shade of the engine's color). It replaces the Sketch and Drawing bars.
+8. **Mode symbol.** A symbol before the target names the thread mode: three staggered bars for pipelined, a clock for low latency. In the single-thread build, one thread does the work one step after another, as in low latency. So it gets the clock, with its own words ("Single-thread mode: without shared memory, ..."). A page that runs the sketch while a worker draws is still pipelined. The symbol is a real button with an `aria-label` and `aria-describedby` that points at a `role="tooltip"`. The tooltip shows on hover and on the keyboard's focus, and a tap toggles it, since touch screens have no hover.
+9. **Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark. When no bar passes the mark, it reads "outside the engine": the page's other code or the browser holds the frame back. It hides while the target holds.
+10. **Browser-neutral figures.** The frame rate, the work bars, the engine's and the GPU's memory and the counts come from the engine's own records. So they show in every browser that the engine runs in. The JavaScript heap (`performance.memory`) and the whole-page figure (`performance.measureUserAgentSpecificMemory`) show only where the browser gives them, with no `n/a`. The memory total adds up the parts that it lists. Where the GPU path has no timer queries, the GPU bar reads "not measured" and stays empty. Where it has them, it reads "measuring" until the first timed frame comes back.
+
+### Collapsed costs nothing extra
+
+While the card is closed, the overlay reads only the frame rate, from the frame intervals that the engine records anyway. The sampling count in the metrics header follows the card's open state, not the overlay's. Opening the card starts the GPU timer, the culled counts' readback and the page's memory sampler. It also starts the memory figures of the sketch thread and of the thread that draws. Closing it stops them. `engine.measure` keeps its own sampling. While the card is closed, the overlay formats none of its figures. While it is open, an update changes text, bar widths and levels, and builds nothing. Bar widths and the ring's arc come from tables made once, so a moving bar allocates nothing.
+
+A test checks the closed overlay on a page that draws on its own thread. There the page counts the GPU calls of timing and readback: WebGL2's `beginQuery`, WebGPU's `resolveQuerySet` and `mapAsync`. In 2 seconds with the card closed, both GPU paths made none of them. Opening the card made them, which shows that the count sees what the engine does.
+
+### Look in one place
+
+The file `debug/overlay.ts` holds what shows, where and when. The file `debug/overlay-look.ts` holds the style sheet and the code that builds and fills the header and the card. A new design changes that file alone. The file `debug/frame-target.ts` holds the target and the color rules. The file `debug/stats-options.ts` holds the option types apart from the scene's types, since the page's address switches name them.
+
+### Cost and size
+
+All runs are from 8 October 2026, in Chrome on the owner's Mac. It is an Apple M5 Max with a 120 Hz display, and its load was 2 to 7.
+
+**Frame time.** `bun run bench:run --scenes s4,s6 --pages null3d-webgpu,null3d-webgl2 --runs 5 --seconds 10`, with no overlay, then `--switches stats=collapsed`, then `stats=open`, then no overlay again. Medians of 5 runs; CPU is the busiest thread per frame:
+
+| Scene and path | CPU, hidden (two runs) | CPU, collapsed | CPU, open | GPU, hidden (two runs) | GPU, collapsed | GPU, open |
+| --- | --- | --- | --- | --- | --- | --- |
+| S4, WebGPU | 0.15, 0.12 ms | 0.11 ms | 0.11 ms | 3.73, 3.77 ms | 3.80 ms | 3.79 ms |
+| S4, WebGL2 | 0.33, 0.30 ms | 0.32 ms | 0.32 ms | 4.44, 4.75 ms | 4.32 ms | 4.30 ms |
+| S6, WebGPU | 0.53, 0.55 ms | 0.55 ms | 0.55 ms | 4.91, 4.84 ms | 4.90 ms | 4.94 ms |
+| S6, WebGL2 | 1.32, 1.35 ms | 1.37 ms | 1.30 ms | 5.66, 5.24 ms | 5.18 ms | 5.56 ms |
+
+Every page held 120 frames a second in every run. The two runs without the overlay differ by up to 0.03 ms of CPU time and up to 8% of WebGL2's GPU time. Against their mean, the open card adds at most 1.9% CPU and 2.0% GPU, both inside that spread. On WebGPU's GPU time, where the two runs agree within 1%, it adds 1.1 to 1.3%. The collapsed overlay shows no difference beyond the spread. So the open card meets the owner's rule of under 2%, and the GPU timer stays at one frame in eleven. The benchmark pages measure with `engine.measure`, which turns the GPU timer on in every run. So the figures without the overlay include the timer's cost. The open card's extra is the culled counts' readback, the memory figures and the page's memory sampler.
+
+**On a phone (a cloud timing, a rough guide).** On 8 October 2026, a Galaxy S24 (SM-S921B) on BrowserStack Automate ran the examples page's production build. It used Chrome 152.0.7977.54 on Android 16, with the Samsung Xclipse 940 GPU through ANGLE on Vulkan. The page was the instances demo on WebGL2, served from the Mac through BrowserStack Local. The engine chose the Low preset, in the pipelined mode with 8 job workers. Each load ran 30 seconds, then `engine.measure(30)` read the engine's own figures:
+
+| Overlay | Frame rate | Busiest thread, mean (median) | Drawing thread, mean | Slowest job worker, mean |
+| --- | --- | --- | --- | --- |
+| Open (`?stats=open`) | 30.0 fps | 10.42 (11.09) ms | 1.04 ms | 0.62 ms |
+| Collapsed (`?stats=collapsed`) | 30.0 fps | 10.60 (10.98) ms | 1.15 ms | 0.53 ms |
+| Off (`?stats=off`) | 30.0 fps | 11.08 (11.57) ms | 1.09 ms | 0.60 ms |
+
+The busiest thread is the sketch worker. The cloud phone's screen runs at 30 Hz, so every load held the 30 fps cap. The overlay's cost does not show above the spread of the three loads, which is about 0.7 ms. The run without the overlay was the slowest. Cloud timings vary from session to session, so these figures only show that the overlay costs no frames on this phone.
+
+After 60 seconds, the open card read: `30 fps`, `Target 30 fps · 33.3 ms`, the pipelined symbol, Sketch 11.3 ms, Drawing 1.1 ms, Jobs ×8 0.8 ms, GPU not measured. Memory read 25.3 MiB: engine 16.7 MiB, GPU 0.0 MiB, JS heap 8.6 MiB. The counts read 3 draws, 115.9 k triangles and 9,661 objects. The frame rate met the target, so no "held back by" line showed. The whole-page line still read "measuring" after a minute. A click closed the card, and the button stayed at the canvas's top right. The page logged no errors. Chrome warned only that it has no WebGPU adapter, which the probe of the GPU paths causes. The [run's record](../tested-devices/galaxy-s24-sm-s921b-chrome/20261008-144429-stats-overlay.md) has the details.
+
+**Allocation.** `bun run bench:allocation` on S1 with 100,000 instances, bytes per frame of the sketch worker and the render worker:
+
+| Path | Hidden | Collapsed (`--stats-collapsed`) | Open (`--stats`) |
+| --- | --- | --- | --- |
+| WebGPU | 319, 578 | 326, 570 | 318, 639 |
+| WebGL2 | 386, 168 | 374, 166 | 373, 166 |
+
+All six pass. Collapsed matches hidden on both paths. On WebGPU, the open card's extra 61 bytes per frame are the GPU timer's and the culled counts' readbacks, within their budgets above. The first WebGPU runs with the overlay lost their browser window within the same minute, before any figure. Both passed when run again.
+
+**Size.** These are the figures of `bun run build:check-size`, after Brotli. The overlay's file loads at its first showing, and takes 6,253 B. It took 6,457 B with the corner option, which the top-right ruling removed. It took 2,245 B before this design, and 882 B on main. That is 39% of the 16 KB budget of a file that loads on first use. The start grows by the switch's two new values and the setup that the start hands the overlay. The file `page.js` grows from 31,394 to 31,501 B, and `page-renderer.js` from 32,426 to 32,495 B. The workers' start files do not change.
+
+**Browser tests.** The stats test passes 26 of 26 in Chrome on the Mac's GPU, with the production build. It passes 26 of 26 with `CI=1` too, on SwiftShader with the production build. It covers every thread mode and the figures that the browser does not give. In each thread mode, it checks that the overlay sits on the canvas's top-right corner. It also checks that the button stays put as the card closes and opens. It also covers the toggle by pointer and keyboard, the focus ring and drags through the card. And it checks both mode symbols and their tooltips, and the closed overlay's GPU calls. After the owner's ruling for the top right, it passed 26 of 26 again both ways, on 8 October 2026. The first-use tests pass both ways: 26 pass, and 6 skip by their own conditions.
+
+## GPU memory
+
+The owner approved this fix on 8 October 2026, after the Galaxy S24 run above.
+
+**The problem.** The card's `GPU` part added the scene's texture bytes (`quality.textureMemory.bytes`) and mesh bytes (`geometry.memoryBytes`). The instances demo has no textures and one small box mesh. So on the phone it read `GPU 0.0 MiB`. Yet the engine held 10,000 instance rows, the canvas's render targets, a shadow map and other buffers on the GPU.
+
+**What counts.** Every GPU object that the engine creates, on both GPU paths:
+
+- Through the draw list (`CreateBuffer`, `CreateTexture`): vertex, index, uniform and storage buffers, instance and batch rows, and the culling and indirect draw buffers. Also the scene's textures, the render targets with their multisampled copies, and the depth and shadow maps. Also the post chain's targets, and the environment's maps and color grading tables.
+- WebGPU's own: the staging ring of uploads, and each indirect draw's copy of its arguments (Apple's WebKit). Also the buffer that copies into 3D textures pass through, and a capture's stand-ins for targets that resolve into the canvas. Also the GPU timer's query set, resolve buffer and readbacks, and the readbacks of the culled counts.
+- WebGL2's own: the renderbuffers of render targets, with the one-sample copy of a multisampled depth target that shaders read. Also the ring of pixel unpack buffers, and the spare textures that mip levels and layer copies draw into.
+
+**How.** A `GpuMemory` object in each backend keeps two running totals in a `Float64Array`: texture bytes and buffer bytes. The backend and its helpers change them where they create, grow and free each object, on the thread that owns them. WebGPU reads a buffer's size from the buffer and keeps each texture's bytes by id. WebGL2 keeps the bytes in its record of each buffer and texture. While a reader samples the frame figures, `recordCounts` copies the two totals into the metrics header each frame, with one `set` between typed arrays. That boxes no fraction and allocates nothing. `FrameStats` reads them as `gpuTextureBytes` and `gpuBufferBytes`.
+
+**Bytes as the GPU stores them.** `textureBytes` counts every mip level of every layer in whole blocks of texels, from the draw list's format tables. A compressed format counts whole 4 x 4 blocks, also for levels smaller than a block. A 3D texture halves its depth at each level, and an array or a cube keeps its layers. A multisampled target counts each sample, as WebGL2 clamps them to `MAX_SAMPLES`. 24-bit depth counts 4 bytes per texel, since the format tables give it none for writes and copies. The unit tests check each case.
+
+**Limits.**
+
+- The totals count the sizes that the engine asks for. A driver may round an object up to its own alignment or page size, and no browser reports that. WebGPU's row padding of copies counts, as the engine asks for it.
+- A WebGL2 driver may give a renderbuffer more samples than asked. The total counts the samples asked for.
+- On WebGL2 without alpha, targets in the canvas's format take `RGB8`. They count 4 bytes per texel, from the format table, since GPUs keep such texels in 4 bytes.
+- The pool of stopped engines' memories ([D-98](D-98-memory-pool.md)) holds WebAssembly memory, not GPU objects, so it is not part of these totals.
+- A tiled GPU may keep a transient multisampled target in tile memory alone. The total still counts it.
+- The canvas's own image (WebGPU's current texture, WebGL2's drawing buffer) belongs to the browser and stays out.
+- Objects that live within one call stay out: the environment bake's work textures and buffers, and a capture's target and readback buffer. Each is freed before the next frame's figures, so counting them would change nothing that the overlay shows.
+- The capability probe's test objects at start stay out, since the probe frees them before the engine draws.
+
+**Options rejected.**
+
+- Walking every buffer and texture when the figures are read. It costs time in proportion to the scene, and the rule is that reading costs nothing.
+- Counting in the Rust core, which issues the draw list's create and destroy commands. It cannot see the backends' own objects: staging, copies, timers, readbacks, renderbuffers and spares.
+- Asking the browser. WebGPU and WebGL2 report no memory use.
+
+**The card.** The legend now has four items, since `GPU textures` and `GPU buffers` replace `GPU`. They wrap onto two lines in the card's width. The split shows at once whether a scene's memory is in images or in rows and vertices. The memory bar's parts still add up to the total in its heading, and the stats test checks it. The type `StatsMemory` gives `gpuTextureBytes` and `gpuBufferBytes` in place of `textureBytes` and `meshBytes`. The type `FrameStats` keeps the scene's `textureBytes` and `meshBytes` beside the new figures.
+
+**Figures.** All runs are from 8 October 2026, in Chrome on the owner's Mac (Apple M5 Max). The instances demo ran on the dev server at 1440 x 900, with `?stats=open`, and the card was read after 6 seconds:
+
+| Path | Before | After |
+| --- | --- | --- |
+| WebGPU, High | GPU 0.0 MiB | GPU textures 37.7 MiB, GPU buffers 3.4 MiB |
+| WebGL2, Medium | GPU 0.0 MiB | GPU textures 61.0 MiB, GPU buffers 2.7 MiB |
+
+The memory total grew from 29.8 to 70.9 MiB on WebGPU, and from 30.0 to 93.8 MiB on WebGL2. The canvas's targets and the engine's buffers make up the GPU parts, since the demo has no textures and no shadow map. Its 10,000 rows take 0.6 MiB of the buffers.
+
+- **Browser tests.** The stats test adds 20,000 instance rows and turns on the shadows of the first directional light. It checks that the buffers hold at least 64 bytes per row, and the textures at least 2 bytes per texel of each shadow cascade. It passes on both GPU paths, in Chrome on the Mac's GPU and with `CI=1`, with the production build too. The other 26 stats tests pass both ways.
+- **Allocation.** `bun run bench:allocation` on S1, bytes per frame of the sketch worker and the render worker. Hidden: WebGPU 327 and 568, WebGL2 376 and 161, the figures of a page without the overlay. Open (`--stats`): WebGPU 310 and 652, WebGL2 371 and 182. All four pass, and no place of the new code allocates.
+- **Size.** Against the branch before this fix, after Brotli: `page-renderer.js` grows by 604 B (1.9%), `sketch-worker-renderer.js` by 545 B and `render-worker.js` by 503 B. The overlay's file grows by 119 B, and the reader of the culled counts by 71 B. The pipelined start takes 137.5 KB of its 140 KB budget, up from 136.9 KB.
+
+## The whole-page line when the browser never answers
+
+On the Galaxy S24, `performance.measureUserAgentSpecificMemory` did not answer within a minute, and the line stayed on `measuring`. The owner approved this fix on 8 October 2026.
+
+- The page keeps at most one request in flight. Every `PageMemorySampler` on the page shares it, since the measurement covers the whole page. A sampler that stops and starts again, or a second overlay, joins the request in flight.
+- After the first request, the page waits at most two minutes (`FIRST_ANSWER_LIMIT_MS`) for the first answer. A browser that answers does so once every worker has run the measurement, or after about a minute. So two minutes leaves room for a slow answer. Without an answer by then, `PageMemorySampler.page` is null, the card hides the line, and the page asks no more for the rest of its life.
+- An answer that comes later still shows. The line reads `measuring` only until the first answer or the limit.
+- A later request that takes long changes nothing: the line keeps the last answer.
+- A unit test stubs the measurement never to answer, and moves a fake clock past two minutes. It checks that the figures hide and that no second request goes out. Others check a late answer and the single request in flight.
+
+## The memory figures from the first sampled frame
+
+The stats test with 20,000 instance rows failed in CI on 9 October 2026, on pull request #453 on WebGL2, because the figures gave `meshBytes` 0. All the other figures were there, the GPU memory totals among them. The owner's rule is that a failed check runs again only after its cause is found and fixed.
+
+- The sketch thread published the memory of textures and meshes only while a reader sampled. It did so only in frames whose number was a multiple of 8. Sampling starts when play starts, at frame 82 or 83 in this test. So the first publish waited up to 7 frames. The thread that draws publishes its GPU memory totals in every frame, so they came at once.
+- Logging on SwiftShader showed it. With the old rule, sampling started at frame 82, and the mesh memory came at frame 88. The page read 0 mesh bytes beside the full GPU totals for 0.8 s. On the busy Mac, a frame of the test's instance rows and their shadow map took 0.3 s to 0.7 s. In the failed CI run, the page waited 10 s and saw no frame that published. So at most 7 frames ran in 10 s, more than 1.4 s each on average.
+- This was a fault in the engine, not only in the test. On a slow device, the overlay or `debug.frameStats()` showed 0 MiB of meshes for up to 7 frames after the card opened. After the card closed and opened again, it showed the memory of the last opening for up to 7 frames.
+- Now the first frame that samples publishes the memory figures, and then every eighth frame after it. A frame count kept on the sketch thread does it. It is 0 while nobody samples, so a reader that starts again gets the figures in its first frame. A unit test (`sketch/runner.test.ts`) starts sampling on a frame whose number is not a multiple of 8. It fails with the old rule.
+- Publishing in every frame was rejected. It reads the texture budget and the core's mesh memory each frame, for figures that change slowly.
+- With the fix, the page got every figure after about 4 sampled frames. They cover one 500 ms window and a refresh of the overlay. They also cover the reads back from the GPU: the GPU time, and on WebGPU the culled counts. The mesh memory came with the first window. With 24 copies of the test at once, frames took 0.4 s to 0.7 s, and the page waited 1.5 s to 2.5 s. The page now waits up to 20 s, not 10 s, so 4 frames of up to 5 s each still fit.
+- The failure came back on the Mac with 20 copies of the test at once, in CI's settings. Main failed 8 of 40 runs, each with `meshBytes` 0 alone. With the fix, 40 of 40 passed twice. In the second round, WebGL2 frames took 1.4 s, as in the failed CI run, and the page waited 3.3 s to 5.5 s.
+
+## Consequences
+
+- `FrameStats` gains `gpuMs`, `triangles`, `objects`, `wasmBytes` and `meshBytes`. The overlay on the page now shows the real texture bytes, where it read 0 before.
+- Each frame record has three more counters, `Triangles`, `DrawnObjects` and `UncountedFigures`. The metrics header has six memory figures and a count of the readers of the frame figures.
+- `FrameStats` gains `gpuTextureBytes` and `gpuBufferBytes`, and `StatsMemory` gives them in place of `textureBytes` and `meshBytes`.
+- The stats test page turns the overlay on from the page, through the option and the switch. Its checks need non-zero triangles, objects and memory on both GPU paths, and GPU time where the path has a timer.
+- The examples' `startDemo` shows the overlay by default, at the top right and collapsed, and takes `stats: false` to leave it off.
+- `bun run bench:allocation --stats` checks the allocation with the overlay's card open, and `--stats-collapsed` with it closed, which keeps the budgets of a page without it.
+- `docs/api/debug.md`, `docs/api/engine.md`, the performance and debugging guides, the three.js mapping and the skills describe the figures.

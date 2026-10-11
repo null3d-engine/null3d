@@ -54,8 +54,11 @@ export function isShaderModule(name: string): boolean {
 	);
 }
 
-/** The crate folders that the shader build compiles: its own and its path dependencies. */
-export function crateFolders(root: string): string[] {
+/**
+ * The crate folders that the build of `crate` compiles: its own and its path dependencies. The
+ * shader build's by default.
+ */
+export function crateFolders(root: string, crate = SHADER_CRATE): string[] {
 	const folders = new Set<string>();
 	const visit = (folder: string) => {
 		if (folders.has(folder)) return;
@@ -64,7 +67,7 @@ export function crateFolders(root: string): string[] {
 		for (const [, path = ''] of manifest.matchAll(/\bpath\s*=\s*"([^"]+)"/g))
 			visit(join(folder, path));
 	};
-	visit(SHADER_CRATE);
+	visit(crate);
 	return [...folders].sort();
 }
 
@@ -88,11 +91,19 @@ function hashFiles(root: string, files: readonly string[]): string {
 	return hash.digest('hex');
 }
 
-/** A hash of every input of the shader build. */
-export function inputHash(root: string): string {
+/**
+ * Every input of the build of `crate`, in order: the files of it and its path dependencies, and the
+ * workspace's Cargo files. The shader build's inputs by default.
+ */
+export function inputFiles(root: string, crate = SHADER_CRATE): string[] {
 	const files = [...WORKSPACE_FILES];
-	for (const folder of crateFolders(root)) filesBelow(root, folder, files);
-	return hashFiles(root, files.sort());
+	for (const folder of crateFolders(root, crate)) filesBelow(root, folder, files);
+	return files.sort();
+}
+
+/** A hash of every input of the build of `crate`, the shader build's by default. */
+export function inputHash(root: string, crate = SHADER_CRATE): string {
+	return hashFiles(root, inputFiles(root, crate));
 }
 
 /** A hash of the modules on disk, or null when the main module is missing. */

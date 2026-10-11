@@ -3,9 +3,10 @@
 // change in the machine's speed during the job reaches both builds alike. Everything here is pure,
 // so the benchmark command and its tests share it.
 //
-// The comparison judges CPU time only: the busiest thread's time per frame, and the engine's own
-// work on its busiest thread. Machines without a real GPU, or with a shared one, time the GPU
-// poorly, so GPU time is reported and never judged.
+// The comparison judges CPU time: the busiest thread's time per frame, and the engine's own work on
+// its busiest thread. It judges GPU time per frame too, on a page whose runs of both builds timed
+// the GPU. CI's Mac machine has no GPU timer, so there it judges CPU time alone. A machine with a
+// real GPU, such as a developer's computer, also catches a change that slows only the GPU.
 import type { Shard } from '../../tests/lib/runs.ts';
 import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
 import { REFERENCE_PRESET_SWITCH } from './parity';
@@ -165,16 +166,24 @@ export function selectRuns(runs: readonly BuildRun[]): RunSelection {
 	return { kept, dropped, refreshHz };
 }
 
-/** What the comparison judges on each page, with the name its report gives each measure. */
+/**
+ * What the comparison judges on each page, with the name its report gives each measure. A measure
+ * that a run may lack, as GPU time where the browser gives no GPU timer, is judged on the rounds in
+ * which both builds' runs have it.
+ */
 export const MEASURES = {
 	'busiest-thread': {
 		name: 'busiest thread',
-		of: (result: BenchResult) => result.cpuMs.median,
+		of: (result: BenchResult): number | null => result.cpuMs.median,
 	},
 	'own-work': {
 		name: 'own work',
 		// null3D times the sketch's update itself, so its own work needs no scene-code page.
-		of: (result: BenchResult) => ownWorkMs(summarizeRuns([result]), 0),
+		of: (result: BenchResult): number | null => ownWorkMs(summarizeRuns([result]), 0),
+	},
+	'gpu-time': {
+		name: 'GPU time',
+		of: (result: BenchResult): number | null => result.stats?.gpuMs?.median ?? null,
 	},
 } as const;
 export type Measure = keyof typeof MEASURES;
@@ -192,15 +201,18 @@ export interface Rule {
 }
 
 /**
- * The rule of each measure, chosen by replaying the recorded comparisons of identical builds on
- * GitHub's Mac machine: no recorded comparison breaks it, with the noise check below. The engine's
- * own work is the busiest thread's time less the scene's update: a small difference of two larger
- * times, which moves more from run to run, so its share is wider. .dev/benchmarks.md gives the
- * measurements.
+ * The rule of each measure. The CPU rules were chosen by replaying the recorded comparisons of
+ * identical builds on GitHub's Mac machine: no recorded comparison breaks them, with the noise check
+ * below. The engine's own work is the busiest thread's time less the scene's update: a small
+ * difference of two larger times, which moves more from run to run, so its share is wider. GPU time
+ * follows the GPU's clock, which the GPU changes with its load, and no comparisons of identical
+ * builds measured it. So its rule is wide: it catches a large slowdown of the GPU's work, not a
+ * small one. .dev/benchmarks.md gives the measurements.
  */
 export const RULES: Readonly<Record<Measure, Rule>> = {
 	'busiest-thread': { share: 0.08, floorMs: 0.05 },
 	'own-work': { share: 0.15, floorMs: 0.05 },
+	'gpu-time': { share: 0.25, floorMs: 0.3 },
 };
 
 /**
@@ -292,34 +304,23 @@ export interface MissingPage {
 /** A comparison needs at least this many rounds in which both builds have a kept run. */
 export const MIN_ROUNDS = 2;
 
-/** GPU time per frame of one page in each build, reported and never judged. */
-export interface GpuTime {
-	scene: string;
-	kind: string;
-	baselineMs: number | null;
-	newMs: number | null;
-}
-
 export interface BuildComparison {
 	comparisons: Comparison[];
 	missing: MissingPage[];
-	gpu: GpuTime[];
 }
 
-/** The median GPU time per frame over runs that timed the GPU, or null when none did. */
-function gpuMedian(runs: readonly BuildRun[]): number | null {
-	const times = runs
-		.map((run) => run.result.stats?.gpuMs?.median)
-		.filter((ms): ms is number => ms != null);
-	return times.length > 0 ? median(times) : null;
-}
+/** One measure's values in the runs that have it. */
+const valuesIn = (runs: readonly BuildRun[], value: (result: BenchResult) => number | null) =>
+	runs.map((run) => value(run.result)).filter((v): v is number => v !== null);
 
 /**
  * Compares the kept runs of the two builds, page by page and measure by measure. The builds ran in
  * turns, so each round holds a run of each build measured moments apart, and the change is the
  * median of the rounds' changes: a machine that changes speed between rounds changes both runs of
  * a round alike. A change counts only beyond the measure's rule and beyond its rounds' noise. A
- * page with too few rounds in which both builds have a kept run is named instead.
+ * page with too few rounds in which both builds have a kept run is named instead. A measure with
+ * too few rounds in which both builds' runs have it, such as GPU time without a GPU timer, is left
+ * out of the page's comparisons.
  */
 export function compareBuilds(
 	{ kept, dropped }: Pick<RunSelection, 'kept' | 'dropped'>,
@@ -329,7 +330,7 @@ export function compareBuilds(
 ): BuildComparison {
 	const all = [...kept, ...dropped.map(({ run }) => run)];
 	const pages = [...new Map(all.map((run) => [pageName(run), run])).values()];
-	const out: BuildComparison = { comparisons: [], missing: [], gpu: [] };
+	const out: BuildComparison = { comparisons: [], missing: [] };
 	for (const { scene, kind } of pages) {
 		const of = (runs: readonly BuildRun[], build: Build) =>
 			runs.filter((r) => r.build === build && r.scene === scene && r.kind === kind);
@@ -349,12 +350,17 @@ export function compareBuilds(
 			});
 			continue;
 		}
-		out.gpu.push({ scene, kind, baselineMs: gpuMedian(baseline), newMs: gpuMedian(next) });
 		for (const measure of MEASURE_NAMES) {
 			const { of: value } = MEASURES[measure];
-			const before = valuesOf(baseline.map((run) => value(run.result)));
-			const after = valuesOf(next.map((run) => value(run.result)));
-			const ratios = pairs.filter(([b]) => value(b) > 0).map(([b, n]) => value(n) / value(b));
+			const timed = pairs.flatMap(([b, n]) => {
+				const baselineMs = value(b);
+				const newMs = value(n);
+				return baselineMs === null || newMs === null ? [] : [[baselineMs, newMs] as const];
+			});
+			if (timed.length < MIN_ROUNDS) continue;
+			const before = valuesOf(valuesIn(baseline, value));
+			const after = valuesOf(valuesIn(next, value));
+			const ratios = timed.filter(([b]) => b > 0).map(([b, n]) => n / b);
 			const change = ratios.length > 0 ? median(ratios) - 1 : 0;
 			const noise = roundNoise(ratios);
 			const deltaMs = change * before.median;
@@ -368,7 +374,7 @@ export function compareBuilds(
 				measure,
 				baseline: before,
 				new: after,
-				rounds: pairs.length,
+				rounds: timed.length,
 				change,
 				noise,
 				deltaMs,
@@ -667,7 +673,7 @@ function verdictLines({ pass, failures, measurementChanges }: Verdict): string[]
 	];
 }
 
-/** The comparison as a short Markdown summary: the verdict, the table, GPU time and the runs. */
+/** The comparison as a short Markdown summary: the verdict, the table and the runs. */
 export function compareReport(
 	result: BuildComparison,
 	verdict: Verdict,
@@ -692,14 +698,8 @@ export function compareReport(
 				`| ${c.scene} | ${c.kind} | ${MEASURES[c.measure].name} | ${spread(c.baseline)} | ${spread(c.new)} | ${percentText(c)} | ${noiseText(c)} | ${resultText(c)} |`,
 		),
 		'',
-		`Each run gives the median CPU time per frame of the busiest thread, and of the engine's own work on it. The change is the median over rounds of the new build's run against the baseline's. Its noise is the standard error of that median, from the spread of the rounds. A page fails when ${limits}, and the change is more than ${NOISE_TIMES} times its noise.`,
+		`Each run gives the median CPU time per frame of the busiest thread, and of the engine's own work on it. A run in a browser that times the GPU also gives the median GPU time per frame${result.comparisons.some((c) => c.measure === 'gpu-time') ? '' : ', and no page here has it from both builds'}. The change is the median over rounds of the new build's run against the baseline's. Its noise is the standard error of that median, from the spread of the rounds. A page fails when ${limits}, and the change is more than ${NOISE_TIMES} times its noise.`,
 	];
-	const gpu = result.gpu.filter((g) => g.baselineMs !== null || g.newMs !== null);
-	if (gpu.length > 0)
-		lines.push(
-			'',
-			`GPU time per frame, reported and not judged: ${gpu.map((g) => `${pageName(g)} ${ms3(g.baselineMs)} ms to ${ms3(g.newMs)} ms`).join('; ')}.`,
-		);
 	const notCompared = result.missing.filter((page) => !newBuildShort(page));
 	if (notCompared.length > 0)
 		lines.push(

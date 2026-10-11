@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { jpegHeader, pngHeader } from '../../../../tests/pages/lib/image-headers';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { BACKGROUND_VALUE_COUNT, BACKGROUND_VALUE_SUN_POSITION } from '../generated/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import { GENERATORS_PRELOAD } from '../shared/images';
 import { Assets, type ModelMakers } from './assets';
@@ -261,9 +262,37 @@ describe('environments', () => {
 				cubes.push([size, levels, 'rgb9e5ufloat', name]);
 				return { bytes: 0 } as unknown as Texture;
 			},
+			addSkyMap(
+				_: Texture,
+				_stages: number,
+				call: string,
+				defaults: (values: Float32Array) => void,
+			) {
+				const values = new Float32Array(BACKGROUND_VALUE_COUNT);
+				defaults(values);
+				skyMaps.push([
+					call,
+					Array.from(
+						values.subarray(BACKGROUND_VALUE_SUN_POSITION, BACKGROUND_VALUE_SUN_POSITION + 3),
+					),
+				]);
+			},
 		} as unknown as Textures;
-		return { textures, cubes };
+		const skyMaps: [string, number[]][] = [];
+		return { textures, cubes, skyMaps };
 	}
+
+	test("make the sky's environment on the GPU, as a map of the scene's sky", async () => {
+		const { textures, cubes, skyMaps } = cubeTextures();
+		const sky = await new Assets(textures, PAGE).skyEnvironment();
+		expect(sky).toBeInstanceOf(Environment);
+		expect([sky.size, sky.levels, sky.format]).toEqual([256, 6, 'rgb9e5ufloat']);
+		expect(cubes).toEqual([[256, 6, 'rgb9e5ufloat', 'sky']]);
+		// With no sky background yet, the map shows the default sky of three.js's example.
+		const [[call, sun] = ['', []]] = skyMaps;
+		expect(call).toBe('assets.skyEnvironment');
+		expect(sun.map((c) => Math.round(c * 1e4) / 1e4)).toEqual([0, 0.0349, -0.9994]);
+	});
 
 	test("load the asset tool's files into cube maps, and make the built-in room on the GPU", async () => {
 		serve({ 'https://game.example/env/room.ktx2': smallMap() });
@@ -324,6 +353,59 @@ describe('environments', () => {
 			),
 		).toBe(
 			`E1213: assets.builtinEnvironment() got "studio", which names no built-in environment. Use 'room'.`,
+		);
+	});
+});
+
+describe('color grading tables', () => {
+	/** Textures that record the size and texels of each 3D texture. */
+	function volumeTextures() {
+		const volumes: [number, Uint8Array, string][] = [];
+		const textures = {
+			fromVolume(size: number, texels: Uint8Array, call: string) {
+				volumes.push([size, texels, call]);
+				return { bytes: texels.length } as unknown as Texture;
+			},
+		} as unknown as Textures;
+		return { textures, volumes };
+	}
+
+	test('a .cube file and its numbers make the same texture and table', async () => {
+		// The corners of a table of 2, red fastest.
+		const rows = Array.from({ length: 8 }, (_, k) => {
+			const [r, g, b] = [k & 1, (k >> 1) & 1, k >> 2];
+			return `${0.1 + r * 0.8} ${g * 0.25} ${b * 0.75}`;
+		});
+		const text = ['TITLE "Look"', 'LUT_3D_SIZE 2', 'DOMAIN_MAX 1 2 1', ...rows].join('\n');
+		serve({ 'https://game.example/look.cube': text });
+		const { textures, volumes } = volumeTextures();
+		const assets = new Assets(textures, PAGE);
+		const loaded = await assets.loadLut('/look.cube');
+		const made = await assets.lutFromData({
+			size: 2,
+			data: rows.flatMap((row) => row.split(' ').map(Number)),
+			domainMax: [1, 2, 1],
+			title: 'Look',
+		});
+		for (const lut of [loaded, made])
+			expect([lut.size, lut.title, lut.domainMin, lut.domainMax, lut.bytes]).toEqual([
+				2,
+				'Look',
+				[0, 0, 0],
+				[1, 2, 1],
+				32,
+			]);
+		expect(volumes.map(([, , call]) => call)).toEqual(['assets.loadLut', 'assets.lutFromData']);
+		expect(volumes[1]?.[1]).toEqual(volumes[0]?.[1] as Uint8Array);
+	});
+
+	test('numbers that make no table give E1208', async () => {
+		const assets = new Assets(volumeTextures().textures, PAGE);
+		expect(await codeOf(assets.lutFromData({ size: 2, data: [0, 0, 0] }))).toBe(
+			'E1208: assets.lutFromData() got 3 numbers for a table of 2 a side: give 24, three per texel, or 32, four per texel.',
+		);
+		expect(await codeOf(assets.lutFromData({ size: 300, data: [] }))).toBe(
+			'E1208: assets.lutFromData() got a table of 300 texels a side; the engine reads 2 to 256.',
 		);
 	});
 });

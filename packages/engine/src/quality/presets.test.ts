@@ -23,6 +23,7 @@ import {
 	type SettingValues,
 	SKETCH_SETTINGS,
 	takesValue,
+	targetFpsOption,
 } from './presets';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
@@ -128,6 +129,8 @@ describe('the preset table', () => {
 			'pointLightShadows',
 			'bloomSize',
 			'aoScale',
+			'dofSamples',
+			'reflectionScale',
 			'governor',
 			'depthPrepass',
 			'gpuOcclusion',
@@ -165,6 +168,8 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'dofSamples',
+			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
 			'antialias',
@@ -190,6 +195,8 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'dofSamples',
+			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
 		]);
@@ -237,6 +244,8 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 128,
 			aoScale: 0,
+			dofSamples: 0,
+			reflectionScale: 0.25,
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
@@ -260,6 +269,8 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0,
+			dofSamples: 22,
+			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 3,
@@ -283,6 +294,8 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0.5,
+			dofSamples: 43,
+			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
@@ -306,6 +319,8 @@ describe('presetSettings', () => {
 			...full,
 			bloomSize: 512,
 			aoScale: 0.5,
+			dofSamples: 71,
+			reflectionScale: 1,
 			softwareOcclusion: true,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
@@ -400,7 +415,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
@@ -451,6 +466,22 @@ describe('presetOption', () => {
 			`E1213: createEngine() got the preset "Ultra", which is not 'auto', 'low', 'medium', 'high' or 'ultra'.`,
 		);
 		for (const bad of ['epic', '', 2, null]) expect(() => presetOption(bad)).toThrow('E1213');
+	});
+});
+
+describe('targetFpsOption', () => {
+	it('takes display or a whole number from 1 up, and nothing for no setting', () => {
+		expect(targetFpsOption(undefined)).toBeUndefined();
+		expect(targetFpsOption('display')).toBe('display');
+		for (const fps of [1, 30, 120, 144]) expect(targetFpsOption(fps)).toBe(fps);
+	});
+
+	it('refuses any other value, with E1213', () => {
+		expect(() => targetFpsOption('max')).toThrow(
+			`E1213: createEngine() got "max" for targetFps, which is not 'display' or a whole number from 1 up.`,
+		);
+		for (const bad of [0, -60, 59.94, Number.POSITIVE_INFINITY, Number.NaN, '120', null])
+			expect(() => targetFpsOption(bad)).toThrow('E1213');
 	});
 });
 

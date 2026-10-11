@@ -297,7 +297,8 @@ describe('the warm-up time plan', () => {
 		mode: { preset: 'low' },
 		backgroundCompile: false,
 		freshShaders: fresh,
-		engineStartMs: 300,
+		// createEngine resolves after the preset check, which runs after the first frame.
+		engineStartMs: 1800 + warmUpMs + firstDrawMs,
 		firstFrameShownMs: 1000 + warmUpMs + firstDrawMs,
 		warmUpMs,
 		firstDrawMs,
@@ -328,7 +329,9 @@ describe('the warm-up time plan', () => {
 		];
 		const results = new Map(s4.map((item, k) => [item.id, result(loads[k] as WarmUpTimeResult)]));
 		const table = warmUpTimeSummary(s4, (id) => results.get(id))?.split('\n');
-		expect(table?.at(-1)).toBe('| s4 | webgl2 | low | no | 6 | 1000 | 2000 | 40 | 1040 |');
+		expect(table?.at(-1)).toBe(
+			'| s4 | webgl2 | low | no | 6 | 1000 | 2000 | 2800 | 40 | 1040 | 1840 |',
+		);
 	});
 });
 

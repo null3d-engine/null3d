@@ -49,7 +49,7 @@ pub(super) enum Drawn {
     /// them.
     #[default]
     Scene,
-    /// The scene objects that cast shadows, as the shadow cascades draw their depth.
+    /// The objects and instance rows that cast shadows, as the shadow cascades draw their depth.
     Casters,
     /// The scene objects that the sketch outlines, as the outline view draws them into the outline
     /// mask.
@@ -95,13 +95,15 @@ pub(super) struct Draw {
     pub(super) first_index: u32,
 }
 
-/// A batch's place in the layout: its data texture, its first row there, its bucket of rows
-/// (the bucket after it takes its clusters), and, for a static batch, its first cluster in the
-/// cluster texture.
+/// A batch's place in the layout: its data texture, its first row there, whether its rows have
+/// row values, which the row values texture beside its data texture holds at the same rows, its
+/// bucket of rows (the bucket after it takes its clusters), and, for a static batch, its first
+/// cluster in the cluster texture.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BatchSlot {
     pub(super) id: Handle,
     pub(super) dynamic: bool,
+    pub(super) values: bool,
     pub(super) base: u32,
     pub(super) bucket: u32,
     pub(super) first_cluster: u32,
@@ -134,6 +136,10 @@ pub(super) struct Layout {
     pub(super) scene_rows: u32,
     pub(super) resident_rows: u32,
     pub(super) streamed_rows: u32,
+    /// The rows of the resident and the streamed textures up to the last row of a batch with row
+    /// values, which the row values textures hold, or 0 for a texture without such rows.
+    pub(super) resident_value_rows: u32,
+    pub(super) streamed_value_rows: u32,
     /// Entries of the cluster texture: each static batch's room for clusters inside cells, whole
     /// clusters each.
     pub(super) cluster_rows: u32,
@@ -233,6 +239,7 @@ impl Layout {
         self.batches.clear();
         let (mut resident, mut streamed, mut clusters) = (self.scene_rows, 0u32, 0u32);
         let mut largest_static = 0;
+        let mut value_rows = [0u32; 2];
         for (id, batch) in batches.iter() {
             let dynamic = batch.is_dynamic();
             let rows = if dynamic {
@@ -240,14 +247,19 @@ impl Layout {
             } else {
                 &mut resident
             };
+            let values = batch.has_row_values();
             self.batches.push(BatchSlot {
                 id,
                 dynamic,
+                values,
                 base: *rows,
                 bucket: NO_BUCKET,
                 first_cluster: clusters,
             });
             *rows = rows.saturating_add(batch.capacity());
+            if values {
+                value_rows[usize::from(dynamic)] = *rows;
+            }
             if !dynamic {
                 clusters = clusters.saturating_add(cluster_room(batch.capacity()));
                 largest_static = largest_static.max(batch.capacity());
@@ -258,6 +270,7 @@ impl Layout {
         }
         self.resident_rows = resident;
         self.streamed_rows = streamed;
+        [self.resident_value_rows, self.streamed_value_rows] = value_rows;
         self.cluster_rows = clusters.saturating_mul(CLUSTER_ROWS);
         self.largest_static = largest_static;
 
@@ -266,8 +279,13 @@ impl Layout {
         let skin = |key: DrawKey, slot: Option<usize>| {
             slot.and_then(|slot| skins.key(slot, key)).unwrap_or(key)
         };
-        let key_of = |mesh: u32, material: u32, group: u32, object: u32, skinned: Option<usize>| {
-            let pipeline = settings.pipeline_of(mesh, material)?;
+        let key_of = |pipeline: Option<DrawKey>,
+                      mesh: u32,
+                      material: u32,
+                      group: u32,
+                      object: u32,
+                      skinned: Option<usize>| {
+            let pipeline = pipeline?;
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
                 Drawn::Casters => {
@@ -286,8 +304,9 @@ impl Layout {
                 }
                 Drawn::Scene => {}
             }
-            // Blended pairs draw in the transparent pass, which sorts them on the job workers.
-            if pipeline.blends() {
+            // Blended pairs, and pairs that let light through, draw in the transparent pass, which
+            // sorts them on the job workers.
+            if pipeline.sorts() {
                 return None;
             }
             let pipeline = if shadows.any() && object & flags::RECEIVE_SHADOWS != 0 {
@@ -322,9 +341,11 @@ impl Layout {
             if left_out {
                 return None;
             }
+            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
             key_of(
-                scene.meshes()[slot],
-                scene.materials()[slot],
+                settings.pipeline_of(mesh, material),
+                mesh,
+                material,
                 RESIDENT,
                 object,
                 Some(slot),
@@ -337,11 +358,19 @@ impl Layout {
                 any_key(slot)
             }
         };
-        // Instance batches cast no shadows yet, take no outlines, and no animated instance skins
-        // them.
-        let batch_key = |batch: &InstanceBatch| match drawn {
-            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0, None),
-            Drawn::Casters | Drawn::Outlined => None,
+        // Instance batches cast and receive shadows as their shadow bits say, take no outlines,
+        // and no animated instance skins them.
+        let batch_key = |batch: &InstanceBatch| {
+            let bits = batch.shadows();
+            match drawn {
+                Drawn::Casters if bits & flags::CAST_SHADOWS == 0 => None,
+                Drawn::Scene | Drawn::Casters => {
+                    let pipeline = settings.batch_pipeline_of(batch);
+                    let (mesh, material) = (batch.mesh(), batch.material());
+                    key_of(pipeline, mesh, material, group_of(batch), bits, None)
+                }
+                Drawn::Outlined => None,
+            }
         };
         collect_bucket_keys(
             &mut self.key_counts,
@@ -424,10 +453,12 @@ impl Layout {
             self.scene_buckets.push(bucket_of(scene_key(slot)));
         }
         let mut runs = self.scene_rows.div_ceil(CULL_CHUNK);
+        let mut batch_rows = 0u32;
         for ((_, batch), slot) in batches.iter().zip(&mut self.batches) {
             slot.bucket = bucket_of(batch_key(batch));
             if slot.bucket != NO_BUCKET {
                 runs += batch.capacity().div_ceil(CULL_CHUNK);
+                batch_rows = batch_rows.saturating_add(batch.capacity());
             }
         }
 
@@ -446,11 +477,11 @@ impl Layout {
             (self.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
         self.sorted_records_at = self.draws_slot_bytes;
-        // Only the scene's objects cast shadows or take outlines, so a cascade or the outline view
-        // lists at most the scene's rows.
+        // A cascade lists at most the scene's rows and the rows of the batches that cast, and the
+        // outline view the scene's rows, as batches take no outlines.
         let listed = match drawn {
             Drawn::Scene => resident.saturating_add(streamed),
-            Drawn::Casters | Drawn::Outlined => self.scene_rows,
+            Drawn::Casters | Drawn::Outlined => self.scene_rows.saturating_add(batch_rows),
         };
         self.room = CullRoom {
             rows: listed,
@@ -581,23 +612,35 @@ impl Clusters {
         self.scratch.try_reserve(layout.largest_static)
     }
 
+    /// The static batches that cull by cluster in the scene's layout or in the casters' layout,
+    /// as the scene's layout places them. A blended batch that casts shadows has a bucket in the
+    /// casters' layout alone. Both layouts list the same batches in the same order, at the same
+    /// places in the cluster texture.
+    fn clustered<'a>(
+        layout: &'a Layout,
+        casters: &'a Layout,
+    ) -> impl Iterator<Item = &'a BatchSlot> {
+        layout.batches.iter().enumerate().filter_map(|(k, slot)| {
+            (slot.clustered() || casters.batches.get(k).is_some_and(BatchSlot::clustered))
+                .then_some(slot)
+        })
+    }
+
     /// The static batches whose current clusters the cluster texture does not hold yet, with
     /// their cluster sets.
     fn uploads<'a>(
         &'a self,
         layout: &'a Layout,
+        casters: &'a Layout,
     ) -> impl Iterator<Item = (&'a BatchSlot, &'a ClusterSet)> {
-        layout
-            .batches
-            .iter()
-            .filter(|slot| slot.clustered())
+        Self::clustered(layout, casters)
             .map(|slot| (slot, self.set(slot)))
             .filter(|(_, set)| set.current && !set.uploaded)
     }
 
     /// The bytes that the next [`Clusters::upload`] copies into the arena.
-    pub(super) fn pending_bytes(&self, layout: &Layout) -> usize {
-        self.uploads(layout)
+    pub(super) fn pending_bytes(&self, layout: &Layout, casters: &Layout) -> usize {
+        self.uploads(layout, casters)
             .map(|(_, set)| set.clusters.order().len() * 4)
             .sum()
     }
@@ -610,8 +653,9 @@ impl Clusters {
         list: &mut DrawList,
         arena: &mut UploadArena,
         layout: &Layout,
+        casters: &Layout,
     ) -> Result<(), RecordError> {
-        for (slot, set) in self.uploads(layout) {
+        for (slot, set) in self.uploads(layout, casters) {
             let order = set.clusters.order();
             let (at, bytes) = arena.push_zeroed(order.len() * 4)?;
             for (k, &row) in order.iter().enumerate() {
@@ -625,7 +669,7 @@ impl Clusters {
             let rows = TextureRows::indices(slot.first_cluster * CLUSTER_ROWS, order.len() as u32);
             write_rows(list, ids::CLUSTERS, rows, at)?;
         }
-        for slot in layout.batches.iter().filter(|slot| slot.clustered()) {
+        for slot in Self::clustered(layout, casters) {
             let set = &mut self.sets[slot.id.slot() as usize];
             set.uploaded |= set.current;
         }

@@ -7,6 +7,8 @@
 // then, after the staging buffer is unmapped. Safari rejects a submit whose commands hold more than
 // one copy from a buffer that was still mapped when the copies were recorded.
 
+import { GpuMemory } from '../memory';
+
 /** Staging buffers at most. The GPU runs a frame or two behind, so a frame rarely finds none free. */
 const MAX_SLOTS = 3;
 /** The smallest staging buffer; the ring makes bigger ones when frames need more. */
@@ -63,7 +65,11 @@ export class StagingRing {
 	/** True after the ring made a staging buffer, until `takeMadeBuffer` reads it. */
 	private madeBuffer = false;
 
-	constructor(private readonly device: GPUDevice) {}
+	/** `memory` counts the staging buffers' bytes with the rest of the backend's GPU memory. */
+	constructor(
+		private readonly device: GPUDevice,
+		private readonly memory = new GpuMemory(),
+	) {}
 
 	/** True while copies wait for `flush`. */
 	get pending(): boolean {
@@ -160,7 +166,7 @@ export class StagingRing {
 	}
 
 	destroy(): void {
-		for (const slot of this.slots) slot.buffer.destroy();
+		for (const slot of this.slots) this.drop(slot);
 		this.slots.length = 0;
 		this.slot = undefined;
 		this.bytes = undefined;
@@ -195,7 +201,7 @@ export class StagingRing {
 			const candidate = this.slots[i] as Slot;
 			if (!candidate.free) continue;
 			if (candidate.capacity > fitting * SHRINK_RATIO) {
-				candidate.buffer.destroy();
+				this.drop(candidate);
 				this.slots.splice(i, 1);
 				if (small > i) small--;
 			} else if (candidate.capacity >= needed) slot ??= candidate;
@@ -203,7 +209,7 @@ export class StagingRing {
 		}
 		if (!slot) {
 			if (small >= 0) {
-				(this.slots[small] as Slot).buffer.destroy();
+				this.drop(this.slots[small] as Slot);
 				this.slots.splice(small, 1);
 			}
 			if (this.slots.length >= MAX_SLOTS) return false;
@@ -223,6 +229,7 @@ export class StagingRing {
 			mappedAtCreation: true,
 		});
 		this.madeBuffer = true;
+		this.memory.addBuffers(capacity);
 		const slot: Slot = {
 			buffer,
 			capacity,
@@ -233,10 +240,18 @@ export class StagingRing {
 			// A lost device or a destroyed ring rejects the mapping; the slot is gone for good.
 			onFailed: () => {
 				const index = this.slots.indexOf(slot);
-				if (index >= 0) this.slots.splice(index, 1);
+				if (index < 0) return;
+				this.slots.splice(index, 1);
+				this.memory.addBuffers(-capacity);
 			},
 		};
 		this.slots.push(slot);
 		return slot;
+	}
+
+	/** Destroys a slot's buffer, and takes its bytes off the memory total. */
+	private drop(slot: Slot): void {
+		slot.buffer.destroy();
+		this.memory.addBuffers(-slot.capacity);
 	}
 }

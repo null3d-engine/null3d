@@ -278,6 +278,61 @@ describe('WebGPUBackend', () => {
 		);
 		const events = log.filter((entry) => !entry.startsWith('background'));
 		expect(events).toEqual(['submit', `destroy ${256 * 8}`]);
+		// The buffer that stays counts as GPU memory, with its rows padded to 256 bytes, and the
+		// one destroyed no longer does.
+		expect(backend.gpuMemory.bytes[1]).toBe(256 * 32);
+	});
+
+	it('keeps a running total of the GPU memory that its textures and buffers take', () => {
+		const { device, textures } = fakeDevice();
+		const canvas = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
+		const context = { getCurrentTexture: () => canvas } as unknown as GPUCanvasContext;
+		const backend = new WebGPUBackend(device, context, 'rgba8unorm', SHADERS);
+		const [textureBytes, bufferBytes] = backend.gpuMemory.bytes;
+		expect([textureBytes, bufferBytes]).toEqual([0, 0]);
+		const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT;
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_BUFFER, 1, 1000, G.BUFFER_USAGE_VERTEX],
+				[G.OP_CREATE_BUFFER, 2, 512, G.BUFFER_USAGE_UNIFORM],
+				// 64 x 64 with its levels of 32 x 32 and 16 x 16, in 2 layers.
+				texture(3, 64, 2, 3, G.VIEW_2D_ARRAY),
+				[G.OP_CREATE_TEXTURE, 4, 64, 64, 1, G.FORMAT_RGBA8_UNORM, target, 4, 1, G.VIEW_2D],
+				[G.OP_CREATE_TEXTURE, 5, 128, 128, 1, G.FORMAT_DEPTH24_PLUS, target, 1, 1, G.VIEW_2D],
+				[G.OP_CREATE_TEXTURE_VIEW, 6, 3, 0, 1],
+			),
+		);
+		const layered = 2 * (64 * 64 + 32 * 32 + 16 * 16) * 4;
+		const multisampled = 64 * 64 * 4 * 4;
+		const depth = 128 * 128 * 4;
+		expect([...backend.gpuMemory.bytes]).toEqual([layered + multisampled + depth, 1512]);
+		// A buffer made again under its id replaces the old one's bytes, and a destroyed one's go.
+		replay(
+			backend,
+			drawList(
+				[G.OP_CREATE_BUFFER, 1, 4000, G.BUFFER_USAGE_VERTEX],
+				[G.OP_DESTROY_BUFFER, 2],
+				[G.OP_DESTROY_TEXTURE, 5],
+				[G.OP_DESTROY_TEXTURE, 6],
+			),
+		);
+		expect([...backend.gpuMemory.bytes]).toEqual([layered + multisampled, 4000]);
+		// A capture's stand-in for a target that resolved into the canvas counts while it lasts.
+		const frame = drawList(
+			[G.OP_BEGIN_RENDER_PASS, 4, 0, G.NO_TARGET, 0, 0, 0, 0, G.PASS_CLEAR_COLOR],
+			[G.OP_END_RENDER_PASS],
+		);
+		replay(backend, frame);
+		backend.canvasTarget = canvas;
+		replay(backend, frame);
+		expect(backend.gpuMemory.bytes[0]).toBe(layered + 2 * multisampled);
+		backend.endCapture();
+		expect(backend.gpuMemory.bytes[0]).toBe(layered + multisampled);
+		backend.destroy();
+		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
+		// Every texture but the canvas, the first one made, is gone.
+		expect(textures.slice(1).filter((made) => !made.destroyed)).toEqual([]);
 	});
 
 	/** A backend in a browser with `userAgent`, which replays a list of indirect draws. */
@@ -338,7 +393,7 @@ describe('WebGPUBackend', () => {
 
 	it('draws straight from the shared buffer of arguments in other browsers', () => {
 		const { usage, log } = drawIndirect(MAC_CHROME);
-		expect(usage).toBe(INDIRECT);
+		expect(usage).toBe(INDIRECT | G.BUFFER_USAGE_COPY_SRC);
 		expect(log).toEqual([
 			'begin pass',
 			'draw from buffer 0 at 0',

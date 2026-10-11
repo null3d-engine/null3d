@@ -200,6 +200,25 @@ describe('quantizeMeshes', () => {
 		});
 	});
 
+	it('keeps the float positions of a mesh whose extras ask for them, and quantizes the rest', () => {
+		const doc = new Document();
+		const scene = doc.createScene();
+		const kept = grid(doc, 4, 700, [300, 0, -200]).setExtras({ quantizePositions: false });
+		const other = grid(doc, 4, 700, [300, 0, -200]);
+		const keptNode = doc.createNode('kept').setMesh(kept).setTranslation([1, 2, 3]);
+		const otherNode = doc.createNode('other').setMesh(other).setTranslation([1, 2, 3]);
+		scene.addChild(keptNode).addChild(otherNode);
+		const before = worldVertices(keptNode);
+		quantizeMeshes(doc);
+
+		const position = (mesh: typeof kept) => mesh.listPrimitives()[0]!.getAttribute('POSITION')!;
+		expect(position(kept).getArray()).toBeInstanceOf(Float32Array);
+		expect(keptNode.getTranslation()).toEqual([1, 2, 3]);
+		expect(keptNode.getScale()).toEqual([1, 1, 1]);
+		expect(worldVertices(keptNode)).toEqual(before);
+		expect(position(other).getArray()).toBeInstanceOf(Uint16Array);
+	});
+
 	it('folds the dequantizing transform into the inverse bind matrices of a skin', async () => {
 		const doc = new Document();
 		const scene = doc.createScene();

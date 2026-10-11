@@ -28,6 +28,16 @@ export default defineSketch(({ quality }) => {
 
 Do not force a heavier preset on phones. When a player picks one in a menu, pass it to `createEngine` with the `preset` option.
 
+Low, the phone's preset, leaves out the costliest work:
+
+- Ambient occlusion draws nothing on Low and Medium, even when the sketch turns it on.
+- Bloom's chain starts from a base of 128 pixels, a quarter of the base on the other presets.
+- FXAA smooths edges in place of MSAA, whose samples cost a phone's GPU more memory traffic.
+- On WebGL2, each object keeps only its 8 largest morph target weights, and occlusion culling on the job workers is off.
+- On WebGL2, the depth prepass draws on every preset. In the S4 benchmark on an iPad, it took Low from 38 to 60 frames per second ([Performance guide](performance.md#the-depth-prepass)).
+
+[Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) lists every setting of each preset.
+
 ## Pixel ratio
 
 The GPU fills every device pixel of the canvas, and a screen's device pixels grow with the square of its pixel ratio. So the pixel ratio is the largest cost you can cap. A full-screen canvas on a phone of 390 x 844 CSS pixels fills:
@@ -48,7 +58,7 @@ Text and fine lines in the scene get softer at a lower scale. The scaling also t
 
 ## Shadows
 
-A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge. So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values.
+A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge. So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values. The shadow map stores each depth in 16 bits, which takes half the memory of 32-bit depths.
 
 ## Memory
 
@@ -68,19 +78,29 @@ To use less memory, share meshes and materials, draw many copies with instance b
 
 Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order. A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
 
-Load large textures from KTX2 files. Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB, or 0.7 MiB in ETC2 without alpha. Encode its mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
+Load large textures from KTX2 files. `bunx @null3d/cli assets optimize` encodes them ([The asset pipeline](assets-pipeline.md)). Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB, or 0.7 MiB in ETC2 without alpha. Encode its mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
 
-A page that starts a second engine, for example in a single-page app, waits for the first engine's `destroy()` promise. The browser frees the first engine's memory only then.
+A page that starts a second engine, for example in a single-page app, waits for the first engine's `destroy()` promise. The page keeps the first engine's shared memory for about 30 seconds, and the second engine takes it. So the browser need not give new memory. When the browser refuses memory at the start, the engine tries again for about 45 seconds. Then it fails with [E1109](../errors/E1109.md). `onProgress` reports `memory-wait` after 10 seconds, so the page can tell the user ([Engine](../api/engine.md#the-running-engine)).
+
+The scene's object tables start small and double as the scene grows. On a Galaxy S25 or a Pixel 9, a growth from 16,383 to 32,767 objects took 2.4 to 5.3 ms. For a large scene, set `createEngine`'s `expectedObjects` option, so the tables never grow during play.
 
 When the tab crashes during a start, the next start of the sketch runs one preset lower. A second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.
 
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale, then the live shadow settings. The `quality.onChange` handlers run after each shadow step, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers the render scale first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
 
 ## Touch input
 
-The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches.
+The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)).
+
+## Networks and repeat visits
+
+Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in the browser's Cache Storage, so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
+
+## Browsers on iPhone and iPad
+
+Every browser on iPhone and iPad runs Safari's WebKit engine. null3D needs Safari 18 or later there, and `createEngine` fails with [E1306](../errors/E1306.md) on an older version. [GPU tiers and backends](../concepts/backends.md#minimum-browsers) says why.
 
 ## Testing on real devices
 

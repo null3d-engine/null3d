@@ -49,12 +49,14 @@ describe('changedLiterals', () => {
 });
 
 describe('hot state', () => {
-	it('swaps a material whose uniforms, textures and vertex inputs stay', () => {
+	it('swaps a material whose uniforms, textures, vertex inputs and vertex offset stay', () => {
 		const hot = new HotState();
 		const tint = [{ name: 'tint', type: 'vec3f', offset: 0 }] as const;
 		hot.remember('a.wgsl', material(tint));
+		expect(hot.swaps('a.wgsl', { ...material(tint), functions: ['surface'] })).toBe(true);
+		// A vertex offset that comes or goes changes the material's shadow casters.
 		expect(hot.swaps('a.wgsl', { ...material(tint), functions: ['surface', 'vertexOffset'] })).toBe(
-			true,
+			false,
 		);
 		expect(hot.swaps('a.wgsl', material())).toBe(false);
 		expect(hot.swaps('a.wgsl', { ...material(tint), locations: [0, 1, 2, 5] })).toBe(false);

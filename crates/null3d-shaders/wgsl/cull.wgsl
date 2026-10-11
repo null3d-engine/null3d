@@ -10,6 +10,8 @@
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
+// Each copy also holds its instance's index, where the vertex shaders of rows with row values find
+// them.
 //
 // The offsets come from a data texture, one row per view and one texel per cell, which each thread
 // reads at its own cell. A table in the uniform parameters, read at each thread's own index, gave
@@ -232,7 +234,7 @@ fn append(s: Survivor, draws_before: u32) {
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, 0u, 0u);
+    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, 0u);
 }
 
 #ifndef OCCLUSION

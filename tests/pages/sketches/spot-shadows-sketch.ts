@@ -3,8 +3,12 @@
 // tile of the shadow atlas. A box on the right receives shadows but casts none, a post casts but
 // receives none, and an unlit box shows no shadow on itself. The page's ?shadowTileSize= switch
 // fixes the tile size, and the sketch fixes the 3 x 3 shadow filter, so every GPU tier draws the
-// same image whatever preset it runs.
-import { defineSketch } from '@null3d/engine';
+// same image whatever preset it runs. ?batches draws the ground's objects as rows of instance
+// batches of one row each, which must cast and receive as the objects do.
+import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
+
+/** Whether the objects draw as instance rows, from the sketch module's ?batches switch. */
+const BATCHES = new URL(import.meta.url).searchParams.has('batches');
 
 export default defineSketch(({ scene, materials, geometry, quality }) => {
 	quality.set({ shadowFilter: 3 });
@@ -47,6 +51,22 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 	const unlit = materials.unlit({ color: '#b06ce0' });
 	const box = geometry.box();
 	const both = { castShadows: true, receiveShadows: true };
+	const place = (options: {
+		mesh: MeshGeometry;
+		material: Material;
+		position: [number, number, number];
+		castShadows?: boolean;
+		receiveShadows?: boolean;
+	}) => {
+		if (!BATCHES) {
+			scene.createMesh(options);
+			return;
+		}
+		const { mesh, position, ...rest } = options;
+		const batch = scene.createInstances(mesh, 1, rest);
+		batch.positions.set(position);
+		batch.markDirty();
+	};
 
 	scene.createMesh({
 		mesh: geometry.box({ width: 40, height: 0.2, depth: 40 }),
@@ -54,25 +74,25 @@ export default defineSketch(({ scene, materials, geometry, quality }) => {
 		position: [0, -0.1, -4],
 		receiveShadows: true,
 	});
-	scene.createMesh({ mesh: box, material: red, position: [-1.5, 0.5, -1], ...both });
-	scene.createMesh({
+	place({ mesh: box, material: red, position: [-1.5, 0.5, -1], ...both });
+	place({
 		mesh: geometry.sphere({ radius: 0.7 }),
 		material: yellow,
 		position: [0.5, 0.7, -2.5],
 		...both,
 	});
-	scene.createMesh({
+	place({
 		mesh: geometry.box({ width: 0.4, height: 4, depth: 0.4 }),
 		material: blue,
 		position: [2, 2, -1],
 		castShadows: true,
 	});
 	// A box that receives shadows but casts none, in the post's shadow.
-	scene.createMesh({
+	place({
 		mesh: box,
 		material: green,
 		position: [-0.2, 0.5, 0.5],
 		receiveShadows: true,
 	});
-	scene.createMesh({ mesh: box, material: unlit, position: [-3, 0.5, -3], ...both });
+	place({ mesh: box, material: unlit, position: [-3, 0.5, -3], ...both });
 });

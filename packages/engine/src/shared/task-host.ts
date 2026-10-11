@@ -11,10 +11,40 @@ export interface JobTaskHost {
 	ports: readonly MessagePort[];
 	/** Asks job worker `index` to leave the job loop for one more task, once no frame work waits. */
 	call(index: number): void;
+	/**
+	 * Asks for at least `count` job workers, and returns how many have been asked for: the ports
+	 * of those workers take tasks. The page starts the job workers only as the work asks for them.
+	 */
+	want(count: number): number;
+}
+
+/**
+ * Asks for job workers as the work grows, up to `most` of them: `start` starts them up to a count.
+ * Returns the function that asks for a count, which returns how many have been asked for in all.
+ * A count at or below that changes nothing, so the workers never shrink.
+ */
+export function jobAsker(most: number, start: (count: number) => void): (count: number) => number {
+	let asked = 0;
+	return (count) => {
+		const wanted = Math.min(count, most);
+		if (wanted > asked) {
+			asked = wanted;
+			start(wanted);
+		}
+		return asked;
+	};
 }
 
 const HOST = Symbol.for('null3d.jobTasks');
-const thread = globalThis as { [HOST]?: JobTaskHost };
+/**
+ * The global function that the core calls when it queues work between frames, such as a model's
+ * animation clips, before any job worker has joined. Only job workers run that work.
+ */
+const WANT_JOB_WORKERS = '__null3dWantJobWorkers';
+const thread = globalThis as { [HOST]?: JobTaskHost; [WANT_JOB_WORKERS]?: () => void };
+// The core asks for the first job workers, as the loader's first task does. A thread without a
+// running engine asks for none.
+thread[WANT_JOB_WORKERS] = () => thread[HOST]?.want(2);
 
 /** Gives this thread the job workers' task ports. */
 export function setJobTasks(host: JobTaskHost): void {

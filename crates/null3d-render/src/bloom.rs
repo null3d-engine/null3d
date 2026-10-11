@@ -304,9 +304,65 @@ const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
 
 /// A texture's size and the corner that a frame draws into it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Area {
-    extent: (u32, u32),
-    corner: (u32, u32),
+pub(crate) struct Area {
+    pub(crate) extent: (u32, u32),
+    pub(crate) corner: (u32, u32),
+}
+
+/// How a full-screen step reads a source from its target: the source's texture coordinates of each
+/// of the target's pixels, the bounds of the source's drawn corner, and the source's size. A pixel's
+/// place in the target's corner maps onto the source's corner. WebGL2 counts rows from the bottom
+/// (`rows_from_bottom`) and draws a corner into a texture's last rows, so the map starts there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CornerMap {
+    /// xy: the source's texture coordinates per pixel of the target. zw: those of the target's
+    /// first pixel.
+    pub(crate) map: [f32; 4],
+    /// The texture coordinates of the centers of the source corner's first and last texels.
+    pub(crate) bounds: [f32; 4],
+    /// The source's size in texels, then one texel in texture coordinates.
+    pub(crate) source: [f32; 4],
+}
+
+impl CornerMap {
+    /// The area of a texture of `size` for a frame of `canvas` at render scale `scale`.
+    pub(crate) fn area(size: Size, canvas: (u32, u32), scale: RenderScale) -> Area {
+        Area {
+            extent: size.extent(canvas),
+            corner: size.viewport(canvas, scale),
+        }
+    }
+
+    /// The map from `target`'s drawn corner onto `source`'s.
+    pub(crate) fn new(source: Area, target: Area, rows_from_bottom: bool) -> Self {
+        let (extent, corner, drawn) = (source.extent, source.corner, target.corner);
+        let per_pixel = [
+            corner.0 as f32 / (drawn.0 as f32 * extent.0 as f32),
+            corner.1 as f32 / (drawn.1 as f32 * extent.1 as f32),
+        ];
+        let source_rows = rows_before(extent.1, corner.1, rows_from_bottom) as f32;
+        let target_rows = rows_before(target.extent.1, drawn.1, rows_from_bottom) as f32;
+        Self {
+            map: [
+                per_pixel[0],
+                per_pixel[1],
+                0.0,
+                source_rows / extent.1 as f32 - target_rows * per_pixel[1],
+            ],
+            bounds: [
+                0.5 / extent.0 as f32,
+                (source_rows + 0.5) / extent.1 as f32,
+                (corner.0 as f32 - 0.5) / extent.0 as f32,
+                (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
+            ],
+            source: [
+                extent.0 as f32,
+                extent.1 as f32,
+                1.0 / extent.0 as f32,
+                1.0 / extent.1 as f32,
+            ],
+        }
+    }
 }
 
 /// Where the chain's textures and corners lie in one frame.
@@ -334,10 +390,7 @@ impl Layout {
 
     /// The scene color's area: the canvas, and the corner of the render scale.
     fn scene(self) -> Area {
-        Area {
-            extent: Size::Full.extent(self.canvas),
-            corner: Size::Full.viewport(self.canvas, self.scale),
-        }
+        CornerMap::area(Size::Full, self.canvas, self.scale)
     }
 }
 
@@ -355,37 +408,22 @@ fn step_block(
     let (level, source_level, up) = chain_step(step, levels);
     let source = source_level.map_or(layout.scene(), |l| layout.level(l));
     let target = layout.level(level);
-    let (extent, corner, drawn) = (source.extent, source.corner, target.corner);
-    let per_pixel = [
-        corner.0 as f32 / (drawn.0 as f32 * extent.0 as f32),
-        corner.1 as f32 / (drawn.1 as f32 * extent.1 as f32),
-    ];
-    // A pixel's place in the target's corner maps onto the source's corner.
-    let source_rows = rows_before(extent.1, corner.1, rows_from_bottom) as f32;
-    let target_rows = rows_before(target.extent.1, drawn.1, rows_from_bottom) as f32;
-    let origin = [
-        0.0,
-        source_rows / extent.1 as f32 - target_rows * per_pixel[1],
-        0.0,
-        0.0,
-    ];
-    let bounds = [
-        0.5 / extent.0 as f32,
-        (source_rows + 0.5) / extent.1 as f32,
-        (corner.0 as f32 - 0.5) / extent.0 as f32,
-        (source_rows + corner.1 as f32 - 0.5) / extent.1 as f32,
-    ];
+    let CornerMap {
+        map,
+        bounds,
+        source: texel,
+    } = CornerMap::new(source, target, rows_from_bottom);
     // A step down spaces its taps by half a pixel of its target: a source texel where the source
     // has twice the target's size. A step up spaces its tent by a texel of its source.
     let spacing = if up {
-        [1.0 / extent.0 as f32, 1.0 / extent.1 as f32]
+        [texel[2], texel[3]]
     } else {
-        [0.5 * per_pixel[0], 0.5 * per_pixel[1]]
+        [0.5 * map[0], 0.5 * map[1]]
     };
     let first = source_level.is_none();
     StepBlock {
-        scale: [per_pixel[0], per_pixel[1], spacing[0], spacing[1]],
-        origin,
+        scale: [map[0], map[1], spacing[0], spacing[1]],
+        origin: [map[2], map[3], 0.0, 0.0],
         bounds,
         threshold: if first { bloom.threshold.max(0.0) } else { 0.0 },
         knee: bloom.knee.max(0.0),

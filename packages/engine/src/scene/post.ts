@@ -1,8 +1,9 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
 // occlusion, which darkens the ambient light of the camera's opaque objects, outlines, the
-// vignette, which the final pass applies before the tone mapping, and the color grading table,
-// which it applies after. The core takes one exposure: the sketch's exposure times the camera
+// vignette, which the final pass applies before the tone mapping, the color grading table, which
+// it applies after, and depth of field, which blurs by distance before bloom. The core takes one
+// exposure: the sketch's exposure times the camera
 // exposure of its EV100. The sketch's custom effects and custom tone curve come through here too
 // (see `effects.ts`).
 
@@ -11,6 +12,7 @@ import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { fromHex } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
+import type { Vec3Like } from '../math/types';
 import { type ColorInput, isComponent } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
 import { Lut } from './lut';
@@ -61,8 +63,11 @@ const SETTINGS = [
 	'lutIntensity',
 	'vignette',
 	'outline',
+	'dof',
 ] as const;
-const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
+/** Bloom's number settings, in the order of their places in the core's block from its intensity on. */
+const BLOOM_NUMBERS = ['intensity', 'threshold', 'knee'] as const;
+const BLOOM_SETTINGS = [...BLOOM_NUMBERS, 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
 const BLENDS = { mix: 0, add: 1, screen: 2 } as const;
 /** The levels of bloom's chain, which take a weight each. */
@@ -78,8 +83,21 @@ const AO_SETTINGS = [
 ] as const;
 /** The most samples of ambient occlusion's horizon search. */
 const MAX_AO_SAMPLES = 64;
+/**
+ * The vignette's settings: its intensity and size have places in the core's block from the
+ * intensity's on, and its falloff and roundness from the falloff's on.
+ */
 const VIGNETTE_SETTINGS = ['intensity', 'size', 'falloff', 'roundness'] as const;
+const VIGNETTE_FIRST = VIGNETTE_SETTINGS.slice(0, 2);
+const VIGNETTE_LAST = VIGNETTE_SETTINGS.slice(2);
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
+/**
+ * Depth of field's number settings, in the order of their places in the core's block from its
+ * focus distance on.
+ */
+const DOF_NUMBERS = ['focusDistance', 'aperture', 'focalLength', 'maxBlur', 'blades'] as const;
+/** The most blur that depth of field takes, as a share of the image's height. */
+const MAX_DOF_BLUR = 0.1;
 const TONE_MAPPINGS = "'agx', 'agx-punchy', 'neutral', 'aces' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
@@ -240,6 +258,50 @@ export interface OutlineSettings {
 }
 
 /**
+ * Depth of field's settings: a camera lens's blur, which keeps sharp only what lies near the focus
+ * distance. The lens is a photographer's: a focal length in millimetres on a full-frame sensor, 24
+ * mm tall, and an aperture as an f-number. World units count as metres. A setting that a call
+ * leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface DofSettings {
+	/**
+	 * The distance from the camera, along its view, that is sharp, in world units: above 0, and 10
+	 * by default. Setting it stops a focus on `focusPoint`.
+	 */
+	focusDistance?: number;
+	/**
+	 * A point in the world to focus on in every frame, as a camera's autofocus does: the focus
+	 * follows the camera and the point. `false`, the default, focuses at `focusDistance`. The
+	 * engine reads the point when `post.set` runs, so a sketch that follows a moving point passes
+	 * it again each frame.
+	 */
+	focusPoint?: Vec3Like | false;
+	/**
+	 * The aperture as an f-number, above 0, and 2.8 by default. A lower number opens the lens and
+	 * blurs more: f/1.4 blurs twice as much as f/2.8.
+	 */
+	aperture?: number;
+	/**
+	 * The lens's focal length in millimetres, above 0, or `'camera'`, the default, for the active
+	 * camera's: its field of view on a full-frame sensor, which `camera.setFocalLength` sets. A
+	 * longer lens blurs more at the same aperture.
+	 */
+	focalLength?: number | 'camera';
+	/**
+	 * The largest blur radius, as a share of the image's height: 0 to 0.1, and 0.02 by default. It
+	 * caps the blur of things very near the camera, and the gather never reaches further.
+	 */
+	maxBlur?: number;
+	/**
+	 * The shape of out-of-focus highlights, the bokeh: 0, the default, for a round aperture, or a
+	 * whole number from 3 to 12 for a polygon with that many blades.
+	 */
+	blades?: number;
+}
+
+/**
  * Settings for `post.set`. A setting that the call leaves out keeps its value.
  *
  * @category api/post
@@ -282,8 +344,9 @@ export interface PostSettings {
 	 */
 	ao?: AoSettings | false;
 	/**
-	 * A color grading table from `assets.loadLut`, which maps each pixel's color after the tone
-	 * mapping, as three.js's `LUTPass` does. `false` turns it off. It is off by default.
+	 * A color grading table from `assets.loadLut` or `assets.lutFromData`, which maps each pixel's
+	 * color after the tone mapping, as three.js's `LUTPass` does. `false` turns it off. It is off
+	 * by default.
 	 */
 	lut?: Lut | false;
 	/**
@@ -301,6 +364,31 @@ export interface PostSettings {
 	 * `{}` with the values they had, and `false` turns them off. They are off by default.
 	 */
 	outline?: OutlineSettings | false;
+	/**
+	 * Depth of field: blurs what lies in front of and behind the focus distance, as a camera lens
+	 * does, with the near and far fields apart, as three.js's `BokehPass` intends. It runs after
+	 * the custom effects and before bloom. Settings turn it on, `{}` with the values it had, and
+	 * `false` turns it off. It is off by default, and draws only where the quality setting
+	 * `dofSamples` is above 0.
+	 */
+	dof?: DofSettings | false;
+}
+
+/**
+ * Writes each setting of `group` that `keys` names and that the call gives as a number into the
+ * post-processing values, the first key's at `place` and each next key's after it. It leaves the
+ * values of the settings that the call leaves out.
+ */
+function writeNumbers(
+	values: Float32Array,
+	place: number,
+	group: object,
+	keys: readonly string[],
+): void {
+	for (let k = 0; k < keys.length; k++) {
+		const value = (group as Record<string, unknown>)[keys[k] as string];
+		if (typeof value === 'number') values[place + k] = value;
+	}
 }
 
 /** Scratch for a hex color's linear components, so reading one allocates nothing. */
@@ -343,6 +431,8 @@ export class Post {
 	private lut: Lut | false = false;
 	private vignette = false;
 	private outline = false;
+	private dof = false;
+	private warnedNoDof = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -431,7 +521,7 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
 			settings;
 		const { core } = this;
 		const { glue } = core;
@@ -473,15 +563,13 @@ export class Post {
 		if (vignette !== undefined) {
 			this.vignette = vignette !== false;
 			if (vignette !== false) {
-				const { intensity, size, falloff, roundness } = vignette;
-				if (intensity !== undefined) values[C.POST_VALUE_VIGNETTE_INTENSITY] = intensity;
-				if (size !== undefined) values[C.POST_VALUE_VIGNETTE_SIZE] = size;
-				if (falloff !== undefined) values[C.POST_VALUE_VIGNETTE_FALLOFF] = falloff;
-				if (roundness !== undefined) values[C.POST_VALUE_VIGNETTE_ROUNDNESS] = roundness;
+				writeNumbers(values, C.POST_VALUE_VIGNETTE_INTENSITY, vignette, VIGNETTE_FIRST);
+				writeNumbers(values, C.POST_VALUE_VIGNETTE_FALLOFF, vignette, VIGNETTE_LAST);
 			}
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
 		if (ao !== undefined) this.setAo(ao, values);
+		if (dof !== undefined) this.setDof(dof, values);
 		if (outline !== undefined) {
 			this.outline = outline !== false;
 			if (outline !== false) {
@@ -499,10 +587,8 @@ export class Post {
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
-			const { intensity, threshold, knee, blend, weights } = bloom;
-			if (intensity !== undefined) values[C.POST_VALUE_BLOOM_INTENSITY] = intensity;
-			if (threshold !== undefined) values[C.POST_VALUE_BLOOM_THRESHOLD] = threshold;
-			if (knee !== undefined) values[C.POST_VALUE_BLOOM_KNEE] = knee;
+			const { blend, weights } = bloom;
+			writeNumbers(values, C.POST_VALUE_BLOOM_INTENSITY, bloom, BLOOM_NUMBERS);
 			if (blend !== undefined && Object.hasOwn(BLENDS, blend))
 				values[C.POST_VALUE_BLOOM_BLEND] = BLENDS[blend];
 			if (weights !== undefined)
@@ -519,20 +605,34 @@ export class Post {
 		core.check(glue.setBloom(this.bloom), 'post.set', undefined, true);
 	}
 
+	/** Turns depth of field on with the settings that `dof` gives, or off with `false`. */
+	private setDof(dof: DofSettings | false, values: Float32Array): void {
+		this.dof = dof !== false;
+		if (dof) {
+			writeNumbers(values, C.POST_VALUE_DOF_FOCUS_DISTANCE, dof, DOF_NUMBERS);
+			if (dof.focalLength === 'camera') values[C.POST_VALUE_DOF_FOCAL_LENGTH] = 0;
+			const point = dof.focusPoint ?? (dof.focusDistance === undefined ? undefined : false);
+			if (point !== undefined) {
+				values[C.POST_VALUE_DOF_FOCUS_ON_POINT] = point ? 1 : 0;
+				if (point)
+					for (let axis = 0; axis < 3; axis++)
+						values[C.POST_VALUE_DOF_FOCUS_POINT + axis] = point[axis] as number;
+			}
+		}
+		if (DEV && this.dof && !this.hdrEffects && !this.warnedNoDof) {
+			this.warnedNoDof = true;
+			console.warn(
+				'null3D: depth of field stays off on this device: it needs HDR color, and the device has no HDR target. See the post-processing concepts page.',
+			);
+		}
+		if (this.dof && this.hdrEffects) this.shaders.need('dof');
+		this.core.check(this.core.glue.setDof(this.dof), 'post.set', undefined, true);
+	}
+
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
 	private setAo(ao: AoSettings | false, values: Float32Array): void {
 		this.ao = ao !== false;
-		if (ao !== false) {
-			if (ao.radius !== undefined) values[C.POST_VALUE_AO_RADIUS] = ao.radius;
-			if (ao.thickness !== undefined) values[C.POST_VALUE_AO_THICKNESS] = ao.thickness;
-			if (ao.distanceExponent !== undefined)
-				values[C.POST_VALUE_AO_DISTANCE_EXPONENT] = ao.distanceExponent;
-			if (ao.distanceFalloff !== undefined)
-				values[C.POST_VALUE_AO_DISTANCE_FALLOFF] = ao.distanceFalloff;
-			if (ao.scale !== undefined) values[C.POST_VALUE_AO_SCALE] = ao.scale;
-			if (ao.samples !== undefined) values[C.POST_VALUE_AO_SAMPLES] = ao.samples;
-			if (ao.intensity !== undefined) values[C.POST_VALUE_AO_INTENSITY] = ao.intensity;
-		}
+		if (ao !== false) writeNumbers(values, C.POST_VALUE_AO_RADIUS, ao, AO_SETTINGS);
 		const on = this.ao && this.occlusionTargets;
 		if (on) this.shaders.need('ao');
 		if (DEV && this.ao && !this.occlusionTargets && !this.warnedNoAo) {
@@ -560,11 +660,11 @@ export class Post {
 	}
 
 	/**
-	 * @internal True while the sketch uses something that needs HDR color: bloom, a custom effect
-	 * or a custom tone curve.
+	 * @internal True while the sketch uses something that needs HDR color: bloom, depth of field, a
+	 * custom effect or a custom tone curve.
 	 */
 	get needsHdr(): boolean {
-		return this.bloom || this.toneCurve !== undefined || this.effects.any;
+		return this.bloom || this.dof || this.toneCurve !== undefined || this.effects.any;
 	}
 
 	/**
@@ -627,10 +727,11 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette and outline.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline and dof.`,
 			);
-	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline } =
+	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
 		settings;
+	checkDof(dof);
 	checkGroup(
 		'ao',
 		ao,
@@ -656,7 +757,7 @@ function checkSettings(settings: PostSettings): void {
 	if (lut !== undefined && lut !== false && !(lut instanceof Lut))
 		throw new EngineError(
 			'E1213',
-			`post.set() got ${String(lut)} for lut, which takes a table from assets.loadLut() or false.`,
+			`post.set() got ${String(lut)} for lut, which takes a table from assets.loadLut() or assets.lutFromData(), or false.`,
 		);
 	checkNumber('lutIntensity', lutIntensity, 1);
 	if (
@@ -712,6 +813,51 @@ function checkSettings(settings: PostSettings): void {
 		throw new EngineError(
 			'E1213',
 			'post.set() got bloom weights that are all 0. Give at least one level a weight above 0.',
+		);
+}
+
+/** Throws E1213 for a value that is not above 0, after `checkNumber`'s checks. */
+function checkPositive(name: string, value: number | undefined): void {
+	checkNumber(name, value);
+	if (value === 0)
+		throw new EngineError('E1213', `post.set() got 0 for ${name}, which is above 0.`);
+}
+
+/** Throws the error of the first depth of field setting that `post.set` cannot take. */
+function checkDof(dof: DofSettings | false | undefined): void {
+	checkGroup(
+		'dof',
+		dof,
+		[...DOF_NUMBERS, 'focusPoint'],
+		'focusDistance, focusPoint, aperture, focalLength, maxBlur and blades',
+	);
+	if (!dof) return;
+	const { focusDistance, focusPoint, aperture, focalLength, maxBlur, blades } = dof;
+	checkPositive('dof.focusDistance', focusDistance);
+	checkPositive('dof.aperture', aperture);
+	if (focalLength !== 'camera') checkPositive('dof.focalLength', focalLength);
+	checkNumber('dof.maxBlur', maxBlur, MAX_DOF_BLUR);
+	if (
+		blades !== undefined &&
+		blades !== 0 &&
+		!(Number.isInteger(blades) && blades >= 3 && blades <= 12)
+	)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${blades} for dof.blades, which takes 0 for a round aperture or a whole number from 3 to 12.`,
+		);
+	if (
+		focusPoint !== undefined &&
+		focusPoint !== false &&
+		!(
+			typeof focusPoint === 'object' &&
+			focusPoint !== null &&
+			[0, 1, 2].every((axis) => Number.isFinite(focusPoint[axis]))
+		)
+	)
+		throw new EngineError(
+			'E1213',
+			`post.set() got ${String(focusPoint)} for dof.focusPoint, which takes a point of three finite numbers, such as [0, 1, -5], or false.`,
 		);
 }
 
