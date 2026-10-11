@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR

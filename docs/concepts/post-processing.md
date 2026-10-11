@@ -8,7 +8,7 @@ summary: "HDR scene color, ambient occlusion and screen-space reflections at hal
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR

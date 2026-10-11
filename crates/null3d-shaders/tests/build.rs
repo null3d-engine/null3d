@@ -7,11 +7,10 @@ mod precision;
 use common::{
     SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
 };
-use std::sync::OnceLock;
 
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs, Output,
-    literals_safari_refuses, typescript,
+    ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs, Output,
+    ShaderSource, literals_safari_refuses, typescript,
 };
 use precision::{newer_built_in_calls, precision_breaks};
 
@@ -584,6 +583,60 @@ fn flat_interpolation_without_either_is_rejected() {
     }
 }
 
+/// A compute shader that claims a slot with an atomic compare-exchange.
+const COMPARE_EXCHANGE: &str = r"var<workgroup> slots: array<atomic<u32>, 64>;
+
+@compute @workgroup_size(64)
+fn cs_main(@builtin(local_invocation_index) lane: u32) {
+    let claim = atomicCompareExchangeWeak(&slots[lane], 0u, 1u);
+}
+";
+
+#[test]
+fn atomic_compare_exchange_fails_the_engines_shader_build() {
+    let source = COMPARE_EXCHANGE;
+    let problem = only_problem(build_wgsl(source));
+    assert_eq!(problem.file.as_deref(), Some(SHADER));
+    assert_eq!(
+        (problem.line, problem.column),
+        (
+            Some(5),
+            Some(column_of(source, 5, "atomicCompareExchangeWeak"))
+        )
+    );
+    assert!(problem.message.contains("Safari 27.0"), "{problem}");
+    assert!(problem.message.ends_with(SEE_RULES), "{problem}");
+}
+
+#[test]
+fn atomic_compare_exchange_in_a_users_shader_builds_with_a_warning() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let inputs = Inputs::read(&root).expect("the repository's shaders");
+    let mut compiler = Compiler::new(&inputs.files).expect("the shader library");
+    let shader: ShaderSource = serde_json::from_value(serde_json::json!({
+        "path": SHADER,
+        "source": COMPARE_EXCHANGE,
+        "variants": { "webgpu": { "targets": ["wgsl"] } },
+    }))
+    .expect("a shader source");
+    let built = compiler.compile(&shader).expect("the user's shader builds");
+    assert!(built["webgpu"].wgsl.is_some());
+    let warnings = compiler.take_warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = &warnings[0];
+    assert_eq!(
+        (warning.line, warning.column),
+        (
+            Some(5),
+            Some(column_of(COMPARE_EXCHANGE, 5, "atomicCompareExchangeWeak"))
+        )
+    );
+    assert_eq!(warning.variants, ["webgpu"]);
+    assert!(warning.message.contains("Safari 27.0"), "{warning}");
+    assert!(warning.message.contains("321006@main"), "{warning}");
+    assert!(compiler.take_warnings().is_empty());
+}
+
 /// A vertex shader that reads the draw index in its variant for WebGL2 alone.
 const DRAW_INDEX: &str = r"enable draw_index;
 #import null3d::math
@@ -971,18 +1024,6 @@ fn the_same_problem_in_several_variants_is_listed_once() {
     );
 }
 
-#[test]
-fn the_output_is_the_same_on_every_build() {
-    let inputs = Inputs::read(std::path::Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../.."
-    )))
-    .unwrap();
-    let first = typescript(&build(&inputs).unwrap());
-    let second = typescript(&build(&inputs).unwrap());
-    assert_eq!(first, second);
-}
-
 /// The library modules that shaders import.
 const LIBRARY_MODULES: [&str; 8] = [
     "math", "noise", "color", "lighting", "fog", "vertex", "depth", "sdf",
@@ -1118,9 +1159,40 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
     build_wgsl(&named).unwrap();
 }
 
+/// The one test that builds every shader of the repository. A full build takes minutes, and
+/// cargo-nextest runs each test in a process of its own, so a test cannot share another test's
+/// build. Every check that reads the whole output runs here, on one build. A second build runs
+/// on another thread at the same time, for the check that the output is the same on every build.
+/// Other tests build only the shaders they read, through the tests' `subset` module.
 #[test]
-fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
-    let output = repository_output();
+fn the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule() {
+    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let inputs = Inputs::read(root).unwrap();
+    let (output, again) = std::thread::scope(|scope| {
+        let again = scope.spawn(|| build(&inputs).unwrap());
+        (build(&inputs).unwrap(), again.join().unwrap())
+    });
+    let failures: Vec<String> = [
+        same_output(&output, &again),
+        glsl_keeps_the_rules_of_strict_drivers_and_webgl2(&output),
+        wgsl_has_only_number_literals_that_safari_reads(&output),
+        standard_material_samples_each_map_without_a_switch_on_webgpu(&output),
+    ]
+    .into_iter()
+    .filter_map(Result::err)
+    .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+fn same_output(output: &Output, again: &Output) -> Result<(), String> {
+    if typescript(output) == typescript(again) {
+        Ok(())
+    } else {
+        Err("two builds of the same shaders wrote different modules".to_owned())
+    }
+}
+
+fn glsl_keeps_the_rules_of_strict_drivers_and_webgl2(output: &Output) -> Result<(), String> {
     let mut breaks = Vec::new();
     let mut stages = 0;
     for (shader, variants) in &output.shaders {
@@ -1140,12 +1212,16 @@ fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
             }
         }
     }
-    assert!(stages > 100, "only {stages} GLSL shaders were built");
-    assert!(
-        breaks.is_empty(),
-        "GLSL that Mali GPUs or WebGL2 reject:\n{}",
-        breaks.join("\n")
-    );
+    if stages <= 100 {
+        return Err(format!("only {stages} GLSL shaders were built"));
+    }
+    if !breaks.is_empty() {
+        return Err(format!(
+            "GLSL that Mali GPUs or WebGL2 reject:\n{}",
+            breaks.join("\n")
+        ));
+    }
+    Ok(())
 }
 
 #[test]
@@ -1176,9 +1252,7 @@ int b = findMSB(c);
     assert!(found[1].starts_with("line 3: `findMSB`"));
 }
 
-#[test]
-fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
-    let output = repository_output();
+fn wgsl_has_only_number_literals_that_safari_reads(output: &Output) -> Result<(), String> {
     let mut refused = Vec::new();
     let mut modules = 0;
     for (shader, variants) in &output.shaders {
@@ -1192,39 +1266,42 @@ fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
             );
         }
     }
-    assert!(modules > 100, "only {modules} WGSL modules were built");
-    assert!(
-        refused.is_empty(),
-        "number literals that Safari 26 refuses:\n{}",
-        refused.join("\n")
-    );
+    if modules <= 100 {
+        return Err(format!("only {modules} WGSL modules were built"));
+    }
+    if !refused.is_empty() {
+        return Err(format!(
+            "number literals that Safari 26 refuses:\n{}",
+            refused.join("\n")
+        ));
+    }
+    Ok(())
 }
 
-#[test]
-fn the_standard_material_samples_each_map_without_a_switch_on_webgpu() {
+fn standard_material_samples_each_map_without_a_switch_on_webgpu(
+    output: &Output,
+) -> Result<(), String> {
     // A switch that picked each map's texture by its slot, though the slot was a constant at each
     // call, made every textured draw many times slower in Chrome on Apple GPUs with a multisampled
     // target (decision record D-89). Only the WebGL2 builds pick a shared unit with a switch.
-    let variants = &repository_output().shaders["standard_maps"];
+    let mut switches = Vec::new();
     let mut modules = 0;
-    for (variant, built) in variants {
+    for (variant, built) in &output.shaders["standard_maps"] {
         let Some(wgsl) = &built.wgsl else { continue };
         modules += 1;
-        assert!(
-            !wgsl.source.contains("switch "),
-            "standard_maps.{variant} picks a texture with a switch"
-        );
+        if wgsl.source.contains("switch ") {
+            switches.push(format!(
+                "standard_maps.{variant} picks a texture with a switch"
+            ));
+        }
     }
-    assert!(modules > 10, "only {modules} WGSL modules were built");
-}
-
-/// One build of the repository's shaders, which the tests that check every build share.
-fn repository_output() -> &'static Output {
-    static OUTPUT: OnceLock<Output> = OnceLock::new();
-    OUTPUT.get_or_init(|| {
-        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-        build(&Inputs::read(root).unwrap()).unwrap()
-    })
+    if modules <= 10 {
+        return Err(format!("only {modules} WGSL modules were built"));
+    }
+    if !switches.is_empty() {
+        return Err(switches.join("\n"));
+    }
+    Ok(())
 }
 
 /// The text of the repository's library module `null3d::<name>`.
