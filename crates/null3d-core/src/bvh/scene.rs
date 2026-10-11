@@ -251,6 +251,12 @@ impl SceneBvh {
         }
     }
 
+    /// Makes the next sync list every item again, as after a structure change, so each item's box
+    /// follows its mesh's box anew.
+    pub fn invalidate(&mut self) {
+        self.epoch = None;
+    }
+
     /// Empties both trees.
     fn clear(&mut self) {
         self.statics.clear();

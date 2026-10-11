@@ -74,6 +74,8 @@ Option C, with these generated pages:
 | The render graph's text dump and the light grid's snapshot in `crates/null3d-render/tests/` | They are the tests' expected output, and reviewers read their diffs |
 | The three.js fixtures in `crates/*/tests/fixtures/` | `cargo test` must run in a fresh clone, with no JavaScript step first. They change only when the pinned three.js changes: 6 commits since 2026-09-28 |
 | The vendored Basis transcoder and encoder, and the meshopt decoder, in `packages/*/vendor/` | The Basis build needs Emscripten, which CI lacks. The meshopt file comes from a pinned package. Both ship in the packages as they are |
+| The asset tool's FBX and OBJ reader, `packages/cli/vendor/ufbx/ufbx.wasm` | Its build needs Emscripten too, which CI lacks. `bun tools/build-ufbx.ts` makes the same bytes from pinned sources, and a unit test pins its SHA-256 ([D-111](D-111-asset-conversions.md)) |
+| The test files and outputs of `assets convert` in `tests/pages/assets/models/` | Blender made the FBX and OBJ files. The image test draws the outputs, and the unit test checks that the tool still writes the same bytes |
 | The meshopt test files | Building them needs the downloaded sample content and gltfpack |
 | The image references, the benchmark records in `bench/results/` and `.dev/benchmark-results.md`, and the README's animation | They are accepted outputs and measurements. Making them needs a real GPU and a person's review |
 | The version numbers, `CHANGELOG.md` and `.claude-plugin/marketplace.json` | The release writes them. Claude Code reads the marketplace file straight from GitHub |

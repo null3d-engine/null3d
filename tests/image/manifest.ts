@@ -527,8 +527,9 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
  * boxes with a point light and a spot light, which their reflections show too. The scale-50 test
  * draws the frame at a render scale of 0.5, where the reflection's texture takes the smaller size
- * and the pass fills it whole. The reflection spec checks where the boxes' reflections land, and
- * that no magenta shows.
+ * and the pass fills it whole. The batches test builds each box from an instance batch, the red one
+ * with a custom material, so the pass draws both kinds of batch. The reflection spec checks where
+ * the boxes' reflections land, and that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -542,6 +543,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-quarter', '?quarter'),
 		test('reflection-lamps', '?lamps'),
 		test('reflection-scale-50', '?half'),
+		test('reflection-batches', '?batches'),
 	];
 }
 
@@ -833,6 +835,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'asset-scene',
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
+	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
+	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
+	// colors. Each must load and draw alike on every tier.
+	{
+		name: 'converted-models',
+		sketch: 'tests/pages/sketches/converted-models-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.5,
 	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
