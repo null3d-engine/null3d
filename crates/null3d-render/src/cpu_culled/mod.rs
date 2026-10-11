@@ -1592,6 +1592,7 @@ impl FrameBuilder for CpuCulledRenderer {
                         .then(|| settings.view_frame(view, scene, parity, canvas, scale))
                         .flatten()
                 },
+                &|view| settings.level_view(view, canvas),
                 Some(sorted),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
@@ -1612,6 +1613,10 @@ impl FrameBuilder for CpuCulledRenderer {
                     .assign(view, frame, input, exposure, &self.tiles);
             }
         }
+        // Shadow views pick the camera's levels with a larger threshold, and the outline view the
+        // camera's own.
+        let shadow_rule = self.settings.shadow_level_view(canvas);
+        let camera_rule = self.settings.level_view(ViewId::CAMERA, canvas);
         // The cascades skip the cells out of their view too: the casters' layout gives every other
         // object no bucket, so the scene's cell order serves it.
         let shadow = self.shadow.as_ref();
@@ -1626,6 +1631,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1638,6 +1644,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1654,6 +1661,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|_| camera.filter(|_| outlines),
+                &|_| camera_rule,
                 None,
                 None,
             )
