@@ -174,6 +174,7 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 - The query is safe for bundlers: the loader adds it at run time, after the build. A static server and Vite's dev server ignore a query they do not know. The query loads a new copy of the module, but the first copy never ran. The modules that it imports keep their own addresses. Only http and https addresses take the query: a `blob:` address with a query names no file.
 - What the retry cannot fix: Chrome keeps a failed import of a module that the sketch imports. The query changes only the sketch's own address.
 - Rejected: rerunning a page that failed with E1410 in the test runner. It hides the same fault from users. It also hides real E1410 failures, such as a wrong address. Asking the dev server for every custom sketch before the browsers start was rejected too. It removes only the test server's compile wait, and the server's answer was already good. Making custom materials smaller, which would make the module small, is a design change of its own.
+- Since 11 October 2026, the module is small. The plugin keeps each distinct block of shader text and each distinct source once per module. The module builds the full text again when it runs. The custom-surface sketch went from 26.5 MB to 1.05 MB on the dev server. The same packing applies to production builds. [Image tests](image-tests.md#ci) gives the failures that led to it, the sizes and the load times.
 
 ## Textures on both GPU paths
 

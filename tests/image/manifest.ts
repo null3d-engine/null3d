@@ -525,8 +525,10 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
  * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
- * boxes with a point light and a spot light, which their reflections show too. The reflection spec
- * checks where the boxes' reflections land, and that no magenta shows.
+ * boxes with a point light and a spot light, which their reflections show too. The scale-50 test
+ * draws the frame at a render scale of 0.5, where the reflection's texture takes the smaller size
+ * and the pass fills it whole. The reflection spec checks where the boxes' reflections land, and
+ * that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -539,6 +541,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
 		test('reflection-lamps', '?lamps'),
+		test('reflection-scale-50', '?half'),
 	];
 }
 

@@ -39,8 +39,8 @@ import {
 	type WorkerFile,
 	workerFilesPlugin,
 } from './offline.ts';
+import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import type { CompiledWgsl } from './shader-types.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -277,14 +277,6 @@ function projectPath(root: string, file: string): string {
 	return relative(root, file).split(sep).join('/');
 }
 
-/**
- * A compiled shader as the JavaScript value that takes its source's place, with the key of its hot
- * updates on the dev server.
- */
-function shaderValue(shader: CompiledWgsl, key?: string): string {
-	return `(${JSON.stringify(key === undefined ? shader : { ...shader, hot: key })})`;
-}
-
 /** Shows WGSL that did not compile in Vite's overlay on the dev server's pages, and in the terminal. */
 function showError(environment: DevEnvironment, error: WgslError): void {
 	environment.logger.error(`${error.message}\n${error.frame}`, { timestamp: true });
@@ -512,8 +504,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						);
 					}
 				}
+				const pack = new ShaderPack();
 				return {
-					code: `export default ${shaderValue(compiled.shader, key)};\n`,
+					code: `export default ${pack.value(compiled.shader, key)};\n${pack.unpacker()}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -532,12 +525,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
+					const pack = new ShaderPack();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, shaderValue(shader, key));
+						out.overwrite(start, end, pack.value(shader, key));
 					}
+					if (out && !pack.empty) out.append(pack.unpacker());
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}
