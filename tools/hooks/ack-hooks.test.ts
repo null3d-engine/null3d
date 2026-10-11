@@ -12,6 +12,7 @@ import {
 } from './check-docs-ack';
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
 import { gpuBearingFiles, gpuCheckProblem } from './check-gpu-ack';
+import { macReferencesProblem, unmatchedSwiftShaderReferences } from './check-mac-references';
 import { touchesRust } from './check-rust';
 import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
@@ -375,5 +376,51 @@ describe('the GPU check of a pull request', () => {
 	it('fails a trailer that records no check', () => {
 		const change = commit('b2', 'fix(engine): a shader\n\nGPU-Checked: done', [shader]);
 		expect(gpuCheckProblem([change])).toContain('GPU-Checked value "done" records no check');
+	});
+});
+
+describe('macReferencesProblem', () => {
+	const swift = (tier: string, name: string) =>
+		`tests/image/references/chromium-swiftshader/${tier}/${name}.png`;
+	const mac = (tier: string, name: string) =>
+		`tests/image/references/chrome-real-gpu/${tier}/${name}.png`;
+	const change = (files: string[], message = 'fix(engine): soften the shadow edges') => ({
+		sha: 'b2c3d4e5f6',
+		message,
+		files,
+	});
+
+	it('needs nothing when both sets change alike, or no SwiftShader reference changes', () => {
+		expect(macReferencesProblem([change([swift('webgpu', 's4'), mac('webgpu', 's4')])])).toBeNull();
+		expect(
+			macReferencesProblem([change([swift('webgl2', 's4')]), change([mac('webgl2', 's4')])]),
+		).toBeNull();
+		expect(macReferencesProblem([change([mac('compat', 'points')])])).toBeNull();
+	});
+
+	it("matches each SwiftShader reference with the same tier's real-GPU reference", () => {
+		expect(
+			unmatchedSwiftShaderReferences([
+				change([swift('webgpu', 's4'), mac('webgl2', 's4'), swift('compat', 's4')]),
+			]),
+		).toEqual([swift('compat', 's4'), swift('webgpu', 's4')]);
+	});
+
+	it('fails a SwiftShader-only change without a reason, and names what it left', () => {
+		const problem = macReferencesProblem([
+			change(['webgpu', 'webgl2', 'compat', 'compat'].map((tier, k) => swift(tier, `s${k}`))),
+		]);
+		expect(problem).toContain('(compat/s2.png, compat/s3.png, webgl2/s1.png and 1 more)');
+		expect(problem).toContain('Mac-References:');
+	});
+
+	it('takes a reason on any commit, and refuses a bare one', () => {
+		const left = change([swift('webgpu', 's4')]);
+		const reason =
+			'Mac-References: bun run test:images -g s4 passes on the Mac GPU with the old references';
+		expect(macReferencesProblem([change([], `test: note\n\n${reason}`), left])).toBeNull();
+		expect(
+			macReferencesProblem([change([swift('webgpu', 's4')], 'fix: a\n\nMac-References: yes')]),
+		).toContain('Mac-References value "yes" gives no reason');
 	});
 });

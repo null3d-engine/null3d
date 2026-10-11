@@ -140,7 +140,7 @@ export function occlusionS6Summary(
 	}
 	if (loads === 0) return undefined;
 	return [
-		`T-36, S6's occlusion turns on WebGL2: medians per frame in ms. Hidden: the entries that culling took out of those in the view. Added: the job workers' and the culling step's added CPU time. Saved: the render worker's and the GPU's time (a dash where the device has no GPU timer). Wrongly hidden at rest: stops where culling on differs from culling off by more than ${AT_REST_MARGIN_PIXELS} pixels past the noise of two frames with it off. Late in motion: objects that showed frames late in flight (a dash where the page did not measure it). Pays: the savings exceed the added time and nothing popped.`,
+		`T-36, S6's occlusion turns on WebGL2: medians per frame in ms. Hidden: the entries that culling took out of those in the view. Added: the job workers' and the culling step's added CPU time. Saved: the render worker's and the GPU's time (a dash where the device has no GPU timer). Wrongly hidden at rest: stops where culling on differs from culling off by more than ${AT_REST_MARGIN_PIXELS} pixels past the noise of two frames with it off. Late in motion: frames in which culling hid what shows while the camera jumped along the route in every frame (a dash where the page did not measure it). Pays: the savings exceed the added time and nothing popped.`,
 		'',
 		'| Preset | Buffer | Hidden | Added | Saved, render | Saved, GPU | Interval, off / on | Wrongly hidden at rest | Late in motion | Pays |',
 		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',

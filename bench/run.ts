@@ -23,8 +23,8 @@
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
-//                     --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6; the default is s1, and every
+//                     scene with --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -139,13 +139,6 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	// S6's counts are the objects nearest the route's start, up to the whole city.
 	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
 };
-/**
- * The scenes that a comparison of two builds runs unless `--scenes` names others: every scene but
- * S5 and S6. They join the benchmark job in CI once that job pins a preset for them; `--scenes s5`
- * or `--scenes s6` compares them now. Each build of the pages still holds their pages, so the job
- * needs the sample content.
- */
-const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5' && scene !== 's6');
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',
@@ -527,7 +520,7 @@ async function runComparison(
 	for (const root of Object.values(roots))
 		if (!existsSync(join(root, BUILT_CORE)))
 			throw new Error(`${root} holds no built engine: run bun run build there first`);
-	const plan = (options.scenes ?? COMPARED_SCENES).flatMap((scene) =>
+	const plan = (options.scenes ?? BENCH_SCENES).flatMap((scene) =>
 		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
 	);
 	const share = options.shard ? shardPages(plan, options.shard) : plan;

@@ -19,7 +19,8 @@
 // and resumes the drive.
 //
 // The page's occlusion turns (T-36) move the camera to a share of the route, held there or driving
-// on, and turn software occlusion culling on and off. The sketch answers each once a frame has it.
+// on, or jumping every frame between two shares, and turn software occlusion culling on and off.
+// The sketch answers each once a frame has it.
 import {
 	defineSketch,
 	type Material,
@@ -231,10 +232,12 @@ export default defineSketch(async (context) => {
 	let drive = 0;
 	if (demo) debug.stats(true);
 	// The occlusion turns' camera: a move that the next frame makes, the seconds it adds to the
-	// clock's, or a held route time, and whether the next frame answers the page.
-	let move: { share: number; still: boolean } | undefined;
+	// clock's, or a held route time and the one it jumps to in every other frame, and whether the
+	// next frame answers the page.
+	let move: { share: number; still: boolean; toward?: number } | undefined;
 	let offset = 0;
 	let heldAt: number | undefined;
+	let jumpTo: number | undefined;
 	let answer = false;
 	page.onMessage((type, message) => {
 		if (type === S6_MESSAGES.drive) move = message as typeof move;
@@ -253,10 +256,13 @@ export default defineSketch(async (context) => {
 				if (move) {
 					const at = move.share * s6LoopSeconds(data);
 					heldAt = move.still ? at : undefined;
+					jumpTo =
+						move.still && move.toward !== undefined ? move.toward * s6LoopSeconds(data) : undefined;
 					offset = at - time.now;
 					move = undefined;
 				}
-				moveCamera(heldAt ?? time.now + offset);
+				const jumped = jumpTo !== undefined && time.frame % 2 === 1;
+				moveCamera(jumped ? (jumpTo as number) : (heldAt ?? time.now + offset));
 			}
 			reportQuality();
 			if (answer) {

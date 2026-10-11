@@ -9,24 +9,25 @@ name: Benchmarks
 # request it runs on demand, against the pull request's merge base: add the benchmark label, or
 # start it from the Actions tab with the pull request's number.
 #
-# On main it runs at most once an hour, on main's newest commit, against the last commit on main
-# that a run measured, so one run measures every merge since then. Each run holds 3 Mac machines
-# for about 20 minutes, and GitHub gives about 5 at once, which CI's Safari jobs need,
-# so main gets no run for each push. When no merge came since the last measured commit, the run
-# stops after choosing the commits, before any Mac machine starts. A run measured its commit when
+# On main it runs once a day, on main's newest commit, against the last commit on main that a run
+# measured, so one run measures every merge since then. Each run holds its Mac machines for about
+# half an hour, and GitHub gives about 5 at once, which CI's Safari jobs need, so main gets no run
+# for each push. When no merge came since the last measured commit, the run stops after choosing
+# the commits, before any Mac machine starts. A run measured its commit when
 # its report merged the shards into a whole comparison, whether the verdict passed or failed. So a
 # slowdown fails the one run that holds it, and the next run compares with that commit. A cancelled
 # run, a run whose builds failed and a run whose shards left pages out measured nothing, so the next
-# hour's run measures the same commits again. When the commits change the benchmark pages or the
+# day's run measures the same commits again. When the commits change the benchmark pages or the
 # comparison's switches, the two builds measure in different ways: the run reports "measurement
 # changed" and fails no page. .dev/benchmarks.md says how to read the summary and how to mark an
 # expected slowdown.
 
 on:
-  # Seven minutes past the hour, away from the top of the hour, when GitHub delays the most
-  # scheduled runs. GitHub runs a schedule on the default branch only.
+  # At 19:07 UTC: away from the top of the hour, when GitHub delays the most scheduled runs, and in
+  # the hour with the fewest merges to main, when CI's Safari jobs need the Mac machines least.
+  # GitHub runs a schedule on the default branch only.
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7 19 * * *"
   pull_request:
     types: [labeled, synchronize]
   workflow_dispatch:

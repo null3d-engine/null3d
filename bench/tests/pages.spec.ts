@@ -452,7 +452,7 @@ function s4LowPassesTest(): void {
  */
 function s6OcclusionTurnsTest(): void {
 	testUnlessTooSlow('s6', 'null3d-webgl2')(
-		's6 on null3d-webgl2 turns occlusion culling off and on, and hides nothing wrongly at rest',
+		's6 on null3d-webgl2 turns occlusion culling off and on, and hides nothing wrongly at rest or in motion',
 		async ({ page }) => {
 			await page.setViewportSize(PHONE_VIEWPORT);
 			const result = await runPage<PageReport & OcclusionTurnsResult>(
@@ -460,12 +460,14 @@ function s6OcclusionTurnsTest(): void {
 				pagePath(
 					's6',
 					'null3d-webgl2',
-					`n=${SHORT_RUN_COUNT}&preset=medium&governor=off&occlusion-turns&rounds=2&seconds=1&stops=4`,
+					`n=${SHORT_RUN_COUNT}&preset=medium&governor=off&occlusion-turns&rounds=2&seconds=1&stops=4&flights=4`,
 				),
 			);
 			expect(result.tier).toBe('webgl2');
 			expect(occlusionTurnsProblems(result)).toEqual([]);
 			expect(result.stops).toHaveLength(4);
+			expect(result.flights).toHaveLength(4);
+			expect(result.lateInMotion).toBe(0);
 			expect(result.off.occludedEntries ?? 0).toBe(0);
 		},
 	);

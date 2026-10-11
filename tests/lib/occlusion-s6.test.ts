@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import {
 	AT_REST_MARGIN_PIXELS,
 	differingPixels,
+	flightShares,
 	hiddenAtRest,
+	JUMP_SHARE,
+	lateFrames,
 	median,
 	medianFigures,
 	type OcclusionFigures,
@@ -100,6 +103,19 @@ describe('the occlusion turns', () => {
 		expect(stopShares(4)).toEqual([0.125, 0.375, 0.625, 0.875]);
 	});
 
+	it("count a frame in motion as late only past the device's noise and the margin", () => {
+		const flight = (noise: number, differing: number[]) => ({
+			share: 0,
+			toward: JUMP_SHARE,
+			noise,
+			differing,
+		});
+		expect(lateFrames(flight(0, [0, AT_REST_MARGIN_PIXELS]))).toBe(0);
+		expect(lateFrames(flight(0, [AT_REST_MARGIN_PIXELS + 1, 0, 90]))).toBe(2);
+		expect(lateFrames(flight(40, [40 + AT_REST_MARGIN_PIXELS]))).toBe(0);
+		expect(flightShares(4)).toEqual([0, 0.25, 0.5, 0.75]);
+	});
+
 	it("count a stop as wrongly hidden at rest only past the device's noise and the margin", () => {
 		expect(hiddenAtRest({ share: 0, noise: 0, differing: AT_REST_MARGIN_PIXELS })).toBe(false);
 		expect(hiddenAtRest({ share: 0, noise: 0, differing: AT_REST_MARGIN_PIXELS + 1 })).toBe(true);
@@ -153,9 +169,17 @@ describe('the occlusion turns', () => {
 		).toEqual([
 			'wrongly hidden at rest: stop 0 at 12.5% of the route differs from culling off in 30 pixels, past the 2 that two frames with culling off differ',
 		]);
-		expect(occlusionTurnsProblems(result({ lateInMotion: 3 }))).toEqual([
-			'late in motion: 3 objects showed late',
-		]);
+		expect(
+			occlusionTurnsProblems(
+				result({
+					lateInMotion: 3,
+					flights: [
+						{ share: 0, toward: 0.001, noise: 2, differing: [0, 1, 2, 3] },
+						{ share: 0.25, toward: 0.251, noise: 2, differing: [30, 0, 40, 50] },
+					],
+				}),
+			),
+		).toEqual(['late in motion: culling hid what shows in 3 frames, at 25.0% of the route']);
 	});
 });
 

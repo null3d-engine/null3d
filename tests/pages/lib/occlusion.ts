@@ -2,8 +2,8 @@
 // the medians of their rounds, the count of pixels where two frames differ, and S6's occlusion
 // turns (T-36): the order of each round's two sides, and the two popping figures. Wrongly hidden
 // at rest compares frames with culling off and on at stops along the route, with the camera still.
-// Late in motion counts the objects that show frames late while the camera flies, from the visual
-// check's popping figure. The device runner judges and tables the turns' results with the same
+// Late in motion counts the frames in which culling hid what shows while the camera jumped along
+// the route in every frame. The device runner judges and tables the turns' results with the same
 // rules (tests/lib/occlusion-s6.ts). Nothing here needs the engine or a browser.
 /** The middle of some numbers, nulls left out, or null without any. */
 export function median(values: readonly (number | null)[]): number | null {
@@ -100,10 +100,24 @@ export const AT_REST_MARGIN_PIXELS = 8;
 export const AT_REST_LIMIT = 0;
 
 /**
- * Objects that may show late in motion before the check fails: none. The culling uses the frame's
- * own camera and keeps no history, so no object can show a frame late.
+ * Frames in motion in which culling may hide what shows before the check fails: none. The culling
+ * uses the frame's own camera and keeps no history, so no object can show a frame late.
  */
 export const LATE_IN_MOTION_LIMIT = 0;
+
+/**
+ * How far the camera jumps in the check in motion, as a share of the route: about a fifth of a
+ * second of S6's drive in one frame. A culling that used an earlier frame's camera would then miss
+ * a building's worth of what came into view, where one frame of the drive would show only a sliver.
+ */
+export const JUMP_SHARE = 0.001;
+
+/**
+ * The shares of the route where the check in motion jumps, evenly spread from the route's start:
+ * with as many as the stops at rest, each lies halfway between two stops.
+ */
+export const flightShares = (count: number): number[] =>
+	Array.from({ length: count }, (_, k) => k / count);
 
 /**
  * One stop of the check at rest: its share of the route, the pixels where two captures with
@@ -116,9 +130,33 @@ export interface OcclusionStop {
 	differing: number;
 }
 
+/**
+ * True when a frame with culling on differs from the one with it off by more than the noise of two
+ * frames with it off and the margin: culling hid something that shows.
+ */
+export const hidesWhatShows = (noise: number, differing: number): boolean =>
+	differing > noise + AT_REST_MARGIN_PIXELS;
+
 /** True when culling hid something at a stop that shows with culling off. */
 export const hiddenAtRest = ({ noise, differing }: OcclusionStop): boolean =>
-	differing > noise + AT_REST_MARGIN_PIXELS;
+	hidesWhatShows(noise, differing);
+
+/**
+ * One point of the check in motion. The camera jumps between `share` and `toward` in turns, one
+ * frame at each, so every frame shows the view one jump from the frame before. `noise` is the most
+ * that two captures with culling off differ at either end. `differing` holds, for each capture with
+ * culling on in motion, the pixels where it differs from the nearer end's capture with culling off.
+ */
+export interface OcclusionFlight {
+	share: number;
+	toward: number;
+	noise: number;
+	differing: number[];
+}
+
+/** The captures of a point in motion in which culling hid something that shows with culling off. */
+export const lateFrames = ({ noise, differing }: OcclusionFlight): number =>
+	differing.filter((pixels) => hidesWhatShows(noise, pixels)).length;
 
 /** What S6's page reports from its occlusion turns. */
 export interface OcclusionTurnsResult {
@@ -138,14 +176,16 @@ export interface OcclusionTurnsResult {
 	on: OcclusionFigures;
 	/** The stops of the check at rest along the route. */
 	stops: OcclusionStop[];
+	/** The points of the check in motion along the route. */
+	flights?: OcclusionFlight[];
 	/**
-	 * The objects that showed frames late while the camera flew the route, from the visual check's
-	 * popping figure on the same flight with culling off and on. Absent until the page runs it.
+	 * The frames in motion in which culling hid what shows: the sum of each point's late frames, or
+	 * null where the page did not run the check in motion.
 	 */
 	lateInMotion?: number | null;
 	/**
 	 * PNG files in base64 of the stops where culling hid what shows, as `stop-<k>-off` and
-	 * `stop-<k>-on`.
+	 * `stop-<k>-on`, and of the points in motion, as `flight-<k>-off` and `flight-<k>-on`.
 	 */
 	images?: Record<string, string>;
 	failures: string[];
@@ -158,7 +198,7 @@ export interface OcclusionTurnsResult {
  * blockers' drawing. The saved times are the render worker's and the GPU's, the GPU's null where
  * the device has no GPU timer, and the frame interval's. Culling pays where the render worker and
  * the GPU save more than the culling adds, and nothing pops: no stop hides what shows at rest, and
- * no object shows late in motion where the page measured it.
+ * no frame in motion hides what shows where the page measured it.
  */
 export function occlusionVerdict({ off, on, stops, lateInMotion = null }: OcclusionTurnsResult) {
 	const less = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
@@ -198,8 +238,8 @@ export function occlusionMeasurementProblems(result: OcclusionTurnsResult): stri
 }
 
 /**
- * The popping of a turns result: each stop where culling hid what shows at rest, and the objects
- * that showed late in motion past the limit.
+ * The popping of a turns result: each stop where culling hid what shows at rest, and each point in
+ * motion where it did so in a frame.
  */
 export function poppingProblems(result: OcclusionTurnsResult): string[] {
 	const problems = (result.stops ?? []).flatMap((stop, k) =>
@@ -210,7 +250,13 @@ export function poppingProblems(result: OcclusionTurnsResult): string[] {
 			: [],
 	);
 	const late = result.lateInMotion ?? 0;
-	if (late > LATE_IN_MOTION_LIMIT) problems.push(`late in motion: ${late} objects showed late`);
+	if (late > LATE_IN_MOTION_LIMIT)
+		problems.push(
+			`late in motion: culling hid what shows in ${late} frames, at ${(result.flights ?? [])
+				.filter((flight) => lateFrames(flight) > 0)
+				.map((flight) => `${(100 * flight.share).toFixed(1)}%`)
+				.join(', ')} of the route`,
+		);
 	return problems;
 }
 

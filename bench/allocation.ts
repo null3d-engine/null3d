@@ -484,9 +484,10 @@ async function main(): Promise<void> {
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
-		// The demo run keeps the scene running until the page closes, with no measurement of the
-		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
+		// the page's own, so no timer of the page's runs and the engine never stops before the samples
+		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts

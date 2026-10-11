@@ -1,11 +1,13 @@
 // Checks the trailers on every commit in a range that main's squash keeps, so a commit made with
 // --no-verify cannot skip them: the acknowledgement trailers, that each Size-Growth trailer names a
-// file and gives a reason, and that a pull request that changes how the GPU draws records its GPU
-// check. CI runs it on pull requests:
+// file and gives a reason, that a pull request that changes how the GPU draws records its GPU
+// check, and that one that remakes SwiftShader references remakes the real-GPU ones or says why
+// not. CI runs it on pull requests:
 //   bun tools/hooks/check-trailers.ts origin/main..HEAD
 import { execFileSync } from 'node:child_process';
 import { DOCS_ACK_RULE } from './check-docs-ack';
 import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
+import { macReferencesProblem } from './check-mac-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
 import { checkAck } from './commit-ack';
@@ -60,8 +62,8 @@ function main(): void {
 		}
 		for (const problem of sizeGrowthProblems(message)) failures.push(`${commit}: ${problem}`);
 	}
-	const gpu = gpuCheckProblem(commits);
-	if (gpu) failures.push(gpu);
+	for (const problem of [gpuCheckProblem(commits), macReferencesProblem(commits)])
+		if (problem) failures.push(problem);
 	if (failures.length === 0) {
 		console.log(`trailers OK in ${range}`);
 		return;

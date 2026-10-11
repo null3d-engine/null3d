@@ -10,9 +10,9 @@ import { finishedComparison, lastMeasured, type MainRun, type RunJob } from './l
 
 /**
  * How many of the workflow's latest finished runs on main the search reads. A scheduled run starts
- * every hour, also when main has not moved, so the list covers about a week without a merge.
+ * every day, also when main has not moved, so the list covers about a month without a merge.
  */
-const RUNS = 200;
+const RUNS = 30;
 
 const REPO = process.env.GITHUB_REPOSITORY;
 
