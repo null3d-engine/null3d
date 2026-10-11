@@ -137,12 +137,12 @@ export const QUALITY_SETTINGS = {
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
-	// more than the scene's pixels need: 128 costs less than the method before it on the Galaxy S25
-	// and the Pixel 9, and has four fewer passes than 512, which matters on the Pixel 11's PowerVR GPU
-	// (D-21). A change makes the chain's targets again; the governor's step halves the base with no
-	// new GPU object.
+	// more than the scene's pixels need. Low's 64 costs less than the method before it on Adreno and
+	// Mali phones, and has six fewer passes than 512, which matters most on PowerVR GPUs (D-21). A
+	// change makes the chain's targets again; the governor's step halves a larger base with no new
+	// GPU object.
 	bloomSize: {
-		presets: [128, 512, 512, 512],
+		presets: [64, 512, 512, 512],
 		changes: 'live',
 		values: [64, 128, 256, 512],
 	},
