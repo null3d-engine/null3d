@@ -53,6 +53,7 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::sky_maps::SkyMaps;
+use crate::ssr::{self, Ssr, TraceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -331,6 +332,10 @@ pub trait FrameBuilder {
     fn check_graph(&mut self) -> Result<(), GraphError>;
     /// The render graph as Graphviz DOT text, compiled first.
     fn graph_dot(&mut self) -> String;
+    /// True when the frame recorded last draws with what the frame before it drew, as
+    /// screen-space reflections read the frame before's color. Hold mode then records its frame
+    /// twice, so the frame it shows has a frame before it.
+    fn reads_last_frame(&self) -> bool;
     /// A render graph error's message, with the passes and resources by name.
     fn graph_message(&self, error: GraphError) -> String;
 }
@@ -666,6 +671,13 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// Screen-space reflections' settings while the sketch turns them on.
+    ssr: Option<Ssr>,
+    /// The size of screen-space reflections' grid, as a share of the render size each way, which
+    /// the quality settings set: 0 draws none.
+    ssr_scale: f32,
+    /// The most steps of screen-space reflections' march, which the quality settings set.
+    ssr_steps: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -742,6 +754,9 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            ssr: None,
+            ssr_scale: ao::MAX_SCALE,
+            ssr_steps: ssr::DEFAULT_STEPS,
             lut: None,
             vignette: None,
             environment: None,
@@ -978,6 +993,50 @@ impl SceneSettings {
     /// same targets, so it makes no GPU object.
     pub fn set_ao_scale(&mut self, scale: f32) {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// Screen-space reflections' settings while they draw: while the sketch turns them on, their
+    /// scale is above 0, and no debug view draws.
+    pub fn ssr(&self) -> Option<Ssr> {
+        self.ssr
+            .filter(|_| self.ssr_scale > 0.0 && !self.debug_view.is_debug())
+    }
+
+    /// Turns screen-space reflections on with their settings, or off with `None`, from the next
+    /// recorded frame on.
+    pub fn set_ssr(&mut self, ssr: Option<Ssr>) {
+        self.ssr = ssr;
+    }
+
+    /// The size of screen-space reflections' grid, as a share of the render size each way.
+    pub fn ssr_scale(&self) -> f32 {
+        self.ssr_scale
+    }
+
+    /// Sets the size of screen-space reflections' grid, from 0, which draws none, to
+    /// [`ao::MAX_SCALE`], from the next recorded frame on. While ambient occlusion draws too, both
+    /// draw on the grid of the larger scale.
+    pub fn set_ssr_scale(&mut self, scale: f32) {
+        self.ssr_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// Sets the most steps of screen-space reflections' march, from 1 to [`ssr::MAX_STEPS`], from
+    /// the next recorded frame on. It changes only the trace's block, so it makes no GPU object.
+    pub fn set_ssr_steps(&mut self, steps: u32) {
+        self.ssr_steps = steps.clamp(1, ssr::MAX_STEPS);
+    }
+
+    /// What screen-space reflections' trace draws with in a frame of a canvas of `canvas` pixels,
+    /// or `None` while they draw nothing or without a camera.
+    pub(crate) fn ssr_frame(&self, canvas: (u32, u32)) -> Option<TraceFrame> {
+        let ssr = self.ssr()?;
+        let (_, lens) = self.views.first()?.camera()?;
+        Some(TraceFrame {
+            ssr,
+            projection: self.camera_projection(canvas)?,
+            orthographic: matches!(lens, Lens::Orthographic(_)),
+            steps: self.ssr_steps,
+        })
     }
 
     /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,

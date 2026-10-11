@@ -485,7 +485,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `bloom`, `ao`, `ssr`, `dof`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Screen-space reflections draw where `ssrScale` is above 0: from Medium up, or after `quality.set({ ssrScale: 0.5 })` on phones. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
@@ -494,6 +494,7 @@ post.set({
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
   ao: { radius: 0.5, intensity: 1 },     // (0.2) GTAOPass's meanings; darkens only ambient light; false turns it off
+  ssr: { maxDistance: 50, thickness: 0.5 },  // (0.2) smooth opaque surfaces reflect the screen in place of the environment; intensity, maxRoughness (0.5) too; false turns it off
   dof: { aperture: 1.8, focusPoint: [0, 1, 0] },  // (0.2) a camera lens: f-number, focusDistance or a world point, focalLength ('camera'), maxBlur, blades; false turns it off
   lut, lutIntensity: 0.8,                // (0.2) a table from assets.loadLut or lutFromData, or false; LUTPass's meanings
   vignette: { intensity: 1, size: 1 },   // (0.2) darkens HDR color before the tone curve; falloff (2) and roundness (0) too; false turns it off

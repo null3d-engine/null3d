@@ -68,6 +68,12 @@ export const SMALLEST_BLOOM_SIZE = QUALITY_SETTINGS.bloomSize.values[0];
 export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
 
 /**
+ * The smallest scale of screen-space reflections' grid above none, in thousandths of the render
+ * size.
+ */
+export const LOWEST_SSR_SCALE = thousandths(QUALITY_SETTINGS.ssrScale.values[1]);
+
+/**
  * The governor's steps of the far cascades' interval from `interval` on: each step doubles it, up to
  * the longest interval.
  */
@@ -182,8 +188,13 @@ export class Governor {
 	 */
 	aoScale = 0;
 	/**
-	 * Counts each change of `farInterval`, `filter`, `bloomHalvings` or `aoScale`, so the frame loop
-	 * applies them.
+	 * The scale of screen-space reflections' grid in thousandths of the render size: the setting's,
+	 * or the lowest above none after a step.
+	 */
+	ssrScale = 0;
+	/**
+	 * Counts each change of `farInterval`, `filter`, `bloomHalvings`, `aoScale` or `ssrScale`, so
+	 * the frame loop applies them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -212,6 +223,9 @@ export class Governor {
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
 	private ao = false;
+	/** The scale of screen-space reflections that their step starts from, and whether they are on. */
+	private ssrSetting = 0;
+	private ssr = false;
 
 	constructor() {
 		this.restart(0);
@@ -272,6 +286,17 @@ export class Governor {
 		if (on === this.ao && scale === this.aoSetting) return;
 		this.ao = on;
 		this.aoSetting = scale;
+		this.applySteps();
+	}
+
+	/**
+	 * Sets the scale of screen-space reflections' grid that their step starts from, in thousandths,
+	 * and whether the sketch has them on, which the step needs.
+	 */
+	setSsr(on: boolean, scale: number): void {
+		if (on === this.ssr && scale === this.ssrSetting) return;
+		this.ssr = on;
+		this.ssrSetting = scale;
 		this.applySteps();
 	}
 
@@ -480,33 +505,43 @@ export class Governor {
 		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
 	}
 
+	/** Screen-space reflections' step while they draw above the lowest scale: to the lowest. */
+	private ssrSteps(): number {
+		return this.ssr && this.ssrSetting > LOWEST_SSR_SCALE ? 1 : 0;
+	}
+
 	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the far cascades' interval doubles with each of its steps, the filter
-	 * takes the lightest after them, then bloom's base halves, and last ambient occlusion takes its
-	 * lowest scale.
+	 * takes the lightest after them, then bloom's base halves, then ambient occlusion takes its
+	 * lowest scale, and last screen-space reflections take theirs.
 	 */
 	private applySteps(): void {
 		const intervalSteps = this.intervalSteps();
 		const shadowSteps = intervalSteps + this.filterSteps();
 		const bloomSteps = this.bloomSteps();
-		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
+		const aoSteps = this.aoSteps();
+		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + aoSteps + this.ssrSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
 		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		const ssrScale =
+			this.steps > shadowSteps + bloomSteps + aoSteps ? LOWEST_SSR_SCALE : this.ssrSetting;
 		if (
 			farInterval === this.farInterval &&
 			filter === this.filter &&
 			bloomHalvings === this.bloomHalvings &&
-			aoScale === this.aoScale
+			aoScale === this.aoScale &&
+			ssrScale === this.ssrScale
 		)
 			return;
 		this.farInterval = farInterval;
 		this.filter = filter;
 		this.bloomHalvings = bloomHalvings;
 		this.aoScale = aoScale;
+		this.ssrScale = ssrScale;
 		this.stepChanges++;
 	}
 }

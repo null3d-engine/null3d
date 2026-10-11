@@ -68,6 +68,7 @@ use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
+use null3d_render::ssr::Ssr;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{MAX_VIEWS, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
@@ -224,13 +225,15 @@ struct Engine {
 /// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
 /// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
-/// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
-/// 2% of the image's height and round aperture, with no focus point.
+/// depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of 2%
+/// of the image's height and round aperture, with no focus point, then screen-space reflections'
+/// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 100.0, 0.5,
+        0.5,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -2842,6 +2845,47 @@ pub fn set_ao_scale(thousandths: u32) -> u32 {
         e.renderer
             .settings_mut()
             .set_ao_scale(thousandths as f32 / 1000.0);
+        0
+    })
+}
+
+/// Turns screen-space reflections on with their intensity, most distance, thickness and most
+/// roughness from the post-processing values, or off, from the next frame on. The TypeScript API
+/// checks the values.
+#[wasm_bindgen(js_name = setSsr)]
+pub fn set_ssr(on: bool) -> u32 {
+    with_engine(|e| {
+        let value = |place| e.post_value(place);
+        use constants::post_value as v;
+        let ssr = on.then(|| Ssr {
+            intensity: value(v::SSR_INTENSITY),
+            max_distance: value(v::SSR_MAX_DISTANCE),
+            thickness: value(v::SSR_THICKNESS),
+            max_roughness: value(v::SSR_MAX_ROUGHNESS),
+        });
+        e.renderer.settings_mut().set_ssr(ssr);
+        0
+    })
+}
+
+/// 1 when the frame recorded last draws with what the frame before it drew, as screen-space
+/// reflections read the frame before's color, else 0. Hold mode then records its frame twice.
+#[wasm_bindgen(js_name = readsLastFrame)]
+pub fn reads_last_frame() -> u32 {
+    // SAFETY: as in `with_engine`.
+    let engine = unsafe { (*ENGINE.0.get()).as_ref() };
+    u32::from(engine.is_some_and(|e| e.renderer.reads_last_frame()))
+}
+
+/// Sets the size of screen-space reflections' grid, in thousandths of the render size each way,
+/// and the most steps of their march, which the quality settings set, from the next frame on: a
+/// size of 0 draws none.
+#[wasm_bindgen(js_name = setSsrQuality)]
+pub fn set_ssr_quality(thousandths: u32, steps: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        settings.set_ssr_scale(thousandths as f32 / 1000.0);
+        settings.set_ssr_steps(steps);
         0
     })
 }

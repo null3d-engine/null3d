@@ -84,6 +84,12 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	ssrScale: {
+		label: 'Screen-space reflections',
+		print: (value) =>
+			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
+	},
+	ssrSteps: { label: 'Screen-space reflection steps per ray' },
 	reflectionScale: {
 		label: 'Reflection passes',
 		print: (value) =>

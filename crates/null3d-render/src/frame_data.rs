@@ -56,6 +56,16 @@ pub struct FrameUniform {
     /// first, `n.y` times the second and `n.z` times the third (see
     /// [`null3d_core::lights::FrameLights::hemisphere`]).
     pub hemisphere: [[f32; 4]; 3],
+    /// Takes a position relative to this frame's camera into the clip space of the camera's view
+    /// in the frame before, whose color screen-space reflections read (see [`crate::ssr`]).
+    pub reflection_reprojection: Mat4,
+    /// Screen-space reflections' strength, 0 when the view draws none, the most roughness that
+    /// reflects, the most distance of a ray, and the share of the screen over which they fade
+    /// toward its edges.
+    pub reflection: [f32; 4],
+    /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
+    /// spans at a distance of one unit in its view, along y, and a spare.
+    pub reflection_corner: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

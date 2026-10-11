@@ -55,6 +55,8 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | `UnrealBloomPass` | `bloom` with `blend: 'add'` and `knee: 0.01` | Keep the threshold. The intensity is about 8.8 times `strength`, and `radius` becomes the `weights`. |
 | `GTAOPass` | `ao` | The settings keep their names. `distanceFallOff` becomes `distanceFalloff`, and `blendIntensity` becomes `intensity`. |
 | `SSAOPass`, `SAOPass`, N8AO | `ao` | Their settings mean other things. Start from the defaults and tune `radius` and `scale` by eye. |
+| `SSRPass`, the WebGPU `ssr()` node | `ssr` | `maxDistance` and `thickness` keep their names, and `opacity` becomes `intensity`. Smooth materials reflect, so `selects` and `blur` have no setting. The reflections take the place of the environment's, so give the scene one. `resolutionScale` becomes the quality setting `ssrScale`. |
+| `ReflectorForSSRPass` | A reflection pass | A flat floor mirrors through a reflection pass, which wins over `ssr` on its plane. |
 | `OutlinePass` | `outline` and `mesh.setOutlined(true)` | `visibleEdgeColor` becomes `color`, and `hiddenEdgeColor` becomes `hiddenColor`. Set `width` to about twice `edgeThickness`. |
 | `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`, with floats from 0 to 1 in the same order. |
 | `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. The default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |

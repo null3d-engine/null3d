@@ -1,6 +1,7 @@
 // The post-processing settings that a sketch sets through `ctx.post`: the exposure and the tone
 // mapping, which the engine applies to the scene's color on its way to the canvas, bloom, ambient
-// occlusion, which darkens the ambient light of the camera's opaque objects, outlines, the
+// occlusion, which darkens the ambient light of the camera's opaque objects, screen-space
+// reflections, which reflect what the screen shows in their shiny surfaces, outlines, the
 // vignette, which the final pass applies before the tone mapping, the color grading table, which
 // it applies after, and depth of field, which blurs by distance before bloom. The core takes one
 // exposure: the sketch's exposure times the camera
@@ -62,6 +63,7 @@ const SETTINGS = [
 	'vignette',
 	'outline',
 	'dof',
+	'ssr',
 ] as const;
 /** Bloom's number settings, in the order of their places in the core's block from its intensity on. */
 const BLOOM_NUMBERS = ['intensity', 'threshold', 'knee'] as const;
@@ -81,6 +83,11 @@ const AO_SETTINGS = [
 ] as const;
 /** The most samples of ambient occlusion's horizon search. */
 const MAX_AO_SAMPLES = 64;
+/**
+ * Screen-space reflections' settings, in the order of their places in the core's block from the
+ * intensity's on.
+ */
+const SSR_SETTINGS = ['intensity', 'maxDistance', 'thickness', 'maxRoughness'] as const;
 /**
  * The vignette's settings: its intensity and size have places in the core's block from the
  * intensity's on, and its falloff and roundness from the falloff's on.
@@ -197,6 +204,38 @@ export interface AoSettings {
 	 * `GTAOPass`'s `blendIntensity`.
 	 */
 	intensity?: number;
+}
+
+/**
+ * Screen-space reflections' settings, with the meanings of three.js's `SSRPass`. A setting that a
+ * call leaves out keeps its value.
+ *
+ * @category api/post
+ */
+export interface SsrSettings {
+	/**
+	 * From 0 to 1: how much of the environment's reflection the screen's reflection replaces where
+	 * a ray hits, and 1 by default, as `SSRPass`'s `opacity`. The material's Fresnel term, metalness
+	 * and specular values still weigh the reflection.
+	 */
+	intensity?: number;
+	/**
+	 * How far a reflected ray travels, in world units: above 0, and 100 by default, as `SSRPass`'s
+	 * `maxDistance`. Reflections fade out over the last fifth of it.
+	 */
+	maxDistance?: number;
+	/**
+	 * How far behind a surface on the screen a ray may pass and still hit it, in world units: 0 or
+	 * more, and 0.5 by default, as `SSRPass`'s `thickness`. Thin objects need a small value, or
+	 * objects behind them reflect as if they were solid.
+	 */
+	thickness?: number;
+	/**
+	 * The roughest surface that shows screen-space reflections, from 0 to 1, and 0.5 by default.
+	 * Rougher surfaces keep the environment's reflection. Reflections fade out from 70% of it, and
+	 * blur more on rougher surfaces.
+	 */
+	maxRoughness?: number;
 }
 
 /**
@@ -369,6 +408,16 @@ export interface PostSettings {
 	 * `dofSamples` is above 0.
 	 */
 	dof?: DofSettings | false;
+	/**
+	 * Screen-space reflections: shiny opaque surfaces reflect what the screen shows along their
+	 * mirror direction, blurred by their roughness, in place of the environment's reflection. They
+	 * fade into the environment's light where the screen holds no hit, as near its edges, so wet
+	 * streets, polished floors and metal reflect the scene around them. Settings turn them on, `{}`
+	 * with the values they had, and `false` turns them off. They are off by default, and draw only
+	 * where the quality setting `ssrScale` is above 0. A planar reflection pass's reflection wins on
+	 * its plane.
+	 */
+	ssr?: SsrSettings | false;
 }
 
 /**
@@ -430,6 +479,8 @@ export class Post {
 	private outline = false;
 	private dof = false;
 	private warnedNoDof = false;
+	private ssr = false;
+	private warnedNoSsr = false;
 	/** The custom tone curve that maps the scene's color, while the sketch sets one. */
 	private toneCurve: ToneCurve | undefined;
 	/** True when an effect or a tone curve came since the last frame, with pipelines to build. */
@@ -518,8 +569,19 @@ export class Post {
 	 */
 	set(settings: PostSettings): void {
 		if (DEV) checkSettings(settings);
-		const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
-			settings;
+		const {
+			toneMapping,
+			exposure,
+			ev100,
+			bloom,
+			ao,
+			lut,
+			lutIntensity,
+			vignette,
+			outline,
+			dof,
+			ssr,
+		} = settings;
 		const { core } = this;
 		const { glue } = core;
 		const values = this.block();
@@ -566,6 +628,7 @@ export class Post {
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
 		if (ao !== undefined) this.setAo(ao, values);
+		if (ssr !== undefined) this.setSsr(ssr, values);
 		if (dof !== undefined) this.setDof(dof, values);
 		if (outline !== undefined) {
 			this.outline = outline !== false;
@@ -641,6 +704,26 @@ export class Post {
 		this.core.check(this.core.glue.setAo(on), 'post.set', undefined, true);
 	}
 
+	/** Turns screen-space reflections on with the settings that `ssr` gives, or off with `false`. */
+	private setSsr(ssr: SsrSettings | false, values: Float32Array): void {
+		this.ssr = ssr !== false;
+		if (ssr !== false) writeNumbers(values, C.POST_VALUE_SSR_INTENSITY, ssr, SSR_SETTINGS);
+		const on = this.ssr && this.occlusionTargets;
+		if (on) {
+			// The reflections draw on ambient occlusion's grid, and read the copy of the opaque color
+			// that transmission makes.
+			this.shaders.need('ao');
+			this.shaders.need('transmission');
+		}
+		if (DEV && this.ssr && !this.occlusionTargets && !this.warnedNoSsr) {
+			this.warnedNoSsr = true;
+			console.warn(
+				'null3D: screen-space reflections stay off on this device: they need float render targets, and the device has none. Shiny surfaces keep the environment light. See the post-processing concepts page.',
+			);
+		}
+		this.core.check(this.core.glue.setSsr(on), 'post.set', undefined, true);
+	}
+
 	/** The core's block of post-processing values, through a view made again after the memory grew. */
 	private block(): Float32Array {
 		const { core } = this;
@@ -696,6 +779,11 @@ export class Post {
 	get aoOn(): boolean {
 		return this.ao && this.occlusionTargets;
 	}
+
+	/** @internal True while the sketch has screen-space reflections on, on a device that draws them. */
+	get ssrOn(): boolean {
+		return this.ssr && this.occlusionTargets;
+	}
 }
 
 /**
@@ -724,11 +812,31 @@ function checkSettings(settings: PostSettings): void {
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
 				'E1213',
-				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline and dof.`,
+				`post.set() got the setting ${key}, and this version has only toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof and ssr.`,
 			);
-	const { toneMapping, exposure, ev100, bloom, ao, lut, lutIntensity, vignette, outline, dof } =
-		settings;
+	const {
+		toneMapping,
+		exposure,
+		ev100,
+		bloom,
+		ao,
+		lut,
+		lutIntensity,
+		vignette,
+		outline,
+		dof,
+		ssr,
+	} = settings;
 	checkDof(dof);
+	checkGroup('ssr', ssr, SSR_SETTINGS, 'intensity, maxDistance, thickness and maxRoughness');
+	if (ssr) {
+		checkNumber('ssr.intensity', ssr.intensity, 1);
+		checkNumber('ssr.maxDistance', ssr.maxDistance);
+		if (ssr.maxDistance === 0)
+			throw new EngineError('E1213', 'post.set() got 0 for ssr.maxDistance, which is above 0.');
+		checkNumber('ssr.thickness', ssr.thickness);
+		checkNumber('ssr.maxRoughness', ssr.maxRoughness, 1);
+	}
 	checkGroup(
 		'ao',
 		ao,

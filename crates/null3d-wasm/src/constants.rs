@@ -181,8 +181,14 @@ pub mod post_value {
     /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
     pub const DOF_FOCUS_POINT: u32 = 46;
     pub const DOF_FOCUS_ON_POINT: u32 = 49;
+    /// Screen-space reflections' intensity, most distance, thickness and most roughness, in this
+    /// order.
+    pub const SSR_INTENSITY: u32 = 50;
+    pub const SSR_MAX_DISTANCE: u32 = 51;
+    pub const SSR_THICKNESS: u32 = 52;
+    pub const SSR_MAX_ROUGHNESS: u32 = 53;
     /// The values in the block.
-    pub const COUNT: u32 = 50;
+    pub const COUNT: u32 = 54;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -942,6 +948,10 @@ pub fn typescript() -> String {
                 ("DOF_BLADES", post_value::DOF_BLADES),
                 ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
                 ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
+                ("SSR_INTENSITY", post_value::SSR_INTENSITY),
+                ("SSR_MAX_DISTANCE", post_value::SSR_MAX_DISTANCE),
+                ("SSR_THICKNESS", post_value::SSR_THICKNESS),
+                ("SSR_MAX_ROUGHNESS", post_value::SSR_MAX_ROUGHNESS),
                 ("COUNT", post_value::COUNT),
             ],
         ),

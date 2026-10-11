@@ -27,6 +27,8 @@ import {
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_SKIN,
+	LAYOUT_SSR_REDUCE,
+	LAYOUT_SSR_TRACE,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
 	PERMUTATION_CASTER,
@@ -91,6 +93,8 @@ import {
 	TEMPLATE_SKIN,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SSR_REDUCE,
+	TEMPLATE_SSR_TRACE,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
 	VERTEX_INSTANCE_LOCATION,
@@ -617,7 +621,15 @@ export class Pipelines {
 		});
 		this.defineLayout(LAYOUT_AO_DEPTH, 'ao depth', [aoSettings, unfiltered(1)]);
 		this.defineLayout(LAYOUT_AO_DEPTH_MS, 'ao depth ms', [aoSettings, unfiltered(1, true)]);
-		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2)]);
+		this.defineLayout(LAYOUT_AO, 'ao', [aoSettings, unfiltered(1), unfiltered(2), unfiltered(3)]);
+		// Screen-space reflections' steps read every texture with textureLoad too: a level of the
+		// depth pyramid reads the level below it, and the trace ambient occlusion's depth copy and
+		// the pyramid's six levels above it.
+		this.defineLayout(LAYOUT_SSR_REDUCE, 'ssr reduce', [aoSettings, unfiltered(1)]);
+		this.defineLayout(LAYOUT_SSR_TRACE, 'ssr trace', [
+			aoSettings,
+			...[1, 2, 3, 4, 5, 6, 7].map((binding) => unfiltered(binding)),
+		]);
 		// The background's values, which the sky's vertex stage reads too, a cube map and its
 		// filtering sampler.
 		this.defineLayout(LAYOUT_BACKGROUND, 'background', [
@@ -739,6 +751,8 @@ export class Pipelines {
 			[TEMPLATE_AO_DEPTH_MS, 'ao depth ms', shaders.ao_ms, 'depth', LAYOUT_AO_DEPTH_MS],
 			[TEMPLATE_AO, 'ao horizon', shaders.ao, 'horizon', LAYOUT_AO],
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
+			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
+			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
 			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
 			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],

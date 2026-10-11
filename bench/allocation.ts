@@ -44,7 +44,9 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--prepass` turns the depth prepass on, in any scene.
+// frame. `--ssr` puts a polished floor under S1 and turns screen-space reflections on, whose
+// steps and copy of the opaque colors draw in every frame. `--prepass` turns the depth prepass on,
+// in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -314,6 +316,14 @@ const TRANSMISSION_REPLAY_BUDGET = 64;
  */
 const TRANSMISSION_MIPS_BUDGET = 11 * 32;
 
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--ssr`, at
+ * bloom's allowance per pass: the encoders of the render passes that screen-space reflections add.
+ * They are the depth prepass, which draws apart from the opaque pass, the depth copy, the six
+ * levels of the depth pyramid, the trace and the copy of the opaque colors.
+ */
+const SSR_REPLAY_BUDGET = 10 * 64;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -474,12 +484,14 @@ async function main(): Promise<void> {
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
+		const ssr = args.includes('--ssr') ? '&ssr' : '';
+		if (ssr && scene !== 's1') throw new Error('--ssr puts a polished floor under S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${ssr}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -618,7 +630,8 @@ async function main(): Promise<void> {
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
-					(name === 'generateMipmaps webgpu/backend.ts' && transmission
+					(replay && ssr ? SSR_REPLAY_BUDGET : 0) +
+					(name === 'generateMipmaps webgpu/backend.ts' && (transmission || ssr)
 						? TRANSMISSION_MIPS_BUDGET
 						: 0) +
 					(statsBudgets[name] ?? 0) +

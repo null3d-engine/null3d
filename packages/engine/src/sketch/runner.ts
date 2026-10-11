@@ -281,6 +281,14 @@ export class SketchRunner {
 	private aoSetting = 0;
 	/** True while ambient occlusion draws: the sketch has it on, and its scale is above 0. */
 	private aoDrawn = false;
+	/** True while the sketch has screen-space reflections on, as the governor knows it. */
+	private ssrOn = false;
+	/** The scale of the reflections' grid that the `ssrScale` setting gives, in thousandths. */
+	private ssrSetting = 0;
+	/** The most steps of the reflections' march that the `ssrSteps` setting gives. */
+	private ssrStepSetting = 0;
+	/** True while screen-space reflections draw: the sketch has them on, and their scale is above 0. */
+	private ssrDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
@@ -746,6 +754,9 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.ssrSetting = Math.round(settings.ssrScale * FULL_SCALE);
+		this.ssrStepSetting = settings.ssrSteps;
+		governor.setSsr(this.ssrOn, this.ssrSetting);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -753,6 +764,7 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
@@ -786,7 +798,8 @@ export class SketchRunner {
 		if (
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
-			glue.setAoScale(governor.aoScale) !== 0
+			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -799,10 +812,27 @@ export class SketchRunner {
 	 */
 	private followEffects(): boolean {
 		const ao = this.followAo();
+		const ssr = this.followSsr();
 		const bloom = this.followBloom();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
-		return ao || bloom || custom || passes;
+		return ao || ssr || bloom || custom || passes;
+	}
+
+	/**
+	 * Follows the sketch's screen-space reflections: the governor's step needs them on. Returns true
+	 * when they start or stop drawing: the frame adds or removes the depth prepass and the steps.
+	 */
+	private followSsr(): boolean {
+		const on = this.post.ssrOn;
+		if (on !== this.ssrOn) {
+			this.ssrOn = on;
+			this.governor.setSsr(on, this.ssrSetting);
+		}
+		const drawn = on && this.ssrSetting > 0;
+		if (drawn === this.ssrDrawn) return false;
+		this.ssrDrawn = drawn;
+		return true;
 	}
 
 	/**
@@ -868,8 +898,10 @@ export class SketchRunner {
 	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
-	 * loss, textures included. It waits for every texture image to reach that thread first. The
-	 * first failure in the sketch or the core stops the hold with E1408.
+	 * loss, textures included. It waits for every texture image to reach that thread first. When
+	 * that frame draws with what the frame before it drew, as screen-space reflections read the
+	 * frame before's color, it steps the sketch once more at the same time, and that thread draws
+	 * both frames in turn. The first failure in the sketch or the core stops the hold with E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
@@ -888,6 +920,11 @@ export class SketchRunner {
 					// loss.
 					this.gpuEpoch = -1;
 				}
+				frame = this.frame();
+			}
+			Atomics.store(slots, Slot.HeldFrom, frame);
+			if (glue.readsLastFrame() !== 0) {
+				this.clock.holdStep(steps, steps, seconds);
 				frame = this.frame();
 			}
 		} catch (error) {

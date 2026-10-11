@@ -533,6 +533,41 @@ function reflectionTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the screen-space reflection tests: boxes, a ball and a lamp on a shiny floor. */
+export const SSR_SKETCH = 'tests/pages/sketches/ssr-sketch.ts';
+
+/** The screen-space reflection tests' image size: wide enough for the reflections' edges to show. */
+const SSR_SIZE = [480, 270] as const;
+
+/**
+ * Screen-space reflections on a smooth steel floor, which reflects no environment, so it shows only
+ * what the reflections find on the screen, on every tier: off, on, on a rough floor, which blurs
+ * them, on a wet plastic floor, which reflects most at a low angle, at a quarter of the render
+ * size, at half the render scale, with ambient occlusion on the same grid, with a planar reflection
+ * on the floor's left half, which wins there, and with a glass ball that draws through the color
+ * copy that the reflections read too. The held frame draws twice, so the reflections read the frame
+ * before it. The reflection spec checks where the boxes' reflections land.
+ */
+function ssrTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${SSR_SKETCH}${query}`,
+		hold: 0,
+		size: SSR_SIZE,
+	});
+	return [
+		test('ssr-off', ''),
+		test('ssr-floor', '?ssr'),
+		test('ssr-rough', '?ssr&rough'),
+		test('ssr-wet', '?ssr&wet'),
+		test('ssr-quarter', '?ssr&ssrscale=0.25'),
+		test('ssr-scale-50', '?ssr&scale=0.5'),
+		test('ssr-ao', '?ssr&ao'),
+		test('ssr-planar', '?ssr&planar'),
+		test('ssr-glass', '?ssr&glass'),
+	];
+}
+
 /** The sketch of the glass scene, which three.js's transmission draws too. */
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
@@ -1009,6 +1044,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...ssrTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),

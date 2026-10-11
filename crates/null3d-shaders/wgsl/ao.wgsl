@@ -10,7 +10,9 @@
 //   writes how open the surface is, with the normal.
 // - `denoise` is three.js's PoissonDenoiseShader: a blur over a disk of taps that keeps the taps on
 //   the pixel's own surface, by their occlusion, their distance from its plane and their normal. It
-//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao).
+//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao). While
+//   screen-space reflections draw, their trace (ssr.wgsl) ran before it on the same grid, and it
+//   copies the reflected ray's length from the trace's target into z of its own; else z is 0.
 //
 // Positions are in the camera's view space, from texture coordinates of the render size that count
 // from the top left. A texel of the steps stands for the pixel of the scene under its center.
@@ -29,14 +31,16 @@ struct Settings {
     extents: vec4f,
     /// three.js's radius, thickness, distance exponent and distance falloff.
     horizon: vec4f,
-    /// three.js's scale, the slices around the view, the steps along each slice, and a spare.
+    /// three.js's scale, the slices around the view, the steps along each slice, and 1 while the
+    /// denoise copies screen-space reflections' ray lengths, else 0.
     shape: vec4f,
     /// The denoise's luma, depth and normal phi, and its radius in texels of the steps.
     denoise: vec4f,
 }
 
 // Binding 1 is the scene's depth target in the depth step, and the steps' copy of the depth in the
-// others. Binding 2 is the horizon step's target, which only the denoise reads.
+// others. Binding 2 is the horizon step's target, which only the denoise reads, and binding 3 the
+// target of screen-space reflections' trace, which only the denoise reads, and only while they draw.
 @group(0) @binding(0) var<uniform> settings: Settings;
 #ifdef MULTISAMPLED
 @group(0) @binding(1) var source: texture_multisampled_2d<f32>;
@@ -44,6 +48,7 @@ struct Settings {
 @group(0) @binding(1) var source: texture_2d<f32>;
 #endif
 @group(0) @binding(2) var horizons: texture_2d<f32>;
+@group(0) @binding(3) var reflections: texture_2d<f32>;
 
 const PI: f32 = 3.141592653589793;
 /// The taps of the denoise's disk, and its rings: three.js's defaults.
@@ -221,13 +226,23 @@ fn horizon_at(texel: vec2i) -> vec4f {
     return textureLoad(horizons, vec2i(inside.x, turned(inside.y, settings.extents.w)), 0);
 }
 
+/// The reflected ray's length that screen-space reflections' trace wrote at a texel, or 0 while
+/// they draw nothing.
+fn reflection_at(texel: vec2i) -> f32 {
+    if settings.shape.w < 0.5 {
+        return 0.0;
+    }
+    return textureLoad(reflections, vec2i(texel.x, turned(texel.y, settings.extents.w)), 0).z;
+}
+
 @fragment
 fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = corner_texel(position);
     let depth = depth_at(texel);
     let found = horizon_at(texel);
+    let reflected = reflection_at(texel);
     if depth <= 0.0 || dot(found.yzw, found.yzw) == 0.0 {
-        return vec4f(1.0, depth, 0.0, 1.0);
+        return vec4f(1.0, depth, reflected, 1.0);
     }
     let center = position_at(texel);
     let normal = found.yzw;
@@ -257,5 +272,5 @@ fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
         sum += held.x * weight;
         total += weight;
     }
-    return vec4f(sum / total, depth, 0.0, 1.0);
+    return vec4f(sum / total, depth, reflected, 1.0);
 }

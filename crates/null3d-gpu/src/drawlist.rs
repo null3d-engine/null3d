@@ -701,8 +701,9 @@ pub mod layout {
     /// [`AO_DEPTH`] for a multisampled depth target, of which the step reads sample 0. Only
     /// WebGPU has it: WebGL2 reads a copy of one sample that the backend keeps.
     pub const AO_DEPTH_MS: u32 = 17;
-    /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the two
-    /// textures that the step reads with `textureLoad`.
+    /// Group 0 of ambient occlusion's other steps: the steps' uniform block, then the three
+    /// textures that the step reads with `textureLoad`. The third is the target of screen-space
+    /// reflections' trace, which only the denoise reads, while they draw.
     pub const AO: u32 = 18;
     /// The background's group: its uniform block, then a cube texture and its filtering sampler.
     /// It is group 1 of the cube and sky backgrounds, and group 2 of the texture background,
@@ -738,6 +739,12 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 0 of a level of screen-space reflections' depth pyramid: the level's uniform block,
+    /// then the level below it, which the step reads with `textureLoad`.
+    pub const SSR_REDUCE: u32 = 30;
+    /// Group 0 of screen-space reflections' trace: its uniform block, then ambient occlusion's depth
+    /// copy and the pyramid's six levels above it, which it reads with `textureLoad`.
+    pub const SSR_TRACE: u32 = 31;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1344,8 +1351,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, and the hemisphere lights' three vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 560;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, then screen-space
+    /// reflections' matrix into the frame before's view and their two vectors.
+    pub const FRAME_UNIFORM_BYTES: u32 = 656;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1558,6 +1566,12 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// One level of screen-space reflections' depth pyramid: one triangle over the level's drawn
+    /// corner, each texel the nearest depth of the 2 x 2 texels of the level below it.
+    pub const SSR_REDUCE: u32 = 49;
+    /// Screen-space reflections' trace: one triangle over the grid of the screen texture, which
+    /// marches each texel's mirror ray through the depth pyramid and writes the ray's length.
+    pub const SSR_TRACE: u32 = 50;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1846,6 +1860,8 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("SSR_REDUCE", layout::SSR_REDUCE),
+                ("SSR_TRACE", layout::SSR_TRACE),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1939,6 +1955,8 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("SSR_REDUCE", template::SSR_REDUCE),
+                ("SSR_TRACE", template::SSR_TRACE),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

@@ -75,6 +75,7 @@ enable draw_index;
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #import null3d::lighting::{indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
+#import null3d::ssr::{screen_reflection}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -654,9 +655,10 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
 /// position relative to the camera, `to_view` points from the surface toward the camera, and
-/// `dfg` holds the split-sum terms at the surface's roughness and view angle. In custom materials,
-/// `reflection` holds light from the mirror direction and its share, which takes the place of
-/// that share of the environment's reflection, with or without an environment.
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle. `reflection` holds
+/// light from the mirror direction and its share, from screen-space reflections and a custom
+/// material's planar reflection, which takes the place of that share of the environment's
+/// reflection, with or without an environment.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -665,9 +667,7 @@ fn light_surface(
     dfg: vec2f,
     extra: vec3f,
     occlusion: f32,
-#ifdef CUSTOM
     reflection: vec4f,
-#endif
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
@@ -695,19 +695,12 @@ fn light_surface(
     diffuse_light = sun.diffuse + clustered.diffuse + indirect;
 #endif
     let env = engine_frame.environment;
-#ifdef CUSTOM
     let mirrored = saturate(reflection.a);
     if has_environment(env) || mirrored > 0.0 {
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
         let irradiance = environment_irradiance(env, normal) * strength;
         let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let radiance = mix(surrounding, reflection.rgb, mirrored);
-#else
-    if has_environment(env) {
-        let strength = material_row.uv_u.w;
-        let irradiance = environment_irradiance(env, normal) * strength;
-        let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
-#endif
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
         let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
@@ -748,6 +741,25 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
+    // What the screen showed along the mirror direction, then a planar reflection over it: the
+    // planar reflection's share wins on its plane.
+    let screen = screen_reflection(
+        pixel,
+        input.relativePosition,
+        normal,
+        input.viewDirection,
+        pbr.roughness,
+        blended,
+    );
+#ifdef CUSTOM
+    let planar = saturate(s.reflection.a);
+    let screen_share = screen.a * (1.0 - planar);
+    let mirror_share = planar + screen_share;
+    let mirror = (s.reflection.rgb * planar + screen.rgb * screen_share) / max(mirror_share, 1e-6);
+    let reflection = vec4f(mirror, mirror_share);
+#else
+    let reflection = screen;
+#endif
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -756,9 +768,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         dfg,
         s.irradiance * engine_frame.output.exposure,
         s.occlusion * screen_occlusion(pixel.xyz, blended),
-#ifdef CUSTOM
-        s.reflection,
-#endif
+        reflection,
     );
 #ifdef TRANSMISSION
     // three.js's getIBLVolumeRefraction: the light from behind, through the diffuse color and less

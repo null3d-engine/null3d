@@ -65,7 +65,8 @@ export interface Null3dPageOptions {
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
  * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
- * lets light through under it, `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * lets light through under it, `ssr` puts a polished floor under it with screen-space reflections
+ * on, `batchShadows` makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `sides` draws S2's boxes
  * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
@@ -96,6 +97,7 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'ssr',
 	'still',
 	'batchShadows',
 	'rowValues',

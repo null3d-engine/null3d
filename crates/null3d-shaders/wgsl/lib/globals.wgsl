@@ -53,6 +53,16 @@ struct Frame {
     hemisphere_x: vec4f,
     hemisphere_y: vec4f,
     hemisphere_z: vec4f,
+    /// Takes a position relative to this frame's camera into the clip space of the camera's view in
+    /// the frame before, which screen-space reflections read the color of (see null3d::ssr).
+    reflection_reprojection: mat4x4f,
+    /// Screen-space reflections' strength, 0 when the view draws none, the most roughness that
+    /// reflects, the most distance of a ray, and the share of the screen over which they fade
+    /// toward its edges.
+    reflection: vec4f,
+    /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
+    /// spans at a distance of one unit in its view, along y, and a spare.
+    reflection_corner: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

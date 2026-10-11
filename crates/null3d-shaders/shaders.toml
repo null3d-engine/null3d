@@ -326,10 +326,30 @@ by_device = true
 pipelines.depth = { vertex = "vs", fragment = "depth" }
 variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 
-# A page downloads ambient occlusion's steps when the sketch first turns it on. The frames keep the
-# opaque pass without it until the steps' pipelines are built.
+# Screen-space reflections' steps on ambient occlusion's grid (see ssr.wgsl): `reduce` makes one
+# level of the depth pyramid from the level below it, and `trace` marches each texel's mirror ray
+# through the pyramid and writes the ray's length into the screen texture. The WebGL2 variants count
+# rows from the bottom.
+[shaders.ssr]
+file = "ssr.wgsl"
+by_device = true
+pipelines.trace = { vertex = "vs", fragment = "trace_rays" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+[shaders.ssr_reduce]
+file = "ssr.wgsl"
+by_device = true
+pipelines.reduce = { vertex = "vs", fragment = "reduce" }
+variants.webgpu = { defs = ["REDUCE"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "REDUCE"], targets = ["glsl"] }
+
+# A page downloads the steps of the screen texture, ambient occlusion's and screen-space
+# reflections', when the sketch first turns either on: reflections draw on ambient occlusion's grid
+# and use its depth step. The frames keep the opaque pass without them until the steps' pipelines
+# are built.
 [first_use.ao]
-shaders = ["ao", "ao_ms"]
+shaders = ["ao", "ao_ms", "ssr", "ssr_reduce"]
 
 # Depth of field's steps (see dof.wgsl): `setup` writes half-size color with each texel's signed
 # blur size from the depth, `gather` blurs the near and the far field apart over a disk or polygon of

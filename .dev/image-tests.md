@@ -61,6 +61,10 @@ The reflection tests of the manifest draw boxes on a mirror floor, on rippled wa
 
 In compatibility mode the floor shows the sky grayer than on core WebGPU and WebGL2. That path keeps display color in the pass's texture, and the floor's material applies the tone curve a second time, as [D-104](decisions/D-104-scene-passes.md#display-color-on-the-8-bit-path-owner-8-october-2026) expects.
 
+The screen-space reflection tests draw boxes, a ball and a lamp on a steel floor that reflects no environment, so the floor shows only what the reflections find ([D-134](decisions/D-134-screen-space-reflections.md)). They cover a rough floor, a wet plastic floor, a quarter-size grid, half the render scale, ambient occlusion on the same grid, a planar reflection on the floor's left half, and a glass ball. `ssr.spec.ts` checks that each box's reflection hangs below it on its own side, and that the floor shows no box without the reflections.
+
+The reflections read the frame before's colors, and hold mode draws only its last frame. So when the last frame reads the frame before, hold mode steps the sketch once more at the same time, and the thread that draws draws both frames in turn: the control slot `HeldFrom` names the first. Without that, every held frame showed no reflections.
+
 ## The cookbook's recipes
 
 Each recipe on the docs' cookbook page, `docs/cookbook/index.md`, is a complete sketch. The tests of the skills' sketches run them too (`tests/lib/skill-sketches.ts`): the unit test type checks each one against the engine, and `tests/image/skill-sketches.spec.ts` draws each one in hold mode on every GPU tier. A recipe that picks a camera must draw more than its background. The tests compare no reference image, so a recipe can change without new references in both sets. The demos in `examples/` carry the reference images instead.

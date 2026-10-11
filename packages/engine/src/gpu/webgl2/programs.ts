@@ -42,6 +42,8 @@ import {
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SSR_REDUCE,
+	TEMPLATE_SSR_TRACE,
 	TEMPLATE_TRANSMISSION_COPY,
 } from '../../generated/gpu';
 import {
@@ -248,6 +250,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	templates[TEMPLATE_SSR_REDUCE] = { shader: shaders.ssr_reduce, pipeline: 'reduce' };
+	templates[TEMPLATE_SSR_TRACE] = { shader: shaders.ssr, pipeline: 'trace' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

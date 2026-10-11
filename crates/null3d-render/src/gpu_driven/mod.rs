@@ -156,6 +156,7 @@ use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
+use crate::ssr::SsrIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
@@ -298,8 +299,10 @@ mod ids {
     pub const EFFECTS: u32 = NO_PYRAMID + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// The uniform buffer of screen-space reflections' steps.
+    pub const SSR: u32 = DOF + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = DOF + 1;
+    pub const PAGES: u32 = SSR + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -409,8 +412,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each step of screen-space reflections, after the copy's.
+    pub const SSR_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after screen-space reflections'.
+    pub const TEXTURE_GROUPS: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -614,6 +619,10 @@ impl GpuDrivenRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        ssr: SsrIds {
+                            buffer: ids::SSR,
+                            first_group: ids::SSR_GROUPS,
+                        },
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
                         }),
@@ -760,6 +769,10 @@ impl GpuDrivenRenderer {
             .ao()
             .zip(self.settings.camera_projection(input.canvas));
         self.graph.set_ao(ao, self.settings.ao_scale());
+        self.graph.set_ssr(
+            self.settings.ssr_frame(input.canvas),
+            self.settings.ssr_scale(),
+        );
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
             .chain(self.sorted.waiting())
@@ -1101,6 +1114,8 @@ impl GpuDrivenRenderer {
         }
         if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
             frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
+            let eye = frame.camera.absolute();
+            self.graph.write_screen_values(&mut frame.uniform, eye);
         }
         self.graph.upload(
             list,
@@ -1637,6 +1652,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
         self.graph.dot()
+    }
+
+    fn reads_last_frame(&self) -> bool {
+        self.graph.ssr_draws()
     }
 
     fn graph_message(&self, error: GraphError) -> String {

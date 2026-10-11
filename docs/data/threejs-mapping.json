@@ -1613,12 +1613,12 @@
     {
       "id": "ssr",
       "category": "Post-processing",
-      "three": "SSRPass / ReflectorForSSRPass",
-      "status": "post-1.0",
-      "since": null,
-      "target": "The environment map, or a reflection pass for a flat surface: render.addPass({ kind: 'reflection', writes, plane })",
-      "notes": "Screen-space reflections come after 1.0. A flat floor or water reflects through a reflection pass (0.2), as the reflector entry says.",
-      "docs": "porting/threejs-unsupported",
+      "three": "SSRPass / ReflectorForSSRPass / ssr() node",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ ssr: { maxDistance, thickness, intensity } }) with quality.set({ ssrScale })",
+      "notes": "Reflects what the screen shows in smooth opaque surfaces, in place of the environment's reflection, through the material's Fresnel term, where SSRPass adds its reflections over the finished image. maxDistance and thickness keep their names, and opacity becomes intensity. The material's roughness picks the surfaces and blurs their reflections, up to maxRoughness, so selects and blur have no settings. A groundReflector (ReflectorForSSRPass) becomes a reflection pass, which wins on its plane. The ssr() node's resolutionScale becomes the ssrScale quality setting, which is 0 on the Low preset of phones. Where a ray hits nothing on the screen, the environment's reflection shows.",
+      "docs": "api/post",
       "detect": "\\bSSRPass\\b|ReflectorForSSRPass"
     },
     {

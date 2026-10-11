@@ -109,3 +109,9 @@ export const JoinFailed = 31;
  * reads the engine memory that the list points at.
  */
 export const ReplayDelayMs = 32;
+/**
+ * In hold mode, the first frame that the thread that draws draws, up to the frame published. The
+ * sketch thread records the held frame twice when a feature draws with what the frame before it
+ * drew, as screen-space reflections read the frame before's color, so the held frame has one.
+ */
+export const HeldFrom = 35;

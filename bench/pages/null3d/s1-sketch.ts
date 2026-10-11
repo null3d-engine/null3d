@@ -34,6 +34,11 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `ssr` switch puts a polished floor under the swarm and turns screen-space reflections on, for
+// the allocation sample and the cost of their steps, the copy of the opaque colors that they read,
+// and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
+// `ssr=quarter` give their grid that share of the render size, and the switch alone takes the
+// preset's.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -76,6 +81,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const ssr = switches.get('ssr');
+	if (ssr !== null) createPolishedFloor(context, ssr);
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -319,6 +326,28 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** The reflections' grid as a share of the render size, by the `ssr` switch's value. */
+const SSR_SCALES = { half: 0.5, quarter: 0.25 } as const;
+
+/**
+ * Adds the `ssr` switch's polished floor under the swarm, and turns screen-space reflections on,
+ * which reflect the swarm in it.
+ */
+function createPolishedFloor(
+	{ scene, geometry, materials, post, quality }: SketchContext,
+	size: string,
+) {
+	const scale = SSR_SCALES[size as keyof typeof SSR_SCALES];
+	if (scale) quality.set({ ssrScale: scale });
+	post.set({ ssr: { maxDistance: 400, thickness: 2 } });
+	const floor = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#1a1d21', roughness: 0.08, metalness: 0.3 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	floor.setRotationEuler(-Math.PI / 2, 0, 0);
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */

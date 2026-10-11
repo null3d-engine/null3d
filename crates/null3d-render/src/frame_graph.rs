@@ -134,6 +134,7 @@ use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
+use crate::frame_data::FrameUniform;
 use crate::grading::Grading;
 use crate::graph::{
     CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
@@ -144,9 +145,14 @@ use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
+use crate::ssr::{self, LastView, SsrIds, SsrPass, TraceFrame};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
 use crate::view::{View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
+
+/// A texture of the plan as the draw lists made it: its plan, the size it was made at, and for a
+/// multisampled target, whether it resolved into the canvas.
+type MadeTexture = (PlannedTexture, (u32, u32), bool);
 
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
@@ -165,6 +171,7 @@ pub(crate) struct GraphIds {
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
     pub(crate) transmission: TransmissionIds,
+    pub(crate) ssr: SsrIds,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -273,6 +280,27 @@ const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
 /// a mip chain that it creates, which the camera's transparent pass reads.
 const TRANSMISSION_PASS: &str = "Transmission";
 const TRANSMISSION_COLOR: &str = "transmissionColor";
+/// Each step of screen-space reflections and the target it creates: a level of the depth pyramid
+/// for each reduce step, then the trace, whose target the camera's opaque pass reads while ambient
+/// occlusion draws none.
+const SSR_PASSES: [&str; ssr::STEPS] = [
+    "SsrLevel1",
+    "SsrLevel2",
+    "SsrLevel3",
+    "SsrLevel4",
+    "SsrLevel5",
+    "SsrLevel6",
+    "SsrTrace",
+];
+const SSR_TARGETS: [&str; ssr::STEPS] = [
+    "ssrLevel1",
+    "ssrLevel2",
+    "ssrLevel3",
+    "ssrLevel4",
+    "ssrLevel5",
+    "ssrLevel6",
+    "ssrTrace",
+];
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
 /// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
 /// pipelines draw into, so each render pass ends without storing it, and it can share a texture
@@ -350,6 +378,9 @@ pub(crate) enum Role {
     OutlineMask,
     /// A step of ambient occlusion, by its place. The graph records it itself.
     Ao(u8),
+    /// A step of screen-space reflections, by its place: a level of the depth pyramid, then the
+    /// trace. The graph records it itself.
+    Ssr(u8),
     /// A pass of the custom effects, a lone effect or a group, by its place among the effects'
     /// passes. The graph records it itself.
     Effect(u8),
@@ -537,6 +568,20 @@ pub(crate) struct FrameGraph {
     ao_scale: f32,
     /// The camera's projection and its inverse, while ambient occlusion draws.
     projection: (Mat4, Mat4),
+    /// Screen-space reflections' steps and their GPU objects, once they first draw.
+    ssr_pass: Option<SsrPass>,
+    /// The GPU objects that screen-space reflections' steps take.
+    ssr_ids: SsrIds,
+    /// What screen-space reflections' trace draws with, while the sketch turns them on.
+    ssr: Option<TraceFrame>,
+    /// The size of screen-space reflections' grid as a share of the render size.
+    ssr_scale: f32,
+    /// True once screen-space reflections' pipelines, ambient occlusion's depth step's and the
+    /// color copy's are built.
+    ssr_built: bool,
+    /// The camera's view in the frame whose color copy the next frame's reflections read, with the
+    /// copy's texture as that frame made it, or `None` before a frame copied for them.
+    last_view: Option<(LastView, MadeTexture)>,
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -668,6 +713,12 @@ impl FrameGraph {
             ao: None,
             ao_scale: ao::MAX_SCALE,
             projection: ([0.0; 16], [0.0; 16]),
+            ssr_pass: None,
+            ssr_ids: ids.ssr,
+            ssr: None,
+            ssr_scale: ao::MAX_SCALE,
+            ssr_built: false,
+            last_view: None,
             views: 0,
             debug_lines: None,
             transparent: Vec::new(),
@@ -777,9 +828,9 @@ impl FrameGraph {
     }
 
     /// True when each view has a depth prepass: from the builder's start, or while ambient
-    /// occlusion draws, as it reads the prepass's depth.
+    /// occlusion or screen-space reflections draw, as they read the prepass's depth.
     pub(crate) fn depth_prepass(&self) -> bool {
-        self.prepass || self.ao.is_some()
+        self.prepass || self.ao.is_some() || self.ssr.is_some()
     }
 
     /// Turns ambient occlusion on with its settings, the camera's projection and its inverse, and
@@ -796,13 +847,104 @@ impl FrameGraph {
         self.ao_scale = scale;
     }
 
-    /// The draw list's id of the texture that the camera's opaque pass reads ambient occlusion
-    /// from, or `None` while ambient occlusion draws no frame. Valid once the frame's
+    /// The draw list's id of the screen texture that the camera's opaque pass reads ambient
+    /// occlusion and screen-space reflections from: ambient occlusion's last target while it
+    /// draws, else the trace's target while reflections draw, else `None`. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn ao_texture(&self) -> Option<u32> {
-        self.ao_draws()
-            .then(|| self.sampled_id(AO_TARGETS[ao::STEPS - 1]))
-            .flatten()
+        self.screen_target().and_then(|name| self.sampled_id(name))
+    }
+
+    /// The name of the screen texture's last target, which the camera's opaque pass reads, or
+    /// `None` while neither ambient occlusion nor screen-space reflections draw.
+    fn screen_target(&self) -> Option<&'static str> {
+        if self.ao_draws() {
+            Some(AO_TARGETS[ao::STEPS - 1])
+        } else if self.ssr_draws() {
+            Some(SSR_TARGETS[ssr::STEPS - 1])
+        } else {
+            None
+        }
+    }
+
+    /// The screen texture's grid as a share of the render size: the largest scale of the features
+    /// that draw on it.
+    fn screen_scale(&self) -> f32 {
+        let ao = if self.ao_draws() { self.ao_scale } else { 0.0 };
+        let ssr = if self.ssr_draws() {
+            self.ssr_scale
+        } else {
+            0.0
+        };
+        ao.max(ssr)
+    }
+
+    /// Turns screen-space reflections on with what their trace draws with, and the size of their
+    /// grid as a share of the render size, or off with `None`, for the next frames. The passes are
+    /// declared again only when they turn on or off.
+    pub(crate) fn set_ssr(&mut self, frame: Option<TraceFrame>, scale: f32) {
+        if frame.is_some() != self.ssr.is_some() {
+            self.declared = false;
+        }
+        self.ssr = frame;
+        self.ssr_scale = scale.clamp(0.0, ao::MAX_SCALE);
+        if frame.is_none() {
+            self.last_view = None;
+        }
+    }
+
+    /// True while screen-space reflections draw: the sketch turned them on, and their pipelines
+    /// are built. Until then the prepass runs, so its pipelines build too.
+    pub(crate) fn ssr_draws(&self) -> bool {
+        self.ssr.is_some() && self.ssr_built
+    }
+
+    /// True while the frame copies the camera's opaque color: for surfaces that let light through,
+    /// or for screen-space reflections, which read it in the next frame.
+    fn copy_wanted(&self) -> bool {
+        self.transmission_wanted || self.ssr.is_some()
+    }
+
+    /// Writes the screen texture's grid and screen-space reflections' values into the camera's
+    /// frame values: the reflections read the copy that the frame before made, through its view.
+    /// `eye` is this frame's camera position in the world. It then keeps this frame's view, whose
+    /// copy the next frame reads. Call it once a frame, after [`FrameGraph::prepare`].
+    pub(crate) fn write_screen_values(&mut self, uniform: &mut FrameUniform, eye: [f64; 3]) {
+        if self.ao_draws() || self.ssr_draws() {
+            let strength = if self.ao_draws() {
+                uniform.occlusion[0]
+            } else {
+                0.0
+            };
+            let [height, across, down] =
+                ao::grid_values(self.canvas, self.scale, self.screen_scale());
+            uniform.occlusion = [strength, height, across, down];
+        }
+        let copy = self.ssr_draws().then(|| self.copy_texture()).flatten();
+        let last = match (&self.last_view, copy) {
+            (Some((view, made)), Some(now)) if *made == now => Some(view),
+            _ => None,
+        };
+        ssr::write_frame_values(uniform, self.ssr.map(|frame| frame.ssr), last, eye);
+        self.last_view = copy.map(|made| {
+            let view = LastView {
+                view_proj: uniform.view_proj,
+                eye,
+                drawn: Size::Full.viewport(self.canvas, self.scale),
+            };
+            (view, made)
+        });
+    }
+
+    /// The color copy's texture as the draw lists made it, while the plan has the copy.
+    fn copy_texture(&self) -> Option<MadeTexture> {
+        if !self.transmission_declared {
+            return None;
+        }
+        let id = self.sampled_id(TRANSMISSION_COLOR)?;
+        self.made
+            .get(id.checked_sub(self.first_texture)? as usize)
+            .copied()
     }
 
     /// True while ambient occlusion draws: the sketch turned it on, and its pipelines are built.
@@ -897,8 +1039,13 @@ impl FrameGraph {
         } else {
             0
         };
-        let ao = if self.ao_draws() {
+        let ao = if self.ao_draws() || self.ssr_draws() {
             AoPass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        let ssr = if self.ssr_draws() {
+            SsrPass::UPLOAD_BYTES
         } else {
             0
         };
@@ -912,7 +1059,7 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof
+        FinalPass::UPLOAD_BYTES + bloom + ao + ssr + effects + dof
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1352,6 +1499,12 @@ impl FrameGraph {
             };
             self.graph.keep(SHADOW_ATLAS, atlas, size);
         }
+        if self.ssr_draws() && !views.is_empty() {
+            // Screen-space reflections read the color copy that the frame before made.
+            let target = Target::color(self.view_target_format()).mipmapped();
+            let size = view_size(&views[ViewId::CAMERA.index()]);
+            self.graph.keep(TRANSMISSION_COLOR, target, size);
+        }
         let named: Vec<ViewPassNames> = views
             .iter()
             .zip(names)
@@ -1426,8 +1579,8 @@ impl FrameGraph {
                 if self.skins() {
                     prepass = prepass.reads(SKINNED);
                 }
-                let occludes = camera && self.ao_draws();
-                if occludes {
+                let screen = if camera { self.screen_target() } else { None };
+                if screen.is_some() {
                     prepass = prepass.creates(PREPASS_COLOR, color);
                 }
                 prepass = reads_targets(prepass, views, &named, index);
@@ -1435,9 +1588,13 @@ impl FrameGraph {
                 let prepass = self.add(prepass, Role::Prepass(id));
                 self.prepasses.push(prepass);
                 self.view_passes.push((index as u16, prepass));
-                if occludes {
-                    self.declare_ao();
-                    pass = pass.reads(AO_TARGETS[ao::STEPS - 1]);
+                if let Some(target) = screen {
+                    self.declare_screen();
+                    pass = pass.reads(target);
+                }
+                if camera && self.ssr_draws() {
+                    // The opaque pass reads the color copy as the frame before left it.
+                    pass = pass.reads_so_far(TRANSMISSION_COLOR);
                 }
                 pass = pass.writes(names.depth.clone());
             } else {
@@ -1472,16 +1629,22 @@ impl FrameGraph {
         let lines = self.add(lines, Role::DebugLines);
         self.graph.set_enabled(lines, false);
         self.debug_lines = Some(lines);
-        self.transmission_declared = self.transmission_draws() && !views.is_empty();
+        self.transmission_declared =
+            (self.transmission_draws() || self.ssr_draws()) && !views.is_empty();
         if self.transmission_declared {
             // The copy reads the scene color as the opaque pass and the debug lines leave it,
-            // before the transparent pass draws into it.
+            // before the transparent pass draws into it. For screen-space reflections, which the
+            // next frame's opaque pass reads from it, it is kept from frame to frame.
             let target = Target::color(self.view_target_format()).mipmapped();
+            let size = view_size(&views[ViewId::CAMERA.index()]);
             let copy = Pass::new(TRANSMISSION_PASS, PassKind::Fullscreen)
-                .optional()
-                .size(view_size(&views[ViewId::CAMERA.index()]))
-                .reads_so_far(SCENE_COLOR)
-                .creates(TRANSMISSION_COLOR, target);
+                .size(size)
+                .reads_so_far(SCENE_COLOR);
+            let copy = if self.ssr_draws() {
+                copy.writes(TRANSMISSION_COLOR)
+            } else {
+                copy.optional().creates(TRANSMISSION_COLOR, target)
+            };
             self.add(copy, Role::TransmissionCopy);
         }
         for (index, view) in views.iter().enumerate() {
@@ -1686,21 +1849,61 @@ impl FrameGraph {
         }
     }
 
-    /// Declares ambient occlusion's steps: the depth copy reads the scene depth as the prepass
-    /// leaves it, the horizon search reads the copy, and the denoise reads both.
-    fn declare_ao(&mut self) {
+    /// Declares the steps of the screen texture: ambient occlusion's depth copy, which reads the
+    /// scene depth as the prepass leaves it, then while screen-space reflections draw the levels
+    /// of their depth pyramid and their trace, each from the copy and the levels before it, then
+    /// while ambient occlusion draws its horizon search, which reads the copy, and its denoise,
+    /// which reads the copy, the search and the trace.
+    fn declare_screen(&mut self) {
         self.ao_steps();
-        for step in 0..ao::STEPS {
+        let depth = Pass::new(AO_PASSES[0], PassKind::Fullscreen)
+            .size(ao::SIZE)
+            .creates(AO_TARGETS[0], Target::color(ao::FORMATS[0]))
+            .reads_so_far(SCENE_DEPTH);
+        self.add(depth, Role::Ao(0));
+        let reflects = self.ssr_draws();
+        if reflects {
+            self.ssr_steps();
+            let mut finer = AO_TARGETS[0];
+            for level in 1..=ssr::LEVELS {
+                let pass = Pass::new(SSR_PASSES[level - 1], PassKind::Fullscreen)
+                    .size(ssr::level_size(level))
+                    .reads(finer)
+                    .creates(SSR_TARGETS[level - 1], Target::color(ssr::LEVEL_FORMAT));
+                self.add(pass, Role::Ssr(level as u8 - 1));
+                finer = SSR_TARGETS[level - 1];
+            }
+            let mut trace = Pass::new(SSR_PASSES[ssr::LEVELS], PassKind::Fullscreen)
+                .size(ssr::TRACE_SIZE)
+                .reads(AO_TARGETS[0]);
+            for level in &SSR_TARGETS[..ssr::LEVELS] {
+                trace = trace.reads(*level);
+            }
+            let trace = trace.creates(SSR_TARGETS[ssr::LEVELS], Target::color(ssr::TRACE_FORMAT));
+            self.add(trace, Role::Ssr(ssr::LEVELS as u8));
+        }
+        if !self.ao_draws() {
+            return;
+        }
+        for step in 1..ao::STEPS {
             let mut pass = Pass::new(AO_PASSES[step], PassKind::Fullscreen)
                 .size(ao::SIZE)
-                .creates(AO_TARGETS[step], Target::color(ao::FORMATS[step]));
-            pass = match step {
-                0 => pass.reads_so_far(SCENE_DEPTH),
-                1 => pass.reads(AO_TARGETS[0]),
-                _ => pass.reads(AO_TARGETS[0]).reads(AO_TARGETS[1]),
-            };
+                .creates(AO_TARGETS[step], Target::color(ao::FORMATS[step]))
+                .reads(AO_TARGETS[0]);
+            if step == 2 {
+                pass = pass.reads(AO_TARGETS[1]);
+                if reflects {
+                    pass = pass.reads(SSR_TARGETS[ssr::LEVELS]);
+                }
+            }
             self.add(pass, Role::Ao(step as u8));
         }
+    }
+
+    /// Screen-space reflections' steps, made when first asked for.
+    fn ssr_steps(&mut self) -> &mut SsrPass {
+        let ids = self.ssr_ids;
+        self.ssr_pass.get_or_insert_with(|| SsrPass::new(ids))
     }
 
     /// Ambient occlusion's steps, made for the scene depth's samples when first asked for.
@@ -1873,11 +2076,17 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
-        let ao_built = self.ao.is_some() && {
+        let ao_built = (self.ao.is_some() || self.ssr.is_some()) && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
         };
+        let ssr_built = self.ssr.is_some() && ao_built && {
+            let steps = self.ssr_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        let ao_built = ao_built && self.ao.is_some();
         if ao_built != self.ao_built {
             let was = self.ao_draws();
             self.ao_built = ao_built;
@@ -1893,16 +2102,18 @@ impl FrameGraph {
             }
         }
         let (format, permutation) = (self.view_target_format(), self.scene_color.permutation());
-        let transmission_built = self.transmission_wanted && {
+        let transmission_built = self.copy_wanted() && {
             let id = self
                 .transmission
                 .request_pipeline(pipelines, format, permutation);
             pipelines.built(id, pipelines_built)
         };
-        if transmission_built != self.transmission_built {
-            let was = self.transmission_draws();
+        let ssr_built = ssr_built && transmission_built;
+        if transmission_built != self.transmission_built || ssr_built != self.ssr_built {
+            let was = (self.transmission_draws(), self.ssr_draws());
             self.transmission_built = transmission_built;
-            if self.transmission_draws() != was {
+            self.ssr_built = ssr_built;
+            if (self.transmission_draws(), self.ssr_draws()) != was {
                 self.declared = false;
             }
         }
@@ -1968,6 +2179,7 @@ impl FrameGraph {
         grading: Grading,
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
+        self.upload_ssr(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_dof(list, arena)?;
         self.bind_view_copies(list)?;
@@ -2200,32 +2412,74 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Records ambient occlusion's objects and settings while it draws, and binds each step to the
-    /// textures it reads.
+    /// Records ambient occlusion's objects and settings while the screen texture's steps draw, and
+    /// binds each step to the textures it reads. While only screen-space reflections draw, the
+    /// depth step alone runs, and the other steps' groups bind the depth copy.
     fn upload_ao(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        let Some(settings) = self.ao.filter(|_| self.ao_built) else {
-            return Ok(());
+        let (settings, projection) = match (self.ao_draws(), self.ssr.filter(|_| self.ssr_built)) {
+            (true, _) => (self.ao.unwrap_or_default(), self.projection),
+            (false, Some(frame)) => (Ao::default(), frame.projection),
+            (false, None) => return Ok(()),
         };
         let id = |name: &str| {
             self.sampled_id(name)
                 .expect("each step of ambient occlusion reads a planned texture")
         };
-        let [depth, horizon] = [id(AO_TARGETS[0]), id(AO_TARGETS[1])];
-        let sources: StepSources = [[id(SCENE_DEPTH); 2], [depth, depth], [depth, horizon]];
-        let (canvas, scale, ao_scale, made) =
-            (self.canvas, self.scale, self.ao_scale, self.textures_made);
-        let projection = self.projection;
+        let depth = id(AO_TARGETS[0]);
+        let reflects = self.ssr_draws();
+        let sources: StepSources = if self.ao_draws() {
+            let horizon = id(AO_TARGETS[1]);
+            let trace = if reflects {
+                id(SSR_TARGETS[ssr::LEVELS])
+            } else {
+                depth
+            };
+            [[id(SCENE_DEPTH); 3], [depth; 3], [depth, horizon, trace]]
+        } else {
+            [[id(SCENE_DEPTH); 3], [depth; 3], [depth; 3]]
+        };
+        let (canvas, scale, grid, made) = (
+            self.canvas,
+            self.scale,
+            self.screen_scale(),
+            self.textures_made,
+        );
         let pass = self
             .ao_pass
             .as_mut()
             .expect("ambient occlusion's steps exist once it is declared");
         pass.prepare(
-            list, arena, settings, projection, canvas, scale, ao_scale, &sources, made,
+            list, arena, settings, projection, canvas, scale, grid, &sources, reflects, made,
         )
+    }
+
+    /// Records screen-space reflections' objects and settings while they draw, and binds their
+    /// steps to the depth copy and the pyramid's levels.
+    fn upload_ssr(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.ssr.filter(|_| self.ssr_draws()) else {
+            return Ok(());
+        };
+        let id = |name: &str| {
+            self.sampled_id(name)
+                .expect("each step of screen-space reflections reads a planned texture")
+        };
+        let mut sources = [0; ssr::LEVELS + 1];
+        sources[0] = id(AO_TARGETS[0]);
+        for level in 1..=ssr::LEVELS {
+            sources[level] = id(SSR_TARGETS[level - 1]);
+        }
+        let grid = ao::corner(self.canvas, self.scale, self.screen_scale());
+        let (canvas, scale, made) = (self.canvas, self.scale, self.textures_made);
+        self.ssr_steps()
+            .prepare(list, arena, &frame, canvas, scale, grid, &sources, made)
     }
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
@@ -2365,8 +2619,21 @@ impl FrameGraph {
                                 .record(
                                     list,
                                     usize::from(step),
-                                    ao::corner(self.canvas, self.scale, self.ao_scale),
+                                    ao::corner(self.canvas, self.scale, self.screen_scale()),
                                 )?,
+                            Role::Ssr(step) => {
+                                let grid = ao::corner(self.canvas, self.scale, self.screen_scale());
+                                let step = usize::from(step);
+                                let corner = if step < ssr::LEVELS {
+                                    ssr::level_corner(grid, step + 1)
+                                } else {
+                                    grid
+                                };
+                                self.ssr_pass
+                                    .as_ref()
+                                    .expect("screen-space reflections' passes run once declared")
+                                    .record(list, step, corner)?
+                            }
                             Role::Effect(index) => self
                                 .effect_pass
                                 .as_ref()
@@ -2572,6 +2839,10 @@ impl FrameGraph {
         if let Some(ao) = self.ao_pass.as_mut() {
             ao.reset_gpu();
         }
+        if let Some(ssr) = self.ssr_pass.as_mut() {
+            ssr.reset_gpu();
+        }
+        self.last_view = None;
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
         }
@@ -2828,6 +3099,10 @@ mod tests {
         transmission: TransmissionIds {
             group: 60,
             blank: 903,
+        },
+        ssr: SsrIds {
+            buffer: 14,
+            first_group: 70,
         },
     };
 
@@ -4037,6 +4312,185 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    /// What screen-space reflections' trace draws with in the tests.
+    fn trace_frame() -> TraceFrame {
+        TraceFrame {
+            ssr: crate::ssr::Ssr::default(),
+            projection: ([1.0; 16], [1.0; 16]),
+            orthographic: false,
+            steps: 32,
+        }
+    }
+
+    #[test]
+    fn screen_space_reflections_trace_before_the_camera_opaque_pass_and_read_the_last_copy() {
+        for (format, antialias, gpu_culling) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa, true),
+            (format::CANVAS, Antialias::Msaa, true),
+            (format::CANVAS, Antialias::Msaa, false),
+            (format::RGBA16_FLOAT, Antialias::Fxaa, false),
+        ] {
+            let canvas = (320, 180);
+            let mut frames = frame_graph(format, antialias, gpu_culling, true);
+            frames.sync(&[View::default(), shown()]);
+            let mut list = DrawList::with_capacity(8192);
+            let mut pipelines = PipelineCache::default();
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            let textures = frames.graph().plan().unwrap().textures().len();
+
+            // The reflections wait for their pipelines, the depth step's and the copy's.
+            frames.set_ssr(Some(trace_frame()), 0.5);
+            assert!(
+                frames.depth_prepass(),
+                "the trace reads the prepass's depth"
+            );
+            frames.request_pipelines(&mut pipelines, 1);
+            assert!(!frames.ssr_draws());
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.ssr_draws());
+            frames.sync(&[View::default(), shown()]);
+            list.clear();
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let names = steps(&frames);
+            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+            let prepass = at("DepthPrepass").unwrap();
+            assert_eq!(at("AoDepth"), Some(prepass + 1));
+            for (level, name) in SSR_PASSES[..ssr::LEVELS].iter().enumerate() {
+                assert_eq!(at(name), Some(prepass + 2 + level));
+            }
+            let trace = at("SsrTrace").unwrap();
+            assert_eq!(trace, prepass + 2 + ssr::LEVELS);
+            assert_eq!(at("Opaque"), Some(trace + 1));
+            assert_eq!(
+                at(TRANSMISSION_PASS),
+                Some(trace + 2),
+                "the copy follows the opaque pass"
+            );
+            assert!(frames.transmission_copied());
+            // The opaque pass reads the trace's target as the screen texture.
+            assert_eq!(
+                frames.ao_texture(),
+                frames.sampled_id(SSR_TARGETS[ssr::LEVELS])
+            );
+            let plan = frames.graph().plan().unwrap();
+            let texture = |name: &str| {
+                let Surface::Texture(index) = plan
+                    .texture_of(frames.graph().find_resource(name).unwrap())
+                    .unwrap()
+                else {
+                    panic!("the steps draw into textures")
+                };
+                plan.textures()[usize::from(index)]
+            };
+            for level in 1..=ssr::LEVELS {
+                let made = texture(SSR_TARGETS[level - 1]);
+                assert_eq!(made.size, ssr::level_size(level));
+                assert_eq!(made.target, Target::color(ssr::LEVEL_FORMAT));
+            }
+            assert_eq!(texture(SSR_TARGETS[ssr::LEVELS]).size, ssr::TRACE_SIZE);
+            assert!(plan.textures().len() > textures);
+
+            // The first frame has no copy to read, so it reflects nothing; the next one reads the
+            // copy that the first made, through the first frame's view.
+            let mut uniform = FrameUniform::default();
+            frames.write_screen_values(&mut uniform, [0.0; 3]);
+            assert_eq!(uniform.reflection[0], 0.0);
+            assert_eq!(uniform.occlusion[0], 0.0, "no ambient occlusion draws");
+            assert_eq!(
+                uniform.occlusion[2], 0.5,
+                "the grid has half the render size"
+            );
+            uniform.view_proj[0] = 2.0;
+            let mut next = FrameUniform::default();
+            frames.write_screen_values(&mut next, [1.0, 0.0, 0.0]);
+            assert_eq!(next.reflection[0], 1.0);
+            assert_eq!(next.reflection_reprojection[0], 2.0);
+            assert_eq!(next.reflection_corner[..2], [320.0, 180.0]);
+
+            // The steps record into the corners of their targets.
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let groups = operands(&list, Op::CreateBindGroup);
+            assert!(
+                groups
+                    .iter()
+                    .any(|group| group[1] == bind_layout::SSR_TRACE)
+            );
+            assert_eq!(
+                groups
+                    .iter()
+                    .filter(|group| group[1] == bind_layout::SSR_REDUCE)
+                    .count(),
+                ssr::LEVELS
+            );
+            list.clear();
+            frames
+                .record(&mut list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            let viewports = operands(&list, Op::SetViewport);
+            for size in [[160, 90], [80, 45], [40, 23], [3, 2]] {
+                assert!(viewports.iter().any(|v| v[2..4] == size), "{size:?}");
+            }
+
+            // With ambient occlusion too, its search and denoise follow the trace, and the denoise
+            // copies the trace's ray lengths into the screen texture that the opaque pass reads.
+            frames.set_ao(Some((Ao::default(), ([1.0; 16], [1.0; 16]))), 0.5);
+            pipelines.create_new(&mut list, 3).unwrap();
+            frames.request_pipelines(&mut pipelines, 3);
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let names = steps(&frames);
+            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+            let trace = at("SsrTrace").unwrap();
+            assert_eq!(at("AoHorizon"), Some(trace + 1));
+            assert_eq!(at("AoDenoise"), Some(trace + 2));
+            assert_eq!(at("Opaque"), Some(trace + 3));
+            assert_eq!(
+                frames.ao_texture(),
+                frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
+            );
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let trace_texture = frames.sampled_id(SSR_TARGETS[ssr::LEVELS]).unwrap();
+            assert!(
+                operands(&list, Op::CreateBindGroup)
+                    .iter()
+                    .any(|group| group[1] == bind_layout::AO && group[3..].contains(&trace_texture)),
+                "the denoise binds the trace's target"
+            );
+
+            // Off again, the steps, their targets and the copy are gone.
+            frames.set_ao(None, 0.5);
+            frames.set_ssr(None, 0.5);
+            assert!(!frames.depth_prepass());
+            frames.sync(&[View::default(), shown()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), textures);
+            assert!(!frames.transmission_copied());
+            let mut uniform = FrameUniform::default();
+            frames.write_screen_values(&mut uniform, [0.0; 3]);
+            assert_eq!(uniform.reflection, [0.0; 4]);
         }
     }
 
