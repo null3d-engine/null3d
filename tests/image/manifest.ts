@@ -1707,12 +1707,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
 	},
 	// Bump maps, displacement maps with the normal or bump map of their heights, and wireframes of
-	// the standard and unlit materials. The parity test draws the same scene with three.js.
+	// the standard and unlit materials. The parity test draws the same scene with three.js. A
+	// software GPU takes about half a minute for the relief scenes' first frame on WebGL2, so they
+	// take a longer limit.
 	{
 		name: 'relief',
 		sketch: 'tests/pages/sketches/relief-sketch.ts',
 		hold: 0,
 		size: [RELIEF_IMAGE.width, RELIEF_IMAGE.height],
+		timeoutSeconds: 60,
 	},
 	// Relief that null3D draws its own way (D-136): displaced terrain and rocks without normal maps,
 	// whose normals follow the map's slope, casting and taking the sun's shadows, a wireframe's line
@@ -1721,6 +1724,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'relief-heights',
 		sketch: 'tests/pages/sketches/relief-heights-sketch.ts',
 		hold: 0,
+		timeoutSeconds: 60,
 	},
 	// The same scene with the quality setting that turns parallax off, as the Low preset does: the
 	// materials with parallax draw their displacement alone.
@@ -1728,6 +1732,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		name: 'relief-heights-no-parallax',
 		sketch: 'tests/pages/sketches/relief-heights-sketch.ts?parallax=off',
 		hold: 0,
+		timeoutSeconds: 60,
 	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares

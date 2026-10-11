@@ -1,5 +1,7 @@
 // The relief scene (bench/scenes/relief.ts), which the parity test also draws with three.js: bump
 // maps, displacement maps and wireframes of the standard and unlit materials, each map made in code.
+// ?tone=none turns off the engine's default of ACES, as the parity test asks: the three.js twin
+// draws with no tone mapping, three.js's default.
 import { defineSketch, type Material, type MeshGeometry, type Texture } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -18,7 +20,10 @@ import {
 	SUN,
 } from '../../../bench/scenes/relief';
 
-export default defineSketch(({ scene, materials, geometry, textures }) => {
+const params = new URL(import.meta.url).searchParams;
+
+export default defineSketch(({ scene, materials, geometry, textures, post }) => {
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(RELIEF_BACKGROUND);
 	scene.setActiveCamera(scene.createPerspectiveCamera(RELIEF_CAMERA));
 	scene.createDirectionalLight(SUN);

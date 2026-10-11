@@ -2,13 +2,13 @@
 // terrain's and the boulders' vertices, so outlines and shadows follow the relief, and the light
 // follows each map's slope. Parallax gives the bricks of a wall of four flat quads their depth (P
 // turns it off and on). A wireframe beacon floats over the hills and casts a shadow of lines.
+// The height maps are in heights.ts.
 import { defineSketch, math, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { bricks, lumps, maps, SIZE, waves } from './heights';
 
 /** A point toward the sun: low, and to the camera's left. */
 const SUN = [-0.75, 0.22, -0.62] as const;
-/** Texels along each side of the height maps. */
-const SIZE = 256;
 /** Each boulder's place and size. */
 const BOULDERS = [
 	[-4.5, 1.4, 1, 1.2],
@@ -16,47 +16,21 @@ const BOULDERS = [
 	[4.2, 1.5, 0.5, 1],
 ] as const;
 
-/** A height map from `height` at u and v, as linear gray texels, with the colors that `paint` gives. */
-function maps(height: (u: number, v: number) => number, paint = (_: number): number[] => []) {
-	const gray = new Uint8Array(SIZE * SIZE * 4).fill(255);
-	const color = new Uint8Array(SIZE * SIZE * 4).fill(255);
-	for (let y = 0; y < SIZE; y++)
-		for (let x = 0; x < SIZE; x++) {
-			const h = height((x + 0.5) / SIZE, (y + 0.5) / SIZE);
-			const at = (y * SIZE + x) * 4;
-			gray.fill(h * 255, at, at + 3);
-			color.set(paint(h), at);
-		}
-	return [gray, color] as const;
-}
-
-/** Waves along `n` directions, each finer and fainter than the one before: rolling relief from 0 to 1. */
-const waves = (u: number, v: number, n: number, seed: number) => {
-	let sum = 0.5;
-	for (let k = 0; k < n; k++) {
-		const a = seed + k * 2.4;
-		sum += (Math.sin((u * Math.cos(a) + v * Math.sin(a)) * 2 ** k * 6.28 + k) * 0.3) / 1.8 ** k;
-	}
-	return math.clamp(sum, 0, 1);
-};
-
-/** Bricks of 4 by 8 to the map, in running bond: bevelled tops at 1 and sunken mortar at 0. */
-const bricks = (u: number, v: number) => {
-	const row = Math.floor(v * 8);
-	const [x, y] = [(u * 4 + (row % 2) * 0.5) % 1, v * 8 - row];
-	const edge = Math.min(x * 4, (1 - x) * 4, y * 2, (1 - y) * 2) * 3 - 0.2;
-	return math.clamp(edge, 0, 1) * (0.92 + 0.08 * Math.sin(u * 90 + row * 7));
-};
-
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, time } = ctx;
 	scene.setBackground({ sky: { sunPosition: SUN, turbidity: 6, rayleigh: 2.5, time: 0 } });
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.35 });
-	scene.setFog({ color: '#c9a99a', density: 0.012, height: 0, heightFalloff: 0.15, sunGlow: 2 });
+	scene.setFog({ color: '#c9a99a', density: 0.007, height: 0, heightFalloff: 0.15, sunGlow: 2 });
 	post.set({ bloom: { intensity: 0.25, threshold: 1 }, ao: { radius: 0.6 }, vignette: {} });
-	const camera = scene.createPerspectiveCamera({ fov: 45, far: 2000, position: [0, 4.5, 12] });
+	const target: Vec3 = [0, 1.5, -2];
+	const camera = scene.createPerspectiveCamera({
+		fov: 45,
+		far: 2000,
+		position: [0, 5, 12],
+		target,
+	});
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 1.5, 0], groundY: 1.5 });
+	const view = interact(ctx, camera, { target, groundY: 1.5 });
 	scene.createDirectionalLight({
 		direction: [-SUN[0], -SUN[1], -SUN[2]],
 		color: '#ffc08a',
@@ -70,10 +44,17 @@ export default defineSketch(async (ctx) => {
 	const solid = { castShadows: true, receiveShadows: true };
 	const texture = (data: Uint8Array, colorSpace: 'linear' | 'srgb') =>
 		textures.fromData({ width: SIZE, height: SIZE, data, colorSpace, ...look });
-	// Grass in the hollows, then dry earth, then bare rock on the tops.
+	// Grass in the hollows, blending into dry earth, then bare rock on the tops.
+	const blend = (from: number[], to: number[], t: number) =>
+		from.map((c, i) => math.lerp(c, to[i] ?? c, t));
 	const [hillHeights, hillColors] = maps(
 		(u, v) => waves(u, v, 6, 0.7),
-		(h) => (h < 0.45 ? [92, 118, 58] : h < 0.62 ? [150, 122, 82] : [168, 160, 150]),
+		(h) =>
+			blend(
+				blend([86, 116, 52], [150, 122, 82], math.smoothstep(h, 0.38, 0.52)),
+				[168, 160, 150],
+				math.smoothstep(h, 0.58, 0.72),
+			),
 	);
 	scene.createMesh({
 		mesh: geometry.plane({ width: 60, height: 60, widthSegments: 256, heightSegments: 256 }),
@@ -88,11 +69,11 @@ export default defineSketch(async (ctx) => {
 	});
 
 	// Boulders: spheres whose lumps move their vertices and shadows.
-	const [lumps] = maps((u, v) => waves(2 * u, v, 5, 2));
+	const [lumpHeights] = maps(lumps);
 	const stone = materials.standard({
 		color: '#a49a8e',
 		roughness: 0.85,
-		displacementMap: texture(lumps, 'linear'),
+		displacementMap: texture(lumpHeights, 'linear'),
 		displacementScale: 0.5,
 		displacementBias: -0.25,
 	});
@@ -106,9 +87,10 @@ export default defineSketch(async (ctx) => {
 			...solid,
 		});
 
-	// The old wall: four quads of two triangles each, whose bricks stand out by parallax.
+	// The old wall: four quads of two triangles each, at an angle to the camera, whose bricks stand
+	// out by parallax.
 	const [brickHeights, brickColors] = maps(bricks, (h) =>
-		h > 0.05 ? [150 + h * 30, 66, 46] : [128, 120, 110],
+		h > 0.04 ? [110 + h * 70, 46 + h * 22, 36 + h * 12] : [118, 112, 104],
 	);
 	const wall = materials.standard({
 		map: texture(brickColors, 'srgb'),
@@ -116,13 +98,15 @@ export default defineSketch(async (ctx) => {
 		displacementMap: texture(brickHeights, 'linear'),
 		displacementScale: 0.12,
 		parallax: true,
-		uvTransform: { repeat: [2, 1] },
+		uvTransform: { repeat: [2, 1.8] },
 	});
+	const turn = 0.45;
 	for (let k = 0; k < 4; k++)
 		scene.createMesh({
-			mesh: geometry.plane({ width: 2.4, height: 2.2 - k * 0.35 }),
+			mesh: geometry.plane({ width: 2.4, height: 4 - k * 0.35 }),
 			material: wall,
-			position: [-1.8 + k * 2.4, 2.4 - k * 0.18, -2.5],
+			position: [-3.6 + k * 2.4 * Math.cos(turn), 1.3 - k * 0.18, -1 - k * 2.4 * Math.sin(turn)],
+			rotation: [0, Math.sin(turn / 2), 0, Math.cos(turn / 2)],
 			...solid,
 		});
 

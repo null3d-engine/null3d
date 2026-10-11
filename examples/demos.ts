@@ -133,6 +133,7 @@ export const DEMOS: readonly Demo[] = [
 		name: 'relief',
 		group: 'Light, materials and effects',
 		sketch: new URL('./relief/sketch.ts', import.meta.url),
+		code: 'relief/',
 		title: 'Relief maps',
 		scene: 'Hillside at sundown',
 		summary:

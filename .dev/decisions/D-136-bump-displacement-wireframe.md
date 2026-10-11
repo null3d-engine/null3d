@@ -63,7 +63,7 @@ The standard material with maps gets a permutation bit, `DISPLACEMENT`. Its buil
 three.js keeps the mesh's normals, so a displaced plane with no normal map lights as if it were flat. Its author meant a moved surface, so this design bends the normals where nothing else does:
 
 - With a normal map or a bump map, that map bends the normal, as in three.js. A normal map made with the height map already holds its slope.
-- With neither, the engine binds the displacement map into the normal slot as well, with a second row flag. The fragment shader bends the normal by the map's slope in world units. It uses the bump map's surface gradient with the position's plain derivatives. The object's scale along the normal scales the height. So the slope matches the moved vertices at any distance, and detail finer than the mesh still shades.
+- With neither, the engine binds the displacement map into the normal slot as well, with a second row flag. The fragment shader bends the normal by the map's slope in world units. It uses the bump map's surface gradient with the position's plain derivatives. The object's scale along the normal scales the height. So the slope matches the moved vertices at any distance, and detail finer than the mesh still shades. The slope comes from the heights one texel to either side (four reads), not from the change between neighboring pixels as a bump map takes it (three reads). Filtering blends that slope between texels, so terrain seen close, where one texel covers many pixels, shades smoothly instead of in one flat facet per texel, as the first demo shots showed.
 
 ### The passes that must follow moved vertices
 

@@ -289,6 +289,18 @@ fn map_texel(layer: f32, at: MapUv) -> vec4f {
 fn base_color_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
 fn metal_rough_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
 fn normal_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
+
+/// The size in texels of the top level of the normal map's slot, whose layer is `layer`.
+fn normal_size(layer: f32) -> vec2f {
+    switch map_unit(layer) {
+        case 0u: { return vec2f(textureDimensions(unit_0_map)); }
+        case 1u: { return vec2f(textureDimensions(unit_1_map)); }
+        case 2u: { return vec2f(textureDimensions(unit_2_map)); }
+        case 3u: { return vec2f(textureDimensions(unit_3_map)); }
+        case 4u: { return vec2f(textureDimensions(unit_4_map)); }
+        default: { return vec2f(textureDimensions(unit_5_map)); }
+    }
+}
 fn occlusion_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
 fn emissive_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
 fn light_texel(layer: f32, at: MapUv) -> vec4f { return map_texel(layer, at); }
@@ -309,6 +321,9 @@ fn metal_rough_texel(layer: f32, at: MapUv) -> vec4f {
 fn normal_texel(layer: f32, at: MapUv) -> vec4f {
     let l = map_layer(layer);
     return textureSampleGrad(normal_map, normal_sampler, at.uv, l, at.dx, at.dy);
+}
+fn normal_size(layer: f32) -> vec2f {
+    return vec2f(textureDimensions(normal_map));
 }
 fn occlusion_texel(layer: f32, at: MapUv) -> vec4f {
     let l = map_layer(layer);
@@ -342,6 +357,25 @@ fn height_change(layer: f32, at: MapUv) -> vec2f {
     let up = normal_texel(layer, MapUv(at.uv + at.dy, at.dx, at.dy)).r;
     return vec2f(across, up) - here;
 }
+
+#ifdef DISPLACEMENT
+/// The change of a height map's red channel across the pixel and up the row, from the map's slope:
+/// the difference between the heights one texel to either side, or a pixel's footprint to either
+/// side where that is wider. Filtering blends that slope between texels, so the light changes
+/// smoothly where one texel covers many pixels. The change from one pixel to the next, as bump
+/// maps take it, stays the same across each texel there, and shades each texel as a flat facet.
+fn height_slope_change(layer: f32, at: MapUv) -> vec2f {
+    let reach = max(1.0 / normal_size(layer), abs(at.dx) + abs(at.dy));
+    let du = vec2f(reach.x, 0.0);
+    let dv = vec2f(0.0, reach.y);
+    let east = normal_texel(layer, MapUv(at.uv + du, at.dx, at.dy)).r;
+    let west = normal_texel(layer, MapUv(at.uv - du, at.dx, at.dy)).r;
+    let north = normal_texel(layer, MapUv(at.uv + dv, at.dx, at.dy)).r;
+    let south = normal_texel(layer, MapUv(at.uv - dv, at.dx, at.dy)).r;
+    let slope = vec2f(east - west, north - south) / (2.0 * reach);
+    return vec2f(dot(slope, at.dx), dot(slope, at.dy));
+}
+#endif
 
 /// The normal bent by a height's change across the pixel, `change`, along the position's change
 /// across it, `along_x`, and up the row, `along_y`: Mikkelsen's surface gradient, as three.js's
@@ -705,18 +739,19 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     }
     let heights = flags & (BUMP | HEIGHT_NORMALS);
     if map_ready(m.maps.z) && heights != 0u {
-        let at = map_uv(flags, 2u, first, second);
+        // Rows count upward on both paths, so a bump map compares the pixel with the one above it,
+        // as three.js's renderers both do.
+        let picked = map_uv(flags, 2u, first, second);
+        let at = MapUv(picked.uv, picked.dx, picked.dy * ROWS_UP);
         let facing = select(-1.0, 1.0, input.frontFacing);
-        // The derivatives in the GPU's own row order: the bend comes out the same either way.
-        let along_y = position_dy * ROWS_UP;
         if heights == BUMP {
             let change = height_change(m.maps.z, at) * m.surface.z;
-            s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(along_y), change, facing);
+            s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(position_dy), change, facing);
         }
 #ifdef DISPLACEMENT
         if heights == HEIGHT_NORMALS {
-            let change = height_change(m.maps.z, at) * height_scale;
-            s.normal = bent_by_height(input.normal, position_dx, along_y, change, facing);
+            let change = height_slope_change(m.maps.z, at) * height_scale;
+            s.normal = bent_by_height(input.normal, position_dx, position_dy, change, facing);
         }
 #endif
     } else if map_ready(m.maps.z) {
