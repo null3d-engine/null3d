@@ -532,7 +532,7 @@ const water = render.addPass({
 });
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights and no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
+- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light, fog, and the point and spot lights its view sees. A light that only the pass sees casts no shadow there. It draws no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
 - Full-screen passes of your own WGSL are (0.2, not built yet): use `post.addEffect` for now.
 

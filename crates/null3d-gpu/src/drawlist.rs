@@ -1344,9 +1344,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, and the camera's view and
-    /// projection matrices, which custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 688;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
+    /// shadow lookups, and the camera's view and projection matrices, which custom materials read.
+    pub const FRAME_UNIFORM_BYTES: u32 = 704;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
