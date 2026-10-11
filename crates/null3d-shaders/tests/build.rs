@@ -7,8 +7,10 @@ mod precision;
 use common::{
     SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
 };
+use std::sync::OnceLock;
+
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs,
+    ALLOWED_LANGUAGE_FEATURES, Binding, Compiler, GlslTexture, GlslUniformBlock, Inputs, Output,
     ShaderSource, literals_safari_refuses, typescript,
 };
 use precision::{newer_built_in_calls, precision_breaks};
@@ -1172,8 +1174,7 @@ fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
 
 #[test]
 fn every_glsl_shader_keeps_the_rules_of_strict_drivers_and_webgl2() {
-    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let output = build(&Inputs::read(root).unwrap()).unwrap();
+    let output = repository_output();
     let mut breaks = Vec::new();
     let mut stages = 0;
     for (shader, variants) in &output.shaders {
@@ -1231,8 +1232,7 @@ int b = findMSB(c);
 
 #[test]
 fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
-    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let output = build(&Inputs::read(root).unwrap()).unwrap();
+    let output = repository_output();
     let mut refused = Vec::new();
     let mut modules = 0;
     for (shader, variants) in &output.shaders {
@@ -1252,6 +1252,33 @@ fn every_wgsl_shader_has_only_number_literals_that_safari_reads() {
         "number literals that Safari 26 refuses:\n{}",
         refused.join("\n")
     );
+}
+
+#[test]
+fn the_standard_material_samples_each_map_without_a_switch_on_webgpu() {
+    // A switch that picked each map's texture by its slot, though the slot was a constant at each
+    // call, made every textured draw many times slower in Chrome on Apple GPUs with a multisampled
+    // target (decision record D-89). Only the WebGL2 builds pick a shared unit with a switch.
+    let variants = &repository_output().shaders["standard_maps"];
+    let mut modules = 0;
+    for (variant, built) in variants {
+        let Some(wgsl) = &built.wgsl else { continue };
+        modules += 1;
+        assert!(
+            !wgsl.source.contains("switch "),
+            "standard_maps.{variant} picks a texture with a switch"
+        );
+    }
+    assert!(modules > 10, "only {modules} WGSL modules were built");
+}
+
+/// One build of the repository's shaders, which the tests that check every build share.
+fn repository_output() -> &'static Output {
+    static OUTPUT: OnceLock<Output> = OnceLock::new();
+    OUTPUT.get_or_init(|| {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        build(&Inputs::read(root).unwrap()).unwrap()
+    })
 }
 
 /// The text of the repository's library module `null3d::<name>`.

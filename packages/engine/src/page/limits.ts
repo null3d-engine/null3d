@@ -165,6 +165,8 @@ export interface CoreDevice {
 	 * loads of the same file skip the transcoder.
 	 */
 	textureCache: boolean;
+	/** The pixels that software occlusion culling's buffer holds about, or 0 for the core's default. */
+	occlusionBuffer: number;
 }
 
 /**
@@ -218,6 +220,7 @@ export type DeviceOptions = Pick<
 	| 'indexInstances'
 	| 'shadowDepthBits'
 	| 'textureCache'
+	| 'occlusionBuffer'
 > & {
 	/** The anti-aliasing mode. */
 	antialias: AntialiasMode;
@@ -394,6 +397,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		expectedObjects: options.expectedObjects,
 		gpuOcclusion: options.gpuOcclusion,
 		textureCache: options.textureCache,
+		occlusionBuffer: options.occlusionBuffer ?? 0,
 	};
 	if (tier !== 'webgl2') {
 		return {

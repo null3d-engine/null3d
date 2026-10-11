@@ -10,6 +10,7 @@
 use null3d_gpu::drawlist::{DrawList, Op, layout as bind_layout, resource_kind};
 
 use super::ids;
+use super::opaque::ROW_VALUES_BINDING;
 use crate::frame::RecordError;
 use crate::view::ViewId;
 
@@ -20,26 +21,21 @@ pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), Recor
 }
 
 /// Records the creation of bind group `group` of the depth template, which binds a view's frame
-/// uniform buffer with the material table: a cascade's frame group, or the group of a camera
-/// view's depth prepass.
+/// uniform buffer with the material table, and for the vertex shaders of custom materials' shadow
+/// casters, the materials' custom values and the row values of instance batches: a cascade's or a
+/// tile's frame group, the outline view's, or the group of a camera view's depth prepass. A new
+/// row values texture needs it again.
 pub(super) fn bind_depth(list: &mut DrawList, group: u32, view: ViewId) -> Result<(), RecordError> {
-    list.push(
-        Op::CreateBindGroup,
-        &[
-            group,
-            bind_layout::DEPTH,
-            2,
-            0,
-            resource_kind::BUFFER,
-            ids::frame(view),
-            0,
-            0,
-            1,
-            resource_kind::BUFFER,
-            ids::MATERIALS,
-            0,
-            0,
-        ],
-    )?;
+    let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
+    let entries = [
+        entry(0, resource_kind::BUFFER, ids::frame(view)),
+        entry(1, resource_kind::BUFFER, ids::MATERIALS),
+        entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
+        entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
+    ];
+    let mut words = [0u32; 3 + 5 * 4];
+    words[..3].copy_from_slice(&[group, bind_layout::DEPTH, entries.len() as u32]);
+    words[3..].copy_from_slice(entries.as_flattened());
+    list.push(Op::CreateBindGroup, &words)?;
     Ok(())
 }

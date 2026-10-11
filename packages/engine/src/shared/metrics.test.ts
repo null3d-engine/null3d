@@ -25,6 +25,7 @@ import {
 	SUM_LONGEST_BUSY_MS,
 	SUM_PHASES,
 	SUM_RECORDS,
+	sampleFrames,
 	UNTIMED,
 } from './metrics';
 import { ratePerSecond } from './stats';
@@ -47,6 +48,22 @@ describe('frame records', () => {
 		expect(recorder.measuring).toBe(true);
 		second.end();
 		expect(recorder.measuring).toBe(false);
+	});
+
+	it('read the figures that only the overlay shows only while a reader of the figures samples', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const recorder = new FrameRecorder(buffer, Role.Render);
+		const measurement = new MetricsReader(buffer);
+		measurement.begin();
+		expect(recorder.measuring).toBe(true);
+		expect(recorder.figures).toBe(false);
+		sampleFrames(buffer, true);
+		expect(recorder.figures).toBe(true);
+		measurement.end();
+		expect(recorder.measuring).toBe(true);
+		sampleFrames(buffer, false);
+		expect(recorder.measuring).toBe(false);
+		expect(recorder.figures).toBe(false);
 	});
 
 	it('carry times, phases, counters and intervals from the writer to the reader', () => {

@@ -1,12 +1,13 @@
 //! Instance batches: one mesh and one material drawn for many rows, each row with its own
-//! position, rotation, scale and optional colour.
+//! position, rotation, scale and optional row values: a colour and four values of the sketch's
+//! own, which shaders read.
 //!
 //! TypeScript writes the row arrays directly through typed-array views. A dynamic batch recomputes
 //! every active row every frame, with no dirty checks. A static batch recomputes only the rows
 //! marked with [`InstanceBatch::mark_dirty`]; the marks live in a row bitset, and the update
 //! walks it 64 rows at a time, so a static batch at rest costs nothing.
 //!
-//! The world output (a 3 × 4 matrix, a bounding sphere and the colour of each row) is
+//! The world output (a 3 × 4 matrix, a bounding sphere and the row values of each row) is
 //! double-buffered by frame parity like the scene's (see [`crate::scene`]): frame `f` writes
 //! buffer `f & 1`, and a row that changed in frame `f - 1` but not in frame `f` is copied from the
 //! other buffer. Each update records the changed rows as coalesced ranges for upload.
@@ -72,8 +73,11 @@ use crate::lines::{self, LineLook, LineMode, Segment};
 use crate::math::{
     self, Affine, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, mul4, transpose4,
 };
+use crate::scene::flags;
 use crate::sprites::{self, SpriteLook};
-use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
+use crate::world::{
+    COLOR_FLOATS, MATRIX_FLOATS, ROW_VALUE_FLOATS, VALUE_FLOATS, WorldArrays, WorldPtrs,
+};
 
 /// Rows per chunk of the parallel update: a whole number of 64-row bitset words.
 pub const ROW_CHUNK: u32 = 1024;
@@ -175,7 +179,10 @@ pub struct InstanceBatch {
     active: u32,
     /// The layer mask of every row (see [`crate::layers`]).
     layers: u32,
-    with_colors: bool,
+    /// The shadow bits of every row: [`flags::CAST_SHADOWS`] and [`flags::RECEIVE_SHADOWS`].
+    shadows: u32,
+    /// True when rows have a colour and values of their own, which the world output carries.
+    with_values: bool,
     /// The batch whose rows this one reads, for a part that owns no rows.
     source: Option<Handle>,
     /// The matrix that places the mesh in the space of each row, applied before the row's own.
@@ -188,7 +195,10 @@ pub struct InstanceBatch {
     positions: Vec<f32>,
     rotations: Vec<f32>,
     scales: Vec<f32>,
+    /// Linear colours `(r, g, b, a)`, 4 floats per row, with row values.
     colors: Vec<f32>,
+    /// The rows' own values, 4 floats per row, with row values.
+    values: Vec<f32>,
     world: [WorldArrays; 2],
     dirty: Bitset,
     dirty_any: bool,
@@ -219,17 +229,17 @@ pub struct InstanceBatch {
 
 impl InstanceBatch {
     /// A batch of `capacity` rows, all active, at the origin with identity rotation and unit
-    /// scale (and white, with colours). `local_radius` is the mesh's bounding radius around its
+    /// scale (and white with zero values, with row values). `local_radius` is the mesh's bounding radius around its
     /// origin. Every row starts dirty, so the first update computes them all.
     pub fn new(
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
     ) -> Self {
-        let Ok(batch) = Self::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+        let Ok(batch) = Self::try_new(capacity, dynamic, with_values, mesh, material, local_radius)
         else {
             panic!("no memory for an instance batch")
         };
@@ -240,7 +250,7 @@ impl InstanceBatch {
     pub fn try_new(
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
@@ -248,7 +258,7 @@ impl InstanceBatch {
         Self::try_new_part(
             capacity,
             dynamic,
-            with_colors,
+            with_values,
             mesh,
             material,
             local_radius,
@@ -335,7 +345,7 @@ impl InstanceBatch {
     pub fn try_new_part(
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
@@ -345,7 +355,7 @@ impl InstanceBatch {
         Self::try_new_rows(
             capacity,
             dynamic,
-            with_colors,
+            with_values,
             mesh,
             material,
             local_radius,
@@ -361,7 +371,7 @@ impl InstanceBatch {
     fn try_new_rows(
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
@@ -386,7 +396,8 @@ impl InstanceBatch {
             local_radius,
             active: capacity,
             layers: DEFAULT_LAYERS,
-            with_colors,
+            shadows: 0,
+            with_values,
             source,
             part,
             sprite: None,
@@ -394,10 +405,25 @@ impl InstanceBatch {
             positions: filled(owned * 3, 0.0)?,
             rotations,
             scales: filled(inputs * 3, 1.0)?,
-            colors: filled(if with_colors { inputs * 4 } else { 0 }, 1.0)?,
+            colors: filled(
+                if with_values {
+                    inputs * COLOR_FLOATS
+                } else {
+                    0
+                },
+                1.0,
+            )?,
+            values: filled(
+                if with_values {
+                    inputs * VALUE_FLOATS
+                } else {
+                    0
+                },
+                0.0,
+            )?,
             world: [
-                WorldArrays::try_new(rows, with_colors)?,
-                WorldArrays::try_new(rows, with_colors)?,
+                WorldArrays::try_new(rows, with_values)?,
+                WorldArrays::try_new(rows, with_values)?,
             ],
             dirty,
             dirty_any: true,
@@ -426,10 +452,10 @@ impl InstanceBatch {
 
     /// Engine memory that one row takes: its input arrays, its cell, and the world arrays of both
     /// frames.
-    pub const fn row_bytes(with_colors: bool) -> u64 {
-        let colors = if with_colors { COLOR_FLOATS } else { 0 };
-        let inputs = 3 + 4 + 3 + colors;
-        let world = MATRIX_FLOATS + 4 + colors;
+    pub const fn row_bytes(with_values: bool) -> u64 {
+        let values = if with_values { ROW_VALUE_FLOATS } else { 0 };
+        let inputs = 3 + 4 + 3 + values;
+        let world = MATRIX_FLOATS + 4 + values;
         ((inputs + 1 + 2 * world) * 4) as u64
     }
 
@@ -592,9 +618,9 @@ impl InstanceBatch {
         self.dynamic
     }
 
-    /// True when rows have colours.
-    pub fn has_colors(&self) -> bool {
-        self.with_colors
+    /// True when rows have row values: a colour and four values of their own.
+    pub fn has_row_values(&self) -> bool {
+        self.with_values
     }
 
     /// The batch whose rows this part reads, or `None` for a batch that owns its rows.
@@ -636,6 +662,21 @@ impl InstanceBatch {
     /// no rebuild and no update of the rows.
     pub fn set_layers(&mut self, mask: u32) {
         self.layers = mask;
+    }
+
+    /// The shadow bits of every row: whether the rows cast shadows ([`flags::CAST_SHADOWS`]) and
+    /// receive them ([`flags::RECEIVE_SHADOWS`]), as an object's flags say.
+    pub fn shadows(&self) -> u32 {
+        self.shadows
+    }
+
+    /// Sets the shadow bits of every row, from the [`flags::SHADOWS`] bits of `bits`. Sprite and
+    /// line batches place their own vertices, so they take none. The renderer's tables depend on
+    /// the bits, so a change needs their rebuild.
+    pub fn set_shadows(&mut self, bits: u32) {
+        if self.sprite.is_none() && self.line.is_none() {
+            self.shadows = bits & flags::SHADOWS;
+        }
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with
@@ -710,7 +751,7 @@ impl InstanceBatch {
         &mut self.scales
     }
 
-    /// Colours `(r, g, b, a)`, 4 floats per row, or an empty slice without colours.
+    /// Colours `(r, g, b, a)`, 4 floats per row, or an empty slice without row values.
     pub fn colors(&self) -> &[f32] {
         &self.colors
     }
@@ -718,6 +759,16 @@ impl InstanceBatch {
     /// Colours, for direct writes.
     pub fn colors_mut(&mut self) -> &mut [f32] {
         &mut self.colors
+    }
+
+    /// The rows' own values, 4 floats per row, or an empty slice without row values.
+    pub fn values(&self) -> &[f32] {
+        &self.values
+    }
+
+    /// The rows' own values, for direct writes.
+    pub fn values_mut(&mut self) -> &mut [f32] {
+        &mut self.values
     }
 
     /// The dirty rows of a static batch, waiting for the next update.
@@ -896,11 +947,12 @@ impl InstanceBatch {
             positions: rows.positions,
             rotations: rows.rotations,
             scales: rows.scales,
-            colors: if self.with_colors {
+            colors: if self.with_values {
                 rows.colors
             } else {
                 std::ptr::null()
             },
+            values: rows.values,
             part: self.part.unwrap_or(math::IDENTITY),
             has_part: self.part.is_some(),
             sprite: rows.sprite,
@@ -1004,6 +1056,7 @@ struct RowSource {
     rotations: *const f32,
     scales: *const f32,
     colors: *const f32,
+    values: *const f32,
     dirty: *const u64,
     dirty_words: usize,
     dirty_any: bool,
@@ -1046,6 +1099,7 @@ impl RowSource {
             rotations: batch.rotations.as_ptr(),
             scales: batch.scales.as_ptr(),
             colors: batch.colors.as_ptr(),
+            values: batch.values.as_ptr(),
             dirty: batch.dirty.words().as_ptr(),
             dirty_words: batch.dirty.words().len(),
             dirty_any: batch.dirty_any,
@@ -1069,6 +1123,7 @@ impl RowSource {
             rotations: empty,
             scales: empty,
             colors: empty,
+            values: empty,
             dirty: std::ptr::NonNull::<u64>::dangling().as_ptr().cast_const(),
             dirty_words: 0,
             dirty_any: false,
@@ -1107,7 +1162,9 @@ struct RowKernel {
     positions: *const f32,
     rotations: *const f32,
     scales: *const f32,
+    /// The rows' colours, or null without row values; then `values` holds their own values.
     colors: *const f32,
+    values: *const f32,
     /// The part matrix, applied before each row's transform when `has_part` is set.
     part: Affine,
     has_part: bool,
@@ -1243,7 +1300,8 @@ impl RowKernel {
             let radii = f32x4::splat(self.local_radius) * max_axis_scale4(&matrices);
             self.out.write4(row, &matrices, radii);
             if !self.colors.is_null() {
-                self.out.write_colors4(row, self.colors.add(row * 4));
+                let (colors, values) = (self.colors.add(row * 4), self.values.add(row * 4));
+                self.out.write_values4(row, colors, values);
             }
         }
     }
@@ -1287,8 +1345,8 @@ impl RowKernel {
             self.out
                 .write(row, &matrix, math::world_sphere(&matrix, self.local_radius));
             if !self.colors.is_null() {
-                let color = self.colors.add(row * 4).cast::<[f32; 4]>().read_unaligned();
-                self.out.write_color(row, color);
+                let (color, values) = (self.colors.add(row * 4), self.values.add(row * 4));
+                self.out.write_values(row, color, values);
             }
         }
     }
@@ -1560,14 +1618,14 @@ impl BatchTable {
         &mut self,
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
     ) -> Result<Handle, CoreError> {
-        let bytes = InstanceBatch::row_bytes(with_colors);
+        let bytes = InstanceBatch::row_bytes(with_values);
         self.insert(capacity, bytes, || {
-            InstanceBatch::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+            InstanceBatch::try_new(capacity, dynamic, with_values, mesh, material, local_radius)
         })
     }
 
@@ -1647,27 +1705,27 @@ impl BatchTable {
         source: Option<Handle>,
         capacity: u32,
         dynamic: bool,
-        with_colors: bool,
+        with_values: bool,
         mesh: u32,
         material: u32,
         local_radius: f32,
         part: Affine,
     ) -> Result<Handle, CoreError> {
-        let (capacity, dynamic, with_colors) = match source {
+        let (capacity, dynamic, with_values) = match source {
             Some(id) => {
                 let owner = self.get(id)?;
                 if owner.source.is_some() {
                     return Err(CoreError::InvalidHandle { raw: id.raw() });
                 }
-                (owner.capacity, owner.dynamic, owner.with_colors)
+                (owner.capacity, owner.dynamic, owner.with_values)
             }
-            None => (capacity, dynamic, with_colors),
+            None => (capacity, dynamic, with_values),
         };
-        self.insert(capacity, InstanceBatch::row_bytes(with_colors), || {
+        self.insert(capacity, InstanceBatch::row_bytes(with_values), || {
             InstanceBatch::try_new_part(
                 capacity,
                 dynamic,
-                with_colors,
+                with_values,
                 mesh,
                 material,
                 local_radius,
@@ -1807,13 +1865,42 @@ mod tests {
         batch.positions_mut()[3..6].copy_from_slice(&[1.0, 2.0, 3.0]);
         batch.scales_mut()[3..6].copy_from_slice(&[2.0, 4.0, 1.0]);
         batch.colors_mut()[4..8].copy_from_slice(&[0.1, 0.2, 0.3, 0.4]);
+        batch.values_mut()[4..8].copy_from_slice(&[5.0, 6.0, 7.0, 8.0]);
+        // Row 4 takes the one-row path, after the four-row block of rows 0 to 3.
+        batch.colors_mut()[16..20].copy_from_slice(&[0.5, 0.6, 0.7, 0.8]);
+        batch.values_mut()[16..20].copy_from_slice(&[-1.0, -2.0, -3.0, -4.0]);
         batch.update(&jobs, 1, &mut cells);
         let m = math::compose([1.0, 2.0, 3.0], IDENTITY_ROTATION, [2.0, 4.0, 1.0]);
         assert_eq!(batch.world(1).matrix(1), &m);
         assert_eq!(batch.world(1).sphere(1), [1.0, 2.0, 3.0, 2.0]);
-        assert_eq!(&batch.world(1).colors()[4..8], &[0.1, 0.2, 0.3, 0.4]);
+        let values = batch.world(1).row_values();
+        assert_eq!(&values[..8], &[1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(&values[8..16], &[0.1, 0.2, 0.3, 0.4, 5.0, 6.0, 7.0, 8.0]);
+        assert_eq!(
+            &values[32..40],
+            &[0.5, 0.6, 0.7, 0.8, -1.0, -2.0, -3.0, -4.0]
+        );
         assert_eq!(batch.changed_ranges(), &[RowRange { start: 0, count: 5 }]);
         assert_eq!(batch.frame_active_count(1), 5);
+    }
+
+    #[test]
+    fn shadow_bits_take_cast_and_receive_and_sprites_and_lines_take_none() {
+        let both = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+        let mut batch = InstanceBatch::new(4, false, false, 3, 4, 1.0);
+        assert_eq!(batch.shadows(), 0);
+        batch.set_shadows(both | flags::DYNAMIC | flags::OUTLINED);
+        assert_eq!(batch.shadows(), both);
+        batch.set_shadows(flags::RECEIVE_SHADOWS);
+        assert_eq!(batch.shadows(), flags::RECEIVE_SHADOWS);
+        let look = SpriteLook::new(1, 1, false);
+        let mut sprites = InstanceBatch::try_new_sprites(2, false, 3, 4, 0.75, look).unwrap();
+        sprites.set_shadows(both);
+        assert_eq!(sprites.shadows(), 0);
+        let look = LineLook::new(LineMode::Segments, 1.0, false, false);
+        let mut line = InstanceBatch::try_new_lines(2, false, 3, 4, 1.0, look).unwrap();
+        line.set_shadows(both);
+        assert_eq!(line.shadows(), 0);
     }
 
     #[test]
@@ -2384,7 +2471,7 @@ mod tests {
             .unwrap();
         let other = table.get(second).unwrap();
         assert_eq!((other.capacity(), other.is_dynamic()), (9, true));
-        assert!(!other.has_colors());
+        assert!(!other.has_row_values());
         assert_eq!(other.source(), Some(first));
         assert!(other.positions().is_empty());
         assert_eq!(

@@ -9,7 +9,8 @@
 // own start times on the page's timeline. With ?memory-option=<MiB>, it passes that maximum in the
 // memory option of createEngine, and reports the maximum of each shared memory that the engine
 // asked the browser for. With ?downloads, it reports when the page asked for each file and when the
-// file arrived, from the browser's resource timing.
+// file arrived, from the browser's resource timing. ?sketch=busy runs a scene whose instance
+// batch gives the job workers work in every frame.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
 import { measureUntil } from './lib/measure';
@@ -88,7 +89,10 @@ run('engine', async () => {
 	const createEngineAtMs = performance.now();
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
+		sketch:
+			params.get('sketch') === 'busy'
+				? new URL('./sketches/busy-sketch.ts', import.meta.url)
+				: new URL('./sketches/empty-sketch.ts', import.meta.url),
 		onProgress: (stage) => {
 			stages.push(stage);
 			progress(stage);

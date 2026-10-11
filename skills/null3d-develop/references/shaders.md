@@ -55,6 +55,9 @@ struct Surface {
   emissive: vec3f,         // linear RGB, added after lighting
   occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
   irradiance: vec3f,       // baked light added to the ambient light, zero by default
+  reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
+  transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
+  thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
@@ -159,7 +162,8 @@ const dissolve = materials.shader({
 - Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
 - The fields fit in 32 numbers, less one for each texture; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
 - No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
-- Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
+- Per-instance data (0.2): `createInstances(mesh, count, { material, values: true })` gives each row four floats in `batch.values`, which the WGSL reads as `object.values` in `vertexOffset` and `surface`. Objects and rows without values read zeros. `colors: true` tints each row through `input.vertexColor`, with no WGSL. (`concepts/instances`, Per-row values)
+- A material with a `vertexOffset` casts shadows that follow the offset (0.2), so swaying grass casts swaying shadows. Its shadows draw again in every frame, as moving objects' do.
 
 Textures (0.2): declare each one as `var name: texture_2d<f32>;`, with no `@group` or `@binding`, and pass it by name in the `textures` option. The engine declares its sampler as `nameSampler`, with the texture's `wrap` and `filter` options:
 
@@ -299,6 +303,25 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
 - Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
+
+A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
+
+```wgsl
+#import null3d::reflection::{reflection_uv}
+var mirror: texture_2d<f32>;    // textures: { mirror: textures.fromPass(pass) }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, reflection_uv(clip, vec2f(0.0)), 0.0).rgb, 1.0);
+    return s;
+}
+```
+
+- The engine lights `s.reflection.rgb` as the light from the mirror direction, in place of that share of the environment's reflection, so Fresnel and metalness weigh it. A tilted normal times a small factor as `reflection_uv`'s offset makes water ripple.
+- Roughness does not blur it. Docs: `api/render`, `shaders/surface-functions`, and the water recipe in `guides/custom-passes`.
+
+Water that shows its bed (0.2): give the custom material `transmission: 1`, `thickness` (the water's depth), `ior: 1.33` and an `attenuationColor`, and set `s.transmission = 1.0` with a rippled `s.normal` in the surface function. The ripples bend the bed that shows through. Only opaque objects show through. Docs: `api/materials` (Transmission), `shaders/surface-functions`.
 
 ## 8. Portable WGSL rules
 

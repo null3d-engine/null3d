@@ -11,11 +11,15 @@ enable draw_index;
 // alpha of the color, the map and the vertex colors falls below the material's cutoff. The
 // ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds test it
 // against the alpha hash (null3d::cutout). A material that blends writes premultiplied color.
-// null3d::mesh finds each instance on both GPU paths.
+// null3d::mesh finds each instance on both GPU paths. The ROW_VALUES builds multiply the color by
+// the row's color, for the rows of instance batches with row values.
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
+#ifdef ROW_VALUES
+#import null3d::mesh::{row_values_of}
+#endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
 #endif
@@ -78,6 +82,10 @@ struct VertexOut {
     /// The position in the mesh's own space, where the alpha hash finds its pattern.
     @location(4) mesh_place: vec3f,
 #endif
+#ifdef ROW_VALUES
+    /// The color of the instance's row.
+    @location(5) @interpolate(flat, either) row_color: vec4f,
+#endif
 }
 
 @vertex
@@ -114,6 +122,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef ALPHA_HASH
     out.mesh_place = mesh_position(v.position);
 #endif
+#ifdef ROW_VALUES
+    out.row_color = row_values_of(found).color;
+#endif
     return out;
 }
 
@@ -138,6 +149,10 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
     alpha *= in.vertex_color.a;
+#endif
+#ifdef ROW_VALUES
+    base *= in.row_color.rgb;
+    alpha *= in.row_color.a;
 #endif
 #ifdef ALPHA_HASH
     if alpha < alpha_hash_threshold(in.mesh_place) {

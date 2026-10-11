@@ -301,7 +301,8 @@ jobs:
     # The npm packages as a developer installs them: each public package packed as the publish job
     # packs it, and checked for every file it needs, then installed into a fresh Vite project where
     # the command-line tool's test command type checks the project and draws its sketch on every
-    # GPU tier, and Vite builds it for production.
+    # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
+    # around a copy of examples/, as the website does, and two demos must start from that build.
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -337,13 +338,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 7, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/7 }
-          - { part: shard 2 of 7, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/7 }
-          - { part: shard 3 of 7, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/7 }
-          - { part: shard 4 of 7, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/7 }
-          - { part: shard 5 of 7, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/7 }
-          - { part: shard 6 of 7, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/7 }
-          - { part: shard 7 of 7, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/7 }
+          - { part: shard 1 of 10, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/10 }
+          - { part: shard 2 of 10, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/10 }
+          - { part: shard 3 of 10, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/10 }
+          - { part: shard 4 of 10, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/10 }
+          - { part: shard 5 of 10, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/10 }
+          - { part: shard 6 of 10, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/10 }
+          - { part: shard 7 of 10, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/10 }
+          - { part: shard 8 of 10, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/10 }
+          - { part: shard 9 of 10, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/10 }
+          - { part: shard 10 of 10, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/10 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -364,7 +368,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "240:388:228:222:152:126:272"
+          PWTEST_SHARD_WEIGHTS: "90:213:427:181:160:121:115:174:120:244"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -485,6 +489,69 @@ jobs:
             target/playwright-bench/
           if-no-files-found: ignore
 
+  allocation-paths:
+    # Whether the allocation job runs: on a pull request only when it changes the code whose
+    # per-frame allocation that job checks, or the check itself; on every other event always. The
+    # merge commit's first parent is main, so the diff holds the pull request's changes alone.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.paths.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+      - name: Find whether the pull request changes what the allocation check covers
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+          PATHS: ^(packages/engine/src/(render|gpu|sketch)/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/(harness|s1-sketch|sketch-common)\.ts$|\.github/workflows/ci\.yml$)
+        run: |
+          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE "$PATHS"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  allocation:
+    # The per-frame allocation check, `bun run bench:allocation`, on S1 with each GPU path, by the
+    # owner's ruling of 9 October 2026. Each GPU path takes a machine of its own, and the check is
+    # the only work there, since a busy machine moves the figures. CI's Chromium draws on
+    # SwiftShader, which draws S1's 100,000 boxes at under one frame a second, so the check draws
+    # fewer boxes here, counts the frames that S1 steps, and judges them by CI's own budgets
+    # (bench/allocation.ts). The Mac's gate keeps the full count on a real GPU. On SwiftShader the
+    # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
+    # minutes.
+    name: allocation (${{ matrix.gpu }})
+    needs: [build, city, allocation-paths]
+    if: needs.allocation-paths.outputs.run == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        gpu: [webgpu, webgl2]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      # The benchmark pages' build holds S6's pages, which load the city's files.
+      - uses: ./.github/actions/samples
+      - uses: ./.github/actions/city
+        with:
+          mode: download
+      - name: Per-frame allocation in S1 on SwiftShader
+        run: bun run bench:allocation --gpu ${{ matrix.gpu }}
+
   real-browsers:
     # Safari on GitHub's macOS machines and Firefox on its Linux machines, through the same test
     # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
@@ -569,8 +636,9 @@ jobs:
     # The one check of this workflow that main's rules require, so that the jobs above can split into
     # shards and change their names with no change to the rules. It runs after every other job, also
     # after a failure or a cancel, and fails unless each job passed. On a draft pull request the
-    # browser, city, benchmark page and real-browser jobs are skipped by their own condition. In every
-    # other run, every job must pass.
+    # browser, city, benchmark page, allocation and real-browser jobs are skipped by their own
+    # condition. The allocation job also skips a pull request that changes nothing it checks. In
+    # every other run, every job must pass.
     if: always()
     needs:
       - docs-and-tools
@@ -585,6 +653,8 @@ jobs:
       - browser
       - browser-city
       - bench
+      - allocation-paths
+      - allocation
       - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -593,8 +663,10 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           FULL_RUN: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+          ALLOCATION_RUN: ${{ needs.allocation-paths.outputs.run == 'true' }}
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson full "$FULL_RUN" \
-            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($full | not)))' \
+          jq -e --argjson full "$FULL_RUN" --argjson allocation "$ALLOCATION_RUN" \
+            'length > 0 and all(to_entries[]; .value.result == "success" or (.value.result == "skipped"
+              and (($full | not) or (.key == "allocation" and ($allocation | not)))))' \
             <<< "$NEEDS" > /dev/null

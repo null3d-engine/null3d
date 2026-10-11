@@ -36,6 +36,13 @@ fn reference(model: &BTreeMap<u32, Obj>, h: Handle) -> (Mat64, bool) {
     }
 }
 
+/// True when an ancestor of `h` hides it, so its world row need not follow its moves.
+fn under_hidden(model: &BTreeMap<u32, Obj>, h: Handle) -> bool {
+    model[&h.raw()]
+        .parent
+        .is_some_and(|p| !reference(model, p).1)
+}
+
 fn is_descendant(model: &BTreeMap<u32, Obj>, h: Handle, ancestor: Handle) -> bool {
     let mut cur = Some(h);
     while let Some(c) = cur {
@@ -109,8 +116,27 @@ fn check_against_reference(scene: &SceneStorage, model: &BTreeMap<u32, Obj>, fra
         let h = Handle::from_raw(raw);
         let slot = scene.resolve(h).unwrap() as usize;
         let (expected, visible) = reference(model, h);
-        let got = world.matrix(slot);
         let scale = expected.iter().fold(1.0f64, |m, v| m.max(v.abs()));
+        if under_hidden(model, h) {
+            // The update leaves such a row alone, so the world getter composes the matrix.
+            assert_eq!(
+                world.radii()[slot],
+                HIDDEN_RADIUS,
+                "frame {frame}, slot {slot}"
+            );
+            let got = scene.absolute_world_matrix(h).unwrap();
+            for k in 0..12 {
+                let err = (got[k] - expected[k]).abs();
+                assert!(
+                    err <= 1e-5 * scale,
+                    "frame {frame}, slot {slot}, element {k} of the getter: {} vs {}",
+                    got[k],
+                    expected[k]
+                );
+            }
+            continue;
+        }
+        let got = world.matrix(slot);
         for k in 0..12 {
             let err = (f64::from(got[k]) - expected[k]).abs();
             assert!(
@@ -277,8 +303,14 @@ fn random_frames(seed: u64, initial: usize, frames: u32, worker_counts: &[u32]) 
         // Every object whose world matrix moved is in the changed set.
         let scene = &runs[0].scene;
         for &raw in model.keys() {
-            let (m, _) = reference(&model, Handle::from_raw(raw));
-            let slot = scene.resolve(Handle::from_raw(raw)).unwrap();
+            let h = Handle::from_raw(raw);
+            let (m, _) = reference(&model, h);
+            let slot = scene.resolve(h).unwrap();
+            // A row below a hidden ancestor uploads nothing until the ancestor shows again.
+            if under_hidden(&model, h) {
+                previous.remove(&raw);
+                continue;
+            }
             if previous.get(&raw).is_none_or(|p| p != &m) {
                 assert!(
                     scene.changed().get(slot),

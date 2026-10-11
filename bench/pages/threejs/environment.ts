@@ -4,7 +4,7 @@
 // three.js's RoomEnvironment as its examples do, with `fromScene(room, 0.04)`. `?env=venice` loads
 // the Radiance file with HDRLoader, and `?env=studio` the OpenEXR file with EXRLoader, and each
 // prefilters it with `fromEquirectangular`. `&rotate` sets
-// `scene.environmentRotation`. It draws the scene once into an offscreen target of the image's size
+// `scene.environmentRotation`, and `&hemisphere` adds a HemisphereLight to the environment's light. It draws the scene once into an offscreen target of the image's size
 // and publishes the pixels, as the hold pages do. `?renderer=webgl` draws with WebGLRenderer, and
 // `?renderer=webgpu` with WebGPURenderer.
 import type * as ThreeModule from 'three';
@@ -19,6 +19,7 @@ import {
 	GRID_COLOR,
 	GRID_ENVIRONMENT_ROTATION,
 	GRID_ENVIRONMENTS,
+	GRID_HEMISPHERE,
 	GRID_IMAGE,
 	GRID_SPHERE,
 	type GridEnvironmentName,
@@ -52,6 +53,10 @@ run('hold', async () => {
 		scene.environment = pmrem.fromEquirectangular(hdr).texture;
 	}
 	if (params.has('rotate')) scene.environmentRotation.set(...GRID_ENVIRONMENT_ROTATION);
+	if (params.has('hemisphere')) {
+		const { skyColor, groundColor, intensity } = GRID_HEMISPHERE;
+		scene.add(new three.HemisphereLight(skyColor, groundColor, intensity));
+	}
 
 	const { radius, widthSegments, heightSegments } = GRID_SPHERE;
 	const sphere = new three.SphereGeometry(radius, widthSegments, heightSegments);
@@ -70,7 +75,7 @@ run('hold', async () => {
 
 	const pixels = await readFrame(width, height, () => renderer.render(scene, camera));
 	return {
-		scene: `environment-${name}${params.has('rotate') ? '-rotated' : ''}`,
+		scene: `environment-${name}${params.has('rotate') ? '-rotated' : ''}${params.has('hemisphere') ? '-hemisphere' : ''}`,
 		renderer: rendererName,
 		n: GRID_CELLS.length,
 		width,
