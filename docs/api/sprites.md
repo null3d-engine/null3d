@@ -96,6 +96,7 @@ export default defineSketch(async ({ scene, textures, time }) => {
 | `dynamic` | `false` | `true` updates and uploads every sprite in use, in every frame. A static batch updates only the sprites that you mark |
 | `layers` | `1`, layer 0 | The [layers](../concepts/render-layers.md) of every sprite, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every sprite's position is relative to, kept at full precision: [Batch origins](../concepts/large-worlds.md#batch-origins) |
+| `depthBias`, `alphaToCoverage` | None, `true` | As for any [material](materials.md) |
 
 An atlas side that is not a whole number from 1 to 2,048 throws [E1108](../errors/E1108.md). A `center` that is not two finite numbers throws [E1203](../errors/E1203.md).
 

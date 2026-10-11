@@ -31,6 +31,7 @@ fn swaying() -> Shading {
         transmission: false,
         row_values: true,
         caster: true,
+        object_ids: false,
     })
 }
 

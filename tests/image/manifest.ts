@@ -517,8 +517,10 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
- * The quarter test draws the reflection at a quarter of the render size. The reflection spec
- * checks where the boxes' reflections land, and that no magenta shows.
+ * The quarter test draws the reflection at a quarter of the render size. The scale-50 test draws
+ * the frame at a render scale of 0.5, where the reflection's texture takes the smaller size and
+ * the pass fills it whole. The reflection spec checks where the boxes' reflections land, and that
+ * no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -530,6 +532,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-mirror', ''),
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
+		test('reflection-scale-50', '?half'),
 	];
 }
 
@@ -821,6 +824,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'asset-scene',
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
+	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
+	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
+	// colors. Each must load and draw alike on every tier.
+	{
+		name: 'converted-models',
+		sketch: 'tests/pages/sketches/converted-models-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.5,
 	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
@@ -1675,6 +1687,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		size: [480, 270],
 		modes: ALL_MODES,
+	},
+	// The inputs that three.js's ShaderMaterial gives its shaders: the instance's row and the
+	// object's id in static and dynamic batches and on meshes, the camera's and the object's
+	// matrices, which green patches check, the second texture coordinates with and without a second
+	// set, and the pixel's position and depth.
+	{
+		name: 'custom-inputs',
+		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
+		hold: 1,
+		size: [480, 270],
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.

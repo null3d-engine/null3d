@@ -1,6 +1,6 @@
 # D-20: WebGPU skinning
 
-Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The change of the engine's default comes in a pull request of its own. Until it merges, the engine still skins in the compute pass. The Mac's Safari and the owner's iPad are still to run, and cannot change the result. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
+Status: decided on 2026-10-08. The owner ruled that the vertex shaders skin on WebGPU by default, as the rule asks. The compute pass failed it on all five devices measured: the Mac, three Android phones and a cloud iPad. The change of the engine's default comes in a pull request of its own. Until it merges, the engine still skins in the compute pass. The owner's iPad ran the timing page on 2026-10-11, where the compute pass saved 0% to 9% with two or more cascades. The Mac's Safari, and S5 on the owner's iPad, are still to run. None of these can change the result. Date: 2026-10-04, updated 2026-10-08. Task: M2-C3, M2-C8.
 
 Summary: Skin once per frame in a compute pass, or in the vertex shader of every pass, as WebGL2 does. The engine builds both, and both draw the same images. The compute pass now skips still poses and writes 8-bit normals, so S5's 500 knights take 49.6 MB of skinned vertices, not 69.4 MB. On the Mac's Chrome it saves nothing against the vertex shaders (3.60 against 3.63 GPU ms), far from the rule's 10%. In S5 it saves at most 4.1% on the Android phones and 4.3% on a cloud iPad. On the timing page it costs 4% to 79% more on each phone, and 26% to 30% more on the iPad. So it fails the rule on all five devices measured. On 8 October 2026 the owner made the vertex shaders WebGPU's default.
 
@@ -283,3 +283,25 @@ On 8 October 2026 the owner ruled on this record: the vertex shaders skin on Web
 ### The change in the engine
 
 The change of the default comes in a pull request of its own (M2-C8's follow-up). Until it merges, the engine skins in the compute pass, and `?skinning=vertex` picks the vertex shaders. That pull request also says what stays of the compute pass. WebGPU morphs only in it ([D-51](D-51-morph-targets.md)), and custom materials and the debug views have no SKIN builds, so some objects still need it.
+
+## Addendum, 2026-10-11: the timing page on the owner's iPad
+
+The owner's iPad Pro 11 (2018, A12X, Safari 26.6.2) ran the `skinning-webgpu` plan over the local network on 11 October 2026, on main at f854dd72d (run `20261011-082012-skinning-webgpu`). Every page passed: 16 of 16. In every page the two ways' images differed in 0 of 921,600 pixels. The iPad was on its charger, with Limit Frame Rate on, and the screen held 59 Hz before every page. The Mac that served the pages ran at a load of 15 to 18. That slows only the serving, not the iPad's GPU timings. S5 did not run on this iPad in this sitting.
+
+Each figure is the GPU time per frame, vertex shaders / compute pass, and how much the compute pass saves.
+
+| Characters | 1 cascade | 2 cascades | 3 cascades | 4 cascades |
+| --- | --- | --- | --- | --- |
+| 50 | 1.89 / 1.75 ms, 7% | 1.90 / 1.77 ms, 7% | 2.12 / 1.90 ms, 10% | 2.33 / 2.03 ms, 13% |
+| 100 | 3.04 / 3.01 ms, 1% | 3.06 / 3.06 ms, 0% | 3.52 / 3.34 ms, 5% | 3.85 / 3.59 ms, 7% |
+| 200 | 5.29 / 5.13 ms, 3% | 5.37 / 5.22 ms, 3% | 6.04 / 5.65 ms, 6% | 6.74 / 6.13 ms, 9% |
+| 500 | 11.43 / 11.08 ms, 3% | 11.81 / 11.31 ms, 4% | 12.94 / 12.08 ms, 7% | 14.34 / 13.02 ms, 9% |
+
+What the figures show:
+
+- On this iPad the compute pass is faster on every page but one, where the two tie. Its saving grows with the cascades, as each cascade skins the crowd again in the vertex shaders.
+- At 200 characters, the size of the other devices' rows, it saves 3% with 2 cascades and 9% with 4. The cloud iPad (A14, Safari 27) showed the opposite: the compute pass took 26% and 30% more there.
+- It saves 10% or more only at 50 characters with 3 or 4 cascades, where the whole frame takes about 2 ms.
+- The vertex shaders cost 0.01 to 0.08 ms less CPU time per frame.
+
+The rule needs a saving of 10% in S5 on every device. The compute pass failed it on the Mac, the three phones and the cloud iPad, so this run does not change the owner's ruling. It does show that on the A12X the compute pass is the faster way, by up to 9% at sizes that matter.

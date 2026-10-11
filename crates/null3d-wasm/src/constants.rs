@@ -107,6 +107,9 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
     /// shadow caster that moves by it.
     pub const CUSTOM_CASTER: u32 = 1 << 30;
+    /// The bit of a custom shading whose WGSL reads an instance's index or an object's id, which
+    /// the frame builders then keep in the table of object ranges.
+    pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -815,6 +818,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
                 ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
                 ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
+                ("CUSTOM_OBJECT_IDS", shading::CUSTOM_OBJECT_IDS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.

@@ -67,7 +67,12 @@ function centerOf(
 	return count > 0 ? { x: x / count, y: y / count, count } : undefined;
 }
 
-for (const name of ['reflection-mirror', 'reflection-water', 'reflection-quarter'])
+for (const name of [
+	'reflection-mirror',
+	'reflection-water',
+	'reflection-quarter',
+	'reflection-scale-50',
+])
 	test(`${name}: the reflection hangs below each box on its own side, and nothing below the plane shows`, async ({
 		page,
 	}) => {
