@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `textures.fromPass` ships in 0.2. Cube maps are not built yet, so coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass`. Cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR

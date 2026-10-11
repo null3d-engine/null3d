@@ -8,7 +8,7 @@ summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleto
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. `debug.skeleton` and `@null3d/engine/stats` ship in null3D 0.2. So do the stats overlay's page switches, its options and card, and its figures of GPU time, triangles, objects and memory. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `debug.skeleton` and `@null3d/engine/stats`. It also adds the stats overlay's page switches, its options and card, and its figures of GPU time, triangles, objects and memory. The API is experimental, so it can still change between versions.
 
 Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
@@ -69,7 +69,7 @@ Debug drawing works in development builds only. In a production build, every dra
 
 ### Limits
 
-- Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md) in null3D 0.2.
+- Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md), from step 0.2.
 - A frame draws at most 131,072 lines. The engine leaves out the lines after that, and warns once in the console.
 - A frame without debug drawing runs no debug pass, uploads nothing and allocates nothing.
 

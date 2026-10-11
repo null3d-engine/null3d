@@ -141,6 +141,9 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	ReflectionPassOptions,
+	ReflectionPlane,
+	ReflectionScale,
 	Render,
 	RenderPass,
 	RenderPassOptions,
@@ -266,7 +269,12 @@ export type {
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
-export type { Quality, QualityGovernor } from './sketch/quality';
+export type {
+	Quality,
+	QualityBudget,
+	QualityBudgetOptions,
+	QualityGovernor,
+} from './sketch/quality';
 export type { LabelOptions, Ui } from './sketch/ui';
 export type { WorkerProbe } from './workers/probe-worker';
 

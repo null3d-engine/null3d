@@ -8,7 +8,7 @@ summary: "The npm packages; the Vite plugin, which every Vite build needs; packa
 
 # Install null3D
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The packages are not on npm until the 0.1 release, so the install commands below fail before then.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The packages are not on npm until the 0.1 release, so the install commands below fail before then.
 
 null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch.
 

@@ -8,7 +8,7 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Ships in null3D 0.1, with shadows of batch rows, row colors and row values in 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds shadows of batch rows, row colors and row values. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
