@@ -116,7 +116,8 @@ pub const FILTER_REACH: u32 = 3;
 /// the High preset's sixteen tiles and the Ultra preset's twenty-four take two frames at most.
 pub const MAX_REDRAWS: usize = 12;
 
-/// The moved rows of a casting batch between two checks of whether every tile must draw already.
+/// The moved casters, or moved rows of a casting batch, between two checks of whether every tile
+/// must draw already.
 const MARKED_CHECK_ROWS: usize = 64;
 
 /// How the shadow atlas is set up: the start values of the quality preset.
@@ -790,8 +791,10 @@ impl ShadowTiles {
     /// Marks the tiles whose views a caster that moved since the module last saw it touches,
     /// before or after the move, as tiles that must draw. Remembers every caster from scratch, and
     /// marks every tile, when it knows none yet, the upload list overflowed or the structure
-    /// changed. A skinned, morphed or swaying caster joins the casters whose poses the module
-    /// checks in every frame.
+    /// changed. Once every tile of the frame's lights must draw, the moved casters that follow
+    /// are only remembered, so a frame in which most casters move costs little more than one
+    /// that remembers them all from scratch. A skinned, morphed or swaying caster joins the
+    /// casters whose poses the module checks in every frame.
     fn mark_moved_casters(
         &mut self,
         input: &FrameInput<'_>,
@@ -841,6 +844,7 @@ impl ShadowTiles {
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
             return;
         }
+        let (mut moved, mut full) = (0, false);
         for range in input.snapshot.uploads() {
             if range.target != SCENE_TARGET {
                 continue;
@@ -851,9 +855,15 @@ impl ShadowTiles {
                 }
                 let now = caster_of(input, slot);
                 let before = std::mem::replace(&mut self.casters[slot], now);
-                if before != now {
-                    self.mark(shadows, &before, &now);
+                if full || before == now {
+                    continue;
                 }
+                if moved % MARKED_CHECK_ROWS == 0 && self.all_marked() {
+                    full = true;
+                    continue;
+                }
+                moved += 1;
+                self.mark(shadows, &before, &now);
             }
         }
     }

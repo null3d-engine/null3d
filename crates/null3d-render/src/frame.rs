@@ -86,6 +86,8 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
 /// The most unchanged scene rows that one upload carries between two runs of changed rows. Each
 /// write of a data texture on WebGL2 goes through a pixel unpack buffer, and many small writes in
 /// a frame hold up the GPU far longer than the few kilobytes of rows that a merged write repeats.
+/// On WebGPU, each buffer write is a call of its own on the render thread, which costs more than
+/// the rows it repeats.
 pub const MERGE_GAP_ROWS: u32 = 64;
 
 /// Rows `start..start + count` joined to the upload `span` (a start and a count) when they begin
