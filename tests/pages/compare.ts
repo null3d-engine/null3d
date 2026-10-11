@@ -103,6 +103,7 @@ run('compare', async () => {
 		label: started.label,
 		tier: started.gpu,
 		build: started.mode,
+		limit: started.limit ?? null,
 		mode: { hold: hold ?? null },
 	};
 	if (started.held) {

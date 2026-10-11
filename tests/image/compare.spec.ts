@@ -96,3 +96,74 @@ for (const engine of ['null3d', 'threejs'] as const)
 		expect(measured.memory?.bytes).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
 	});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	for (const gpu of ['webgpu', 'webgl2'] as const)
+		test(`Night town starts and draws with ${engine} on ${gpu}, and the ramp runs`, async ({
+			page,
+		}) => {
+			// The image tests hold each engine's look. These runs draw no effects, and each engine and
+			// GPU path builds the town in one mode: the scene graph on WebGPU, batches on WebGL2.
+			const mode = gpu === 'webgpu' ? 'scene-graph' : 'instanced';
+			const errors: string[] = [];
+			page.on('pageerror', (error) => errors.push(error.message));
+			page.on('console', (message) => {
+				if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+					errors.push(message.text());
+			});
+			await page.goto(
+				`compare.html?compare=night-town&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quick()}`,
+			);
+			const result = await pageResult<{
+				error?: string;
+				label: string;
+				tier: string;
+				build: string;
+				limit: { count: number; reason: string } | null;
+				ramp: RampResult;
+			}>(page, 100_000);
+			expect(result.error).toBeUndefined();
+			expect(result.tier).toBe(gpu);
+			expect(result.build).toBe(mode);
+			const { ramp } = result;
+			expect(ramp.steps.length).toBeGreaterThanOrEqual(1);
+			// The ramp counts lights, and stops at three.js's limit where WebGLRenderer finds one.
+			const top = Math.min(400, result.limit?.count ?? 400);
+			for (const step of ramp.steps) expect(step.count).toBeLessThanOrEqual(top);
+			if (!softwareGpu()) for (const step of ramp.steps) expect(step.fps).toBeGreaterThan(0);
+			if (result.limit) {
+				expect(engine).toBe('threejs');
+				expect(gpu).toBe('webgl2');
+				expect(result.limit.count % 12).toBe(0);
+				expect(result.limit.reason).toContain('WebGLRenderer');
+			}
+			expect(errors).toEqual([]);
+		});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	test(`Busy page measures ${engine} beside a busy page, with the page thread's figures`, async ({
+		page,
+	}) => {
+		const seconds = softwareGpu() ? 0.5 : 3;
+		await page.goto(
+			`compare.html?compare=busy-page&engine=${engine}&gpu=webgpu&effects=&measure=120&seconds=${seconds}${quick()}`,
+		);
+		// Typing into the busy page's search box during the measurement gives the browser input to
+		// time.
+		await page.locator('.busy-search').pressSequentially('lanterns by the harbor', { delay: 40 });
+		const result = await pageResult<{
+			error?: string;
+			label: string;
+			measured: {
+				count: number;
+				fps: number;
+				mainThread: { longTasks: number; inputDelayMs: number | null } | null;
+			};
+		}>(page, 100_000);
+		expect(result.error).toBeUndefined();
+		expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
+		expect(result.measured.count).toBe(120);
+		// Chrome reports long tasks, so the page thread's figures are there for both engines.
+		expect(result.measured.mainThread).not.toBeNull();
+		expect(result.measured.mainThread?.longTasks).toBeGreaterThanOrEqual(0);
+	});
