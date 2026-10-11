@@ -5,8 +5,9 @@
 // its surface's reflection. With the default, the plane is a smooth metal mirror, so each box's
 // reflection hangs below it on its own side and the sky fills the rest. ?water ripples the plane
 // with a few waves and gives it water's color and reflectance. ?quarter draws the reflection at a
-// quarter of the render size, and ?every=3 draws it in one frame of three. The magenta box must
-// never show: the pass clips everything below the plane, and the reflection spec checks it.
+// quarter of the render size, and ?every=3 draws it in one frame of three. ?half draws the frame
+// at a render scale of 0.5. The magenta box must never show: the pass clips everything below the
+// plane, and the reflection spec checks it.
 import { defineSketch } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -58,7 +59,9 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, textures, render }) => {
+export default defineSketch(({ scene, materials, geometry, textures, render, quality }) => {
+	if (params.has('half'))
+		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
 	scene.setBackground({ sky: { sunPosition: [0.4, 0.35, -0.85], cloudCoverage: 0 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

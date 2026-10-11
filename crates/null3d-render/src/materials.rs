@@ -101,6 +101,9 @@ pub struct CustomShading {
     /// True when it has the builds of a shadow caster that moves by its vertex offset, which its
     /// shadows draw with.
     pub caster: bool,
+    /// True when its WGSL reads an instance's index or an object's id, which its vertex shader
+    /// finds in the table of object ranges.
+    pub object_ids: bool,
 }
 
 impl CustomShading {
@@ -115,6 +118,7 @@ impl CustomShading {
             transmission: false,
             row_values: true,
             caster: false,
+            object_ids: false,
         })
     }
 }
@@ -185,6 +189,12 @@ impl Shading {
     /// vertex offset: a custom material's whose WGSL has one.
     pub const fn casts_its_own_way(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.caster)
+    }
+
+    /// True when its shader reads the table of object ranges: a custom material's whose WGSL
+    /// reads an instance's index or an object's id.
+    pub const fn reads_object_ids(self) -> bool {
+        matches!(self, Shading::Custom(custom) if custom.object_ids)
     }
 }
 
@@ -670,6 +680,12 @@ impl MaterialTable {
     /// True when a material with this id lives: created, and not destroyed.
     pub fn is_live(&self, id: u32) -> bool {
         self.states.get(id as usize) == Some(&State::Live)
+    }
+
+    /// True when a live material's shader reads the table of object ranges, which the frame
+    /// builders then fill.
+    pub fn reads_object_ids(&self) -> bool {
+        (0..self.len()).any(|id| self.is_live(id) && self.shading[id as usize].reads_object_ids())
     }
 
     /// True when a template is a custom one that no live material draws with.

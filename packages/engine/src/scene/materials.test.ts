@@ -39,6 +39,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_FIRST,
+	SHADING_CUSTOM_OBJECT_IDS,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_LIT,
 	SHADING_UNLIT,
@@ -571,6 +572,16 @@ describe('materials.shader', () => {
 		materials.shader({ wgsl: compiledMaterial() });
 		expect(sent.map(([template]) => template)).toEqual([128]);
 		expect(TEMPLATE_CUSTOM_FIRST).toBe(128);
+	});
+
+	test('marks the shading of WGSL that reads an instance index or an object id', () => {
+		const { shadings, materials } = fakeCore();
+		materials.shader({ wgsl: { ...compiledMaterial(), objectIds: true } });
+		materials.shader({ wgsl: compiledMaterial() });
+		expect(shadings.map((shading) => shading >>> 0)).toEqual([
+			(standardCustom(SHADING_CUSTOM_FIRST) | SHADING_CUSTOM_OBJECT_IDS) >>> 0,
+			standardCustom(SHADING_CUSTOM_FIRST + 1),
+		]);
 	});
 
 	test('refuses the alpha hash and alpha to coverage, which custom materials do not take', () => {

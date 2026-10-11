@@ -1344,8 +1344,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, and the hemisphere lights' three vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 560;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, and the camera's view and
+    /// projection matrices, which custom materials read.
+    pub const FRAME_UNIFORM_BYTES: u32 = 688;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1372,6 +1373,10 @@ pub mod sizes {
     pub const ROW_VALUE_TEXELS: u32 = 2;
     /// Row values per row of their data texture, which is 2,048 texels wide.
     pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
+    /// Bytes of the table of object ranges, a uniform block that the vertex shaders of custom
+    /// materials which read an instance's index or an object's id search: the largest uniform
+    /// block that every WebGL2 device and WebGPU's compatibility mode allow.
+    pub const OBJECT_RANGE_BYTES: u32 = 16384;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
@@ -2121,6 +2126,10 @@ mod tests {
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
+            format!(
+                "const OBJECT_RANGE_VECTORS: u32 = {}u;",
+                sizes::OBJECT_RANGE_BYTES / 16
+            ),
         ] {
             assert!(mesh.contains(&line), "lib/mesh.wgsl lacks {line}");
         }
