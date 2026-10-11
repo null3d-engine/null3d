@@ -120,6 +120,8 @@ export interface MaterialBuild {
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/** True when the WGSL reads an instance's index or an object's id. */
+	readonly objectIds: boolean;
 }
 
 /** The result of a custom material's compile. */

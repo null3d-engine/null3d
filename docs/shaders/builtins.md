@@ -3,12 +3,12 @@ id: shaders/builtins
 title: Built-in shader inputs
 status: experimental
 since: "0.1"
-summary: "Camera, time, object, instance and light values available to custom shaders."
+summary: "Camera, time, object, instance and light values available to custom shaders, with the camera's and the object's matrices and ids."
 ---
 
 # Built-in shader inputs
 
-> Ships in null3D 0.1, with the values of batch rows in 0.2. The API is experimental, so it can still change between versions. The view and projection matrices, the camera's near and far planes, the object's matrices and id are not built yet. Nor are light values. Coding agents must not use them.
+> Ships in null3D 0.1, with the values of batch rows, the camera's and the object's matrices and the object's id in 0.2. The API is experimental, so it can still change between versions. Light values are not built yet. Coding agents must not use them.
 
 A custom material's WGSL reads four built-in values besides its inputs: `frame`, `camera`, `object` and `material`. The engine fills them before it calls your functions, in the vertex offset and in the surface function alike. Read them anywhere in your WGSL, as global values. A [full shader](../guides/custom-shaders.md#full-shaders) imports `frame`, `camera` and `object` from `null3d::builtins`, and fills them with `fill_builtins`.
 
@@ -45,6 +45,22 @@ The values of the camera that the view draws from.
 | --- | --- | --- |
 | `position` | `vec3f` | The camera's position in the world |
 | `viewProjection` | `mat4x4f` | The matrix from positions relative to the camera to clip space |
+| `view` | `mat4x4f` | The matrix from positions relative to the camera to view space, where the camera looks down -z. It holds the camera's rotation only, because the camera sits at the origin of positions relative to it |
+| `projection` | `mat4x4f` | The matrix from view space to clip space. `camera.projection * camera.view` is `camera.viewProjection` |
+| `near` | `f32` | The distance of the camera's near plane |
+| `far` | `f32` | The distance of the camera's far plane |
+
+The engine stores depth reversed on every GPU path: clip space's depth is 1 at the near plane and 0 at the far plane. `camera.projection` gives that depth. A light draws each shadow, so a vertex offset reads zeros for the camera's `view` and `projection` in a shadow pass.
+
+```wgsl
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    // The distance along the view, from 0 at the near plane to 1 at the far plane.
+    let depth = -(camera.view * vec4f(input.relativePosition, 1.0)).z;
+    s.emissive = vec3f(saturate((depth - camera.near) / (camera.far - camera.near)));
+    return s;
+}
+```
 
 ## `object`
 
@@ -54,12 +70,47 @@ The values of the object that the draw shows. For instances of a batch, they are
 | --- | --- | --- |
 | `position` | `vec3f` | The position of the object's origin in the world |
 | `values` | `vec4f` | The four numbers of the instance's row, for a batch made with `values: true`. Zeros elsewhere |
+| `worldMatrix` | `mat4x4f` | The object's or instance's world matrix, with its translation relative to the camera |
+| `normalMatrix` | `mat3x3f` | The matrix that turns a normal from the mesh's space into world space: the inverse transpose of the world matrix's 3 x 3 part. Normalize the result |
+| `id` | `u32` | The object's id, the same number as the mesh's `shaderId` in the sketch. Every row of a batch has the batch's id, `batch.shaderId` |
 
 Use `object.position` to give each object or instance a look of its own from one material, such as a hue or a phase. Use `object.values` for what the sketch sets row by row, such as a phase of the wind, an age or a tint. The sketch writes them in the batch's `values` array ([Instances and batching](../concepts/instances.md#per-row-values)). A full shader reads zeros there, as `fill_builtins` leaves them.
+
+`object.worldMatrix` takes positions in the mesh's space to positions relative to the camera, as every position of the engine is. So `camera.viewProjection * object.worldMatrix * vec4f(p, 1.0)` places a point `p` of the mesh in clip space. Its last column is the origin relative to the camera, and `object.position` is the origin in the world.
+
+`object.id` stays the same while the object lives. A hash of it gives a moving object a random look that stays as it moves. Pass a mesh's `shaderId` to a uniform to pick out that mesh in a shader:
+
+```wgsl
+struct Uniforms { picked: u32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.emissive += vec3f(1.0, 0.5, 0.1) * select(0.0, 1.0, object.id == material.picked);
+    return s;
+}
+```
+
+```ts
+material.set({ picked: mesh.shaderId });
+```
+
+A full shader reads zeros for the object's matrices and id, as `fill_builtins` leaves them. It finds its instance's matrices with `find_instance` from `null3d::mesh`.
 
 ## `material`
 
 The custom material's uniforms, which the WGSL declares as `struct Uniforms`. [Surface functions](surface-functions.md#uniforms) describes them.
+
+## What the inputs cost
+
+The values above that a material does not read cost it nothing. A few inputs cost something, so only WGSL that reads them gets them. The plugin finds which fields the WGSL reads when it builds the material:
+
+| Input | Its cost, only where the WGSL reads it |
+| --- | --- |
+| `uv1` | One more vertex attribute, the mesh's second texture coordinates |
+| `instance`, `object.id` | A search per vertex in a small table of the scene's batches, which the engine keeps while a material reads them |
+| `object.worldMatrix`, `object.normalMatrix` | Three more values from the vertex stage to the fragment stage, in materials whose surface function runs |
+
+The pixel's position, the camera's values and `object.position` cost nothing.
 
 ## Positions relative to the camera
 

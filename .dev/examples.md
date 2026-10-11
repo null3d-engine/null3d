@@ -126,6 +126,7 @@ What the pointer steers in each demo:
 | morph-flowers | The tulips near the pointed point, which open |
 | input | Nothing: the keys, a gamepad and the camera gestures drive it. The right stick turns the camera before and after the hand-over |
 | walk-and-fly | Nothing: the keys, the drag and the locked mouse drive first-person and fly controls |
+| shader-inputs | Nothing: the camera only. A hover or a tap on a stone lights it, through the stone's `shaderId` in a uniform |
 | The others | Nothing: the camera only. Picking keeps its hover and its click, and the engine gives no click after a drag of more than 2 CSS pixels |
 
 Three demos need more than the shared rules:
@@ -338,7 +339,7 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Group | Demos |
 | --- | --- |
 | Building scenes | generators, mesh-arrays, objects, layers |
-| Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
+| Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
