@@ -327,26 +327,30 @@ Five prototypes give the most decisions per sitting: L1, S3, P2, A1 and G1.
 | 9 | GLSL-to-WGSL port command | three.js's transpiler | S to M | M3, command line only |
 | 10 | Gaussian splats, on WebGL2 too | PlayCanvas, Babylon.js; three.js on WebGPU only | M to L | M3 add-on |
 | 11 | Planar reflections and linked views | three.js add-ons, Babylon.js | M | M3; planar reflections in M2-EX15 for the showcase scenes ([D-117](decisions/D-117-showcase-features-before-1-0.md)) |
-| 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | M3 add-on |
-| 13 | Projected decals | three.js's `DecalGeometry` | S | M2 or M3 |
+| 12 | Particles on the job workers | Babylon.js, PlayCanvas, Godot | M | Before 1.0, an add-on in M2-EX20 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
+| 13 | Projected decals | three.js's `DecalGeometry` | S | M2, in M2-EX27 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 14 | Per-object light maps, reading `NEEDLE_lightmaps` first | Bevy, PlayCanvas, Godot | S to M | M3 |
 | 15 | IK (two-bone, aim, CCD) | Godot, Babylon.js, a three.js add-on | S to M | M3; add-on if large |
-| 16 | Box-projected reflection probes | Godot, PlayCanvas, Babylon.js | M | M3 |
-| 17 | `KHR_materials_specular` and `ior`; then clearcoat and sheen | three.js, Filament, Babylon.js | S, M, M | M2 (first two), M3 |
+| 16 | Box-projected reflection probes | Godot, PlayCanvas, Babylon.js | M | M2, in M2-EX32 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 17 | `KHR_materials_specular` and `ior`; then clearcoat and sheen | three.js, Filament, Babylon.js | S, M, M | M2: the first two built; clearcoat and sheen in M2-EX30 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 18 | `KHR_materials_variants` | Babylon.js, PlayCanvas | M | M3 |
 | 19 | Root motion | Godot, Babylon.js | M | M3 |
 | 20 | Shape casts and closest-point queries | three-mesh-bvh | M | M3, with physics |
-| 21 | Probe grid | three.js, Bevy, Unity, Godot | M to L | M3 |
-| 22 | Area lights | three.js, Babylon.js, Bevy, PlayCanvas, Godot | M | After 1.0 |
+| 21 | Probe grid | three.js, Bevy, Unity, Godot | M to L | M2, in M2-EX29 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 22 | Area lights | three.js, Babylon.js, Bevy, PlayCanvas, Godot | M | M2, in M2-EX28 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
 | 23 | Transmission | three.js, Filament, Babylon.js | L | Before 1.0, M2-EX16 ([D-117](decisions/D-117-showcase-features-before-1-0.md), [D-122](decisions/D-122-transmission.md)) |
-| 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | After 1.0 |
-| 25 | Automatic exposure | Godot, Unity, Filament | M | After 1.0 |
-| 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur after 1.0 |
-| 27 | Weighted blended transparency | | M | After 1.0, opt-in for particle scenes |
-| 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | After 1.0; god rays as a custom-effect recipe in M3 |
-| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)); screen-space reflections after 1.0 |
+| 24 | Physical sky and atmosphere | Babylon.js, Bevy, Godot | M | M2, in M2-EX26 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 25 | Automatic exposure | Godot, Unity, Filament | M | M2, in M2-EX31 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 26 | Depth of field and motion blur | Most engines | M | Depth of field built in M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)); motion blur in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
+| 27 | Weighted blended transparency | | M | M2, in M2-EX33, opt-in for particle scenes ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+| 28 | Volumetric light | Godot, Bevy, PlayCanvas, Babylon.js | M | Before 1.0: light shafts and lit fog in M2-EX21 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
+| 29 | Temporal anti-aliasing with motion, screen-space reflections | Most engines | L | A temporal anti-aliasing prototype before 1.0, M2-EX18 ([D-117](decisions/D-117-showcase-features-before-1-0.md)), and no TAA for 1.0 ([D-129](decisions/D-129-temporal-anti-aliasing.md)); per-object motion vectors before 1.0, in M2-EX25 ([D-142](decisions/D-142-more-techniques-before-1-0.md)); screen-space reflections before 1.0, in M2-EX22 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)) |
 | 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0. XR needs the thread mode that draws on the main thread, so keep that mode working |
-| 31 | Terrain | No engine core | L | After 1.0 |
+| 31 | Terrain | No engine core | L | M2, an add-on in M2-EX35 ([D-142](decisions/D-142-more-techniques-before-1-0.md)) |
+
+Global illumination was not one of the gaps. DDGI was judged too heavy for phones, so it waited for desktop presets after 1.0. It now joins M3, with a technique that phones can run ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+Two more techniques have no row above, and both move into M2 ([D-142](decisions/D-142-more-techniques-before-1-0.md)). Impostors and merged far geometry, first in line for after 1.0 until now, are M2-EX34. Subsurface and foliage translucency, for light through leaves, petals and skin, is M2-EX36.
 
 Water is a recipe on planar reflections. Navigation meshes, CSG, trails, exporters and gizmos block no user segment in 1.0.
 

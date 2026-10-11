@@ -64,12 +64,12 @@ With `WebGLRenderer`, reading the canvas in the same task as the render works wi
 ## 3. Compare the null3D port
 
 ```sh
-bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3)
+bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3, not built yet)
 ```
 
 The command runs the sketch in hold mode and poses the active camera at each view. It captures each image through the engine's readback, and compares it with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
 
-Before 0.3, `bunx @null3d/cli test` compares the port with the baseline (engine docs `cli/null3d`). Make each view an image test, with the three.js image as its reference:
+Until `port compare` is built, `bunx @null3d/cli test` compares the port with the baseline (engine docs `cli/null3d`). Make each view an image test, with the three.js image as its reference:
 
 1. Let the sketch pose its camera from a view name in its module's address. In the setup, read `new URL(import.meta.url).searchParams.get('view')`, and set the camera from that view's `position`, `target` and `fov` (`guides/testing`).
 2. List one test per view in `null3d.json`, with the view's time and the baseline's size:
@@ -149,7 +149,7 @@ Tested on: <device, OS, browser and version, GPU tier> for each device.
 - Ported: <scenes and features>
 - Parity: <n> of <m> views pass on WebGPU, <n> of <m> on WebGL2
 - Performance on <device>: frame time p50 <a> ms to <b> ms, p99 <c> ms to <d> ms; main-thread time <e> ms to <f> ms
-- Lowest engine version needed: <version>
+- Latest roadmap step needed: <step>. Mapped features not built yet (their mapping notes start "Not built yet"): <features, or none>
 
 ## Parity per view
 | View | WebGPU | WebGL2 | Differing pixels | Notes |
