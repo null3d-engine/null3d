@@ -51,6 +51,45 @@ ivec2 lot_of(vec2 p) {
 }
 `;
 
+/** A shop's neon colors and tubes: the same math as the WGSL's `neon_color` and `shop_neon`. */
+const GLSL_NEON = /* glsl */ `
+vec3 neon_color( int i ) {
+	if ( i == 0 ) return vec3( 1.0, 0.06, 0.35 );
+	if ( i == 1 ) return vec3( 0.0, 0.7, 1.0 );
+	if ( i == 2 ) return vec3( 1.0, 0.42, 0.04 );
+	if ( i == 3 ) return vec3( 0.15, 1.0, 0.2 );
+	if ( i == 4 ) return vec3( 0.5, 0.12, 1.0 );
+	return vec3( 1.0, 0.04, 0.03 );
+}
+float tube_to( vec2 p, vec2 a, vec2 b ) {
+	vec2 ab = b - a;
+	float t = clamp( dot( p - a, ab ) / dot( ab, ab ), 0.0, 1.0 );
+	return length( p - a - ab * t );
+}
+float shop_neon( vec2 p, float tileX, float shop, ivec2 bay, ivec2 lot ) {
+	float d = 9.0;
+	if ( shop < 0.62 ) {
+		float cell = clamp( floor( ( tileX - 0.1 ) / 0.16 ), 0.0, 4.0 );
+		float bits = town_hash( int( cell ), bay.x + lot.x * 64, lot.y + 101 );
+		float x0 = ( 0.1 + ( cell + 0.2 ) * 0.16 ) * 2.6;
+		float x1 = ( 0.1 + ( cell + 0.8 ) * 0.16 ) * 2.6;
+		float y0 = 3.2;
+		float y1 = 3.85;
+		float ym = 3.525;
+		d = tube_to( p, vec2( x0, y0 ), vec2( x0, y1 ) );
+		d = min( d, mix( 9.0, tube_to( p, vec2( x0, y1 ), vec2( x1, y1 ) ), step( 0.5, fract( bits * 2.0 ) ) ) );
+		d = min( d, mix( 9.0, tube_to( p, vec2( x0, ym ), vec2( x1, ym ) ), step( 0.5, fract( bits * 4.0 ) ) ) );
+		d = min( d, mix( 9.0, tube_to( p, vec2( x0, y0 ), vec2( x1, y0 ) ), step( 0.5, fract( bits * 8.0 ) ) ) );
+		d = min( d, mix( 9.0, tube_to( p, vec2( x1, y0 ), vec2( x1, y1 ) ), step( 0.5, fract( bits * 16.0 ) ) ) );
+		d = min( d, mix( 9.0, tube_to( p, vec2( x0, y1 ), vec2( x1, y0 ) ), step( 0.5, fract( bits * 32.0 ) ) ) );
+	} else if ( shop < 0.8 ) {
+		vec2 q = abs( p - vec2( 1.3, 1.554 ) ) - vec2( 1.18, 1.34 );
+		d = abs( length( max( q, vec2( 0.0 ) ) ) + min( max( q.x, q.y ), 0.0 ) );
+	}
+	return 1.0 - smoothstep( 0.012, 0.022, d ) + exp( - d / 0.05 ) * 0.18;
+}
+`;
+
 /** The varyings that every custom material passes: texture coordinates, world position and normal. */
 const GLSL_VARYINGS = /* glsl */ `
 varying vec2 vTownUv;
@@ -97,12 +136,20 @@ function patch(material: AnyMaterial, key: string, edit: (shader: Shader) => voi
 
 // The facades.
 
+/** A facade kind's numbers, which the look sets. */
+export interface FacadeSettings {
+	litShare: number;
+	windowLight: number;
+	shopLight: number;
+	neonLight: number;
+}
+
 /** A facade kind's material: the bay texture, lit windows, and the roof. */
 export async function facadeMaterial(
 	three: Three,
 	renderer: 'webgl' | 'webgpu',
 	maps: ShaderMaps,
-	settings: { litShare: number; windowLight: number; shopLight: number },
+	settings: FacadeSettings,
 	setup: (material: ThreeModule.Material) => void,
 ): Promise<Timed> {
 	if (renderer === 'webgpu') return facadeNodes(three, await import('three/tsl'), maps, settings);
@@ -113,6 +160,7 @@ export async function facadeMaterial(
 		townLitShare: { value: settings.litShare },
 		townWindowLight: { value: settings.windowLight },
 		townShopLight: { value: settings.shopLight },
+		townNeonLight: { value: settings.neonLight },
 		townColor: { value: maps.color },
 		townOrm: { value: maps.orm },
 		townNormal: { value: maps.normal },
@@ -127,10 +175,12 @@ uniform float townTime;
 uniform float townLitShare;
 uniform float townWindowLight;
 uniform float townShopLight;
+uniform float townNeonLight;
 uniform sampler2D townColor;
 uniform sampler2D townOrm;
 uniform sampler2D townNormal;`,
 			)
+			.replace(GLSL_HASH, `${GLSL_HASH}\n${GLSL_NEON}`)
 			.replace(
 				'#include <metalnessmap_fragment>',
 				`#include <metalnessmap_fragment>
@@ -155,6 +205,11 @@ uniform sampler2D townNormal;`,
 	vec3 room = kind > 0.78 ? vec3( 0.55, 0.72, 1.0 ) : ( kind > 0.45 ? vec3( 1.0, 0.8, 0.55 ) : vec3( 1.0, 0.55, 0.24 ) );
 	float tvFlicker = 0.55 + 0.45 * sin( townTime * 9.0 + pick * 60.0 ) * sin( townTime * 3.7 + kind * 20.0 );
 	if ( kind > 0.84 && kind <= 0.9 ) room = vec3( 0.25, 0.45, 1.0 ) * tvFlicker;
+	float shop = town_hash( bay.x * 7 + lot.x, 31, lot.y * 5 + 3 );
+	vec3 tint = neon_color( int( floor( fract( shop * 13.7 ) * 6.0 ) ) );
+	if ( ground && kind > 0.55 ) room = mix( vec3( 1.0, 0.8, 0.55 ), tint, 0.55 );
+	float stutter = town_hash( int( floor( townTime * 15.0 ) ), bay.x + lot.x * 64, lot.y ) < 0.035 ? 0.12 : 1.0;
+	float neon = ground ? shop_neon( vec2( tile.x * 2.6, coord.y * 4.2 ), tile.x, shop, bay, lot ) : 0.0;
 	float curtain = mod( pick * 7.0, 1.0 ) < 0.35 ? ( tile.x > 0.5 ? 1.0 : 0.35 ) : 1.0;
 	float depthFade = 0.55 + 0.45 * smoothstep( 0.1, 0.8, fract( coord.y ) );
 	float strength = ground ? townShopLight : townWindowLight * ( 0.5 + pick );
@@ -175,7 +230,7 @@ uniform sampler2D townNormal;`,
 			.replace(
 				'#include <emissivemap_fragment>',
 				`#include <emissivemap_fragment>
-	totalEmissiveRadiance = roof ? vec3( 0.0 ) : townGlow * texel.a;`,
+	totalEmissiveRadiance = roof ? vec3( 0.0 ) : townGlow * texel.a + tint * neon * stutter * townNeonLight;`,
 			);
 	});
 	return { material, setTime: (seconds) => (uniforms.townTime.value = seconds) };
@@ -208,12 +263,72 @@ function tslLot(tsl: Tsl) {
 	});
 }
 
-function facadeNodes(
-	three: Three,
-	tsl: Tsl,
-	maps: ShaderMaps,
-	settings: { litShare: number; windowLight: number; shopLight: number },
-): Timed {
+/** The TSL twins of a shop's neon colors and tubes. */
+function tslNeon(tsl: Tsl) {
+	const {
+		vec2,
+		vec3,
+		float,
+		int,
+		floor,
+		fract,
+		clamp,
+		dot,
+		length,
+		min,
+		max,
+		abs,
+		mix,
+		step,
+		select,
+		smoothstep,
+		exp,
+	} = tsl;
+	const hash = tslHash(tsl);
+	const palette = [
+		[1, 0.06, 0.35],
+		[0, 0.7, 1],
+		[1, 0.42, 0.04],
+		[0.15, 1, 0.2],
+		[0.5, 0.12, 1],
+	] as const;
+	const color = (i: Tsl) =>
+		palette.reduceRight<Tsl>(
+			(rest, rgb, k) => select(i.equal(int(k)), vec3(...rgb), rest),
+			vec3(1, 0.04, 0.03),
+		);
+	const tubeTo = (p: Tsl, a: Tsl, b: Tsl) => {
+		const ab = b.sub(a);
+		const t = clamp(dot(p.sub(a), ab).div(dot(ab, ab)), 0, 1);
+		return length(p.sub(a).sub(ab.mul(t)));
+	};
+	const tubes = (p: Tsl, tileX: Tsl, shop: Tsl, bay: Tsl, lot: Tsl) => {
+		const cell = clamp(floor(tileX.sub(0.1).div(0.16)), 0, 4);
+		const bits = hash(int(cell), bay.x.add(lot.x.mul(64)), lot.y.add(101));
+		const x0 = cell.add(0.2).mul(0.16).add(0.1).mul(2.6);
+		const x1 = cell.add(0.8).mul(0.16).add(0.1).mul(2.6);
+		const y0 = float(3.2);
+		const y1 = float(3.85);
+		const ym = float(3.525);
+		const stroke = (a: Tsl, b: Tsl, bit: number) =>
+			mix(float(9), tubeTo(p, a, b), step(0.5, fract(bits.mul(bit))));
+		let letters = tubeTo(p, vec2(x0, y0), vec2(x0, y1));
+		letters = min(letters, stroke(vec2(x0, y1), vec2(x1, y1), 2));
+		letters = min(letters, stroke(vec2(x0, ym), vec2(x1, ym), 4));
+		letters = min(letters, stroke(vec2(x0, y0), vec2(x1, y0), 8));
+		letters = min(letters, stroke(vec2(x1, y0), vec2(x1, y1), 16));
+		letters = min(letters, stroke(vec2(x0, y1), vec2(x1, y0), 32));
+		const q = abs(p.sub(vec2(1.3, 1.554))).sub(vec2(1.18, 1.34));
+		const outline = abs(length(max(q, vec2(0))).add(min(max(q.x, q.y), 0)));
+		const d = select(shop.lessThan(0.62), letters, select(shop.lessThan(0.8), outline, float(9)));
+		return float(1)
+			.sub(smoothstep(0.012, 0.022, d))
+			.add(exp(d.div(-0.05)).mul(0.18));
+	};
+	return { color, tubes };
+}
+
+function facadeNodes(three: Three, tsl: Tsl, maps: ShaderMaps, settings: FacadeSettings): Timed {
 	const {
 		uniform,
 		uv,
@@ -279,7 +394,24 @@ function facadeNodes(
 		vec3(0.55, 0.72, 1),
 		select(kind.greaterThan(0.45), vec3(1, 0.8, 0.55), vec3(1, 0.55, 0.24)),
 	);
-	const room = select(tv, vec3(0.25, 0.45, 1).mul(tvFlicker), base);
+	const neonOf = tslNeon(tsl);
+	const shop = hash(bay.x.mul(7).add(lot.x), int(31), lot.y.mul(5).add(3));
+	const tint = neonOf.color(int(floor(fract(shop.mul(13.7)).mul(6))));
+	const room = select(
+		ground.and(kind.greaterThan(0.55)),
+		tsl.mix(vec3(1, 0.8, 0.55), tint, 0.55),
+		select(tv, vec3(0.25, 0.45, 1).mul(tvFlicker), base),
+	);
+	const stutter = select(
+		hash(int(floor(time.mul(15))), bay.x.add(lot.x.mul(64)), lot.y).lessThan(0.035),
+		float(0.12),
+		float(1),
+	);
+	const neon = select(
+		ground,
+		neonOf.tubes(vec2(tile.x.mul(2.6), coord.y.mul(4.2)), tile.x, shop, bay, lot),
+		float(0),
+	);
 	const curtain = select(
 		mod(pick.mul(7), 1).lessThan(0.35),
 		select(tile.x.greaterThan(0.5), float(1), float(0.35)),
@@ -331,7 +463,11 @@ function facadeNodes(
 		),
 	);
 	material.normalNode = normalize(cameraViewMatrix.mul(vec4(worldNormal, 0)).xyz);
-	material.emissiveNode = select(roof, vec3(0), glow.mul(texel.a));
+	material.emissiveNode = select(
+		roof,
+		vec3(0),
+		glow.mul(texel.a).add(tint.mul(neon.mul(stutter).mul(settings.neonLight))),
+	);
 	return { material, setTime: (seconds) => (time.value = seconds) };
 }
 
@@ -341,6 +477,7 @@ function facadeNodes(
 export interface StreetSettings {
 	puddleShare: number;
 	wetDarken: number;
+	wetMirror: number;
 }
 
 /** How a reflection reaches the street: three.js's Reflector on WebGL, the reflector node on WebGPU. */
@@ -382,12 +519,14 @@ const GLSL_STREET = /* glsl */ `
 	float d = length( to ) * 0.6;
 	float ring = exp( - pow( ( d - radius ) / 0.012, 2.0 ) ) * ( 1.0 - phase );
 	vec2 tilt = normalize( to + vec2( 0.0001 ) ) * ring * 0.35 * puddle;
-	vec3 roughNormal = normalize( vec3( bump.x, 0.0, - bump.y ) * 0.6 + vec3( 0.0, 1.0, 0.0 ) * bump.z );
+	vec3 roughNormal = normalize( vec3( bump.x, 0.0, - bump.y ) * 0.3 + vec3( 0.0, 1.0, 0.0 ) * bump.z );
 	vec3 waterNormal = normalize( vec3( tilt.x, 1.0, tilt.y ) );
 	vec3 townWorldNormal = normalize( mix( roughNormal, waterNormal, puddle ) );
 	diffuseColor.rgb *= paint * mix( townWetDarken, 0.35, puddle );
-	roughnessFactor = mix( orm.g * 0.42, 0.03, puddle );
+	roughnessFactor = mix( orm.g * 0.32, 0.03, puddle );
 	metalnessFactor = 0.0;
+	float wet = 1.0 - puddle;
+	vec2 smear = vec2( ( water.g - 0.5 ) * 0.004, ( orm.g - 0.855 ) * 0.6 ) * wet;
 `;
 
 /** The street's material, with puddles that show the reflection. */
@@ -408,6 +547,7 @@ export async function streetMaterial(
 		townPuddleShare: { value: settings.puddleShare },
 		townWetDarken: { value: settings.wetDarken },
 		townMirrorShare: { value: reflection ? 1 : 0 },
+		townWetMirror: { value: settings.wetMirror },
 		townColor: { value: maps.color },
 		townOrm: { value: maps.orm },
 		townNormal: { value: maps.normal },
@@ -431,6 +571,7 @@ uniform float townTime;
 uniform float townPuddleShare;
 uniform float townWetDarken;
 uniform float townMirrorShare;
+uniform float townWetMirror;
 uniform sampler2D townColor;
 uniform sampler2D townOrm;
 uniform sampler2D townNormal;
@@ -452,9 +593,9 @@ float town_ripple( vec2 c ) { return fract( sin( dot( c, vec2( 127.1, 311.7 ) ) 
 				'#include <lights_fragment_maps>',
 				`#include <lights_fragment_maps>
 	vec4 townMirrorCoord = vTownMirror;
-	townMirrorCoord.xy += tilt * 0.08 * townMirrorCoord.w;
+	townMirrorCoord.xy += ( tilt * 0.08 + smear ) * townMirrorCoord.w;
 	vec3 townMirrored = textureProj( townMirror, townMirrorCoord ).rgb;
-	radiance = mix( radiance, townMirrored, puddle * townMirrorShare );`,
+	radiance = mix( radiance, townMirrored, ( puddle + wet * townWetMirror ) * townMirrorShare );`,
 			);
 	});
 	return { material, setTime: (seconds) => (uniforms.townTime.value = seconds) };
@@ -552,24 +693,27 @@ function streetNodes(
 		.mul(puddle);
 	const roughNormal = normalize(
 		vec3(bump.x, 0, bump.y.negate())
-			.mul(0.6)
+			.mul(0.3)
 			.add(vec3(0, 1, 0).mul(bump.z)),
 	);
 	const waterNormal = normalize(vec3(tilt.x, 1, tilt.y));
 	const worldNormal = normalize(mix(roughNormal, waterNormal, puddle));
 	material.colorNode = paint.mul(mix(float(settings.wetDarken), float(0.35), puddle));
-	material.roughnessNode = mix(orm.g.mul(0.42), float(0.03), puddle);
+	material.roughnessNode = mix(orm.g.mul(0.32), float(0.03), puddle);
 	material.metalnessNode = float(0);
 	material.normalNode = normalize(cameraViewMatrix.mul(vec4(worldNormal, 0)).xyz);
 	if (reflection?.node) {
 		// The reflector node samples where each pixel shows on the screen; a ripple's tilt moves the
 		// place. The reflection adds as light from the mirror direction, weighed by Schlick's Fresnel
 		// term for water, where the puddles lie.
+		// The asphalt's grain moves each pixel's sample up or down the screen, between the puddles.
 		const node = reflection.node;
-		node.uvNode = node.uvNode.add(tilt.mul(0.08));
+		const wet = one.sub(puddle);
+		const smear = vec2(water.g.sub(0.5).mul(0.004), orm.g.sub(0.855).mul(0.6)).mul(wet);
+		node.uvNode = node.uvNode.add(tilt.mul(0.08)).add(smear);
 		const facing = dot(normalView, positionViewDirection).clamp(0, 1);
 		const fresnel = pow(one.sub(facing), 5).mul(0.96).add(0.04);
-		material.emissiveNode = node.rgb.mul(fresnel).mul(puddle);
+		material.emissiveNode = node.rgb.mul(fresnel).mul(puddle.add(wet.mul(settings.wetMirror)));
 	}
 	return { material, setTime: (seconds) => (time.value = seconds) };
 }
@@ -722,4 +866,208 @@ export async function awningMaterial(
 			);
 	});
 	return { material, setTime: (seconds) => (uniforms.townTime.value = seconds) };
+}
+
+// The sky's dome.
+
+/** The dome's numbers, which the look sets: the direction toward the moon and the clouds' share. */
+export interface SkySettings {
+	moon: readonly [number, number, number];
+	cover: number;
+	brightness: number;
+}
+
+const GLSL_SKY = /* glsl */ `
+float sky_hash( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
+float sky_noise( vec2 p ) {
+	vec2 i = floor( p );
+	vec2 f = fract( p );
+	vec2 u = f * f * ( 3.0 - 2.0 * f );
+	float a = sky_hash( i );
+	float b = sky_hash( i + vec2( 1.0, 0.0 ) );
+	float c = sky_hash( i + vec2( 0.0, 1.0 ) );
+	float d = sky_hash( i + vec2( 1.0, 1.0 ) );
+	return mix( mix( a, b, u.x ), mix( c, d, u.x ), u.y );
+}
+float sky_fbm( vec2 p ) {
+	float sum = 0.0;
+	float amount = 0.5;
+	for ( int k = 0; k < 5; k ++ ) {
+		sum += amount * sky_noise( p );
+		p = p * 2.03 + vec2( 1.7, 9.2 );
+		amount *= 0.5;
+	}
+	return sum;
+}
+float sky_star( vec3 d ) {
+	vec3 q = d * 160.0;
+	vec3 cell = floor( q );
+	float h = fract( sin( dot( cell, vec3( 127.1, 311.7, 74.7 ) ) ) * 43758.5453 );
+	float spot = length( fract( q ) - 0.5 );
+	return step( 0.985, h ) * ( 1.0 - smoothstep( 0.0, 0.3, spot ) ) * ( h - 0.985 ) / 0.015;
+}
+vec3 sky_color( vec3 d, vec3 moonDir, float time, float cover ) {
+	float up = max( d.y, 0.0 );
+	float toward = max( dot( d, moonDir ), 0.0 );
+	vec3 zenith = vec3( 0.0006, 0.0011, 0.0042 );
+	vec3 haze = vec3( 0.0034, 0.005, 0.0098 );
+	vec3 city = vec3( 0.003, 0.002, 0.0016 ) * pow( 1.0 - up, 16.0 );
+	vec3 air = mix( haze, zenith, pow( up, 0.5 ) ) + city;
+	vec3 moonlight = vec3( 0.62, 0.72, 1.0 );
+	air += moonlight * ( 0.004 * pow( toward, 6.0 ) + 0.05 * pow( toward, 90.0 ) + 0.5 * pow( toward, 1800.0 ) );
+	air += vec3( 0.5, 0.55, 0.7 ) * 0.02 * sky_star( d ) * smoothstep( 0.08, 0.3, up );
+	vec2 plane = d.xz / ( up + 0.3 ) * 1.5 + vec2( time * 0.012, time * 0.005 );
+	float n = sky_fbm( plane );
+	float edge = 1.0 - cover;
+	float density = smoothstep( edge - 0.06, edge + 0.22, n ) * smoothstep( -0.02, 0.08, up );
+	float ahead = sky_fbm( plane + normalize( moonDir.xz + vec2( 0.0001 ) ) * 0.09 );
+	float rim = clamp( 0.5 + ( n - ahead ) * 5.0, 0.0, 1.0 );
+	vec3 base = vec3( 0.0034, 0.004, 0.0058 ) + vec3( 0.0058, 0.006, 0.0066 ) * pow( 1.0 - up, 3.0 ) + city * 1.6;
+	vec3 lit = moonlight * ( 0.004 + 0.12 * pow( toward, 10.0 ) + 0.6 * pow( toward, 60.0 ) ) * rim * ( 1.15 - density );
+	vec3 cloud = base + lit;
+	float disc = smoothstep( 0.99972, 0.99978, dot( d, moonDir ) );
+	float seas = 0.78 + 0.22 * sky_noise( ( d.xy - moonDir.xy ) * 900.0 + vec2( 3.0, 7.0 ) );
+	vec3 moon = vec3( 1.0, 0.96, 0.88 ) * 2.4 * seas * disc;
+	return mix( air, cloud, density * 0.96 ) + moon * ( 1.0 - 0.85 * density );
+}
+`;
+
+/**
+ * The sky dome's material, drawn as light alone and without fog: MeshBasicMaterial with the sky's
+ * GLSL on WebGLRenderer, and MeshBasicNodeMaterial with its TSL twin on WebGPURenderer.
+ */
+export async function skyMaterial(
+	three: Three,
+	renderer: 'webgl' | 'webgpu',
+	settings: SkySettings,
+): Promise<Timed> {
+	if (renderer === 'webgpu') return skyNodes(three, await import('three/tsl'), settings);
+	const material = new three.MeshBasicMaterial({ color: '#ffffff', fog: false });
+	const uniforms = {
+		townTime: { value: 0 },
+		townMoon: { value: new three.Vector3(...settings.moon) },
+		townCover: { value: settings.cover },
+		townBrightness: { value: settings.brightness },
+	};
+	material.onBeforeCompile = (shader) => {
+		Object.assign(shader.uniforms, uniforms);
+		shader.vertexShader = shader.vertexShader
+			.replace('#include <common>', '#include <common>\nvarying vec3 vTownWorld;')
+			.replace(
+				'#include <project_vertex>',
+				'#include <project_vertex>\n\tvTownWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;',
+			);
+		shader.fragmentShader = shader.fragmentShader
+			.replace(
+				'#include <common>',
+				`#include <common>
+varying vec3 vTownWorld;
+uniform float townTime;
+uniform vec3 townMoon;
+uniform float townCover;
+uniform float townBrightness;
+${GLSL_SKY}`,
+			)
+			.replace(
+				'#include <color_fragment>',
+				`#include <color_fragment>
+	diffuseColor.rgb = sky_color( normalize( vTownWorld - cameraPosition ), townMoon, townTime, townCover ) * townBrightness;`,
+			);
+	};
+	material.customProgramCacheKey = () => 'night-town-sky';
+	return { material, setTime: (seconds) => (uniforms.townTime.value = seconds) };
+}
+
+function skyNodes(three: Three, tsl: Tsl, settings: SkySettings): Timed {
+	const {
+		uniform,
+		vec2,
+		vec3,
+		float,
+		fract,
+		floor,
+		sin,
+		dot,
+		mix,
+		max,
+		pow,
+		smoothstep,
+		step,
+		clamp,
+		length,
+		normalize,
+		positionWorld,
+		cameraPosition,
+	} = tsl;
+	const webgpu = three as unknown as typeof import('three/webgpu');
+	const time = uniform(0);
+	const moonDir = vec3(...settings.moon);
+	const hash = (p: Tsl) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
+	const noise = (p: Tsl) => {
+		const i = floor(p);
+		const f = fract(p);
+		const u = f.mul(f).mul(f.mul(-2).add(3));
+		const a = hash(i);
+		const b = hash(i.add(vec2(1, 0)));
+		const c = hash(i.add(vec2(0, 1)));
+		const d = hash(i.add(vec2(1, 1)));
+		return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+	};
+	const fbm = (start: Tsl) => {
+		let p = start;
+		let sum: Tsl = float(0);
+		let amount = 0.5;
+		for (let k = 0; k < 5; k++) {
+			sum = sum.add(noise(p).mul(amount));
+			p = p.mul(2.03).add(vec2(1.7, 9.2));
+			amount *= 0.5;
+		}
+		return sum;
+	};
+	const d = normalize(positionWorld.sub(cameraPosition));
+	const up = max(d.y, 0);
+	const toward = max(dot(d, moonDir), 0);
+	const city = vec3(0.003, 0.002, 0.0016).mul(pow(float(1).sub(up), 16));
+	const moonlight = vec3(0.62, 0.72, 1);
+	const q = d.mul(160);
+	const h = fract(sin(dot(floor(q), vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+	const star = step(0.985, h)
+		.mul(float(1).sub(smoothstep(0, 0.3, length(fract(q).sub(0.5)))))
+		.mul(h.sub(0.985).div(0.015));
+	const air = mix(vec3(0.0034, 0.005, 0.0098), vec3(0.0006, 0.0011, 0.0042), pow(up, 0.5))
+		.add(city)
+		.add(
+			moonlight.mul(
+				pow(toward, 6).mul(0.004).add(pow(toward, 90).mul(0.05)).add(pow(toward, 1800).mul(0.5)),
+			),
+		)
+		.add(vec3(0.5, 0.55, 0.7).mul(star.mul(0.02).mul(smoothstep(0.08, 0.3, up))));
+	const plane = d.xz
+		.div(up.add(0.3))
+		.mul(1.5)
+		.add(vec2(time.mul(0.012), time.mul(0.005)));
+	const n = fbm(plane);
+	const edge = 1 - settings.cover;
+	const density = smoothstep(edge - 0.06, edge + 0.22, n).mul(smoothstep(-0.02, 0.08, up));
+	const ahead = fbm(plane.add(normalize(moonDir.xz.add(vec2(0.0001))).mul(0.09)));
+	const rim = clamp(n.sub(ahead).mul(5).add(0.5), 0, 1);
+	const cloud = vec3(0.0034, 0.004, 0.0058)
+		.add(vec3(0.0058, 0.006, 0.0066).mul(pow(float(1).sub(up), 3)))
+		.add(city.mul(1.6))
+		.add(
+			moonlight
+				.mul(pow(toward, 10).mul(0.12).add(pow(toward, 60).mul(0.6)).add(0.004))
+				.mul(rim)
+				.mul(float(1.15).sub(density)),
+		);
+	const disc = smoothstep(0.99972, 0.99978, dot(d, moonDir));
+	const seas = noise(d.xy.sub(moonDir.xy).mul(900).add(vec2(3, 7)))
+		.mul(0.22)
+		.add(0.78);
+	const moon = vec3(1, 0.96, 0.88).mul(seas.mul(disc).mul(2.4));
+	const material = new webgpu.MeshBasicNodeMaterial({ fog: false });
+	material.colorNode = mix(air, cloud, density.mul(0.96))
+		.add(moon.mul(float(1).sub(density.mul(0.85))))
+		.mul(settings.brightness);
+	return { material, setTime: (seconds) => (time.value = seconds) };
 }

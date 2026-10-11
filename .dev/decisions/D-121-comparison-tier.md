@@ -124,3 +124,67 @@ The first run, on 9 October 2026, measured the first build: a null3D tree agains
 ## Device sitting before Factory goes on the page
 
 Factory's ramp on the Mac in Chrome (at 120 Hz) and Safari, the Galaxy S24+, a Pixel, the iPad, and a WebGL-only iPhone, each with the runs recorded in [tested devices](../tested-devices.md).
+
+## Night town and Busy page
+
+Added on 11 October 2026, task M2-EX7. Night town is a rainy downtown at night. Each block brings 12 lights: four street lamps, two neon signs, and two cars, each with two headlights and a tail light. So the count is in lights. The ramps top out under 1,024 lights, the most that both engines' clustered lighting lists at once. Busy page draws the same town beside a page that keeps its own thread busy, and measures that thread's long tasks and input delay. Both comparisons follow the owner's look bar of [D-132](D-132-showcase-look-and-features-2026-10-11.md).
+
+### How each engine draws the town
+
+- null3D lists the point and spot lights of each part of the view in clusters, on WebGPU and WebGL2. Surface functions in WGSL draw the facades with their lit windows and the wet street with its puddles and rain rings. Others draw the neon tubes that stutter. The awnings' edges ripple in a vertex function. A reflection pass mirrors the town in the puddles. Sprite batches draw the rain, the steam, the exhaust and the glow around each light.
+- three.js's WebGPURenderer lists point lights in clusters with its ClusteredLighting add-on, and shades every spot light in every pixel. Its WebGLRenderer shades every light in every pixel, in one shader per material. The same looks come from GLSL that `onBeforeCompile` adds, and from TSL nodes on WebGPU. CSM or CSMShadowNode casts the moon's shadows, a Reflector or the reflector node mirrors the puddles, and points draw the particles.
+- The particles go through a small interface, `examples/lib/particles.ts`, with one maker per engine. The particles add-on of D-132 can take its place.
+
+### three.js's light limit on WebGLRenderer
+
+WebGLRenderer builds every light into each material's shader, and a GPU builds such a shader with only so many lights. The three.js half finds the limit when it starts. It builds a standard material with the moon's cascades and each count of blocks' lights, in a binary search. A shader that fails to build counts as too many. In Chrome on the Mac, 192 lights fit, which is 16 blocks. The town stops there, the page shows the limit, and the ramp stops at it.
+
+### The look
+
+The first frames, on 11 October 2026, showed shop windows that burned white and neon signs too small to read. The sky over the town was grey, the rain streaks long and the steam faint. A moving car stood right in front of the street shot. The fixes:
+
+- Windows glow at a fifth of their first strength, and shops at a tenth. Shops show rows of shelves. The tone curve turns a bright warm light white, so a weaker light keeps its color.
+- The signs are 4.4 m tall, not 3.2 m, with thicker tubes, and their glows are larger.
+- The sky formula that both engines share is white at the horizon whatever its haze settings, since three.js's Sky follows the Preetham model. A model of the formula showed this for five settings. So the analytic sky now only lights the town, and a sky dome draws the sky that shows (see the second round below). The grade lifts the shadows toward blue.
+- Rain drops are shorter, and fade out as they near the camera. Steam is brighter. The street is darker and glossier, with more puddles.
+- The street shot moved from 30 to 33 seconds, when no car drives beside the camera, and the camera rides at about 2 m.
+
+The coordinator's review of that round against the owner's bar asked for a moonlit, cloudy sky, textured facades, more neon and color at street level, and stronger reflections in the wet street. The second round, the same evening:
+
+- **The sky.** A dome around the camera draws the sky as light alone, without fog, from one shader in each language: WGSL for null3D, and GLSL and TSL for three.js's two renderers. Clouds of layered noise drift overhead and reach down to the horizon. Their edges that face the moon shine silver. The moon's disc shows through thin cloud with a halo, stars show in the gaps, and a faint sodium glow lights the low air. The moon moved from the north-west to the far end of the street shot, which `timeOfDay(23)` gives with a heading of 0.4. Its height stays 27.6 degrees, and the street camera looks up a little more to show it. The analytic sky stays, hidden behind the dome, because it makes the environment light in both engines.
+- **The facades.** The facade maps are made in code at 512 texels a side, not 256. Bricks have uneven shades and a few dark or orange ones, in light mortar, with a course of upright bricks over each window. Concrete has panel seams, tie holes and rain stains under the windows. Plaster has grooved courses on the ground floor. Every window has a frame, with mullions and a transom, and soot gathers under the sills. The normal maps take their relief from the same heights, and the trim is a lighter stone.
+- **Neon at street level.** The facade shader draws neon over most shops: five letters of straight tubes on the fascia over the window, or a tube around the window, in one of six colors. Each shop's neon stutters like the blade signs, and some shops glow in their neon's tint. These are emissive pixels, not lights, so the count of lights and the ramps stay the same. The blade signs' tubes are dimmer, because the tone curve turned their bright light white.
+- **The wet street.** Puddles cover 60% of the street, not 50%. The asphalt between them is glossier and shows the mirror at half strength. Its grain moves each pixel's sample up or down the screen, so each light leaves a broken streak, as on real wet asphalt. Both engines do this with one sample a pixel. three.js's reflector node has no second sample: a copy of the node never receives the mirror's texture.
+- **Screen-space reflections.** These are planned for both engines but not built yet. When they join the comparison, they take the wet asphalt's share of the mirror (`wetMirror`) and the reflections in cars and windows. The puddles keep the planar mirror, which wins on its plane. `NIGHT_LOOK.ssr` holds the settings that both engines will take.
+
+The owner approved the look on 11 October 2026, after a third round that fixed the facade shader on three.js's WebGLRenderer, which had failed to build. The owner allowed five last changes:
+
+- **three.js's walls on WebGL.** The facade shader now builds there, so WebGLRenderer draws the walls and the shops' neon as the other paths do.
+- **The moon.** The street camera looks up a little more, so the whole moon and its halo show in the street shot.
+- **The near asphalt.** Its bump is half as deep, so the street close to the camera looks smoother.
+- **The low sky.** The haze is a deeper blue and the city's glow is fainter and lower, so the low sky no longer turns brown. The cloud layer squashes less toward the horizon, so the clouds keep their shapes lower down, and their low undersides catch a grey light.
+- **The blade signs.** Their tubes are dimmer.
+
+### A three.js fault: CSM on WebGLRenderer
+
+On WebGLRenderer, Night town's street looked dull and dark with shadows on, and fine with them off. The roofs had no shine either. Debug output showed that the street's lights still reached it, but gave no highlights. The cause is three.js 0.186.1's CSM add-on. It puts its own copy of the chunk that starts the lighting in place of three.js's. That copy predates the standard material's energy terms (`material.dfg` and `multiScatteringCompensation`). Every direct light's highlight and the environment's reflection multiply by them, so they stay zero. The three.js half now puts three.js's own setup lines back in front of CSM's lights. three.js's WebGPU path and null3D did not have the fault.
+
+This fix keeps the comparison fair. Without it, three.js's WebGL frames would look worse because of a three.js bug, not because of a weaker technique. The fix changes no lighting math, and it adds no work to a frame. The fault is a three.js bug to report upstream. The report should name `examples/jsm/csm/CSMShader.js`, whose `lights_fragment_begin` lacks the `#ifdef STANDARD` block of the current chunk. The fix in `three-build.ts` (`withCurrentLightSetup`) shows the missing lines. When three.js fixes the add-on, remove the fix and check the WebGL frames again.
+
+### Image tests
+
+At the held count of 300 lights, three.js takes a long time to build its shaders. Each figure is the time from opening the page to the held frame:
+
+| Path | 300 lights | 96 lights | 48 lights |
+| --- | --- | --- | --- |
+| three.js WebGPURenderer, Mac GPU | 95 s | 35 s | 21 s |
+| three.js WebGLRenderer, Mac GPU | 6 s | 6 s | 3 s |
+| three.js WebGPURenderer, SwiftShader | over 180 s | 93 s | 40 s |
+| three.js WebGLRenderer, SwiftShader | not measured | 51 s | 20 s |
+| null3D, both paths, SwiftShader | 10 s | 10 s | 9 s |
+
+So Night town's image tests wait up to 180 s, and on SwiftShader both engines' tests draw 48 lights, 4 blocks. Their SwiftShader references show that smaller town.
+
+### The test page's 404
+
+The first runs logged one "404 (Not Found)" on the first page of each browser. The comparison test page named no icon, so the browser asked the server for `/favicon.ico`. The page now names an empty icon, as the examples page does. The fault was in every comparison's test page, Battle's too.

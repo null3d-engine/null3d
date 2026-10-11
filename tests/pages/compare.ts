@@ -92,7 +92,10 @@ run('compare', async () => {
 		mode: modeFromText(params.get('mode')),
 		effects: effectsFromText(params.get('effects')),
 		gpu,
-		count: hold === undefined ? (fixed ?? SHORT_RAMP.start) : comparison.hold.count,
+		count:
+			hold === undefined
+				? (fixed ?? SHORT_RAMP.start)
+				: Number(params.get('count') ?? comparison.hold.count),
 		hold,
 		threeRenderer,
 		stats: hold === undefined,
@@ -128,7 +131,9 @@ run('compare', async () => {
 		full
 			? { warmupSeconds: warmup }
 			: {
-					plan: SHORT_RAMP,
+					// A run with a limit below the short ramp's top, such as three.js's light limit on
+					// WebGLRenderer, stops there.
+					plan: { ...SHORT_RAMP, max: Math.min(SHORT_RAMP.max, started.plan.max) },
 					warmupSeconds: warmup ?? 1,
 					stepSeconds: step,
 					settleSeconds: step * 0.4,

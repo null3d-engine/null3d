@@ -482,6 +482,7 @@ export type NightMesh =
 	| 'carCabin'
 	| 'headlamps'
 	| 'tailLamps'
+	| 'skyDome'
 	| `facade${number}`
 	| `trim${number}`
 	| `signTubes${number}`;
@@ -581,6 +582,43 @@ function signTubesMesh(shape: number): MeshData {
 	return mergeMeshes(parts);
 }
 
+/**
+ * The sky's dome: a sphere of a radius around the origin, which the camera carries, with its faces
+ * and normals turned inward. It reaches a little below the horizon, where the fogged town meets it.
+ */
+export function skyDomeMesh(radius: number, around = 48, down = 24): MeshData {
+	const position: number[] = [];
+	const normal: number[] = [];
+	const uv: number[] = [];
+	const index: number[] = [];
+	const lowest = -0.15;
+	for (let j = 0; j <= down; j++) {
+		const elevation = lowest + (j / down) * (Math.PI / 2 - lowest);
+		const y = Math.sin(elevation);
+		const ring = Math.cos(elevation);
+		for (let i = 0; i <= around; i++) {
+			const angle = (i / around) * TAU;
+			const x = ring * Math.cos(angle);
+			const z = ring * Math.sin(angle);
+			position.push(x * radius, y * radius, z * radius);
+			normal.push(-x, -y, -z);
+			uv.push(i / around, j / down);
+		}
+	}
+	for (let j = 0; j < down; j++)
+		for (let i = 0; i < around; i++) {
+			const a = j * (around + 1) + i;
+			const b = a + around + 1;
+			index.push(a, a + 1, b, a + 1, b + 1, b);
+		}
+	return {
+		position: Float32Array.from(position),
+		normal: Float32Array.from(normal),
+		uv: Float32Array.from(uv),
+		index: Uint16Array.from(index),
+	};
+}
+
 /** One mesh per kind of part. Setup code. */
 export function nightMeshes(
 	blocks: number,
@@ -659,6 +697,7 @@ export function nightMeshes(
 			boxAt(0.42, 0.11, 0.05, -0.62, 0.78, -length / 2 - 0.01),
 			boxAt(0.42, 0.11, 0.05, 0.62, 0.78, -length / 2 - 0.01),
 		]),
+		skyDome: skyDomeMesh(NIGHT_LOOK.dome.radius),
 	};
 	for (const [d, design] of designs.entries()) {
 		meshes[`facade${d}`] = facadeMesh(design);
@@ -1186,16 +1225,29 @@ export function writeRain(seconds: number, camera: OutArray, rows: ParticleRows)
 // Textures made in code: the facades, the street and the sidewalk.
 
 /** The facade map's layout: each tile spans one bay across, the ground floor below and a floor above. */
-export const FACADE_TEXTURE = 256;
+export const FACADE_TEXTURE = 512;
 
-/** A facade kind's wall color, mortar or seams, and how its windows sit. */
+/** A facade kind's wall color, its windows' share of a bay, and its window frames' paint or metal. */
 const FACADE_LOOKS: Readonly<
-	Record<FacadeKind, { wall: readonly [number, number, number]; glassShare: number }>
+	Record<
+		FacadeKind,
+		{
+			wall: readonly [number, number, number];
+			glassShare: number;
+			frame: readonly [number, number, number];
+			frameMetal: number;
+		}
+	>
 > = {
-	brick: { wall: [0.46, 0.2, 0.14], glassShare: 0.5 },
-	plaster: { wall: [0.68, 0.6, 0.5], glassShare: 0.5 },
-	concrete: { wall: [0.45, 0.45, 0.44], glassShare: 0.56 },
-	glass: { wall: [0.16, 0.18, 0.2], glassShare: 0.86 },
+	brick: { wall: [0.5, 0.22, 0.15], glassShare: 0.48, frame: [0.62, 0.6, 0.55], frameMetal: 0 },
+	plaster: { wall: [0.7, 0.62, 0.5], glassShare: 0.48, frame: [0.13, 0.2, 0.17], frameMetal: 0 },
+	concrete: {
+		wall: [0.5, 0.5, 0.48],
+		glassShare: 0.56,
+		frame: [0.42, 0.43, 0.45],
+		frameMetal: 0.8,
+	},
+	glass: { wall: [0.13, 0.15, 0.17], glassShare: 0.9, frame: [0.09, 0.09, 0.1], frameMetal: 0.85 },
 };
 
 /** The maps of a facade: color with the window mask in alpha, packed occlusion, roughness, metalness, and normals. */
@@ -1205,23 +1257,192 @@ export interface FacadeMaps {
 	normal: TextureData;
 }
 
-/** In the facade map, whether a point of the tile is glass, and how far it is from the glass's edge. */
-function windowAt(u: number, v: number, kind: FacadeKind): { glass: boolean; frame: number } {
-	const share = FACADE_LOOKS[kind].glassShare;
-	if (v < 0.5) {
-		// The ground floor: a wide shop window with a sign band above it.
-		const fv = v * 2;
-		const inside = u > 0.06 && u < 0.94 && fv > 0.06 && fv < 0.68;
-		const edge = Math.min(u - 0.06, 0.94 - u, fv - 0.06, 0.68 - fv);
-		return { glass: inside, frame: edge };
+/** The bay's width that the facade map draws, in meters: each wall's bays stretch it a little. */
+const TILE_WIDTH = BAY;
+
+/** One texel of a facade: its sRGB color, whether it is glass, its roughness, metalness and height. */
+interface FacadeTexel {
+	r: number;
+	g: number;
+	b: number;
+	glass: boolean;
+	roughness: number;
+	metalness: number;
+	height: number;
+}
+
+/**
+ * The window of a floor: the glass's edges across the bay (u) and up the floor (from 0 at its
+ * floor to 1 at the next). The ground floor holds a wide shop window under the sign fascia.
+ */
+function windowBox(kind: FacadeKind, ground: boolean): readonly [number, number, number, number] {
+	if (ground) return [0.06, 0.94, 0.06, 0.68];
+	const half = FACADE_LOOKS[kind].glassShare / 2;
+	return kind === 'glass'
+		? [0.5 - half, 0.5 + half, 0.08, 0.94]
+		: [0.5 - half, 0.5 + half, 0.22, 0.84];
+}
+
+/** The distance from a place to the nearest of some lines across one axis. */
+function nearLine(at: number, lines: readonly number[]): number {
+	let best = Number.POSITIVE_INFINITY;
+	for (const line of lines) best = Math.min(best, Math.abs(at - line));
+	return best;
+}
+
+/**
+ * A facade texel at (u, v) of the tile. Walls by kind: bricks of uneven shades in light mortar with
+ * a soldier course over each window; concrete panels with seams, tie holes and rain stains under
+ * the windows; plaster with grooved courses on the ground floor; or a glass curtain wall with dark
+ * spandrels. Every window has a frame that stands out from the glass, with mullions and a transom,
+ * and soot gathers under the sills.
+ */
+function facadeTexel(kind: FacadeKind, u: number, v: number, seed: number): FacadeTexel {
+	const look = FACADE_LOOKS[kind];
+	const ground = v < 0.5;
+	const fv = ground ? v * 2 : (v - 0.5) * 2;
+	const floor = ground ? GROUND_FLOOR : FLOOR_HEIGHT;
+	// Meters across the bay and up the floor.
+	const x = u * TILE_WIDTH;
+	const y = fv * floor;
+	const [u0, u1, v0, v1] = windowBox(kind, ground);
+	const left = u0 * TILE_WIDTH;
+	const right = u1 * TILE_WIDTH;
+	const bottom = v0 * floor;
+	const top = v1 * floor;
+	// The distance into the glass, negative outside it.
+	const inward = Math.min(x - left, right - x, y - bottom, top - y);
+	const grime = fbm(u, v, 4, 4, seed + 3);
+
+	// The frame around the glass, and the bars that split it into panes.
+	const frameWidth = ground ? 0.09 : 0.07;
+	if (inward > -frameWidth) {
+		let bar = inward < 0.03;
+		if (!bar && inward > 0) {
+			const across = (left + right) / 2;
+			if (kind === 'glass') {
+				const pane = (right - left) / 4;
+				bar =
+					nearLine(x, [left + pane, left + 2 * pane, left + 3 * pane]) < 0.025 ||
+					Math.abs(y - (bottom + top) / 2) < 0.03;
+			} else if (ground) {
+				const third = (right - left) / 3;
+				bar =
+					nearLine(x, [left + third, left + 2 * third]) < 0.035 ||
+					Math.abs(y - (bottom + 0.78 * (top - bottom))) < 0.035;
+			} else {
+				bar =
+					Math.abs(x - across) < 0.025 || Math.abs(y - (bottom + 0.68 * (top - bottom))) < 0.025;
+			}
+		}
+		if (bar || inward <= 0) {
+			const [fr, fg, fb] = look.frame;
+			const wear = 0.85 + 0.25 * grime;
+			return {
+				r: fr * wear,
+				g: fg * wear,
+				b: fb * wear,
+				glass: false,
+				roughness: look.frameMetal > 0 ? 0.35 : 0.5,
+				metalness: look.frameMetal,
+				height: inward <= 0 ? 0.5 : 0.42,
+			};
+		}
+		// The glass, darker under the window's head where the reveal shades it.
+		const reveal = 0.6 + 0.4 * smoothstep((top - y) / 0.25);
+		return {
+			r: 0.05 * reveal,
+			g: 0.06 * reveal,
+			b: 0.07 * reveal,
+			glass: true,
+			roughness: 0.06,
+			metalness: 0,
+			height: 0.3,
+		};
 	}
-	const fv = (v - 0.5) * 2;
-	const half = share / 2;
-	const top = kind === 'glass' ? 0.94 : 0.84;
-	const bottom = kind === 'glass' ? 0.08 : 0.22;
-	const inside = u > 0.5 - half && u < 0.5 + half && fv > bottom && fv < top;
-	const edge = Math.min(u - (0.5 - half), 0.5 + half - u, fv - bottom, top - fv);
-	return { glass: inside, frame: edge };
+
+	// The wall.
+	let [r, g, b] = look.wall;
+	let shade = 0.85 + 0.3 * grime;
+	let roughness = 0.82 + 0.1 * grime;
+	let height = 0.62 + 0.06 * grime;
+	if (kind === 'brick') {
+		const course = 0.133;
+		const length = 0.3;
+		const row = Math.floor(y / course);
+		// A soldier course of upright bricks over each window, a little wider than it.
+		const soldier =
+			!ground && y > top + 0.08 && y < top + 0.08 + 0.24 && x > left - 0.12 && x < right + 0.12;
+		const along = soldier ? x / 0.09 : x / length + (row % 2) * 0.5;
+		const brick = Math.floor(along);
+		const joint = soldier
+			? along - brick < 0.12 || y < top + 0.1 || y > top + 0.3
+			: (y / course) % 1 < 0.12 || along - brick < 0.05;
+		if (joint) {
+			r = 0.42;
+			g = 0.4;
+			b = 0.37;
+			shade = 0.9 + 0.2 * grime;
+			roughness = 0.95;
+			height = 0.42;
+		} else {
+			const pick = hash01(seed, row + (soldier ? 977 : 0), brick + (ground ? 4099 : 0));
+			const speckle = tiledNoise(u * 180, v * 180, 180, seed + 21);
+			shade *= 0.72 + 0.42 * pick + 0.08 * speckle;
+			if (pick < 0.12) shade *= 0.6;
+			else if (pick > 0.9) {
+				r *= 1.16;
+				g *= 1.12;
+				b *= 0.85;
+			}
+			if (soldier) shade *= 0.82;
+			height = 0.62 + 0.05 * speckle;
+		}
+	} else if (kind === 'concrete') {
+		const seam = x < 0.015 || x > TILE_WIDTH - 0.015 || y < 0.02 || y > floor - 0.02;
+		const panelY = ground ? y : y - 0.2;
+		const tie =
+			Math.hypot(((x / (TILE_WIDTH / 4)) % 1) - 0.5, (((panelY + 0.5) / 0.8) % 1) - 0.5) < 0.05;
+		const aggregate = tiledNoise(u * 220, v * 220, 220, seed + 23);
+		shade *= 0.9 + 0.18 * aggregate;
+		// Rain stains run down from each sill's ends.
+		if (!ground && y < bottom) {
+			const streak = tiledNoise(u * 48, v * 3, 48, seed + 25);
+			const under = smoothstep(1 - (x < left ? left - x : x > right ? x - right : 0) / 0.25);
+			shade *= 1 - 0.35 * under * streak * smoothstep(1 - (bottom - y) / 1.6);
+		}
+		if (seam || tie) {
+			shade *= 0.55;
+			height = 0.4;
+		}
+	} else if (kind === 'plaster') {
+		shade *= 0.9 + 0.14 * tiledNoise(u * 96, v * 96, 96, seed + 9);
+		// Grooved courses on the ground floor, and a band at each floor's foot.
+		if ((ground && y % 0.42 < 0.03) || (!ground && y < 0.18)) {
+			shade *= ground ? 0.6 : 1.15;
+			height = ground ? 0.4 : 0.72;
+		}
+	} else {
+		// Spandrels of dark stone between the glass of each floor.
+		roughness = 0.4;
+		shade *= 0.9 + 0.2 * tiledNoise(u * 64, v * 64, 64, seed + 27);
+	}
+	// Soot under the sills, and damp at the foot of the building.
+	if (!ground && y < bottom && x > left - 0.1 && x < right + 0.1)
+		shade *= 0.75 + 0.25 * smoothstep((bottom - y) / 0.9);
+	if (ground && y < 0.6) {
+		shade *= 0.7 + 0.3 * smoothstep(y / 0.6);
+		roughness *= 0.6;
+	}
+	return {
+		r: r * shade,
+		g: g * shade,
+		b: b * shade,
+		glass: false,
+		roughness,
+		metalness: 0,
+		height,
+	};
 }
 
 /** The facade maps of a kind, FACADE_TEXTURE texels a side. Setup code. */
@@ -1231,62 +1452,15 @@ export function facadeMaps(kind: FacadeKind, seed = NIGHT_SEED): FacadeMaps {
 	const orm = new Uint8Array(size * size * 4);
 	const normal = new Uint8Array(size * size * 4);
 	const height = new Float32Array(size * size);
-	const [wr, wg, wb] = FACADE_LOOKS[kind].wall;
 	for (let y = 0; y < size; y++)
 		for (let x = 0; x < size; x++) {
-			const u = (x + 0.5) / size;
-			const v = (y + 0.5) / size;
 			const i = y * size + x;
-			const { glass, frame } = windowAt(u, v, kind);
-			const grime = fbm(u, v, 4, 4, seed + 3);
-			let shade = 0.8 + 0.3 * grime;
-			let bump = 0.6 + 0.1 * grime;
-			let roughness = 0.82 + 0.1 * grime;
-			let metal = 0;
-			if (kind === 'brick') {
-				// Courses of bricks, 12 a floor, each its own shade.
-				const course = Math.floor(v * 24);
-				const along = u * 6 + (course % 2) * 0.5;
-				const mortar = (v * 24) % 1 < 0.14 || along % 1 < 0.05;
-				shade *= mortar ? 0.55 : 0.82 + 0.3 * hash01(seed, course, Math.floor(along));
-				bump = mortar ? 0.3 : bump;
-			} else if (kind === 'concrete') {
-				const seam = u < 0.012 || u > 0.988 || (v * 2) % 1 < 0.012;
-				shade *= seam ? 0.6 : 1;
-				bump = seam ? 0.35 : bump;
-			} else if (kind === 'glass') {
-				roughness = 0.35;
-				metal = 0.8;
-			} else {
-				shade *= 0.92 + 0.12 * tiledNoise(u * 32, v * 32, 32, seed + 9);
-			}
-			// The window's frame: a band around the glass, set back from the wall.
-			const inFrame = !glass && frame > -0.035 && frame <= 0;
-			let r = wr * shade;
-			let g = wg * shade;
-			let b = wb * shade;
-			let alpha = 0;
-			if (glass) {
-				r = 0.05;
-				g = 0.06;
-				b = 0.07;
-				roughness = 0.08;
-				metal = 0;
-				bump = 0.1;
-				alpha = 1;
-			} else if (inFrame) {
-				r = 0.12;
-				g = 0.12;
-				b = 0.13;
-				roughness = 0.45;
-				metal = 0.6;
-				bump = 0.25;
-			}
-			color.set([byte(r), byte(g), byte(b), byte(alpha)], i * 4);
-			orm.set([255, byte(roughness), byte(metal), 255], i * 4);
-			height[i] = bump;
+			const t = facadeTexel(kind, (x + 0.5) / size, (y + 0.5) / size, seed);
+			color.set([byte(t.r), byte(t.g), byte(t.b), t.glass ? 255 : 0], i * 4);
+			orm.set([255, byte(t.roughness), byte(t.metalness), 255], i * 4);
+			height[i] = t.height;
 		}
-	normalFromHeight(height, size, 3, normal);
+	normalFromHeight(height, size, 6, normal);
 	return {
 		color: { size, data: color, colorSpace: 'srgb' },
 		orm: { size, data: orm, colorSpace: 'linear' },
@@ -1437,28 +1611,30 @@ export const FACADE_LIT_SHARE: Readonly<Record<FacadeKind, number>> = {
 
 /** The look: the moonlit sky, the lights, fog, bloom, ambient occlusion, tone curve and grade. */
 export const NIGHT_LOOK = {
-	/** `timeOfDay(23, { heading, noonElevation })`: the moon low in the north-west. */
-	time: { hours: 23, heading: 0.9, noonElevation: 0.5 },
-	/** That time's sky with clearer air and fewer clouds, which three.js's Sky draws alike. */
+	/** `timeOfDay(23, { heading, noonElevation })`: the moon low over the far end of the street shot. */
+	time: { hours: 23, heading: 0.4, noonElevation: 0.5 },
+	/**
+	 * That time's sky with clearer air, which three.js's Sky draws alike. It gives the town its
+	 * environment light; the sky dome draws the sky that shows.
+	 */
 	sky: {
-		sunPosition: [-0.5031257909720012, 0.4630895095203464, -0.7296660500742812] as const,
+		sunPosition: [-0.09171388153626528, 0.4630895095203464, -0.8815535548710339] as const,
 		turbidity: 2,
 		rayleigh: 2,
 		mieCoefficient: 0.002,
 		mieDirectionalG: 0.6,
-		cloudCoverage: 0.3,
-		cloudDensity: 0.5,
-		cloudElevation: 0.5,
-		cloudScale: 0.0002,
-		cloudSpeed: 0.00002,
 	},
 	/** The factor of the sky's light, which dims the moon's day-for-night sky. */
-	skyIntensity: 0.0028115538168475454,
-	/** The share of that light that the sky shows behind the town, which keeps the night sky dark. */
-	skyShown: 0.25,
+	skyIntensity: 0.002283920577915905,
+	/**
+	 * The sky that shows: a dome around the camera with clouds that drift and that the moon lights
+	 * from behind, the moon's disc and halo, stars in the gaps, and the city's glow low down. `cover`
+	 * is the clouds' share of the sky and `brightness` scales the whole dome.
+	 */
+	dome: { radius: 700, cover: 0.55, brightness: 1 },
 	/** The moon: its direction of travel, linear color and intensity. */
 	moon: {
-		direction: [0.5031257909720012, -0.4630895095203464, 0.7296660500742812] as const,
+		direction: [0.09171388153626528, -0.4630895095203464, 0.8815535548710339] as const,
 		color: [0.55, 0.68, 1] as const,
 		intensity: 0.4,
 		shadowDistance: 160,
@@ -1477,7 +1653,7 @@ export const NIGHT_LOOK = {
 	camera: { fov: 50, near: 0.1, far: 900 },
 	/** Lights, in candela as three.js's units since r155. */
 	lamp: { intensity: 26, range: 17, decay: 2, lens: 9 },
-	sign: { intensity: 36, range: 12, decay: 2, tubes: 5 },
+	sign: { intensity: 36, range: 12, decay: 2, tubes: 2.2 },
 	headlight: {
 		color: '#fff3dc' as Hex,
 		intensity: 90,
@@ -1488,8 +1664,8 @@ export const NIGHT_LOOK = {
 		lens: 14,
 	},
 	tail: { color: '#ff1a10' as Hex, intensity: 3, range: 5, decay: 2, lens: 5 },
-	/** The windows' light, scaled per window by the facade shader. */
-	windows: { intensity: 0.3, shops: 0.22 },
+	/** The windows' light, scaled per window by the facade shader, and the shops' neon. */
+	windows: { intensity: 0.3, shops: 0.22, neon: 1.2 },
 	/** The awnings' stripes. */
 	awning: {
 		colors: ['#7a1420', '#1b4d5c', '#6b4a12', '#24452a'] as const satisfies readonly Hex[],
@@ -1507,8 +1683,17 @@ export const NIGHT_LOOK = {
 		tail: 0.35,
 		tailSize: 0.9,
 	},
-	/** The street's wetness: how dark wet asphalt turns, and the puddles' share. */
-	street: { puddleShare: 0.5, wetDarken: 0.25 },
+	/**
+	 * The street's wetness: the puddles' share, how dark wet asphalt turns, and how much of the
+	 * mirror the wet asphalt between the puddles shows.
+	 */
+	street: { puddleShare: 0.6, wetDarken: 0.25, wetMirror: 0.5 },
+	/**
+	 * Screen-space reflections, for when the comparison draws them: null3D's `post.set({ ssr })`
+	 * and three.js's SSR passes. They then take the wet asphalt's share of the mirror and the cars'
+	 * and windows' reflections.
+	 */
+	ssr: { intensity: 1, maxDistance: 60, thickness: 0.6, maxRoughness: 0.45 },
 	/** Bloom, as UnrealBloomPass's settings; the others map it as Factory's look does. */
 	bloom: { threshold: 1, strength: 0.6, radius: 0.5 },
 	bloomChain: {
@@ -1537,8 +1722,8 @@ export const NIGHT_CAMERA: CameraLoop = {
 		14, -62, 42, 30, -72, 92, 40, 22,
 	],
 	targets: [
-		0, 0, -8, -10, 2, 0, 0, 4, 0, -21, 4, 0, -21, 3, -12, -19, 3.4, -40, -15, 4, -62, 0, 3, -10, 0,
-		0, 0, 0, 0, 0,
+		0, 0, -8, -10, 2, 0, 0, 4, 0, -21, 4, 0, -21, 3, -12, -19, 8, -40, -15, 8, -62, 0, 3, -10, 0, 0,
+		0, 0, 0, 0,
 	],
 };
 
@@ -1559,8 +1744,18 @@ export const NIGHT_RAMPS = {
 	phone: { start: 36, factor: 1.2, max: 480 },
 } as const satisfies Record<DeviceClass, RampPlan>;
 
-/** The frame that the image tests hold: the wide shot, with 25 blocks. */
-export const NIGHT_HOLD = { seconds: WIDE_SHOT, count: 300 } as const;
+/**
+ * The frame that the image tests hold: the wide shot, with 25 blocks. three.js's WebGPURenderer
+ * takes about 95 seconds on the Mac to build that many lights' shaders, so the test waits longer.
+ * On the software GPU, either three.js renderer takes minutes at that count, so both engines' tests
+ * draw 4 blocks there.
+ */
+export const NIGHT_HOLD = {
+	seconds: WIDE_SHOT,
+	count: 300,
+	timeoutSeconds: 180,
+	softwareCount: 48,
+} as const;
 
 /** Triangles in the town for a count of lights, before shadows and particles. */
 export function nightTriangles(

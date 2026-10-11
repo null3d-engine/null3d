@@ -85,6 +85,7 @@ import {
 	facadeMaterial,
 	neonMaterial,
 	type StreetReflection,
+	skyMaterial,
 	streetMaterial,
 	type Timed,
 } from './three-shaders';
@@ -304,6 +305,7 @@ export async function buildNightTown({
 				litShare: FACADE_LIT_SHARE[facade],
 				windowLight: look.windows.intensity,
 				shopLight: look.windows.shops,
+				neonLight: look.windows.neon,
 			},
 			setup,
 		);
@@ -385,7 +387,7 @@ export async function buildNightTown({
 		roughness: 1,
 		metalness: 1,
 	});
-	const trim = standard({ color: '#3b3e44', roughness: 0.55, metalness: 0.3 });
+	const trim = standard({ color: '#57544e', roughness: 0.6, metalness: 0.1 });
 	const darkMetal = standard({ color: '#1d2024', roughness: 0.4, metalness: 0.8 });
 	const lens = standard({
 		color: '#000000',
@@ -443,6 +445,18 @@ export async function buildNightTown({
 	};
 
 	const street = still('ground', streetLook.material, scene, 0, 0, 0, 0, false);
+	// The sky's dome, which the camera carries. It draws after the town, so the town's pixels
+	// hide it before its shader runs.
+	const skyLook = await skyMaterial(three, kind, {
+		moon: [-look.moon.direction[0], -look.moon.direction[1], -look.moon.direction[2]],
+		cover: look.dome.cover,
+		brightness: look.dome.brightness,
+	});
+	timed.push(skyLook);
+	const dome = new three.Mesh(geometry('skyDome'), skyLook.material);
+	dome.renderOrder = 1;
+	dome.frustumCulled = false;
+	scene.add(dome);
 
 	const headDirection = new three.Vector3(...HEADLIGHT_AIM).normalize();
 	const at = new Float64Array(4);
@@ -932,7 +946,7 @@ export async function buildNightTown({
 		look: {
 			exposure: look.exposure,
 			environmentIntensity: look.skyIntensity,
-			sky: { settings: { ...look.sky, time: 0 }, intensity: look.skyIntensity * look.skyShown },
+			sky: { settings: { ...look.sky, time: 0 }, intensity: look.skyIntensity },
 			fog: {
 				color: look.fog.color,
 				density: look.fog.density,
@@ -981,6 +995,7 @@ export async function buildNightTown({
 			camera.lookAt(
 				lookAt.set(cameraTarget[0] as number, cameraTarget[1] as number, cameraTarget[2] as number),
 			);
+			dome.position.copy(camera.position);
 			if (particles) {
 				const { steam, exhaust, glows, rain } = particles;
 				steam.commit(writeSteam(town, seconds, steam.rows()));

@@ -1946,7 +1946,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				size: [640, 360],
 				hold: comparison.hold.seconds,
 				tiers: ['webgpu', 'webgl2'],
-				timeoutSeconds: 90,
+				timeoutSeconds: comparison.hold.timeoutSeconds ?? 90,
+				...(comparison.hold.softwareCount !== undefined && {
+					swiftShaderSwitches: [`count=${comparison.hold.softwareCount}`],
+				}),
 			};
 			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
 			// its test shares that comparison's references, in the scene graph mode only.

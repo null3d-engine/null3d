@@ -36,8 +36,17 @@ export interface Comparison {
 	threeOnPage?: boolean;
 	/** The ramp of each device class. Its maximum is also the most the slider and a run reach. */
 	ramps: Readonly<Record<DeviceClass, RampPlan>>;
-	/** The frame that the image tests hold: its simulation time in seconds and its count. */
-	hold: { readonly seconds: number; readonly count: number };
+	/**
+	 * The frame that the image tests hold: its simulation time in seconds and its count. A scene
+	 * whose three.js half starts slowly gives the test more time, and a smaller count to draw on the
+	 * software GPU, which both engines' tests then hold there.
+	 */
+	hold: {
+		readonly seconds: number;
+		readonly count: number;
+		readonly timeoutSeconds?: number;
+		readonly softwareCount?: number;
+	};
 	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
 	objectsAt(count: number, mode: CompareMode): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */

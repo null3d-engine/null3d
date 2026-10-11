@@ -253,6 +253,8 @@ The ramp raises the count step by step. Each step sets the count, waits half a s
 
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
 
+Night town's and Busy page's ramps count lights, 12 to a block. They start at 60, 48 and 36 lights and top out at 1,020, 720 and 480 on desktops, tablets and phones. Each stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
+
 ### Fairness rules
 
 These rules show on the page's "about this comparison" panel, from `FAIRNESS_RULES` in `examples/lib/compare.ts`:

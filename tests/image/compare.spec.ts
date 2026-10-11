@@ -2,6 +2,7 @@
 // ramp runs. A short ramp of three steps checks that the shell raises the count, measures each step
 // and reports what it found. The held frames of both engines are image tests in the manifest.
 import { expect, test } from '@playwright/test';
+import { NIGHT_HOLD } from '../../examples/compare/night-town/scene.ts';
 import type { RampResult } from '../../examples/lib/ramp.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -20,6 +21,8 @@ const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftsha
  * for the short ramp's top count alone, no warmup, and quarter-second steps.
  */
 const quick = () => (softwareGpu() ? '&max=400&warmup=0&step=0.25' : '');
+const quickTown = () =>
+	softwareGpu() ? `&max=${NIGHT_HOLD.softwareCount}&warmup=0&step=0.25` : '';
 
 for (const mode of ['scene-graph', 'instanced'] as const)
 	for (const engine of ['null3d', 'threejs'] as const)
@@ -111,8 +114,10 @@ for (const engine of ['null3d', 'threejs'] as const)
 				if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
 					errors.push(message.text());
 			});
+			// On the software GPU, three.js takes about a minute to build the shaders of each new
+			// count of lights, so the ramp holds the image tests' count there.
 			await page.goto(
-				`compare.html?compare=night-town&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quick()}`,
+				`compare.html?compare=night-town&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quickTown()}`,
 			);
 			const result = await pageResult<{
 				error?: string;
@@ -130,7 +135,11 @@ for (const engine of ['null3d', 'threejs'] as const)
 			// The ramp counts lights, and stops at three.js's limit where WebGLRenderer finds one.
 			const top = Math.min(400, result.limit?.count ?? 400);
 			for (const step of ramp.steps) expect(step.count).toBeLessThanOrEqual(top);
-			if (!softwareGpu()) for (const step of ramp.steps) expect(step.fps).toBeGreaterThan(0);
+			// three.js builds new shaders when lights join the scene, and WebGPURenderer can show no
+			// frame for a whole step while it does. The first step's lights were built at the start.
+			if (!softwareGpu())
+				for (const step of engine === 'null3d' ? ramp.steps : ramp.steps.slice(0, 1))
+					expect(step.fps).toBeGreaterThan(0);
 			if (result.limit) {
 				expect(engine).toBe('threejs');
 				expect(gpu).toBe('webgl2');

@@ -85,7 +85,7 @@ import {
 	writeRain,
 	writeSteam,
 } from './scene';
-import { AWNING_WGSL, FACADE_WGSL, NEON_WGSL, STREET_WGSL } from './shaders';
+import { AWNING_WGSL, FACADE_WGSL, NEON_WGSL, SKY_WGSL, STREET_WGSL } from './shaders';
 
 /** The blocks that each frame makes or destroys, within the engine's queue of changes. */
 const BLOCKS_PER_FRAME = 40;
@@ -165,11 +165,8 @@ export default defineSketch(
 			post.set({ lut: await assets.lutFromData({ size: table.size, data }) });
 		}
 
-		// The moonlit sky, the light it gives, the moon and the haze.
-		scene.setBackground(
-			{ sky: { ...look.sky, time: 0 } },
-			{ intensity: look.skyIntensity * look.skyShown },
-		);
+		// The moonlit sky's light, the moon and the haze. The sky dome hides the sky's background.
+		scene.setBackground({ sky: { ...look.sky, time: 0 } }, { intensity: look.skyIntensity });
 		scene.setEnvironment(await assets.skyEnvironment(), { intensity: look.skyIntensity });
 		if (effects.fog) scene.setFog({ curve: 'exponential', ...look.fog });
 		scene.createDirectionalLight({
@@ -207,6 +204,7 @@ export default defineSketch(
 					litShare: FACADE_LIT_SHARE[kind],
 					windowLight: look.windows.intensity,
 					shopLight: look.windows.shops,
+					neonLight: look.windows.neon,
 				},
 				textures: {
 					colorMap: upload(maps.color),
@@ -238,6 +236,7 @@ export default defineSketch(
 				puddleShare: look.street.puddleShare,
 				wetDarken: look.street.wetDarken,
 				mirrorShare: reflection ? 1 : 0,
+				wetMirror: look.street.wetMirror,
 			},
 			textures: {
 				colorMap: upload(street.color),
@@ -256,6 +255,17 @@ export default defineSketch(
 			timed.push(material);
 			return material;
 		});
+		const sky = materials.shader({
+			wgsl: SKY_WGSL,
+			fog: false,
+			uniforms: {
+				moon: [-look.moon.direction[0], -look.moon.direction[1], -look.moon.direction[2]],
+				time: 0,
+				cover: look.dome.cover,
+				brightness: look.dome.brightness,
+			},
+		});
+		timed.push(sky);
 		const awnings = look.awning.colors.map((stripe) => {
 			const material = materials.shader({
 				wgsl: AWNING_WGSL,
@@ -273,7 +283,7 @@ export default defineSketch(
 			metalness: 1,
 			uvTransform: { repeat: [1 / SIDEWALK_TILE, 1 / SIDEWALK_TILE] },
 		});
-		const trim = materials.standard({ color: '#3b3e44', roughness: 0.55, metalness: 0.3 });
+		const trim = materials.standard({ color: '#57544e', roughness: 0.6, metalness: 0.1 });
 		const darkMetal = materials.standard({ color: '#1d2024', roughness: 0.4, metalness: 0.8 });
 		const lens = materials.standard({
 			color: '#000000',
@@ -320,6 +330,7 @@ export default defineSketch(
 			material: streetMaterial,
 			receiveShadows: effects.shadows,
 		});
+		const dome = scene.createMesh({ mesh: mesh('skyDome'), material: sky, dynamic: true });
 
 		const position = new Float64Array(4);
 		const carAt = new Float64Array(3);
@@ -825,6 +836,11 @@ export default defineSketch(
 				rain.commit(writeRain(seconds, cameraPosition, rain.rows()));
 			}
 			quat.lookAt(cameraRotation, cameraTarget, cameraPosition);
+			dome.setPosition(
+				cameraPosition[0] as number,
+				cameraPosition[1] as number,
+				cameraPosition[2] as number,
+			);
 			camera.setPosition(
 				cameraPosition[0] as number,
 				cameraPosition[1] as number,

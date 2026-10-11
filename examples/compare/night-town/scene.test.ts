@@ -41,6 +41,7 @@ import {
 	signFlicker,
 	signLight,
 	signPlace,
+	skyDomeMesh,
 	streetMaps,
 	townHash,
 	trimMesh,
@@ -79,7 +80,7 @@ describe('Night town', () => {
 		expect(NIGHT_HOLD.count % LIGHTS_PER_BLOCK).toBe(0);
 	});
 
-	test('the look is the night of timeOfDay, with clearer air and the moon low in the north-west', () => {
+	test('the look is the night of timeOfDay, with clearer air and the moon low down the street', () => {
 		const night = timeOfDay(NIGHT_LOOK.time.hours, {
 			heading: NIGHT_LOOK.time.heading,
 			noonElevation: NIGHT_LOOK.time.noonElevation,
@@ -88,17 +89,40 @@ describe('Night town', () => {
 		// Less haze than the time of day's own sky, so the sky stays dark and blue over the town.
 		expect(NIGHT_LOOK.sky.turbidity).toBeLessThan(night.sky.turbidity);
 		expect(NIGHT_LOOK.sky.mieCoefficient).toBeLessThan(night.sky.mieCoefficient as number);
-		expect(NIGHT_LOOK.skyShown).toBeLessThan(1);
 		expect(night.skyIntensity).toBeCloseTo(NIGHT_LOOK.skyIntensity, 12);
 		expect(night.light.direction).toEqual([...NIGHT_LOOK.moon.direction]);
 		expect(night.light.color).toEqual([...NIGHT_LOOK.moon.color]);
 		expect(night.light.intensity).toBe(NIGHT_LOOK.moon.intensity);
 		expect(night.exposure).toBe(NIGHT_LOOK.exposure);
-		// Low enough to show in the wide shot, toward -X and -Z.
+		// Low over the far end of the street that the street shot looks down, along -Z.
 		const [x, y, z] = NIGHT_LOOK.sky.sunPosition;
 		expect(Math.asin(y) * (180 / Math.PI)).toBeLessThan(30);
-		expect(x).toBeLessThan(0);
-		expect(z).toBeLessThan(0);
+		expect(Math.abs(Math.atan2(x, -z)) * (180 / Math.PI)).toBeLessThan(10);
+	});
+
+	test("the sky dome faces inward and stays inside the camera's far plane", () => {
+		const { radius } = NIGHT_LOOK.dome;
+		expect(radius).toBeLessThan(NIGHT_LOOK.camera.far);
+		const dome = skyDomeMesh(radius);
+		const p = dome.position;
+		for (let i = 0; i < p.length; i += 3) {
+			const length = Math.hypot(p[i] as number, p[i + 1] as number, p[i + 2] as number);
+			expect(length).toBeCloseTo(radius, 3);
+			// Each normal points to the center.
+			expect((dome.normal[i] as number) * (p[i] as number)).toBeLessThanOrEqual(1e-6);
+		}
+		// Each triangle winds counterclockwise seen from the center: its face normal points inward.
+		const at = (k: number) => [p[k * 3], p[k * 3 + 1], p[k * 3 + 2]] as [number, number, number];
+		for (let t = 0; t < dome.index.length; t += 3) {
+			const [a, b, c] = [0, 1, 2].map((k) => at(dome.index[t + k] as number));
+			const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+			const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+			const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+			const m = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3];
+			// The top ring meets at the pole, where every other triangle has no area.
+			if (Math.hypot(n[0], n[1], n[2]) < 1e-3) continue;
+			expect(n[0] * m[0] + n[1] * m[1] + n[2] * m[2]).toBeLessThan(0);
+		}
 	});
 
 	test("the hash matches the shaders' integer math and spreads its values", () => {
