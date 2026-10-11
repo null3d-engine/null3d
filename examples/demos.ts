@@ -93,6 +93,30 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'extra-shapes',
+		group: 'Building scenes',
+		sketch: new URL('./extra-shapes/sketch.ts', import.meta.url),
+		title: 'Extra shapes',
+		scene: 'Mirror floor at dusk',
+		summary:
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'vertex-updates',
+		group: 'Building scenes',
+		sketch: new URL('./vertex-updates/sketch.ts', import.meta.url),
+		title: 'Vertex updates',
+		scene: 'Pool at golden hour',
+		summary:
+			"A glowing float leaves rings on a pool. Each frame the sketch rewrites the water's positions and normals and passes them to mesh.updateVertices, which allocates nothing.",
+		controls: `${CAMERA} Move the mouse, or tap, to lead the float.`,
+		hold: 2.5,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'objects',
 		group: 'Building scenes',
 		sketch: new URL('./objects/sketch.ts', import.meta.url),
@@ -128,6 +152,18 @@ export const DEMOS: readonly Demo[] = [
 		controls: CAMERA,
 		hold: 1,
 		timeoutSeconds: 60,
+	},
+	{
+		name: 'shader-inputs',
+		group: 'Light, materials and effects',
+		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
+		code: 'shader-inputs/',
+		title: 'Custom shader inputs',
+		scene: 'Crystal spiral',
+		summary:
+			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
+		controls: `${CAMERA} Hover over a stone, or tap it, to light it.`,
+		hold: 1,
 	},
 	{
 		name: 'time-of-day',

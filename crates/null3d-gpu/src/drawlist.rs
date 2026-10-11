@@ -1351,9 +1351,10 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, then screen-space
-    /// reflections' matrix into the frame before's view and their two vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 656;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read,
+    /// then screen-space reflections' matrix into the frame before's view and their two vectors.
+    pub const FRAME_UNIFORM_BYTES: u32 = 800;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1380,6 +1381,10 @@ pub mod sizes {
     pub const ROW_VALUE_TEXELS: u32 = 2;
     /// Row values per row of their data texture, which is 2,048 texels wide.
     pub const ROW_VALUES_PER_TEXTURE_ROW: u32 = 1024;
+    /// Bytes of the table of object ranges, a uniform block that the vertex shaders of custom
+    /// materials which read an instance's index or an object's id search: the largest uniform
+    /// block that every WebGL2 device and WebGPU's compatibility mode allow.
+    pub const OBJECT_RANGE_BYTES: u32 = 16384;
     /// Bytes of one point or spot light's record, which fragment shaders read from the light
     /// list: four vectors of four 32-bit values.
     pub const LIGHT_RECORD_BYTES: u32 = 64;
@@ -1573,8 +1578,9 @@ pub mod template {
     /// marches each texel's mirror ray through the depth pyramid and writes the ray's length.
     pub const SSR_TRACE: u32 = 50;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
-    /// template from here up, which the thread that draws receives from the sketch.
-    pub const CUSTOM_FIRST: u32 = 64;
+    /// template from here up, which the thread that draws receives from the sketch. The engine's
+    /// own templates take ids below it.
+    pub const CUSTOM_FIRST: u32 = 128;
 }
 
 /// Why recording failed.
@@ -2138,6 +2144,10 @@ mod tests {
             ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
+            format!(
+                "const OBJECT_RANGE_VECTORS: u32 = {}u;",
+                sizes::OBJECT_RANGE_BYTES / 16
+            ),
         ] {
             assert!(mesh.contains(&line), "lib/mesh.wgsl lacks {line}");
         }
@@ -2382,6 +2392,22 @@ mod tests {
             decode(&truncated).next(),
             Some(Err(DecodeError::Truncated { at: 0 }))
         );
+    }
+
+    #[test]
+    fn engine_templates_have_unique_ids_below_the_custom_ones() {
+        assert_eq!(template::CUSTOM_FIRST, 128);
+        let mut ids: Vec<u32> = typescript_constants()
+            .lines()
+            .filter_map(|line| line.strip_prefix("export const TEMPLATE_"))
+            .filter(|line| !line.starts_with("CUSTOM_FIRST "))
+            .map(|line| line.split(" = ").nth(1).unwrap().trim_end_matches(';'))
+            .map(|id| id.parse().unwrap())
+            .collect();
+        assert!(ids.len() > 40, "{} engine templates", ids.len());
+        ids.sort_unstable();
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
+        assert!(ids.iter().all(|&id| id > 0 && id < template::CUSTOM_FIRST));
     }
 
     #[test]

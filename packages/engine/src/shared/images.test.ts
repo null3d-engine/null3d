@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { TEMPLATE_CUSTOM_FIRST } from '../generated/gpu';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
@@ -235,19 +236,19 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		const { slots } = controlViews(createControlBuffer(true));
 		const table = new ImageTable();
 		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
-		sendThrough(sketchEnd).sendShader(64, shader);
+		sendThrough(sketchEnd).sendShader(TEMPLATE_CUSTOM_FIRST, shader);
 		deliver(sketchEnd, RECEIVING);
-		expect(sketchEnd.posted).toEqual([[{ template: 64, shader }, []]]);
+		expect(sketchEnd.posted).toEqual([[{ template: TEMPLATE_CUSTOM_FIRST, shader }, []]]);
 		receiveImages(drawingEnd, table, slots);
 		deliver(drawingEnd, sketchEnd.posted[0]?.[0]);
-		expect(table.shaders.get(64)).toBe(shader);
+		expect(table.shaders.get(TEMPLATE_CUSTOM_FIRST)).toBe(shader);
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(0);
 	});
 
 	test('reach a table on this thread at once, which forgets them when it clears', () => {
 		const table = new ImageTable();
-		shadersToTable(table)(65, shader);
-		expect(table.shaders.get(65)).toBe(shader);
+		shadersToTable(table)(TEMPLATE_CUSTOM_FIRST + 1, shader);
+		expect(table.shaders.get(TEMPLATE_CUSTOM_FIRST + 1)).toBe(shader);
 		table.clear();
 		expect(table.shaders.size).toBe(0);
 	});
@@ -255,12 +256,12 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 	test('list a template whose shader a later one replaces, for the backend to build again', () => {
 		const table = new ImageTable();
 		const send = shadersToTable(table);
-		send(66, shader);
+		send(TEMPLATE_CUSTOM_FIRST + 2, shader);
 		expect(table.replaced).toEqual([]);
 		const newer = { ...shader, locations: [0, 1, 2] };
-		send(66, newer);
-		expect(table.shaders.get(66)).toBe(newer);
-		expect(table.replaced).toEqual([66]);
+		send(TEMPLATE_CUSTOM_FIRST + 2, newer);
+		expect(table.shaders.get(TEMPLATE_CUSTOM_FIRST + 2)).toBe(newer);
+		expect(table.replaced).toEqual([TEMPLATE_CUSTOM_FIRST + 2]);
 		table.clear();
 		expect(table.replaced).toEqual([]);
 	});

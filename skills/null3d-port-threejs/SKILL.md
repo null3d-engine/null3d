@@ -14,8 +14,8 @@ A good port looks like the original, runs faster, and reads like null3D code. Tr
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.
-2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>` (0.3). A page with `status: planned` describes an API that does not exist in that version yet. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too.
-3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3D equivalent, a status, the first engine version with it, and a doc ID. The statuses:
+2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>` (0.3, not built yet). A page with `status: planned` describes an API that does not exist in that version yet. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too.
+3. Look up three.js APIs in `references/api-mapping.md`. For 162 three.js APIs it gives the null3D equivalent, a status, the roadmap step that adds it, and a doc ID. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3. The statuses:
    - `direct`: same concept, new name.
    - `changed`: supported with a different API or pattern; follow the note.
    - `manual`: rewrite by hand (shaders, render hooks, some material maps).
@@ -30,11 +30,11 @@ A good port looks like the original, runs faster, and reads like null3D code. Tr
 node <this-skill-dir>/scripts/analyze-threejs.mjs <three-project-dir> --md PORTING-INVENTORY.md --json porting-inventory.json
 ```
 
-The scanner lists every three.js feature it finds, grouped by status, with file and line references and the null3D equivalent. It also gives the lowest engine version the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. It matches text patterns, so read the code to confirm each row.
+The scanner lists every three.js feature it finds, grouped by status, with file and line references and the null3D equivalent. It also gives the latest roadmap step the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. A mapping note that starts "Not built yet" marks a feature that the engine lacks today. It matches text patterns, so read the code to confirm each row.
 
 Then tell the user, before writing any code:
 - which features need a hand rewrite, which are `post-1.0` or `unsupported`, and the workaround you propose for each;
-- the engine version the port needs;
+- the latest roadmap step the port needs, and the mapped features that are not built yet (their mapping notes start "Not built yet");
 - the rough effort.
 
 These decide the scope. Settling them first avoids a half-done port that fails on a feature nobody discussed.
@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures. Draco models load as they are (0.2), so delete the `DRACOLoader` setup and its decoder files, then convert the models to meshopt with the same command.
+3. Models (0.2) and textures. The engine loads glTF only: convert FBX, OBJ, STL and PLY files with `bunx @null3d/cli assets convert <in> <out.glb>` (0.2). It keeps FBX skins, blend shapes and clips, and turns Draco compression into meshopt. Then optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures. Draco glTF models load as they are (0.2), so delete the `DRACOLoader` setup and its decoder files, then convert the models to meshopt with the optimize command.
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.
@@ -99,6 +99,8 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`. It 
 | `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change needs a new pipeline, whose objects draw nothing until it is built, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
+| `geometry.attributes.position.needsUpdate = true` after changing vertices | Keep the array, change it, and call `mesh.updateVertices('positions', positions)` (0.2) | It allocates nothing and uploads only the vertices that changed; the mesh keeps its first bounding sphere, so add `setBounds` when vertices move outside it |
+| `TorusKnotGeometry`, `ExtrudeGeometry`, `Shape` and the other extra geometry classes | `geometry.fromArrays(torusKnot({ ... }))` and the same classes from `@null3d/geometry` (0.2), with points as arrays | The functions return three.js's vertices for `fromArrays`; `ExtrudeGeometry`'s caps and sides become one mesh |
 | `mergeGeometries` to cut draw calls | Separate objects that share a mesh and material | They already share one draw (`guides/performance`) |
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
 | `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |

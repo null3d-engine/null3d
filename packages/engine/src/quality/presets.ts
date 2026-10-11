@@ -137,12 +137,12 @@ export const QUALITY_SETTINGS = {
 	// The texels on the short side of the base of bloom's mip chain. The glow keeps its size at any
 	// base: a smaller base drops the chain's narrowest levels, which costs less and softens the
 	// glow's core. Low runs on phones at render scales down to 0.5, where a larger base would cost
-	// more than the scene's pixels need: 128 costs less than the method before it on the Galaxy S25
-	// and the Pixel 9, and has four fewer passes than 512, which matters on the Pixel 11's PowerVR GPU
-	// (D-21). A change makes the chain's targets again; the governor's step halves the base with no
-	// new GPU object.
+	// more than the scene's pixels need. Low's 64 costs less than the method before it on Adreno and
+	// Mali phones, and has six fewer passes than 512, which matters most on PowerVR GPUs (D-21). A
+	// change makes the chain's targets again; the governor's step halves a larger base with no new
+	// GPU object.
 	bloomSize: {
-		presets: [128, 512, 512, 512],
+		presets: [64, 512, 512, 512],
 		changes: 'live',
 		values: [64, 128, 256, 512],
 	},
@@ -192,10 +192,11 @@ export const QUALITY_SETTINGS = {
 		values: [0.25, 0.5, 1],
 	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
-	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
-	// measured yet, so these values follow the plan until device runs settle them (D-41).
+	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
+	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
+	// scene that measures a gain turns it on.
 	softwareOcclusion: {
-		presets: [false, true, true, true],
+		presets: [false, false, false, false],
 		changes: 'live',
 		values: 'flag',
 	},
@@ -487,7 +488,8 @@ export interface QualitySettings {
 	 * True when software occlusion culling runs on WebGL2: each frame, the job workers draw the
 	 * objects that `setOccluder(true)` marks into a small depth buffer, and the engine skips every
 	 * object that lies wholly behind them. It costs the job workers time for each blocker, and
-	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
+	 * saves drawing what they hide. Every preset leaves it off, and the `softwareOcclusion` option
+	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
 }

@@ -240,7 +240,7 @@ export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_TRANSMISSION_COPY = 47;
 export const TEMPLATE_SSR_REDUCE = 49;
 export const TEMPLATE_SSR_TRACE = 50;
-export const TEMPLATE_CUSTOM_FIRST = 64;
+export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
 export const BUFFER_USAGE_COPY_SRC = 4;
@@ -260,7 +260,7 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_INDEX_STRIDE = 16;
-export const SIZE_FRAME_UNIFORM_BYTES = 656;
+export const SIZE_FRAME_UNIFORM_BYTES = 800;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;

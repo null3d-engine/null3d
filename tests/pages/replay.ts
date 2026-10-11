@@ -140,6 +140,9 @@ run('replay', async () => {
 		// The depth pyramid of occlusion culling, which the culling group binds and this view,
 		// which culls in one phase, never reads.
 		[17, 16, U.STORAGE, -1],
+		// The table of object ranges, which the frame group binds and only shaders that read ids
+		// search.
+		[18, 16, U.UNIFORM | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -314,7 +317,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		17,
+		18,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -334,6 +337,7 @@ run('replay', async () => {
 		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
 		// The row values of instance batches, which only shaders built for them read.
 		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[17, G.RESOURCE_BUFFER, 18, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

@@ -118,6 +118,8 @@ export type Vec3 = readonly [number, number, number];
 export type Quat = readonly [number, number, number, number];
 
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
+/** The bit of the ids that custom materials read for the rows of instance batches, above every slot. */
+const BATCH_SHADER_ID = 1 << C.HANDLE_SLOT_BITS;
 
 /**
  * Options every node takes when it is created.
@@ -1111,6 +1113,15 @@ export class Mesh extends Object3D {
 	 */
 	morphJoint = -1;
 
+	/**
+	 * The number that a custom material's WGSL reads as `object.id` for this mesh. No other live
+	 * mesh or batch has it. Pass it to a uniform to pick out this mesh in a shader. It is 0 once the
+	 * mesh is destroyed.
+	 */
+	get shaderId(): number {
+		return this.row;
+	}
+
 	/** @internal */
 	override twin(handle: number): Object3D {
 		const twin = super.twin(handle) as Mesh;
@@ -1905,6 +1916,14 @@ export class InstanceBatch {
 	}
 
 	/**
+	 * The number that a custom material's WGSL reads as `object.id` for every row of the batch.
+	 * No other live batch or mesh has it. The WGSL tells the rows apart by `input.instance`.
+	 */
+	get shaderId(): number {
+		return BATCH_SHADER_ID | (this.id & SLOT_MASK);
+	}
+
+	/**
 	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so
 	 * this check creates no closure: one would allocate on each call until the browser optimizes
 	 * the code.
@@ -2303,10 +2322,6 @@ export class Scene {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
-	/** @internal True once development builds saw a point or spot light. */
-	rangedLights = false;
-	/** @internal Called in development builds when the scene gets its first point or spot light. */
-	onRangedLight: (() => void) | undefined;
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
 	 * undefined to follow the camera's.
@@ -3457,10 +3472,6 @@ export class Scene {
 		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
-		if (DEV && ranged && !this.rangedLights) {
-			this.rangedLights = true;
-			this.onRangedLight?.();
-		}
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {

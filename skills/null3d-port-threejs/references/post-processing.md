@@ -2,7 +2,7 @@
 
 three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects (0.2) run after the scene and before bloom, on HDR color; the engine joins per-pixel effects into few passes. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading and the vignette. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `outline`, `lut`, `vignette`, custom effects with `post.addEffect` and custom tone curves (0.2). Scene passes that render into a texture (`render.addPass({ kind: 'scene' })` with `textures.fromPass`) are built in 0.2, so `WebGLRenderTarget` render-to-texture ports. So are reflection passes (`render.addPass({ kind: 'reflection', plane })`), which `Reflector`, `Water` and `Water2`'s reflection port to. Full-screen passes of your own WGSL with `render.addPass` come later in 0.2: port a `ShaderPass` as a custom effect. The port's report lists each effect it dropped.
+Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. The HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `dof`, `outline`, `lut`, `vignette`, custom effects with `post.addEffect` and custom tone curves (0.2). Scene passes that render into a texture (`render.addPass({ kind: 'scene' })` with `textures.fromPass`) are built in 0.2, so `WebGLRenderTarget` render-to-texture ports. So are reflection passes (`render.addPass({ kind: 'reflection', plane })`), which `Reflector`, `Water` and `Water2`'s reflection port to. Full-screen passes of your own WGSL with `render.addPass` are (0.2, not built yet): port a `ShaderPass` as a custom effect. The port's report lists each effect it dropped.
 
 ## Contents
 
@@ -46,7 +46,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect` (0.2), one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. Effects take no textures, so `GlitchPass`'s random texture becomes `null3d::noise` |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. List it as dropped |
 | `ShaderPass(customShader)` | `post.addEffect({ wgsl, uniforms, order })` (0.2) | Section 6; GLSL to WGSL: `references/shaders.md` |
-| `ClearPass`, `MaskPass`, `TexturePass` | A custom pass (0.2), if still needed | Masks usually become layers |
+| `ClearPass`, `MaskPass`, `TexturePass` | A full-screen pass of your own WGSL (0.2, not built yet), if still needed | Masks usually become layers |
 
 ## 3. pmndrs postprocessing effects
 
@@ -180,7 +180,7 @@ For `CustomToneMapping`, copy the body of the app's patched `CustomToneMapping` 
 - Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep. null3D tone-maps once.
 - Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, as `UnrealBloomPass` before `OutputPass` does. An original that tone-mapped first looks weaker; raise `intensity` to match.
 - Threshold: null3D's default threshold is 0, so all light glows a little, and its default intensity is low. A port always sets `threshold` from the source, which defaults to 1 in `UnrealBloomPass` and 0.9 in pmndrs `BloomEffect`. The threshold is in color before the exposure, as in three.js, at any exposure.
-- Bloom's size: the quality setting `bloomSize` (128 on Low, 512 elsewhere) changes the glow's detail, not its size. Do not map `resolution` or `resolutionScale` onto it.
+- Bloom's size: the quality setting `bloomSize` (64 on Low, 512 elsewhere) changes the glow's detail, not its size. Do not map `resolution` or `resolutionScale` onto it.
 - HDR targets: in WebGPU's compatibility mode with MSAA, bloom, the first effect or a custom tone curve moves the engine to HDR color with FXAA. Edges there look as with FXAA (`concepts/post-processing`). On a WebGL2 device with no float targets, all three stay off, and development builds warn once.
 - HDR input: effects read linear HDR color after the exposure, before bloom and the tone curve. A `ShaderPass` before `OutputPass` read the same kind of color, unexposed. One after `OutputPass` read display color from 0 to 1. Retune what assumed display color, such as thresholds, grain amounts and sRGB color math: clamp, convert with `null3d::color`'s `linear_to_srgb` and `srgb_to_linear`, or tune by eye.
 - Exposure in effects: with an exposure other than 1, scale a ported effect's thresholds by the exposure.
