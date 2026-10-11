@@ -136,7 +136,20 @@ scene.instantiate(city, { occluder: false });
 
 `setOccluder` changes an object afterwards. [The asset pipeline](../guides/assets-pipeline.md#blockers-and-stored-trees) says which meshes get blockers.
 
-The `softwareOcclusion` quality setting turns it on and off during play. It is on from the Medium preset up, and off on Low. The `?occlusion=off` switch turns it off for a page. The `?occlusion-buffer=384x216` switch gives the buffer about that many pixels, to measure a larger buffer against the default. `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`.
+### Turn it on where it pays
+
+Every quality preset leaves software occlusion culling off. The engine measured it in S6, its benchmark city, on three Android phones and an iPad, all on WebGL2. It hid 23% to 39% of the entries in view, but removed fewer than 3% of the draw calls. Most hidden entries were rows of instance batches whose other rows still showed, so the batch still drew. The job workers spent 7 to 22 ms more per frame, and the render worker saved 2 ms at most. On every device, it cost at least 3.5 times what it saved.
+
+A scene whose few large blockers hide many separate meshes, each its own draw call, can gain where the city lost. So turn it on only when your scene measures a gain:
+
+```ts
+const engine = await createEngine({ canvas, sketch, softwareOcclusion: true });
+```
+
+- Compare the page with `?occlusion=on` and with `?occlusion=off` on your slowest WebGL2 device. The switch wins over the option. Keep the culling only where the frame takes less time with it on.
+- `engine.measure` reports the entries that it hid as `occludedEntries`, beside `visibleEntries`. The `?stats` overlay shows each thread's CPU time ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)).
+- The `softwareOcclusion` quality setting turns it on and off during play, with `quality.set`.
+- The `?occlusion-buffer=384x216` switch gives the buffer about that many pixels, to measure a larger buffer against the default.
 
 WebGPU reads the same marks for its own [occlusion culling on the GPU](#gpu-occlusion-culling-on-webgpu), which the `gpuOcclusion` setting turns on, and ignores the `softwareOcclusion` setting.
 

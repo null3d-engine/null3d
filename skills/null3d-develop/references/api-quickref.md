@@ -39,6 +39,7 @@ const engine = await createEngine({
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
+  softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
