@@ -34,6 +34,10 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `weighted` switch puts a column of smoke over the swarm's middle: puffs of the weighted
+// blending in a sprite batch that rise and swell in every frame, for the allocation sample and the
+// cost of the camera's weighted layer. `weighted=sorted` gives the same smoke the normal blending,
+// which the transparent pass sorts, for the cost of one against the other.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -76,6 +80,9 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const weighted = switches.get('weighted');
+	const moveSmoke =
+		weighted === null ? undefined : await createSmoke(context, weighted === 'sorted');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -144,6 +151,7 @@ export default defineSketch(async (context) => {
 		animate(t);
 		morph(t);
 		moveCasters?.(t);
+		moveSmoke?.(t);
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
@@ -319,6 +327,47 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** The puffs of the `weighted` switch's smoke, and how long each one rises, in seconds. */
+const SMOKE_PUFFS = 2000;
+const SMOKE_LIFE = 8;
+
+/**
+ * Adds the `weighted` switch's column of smoke over the swarm's middle: soft puffs of the weighted
+ * blending, or of the normal blending with `sorted`, that rise, swell and fade. Returns the function
+ * that moves them to a time, which writes the batch's arrays and allocates nothing.
+ */
+async function createSmoke({ scene, textures }: SketchContext, sorted: boolean) {
+	const size = 32;
+	const dot = new Uint8Array(size * size * 4).fill(255);
+	for (let i = 0; i < size * size; i++) {
+		const r = Math.hypot((i % size) + 0.5 - size / 2, Math.floor(i / size) + 0.5 - size / 2);
+		dot[i * 4 + 3] = 255 * Math.max(0, 1 - (2 * r) / size) ** 2;
+	}
+	const map = textures.fromData({ width: size, height: size, data: dot });
+	const puffs = await scene.createSprites({
+		count: SMOKE_PUFFS,
+		map,
+		dynamic: true,
+		depthWrite: false,
+		blending: sorted ? 'normal' : 'weighted',
+	});
+	return (t: number) => {
+		const { positions, sizes, colors } = puffs;
+		for (let i = 0; i < SMOKE_PUFFS; i++) {
+			const seed = (i * 0.618034) % 1;
+			const age = (t / SMOKE_LIFE + seed) % 1;
+			const turn = i * 2.39996 + age * 3;
+			const spread = 2 + age * 18;
+			positions[i * 3] = Math.cos(turn) * spread * seed;
+			positions[i * 3 + 1] = S1_BOB_HEIGHT + age * 60;
+			positions[i * 3 + 2] = Math.sin(turn) * spread * seed;
+			sizes[i * 2] = sizes[i * 2 + 1] = 4 + age * 14;
+			colors[i * 4] = colors[i * 4 + 1] = colors[i * 4 + 2] = 0.55 + 0.3 * seed;
+			colors[i * 4 + 3] = 0.35 * Math.min(1, age * 8) * (1 - age);
+		}
+	};
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */

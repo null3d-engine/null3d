@@ -19,7 +19,7 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, si
 use super::ids;
 use super::skin::{DrawGroups, SkinnedPart, Skinning};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
-use crate::sorted::{SortedLayout, SortedSource, SortedView};
+use crate::sorted::{SortedLayout, SortedRows, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
 /// Rows from which the job workers write the instances too.
@@ -177,11 +177,15 @@ impl Transparent {
     /// run of sorted rows that share a bucket, with one instanced draw per part of the bucket's
     /// mesh for each of the bucket's passes, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
-    /// It leaves out the objects whose maps show a target that the view does not read.
+    /// It leaves out the objects whose maps show a target that the view does not read. `rows`
+    /// picks the buckets that draw, and their pipelines: those of the transparent pass, or of the
+    /// camera's weighted layer.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         view: ViewId,
+        rows: SortedRows,
         layout: &SortedLayout,
         skinning: &Skinning,
         settings: &SceneSettings,
@@ -202,6 +206,9 @@ impl Transparent {
         let textures = settings.textures();
         for draw in draws {
             let bucket = layout.buckets[draw.bucket as usize];
+            if rows.passes(&bucket).next().is_none() {
+                continue;
+            }
             if hidden_targets != 0
                 && bucket.textures != 0
                 && textures.group_pass_views(bucket.textures) & hidden_targets != 0
@@ -224,7 +231,7 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            for pass in bucket.passes() {
+            for pass in rows.passes(&bucket) {
                 if pipeline != Some(pass) {
                     list.push(Op::SetPipeline, &[pass])?;
                     pipeline = Some(pass);

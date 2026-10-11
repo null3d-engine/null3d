@@ -241,6 +241,11 @@ pub mod feature {
     /// material's transmission value sets how much light passes. It takes no mask, so it wins over
     /// [`ALPHA_MASK`].
     pub const TRANSMISSION: u32 = 8192;
+    /// With [`BLEND`] and normal blending, the surface blends with the other such surfaces in any
+    /// order, by a weighted average, in the camera's weighted layer (see [`crate::weighted`]).
+    /// Elsewhere it draws back to front with the blended surfaces. A surface that lets light
+    /// through sorts, so [`TRANSMISSION`] wins over it.
+    pub const WEIGHTED: u32 = 524288;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -255,12 +260,21 @@ pub mod feature {
         | NO_FOG
         | ALPHA_HASH
         | SINGLE_PASS
-        | TRANSMISSION;
+        | TRANSMISSION
+        | WEIGHTED;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
     pub const fn masks(features: u32) -> bool {
         features & ALPHA_MASK != 0 && features & (BLEND | TRANSMISSION) == 0
+    }
+
+    /// True for features that draw in the camera's weighted layer: [`WEIGHTED`] with normal
+    /// blending, on a surface that does not let light through.
+    pub const fn weighs(features: u32) -> bool {
+        features & WEIGHTED != 0
+            && features & BLEND != 0
+            && features & (ADDITIVE | MULTIPLY | TRANSMISSION) == 0
     }
 }
 

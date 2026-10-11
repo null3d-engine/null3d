@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, and the weighted blending. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -195,7 +195,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
 | `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'`, `'mask'`, `'hash'` or `'blend'`. See "Alpha modes" |
 | `alphaToCoverage` | Both | true | With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's `alphaToCoverage` does. `false` gives the hard cut edges of three.js's `alphaTest`. See "Alpha to coverage" |
-| `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'` or `'multiply'`. See "Blending" |
+| `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'`, `'multiply'` or `'weighted'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
@@ -264,6 +264,7 @@ const pane = materials.standard({ color: '#a8d8ff', opacity: 0.3, alphaMode: 'bl
 | `'normal'` | Covers what lies behind, as far as the alpha says | Glass, fading objects, smoke |
 | `'additive'` | Adds the surface's light to what lies behind, times the alpha | Glows, fire, sparks, lasers |
 | `'multiply'` | Tints what lies behind by the surface's color, as far as the alpha says | Stains, shadows painted on, tinted film |
+| `'weighted'` | Covers what lies behind as `'normal'` does, but blends with the other weighted surfaces in any order | Smoke, dust, clouds of particles, many panes of glass that cross |
 
 The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. Textures loaded with `premultipliedAlpha: true` blend correctly too.
 
@@ -274,6 +275,29 @@ The engine blends in linear color, before the tone mapping, as three.js's `WebGP
 const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend' });
 const glow = materials.unlit({ color: '#ffb040', alphaMode: 'blend', blending: 'additive', depthWrite: false });
 ```
+
+### Weighted blending
+
+Blended objects draw farthest first, and the sort orders whole objects, or the rows of a batch. Surfaces that cross, a large surface around a small one, and puffs of smoke inside each other have no right order. The sort then puts some of them in the wrong order, and they pop as the camera moves. Additive and multiply blending give the same result in any order, so only normal blending needs the sort.
+
+`blending: 'weighted'` blends such surfaces without a sort. The engine uses weighted blended order-independent transparency (McGuire and Bavoil, 2013), as three.js's `OITPassNode` does. Each weighted surface adds its color and its coverage into two targets, in any order, and near surfaces weigh more than far ones. A full-screen step then blends the average color over the scene, as far as the surfaces cover it.
+
+```ts
+// sketch.ts: smoke puffs that cross each other, and panes of glass that cross, without popping.
+const smoke = materials.unlit({ color: '#9a9590', opacity: 0.35, alphaMode: 'blend', blending: 'weighted', depthWrite: false });
+const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend', blending: 'weighted', doubleSided: true });
+```
+
+- The result is an average. Where a dark and a bright surface overlap at a similar depth, both show. The nearest surface shows most. Where an exact order exists, a sorted blend shows it.
+- Weighted surfaces draw as one layer after the camera's other blended surfaces and its surfaces that let light through. They show where nothing nearer wrote depth.
+- A weighted surface writes no depth, and both faces of a double-sided one draw in one draw.
+- The layer draws at one sample per pixel, so MSAA does not smooth the edges of weighted surfaces. Soft surfaces, such as smoke, look the same. FXAA smooths the edges as it smooths the rest.
+- Views other than the camera's, such as [scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes), draw weighted surfaces farthest first, as `'normal'` ones. So do WebGL2 devices that cannot draw into 16-bit float targets, and frames before the layer's shaders have loaded.
+- Materials with `transmission`, custom materials and lines do not take the `weighted` blending. They throw E1217.
+
+### Cost of weighted blending
+
+The layer costs nothing until the first weighted surface draws, and its shaders download only then. Each frame then draws the camera's weighted surfaces into two targets of the render size, 10 bytes per pixel together. A full-screen step blends them over the scene. With MSAA, the layer first copies one sample of each pixel's depth. The camera's other blended objects and the weighted layer draw in separate render passes. To load the layer's shaders before the first frame, list `'weighted'` in `createEngine`'s `preload` option.
 
 ## Depth bias
 
@@ -374,7 +398,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and so does the `weighted` blending on a custom material or a material with `transmission`, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

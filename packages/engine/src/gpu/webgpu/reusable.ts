@@ -2,7 +2,10 @@
 // allocates none of its own. WebGPU reads a descriptor only during the call that takes it, so one
 // object can serve every frame.
 
-/** A render pass descriptor with at most one color target and one depth target. */
+/**
+ * A render pass descriptor with at most two color targets and one depth target. Only the weighted
+ * layer draws into a second color target, which clears and stores as the first does.
+ */
 export class RenderPassSetup {
 	private readonly clearColor: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 };
 	private readonly colorTarget: GPURenderPassColorAttachment = {
@@ -12,6 +15,16 @@ export class RenderPassSetup {
 		clearValue: this.clearColor,
 	};
 	private readonly colorTargets: GPURenderPassColorAttachment[] = [this.colorTarget];
+	private readonly secondTarget: GPURenderPassColorAttachment = {
+		view: undefined as unknown as GPUTextureView,
+		loadOp: 'clear',
+		storeOp: 'store',
+		clearValue: this.clearColor,
+	};
+	private readonly twoColorTargets: GPURenderPassColorAttachment[] = [
+		this.colorTarget,
+		this.secondTarget,
+	];
 	private readonly noColorTargets: GPURenderPassColorAttachment[] = [];
 	private readonly depthTarget: GPURenderPassDepthStencilAttachment = {
 		view: undefined as unknown as GPUTextureView,
@@ -51,6 +64,19 @@ export class RenderPassSetup {
 		clearColor.b = color[at + 2] as number;
 		clearColor.a = color[at + 3] as number;
 		this.descriptor.colorAttachments = this.colorTargets;
+	}
+
+	/**
+	 * Sets a second color target after the first, or leaves the first alone when `view` is
+	 * undefined. Call it after `setColor`, whose clear color and operations it takes.
+	 */
+	setSecondColor(view: GPUTextureView | undefined): void {
+		if (!view) return;
+		const target = this.secondTarget;
+		target.view = view;
+		target.loadOp = this.colorTarget.loadOp;
+		target.storeOp = this.colorTarget.storeOp;
+		this.descriptor.colorAttachments = this.twoColorTargets;
 	}
 
 	/** Sets the depth target, or removes it when `view` is undefined. It clears to `value[at]`. */

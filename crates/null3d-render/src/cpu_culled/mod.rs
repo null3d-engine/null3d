@@ -121,10 +121,11 @@ use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
-use crate::sorted::SortedLayout;
+use crate::sorted::{SortedLayout, SortedRows};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
+use crate::weighted::WeightedIds;
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
@@ -142,6 +143,7 @@ mod ids {
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, ViewId};
+    use crate::weighted::WeightedIds;
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
@@ -274,8 +276,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the weighted layer's composite and depth copy, after the copy's.
+    pub const WEIGHTED_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the weighted layer's.
+    pub const TEXTURE_GROUPS: u32 = WEIGHTED_GROUPS + WeightedIds::GROUPS;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -303,6 +307,9 @@ pub struct CpuCulledConfig {
     pub depth_prepass: bool,
     /// How the shadow cascades store depth.
     pub cascade_depth: CascadeDepth,
+    /// True when the device draws into one-sample targets of 16-bit floats, which the camera's
+    /// weighted layer needs (`Capabilities::FLOAT16_TARGETS`).
+    pub float16_targets: bool,
 }
 
 impl Default for CpuCulledConfig {
@@ -318,6 +325,7 @@ impl Default for CpuCulledConfig {
             light_limits: LightLimits::default(),
             depth_prepass: false,
             cascade_depth: CascadeDepth::default(),
+            float16_targets: true,
         }
     }
 }
@@ -473,9 +481,13 @@ impl CpuCulledRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        weighted: WeightedIds {
+                            first_group: ids::WEIGHTED_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
+                graph.set_weighted_targets(config.float16_targets);
                 graph.set_depth_prepass(config.depth_prepass);
                 graph
             },
@@ -693,6 +705,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
+                self.graph.weighted_targets(targets),
             )
             .map_err(out_of_memory)?;
         self.skins.asked();
@@ -1096,6 +1109,7 @@ impl CpuCulledRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        self.graph.set_weighted(self.sorted.weighs());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1315,6 +1329,7 @@ impl CpuCulledRenderer {
         )?;
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
+        let weighted = self.graph.weighted_declared();
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
@@ -1391,12 +1406,26 @@ impl CpuCulledRenderer {
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
+                    let rows = if weighted && view == ViewId::CAMERA {
+                        SortedRows::Sorted
+                    } else {
+                        SortedRows::All
+                    };
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
                     let hidden = hidden_in(view);
                     let index = view.index();
-                    transparent.record(list, arena, index, draws, at, meshes, bind, &hidden)
+                    transparent.record(list, arena, index, rows, draws, at, meshes, bind, &hidden)
+                }
+                Role::Weighted if culling.frame(ViewId::CAMERA).is_some() => {
+                    let view = ViewId::CAMERA;
+                    let at = opaque.sorted_records_at(view, layout);
+                    let draws = ids::draws_group(view);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
+                    let hidden = hidden_in(view);
+                    let (index, rows) = (view.index(), SortedRows::Weighted);
+                    transparent.record(list, arena, index, rows, draws, at, meshes, bind, &hidden)
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);

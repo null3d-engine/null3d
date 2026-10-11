@@ -538,6 +538,8 @@ function reflectionTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of weighted blending's crossing panes and overlapping puffs. */
+const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
 /** The sketch of the glass scene, which three.js's transmission draws too. */
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
@@ -1898,6 +1900,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Weighted blending: crossing panes of glass and overlapping puffs blend in any order in the
+	// camera's weighted layer, over a pane of normal blending.
+	{ name: 'weighted', sketch: WEIGHTED_SKETCH, hold: 0, size: [480, 270] },
+	// The same surfaces in the reverse render order draw the same image, so the references are
+	// copies of the weighted test's.
+	{
+		name: 'weighted-reverse',
+		sketch: `${WEIGHTED_SKETCH}?reverse`,
+		hold: 0,
+		size: [480, 270],
+		reference: 'weighted',
+	},
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

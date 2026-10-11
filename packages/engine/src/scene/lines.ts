@@ -19,6 +19,7 @@ import type {
 	PointerTarget,
 } from './pointer-events';
 import type {
+	Blending,
 	Geometry,
 	Material,
 	MaterialFeatures,
@@ -65,7 +66,13 @@ export interface LineValues
  */
 export interface LineOptions
 	extends LineValues,
-		Pick<MaterialFeatures, 'fog' | 'blending' | 'depthWrite' | 'depthTest' | 'depthBias'> {
+		Pick<MaterialFeatures, 'fog' | 'depthWrite' | 'depthTest' | 'depthBias'> {
+	/**
+	 * With the `blend` alpha mode, how the lines meet what lies behind them: `'normal'`,
+	 * `'additive'` or `'multiply'`. Lines do not take the `'weighted'` blending. The default is
+	 * `normal`.
+	 */
+	blending?: Exclude<Blending, 'weighted'>;
 	/**
 	 * The points: 3 numbers each. Their number is the batch's capacity, which never changes, and
 	 * `lines.positions` holds them after the call.

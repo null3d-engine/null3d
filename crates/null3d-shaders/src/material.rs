@@ -524,7 +524,8 @@ impl Compiler {
                 // Only WGSL that sets the surface's transmission has the builds that let light
                 // through, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
-                // that the default surface multiplies.
+                // that the default surface multiplies. They have no builds of the weighted layer:
+                // the engine's API refuses the weighted blending for them (decision record D-150).
                 let skins = !variant.targets.contains(&Target::Wgsl);
                 let left_out = [
                     "HALF",
@@ -533,6 +534,7 @@ impl Compiler {
                     "SAMPLE_MASK",
                     "ALPHA_COVERAGE",
                     "ALPHA_HASH",
+                    "WEIGHTED",
                 ];
                 let permutations = variant
                     .permutations

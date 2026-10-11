@@ -155,11 +155,12 @@ use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
-use crate::sorted::SortedLayout;
+use crate::sorted::{SortedLayout, SortedRows};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
+use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
@@ -212,6 +213,7 @@ mod ids {
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
+    use crate::weighted::WeightedIds;
 
     pub const MATERIALS: u32 = 1;
     pub const MATRICES: u32 = 2;
@@ -412,8 +414,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the weighted layer's composite and depth copy, after the copy's.
+    pub const WEIGHTED_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the weighted layer's.
+    pub const TEXTURE_GROUPS: u32 = WEIGHTED_GROUPS + WeightedIds::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -616,6 +620,9 @@ impl GpuDrivenRenderer {
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
+                        },
+                        weighted: WeightedIds {
+                            first_group: ids::WEIGHTED_GROUPS,
                         },
                         view_copy: Some(ViewCopyIds {
                             first_group: ids::VIEW_COPY_GROUPS,
@@ -820,6 +827,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                    self.graph.weighted_targets(targets),
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while a light casts shadows.
@@ -905,6 +913,7 @@ impl GpuDrivenRenderer {
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
+        self.graph.set_weighted(self.sorted.weighs());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.background.request_pipeline(
@@ -1412,6 +1421,7 @@ impl GpuDrivenRenderer {
         };
         let (sorted, transparent) = (&self.sorted, &self.transparent);
         let (settings, meshes) = (&self.settings, &self.meshes);
+        let weighted = self.graph.weighted_declared();
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -1450,8 +1460,22 @@ impl GpuDrivenRenderer {
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    transparent.record(list, view, sorted, skinning, settings, meshes)
+                    let rows = if weighted && view == ViewId::CAMERA {
+                        SortedRows::Sorted
+                    } else {
+                        SortedRows::All
+                    };
+                    transparent.record(list, view, rows, sorted, skinning, settings, meshes)
                 }
+                Role::Weighted => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::Weighted,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                ),
                 _ => Ok(()),
             },
         )?;
