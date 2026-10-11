@@ -6,7 +6,8 @@
 #     --python tools/samples/blender/creek.py -- <output folder> [--preview <folder>]
 #
 # It writes three binary glTF files into the output folder, and prints each model's triangles:
-#   trees.glb   oak, beech and birch, each a wood node and a leaves node
+#   trees.glb   oak, beech and birch, each a wood node and a leaves node, with lower levels of
+#               detail (MSFT_lod): fewer, larger leaf cards and fewer, plainer branches
 #   plants.glb  fern, hosta, shrub and flowers, one node each
 #   cave.glb    cave, one node
 # Leaves, fronds and plant leaves are cards whose texture's alpha cuts their outline, so their
@@ -501,6 +502,17 @@ TREES = {
 }
 
 
+# The trees' lower levels of detail, from the finest down. Each keeps one card in `every` of the
+# full tree's, larger by `grow` so the crown stays as full, and draws branches up to `branches`
+# levels deep with `sides` fewer sides each (three at least). `error` is the level's surface error
+# in meters, which the engine compares with the size of a pixel at the tree's distance: these
+# switch about 25 m and 50 m away on a screen 1,080 pixels high, at the scene's 45 degree view.
+TREE_LEVELS = (
+    dict(every=3, grow=1.55, branches=2, sides=2, error=0.02),
+    dict(every=8, grow=2.4, branches=1, sides=4, error=0.04),
+)
+
+
 def grow_tree(spec, rng):
     """The branches of a tree, as (points, radii, level), and its leaf cards' places."""
     branches, cards = [], []
@@ -554,10 +566,12 @@ def grow_tree(spec, rng):
     return branches, cards
 
 
-def build_tree(name, spec, bark_mat, leaf_mat, rng):
-    branches, cards = grow_tree(spec, rng)
+def tree_wood(spec, branches, rng, depth=None, fewer=0):
+    """The wood of a tree: its branches down to `depth` levels, with `fewer` sides each."""
     wood = Builder()
     for points, radii, level in branches:
+        if depth is not None and level > depth:
+            continue
         r = radii[0]
         around = max(1, round(2 * math.pi * r / 0.9))
         along = 2 * math.pi * r / around * 2
@@ -576,8 +590,15 @@ def build_tree(name, spec, bark_mat, leaf_mat, rng):
             flare = lambda z, a, phase=phase, lift=lift: 1 + lift * math.exp(-max(z, 0) / 0.4) * (
                 0.45 + 0.55 * max(0.0, math.cos(5 * a + phase)) ** 2
             )
-        tube(wood, points, radii, spec['sides'][min(level, 3)], (around, max(along, 0.3)), wood_color, flare)
+        sides = max(3, spec['sides'][min(level, 3)] - fewer)
+        tube(wood, points, radii, sides, (around, max(along, 0.3)), wood_color, flare)
+    # One normal per vertex from the shape.
+    wood.normals = [None] * len(wood.positions)
+    return wood
 
+
+def tree_leaves(spec, cards, rng, grow=1.0):
+    """The leaf cards of a tree, each `grow` times its usual size."""
     # The crown's middle and size, which shade the cards: darker inside and underneath.
     places = np.array([tuple(p) for p, _ in cards])
     center = Vector(places.mean(axis=0))
@@ -592,7 +613,7 @@ def build_tree(name, spec, bark_mat, leaf_mat, rng):
         along = (d - facing * d.dot(facing))
         along = along.normalized() if along.length > 1e-3 else frame_of(facing)[0]
         across = along.cross(facing)
-        size = spec['card'] * (0.8 + 0.4 * rng.random())
+        size = spec['card'] * (0.8 + 0.4 * rng.random()) * grow
         cell = int(rng.random() * 4)
         cu, cv = (cell % 2) * 0.5, (cell // 2) * 0.5
         base = p - along * size * 0.08
@@ -611,10 +632,30 @@ def build_tree(name, spec, bark_mat, leaf_mat, rng):
         a0, a1, a2, b0, b1, b2 = ids
         leaves.face(a0, a1, b1, b0)
         leaves.face(a1, a2, b2, b1)
-    # Wood: one normal per vertex from the shape. Leaves: normals bent away from the crown's middle,
-    # so the crown shades as one soft mass.
-    wood.normals = [None] * len(wood.positions)
-    return wood.build(f'{name}-wood', bark_mat), leaves.build(f'{name}-leaves', leaf_mat), wood.triangles(), leaves.triangles()
+    return leaves
+
+
+def build_tree(name, spec, bark_mat, leaf_mat, rng):
+    """The tree's wood and leaves objects, their lower levels, and the full tree's triangles.
+
+    The leaves' normals bend away from the crown's middle, so the crown shades as one soft mass.
+    Each lower level draws with a random stream of its own, so the levels leave the full tree,
+    and every model built after it, as they were.
+    """
+    branches, cards = grow_tree(spec, rng)
+    wood = tree_wood(spec, branches, rng)
+    leaves = tree_leaves(spec, cards, rng)
+    parts = [wood.build(f'{name}-wood', bark_mat), leaves.build(f'{name}-leaves', leaf_mat)]
+    levels = []
+    for k, level in enumerate(TREE_LEVELS, start=1):
+        own = np.random.default_rng((SEED, k, len(name), sum(map(ord, name))))
+        coarse_wood = tree_wood(spec, branches, own, level['branches'], level['sides'])
+        coarse_leaves = tree_leaves(spec, cards[:: level['every']], own, level['grow'])
+        levels += [
+            coarse_wood.build(f'{name}-wood-{k}', bark_mat),
+            coarse_leaves.build(f'{name}-leaves-{k}', leaf_mat),
+        ]
+    return parts, levels, wood.triangles(), leaves.triangles()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -997,8 +1038,13 @@ def build_cave(mat, rng):
 # ---------------------------------------------------------------------------------------------
 
 
-def export(path, objects, masked):
-    """Writes the objects as one binary glTF file, then marks the cutout materials masked."""
+def export(path, objects, masked, levels=()):
+    """Writes the objects as one binary glTF file, then marks the cutout materials masked.
+
+    An object named `<part>-<k>` is level k of the part named `<part>`, and `levels` gives each
+    level's error. The part's node lists its levels in the MSFT_lod extension, from the finest
+    down, with their errors in its extras, and the levels' nodes leave the scene.
+    """
     bpy.ops.object.select_all(action='DESELECT')
     for o in objects:
         o.select_set(True)
@@ -1032,6 +1078,19 @@ def export(path, objects, masked):
         else:
             m.pop('alphaMode', None)
             m.pop('doubleSided', None)
+    if levels:
+        index = {node['name']: k for k, node in enumerate(doc['nodes'])}
+        lower = set()
+        for k, node in enumerate(doc['nodes']):
+            ids = [index[f"{node['name']}-{n}"] for n in range(1, len(levels) + 1) if f"{node['name']}-{n}" in index]
+            if not ids:
+                continue
+            node.setdefault('extensions', {})['MSFT_lod'] = {'ids': ids}
+            node.setdefault('extras', {})['NULL3D_lod_error'] = [levels[n] for n in range(len(ids))]
+            lower.update(ids)
+        for scene in doc['scenes']:
+            scene['nodes'] = [n for n in scene['nodes'] if n not in lower]
+        doc['extensionsUsed'] = sorted(set(doc.get('extensionsUsed', [])) | {'MSFT_lod'})
     text = json.dumps(doc, separators=(',', ':')).encode()
     text += b' ' * (-len(text) % 4)
     body = struct.pack('<II', len(text), 0x4E4F534A) + text + rest
@@ -1098,8 +1157,8 @@ def main():
         )
     tree_objects, counts = [], {}
     for name, spec in TREES.items():
-        wood, leaves, wood_tris, leaf_tris = build_tree(name, spec, barks[spec['bark']], leaf_mat, rng)
-        tree_objects += [wood, leaves]
+        parts, levels, wood_tris, leaf_tris = build_tree(name, spec, barks[spec['bark']], leaf_mat, rng)
+        tree_objects += parts + levels
         counts[name] = (wood_tris, leaf_tris)
 
     fern_mat = material('fern', image('fern', fern_frond(256, 1024, rng)), cutout=True, roughness=0.7)
@@ -1123,7 +1182,8 @@ def main():
     cave, _ = build_cave(rock_mat, rng)
 
     report = {}
-    report.update(export(os.path.join(out, 'trees.glb'), tree_objects, {'leaves'}))
+    errors = [level['error'] for level in TREE_LEVELS]
+    report.update(export(os.path.join(out, 'trees.glb'), tree_objects, {'leaves'}, errors))
     report.update(export(os.path.join(out, 'plants.glb'), plants, {'fern', 'hosta', 'shrub', 'flowers'}))
     report.update(export(os.path.join(out, 'cave.glb'), [cave], set()))
     for name, triangles in report.items():
