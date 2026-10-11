@@ -1264,6 +1264,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with joints turned on top of the clip: rotations set and added, and look-ats
+	// of chains at full and half weight, which the job workers apply before the skinning matrices.
+	{
+		name: 'skinning-joints',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?joints',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	// The characters with tangents and a normal map of grooves, which light alike only when every
 	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
 	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.

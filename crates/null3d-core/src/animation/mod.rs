@@ -27,9 +27,16 @@
 //! flipped into the hemisphere of the sum so far, then normalized. Translations and scales take
 //! the weighted average. When the weights add up to less than 1, the rest pose makes up the
 //! remainder, as three.js's `AnimationMixer` does.
+//!
+//! # Joint overrides
+//!
+//! Game code can set or add to a joint's rotation on top of the clips, and turn a chain of joints
+//! toward a point ([`joints`]). The frame step applies them after the blend and before the
+//! compose, in the same chunk of the parallel loop. Their table exists only from their first use.
 
 mod actions;
 mod clip;
+pub mod joints;
 mod pose;
 mod resample;
 mod skeleton;

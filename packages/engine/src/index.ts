@@ -79,6 +79,7 @@ export type {
 	AnimationEventHandler,
 	Animator,
 	BlendOptions,
+	LookAtOptions,
 	PlayOptions,
 	StopOptions,
 } from './scene/animation';

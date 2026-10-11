@@ -4,7 +4,9 @@
 // third the walk and the run side by side by clip weights, from start times of their own. Each
 // frame, the sketch moves one layer's weight of every character, and the blend value or the run's
 // clip weight. Now and then a character cross-fades to another clip, plays its blend again with
-// other points, or fades its clips to new weights, as a game's code does. Each character is a
+// other points, or fades its clips to new weights, as a game's code does. Every fourth character
+// turns two joints on top of its clips, with a set and an added rotation, and the next ones aim a
+// chain of three joints at a point that moves, at a weight that moves. Each character is a
 // skinned mesh, a box at each joint, in a row in front of S1's boxes, which both GPU paths skin
 // each frame. The engine cannot load animated models yet, so the characters come from the
 // engine's internal rig and skin calls.
@@ -24,6 +26,8 @@ const FADE_EVERY = 120;
 const BLEND = Object.freeze({ walk: 0, run: 0.8 });
 const REVERSED = Object.freeze({ walk: 0.8, run: 0 });
 const FADE = Object.freeze({ fade: 0.3 });
+/** The aim of the characters that look at a point: a limb of three joints from the root. */
+const AIM = Object.freeze({ joints: ['joint1', 'joint6', 'joint11'], limit: 0.8 });
 const FADE_TO_WEIGHT = [
 	Object.freeze({ fade: 0.3, weight: 0.25 }),
 	Object.freeze({ fade: 0.3, weight: 0.75 }),
@@ -49,6 +53,9 @@ export function createAnimatedCrowd(
 	const animators: Animator[] = [];
 	// The handler does nothing, so the sample counts only what the engine allocates to call it.
 	const hear = () => {};
+	// The rotation and the point that the joint overrides take, which each frame changes in place.
+	const bend = [0, 0, 0, 1];
+	const target = new Float64Array(3);
 	for (let k = 0; k < count; k++) {
 		const position: [number, number, number] = [(k % 16) - 7.5, 0, 6 + Math.floor(k / 16)];
 		const dancer = scene.createMesh({ mesh, material, position, name: `dancer${k}` });
@@ -65,15 +72,25 @@ export function createAnimatedCrowd(
 		animator.setTimeScale(1 + (k % 4) * 0.25);
 		animator.onEvent('left', hear);
 		animator.onEvent('loop', hear);
+		if (k % 4 === 3) animator.lookAt(target, AIM);
 		animators.push(animator);
 	}
 	let frame = 0;
 	return (t) => {
 		frame++;
+		bend[1] = Math.sin(0.5 * t);
+		bend[3] = Math.cos(0.5 * t);
+		target[0] = 3 * Math.cos(t);
+		target[1] = 1.5;
+		target[2] = 6 + 3 * Math.sin(t);
 		for (let k = 0; k < animators.length; k++) {
 			const animator = animators[k] as Animator;
 			const kind = k % 3;
 			animator.setLayerWeight(1, 0.5 + 0.5 * Math.sin(t + k));
+			if (k % 4 === 1) {
+				animator.setJointRotation(7, bend, 0.5 + 0.5 * Math.sin(t + k));
+				animator.addJointRotation(12, bend);
+			} else if (k % 4 === 3) animator.lookAt(target, undefined, 0.5 + 0.5 * Math.cos(t + k));
 			if (kind === 1) animator.setBlend(0.4 + 0.4 * Math.sin(t + k));
 			else if (kind === 2) animator.setWeight('run', 0.5 + 0.5 * Math.cos(t + k));
 			if ((frame + k) % FADE_EVERY !== 0) continue;
