@@ -170,6 +170,50 @@ fn webgl2_tiles_draw_only_when_their_casters_or_lights_move() {
     }
 }
 
+/// Checks that a caster which moves while every tile must draw already is still remembered where
+/// it went: its next move, far from every light, draws no tile, on either builder.
+fn casters_that_move_while_every_tile_must_draw_are_remembered<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // Larger tiles leave every tile to draw, and the box leaves the light's reach meanwhile.
+    let larger = TileSettings {
+        size: 512,
+        ..TWO_TILES
+    };
+    world.renderer.settings_mut().set_tile_settings(larger);
+    world.scene.set_position(lit_box, [30.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // It moves on, out of reach before and after: no tile draws.
+    world.scene.set_position(lit_box, [40.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
 #[test]
 fn a_tile_cull_and_draw_on_webgpu_reads_the_casters_alone() {
     let mut world = world(GpuDrivenRenderer::new(Default::default()), TWO_TILES);
