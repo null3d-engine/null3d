@@ -56,6 +56,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | `alphaToCoverage` | The pipeline's state: MSAA turns the masked alpha into coverage |
 | `alphaMode: 'blend'`, `blending` | The pipeline's blend state, and the transparent pass |
 | `transmission` | A shader variant that samples a copy of the opaque objects' colors, and the transparent pass |
+| `diffuseTransmission` | A shader variant that lights the surface's back too, and lets that light through to its front |
 | `doubleSided` | The pipeline's state: it culls no faces. A blended one draws with two pipelines, one per face, unless `forceSinglePass` asks for one |
 | `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
