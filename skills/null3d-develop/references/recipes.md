@@ -659,4 +659,4 @@ export default defineSketch(async ({ scene, geometry, materials, textures, post 
 });
 ```
 
-Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. `follow: object` emits from a moving object and leaves the particles in the world, as a torch's smoke trail. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.
+Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.

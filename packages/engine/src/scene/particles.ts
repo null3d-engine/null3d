@@ -66,9 +66,10 @@ export interface ParticleMotion {
 export type ParticleGroundMode = 'kill' | 'bounce' | 'stick';
 
 /**
- * How the particles' quads turn: `camera` faces the camera, `velocity` lies along the particle's
- * motion and stretches with its speed, as sparks and rain do, `ground` lies flat on the object's
- * ground plane, as ripples do, and `tumble` turns freely about an axis of its own, as leaves do.
+ * How the particles' quads turn. With `camera`, a quad faces the camera. With `velocity`, it lies
+ * along the particle's motion and stretches with its speed, as sparks and rain do. With `ground`,
+ * it lies flat on the object's ground plane, as ripples do. With `tumble`, it turns freely about an
+ * axis of its own, as leaves do.
  *
  * @category api/particles
  */
@@ -284,9 +285,9 @@ function isOneColor(colors: ColorInput | readonly [ColorInput, ColorInput]): col
 /**
  * A particle buffer: a scene object that draws a quad for each live particle record. The
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
- * born, with `write`; the GPU moves it and changes its look as it ages, as the buffer's values
- * say, and stops drawing it at the end of its lifetime. Then call `setFrame` once per frame with
- * the buffer's time.
+ * born, with `write`. The GPU moves it and changes its look as it ages, as the buffer's values
+ * say. It stops drawing the particle at the end of its lifetime. Call `setFrame` once per frame
+ * with the buffer's time.
  *
  * @category api/particles
  */

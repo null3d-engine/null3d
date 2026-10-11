@@ -208,7 +208,7 @@ The full table and the debugging tools are in `references/testing-and-debugging.
 Read these when the task needs them:
 
 - `references/api-quickref.md`: the API by area, with the version that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
-- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds and particle effects.
+- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels and loading screens. Others cover HTML UI, physics, video, custom effects, large worlds and particle effects.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3), error codes and a full troubleshooting table.

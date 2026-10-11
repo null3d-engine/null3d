@@ -78,7 +78,7 @@ An emitter gives birth to particles at a steady `rate` per second, in `bursts`, 
 | `capacity` | The most particles alive at once. The default fits the rate and bursts. | |
 | `seed` | The seed of the random numbers. | 1 |
 
-A `sphere` sends particles outward from its center. A `cone` sends them up within its `angle`, as a fountain or a flame does. `system.burst(count)` adds a burst at any time, and `system.emitting = false` stops the emitter while live particles live out their lives.
+A `sphere` sends particles outward from its center. A `cone` sends them up within its `angle`, as a fountain or a flame does. Call `system.burst(count)` to add a burst at any time. Set `system.emitting = false` to stop the emitter, and live particles live out their lives.
 
 ### Where particles live
 
@@ -160,7 +160,7 @@ Each live particle costs the GPU one quad, whose vertex shader works out its sta
 
 ## Compared with three.js
 
-three.js has no particle system of its own. Projects build one from `THREE.Points` or `InstancedMesh` with a custom shader, and move the particles on the CPU each frame, or use a library such as three.quarks or three-nebula.
+three.js has no particle system of its own. Projects build one from `THREE.Points` or `InstancedMesh` with a custom shader, and move the particles on the CPU each frame. Others use a library such as three.quarks or three-nebula.
 
 | three.js | null3D |
 | --- | --- |

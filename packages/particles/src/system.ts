@@ -34,14 +34,12 @@ import { between, chance, pcg } from './random';
 export type ParticleRange = number | readonly [number, number];
 
 /**
- * Where an emitter's particles are born, in its own space, and which way they set off.
- *
- * - `point`: at the emitter, along `direction`.
- * - `sphere`: inside a ball of `radius`, or on its surface with `surface`, moving outward.
- * - `cone`: on a disc of `radius` across the emitter's +y axis, moving up within `angle` radians of
- *   it, as a fountain or a flame does.
- * - `box`: inside a box of `size`, centered on the emitter, along `direction`.
- * - `disc`: on a disc of `radius` across the emitter's +y axis, along `direction`.
+ * Where an emitter's particles are born, in its own space, and which way they set off. A `point`
+ * emits at the emitter, along `direction`. A `sphere` emits inside a ball of `radius`, or on its
+ * surface with `surface`, and sends particles outward. A `cone` emits on a disc of `radius` across
+ * the emitter's +y axis. It sends particles up within `angle` radians of that axis, as a fountain
+ * or a flame does. A `box` emits inside a box of `size`, centered on the emitter, along
+ * `direction`. A `disc` emits on a disc of `radius` across the +y axis, along `direction`.
  *
  * @category api/particles
  */
@@ -71,7 +69,7 @@ export interface ParticleBurst {
 
 /**
  * A sub-emitter: another system that bursts where a particle of this system dies or first meets
- * the ground, as a firework's rocket bursts into sparks or a raindrop splashes.
+ * the ground. A firework's rocket bursts into sparks this way, and a raindrop splashes.
  *
  * @category api/particles
  */
