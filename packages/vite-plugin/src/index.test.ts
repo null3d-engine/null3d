@@ -170,11 +170,12 @@ function resolvedPlugin(
 }
 
 describe('the third-party notices', () => {
-	it("joins the notices of each null3D package that the project depends on, the engine's first", () => {
+	it("joins the notices of each null3D package that a page ships, the engine's first", () => {
 		const root = noticesProject({
 			'@null3d/physics': 'physics notices',
 			'@null3d/engine': 'engine notices',
 			'@null3d/controls': null,
+			'@null3d/cli': 'command-line tool notices',
 		});
 		expect(thirdPartyNotices(root)).toBe('engine notices\n\nphysics notices\n');
 		expect(thirdPartyNotices(fixture({ 'package.json': '{}' }))).toBeNull();

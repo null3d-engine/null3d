@@ -207,9 +207,13 @@ const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
 /** The file that a production build writes beside the page, with every package's notices. */
 export const NOTICES_FILE = 'null3d-third-party-notices.txt';
 
+/** The null3D packages that run as tools on the developer's computer and put no code in a page. */
+const TOOL_PACKAGES = new Set(['@null3d/cli', '@null3d/vite-plugin']);
+
 /**
  * The third-party notices of the null3D packages that the project depends on: the engine's first,
- * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ * then each add-on's, by name. The tools' notices stay out, since a page ships none of their code.
+ * Null when none has notices, as in a project without the engine.
  */
 export function thirdPartyNotices(root: string): string | null {
 	const manifest = resolve(root, 'package.json');
@@ -217,7 +221,7 @@ export function thirdPartyNotices(root: string): string | null {
 	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
 	const require = createRequire(manifest);
 	const names = Object.keys({ ...dependencies, ...devDependencies })
-		.filter((name) => name.startsWith('@null3d/'))
+		.filter((name) => name.startsWith('@null3d/') && !TOOL_PACKAGES.has(name))
 		.sort(
 			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
 		);
