@@ -225,7 +225,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory is the first ([D-121](decisions/D-121-comparison-tier.md)). Battle, Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -266,6 +266,19 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 ### The look
 
 Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
+
+Every comparison scene meets the same look bar as the feature demos and showcases (owner, 11 October 2026): good figures don't excuse a plain scene. The bar is the reworked Geometry Generators demo and the Creek showcase. They have varied materials, small textures made in code and reflections of an environment. They have a sky, fog, sun shadows, finished ground, a tuned grade and bloom on what glows.
+
+### Battle
+
+Battle is the comparison of ready-made assets ([D-121](decisions/D-121-comparison-tier.md#battle)). Two armies of animated soldiers and mechs meet on a cratered field at dusk, with tanks behind each line.
+
+- Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
+- The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
+- The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
+- In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
 ### The stats panel of three.js
 

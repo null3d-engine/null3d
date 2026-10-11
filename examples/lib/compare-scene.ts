@@ -263,6 +263,8 @@ export interface MeshData {
 	uv: Float32Array;
 	/** Three vertex indices per triangle, counter-clockwise when seen from the front. */
 	index: Uint16Array;
+	/** Three floats per vertex: a linear color that multiplies the material's color, if any. */
+	color?: Float32Array;
 }
 
 export function triangleCount(mesh: MeshData): number {
@@ -463,7 +465,16 @@ type Texel = (
 };
 
 /** The surfaces that the comparisons draw. Each tiles over one meter. */
-export type SurfaceKind = 'paint' | 'brushed' | 'concrete' | 'rubber' | 'crate';
+export type SurfaceKind =
+	| 'paint'
+	| 'brushed'
+	| 'concrete'
+	| 'rubber'
+	| 'crate'
+	| 'ground'
+	| 'rock'
+	| 'masonry'
+	| 'camo';
 
 const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 	// Painted steel, white so a material's color tints it, with scuffs where bare metal shows.
@@ -539,6 +550,72 @@ const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 			roughness: 0.75 + 0.15 * grain,
 			metalness: 0,
 			height: 0.6 + 0.2 * grain - 0.5 * gap,
+		};
+	},
+	// Trampled earth: soil of mixed tones, pebbles and small clods, light so vertex colors tint it.
+	ground: (seed) => (u, v) => {
+		const soil = fbm(u, v, 4, 5, seed);
+		const grit = tiledNoise(u * 96, v * 96, 96, seed + 5);
+		const pebble = smoothstep((tiledNoise(u * 24, v * 24, 24, seed + 9) - 0.72) * 9);
+		const shade = 0.62 + 0.22 * soil + 0.1 * grit + 0.12 * pebble;
+		return {
+			r: shade,
+			g: shade * 0.93,
+			b: shade * 0.84,
+			roughness: 0.92 - 0.25 * pebble,
+			metalness: 0,
+			height: 0.35 + 0.25 * soil + 0.15 * grit + 0.45 * pebble,
+		};
+	},
+	// Weathered rock with cracks and lichen-dark patches.
+	rock: (seed) => (u, v) => {
+		const mass = fbm(u, v, 3, 6, seed);
+		const crack = smoothstep((0.06 - Math.abs(fbm(u, v, 6, 3, seed + 31) - 0.5)) * 18);
+		const grain = tiledNoise(u * 128, v * 128, 128, seed + 2);
+		const shade = (0.5 + 0.3 * mass + 0.08 * grain) * (1 - 0.55 * crack);
+		return {
+			r: shade,
+			g: shade * 0.97,
+			b: shade * 0.92,
+			roughness: 0.82 + 0.12 * grain,
+			metalness: 0,
+			height: 0.5 + 0.3 * mass + 0.1 * grain - 0.5 * crack,
+		};
+	},
+	// Rough stone blocks in courses half a meter high, with sunken mortar joints.
+	masonry: (seed) => (u, v) => {
+		const course = Math.floor(v * 2);
+		const along = u * 2.5 + (course % 2) * 0.5;
+		const block = Math.floor(along);
+		const joint =
+			Math.min(Math.abs(((v * 2) % 1) - 0.5), Math.abs((along % 1) - 0.5)) > 0.46 ? 1 : 0;
+		const tone = 0.62 + 0.18 * hash01(seed, block, course) + 0.12 * fbm(u, v, 8, 4, seed + 3);
+		const shade = joint ? 0.42 : tone;
+		return {
+			r: shade,
+			g: shade * 0.95,
+			b: shade * 0.88,
+			roughness: joint ? 0.95 : 0.8 + 0.1 * hash01(seed, block, course + 99),
+			metalness: 0,
+			height: joint ? 0.1 : 0.6 + 0.2 * fbm(u, v, 8, 3, seed + 7),
+		};
+	},
+	// A tank's paint: white so the army's color tints it, with dark camouflage patches, mud toward
+	// the bottom of each tile and chipped edges where steel shows.
+	camo: (seed) => (u, v) => {
+		const blot = fbm(u, v, 2, 4, seed);
+		const patch = smoothstep((blot - 0.55) * 10);
+		const chip = smoothstep((fbm(u, v, 8, 4, seed + 41) - 0.74) * 12);
+		const mud = smoothstep((fbm(u, v, 4, 4, seed + 77) - 0.6) * 6);
+		const paint = lerp(0.9, 0.48, patch);
+		const shade = lerp(lerp(paint, 0.42, mud * 0.8), 0.5, chip);
+		return {
+			r: shade * lerp(1, 0.9, mud),
+			g: shade * lerp(1, 0.8, mud),
+			b: shade * lerp(1, 0.62, mud),
+			roughness: lerp(lerp(0.62, 0.95, mud), 0.35, chip),
+			metalness: lerp(0.15, 0.9, chip),
+			height: 0.55 + 0.1 * blot - 0.3 * chip + 0.2 * mud,
 		};
 	},
 };

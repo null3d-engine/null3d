@@ -124,3 +124,42 @@ The first run, on 9 October 2026, measured the first build: a null3D tree agains
 ## Device sitting before Factory goes on the page
 
 Factory's ramp on the Mac in Chrome (at 120 Hz) and Safari, the Galaxy S24+, a Pixel, the iPad, and a WebGL-only iPhone, each with the runs recorded in [tested devices](../tested-devices.md).
+
+## Battle
+
+Built 2026-10-11, task M2-EX6. Battle is the second comparison, and the comparison of ready-made assets. Two armies of animated soldiers and mechs, with tanks behind each line, meet on a cratered field at dusk. Its mechanism is S5's: three.js pays per animated character on one thread. The count is the soldiers and mechs of both armies.
+
+### The models
+
+- Both engines load the same two files from the [sample content](../sample-content.md). The soldier is Quaternius's CC0 Character Soldier. The sample-assets repository keeps the source as published, and its script `scripts/battle-soldier.ts` builds `characters/battle-soldier` from it. The body's parts, head and shoulder pads become one skinned mesh with vertex colors. The AK stays a mesh of its own under the right hand's joint, and the other 13 weapons go. The four clips that the battle plays stay, as idle, run, shoot and die.
+- The rifle stays in the file, because null3D attaches a rigid mesh to a joint only from the file: its joints are not objects. three.js's `SkeletonUtils.clone` keeps the mesh under the bone. So the weapon follows the hand the same way in both engines.
+- The mech is Quaternius's CC0 George, as the old repository converted it: one skinned mesh of 3,000 triangles with four clips. The old repository's source links on Google Drive refused downloads on 11 October 2026 (quota exceeded), and no other copy of George was found. The sample-assets entry `characters/quaternius-mech` records the conversion and the source file's SHA-256.
+- The soldier keeps the source's detail: 5,828 triangles for the body and 1,122 for the rifle, about three times the old repository's simplified soldier. A comparison of ready-made assets draws them as made.
+- The skinned body's node in the source has a scale and a turn. The glTF rules ignore a skinned mesh's node transform, and three.js's loader applies it. The script bakes it into the vertices and puts the node at the origin, so both readings draw the same model.
+
+### How each engine builds it
+
+- **Scene graph**, the default. null3D makes each unit a copy of its model with `scene.instantiate`. The copy is a group with the skinned body and the rifle, and an animator that runs on the job workers. When the battle changes a unit's clip, the sketch cross-fades to it. three.js makes each unit a `SkeletonUtils.clone` with its own `AnimationMixer`, as its animation examples build characters. Each frame, the unit's two clips in play take their times and weights from the shared simulation. Then `mixer.update(0)` blends them into the bones. That is the work of `mixer.update(delta)` with a cross-fade, and a held frame shows the state's exact pose. Each tank is a tree of three objects in both engines: the hull, the turret on it and the barrel on the turret.
+- **Instanced.** three.js takes the route of its crowd example (`webgpu_skinning_instancing_individual`). One mixer per model poses each unit in turn, and one draw per model skins every unit from a table of bone matrices. The example's compute pass stores each copy's skinned vertices, which would take gigabytes at 20,000 soldiers. So the skinning runs as the units draw, as the old repository did. The rifles are an `InstancedMesh`, each placed by its hand's joint. The route needs WebGPURenderer. The comparison's entry names it for the mode. So on the WebGL2 path, three.js runs WebGPURenderer in its WebGL2 mode, with the tables in float textures. null3D has one way to draw animated characters: an object per character, which it already draws in batches. So it builds the units as in the scene graph mode. Each tank part is one batch of copies in both engines, posed in closed form.
+- Tracers, shells and particles are batches in both modes, as games draw effects.
+- null3D's joints are not objects, so neither engine turns the torso toward its aim, as the old repository's three.js poser did. Each unit turns its whole body toward its target.
+
+### The look
+
+The owner raised the bar on 11 October 2026: every comparison meets the look bar of the feature demos and showcases ([Examples](../examples.md#the-look)). Battle's look is made from features that both engines have today, each by its own technique:
+
+| Part | null3D | three.js |
+| --- | --- | --- |
+| Sky | The generated sky, with clouds, as the background | `Sky` on WebGLRenderer, `SkyMesh` on WebGPURenderer |
+| Light from the sky | `assets.skyEnvironment()`, which leaves out the sun's disc | `PMREMGenerator.fromScene` of a sky without the sun's disc |
+| Sun shadows | The directional light's 3 cascades over 320 m | The CSM add-on, or the CSM shadow node, with the same reach |
+| Fog | Height fog with a glow toward the sun | The same formula in GLSL chunks or a fog node, with the glow |
+| Ground, rocks, ruins, tank paint | Surfaces made in code (`ground`, `rock`, `masonry`, `camo`), and the terrain's vertex colors | The same textures and colors |
+| Grass and flags in the wind, embers on wrecks | WGSL vertex offsets and a surface function | GLSL added to `MeshStandardMaterial`, or node materials |
+| Smoke, fire, sparks, muzzle flashes | Sprite batches, from the shared rows of `examples/lib/particles.ts` | An instanced quad that faces the camera, from the same rows |
+| Light of each blast and wreck | A pool of 9 point lights | The same pool |
+| Bloom, ambient occlusion, curve, grade | null3D's chain, AO, AgX and grading table | As for Factory |
+
+- three.js draws a layer's sprites in one draw, unsorted. null3D sorts blended sprites from back to front. Smoke is soft enough that the order shows little.
+- The particles add-on (D-131) will take the null3D side of each layer. The scene's rows and the three.js side stay.
+- The sky's clouds stand still in both engines. Moving clouds would refresh null3D's sky light every frame, and three.js's PMREM pass would need to run again.

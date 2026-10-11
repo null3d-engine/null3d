@@ -7,6 +7,7 @@
 import type { DemoGroup } from '../demos';
 import type { CompareMode } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
+import { BATTLE_HOLD, BATTLE_RAMPS, battleObjects } from './battle/scene';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
 
 /** The group that a page lists the comparisons under. */
@@ -39,9 +40,46 @@ export interface Comparison {
 	modes: Readonly<Record<CompareMode, string>>;
 	/** How each engine draws the scene, for the "about this comparison" panel. */
 	notes: readonly string[];
+	/** Why the comparison loads files, when it does: the same files in both engines. */
+	assets?: string;
+	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
+	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
 
 export const COMPARISONS: readonly Comparison[] = [
+	{
+		name: 'battle',
+		code: 'compare/battle/',
+		title: 'Battle',
+		summary:
+			'Two armies of animated soldiers and mechs, rifles in hand, with tanks behind each line, meet on a cratered field at dusk under tracers, shell fire and smoke.',
+		countUnit: 'soldiers and mechs',
+		sketch: new URL('./battle/sketch.ts', import.meta.url),
+		startThree: () =>
+			new Worker(new URL('./battle/three.ts', import.meta.url), {
+				type: 'module',
+				name: 'three.js',
+			}),
+		ramps: BATTLE_RAMPS,
+		hold: BATTLE_HOLD,
+		objectsAt: battleObjects,
+		shadowTiles: 0,
+		modes: {
+			'scene-graph':
+				"Scene graph measures characters built the usual way: each soldier and mech is its own copy of the model, with its own skeleton and animation, as each engine's examples load characters. null3D animates the copies on its job workers and draws those of one model together. three.js gives each copy its own AnimationMixer, poses its bones on the worker's thread and draws each copy on its own. Each tank is a tree of three parts.",
+			instanced:
+				'Instanced measures the most tuned build. three.js takes the route of its crowd example: one AnimationMixer per model poses each unit in turn, and one draw per model skins every unit from a table of bone matrices. That route needs WebGPURenderer, which runs in its WebGL2 mode on the WebGL2 path. null3D has one way to draw animated characters, the copies of the scene graph mode, which it already draws in batches. Each tank part is one batch of copies in both engines.',
+		},
+		notes: [
+			"Both engines load the same soldier and mech files. The rifle is a mesh of its own on the soldier's right hand, and follows its joint in both engines.",
+			"Each engine draws each effect its own way: null3D's generated sky and its environment light, cascaded sun shadows, height fog, bloom chain, ambient occlusion and grading table; three.js's Sky with its light through PMREMGenerator, the CSM add-on or the CSM shadow node, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
+			'Smoke, fire, sparks and muzzle flashes are sprites: a sprite batch in null3D, which sorts the smoke from back to front, and an instanced quad that faces the camera in three.js, which does not sort it.',
+			"Grass and flags sway, and the wrecks' embers glow, through custom materials: WGSL surface and vertex functions in null3D, GLSL added to MeshStandardMaterial on WebGLRenderer, and node materials on WebGPURenderer.",
+		],
+		assets:
+			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
+		threeRenderers: { instanced: 'webgpu' },
+	},
 	{
 		name: 'factory',
 		code: 'compare/factory/',

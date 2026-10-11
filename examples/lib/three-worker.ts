@@ -25,11 +25,50 @@ export const THREE_VERSION = '0.186.1';
 /** The build of three.js that a scene's objects come from: `three` or `three/webgpu`. */
 export type Three = typeof ThreeModule;
 
+/** The settings of three.js's `Sky`, which null3D's generated sky takes by the same names. */
+export interface ThreeSky {
+	sunPosition: readonly [number, number, number];
+	turbidity: number;
+	rayleigh: number;
+	mieCoefficient: number;
+	mieDirectionalG: number;
+	cloudCoverage: number;
+	cloudDensity: number;
+	cloudElevation: number;
+}
+
+/** A sun: a directional light whose shadows fall in cascades over the camera's view. */
+export interface ThreeSun {
+	/** The direction that the light travels. */
+	direction: readonly [number, number, number];
+	color: Hex;
+	intensity: number;
+	cascades: number;
+	/** Meters from the camera that the cascades cover. */
+	distance: number;
+	mapSize: number;
+}
+
 /** The look that the worker draws around a scene, from the scene's shared description. */
 export interface ThreeLook {
 	exposure: number;
 	environmentIntensity: number;
-	fog: { color: Hex; density: number; height: number; heightFalloff: number };
+	/**
+	 * The background and the environment light: three.js's `RoomEnvironment` by default, or its
+	 * `Sky` as the background with the sky's light through PMREMGenerator.
+	 */
+	sky?: ThreeSky;
+	/** A sun with cascaded shadows: the CSM add-on, or the CSM shadow node on WebGPURenderer. */
+	sun?: ThreeSun;
+	fog: {
+		color: Hex;
+		density: number;
+		height: number;
+		heightFalloff: number;
+		/** How much of the sun's light the fog scatters toward the camera, and how tightly. */
+		sunGlow?: number;
+		sunGlowExponent?: number;
+	};
 	/** UnrealBloomPass's settings. */
 	bloom: { threshold: number; strength: number; radius: number };
 	/** Ambient occlusion's search radius in meters, and its targets' share of the render size. */
@@ -48,6 +87,11 @@ export interface ThreeSceneBuild {
 	step(): void;
 	/** Writes every moving object and the camera for simulation time `seconds`. Allocates nothing. */
 	pose(seconds: number): void;
+}
+
+/** What the worker updates before each draw, such as the sun's cascades. */
+interface BeforeDraw {
+	update(): void;
 }
 
 /** What a scene's build gets. */
@@ -186,6 +230,7 @@ class ThreeRuntime {
 	/** Instances drawn in the frame, from three.js's own count of each draw. */
 	private objects = 0;
 	private gpuTimer: GpuTimer | null = null;
+	private beforeDraw: BeforeDraw | null = null;
 
 	constructor(
 		private readonly canvas: OffscreenCanvas,
@@ -212,6 +257,7 @@ class ThreeRuntime {
 		camera.aspect = options.width / options.height;
 		camera.updateProjectionMatrix();
 		await this.addEnvironment(three, scene, look);
+		if (look.sun) this.beforeDraw = await this.addSun(three, scene, camera, look.sun);
 		if (options.effects.fog) await this.addFog(three, scene, look);
 		// Post-processing draws count too, so the counts reset once a frame, not once a draw.
 		renderer.info.autoReset = false;
@@ -222,6 +268,14 @@ class ThreeRuntime {
 			update(...args);
 		};
 		this.drawer = await makeDrawer(three, renderer, build, options);
+		const before = this.beforeDraw;
+		if (before) {
+			const draw = this.drawer.render;
+			this.drawer.render = () => {
+				before.update();
+				draw();
+			};
+		}
 		const skipped = this.clock.skipTo(options.hold ?? 0);
 		for (let i = 0; i < skipped; i++) build.step();
 		build.pose(this.clock.time);
@@ -254,8 +308,11 @@ class ThreeRuntime {
 				antialias: true,
 				powerPreference: 'high-performance',
 				trackTimestamp: options.gpuTimer,
+				forceWebGL: options.forceWebGL === true,
 			}) as unknown as AnyRenderer;
 			await renderer.init?.();
+			if (options.forceWebGL)
+				return { three: webgpu as unknown as Three, renderer, name: 'WebGPURenderer (WebGL2)' };
 			// WebGPURenderer falls back to WebGL 2 when WebGPU fails to start. A WebGPU run must never
 			// measure WebGL by mistake, so that counts as an error.
 			if (!renderer.backend?.isWebGPUBackend)
@@ -271,13 +328,147 @@ class ThreeRuntime {
 		return { three, renderer, name: 'WebGLRenderer' };
 	}
 
-	/** The room environment, prefiltered by the PMREMGenerator of the renderer's build. */
+	/**
+	 * The environment, prefiltered by the PMREMGenerator of the renderer's build: the room, or the
+	 * sky. A sky is the background too: `Sky` on WebGLRenderer and `SkyMesh` on WebGPURenderer, as
+	 * three.js's sky examples draw it. The sky's light leaves out the sun's disc, whose light the
+	 * sun gives.
+	 */
 	private async addEnvironment(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
-		const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
 		const pmrem = new three.PMREMGenerator(this.renderer as ThreeModule.WebGLRenderer);
-		scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+		if (look.sky) {
+			const makeSky = await this.skyMaker(look.sky);
+			scene.add(makeSky(true));
+			const lightScene = new three.Scene();
+			lightScene.add(makeSky(false));
+			scene.environment = pmrem.fromScene(lightScene).texture;
+		} else {
+			const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
+			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+		}
 		scene.environmentIntensity = look.environmentIntensity;
 		pmrem.dispose();
+	}
+
+	/** Makes sky objects with the look's settings, with or without the sun's disc. */
+	private async skyMaker(sky: ThreeSky): Promise<(sunDisc: boolean) => ThreeModule.Object3D> {
+		const [sx, sy, sz] = sky.sunPosition;
+		const settings = {
+			turbidity: sky.turbidity,
+			rayleigh: sky.rayleigh,
+			mieCoefficient: sky.mieCoefficient,
+			mieDirectionalG: sky.mieDirectionalG,
+			cloudCoverage: sky.cloudCoverage,
+			cloudDensity: sky.cloudDensity,
+			cloudElevation: sky.cloudElevation,
+		};
+		if (this.options.renderer === 'webgpu') {
+			const { SkyMesh } = await import('three/addons/objects/SkyMesh.js');
+			return (sunDisc) => {
+				const mesh = new SkyMesh();
+				mesh.scale.setScalar(10_000);
+				for (const [name, value] of Object.entries(settings))
+					(mesh as unknown as Record<string, { value: number }>)[name].value = value;
+				mesh.sunPosition.value.set(sx, sy, sz);
+				mesh.showSunDisc.value = sunDisc ? 1 : 0;
+				return mesh as unknown as ThreeModule.Object3D;
+			};
+		}
+		const { Sky } = await import('three/addons/objects/Sky.js');
+		return (sunDisc) => {
+			const mesh = new Sky();
+			mesh.scale.setScalar(10_000);
+			const uniforms = (mesh.material as ThreeModule.ShaderMaterial).uniforms;
+			for (const [name, value] of Object.entries(settings))
+				(uniforms[name] as { value: number }).value = value;
+			(uniforms.sunPosition as { value: ThreeModule.Vector3 }).value.set(sx, sy, sz);
+			(uniforms.showSunDisc as { value: number }).value = sunDisc ? 1 : 0;
+			return mesh;
+		};
+	}
+
+	/**
+	 * The sun and its cascaded shadows, as three.js's examples cast them: the CSM add-on on
+	 * WebGLRenderer, with a light per cascade and every lit material set up for it, and the CSM
+	 * shadow node on WebGPURenderer. A material's own shader hook runs after the add-on's.
+	 */
+	private async addSun(
+		three: Three,
+		scene: ThreeModule.Scene,
+		camera: ThreeModule.PerspectiveCamera,
+		sun: ThreeSun,
+	): Promise<BeforeDraw | null> {
+		const shadows = this.options.effects.shadows;
+		const direction = new three.Vector3(...sun.direction).normalize();
+		if (this.options.renderer === 'webgpu') {
+			const light = new three.DirectionalLight(sun.color, sun.intensity);
+			light.position.copy(direction).multiplyScalar(-100);
+			light.target.position.set(0, 0, 0);
+			scene.add(light, light.target);
+			if (!shadows) return null;
+			light.castShadow = true;
+			light.shadow.mapSize.set(sun.mapSize, sun.mapSize);
+			light.shadow.bias = -0.0003;
+			light.shadow.normalBias = 0.03;
+			const { CSMShadowNode } = await import('three/addons/csm/CSMShadowNode.js');
+			const csm = new CSMShadowNode(light as never, {
+				cascades: sun.cascades,
+				maxFar: sun.distance,
+				mode: 'practical',
+				lightMargin: 120,
+			});
+			(light.shadow as unknown as { shadowNode: unknown }).shadowNode = csm;
+			return null;
+		}
+		if (!shadows) {
+			const light = new three.DirectionalLight(sun.color, sun.intensity);
+			light.position.copy(direction).multiplyScalar(-100);
+			scene.add(light, light.target);
+			return null;
+		}
+		const { CSM } = await import('three/addons/csm/CSM.js');
+		const csm = new CSM({
+			camera,
+			parent: scene,
+			cascades: sun.cascades,
+			maxFar: sun.distance,
+			mode: 'practical',
+			shadowMapSize: sun.mapSize,
+			shadowBias: -0.0003,
+			lightDirection: direction,
+			lightIntensity: sun.intensity,
+			lightMargin: 120,
+		});
+		for (const light of csm.lights) {
+			light.color.set(sun.color);
+			light.shadow.normalBias = 0.03;
+		}
+		scene.traverse((object) => {
+			const mesh = object as ThreeModule.Mesh;
+			const list = Array.isArray(mesh.material)
+				? mesh.material
+				: mesh.material
+					? [mesh.material]
+					: [];
+			for (const material of list as ThreeModule.Material[]) {
+				if (!(material as ThreeModule.MeshStandardMaterial).isMeshStandardMaterial) continue;
+				if (material.userData.csm) continue;
+				material.userData.csm = true;
+				const own = material.onBeforeCompile;
+				csm.setupMaterial(material);
+				const added = material.onBeforeCompile;
+				material.onBeforeCompile = (shader, renderer) => {
+					added.call(material, shader, renderer);
+					own.call(material, shader, renderer);
+				};
+			}
+		});
+		return {
+			update() {
+				camera.updateMatrixWorld();
+				csm.update();
+			},
+		};
 	}
 
 	/**
@@ -287,6 +478,14 @@ class ThreeRuntime {
 	 */
 	private async addFog(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
 		const { color, density, height, heightFalloff } = look.fog;
+		// The glow toward the sun, as null3D's fog adds it: the sun's light times the glow, falling
+		// away from the sun's direction by a power.
+		const glow = look.sun ? (look.fog.sunGlow ?? 0) : 0;
+		const glowPower = look.fog.sunGlowExponent ?? 8;
+		const toSun = new three.Vector3(...(look.sun?.direction ?? [0, -1, 0])).normalize().negate();
+		const sunLight = new three.Color(look.sun?.color ?? '#ffffff').multiplyScalar(
+			look.sun?.intensity ?? 0,
+		);
 		if (this.options.renderer === 'webgpu') {
 			const tsl = await import('three/tsl');
 			const ray = tsl.positionWorld.sub(tsl.cameraPosition);
@@ -302,7 +501,13 @@ class ThreeRuntime {
 			const atCamera = tsl.exp(tsl.cameraPosition.y.sub(height).mul(-heightFalloff));
 			const path = ray.length().mul(atCamera).mul(ratio);
 			const factor = tsl.float(1).sub(tsl.exp(path.mul(-density)));
-			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(tsl.color(color), factor);
+			const facing = tsl.max(tsl.dot(ray.normalize(), tsl.vec3(toSun.x, toSun.y, toSun.z)), 0);
+			const shine = tsl.pow(facing, glowPower).mul(glow);
+			const base = new three.Color(color);
+			const tint = tsl
+				.vec3(base.r, base.g, base.b)
+				.add(tsl.vec3(sunLight.r, sunLight.g, sunLight.b).mul(shine));
+			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(tint, factor);
 			return;
 		}
 		const chunks = three.ShaderChunk as unknown as Record<string, string>;
@@ -318,6 +523,7 @@ class ThreeRuntime {
 	vFogWorld = ( modelMatrix * fogWorld ).xyz;
 #endif`;
 		const f = heightFalloff.toFixed(6);
+		const v = (value: number) => value.toFixed(6);
 		chunks.fog_pars_fragment = `#ifdef USE_FOG
 	uniform vec3 fogColor;
 	varying vec3 vFogWorld;
@@ -328,7 +534,9 @@ class ThreeRuntime {
 	float fogClimb = ${f} * fogRay.y;
 	float fogRatio = abs( fogClimb ) < 0.01 ? 1.0 + fogClimb * ( fogClimb / 6.0 - 0.5 ) : ( 1.0 - exp( min( - fogClimb, 40.0 ) ) ) / fogClimb;
 	float fogPath = length( fogRay ) * exp( - ${f} * ( cameraPosition.y - ${height.toFixed(6)} ) ) * fogRatio;
-	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, 1.0 - exp( - fogDensity * fogPath ) );
+	float fogFacing = max( dot( normalize( fogRay ), vec3( ${v(toSun.x)}, ${v(toSun.y)}, ${v(toSun.z)} ) ), 0.0 );
+	vec3 fogTint = fogColor + vec3( ${v(sunLight.r)}, ${v(sunLight.g)}, ${v(sunLight.b)} ) * ( ${v(glow)} * pow( fogFacing, ${v(glowPower)} ) );
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogTint, 1.0 - exp( - fogDensity * fogPath ) );
 #endif`;
 		scene.fog = new three.FogExp2(color, density);
 	}

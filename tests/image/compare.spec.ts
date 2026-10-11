@@ -96,3 +96,70 @@ for (const engine of ['null3d', 'threejs'] as const)
 		expect(measured.memory?.bytes).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
 	});
+
+// Battle loads two models and draws thousands of skinned triangles per unit, so on the software GPU
+// the page runs the scene graph mode alone, each engine on one GPU path. The image tests hold both
+// engines on both GPU paths in both modes.
+for (const mode of ['scene-graph', 'instanced'] as const)
+	for (const engine of ['null3d', 'threejs'] as const)
+		for (const gpu of ['webgpu', 'webgl2'] as const)
+			test(`Battle starts and draws with ${engine} on ${gpu} in the ${mode} mode, and the ramp runs`, async ({
+				page,
+			}) => {
+				test.skip(
+					softwareGpu() && (mode === 'instanced' || (gpu === 'webgpu') !== (engine === 'threejs')),
+					'the software GPU runs one ramp per engine, in the scene graph mode',
+				);
+				const errors: string[] = [];
+				page.on('pageerror', (error) => errors.push(error.message));
+				page.on('console', (message) => {
+					if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+						errors.push(message.text());
+				});
+				await page.goto(
+					`compare.html?compare=battle&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quick()}`,
+				);
+				const result = await pageResult<{
+					error?: string;
+					label: string;
+					tier: string;
+					build: string;
+					ramp: RampResult;
+				}>(page, 100_000);
+				expect(result.error).toBeUndefined();
+				expect(result.tier).toBe(gpu);
+				expect(result.build).toBe(mode);
+				expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
+				// The instanced mode draws three.js's crowd with WebGPURenderer on both GPU paths.
+				if (engine === 'threejs' && mode === 'instanced')
+					expect(result.label).toContain('WebGPURenderer');
+				const { ramp } = result;
+				expect(ramp.steps.length).toBeGreaterThanOrEqual(2);
+				expect(ramp.steps.map((step) => step.count)).toEqual(
+					[100, 200, 400].slice(0, ramp.steps.length),
+				);
+				if (!softwareGpu()) for (const step of ramp.steps) expect(step.fps).toBeGreaterThan(0);
+				expect(errors).toEqual([]);
+			});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	test(`Battle measures ${engine}'s frames and the whole page's memory at a fixed count`, async ({
+		page,
+	}) => {
+		test.skip(softwareGpu(), "the software GPU's browser measures no memory");
+		await page.goto(
+			`compare.html?compare=battle&engine=${engine}&gpu=webgpu&effects=&measure=400&seconds=3`,
+		);
+		const result = await pageResult<{
+			error?: string;
+			measured: {
+				count: number;
+				fps: number;
+				memory: { bytes: number | null; browserBytes: number | null } | null;
+			};
+		}>(page, 100_000);
+		expect(result.error).toBeUndefined();
+		expect(result.measured.count).toBe(400);
+		expect(result.measured.fps).toBeGreaterThan(0);
+		expect(result.measured.memory?.bytes).toBeGreaterThan(0);
+	});

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { COMPARISONS } from '../../examples/compare/comparisons.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { IMAGE_RUNS, IMAGE_TESTS, manifestRun } from '../image/manifest.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
@@ -152,6 +153,21 @@ describe('the manifest', () => {
 				readFileSync(join(REPO_ROOT, 'examples', demo.name, 'sketch.ts'), 'utf8'),
 			);
 		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
+	});
+
+	it('loads files only in the comparisons that say why, in both engines alike', () => {
+		const loads = (name: string, half: string) =>
+			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(
+				readFileSync(join(REPO_ROOT, 'examples', 'compare', name, half), 'utf8'),
+			);
+		for (const comparison of COMPARISONS) {
+			const null3d = loads(comparison.name, 'sketch.ts');
+			expect([comparison.name, null3d]).toEqual([comparison.name, comparison.assets !== undefined]);
+			expect([comparison.name, loads(comparison.name, 'three.ts')]).toEqual([
+				comparison.name,
+				null3d,
+			]);
+		}
 	});
 
 	it('finds what is wrong with a list of tests', () => {

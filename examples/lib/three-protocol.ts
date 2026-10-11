@@ -16,6 +16,8 @@ export interface ThreeStart {
 	mode: CompareMode;
 	effects: Effects;
 	renderer: ThreeRenderer;
+	/** WebGPURenderer in its WebGL2 mode: a comparison that needs it on the WebGL2 path. */
+	forceWebGL?: boolean;
 	/** The canvas's size in CSS pixels, and the device pixels per CSS pixel to draw at. */
 	width: number;
 	height: number;
