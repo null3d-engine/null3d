@@ -17,7 +17,7 @@ On 3 October 2026:
 | The governor's thresholds | Proposed by M1-G5, kept by M1-G6. The stress test passes on the Mac, the S24+ and, after #222, the iPad. M2-R3 gave the page's thread a measurement of the display of its own, for Safari with `?render=main`. In M1-G6's S4 reruns, the render scale held still in every measured second. M1-K5 moved the step-down line to the line at which the benchmark reports count a held second, and gave each setting its own wait after a failed step up (below) | The iPad's S4 rerun at Low, warm; the owner's answer |
 | The preset values | Set by M1-G6 (#215), 2026-10-03. The S24+ passed its S4 gate at Low. Warm, the iPad held about 45 fps at Medium, so the owner decided to judge its gate at Low. It passed at Low: 298 of 299 seconds at 60 fps | Open for later: the chooser starts the S24+ at Low, though it held Medium for 5 minutes. A follow-up measures the render scale on tile-based GPUs |
 | The live shadow-map resize test | Not built | No setting that changes during play resizes a shadow map, so the presets do not need it (below) |
-| Budgets for a sketch's own systems | Proposed by M2-P3, 2026-10-08: one shared scale in steps of 0.25, whose steps alternate with the render scale's, a budget's step first (below) | The owner's answer; a device run of the governor plan's walk, which now registers a budget |
+| Budgets for a sketch's own systems | Decided by the owner on 2026-10-11, as M2-P3 proposed on 2026-10-08: one shared scale in steps of 0.25, whose steps alternate with the render scale's, a budget's step first (below) | A device run of the governor plan's walk, which now registers a budget |
 
 ## Question
 
@@ -376,7 +376,7 @@ M2-R6's audit listed the iPad's governor swings of the M1 gate as open: 34 steps
 
 ### Budgets for a sketch's own systems (M2-P3)
 
-Status: proposed by M2-P3 on 2026-10-08. The owner has not answered yet.
+Status: decided by the owner on 2026-10-11. M2-P3 proposed the rule on 2026-10-08.
 
 A game registers a budget for a system of its own with `quality.setBudget({ name, ms, min, onScale })`, and gets a scale from 0 to 1. The governor lowers it with its other live steps. The task's rule: a registered system scales down before the render scale reaches its floor, by a rule that the docs give.
 
@@ -412,6 +412,8 @@ Take a sketch range of 1 to 0.5, which has 10 scale steps, and a budget with `mi
 The unit tests in `quality/governor.test.ts` walk the ladder with budgets of 4, 3 and 2 steps. The render scale ranges are 1 to 0.8, one step, and one fixed scale. In each, the budgets take a step before the render scale reaches its floor. The steps up pass the same states in the reverse order. Without budgets, the ladder stays as before. In one test, the sketch's own system makes the frames slow until the budgets' second step. The governor rests at that step, with the render scale one step down.
 
 The browser test's walk (`tests/pages/lib/governor.ts`) registers a budget with a floor of 0.5. Its load spins the sketch's thread at every scale, so no step helps. The walk expects 6 steps down and back up: budget, scale, budget, scale, the far cascades, the filter.
+
+On 11 October 2026, after the merge of main, the walk passed on WebGPU and WebGL2 in Chrome on the Mac's GPU. All 46 tests of `governor.spec.ts` and `quality.spec.ts` passed there. No phone or tablet has run the walk with a budget yet.
 
 
 Status: set by M1-G6 on 2026-10-03, from the Mac's runs and the reruns on the S24+ and the iPad. The values below stay as proposed. The S24+ holds its gate at Low. The iPad misses its gate at Medium once it is warm, for reasons that no shadow value changes ("The reruns" below). The owner decided on 3 October 2026 to judge the iPad's gate at Low ("Decision on the iPad's gate" below). The iPad's first runs do not count. The governor keeps the thresholds of M1-G5: in every measured second of the reruns, the render scale held still, with no step up or down.
