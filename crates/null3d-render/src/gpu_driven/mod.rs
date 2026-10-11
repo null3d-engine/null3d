@@ -904,12 +904,8 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
-        self.graph.set_taa(self.settings.taa_frame(
-            input.scene,
-            parity,
-            input.canvas,
-            input.render_scale,
-        ));
+        self.graph
+            .set_taa(self.settings.taa_frame(input.scene, parity, input.canvas));
         self.graph.set_msaa_fxaa(self.settings.msaa_fxaa());
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());

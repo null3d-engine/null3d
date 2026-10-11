@@ -1086,12 +1086,10 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
-        self.graph.set_taa(self.settings.taa_frame(
-            input.scene,
-            input.parity(),
-            input.canvas,
-            input.render_scale,
-        ));
+        self.graph.set_taa(
+            self.settings
+                .taa_frame(input.scene, input.parity(), input.canvas),
+        );
         self.graph.set_msaa_fxaa(self.settings.msaa_fxaa());
         self.graph.set_effects(
             self.settings.effects(),

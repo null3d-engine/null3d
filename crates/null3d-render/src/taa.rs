@@ -122,10 +122,12 @@ pub(crate) struct LastView {
     pub(crate) at: [f64; 3],
 }
 
-/// The matrix that takes a point of this frame's clip space, from the projection with its offset,
-/// to the last frame's clip space without its offset: the inverse of this frame's matrix, the
-/// move from this camera's place to the last one's, then the last view's matrix. `None` when this
-/// frame's matrix has no inverse.
+/// The matrix that takes a point of this frame's clip space to the last frame's, both without the
+/// camera's offsets: the inverse of this frame's matrix, the move from this camera's place to the
+/// last one's, then the last view's matrix. The history holds each pixel's color around its
+/// center, so a pixel's center reprojects without the offset that its own sample took; with the
+/// offset, a still camera would read the history half a pixel away in a new direction each frame,
+/// and the history would blur. `None` when this frame's matrix has no inverse.
 pub(crate) fn reprojection(view_proj: &Mat4, at: [f64; 3], last: &LastView) -> Option<Mat4> {
     let inverse = invert(view_proj)?;
     let mut moved = [0.0f32; 16];
@@ -450,22 +452,29 @@ mod tests {
     }
 
     #[test]
-    fn a_still_camera_reprojects_each_point_onto_itself_without_the_offset() {
+    fn a_still_camera_reprojects_each_pixel_onto_itself_and_a_moved_one_follows_the_move() {
         let projection = perspective_reversed(1.0, 1.5, 0.1, 100.0);
-        let moved = jittered(&projection, [0.25, -0.25], (1200, 800));
         let last = LastView {
             view_proj: projection,
             at: [1.0, 2.0, 3.0],
         };
-        let m = reprojection(&moved, [1.0, 2.0, 3.0], &last).unwrap();
-        // A point of this frame's clip space lands where the projection without the offset puts
-        // it: shifted back by the offset.
+        let apply = |m: &Mat4, clip: [f32; 4]| {
+            let out: Vec<f32> = (0..4)
+                .map(|row| (0..4).map(|k| m[k * 4 + row] * clip[k]).sum())
+                .collect();
+            (out[0] / out[3], out[1] / out[3])
+        };
         let clip = [0.2f32, -0.4, 0.5, 1.0];
-        let out: Vec<f32> = (0..4)
-            .map(|row| (0..4).map(|k| m[k * 4 + row] * clip[k]).sum())
-            .collect();
-        let (x, y) = (out[0] / out[3], out[1] / out[3]);
-        assert!((x - (0.2 - 2.0 * 0.25 / 1200.0)).abs() < 1e-4, "{x}");
-        assert!((y - (-0.4 + 2.0 * 0.25 / 800.0)).abs() < 1e-4, "{y}");
+        let (x, y) = apply(
+            &reprojection(&projection, [1.0, 2.0, 3.0], &last).unwrap(),
+            clip,
+        );
+        assert!((x - 0.2).abs() < 1e-5 && (y + 0.4).abs() < 1e-5, "{x} {y}");
+        // A camera one unit to the right sees every point further left than it was.
+        let (x, _) = apply(
+            &reprojection(&projection, [2.0, 2.0, 3.0], &last).unwrap(),
+            clip,
+        );
+        assert!(x > 0.2, "{x}");
     }
 }

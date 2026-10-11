@@ -1080,7 +1080,7 @@ impl SceneSettings {
     }
 
     /// What temporal anti-aliasing resolves with in this frame of `scene`'s positions of `parity`,
-    /// on a canvas of `canvas` pixels at render scale `scale`, or `None` while it is off or without
+    /// on a canvas of `canvas` pixels, or `None` while it is off or without
     /// a camera. It takes the camera's offset for this frame, which the camera's view then draws
     /// with, and keeps what the camera sees for the next frame. Call it once per recorded frame.
     pub(crate) fn taa_frame(
@@ -1088,7 +1088,6 @@ impl SceneSettings {
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
-        scale: RenderScale,
     ) -> Option<TaaFrame> {
         let Some(settings) = self.taa() else {
             self.taa_last = None;
@@ -1096,7 +1095,6 @@ impl SceneSettings {
             return None;
         };
         let view = self.views.first()?;
-        let size = view.draw_size(canvas, scale);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let camera = view.transform(scene, parity, aspect)?;
         self.taa_jitter = if settings.jitter {
@@ -1104,13 +1102,12 @@ impl SceneSettings {
         } else {
             [0.0; 2]
         };
-        let moved = taa::jittered(&camera.view_proj, self.taa_jitter, size);
         let at = camera.cell.absolute();
         let previous = self.taa_last.replace(LastView {
             view_proj: camera.view_proj,
             at,
         });
-        let reproject = previous.and_then(|last| taa::reprojection(&moved, at, &last));
+        let reproject = previous.and_then(|last| taa::reprojection(&camera.view_proj, at, &last));
         let mut identity = [0.0; 16];
         for k in 0..4 {
             identity[k * 5] = 1.0;
