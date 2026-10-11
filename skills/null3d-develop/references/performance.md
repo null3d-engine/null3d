@@ -22,7 +22,7 @@ A frame has three kinds of cost, and each has its own fixes.
 | Cost | Where it runs | Grows with | Typical fixes |
 | --- | --- | --- | --- |
 | Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
-| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs, fewer point and spot lights |
+| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling and light lists on WebGL2 | Static objects, instances, fewer levels, LODs (0.2, not built yet), fewer point and spot lights |
 | GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets, hidden objects | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights, `gpuOcclusion` where walls hide many objects, `depthPrepass` for heavy overdraw on WebGPU (section 7) |
 
 On WebGPU, compute passes on the GPU cull the objects and list the lights of each cluster. Clusters are the cells of the view that clustered lighting uses. On WebGL2, the job workers do both on the CPU. So many objects and many point or spot lights cost CPU time on WebGL2, and GPU time on WebGPU. Both paths list the same lights for each cluster (`concepts/lighting`).
@@ -71,8 +71,8 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "update" time | Heavy sketch code | Loop over typed arrays; move work to `onFixedUpdate` at a lower rate; spread AI over frames |
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
-| High "animation" (0.2) | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs; on WebGPU, pause characters that wait with `setTimeScale(0)`, since a still pose costs no skinning work (`guides/performance`) |
-| High "culling" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks; LODs |
+| Frame time grows with each skinned character (0.2) | Many skinned characters | On WebGPU, pause characters that wait with `setTimeScale(0)`, since a still pose costs no skinning work (`guides/performance`). Lower update rates far away, shared poses between identical characters and LODs are (0.2, not built yet) |
+| High "cull" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks; LODs (0.2, not built yet) |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | Low `occludedEntries` on WebGL2 though buildings merged into one mesh per material fill the view | A blocker mesh past 4,096 triangles blocks nothing | Merge by area as well as by material. Below that limit a merged mesh blocks part by part: each connected part by its own distance (`concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
@@ -80,7 +80,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
 | High "replay" or draw calls | Too many mesh and material combinations | Share materials; keep textures to a few power-of-two sizes, as `bunx @null3d/cli assets optimize` (0.2) does; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
-| High "culling" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
+| High "cull" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
 | 30 frames per second on a 60 Hz display, with the busiest thread's `cpuMs` a little over one refresh | In pipelined mode, a frame that misses one refresh waits for the next | Cut the CPU work below the refresh interval. Or measure `latency: 'low'`: on a warm Galaxy S24+ it showed 40 frames per second where pipelined mode showed 32. On the iPad keep pipelined mode (`guides/performance`) |
@@ -133,17 +133,20 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Textures | `maxAnisotropy`, `uploadBytesPerFrame`, `textureMemoryMiB` (0.2) | During play |
 | Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` | During play |
 | Directional light shadow maps | `shadowCascades`, `shadowMapSize` | At the start |
+| Effects and reflections | `bloomSize`, `aoScale`, `dofSamples`, `reflectionScale` (0.2) | During play |
+| WebGL2 occlusion culling | `softwareOcclusion` (0.2), off on Low | During play |
 | Frame budget | `governor` | During play |
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
 | Spot and point light shadows | `shadowTiles`, `shadowTileSize`, `pointLightShadows` (High and Ultra only) | At the start |
 | Depth prepass | `depthPrepass`, on for WebGL2 and off for WebGPU on every preset | At the start |
 | GPU occlusion culling | `gpuOcclusion`, off on every preset (WebGPU only) | At the start |
+| Morph targets | `morphTargets` (0.2): the most morph weights per object on WebGL2 | At the start |
 | Engine memory | `memoryMaximumMiB` | Before the engine loads |
 
 The table marks its other rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor
@@ -182,10 +185,10 @@ The scene shaders can do their color math at half precision: lighting, tone mapp
 
 ### Your own systems
 
-Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Your systems get budgets of their own through `setBudget` (0.2):
+Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Your systems get budgets of their own through `setBudget` (0.2, not built yet):
 
 ```ts
-quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
+quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2, not built yet)
 const RAIN = { low: 2000, medium: 5000, high: 10000, ultra: 10000 };  // one table, keyed by preset
 rain.setActiveCount(RAIN[quality.preset]);
 quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
@@ -227,7 +230,7 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
 | Compile shaders before the first frame | The first frame waits for its pipelines. Wait for `engine.firstFrame`; warm up later stages with `scene.warmUp()` |
-| Download every shader before play | Skinning, morph targets, bloom, ambient occlusion, sprites, lines, backgrounds that are not a color (`'background'`), the sky (`'sky'`), alpha to coverage (`'coverage'`), the alpha hash (`'hash'`), masked shadows (`'cutout'`), scene passes (`'views'`), joined custom effects (`'effect_groups'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
+| Download every shader before play | Skinning, morph targets (`'morph'`), bloom, ambient occlusion (`'ao'`), depth of field (`'dof'`), transmission, per-row values of instance batches (`'row_values'`), sprites, lines, backgrounds that are not a color (`'background'`), the sky (`'sky'`), alpha to coverage (`'coverage'`), the alpha hash (`'hash'`), masked shadows (`'cutout'`), scene passes (`'views'`), joined custom effects (`'effect_groups'`) and GPU occlusion culling (`'occlusion'`) download their shaders on first use. A masked object casts no shadow until `'cutout'` loads. For a game that must fetch nothing during play, list them: `createEngine({ preload: ['skinning', 'bloom'] })`. They then load, and compile where the files allow, before the first frame. Create the scene's own objects in the setup and `await scene.warmUp()` for the pipelines that depend on materials. Leave the list out otherwise: each listed file grows the start |
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

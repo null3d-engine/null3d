@@ -9,7 +9,7 @@
       "files": ["evals/files/threejs-app/package.json", "evals/files/threejs-app/src/main.js"],
       "expectations": [
         "Runs scripts/analyze-threejs.mjs (or equivalent scanning) and summarizes the inventory before porting",
-        "Raises the GLSL ShaderMaterial, CSS2D labels and version needs (0.2 for glTF, animation, bloom) before writing code",
+        "Raises the GLSL ShaderMaterial and the CSS2D labels before writing code, and presents glTF loading, animation and bloom as built (0.2), not as missing",
         "Splits the code: page.ts creates the engine and keeps lil-gui; sketch.ts holds the scene and the loop",
         "The requestAnimationFrame loop becomes onUpdate, and the resize handler and setPixelRatio call are removed",
         "InstancedMesh with setMatrixAt and a dummy Object3D becomes scene.createInstances with direct writes to positions",
@@ -34,8 +34,7 @@
         "The drei Environment preset studio becomes an environment map made with bunx @null3d/cli assets env and loaded with assets.loadEnvironment, or assets.builtinEnvironment('room') for neutral light, with scene.setEnvironment, marked as 0.2",
         "useFrame rotation becomes onUpdate on a dynamic object",
         "drei OrbitControls becomes createOrbitControls from @null3d/controls",
-        "No React state is updated every frame",
-        "Notes that glTF loading needs engine 0.2"
+        "No React state is updated every frame"
       ]
     },
     {
@@ -83,12 +82,12 @@
     {
       "id": 6,
       "prompt": "How hard would it be to port the three.js app in evals/files/threejs-app to null3d? Just give me an estimate first, don't port anything yet.",
-      "expected_output": "A summary from the scanner: feature counts by status, the manual items, the lowest engine version, the rough effort size and its limits, without starting the port.",
+      "expected_output": "A summary from the scanner: feature counts by status, the manual items, the latest roadmap step the port needs and the mapped features that are not built yet, the rough effort size and its limits, without starting the port.",
       "files": ["evals/files/threejs-app/package.json", "evals/files/threejs-app/src/main.js"],
       "expectations": [
         "Runs the scanner or performs an equivalent inventory",
         "Reports counts by status and names the manual items",
-        "States the lowest engine version needed",
+        "States the latest roadmap step the port needs, and the mapped features that are not built yet (their mapping notes start \"Not built yet\"), or that there are none",
         "Gives the rough effort size and says it is a planning aid, not hours",
         "Does not write ported code"
       ]
