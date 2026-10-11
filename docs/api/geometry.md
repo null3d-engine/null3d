@@ -250,7 +250,7 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.computeBoundingSphere()` | Nothing: the engine computes bounds itself |
 | `geometry.morphAttributes.position = [...]` with `morphTargetsRelative = true` | `morphTargets: { positions: [...] }` |
 | `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
-| `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
+| `mesh.morphTargetDictionary` | The mesh geometry's `morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 | `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
 | `new TorusKnotGeometry(1, 0.4)`, and `Icosahedron`, `Lathe`, `Shape`, `Extrude`, `Tube` and the other geometry classes | `geometry.fromArrays(torusKnot({ radius: 1, tube: 0.4 }))`, with the functions of `@null3d/geometry` |
 | `new THREE.Shape()`, `new THREE.CatmullRomCurve3(points)` | The same classes from `@null3d/geometry`, with points as arrays: `new CatmullRomCurve3([[0, 0, 0], [1, 1, 0]])` |

@@ -1,6 +1,6 @@
 # D-132: A beautiful look for every demo, and more engine features before 1.0
 
-Status: decided by the owner on 11 October 2026, between about 07:55 and 08:15 (UTC+8). It extends [D-117](D-117-showcase-features-before-1-0.md). The features are tasks M2-EX20 to M2-EX22, M2-F12, M2-J4 and M2-I4, and M2-EX19 cuts memory. Each feature's design and figures go into a record of its own when it is built.
+Status: decided by the owner on 11 October 2026, between about 07:55 and 08:15 (UTC+8). It extends [D-117](D-117-showcase-features-before-1-0.md). The features are tasks M2-EX20 to M2-EX22, M2-F12, M2-J4 and M2-I4, and M2-EX19 cuts memory. Each feature's design and figures go into a record of its own when it is built. [D-142](D-142-more-techniques-before-1-0.md) extends it the same evening with eleven more techniques.
 
 Summary: Every demo, showcase scene and comparison must look very beautiful, with shaders, effects, particles and complex geometry. So particles, light shafts and lit fog, screen-space reflections, contact shadows, bump and displacement maps and LOD groups start now, before 1.0. Motion blur and global illumination join M3, and M2-EX19 brings memory toward three.js's without slower frames.
 
