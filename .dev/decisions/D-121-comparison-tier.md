@@ -173,7 +173,7 @@ This fix keeps the comparison fair. Without it, three.js's WebGL frames would lo
 
 ### Image tests
 
-At the held count of 300 lights, three.js takes a long time to build its shaders. Each figure is the time from opening the page to the held frame:
+three.js builds its shaders again for each count of lights, and takes a long time at large counts. Each figure is the time from opening the page to the held frame, on a quiet Mac:
 
 | Path | 300 lights | 96 lights | 48 lights |
 | --- | --- | --- | --- |
@@ -183,7 +183,7 @@ At the held count of 300 lights, three.js takes a long time to build its shaders
 | three.js WebGLRenderer, SwiftShader | not measured | 51 s | 20 s |
 | null3D, both paths, SwiftShader | 10 s | 10 s | 9 s |
 
-So Night town's image tests wait up to 180 s, and on SwiftShader both engines' tests draw 48 lights, 4 blocks. Their SwiftShader references show that smaller town.
+The first tests held 300 lights, 25 blocks, and 48 lights on SwiftShader. On 11 October 2026, with the Mac's load near 20, WebGPURenderer gave no frame within 180 s at 300 lights on the Mac's GPU, and none at 48 lights on SwiftShader in one of four tests. So the tests now hold 96 lights, 8 blocks, and 24 lights, 2 blocks, on SwiftShader, in both engines' tests. They wait up to 180 s. The SwiftShader references show that smaller town.
 
 ### The test page's 404
 

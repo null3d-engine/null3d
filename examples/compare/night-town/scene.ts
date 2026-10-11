@@ -1745,16 +1745,16 @@ export const NIGHT_RAMPS = {
 } as const satisfies Record<DeviceClass, RampPlan>;
 
 /**
- * The frame that the image tests hold: the wide shot, with 25 blocks. three.js's WebGPURenderer
- * takes about 95 seconds on the Mac to build that many lights' shaders, so the test waits longer.
- * On the software GPU, either three.js renderer takes minutes at that count, so both engines' tests
- * draw 4 blocks there.
+ * The frame that the image tests hold: the wide shot, with a part of the town. three.js builds its
+ * shaders for each count of lights, and its WebGPURenderer takes minutes for the whole town on a
+ * busy machine, so the test waits longer and draws fewer blocks. On the software GPU both engines'
+ * tests draw fewer blocks still.
  */
 export const NIGHT_HOLD = {
 	seconds: WIDE_SHOT,
-	count: 300,
+	count: 96,
 	timeoutSeconds: 180,
-	softwareCount: 48,
+	softwareCount: 24,
 } as const;
 
 /** Triangles in the town for a count of lights, before shadows and particles. */
