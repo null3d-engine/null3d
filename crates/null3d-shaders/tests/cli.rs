@@ -1,4 +1,6 @@
-//! The `shader-build` command, run against copies of the repository's shader inputs.
+//! The `shader-build` command, run against copies of a few of the repository's shaders.
+
+mod subset;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -7,10 +9,11 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use null3d_shaders::{MANIFEST_PATH, OUTPUT_DIR, OUTPUT_PATH, SHADER_DIR};
+use subset::repository_subset;
 
-fn repository() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+/// The shaders in each copy: one that loads by device with draw index builds, one without a GLSL
+/// target, one without permutation bits, and one that stays in the main module.
+const SHADERS: [&str; 4] = ["outline_mask", "cull", "mipmap", "test_mesh"];
 
 /// A scratch folder that holds a copy of the shader inputs and is removed when dropped.
 struct Scratch(PathBuf);
@@ -24,8 +27,11 @@ impl Scratch {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let _ = fs::remove_dir_all(&root);
-        copy_dir(&repository().join(SHADER_DIR), &root.join(SHADER_DIR));
-        fs::copy(repository().join(MANIFEST_PATH), root.join(MANIFEST_PATH)).unwrap();
+        let inputs = repository_subset(&SHADERS);
+        for (file, text) in &inputs.files {
+            write(&root.join(SHADER_DIR).join(file), text);
+        }
+        write(&root.join(MANIFEST_PATH), &inputs.manifest);
         Self(root)
     }
 
@@ -44,17 +50,9 @@ impl Drop for Scratch {
     }
 }
 
-fn copy_dir(from: &Path, to: &Path) {
-    fs::create_dir_all(to).unwrap();
-    for entry in fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let target = to.join(entry.file_name());
-        if entry.path().is_dir() {
-            copy_dir(&entry.path(), &target);
-        } else {
-            fs::copy(entry.path(), target).unwrap();
-        }
-    }
+fn write(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -127,17 +125,17 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
         assert!(text.contains("export const SHADERS = {"), "{module}");
     }
     let wgsl = fs::read_to_string(folder.join("shaders-wgsl.js")).unwrap();
-    assert!(wgsl.contains("\tlit: {\n\t\twebgpu: {") && !wgsl.contains("#version"));
+    assert!(wgsl.contains("\toutline_mask: {\n\t\twebgpu: {") && !wgsl.contains("#version"));
     let glsl = fs::read_to_string(folder.join("shaders-glsl-draw-index.js")).unwrap();
-    assert!(glsl.contains("\tlit: {\n\t\twebgl2_draw_index: {"));
-    assert!(glsl.contains("\tcull: {},") && !glsl.contains("\tlit: {\n\t\twebgl2: {"));
+    assert!(glsl.contains("\toutline_mask: {\n\t\twebgl2_draw_index: {"));
+    assert!(glsl.contains("\tcull: {},") && !glsl.contains("\toutline_mask: {\n\t\twebgl2: {"));
     // A shader without permutation bits is in every module of its target.
     assert!(glsl.contains("\tmipmap: {\n\t\twebgl2: {"));
     let main = fs::read_to_string(scratch.0.join(OUTPUT_PATH)).unwrap();
     assert!(main.contains(
         "\t1: () => importShaders(new URL('./shaders-glsl-draw-index.js', import.meta.url)),"
     ));
-    assert!(!main.contains("LIT_SHADER") && main.contains("TEST_MESH_SHADER"));
+    assert!(!main.contains("OUTLINE_MASK_SHADER") && main.contains("TEST_MESH_SHADER"));
 }
 
 #[test]
