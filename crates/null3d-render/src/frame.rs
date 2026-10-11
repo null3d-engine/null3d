@@ -1479,14 +1479,16 @@ impl SceneSettings {
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
     /// has its own, and the preset's size unless it has its own, and each view that draws once in
-    /// several frames moves its turn on. A builder calls it once per frame, before it syncs its
-    /// graph with the views.
-    pub(crate) fn pace_views(&mut self) {
+    /// several frames moves its turn on, drawing at once into a texture of a new size for the
+    /// frame's canvas `canvas` and render scale `scale`. A builder calls it once per frame, before
+    /// it syncs its graph with the views.
+    pub(crate) fn pace_views(&mut self, canvas: (u32, u32), scale: RenderScale) {
         let camera_layers = self.views[ViewId::CAMERA.index()].layers();
         let halvings = self.mirror_halvings;
         for view in self.views.iter_mut().skip(1) {
             view.follow_camera(halvings, camera_layers);
-            view.target_mut().pace();
+            let made = view.target().graph_size().made(canvas, scale);
+            view.target_mut().pace(made);
         }
     }
 

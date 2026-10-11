@@ -926,7 +926,7 @@ impl GpuDrivenRenderer {
             size: s.size,
         }));
         self.graph.set_skinning(self.skinning.dispatches());
-        self.settings.pace_views();
+        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());

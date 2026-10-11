@@ -1804,18 +1804,21 @@ impl FrameGraph {
 
     /// Compiles the graph if its passes changed, then sets the canvas size and makes the plan's
     /// textures where the canvas or the plan changed, so the frame's targets match the canvas. The
-    /// frame draws at render scale `scale`, which makes no texture.
+    /// frame draws at render scale `scale`. A new render scale makes again only the textures whose
+    /// size follows it ([`Size::Scaled`]).
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         canvas: (u32, u32),
         scale: RenderScale,
     ) -> Result<(), RecordError> {
+        let previous = self.scale;
         self.scale = if self.final_runs() {
             scale
         } else {
             RenderScale::FULL
         };
+        let rescaled = self.scale != previous;
         let compiled = self.graph.compile().map_err(RecordError::Graph)?
             | std::mem::take(&mut self.compiled_early);
         let canvas = (canvas.0.max(1), canvas.1.max(1));
@@ -1824,7 +1827,7 @@ impl FrameGraph {
             list.push(Op::ResizeCanvas, &[canvas.0, canvas.1])?;
             self.canvas = canvas;
         }
-        self.textures_made = (compiled || resized) && self.make_textures(list)?;
+        self.textures_made = (compiled || resized || rescaled) && self.make_textures(list)?;
         Ok(())
     }
 
@@ -2251,7 +2254,7 @@ impl FrameGraph {
             let target = texture.target;
             let made = (
                 *texture,
-                texture.size.extent(self.canvas),
+                texture.size.made(self.canvas, self.scale),
                 into_canvas && target.samples > 1,
             );
             let by_layer =
@@ -2462,7 +2465,7 @@ impl FrameGraph {
     /// into all of them records nothing.
     fn set_render_area(&self, list: &mut DrawList, size: Size) -> Result<(), RecordError> {
         let (width, height) = size.viewport(self.canvas, self.scale);
-        if (width, height) == size.extent(self.canvas) {
+        if (width, height) == size.made(self.canvas, self.scale) {
             return Ok(());
         }
         list.push(
@@ -2764,7 +2767,7 @@ mod tests {
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
-    fn a_mirror_view_draws_at_its_share_of_the_render_size_and_culls_once() {
+    fn a_mirror_view_fills_its_texture_at_a_share_of_the_render_size_and_culls_once() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.set_occlusion(true);
         let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
@@ -2775,7 +2778,7 @@ mod tests {
         reflection.follow_camera(1, 1);
         frames.sync(&[View::default(), reflection, shown()]);
         let size = |view: usize| frames.graph().pass_size(frames.opaque[view]);
-        assert_eq!(size(1), Size::HALF);
+        assert_eq!(size(1), Size::Scaled(1));
         assert_eq!(size(2), Size::Full);
         assert!(frames.occludes(ViewId::CAMERA));
         assert!(
@@ -2786,7 +2789,40 @@ mod tests {
         // A new share of the render size declares the passes again.
         reflection.follow_camera(2, 1);
         frames.sync(&[View::default(), reflection, shown()]);
-        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::QUARTER);
+        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::Scaled(2));
+    }
+
+    #[test]
+    fn a_mirror_views_texture_is_made_again_at_each_new_render_scale() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.set_scaling(true);
+        let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
+        let mut reflection = View::mirror(mirror, None, None).with_target(ViewTarget {
+            shown: true,
+            ..ViewTarget::default()
+        });
+        reflection.follow_camera(1, 1);
+        frames.sync(&[View::default(), reflection]);
+        let mut list = DrawList::with_capacity(256);
+        let half = RenderScale::from_thousandths(500);
+        let made = |frames: &FrameGraph| frames.made.iter().map(|made| made.1).collect::<Vec<_>>();
+        frames.prepare(&mut list, (64, 48), half).unwrap();
+        assert!(frames.textures_made());
+        assert!(
+            made(&frames).contains(&(16, 12)),
+            "half of the render size of 32 x 24: {:?}",
+            made(&frames)
+        );
+        frames.prepare(&mut list, (64, 48), half).unwrap();
+        assert!(!frames.textures_made(), "the same scale makes nothing");
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.textures_made());
+        assert!(made(&frames).contains(&(32, 24)));
+        assert!(!made(&frames).contains(&(16, 12)));
+        // The camera's own targets keep the canvas's size at any render scale.
+        assert!(made(&frames).contains(&(64, 48)));
     }
 
     #[test]
