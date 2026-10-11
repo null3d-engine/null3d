@@ -1376,9 +1376,9 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, and the camera's view and
-    /// projection matrices, which custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 688;
+    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
+    /// shadow lookups, and the camera's view and projection matrices, which custom materials read.
+    pub const FRAME_UNIFORM_BYTES: u32 = 704;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1606,8 +1606,9 @@ pub mod template {
     /// binds as a custom effect that reads depth does.
     pub const MOTION_VIEW: u32 = 63;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
-    /// template from here up, which the thread that draws receives from the sketch.
-    pub const CUSTOM_FIRST: u32 = 64;
+    /// template from here up, which the thread that draws receives from the sketch. The engine's
+    /// own templates take ids below it.
+    pub const CUSTOM_FIRST: u32 = 128;
 }
 
 /// Why recording failed.
@@ -2420,6 +2421,22 @@ mod tests {
             decode(&truncated).next(),
             Some(Err(DecodeError::Truncated { at: 0 }))
         );
+    }
+
+    #[test]
+    fn engine_templates_have_unique_ids_below_the_custom_ones() {
+        assert_eq!(template::CUSTOM_FIRST, 128);
+        let mut ids: Vec<u32> = typescript_constants()
+            .lines()
+            .filter_map(|line| line.strip_prefix("export const TEMPLATE_"))
+            .filter(|line| !line.starts_with("CUSTOM_FIRST "))
+            .map(|line| line.split(" = ").nth(1).unwrap().trim_end_matches(';'))
+            .map(|id| id.parse().unwrap())
+            .collect();
+        assert!(ids.len() > 40, "{} engine templates", ids.len());
+        ids.sort_unstable();
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
+        assert!(ids.iter().all(|&id| id > 0 && id < template::CUSTOM_FIRST));
     }
 
     #[test]

@@ -19,6 +19,13 @@
 //! so a scene that loads and drops models keeps the same memory. A removal reports where each
 //! page and the delta texels first changed ([`MeshMoves`]), and the GPU copies upload again from
 //! there. A removed mesh's id goes to the next mesh added.
+//!
+//! A mesh's vertices can change after it is added ([`MeshStorage::update_vertices`]): new values
+//! of one attribute go into the vertices of its parts in place, and the storage lists the byte
+//! range of each page that changed, which the GPU copies upload again. A part of a split mesh
+//! holds its vertices in the order its triangles first use them, so the storage keeps, for each
+//! split mesh, the mesh's vertex that each of its parts' vertices copies. A mesh in one part
+//! keeps its vertices in their order and needs no such list.
 
 use null3d_core::bvh::mesh::Triangles;
 use null3d_gpu::drawlist::vertex;
@@ -79,6 +86,13 @@ pub struct MeshSlot {
     /// The mesh's delta texels: `texels` of the storage's list of them, from `first_texel` on.
     first_texel: u32,
     texels: u32,
+    /// For a split mesh, the mesh's vertex that each vertex of its parts copies, in part order:
+    /// `sources` of the storage's list of them, from `first_source` on. 0 for a mesh in one part.
+    first_source: u32,
+    sources: u32,
+    /// How many times [`MeshStorage::update_vertices`] changed the mesh's vertices, never 0 again
+    /// once it did: 0 for a mesh whose vertices stay as they were added.
+    pub updates: u32,
 }
 
 /// One shared buffer or page: interleaved vertices of one format, as the GPU reads their bytes,
@@ -158,6 +172,29 @@ pub struct MeshStorage {
     live: Vec<bool>,
     /// The ids of removed meshes, which the next meshes take lowest first.
     free: Vec<u32>,
+    /// The mesh vertex that each vertex of a split mesh's parts copies, mesh after mesh.
+    sources: Vec<u32>,
+    /// The byte ranges of the pages that the last vertex update changed: each page's index, and
+    /// its first and its end byte. The list keeps its room from update to update.
+    updated: Vec<(u32, usize, usize)>,
+}
+
+/// Why [`MeshStorage::update_vertices`] refused an update. It changes no vertex then.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateError {
+    /// The id names no live mesh.
+    UnknownMesh,
+    /// The mesh has joints or morph targets, whose bounds and poses follow the vertices it was
+    /// added with.
+    Posed,
+    /// The mesh's format has no attribute at the location, or the attribute takes no updates.
+    NoAttribute,
+    /// The values per vertex do not fit the attribute.
+    Components,
+    /// The vertices run past the mesh's last one, or the bytes are fewer than they need.
+    Range,
+    /// A float value at this place among the update's values is NaN or infinite.
+    NotFinite { at: u32 },
 }
 
 /// Where a removal changed the storage's data, which the GPU copies then upload again.
@@ -202,6 +239,10 @@ impl Triangles for MeshTriangles<'_> {
     }
 }
 
+/// The last vertex shader location whose attribute takes updates: the colors. Joints, weights and
+/// the morph attribute follow it.
+const LAST_UPDATABLE: usize = 5;
+
 /// A vertex that the part being built does not use yet.
 const UNUSED: u32 = u32::MAX;
 
@@ -226,6 +267,8 @@ impl MeshStorage {
             drawing_edges: false,
             live: Vec::new(),
             free: Vec::new(),
+            sources: Vec::new(),
+            updated: Vec::new(),
         }
     }
 
@@ -297,6 +340,101 @@ impl MeshStorage {
             parts,
             count: parts.iter().map(|part| part.index_count / 3).sum(),
         })
+    }
+
+    /// Writes new values of the attribute at vertex shader `location` into vertices `start` to
+    /// `start + count` of mesh `id`, in every part that holds them. `bytes` holds `components`
+    /// values per vertex in the attribute's own type, as little-endian bytes, vertex after vertex
+    /// from vertex `start` on. Colors take 3 values, which keep each vertex's alpha, or 4. Joints,
+    /// weights and the morph attribute take no updates, and neither does a mesh with joints or
+    /// morph targets. Returns true for the mesh's first update. [`MeshStorage::updated`] then
+    /// lists the bytes of each page that changed. Allocates nothing once the list has room for
+    /// the mesh's parts. The mesh keeps its radius.
+    ///
+    /// # Errors
+    /// [`UpdateError`] for an update that does not fit the mesh, which then keeps its vertices.
+    pub fn update_vertices(
+        &mut self,
+        id: u32,
+        location: usize,
+        components: u32,
+        start: u32,
+        count: u32,
+        bytes: &[u8],
+    ) -> Result<bool, UpdateError> {
+        let mesh = *self.mesh(id).ok_or(UpdateError::UnknownMesh)?;
+        if mesh.joints > 0 || mesh.targets > 0 {
+            return Err(UpdateError::Posed);
+        }
+        let attribute = vertex::ATTRIBUTES
+            .get(location)
+            .filter(|_| location <= LAST_UPDATABLE)
+            .ok_or(UpdateError::NoAttribute)?;
+        let ty = vertex::type_of(mesh.format, location).ok_or(UpdateError::NoAttribute)?;
+        let offset = vertex::offset(mesh.format, location).ok_or(UpdateError::NoAttribute)?;
+        let colors = attribute.bit == vertex::COLOR && components == 3;
+        if components != attribute.components && !colors {
+            return Err(UpdateError::Components);
+        }
+        let size = (components * ty.bytes()) as usize;
+        let end = start.checked_add(count).ok_or(UpdateError::Range)?;
+        if end > mesh.vertex_count || bytes.len() < count as usize * size {
+            return Err(UpdateError::Range);
+        }
+        let bytes = &bytes[..count as usize * size];
+        if ty == vertex::Type::F32 {
+            let words = bytes.as_chunks::<4>().0;
+            if let Some(at) = words
+                .iter()
+                .position(|&word| !f32::from_le_bytes(word).is_finite())
+            {
+                return Err(UpdateError::NotFinite { at: at as u32 });
+            }
+        }
+        let stride = vertex::stride(mesh.format) as usize;
+        let offset = offset as usize;
+        let first = mesh.first_part as usize;
+        let mut sources = &self.sources[mesh.first_source as usize..][..mesh.sources as usize];
+        self.updated.clear();
+        for part in &self.parts[first..first + mesh.part_count as usize] {
+            let page = &mut self.pages[part.page as usize];
+            let base = part.first_vertex as usize * stride + offset;
+            let mut write = |local: usize, v: u32| {
+                let from = (v - start) as usize * size;
+                let at = base + local * stride;
+                page.vertices[at..at + size].copy_from_slice(&bytes[from..from + size]);
+            };
+            // The part's vertices that changed: the first and one past the last.
+            let (low, high) = if mesh.sources == 0 {
+                (start..end).for_each(|v| write(v as usize, v));
+                (start, end)
+            } else {
+                let (own, rest) = sources.split_at(part.vertex_count as usize);
+                sources = rest;
+                let mut changed = (u32::MAX, 0);
+                for (local, &v) in own.iter().enumerate() {
+                    if (start..end).contains(&v) {
+                        write(local, v);
+                        changed = (changed.0.min(local as u32), local as u32 + 1);
+                    }
+                }
+                changed
+            };
+            if low < high {
+                let first_byte = (part.first_vertex + low) as usize * stride;
+                let end_byte = (part.first_vertex + high) as usize * stride;
+                self.updated.push((part.page, first_byte, end_byte));
+            }
+        }
+        let slot = &mut self.meshes[id as usize];
+        slot.updates = slot.updates.wrapping_add(1).max(1);
+        Ok(mesh.updates == 0)
+    }
+
+    /// The byte ranges of the pages that the last [`MeshStorage::update_vertices`] changed: each
+    /// page's index, its first byte and its end byte, whole vertices each.
+    pub fn updated(&self) -> &[(u32, usize, usize)] {
+        &self.updated
     }
 
     /// The parts of a mesh, in triangle order: their triangles, or their edge lists while draws
@@ -372,6 +510,7 @@ impl MeshStorage {
         }
         let (max_vertices, max_indices) = self.part_limits(geometry.format)?;
         let first_part = self.parts.len() as u32;
+        let first_source = self.sources.len() as u32;
         reserve(&mut self.meshes, 1)?;
         reserve(&mut self.live, 1)?;
         let placed = if vertex_count <= max_vertices && indices.len() <= max_indices {
@@ -386,6 +525,7 @@ impl MeshStorage {
             let mut parts = Gaps::default();
             parts.add(first_part, self.parts.len() as u32 - first_part);
             self.take_out(parts, Gaps::default(), Gaps::default(), Gaps::default());
+            self.sources.truncate(first_source as usize);
             return Err(error);
         }
         if self.edges {
@@ -412,6 +552,9 @@ impl MeshStorage {
             first_reach: 0,
             first_texel: 0,
             texels: 0,
+            first_source,
+            sources: self.sources.len() as u32 - first_source,
+            updates: 0,
         };
         let lowest = (0..self.free.len()).min_by_key(|&k| self.free[k]);
         Ok(match lowest.map(|k| self.free.swap_remove(k)) {
@@ -433,6 +576,7 @@ impl MeshStorage {
     /// [`MeshStorage::release`] gives them to later meshes.
     pub fn remove(&mut self, ids: &[u32]) -> MeshMoves {
         let (mut parts, mut spheres, mut reaches, mut texels) = Default::default();
+        let mut sources = Gaps::default();
         for &id in ids {
             if self.mesh(id).is_none() {
                 continue;
@@ -442,8 +586,17 @@ impl MeshStorage {
             Gaps::add(&mut spheres, mesh.first_sphere, mesh.joints);
             Gaps::add(&mut reaches, mesh.first_reach, mesh.targets);
             Gaps::add(&mut texels, mesh.first_texel, mesh.texels);
+            sources.add(mesh.first_source, mesh.sources);
             self.live[id as usize] = false;
             self.meshes[id as usize].part_count = 0;
+        }
+        sources.close();
+        sources.squeeze(&mut self.sources, 1);
+        for id in 0..self.meshes.len() {
+            if self.live[id] {
+                let mesh = &mut self.meshes[id];
+                mesh.first_source -= sources.before(mesh.first_source);
+            }
         }
         self.take_out(parts, spheres, reaches, texels)
     }
@@ -916,8 +1069,10 @@ impl PartBuilder {
                 .extend_from_slice(&geometry.vertices[at..at + stride]);
             self.local[v as usize] = UNUSED;
         }
+        reserve(&mut storage.sources, self.used.len())?;
         let part = storage.place(geometry.format, &self.vertices, &self.indices)?;
         storage.parts.push(part);
+        storage.sources.extend_from_slice(&self.used);
         self.used.clear();
         self.indices.clear();
         Ok(())
@@ -1605,5 +1760,182 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Little-endian bytes of floats, as an update passes them.
+    fn float_bytes(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    /// `geometry` with the position of each vertex `v` that `moved` gives set to `[v, -v, 2]`.
+    fn with_positions(geometry: &Geometry, moved: std::ops::Range<u32>) -> Geometry {
+        let stride = geometry.stride();
+        let mut out = geometry.clone();
+        for v in moved {
+            let at = v as usize * stride;
+            out.vertices[at..at + 12].copy_from_slice(&float_bytes(&[v as f32, -(v as f32), 2.0]));
+        }
+        out
+    }
+
+    /// The new positions of vertices `moved`, as `with_positions` gives them.
+    fn moved_positions(moved: std::ops::Range<u32>) -> Vec<u8> {
+        float_bytes(
+            &moved
+                .flat_map(|v| [v as f32, -(v as f32), 2.0])
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn an_update_writes_one_attribute_in_place_and_lists_the_bytes_it_changed() {
+        let mesh = grid(4, 4, vertex::UV0);
+        let stride = mesh.stride();
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            storage
+                .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap())
+                .unwrap();
+            let id = storage.add(&mesh).unwrap();
+            let part = storage.parts(storage.mesh(id).unwrap())[0];
+            let bytes = moved_positions(3..7);
+            assert_eq!(storage.update_vertices(id, 0, 3, 3, 4, &bytes), Ok(true));
+            assert_eq!(storage.update_vertices(id, 0, 3, 3, 4, &bytes), Ok(false));
+            assert_eq!(storage.mesh(id).unwrap().updates, 2);
+            // Only the positions change: the normals and the texture coordinates stay.
+            assert_eq!(
+                resolved_vertices(&storage, id),
+                original_vertices(&with_positions(&mesh, 3..7)),
+                "{packing:?}"
+            );
+            let first = part.first_vertex as usize + 3;
+            assert_eq!(
+                storage.updated(),
+                [(part.page, first * stride, (first + 4) * stride)]
+            );
+            // The mesh keeps the radius it was added with.
+            assert_eq!(storage.mesh(id).unwrap().radius, mesh_radius(&mesh));
+        }
+    }
+
+    /// The radius that the storage gives a geometry.
+    fn mesh_radius(geometry: &Geometry) -> f32 {
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(geometry).unwrap();
+        storage.mesh(id).unwrap().radius
+    }
+
+    #[test]
+    fn an_update_reaches_each_copy_of_a_vertex_in_the_parts_of_a_split_mesh() {
+        // 300 x 300 quads split into parts, which share the vertices along their seams.
+        let big = grid(300, 300, 0);
+        let vertices = big.vertex_count() as u32;
+        let moved = 40_000..vertices;
+        for packing in [Packing::SharedBuffers, Packing::Pages] {
+            let mut storage = MeshStorage::new(packing);
+            // A split mesh before it, which goes, moves the second one's list of copies down.
+            let gone = storage.add(&big).unwrap();
+            let id = storage.add(&big).unwrap();
+            storage.remove(&[gone]);
+            assert!(storage.parts(storage.mesh(id).unwrap()).len() > 1);
+            let bytes = moved_positions(moved.clone());
+            let count = moved.end - moved.start;
+            assert_eq!(
+                storage.update_vertices(id, 0, 3, moved.start, count, &bytes),
+                Ok(true)
+            );
+            assert_eq!(
+                resolved_vertices(&storage, id),
+                original_vertices(&with_positions(&big, moved.clone())),
+                "{packing:?}"
+            );
+            assert_eq!(
+                storage.updated().len(),
+                storage.parts(storage.mesh(id).unwrap()).len()
+            );
+        }
+    }
+
+    #[test]
+    fn colors_of_three_values_keep_each_vertexs_alpha() {
+        let mesh = grid(1, 1, vertex::COLOR);
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&mesh).unwrap();
+        let bytes = float_bytes(&[0.25, 0.5, 0.75]);
+        assert_eq!(storage.update_vertices(id, 5, 3, 1, 1, &bytes), Ok(true));
+        let stride = mesh.stride();
+        let page = &storage.pages()[0];
+        let at = stride + vertex::offset(mesh.format, 5).unwrap() as usize;
+        assert_eq!(page.vertices[at..at + 12], bytes);
+        assert_eq!(
+            page.vertices[at + 12..at + 16],
+            mesh.vertices[at + 12..at + 16]
+        );
+    }
+
+    #[test]
+    fn updates_that_do_not_fit_change_nothing() {
+        use crate::morph::MorphTargets;
+
+        let mesh = grid(2, 2, vertex::UV0);
+        let mut storage = MeshStorage::new(Packing::SharedBuffers);
+        let id = storage.add(&mesh).unwrap();
+        let nine = moved_positions(0..9);
+        let refused = [
+            (
+                storage.update_vertices(id + 1, 0, 3, 0, 9, &nine),
+                UpdateError::UnknownMesh,
+            ),
+            (
+                storage.update_vertices(id, 0, 3, 1, 9, &nine),
+                UpdateError::Range,
+            ),
+            (
+                storage.update_vertices(id, 0, 3, 0, 9, &nine[..8]),
+                UpdateError::Range,
+            ),
+            (
+                storage.update_vertices(id, 0, 2, 0, 9, &nine),
+                UpdateError::Components,
+            ),
+            (
+                storage.update_vertices(id, 3, 2, 0, 9, &nine),
+                UpdateError::NoAttribute,
+            ),
+            (
+                storage.update_vertices(id, 6, 4, 0, 9, &nine),
+                UpdateError::NoAttribute,
+            ),
+            (
+                storage.update_vertices(
+                    id,
+                    0,
+                    3,
+                    0,
+                    2,
+                    &float_bytes(&[0.0, 1.0, 2.0, 3.0, f32::NAN, 5.0]),
+                ),
+                UpdateError::NotFinite { at: 4 },
+            ),
+        ];
+        for (result, error) in refused {
+            assert_eq!(result, Err(error));
+        }
+        assert_eq!(storage.mesh(id).unwrap().updates, 0);
+        assert_eq!(resolved_vertices(&storage, id), original_vertices(&mesh));
+
+        let positions = vec![0.5; mesh.vertex_count() * 3];
+        let targets = MorphTargets {
+            targets: 1,
+            positions: Some(&positions),
+            normals: None,
+            tangents: None,
+            colors: None,
+        };
+        let morphed = storage.add_morphed(&mesh, &targets).unwrap();
+        assert_eq!(
+            storage.update_vertices(morphed, 0, 3, 0, 9, &nine),
+            Err(UpdateError::Posed)
+        );
     }
 }
