@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures.
+3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures. Draco models load as they are (0.2), so delete the `DRACOLoader` setup and its decoder files, then convert the models to meshopt with the same command.
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.
