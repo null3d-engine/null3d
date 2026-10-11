@@ -144,7 +144,7 @@ Without a map, each particle is a soft round dot. `particleTextures` makes textu
 
 ### Soft particles
 
-A particle that crosses the ground or a wall shows a hard line where it cuts into it. With `softness`, the particle fades out as it nears the surface behind it. The camera's view then copies its opaque depth once per frame, after its opaque objects, and the copy costs one full-screen pass. Frames without a soft system copy nothing. Views other than the camera's draw particles without the fade.
+A particle that crosses the ground or a wall shows a hard line where it cuts into it. With `softness`, the particle fades out as it nears the surface behind it. The camera's view then copies its opaque depth once per frame, after its opaque objects, and the copy costs one full-screen pass. Frames without a soft system copy nothing. Views other than the camera's draw particles without the fade. The Low preset turns the `softParticles` quality setting off, so phones keep one render pass and draw particles with hard edges.
 
 ## Drawing
 

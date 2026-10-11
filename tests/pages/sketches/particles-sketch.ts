@@ -1,7 +1,8 @@
 // Particles of the particles add-on, in hold mode: a fountain of soft dots that bounce on the floor
-// and fade over life, smoke from a flipbook made in code that drifts in the wind and billows with
-// turbulence, sparks that lie along their velocity, and leaves that tumble down, each one of four
-// shapes. The emitters seed their random numbers, so the held frame is the same on every run.
+// and fade over life, and smoke from a flipbook made in code that drifts in the wind, billows with
+// turbulence and fades where it meets the floor. Sparks lie along their velocity, and leaves of
+// four shapes tumble down. The emitters seed their random numbers, so the held frame is the same on
+// every run.
 import { defineSketch } from '@null3d/engine';
 import { createParticles, particleTextures } from '@null3d/particles';
 
@@ -55,6 +56,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 		spin: [-0.4, 0.4],
 		colors: ['#c4c4ca', '#a8a8b0'],
 		alphaOverLife: [0, 0.7, 0],
+		softness: 0.3,
 		seed: 2,
 	});
 	const sparks = await createParticles(scene, {

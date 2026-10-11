@@ -96,6 +96,7 @@ export const SETTING_DOCS: {
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
 	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
+	softParticles: { label: 'Soft particles', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

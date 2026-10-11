@@ -45,6 +45,12 @@ A system is a scene object with a material of the particle shading. It culls, ta
 
 The copy splits the camera's opaque and transparent passes into two render passes, as transmission does, and runs only while a system with `softness` draws.
 
+### Quality
+
+- The `softParticles` quality setting is off on Low and on above it. Phones keep one render pass for the camera, and draw particles with hard edges where they cut into the scene. The governor does not turn it off during play: a pass split that comes and goes would make the frame's cost jump.
+- Each system's cost is its capacity's vertex work and its particles' pixels. The add-on does not scale emission by preset. A sketch scales `system.rate` with `quality.preset`, as the [quality presets](../../docs/concepts/quality-presets.md) page shows for its own particle counts.
+- A scene without particles pays nothing: no pass, target, pipeline, bind group or download.
+
 ## Data
 
 Route benchmark, 11 October 2026: MacBook Pro M5 Max, Chrome, headless, in the quiet window (1-minute load 3.2 to 3.4). The target is 1280 x 720, with additive quads of 0.03 m. Each figure is the median time of one iteration, a clear and a draw, with the GPU's work:

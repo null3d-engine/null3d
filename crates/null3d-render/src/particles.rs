@@ -157,6 +157,8 @@ pub struct ParticleTable {
     /// True when a system came or went since the builders last asked, so their draw tables find
     /// it.
     changed: bool,
+    /// False when the quality preset draws soft particles with hard edges.
+    hard: bool,
 }
 
 impl ParticleTable {
@@ -281,12 +283,19 @@ impl ParticleTable {
         self.by_slot.is_empty()
     }
 
+    /// Lets systems fade their particles near the surfaces behind them, or not.
+    pub fn set_soft(&mut self, on: bool) {
+        self.hard = !on;
+    }
+
     /// True when a system fades its particles near the surfaces behind them, so the camera's view
-    /// copies its opaque depth for them.
+    /// copies its opaque depth for them, unless the quality preset turned soft particles off.
     pub fn wants_depth(&self) -> bool {
-        self.ids()
-            .filter_map(|id| self.get(id))
-            .any(|s| s.values[SOFTNESS] > 0.0 && s.drawn() > 0)
+        !self.hard
+            && self
+                .ids()
+                .filter_map(|id| self.get(id))
+                .any(|s| s.values[SOFTNESS] > 0.0 && s.drawn() > 0)
     }
 
     /// The live systems' ids.

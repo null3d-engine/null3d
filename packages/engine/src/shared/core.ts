@@ -554,6 +554,8 @@ export interface CoreGlue extends CoreErrors {
 	markParticleRecords(id: number, start: number, count: number): number;
 	/** Marks a particle system's values for the next frame's upload. */
 	markParticleValues(id: number): number;
+	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
+	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -880,6 +882,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'particleValues',
 	'markParticleRecords',
 	'markParticleValues',
+	'setSoftParticles',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',

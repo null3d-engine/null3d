@@ -2831,6 +2831,17 @@ pub fn mark_particle_values(id: u32) -> u32 {
     })
 }
 
+/// Lets particle systems with a soft fade fade near the surfaces behind them, which copies the
+/// camera's opaque depth while one draws, or draws them with hard edges: the quality preset's soft
+/// particles.
+#[wasm_bindgen(js_name = setSoftParticles)]
+pub fn set_soft_particles(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().particles_mut().set_soft(on);
+        0
+    })
+}
+
 /// Turns depth of field on with its focus, aperture, focal length, largest blur, blades and focus
 /// point from the post-processing values, or off, from the next frame on. The TypeScript API checks
 /// the values.

@@ -238,6 +238,7 @@ describe('SketchQuality.lower', () => {
 			aoScale: low.aoScale,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			softParticles: low.softParticles,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -255,8 +256,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size
-		// and software occlusion culling did.
+		// the reflections' size, soft particles and software occlusion culling did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -265,6 +265,7 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
+			'softParticles',
 			'softwareOcclusion',
 		]);
 	});

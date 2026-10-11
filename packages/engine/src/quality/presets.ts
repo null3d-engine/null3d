@@ -173,6 +173,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// Soft particles: while a particle system fades near the surfaces behind it, the camera copies
+	// its opaque depth once per frame, which splits its opaque and transparent passes. Low, which
+	// phones draw, keeps one render pass and draws particles with hard edges (D-131).
+	softParticles: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
 	// measured yet, so these values follow the plan until device runs settle them (D-41).
@@ -458,6 +466,12 @@ export interface QualitySettings {
 	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when particle systems with `softness` fade where they near the surfaces behind them. The
+	 * camera then copies its opaque depth once per frame, while such a system draws. False draws
+	 * them with hard edges where they cut into the scene. It changes during play.
+	 */
+	softParticles: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */
