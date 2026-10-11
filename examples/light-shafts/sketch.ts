@@ -16,6 +16,8 @@ import { interact } from '../lib/interact';
 // Seconds of each sunset and dusk, the hours that they span, and the hours between calls of
 // timeOfDay, which makes a new object each time.
 const [CYCLE, GOLDEN, BLUE, STEP] = [36, 17.1, 18.7, 1 / 30];
+/** The share of the sky's color that the haze keeps in shade, so the sunlit air stands out. */
+const SHADE = 0.3;
 /** The lanterns along the path: x and z, each on a post that leans its light over the path. */
 const LANTERNS = [1.6, 8, -1.6, 1, 1.6, -6, -1.6, -13];
 /** What the camera looks at down the path, and the box that the pointed point stays in. */
@@ -120,8 +122,9 @@ export default defineSketch((ctx) => {
 			sun.setIntensity(day.light.intensity);
 			fill.setColor(day.fog.color);
 			fill.setIntensity(0.4 * day.skyIntensity + 0.05);
+			const [r, g, b] = day.fog.color;
 			scene.setFog({
-				color: day.fog.color,
+				color: [r * SHADE, g * SHADE, b * SHADE],
 				sunGlow: day.fog.sunGlow,
 				density: 0.03,
 				height: 0,

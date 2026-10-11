@@ -639,7 +639,7 @@ mod tests {
             assert!(found.is_some(), "FogStep lacks {field} in this order");
             at += found.unwrap_or(0);
         }
-        assert_eq!(std::mem::size_of::<Block>(), 13 * 16 + 64);
+        assert_eq!(std::mem::size_of::<Block>(), 12 * 16 + 64);
         assert!(library.contains(&format!("SLICES_PER_ROW: u32 = {SLICES_PER_ROW}u;")));
     }
 

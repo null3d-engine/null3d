@@ -10,7 +10,8 @@
 //   the summed grid's light there to the scene's color. Past the grid's reach it adds the sun's
 //   light that the fog scatters, without shadows, in closed form: with every bit of fog scattering
 //   as much as it dims, the light between two distances is the sun's light times the phase times
-//   the drop in the share of light that passes. So no edge shows where the grid ends.
+//   the drop in the share of light that passes. So no edge shows where the grid ends. The
+//   background takes the grid's light alone, as it takes none of the scene's fog.
 //
 // The steps bind as depth of field's do: the sum as a step of bloom (settings, a texture and a
 // sampler), and the apply step as depth of field's composite, with the summed grid at binding 4.
@@ -105,8 +106,10 @@ fn apply(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let near = textureSampleLevel(summed, source_sampler, place.near, 0.0);
     let far = textureSampleLevel(summed, source_sampler, place.far, 0.0);
     var scattered = fog_volume_blend(near, far, place).rgb;
+    // The background takes no fog (null3d::fog): its sky holds its own haze around the sun. So
+    // it takes the grid's light in front of it, and no light from past the grid's reach.
     let reach = settings.grid.cells.w;
-    if along > reach {
+    if along > reach && depth > 0.0 {
         let ray = fog_ray(settings, screen);
         let stretch = length(ray);
         let direction = ray / stretch;
