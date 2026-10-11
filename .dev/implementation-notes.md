@@ -42,6 +42,11 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - Uploads from 64 KiB to 4 MiB take the route that the render worker measures as faster on the device: `queue.writeBuffer` or the staging ring.
 - In Chrome on a Mac the ring is 3 to 6 times faster in that range, as `writeBuffer` takes up to 0.8 ms per MB. In Safari `writeBuffer` wins at every size, because unmapping a staging buffer costs time in proportion to its size. Outside that range `writeBuffer` wins in every browser measured.
+- Each frame lists the runs of changed rows, with room for 4,096 runs. A frame with more scene runs widens its last run to cover the rest, rows between runs included. Both world buffers hold the latest matrix of every row that draws, so those rows upload unchanged.
+- The list once overflowed instead. The frame then uploaded every row up to the highest slot ever used, and the shadow tiles forgot every caster and drew again. Moving objects that take turns with still ones make one run each. So the Factory comparison overflowed at about 2,100 moving cells, about 4,300 runs. With room for 200,000 parts and 21,399 shown, the frame uploaded all 300,000 rows, 14.4 MB. In builds of 10 October, widening the last run took the busiest thread there from 4.77 to 2.35 ms per frame on WebGPU. On WebGL2 it went from 4.42 to 2.64 ms.
+- The scene's runs leave room for each instance batch's, so only batch runs past the room still overflow the list.
+- Without the overflow, the shadow tiles check each moved caster against each tile of the frame's lights. Once every tile must draw, they stop checking and only remember where the remaining casters went. Without that stop, room for exactly 50,000 Factory parts, all moving, cost 1.7 ms more per frame than the overflow's fresh start. With it, the frame takes the same time as before, 2.45 to 2.54 ms on WebGPU.
+- Both GPU paths join scene runs that lie close together into one write. On WebGPU each write is a call of its own on the render thread. At 21,399 shown parts, joining took the render thread from 0.41 to 0.19 ms per frame, for 0.6 MB more upload.
 
 ## Download size
 
