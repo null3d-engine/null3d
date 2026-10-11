@@ -598,14 +598,15 @@ The engine lights `s.reflection` with the material's Fresnel, so water reflects 
 import { defineSketch } from '@null3d/engine';
 import { createParticles, particleTextures } from '@null3d/particles';
 
-export default defineSketch(async ({ scene, geometry, materials, textures, post }) => {
+export default defineSketch(async (ctx) => {
+  const { scene, geometry, materials, textures, post } = ctx;
   post.set({ bloom: { intensity: 0.4, threshold: 1 } });
   scene.setBackground('#10131a');
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.8, 5], target: [0, 0.8, 0] }));
   scene.createAmbientLight({ intensity: 0.3 });
   const ground = scene.createMesh({ mesh: geometry.plane({ width: 20, height: 20 }), material: materials.standard({ color: '#2a2622' }) });
   ground.setRotationEuler(-Math.PI / 2, 0, 0);
-  const fire = await createParticles(scene, {
+  const fire = await createParticles(ctx, {
     ...particleTextures.flame(textures),
     rate: 60,
     lifetime: [0.5, 0.8],
@@ -618,7 +619,7 @@ export default defineSketch(async ({ scene, geometry, materials, textures, post 
     alphaOverLife: [0, 1, 0],
     softness: 0.3,
   });
-  const smoke = await createParticles(scene, {
+  const smoke = await createParticles(ctx, {
     ...particleTextures.smoke(textures),
     blending: 'normal',
     position: [0, 0.8, 0],
@@ -634,7 +635,7 @@ export default defineSketch(async ({ scene, geometry, materials, textures, post 
     colors: ['#3a3a40', '#2c2c30'],
     alphaOverLife: [0, 0.5, 0],
   });
-  const sparks = await createParticles(scene, {
+  const sparks = await createParticles(ctx, {
     ...particleTextures.spark(textures),
     rate: 30,
     lifetime: [1, 1.6],
@@ -652,8 +653,8 @@ export default defineSketch(async ({ scene, geometry, materials, textures, post 
   });
   const systems = [fire, smoke, sparks];
   return {
-    onLateUpdate(dt) {
-      for (const system of systems) system.update(dt);
+    onLateUpdate() {
+      for (const system of systems) system.update();
     },
   };
 });

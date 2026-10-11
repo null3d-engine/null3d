@@ -1,8 +1,11 @@
 // Particle systems: an emitter that fills one of the engine's particle buffers. The emitter runs on
-// the sketch's thread in `update(dt)`, once per frame. It works out which particles are born in the
+// the sketch's thread in `update`, once per frame. It works out which particles are born in the
 // frame, at even times between the frame before and this one, writes each one's record once, and
 // gives the buffer the frame's time. The GPU does the rest: each particle moves, turns, changes
 // color and dies in closed form, so a system of a million particles costs the CPU only its births.
+//
+// `update` allocates nothing. Its numbers move through typed arrays and fields, never as the
+// arguments or the results of calls that the engine may not inline, which would box them.
 
 import type {
 	Mat4Like,
@@ -11,20 +14,32 @@ import type {
 	ParticleBuffer,
 	ParticleBufferOptions,
 	ParticleValues,
-	Scene,
+	SketchContext,
+	SketchTime,
 	Vec3Like,
 } from '@null3d/engine';
 import { mat4 } from '@null3d/engine';
 import {
+	AGE,
+	BIRTH,
+	GROUND_BOUNCE,
 	GROUND_KILL,
 	GROUND_NONE,
+	GROUND_STICK,
+	HIT,
 	impact,
 	type MotionValues,
+	P,
+	PARTICLE_FLOATS,
 	particleState,
 	reach,
+	SEED,
 	stateAt,
+	T,
+	V,
+	VELOCITY,
 } from './motion';
-import { between, chance, pcg } from './random';
+import { NUMBER, PARTICLE_SEED, pcg, randomize, SYSTEM_SEED } from './random';
 
 /**
  * A number, or the smallest and the largest of a random number.
@@ -139,8 +154,35 @@ export interface ParticleSystemOptions extends Omit<ParticleBufferOptions, 'capa
 
 /** Seconds of the buffer's time after which the system moves its time back, for precision. */
 const REBASE_AFTER = 1024;
-/** Floats of a pending sub-emitter event: time, sub-emitter, birth place and time, velocity, seed. */
-const EVENT_FLOATS = 10;
+/** Floats of a pending sub-emitter event: its time and sub-emitter, then the particle's numbers. */
+const EVENT_FLOATS = 2 + PARTICLE_FLOATS;
+/** The random channels of a particle: its speed, shape, direction, place in a box, and lifetime. */
+const SPEED = 0;
+const U = 1;
+const W = 2;
+const R = 3;
+const ANGLE = 4;
+const BOX_Y = 5;
+const BOX_Z = 6;
+const LIFE = 7;
+const CHANNELS = 8;
+/** The places of the record that the system writes for each particle. */
+const RECORD_TIME = 3;
+const RECORD_LIFE = 7;
+/** The places of the emitter's numbers: the span of emission, and the next birth's time and share. */
+const FROM = 0;
+const TO = 1;
+const BIRTH_TIME = 2;
+const SHARE = 3;
+
+/** The share of its culling sphere's radius below which a system's new sphere replaces it. */
+const BOUNDS_SLACK = 0.8;
+
+/** The ground's mode codes, by name. */
+const GROUND_MODES = { kill: GROUND_KILL, bounce: GROUND_BOUNCE, stick: GROUND_STICK } as const;
+
+/** The frame of directions about up, for the cone. */
+const IDENTITY = new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
 /** The smallest and the largest of a range. */
 function span(range: ParticleRange | undefined, fallback: number): readonly [number, number] {
@@ -150,7 +192,7 @@ function span(range: ParticleRange | undefined, fallback: number): readonly [num
 
 /**
  * A particle system: an emitter that fills a particle buffer. `createParticles` makes one. Call
- * `update(dt)` once per frame, in `onLateUpdate`, where objects' world places are the frame's.
+ * `update()` once per frame, in `onLateUpdate`, where objects' world places are the frame's.
  *
  * @category api/particles
  */
@@ -163,7 +205,6 @@ export class ParticleSystem {
 	time = 0;
 	private readonly lifetime: readonly [number, number];
 	private readonly speed: readonly [number, number];
-	private readonly seed: number;
 	/** Particles emitted so far: each one's number picks its place and its random numbers. */
 	private emitted = 0;
 	/** The time of the next birth of the rate's stream, or Infinity for none. */
@@ -186,6 +227,8 @@ export class ParticleSystem {
 		restitution: 0.4,
 		friction: 0.2,
 	};
+	/** How far beyond its births' box a live particle may be, for the culling sphere. */
+	private grow = 0;
 	/** The followed object's world matrix in this frame and the frame before, and the system's inverse. */
 	private readonly emitter = new Float64Array(16);
 	private readonly lastEmitter = new Float64Array(16);
@@ -194,63 +237,63 @@ export class ParticleSystem {
 	/** The births' box in the system's space, for this span of the longest lifetime and the one before. */
 	private readonly births = new Float64Array(12);
 	private epochEnd = 0;
+	/** The culling sphere last given to the object, and the point that carries its center. */
 	private readonly bounds = new Float64Array(4);
+	private readonly center = [0, 0, 0];
 	/** The pending sub-emitter events, EVENT_FLOATS each. */
 	private readonly events: Float64Array;
 	private eventCount = 0;
-	private readonly sample = new Float64Array(6);
-	private readonly direction = new Float64Array(3);
+	/** The emitter's numbers: see FROM, TO, BIRTH_TIME and SHARE. */
+	private readonly span = new Float64Array(4);
+	/** The system's seed, a particle's number and its seed, for `randomize`. */
+	private readonly seeds = new Uint32Array(3);
+	private readonly random = new Float64Array(CHANNELS);
+	/** The record of the particle being born, as the buffer takes it. */
+	private readonly record = new Float64Array(8);
 	/** The axes of the frame whose y axis is the emitter's direction, as three columns. */
 	private readonly frame = new Float64Array(9);
+	/** A particle's numbers for the motion functions, and its state at an event. */
+	private readonly particle = new Float64Array(PARTICLE_FLOATS);
+	private readonly flightNumbers = new Float64Array(14);
 	private readonly state = particleState();
+	/** A burst's place and its added velocity, made in the sub-emitter's space. */
 	private readonly point = [0, 0, 0];
 	private readonly inherited = [0, 0, 0];
-	/** The system's world matrix and the matrix into a sub-emitter's space, while events fire. */
+	/** This system's world matrix and the matrix into a sub-emitter's space, while events fire. */
 	private readonly world = new Float64Array(16);
 	private readonly childLocal = new Float64Array(16);
-	private readonly record = new Float32Array(9);
+	private readonly saved = new Float32Array(9);
 
 	/** @internal */
 	constructor(
 		/** The engine's particle buffer that the system fills, with its scene object. */
 		readonly buffer: ParticleBuffer,
 		private readonly options: ParticleSystemOptions,
+		private readonly clock: SketchTime,
 	) {
 		this.rate = options.rate ?? 0;
 		this.lifetime = span(options.lifetime, 1);
 		this.speed = span(options.speed, 1);
-		this.seed = pcg(options.seed ?? 1);
-		this.events = new Float64Array(
-			options.subEmitters?.length ? buffer.capacity * options.subEmitters.length * EVENT_FLOATS : 0,
-		);
+		this.seeds[SYSTEM_SEED] = pcg(options.seed ?? 1);
+		const subs = options.subEmitters?.length ?? 0;
+		this.events = new Float64Array(subs > 0 ? buffer.capacity * subs * EVENT_FLOATS : 0);
 		this.resetBirths();
 		this.readMotion(options);
+		this.frame.set(IDENTITY);
 		const d = options.direction;
 		if (d) {
-			// t = normalize(cross(a, n)), b = cross(n, t), for n the direction and a an axis apart from it.
-			const len = Math.hypot(d[0] as number, d[1] as number, d[2] as number) || 1;
-			const nx = (d[0] as number) / len;
-			const ny = (d[1] as number) / len;
-			const nz = (d[2] as number) / len;
+			// t = normalize(cross(a, n)) and b = cross(n, t), for n the direction and a an axis apart.
+			const [dx, dy, dz] = [d[0] as number, d[1] as number, d[2] as number];
+			const len = Math.hypot(dx, dy, dz) || 1;
+			const [nx, ny, nz] = [dx / len, dy / len, dz / len];
 			const [ax, ay, az] = Math.abs(ny) < 0.99 ? [0, 1, 0] : [1, 0, 0];
-			let tx = ay * nz - az * ny;
-			let ty = az * nx - ax * nz;
-			let tz = ax * ny - ay * nx;
-			const tl = Math.hypot(tx, ty, tz) || 1;
-			tx /= tl;
-			ty /= tl;
-			tz /= tl;
-			this.frame.set([
-				tx,
-				ty,
-				tz,
-				nx,
-				ny,
-				nz,
-				ny * tz - nz * ty,
-				nz * tx - nx * tz,
-				nx * ty - ny * tx,
-			]);
+			const [cx, cy, cz] = [ay * nz - az * ny, az * nx - ax * nz, ax * ny - ay * nx];
+			const tl = Math.hypot(cx, cy, cz) || 1;
+			const [tx, ty, tz] = [cx / tl, cy / tl, cz / tl];
+			const bx = ny * tz - nz * ty;
+			const by = nz * tx - nx * tz;
+			const bz = nx * ty - ny * tx;
+			this.frame.set([tx, ty, tz, nx, ny, nz, bx, by, bz]);
 		}
 	}
 
@@ -265,44 +308,68 @@ export class ParticleSystem {
 		this.readMotion(values);
 	}
 
-	/** Keeps the CPU's copy of the motion values in step with the buffer's. */
+	/** Keeps the CPU's copy of the motion values in step with the buffer's, and the reach. */
 	private readMotion(values: ParticleValues): void {
 		const m = this.motion;
-		if (values.gravity) [m.gx, m.gy, m.gz] = values.gravity as [number, number, number];
-		if (values.wind) [m.wx, m.wy, m.wz] = values.wind as [number, number, number];
+		const { gravity, wind } = values;
+		if (gravity) {
+			m.gx = gravity[0] as number;
+			m.gy = gravity[1] as number;
+			m.gz = gravity[2] as number;
+		}
+		if (wind) {
+			m.wx = wind[0] as number;
+			m.wy = wind[1] as number;
+			m.wz = wind[2] as number;
+		}
 		m.drag = values.drag ?? m.drag;
 		m.turbulence = values.turbulence ?? m.turbulence;
 		m.turbulenceScale = values.turbulenceScale ?? m.turbulenceScale;
 		m.turbulenceSpeed = values.turbulenceSpeed ?? m.turbulenceSpeed;
 		if (values.groundHeight !== undefined) {
 			m.groundHeight = values.groundHeight;
-			if (m.groundMode === GROUND_NONE) m.groundMode = 2;
+			if (m.groundMode === GROUND_NONE) m.groundMode = GROUND_BOUNCE;
 		}
-		if (values.groundMode) m.groundMode = { kill: 1, bounce: 2, stick: 3 }[values.groundMode];
+		if (values.groundMode) m.groundMode = GROUND_MODES[values.groundMode];
 		m.restitution = values.restitution ?? m.restitution;
 		m.friction = values.friction ?? m.friction;
+		const add = this.options.velocity;
+		const extra = add ? Math.hypot(add[0] as number, add[1] as number, add[2] as number) : 0;
+		const size = Math.max(values.size?.[1] ?? 0, this.options.size?.[1] ?? 0.1);
+		const aspect = Math.max(1, values.aspect ?? this.options.aspect ?? 1);
+		this.grow = reach(m, this.speed[1] + extra, this.lifetime[1]) + size * aspect;
 	}
 
 	/**
-	 * Moves the system on by `dt` seconds: emits the particles born in that time, fires the
-	 * sub-emitters of particles that died or met the ground, and gives the buffer its time. Call it
-	 * once per frame in `onLateUpdate`. It allocates nothing.
+	 * Moves the system on by the frame's step, or by `dt` seconds: emits the particles born in that
+	 * time, fires the sub-emitters of particles that died or met the ground, and gives the buffer
+	 * its time. Call it once per frame in `onLateUpdate`. It allocates nothing.
 	 */
-	update(dt: number): void {
+	update(dt?: number): void {
+		const s = this.span;
 		this.readEmitter();
-		if (this.time === 0 && this.emitted === 0 && this.options.prewarm && dt > 0) {
+		if (this.time === 0 && this.emitted === 0 && this.options.prewarm) {
 			// A prewarmed system emits its first span of the longest lifetime at once.
-			this.emitBetween(0, this.lifetime[1]);
+			s[FROM] = 0;
+			s[TO] = this.lifetime[1];
+			this.emitBetween();
 			this.time = this.lifetime[1];
 		}
-		const from = this.time;
-		const to = from + Math.max(dt, 0);
-		this.emitBetween(from, to);
-		this.time = to;
-		this.fireEvents(to);
-		if (to - this.base > REBASE_AFTER) this.rebase(to - this.base - this.lifetime[1] - 1);
-		this.buffer.setFrame(to - this.base, Math.min(this.emitted, this.buffer.capacity));
-		this.updateBounds(to);
+		// The step goes through the typed array: a number that may be either of two values would be
+		// boxed on its way.
+		s[TO] = this.clock.dt;
+		if (dt !== undefined) s[TO] = dt;
+		s[FROM] = this.time;
+		s[TO] = this.time + Math.max(s[TO] as number, 0);
+		this.emitBetween();
+		this.time = s[TO] as number;
+		this.fireEvents();
+		if (this.time - this.base > REBASE_AFTER) this.rebase();
+		const frame = this.buffer.frame;
+		frame[0] = this.time - this.base;
+		frame[1] = Math.min(this.emitted, this.buffer.capacity);
+		this.buffer.commit();
+		this.updateBounds();
 	}
 
 	/**
@@ -310,35 +377,45 @@ export class ParticleSystem {
 	 * the shape's spread and `velocity` added.
 	 */
 	burst(count: number, at?: Vec3Like, velocity?: Vec3Like): void {
-		for (let k = 0; k < count; k++) this.emit(this.time, 1, at, velocity);
+		this.span[BIRTH_TIME] = this.time;
+		this.span[SHARE] = 1;
+		for (let k = 0; k < count; k++) this.emit(at, velocity);
 	}
 
-	/** Emits the rate's and the bursts' particles born after `from` and up to `to`. */
-	private emitBetween(from: number, to: number): void {
-		const { duration, loop = true } = this.options;
+	/** Emits the rate's and the bursts' particles born after the span's start and up to its end. */
+	private emitBetween(): void {
+		const s = this.span;
+		const from = s[FROM] as number;
+		const to = s[TO] as number;
+		const length = Math.max(to - from, 1e-9);
+		const { duration, loop = true, bursts } = this.options;
 		const end = duration !== undefined && !loop ? duration : Infinity;
 		if (this.emitting && this.rate > 0) {
 			const step = 1 / this.rate;
 			if (this.nextBirth === Infinity || this.nextBirth < from) this.nextBirth = from + step;
 			let budget = this.buffer.capacity;
 			while (this.nextBirth <= to && this.nextBirth <= end && budget-- > 0) {
-				this.emit(this.nextBirth, (this.nextBirth - from) / Math.max(to - from, 1e-9));
+				s[BIRTH_TIME] = this.nextBirth;
+				s[SHARE] = (this.nextBirth - from) / length;
+				this.emit(undefined, undefined);
 				this.nextBirth += step;
 			}
 		} else this.nextBirth = Infinity;
-		if (!this.emitting) return;
-		for (const burst of this.options.bursts ?? []) {
+		if (!this.emitting || !bursts) return;
+		for (let b = 0; b < bursts.length; b++) {
+			const burst = bursts[b] as ParticleBurst;
 			const interval = burst.interval ?? (loop && duration !== undefined ? duration : 0);
 			const cycles = burst.interval !== undefined || loop ? (burst.cycles ?? Infinity) : 1;
-			// The bursts whose times fall after `from` and up to `to`.
+			// The bursts whose times fall after the span's start and up to its end.
 			let first = interval > 0 ? Math.max(0, Math.ceil((from - burst.time) / interval)) : 0;
 			if (interval > 0 && burst.time + first * interval <= from) first++;
 			for (let j = first; j < cycles; j++) {
 				const at = burst.time + j * interval;
 				if (at > to || at > end) break;
 				if (at > from || (from === 0 && at === 0)) {
-					const share = (at - from) / Math.max(to - from, 1e-9);
-					for (let k = 0; k < burst.count; k++) this.emit(at, share);
+					s[BIRTH_TIME] = at;
+					s[SHARE] = (at - from) / length;
+					for (let k = 0; k < burst.count; k++) this.emit(undefined, undefined);
 				}
 				if (interval <= 0) break;
 			}
@@ -360,242 +437,197 @@ export class ParticleSystem {
 	}
 
 	/**
-	 * Emits one particle born at `time`, which is `share` of the way through the frame, for a
-	 * followed emitter that moves. `at` and `velocity` give a burst's place and added velocity.
+	 * Emits one particle, born at the span's birth time, its share of the way through the frame for
+	 * a followed emitter that moves. `at` and `velocity` give a burst's place and added velocity.
 	 */
-	private emit(time: number, share: number, at?: Vec3Like, velocity?: Vec3Like): void {
+	private emit(at: Vec3Like | undefined, velocity: Vec3Like | undefined): void {
+		const seeds = this.seeds;
 		const number = this.emitted++;
-		const seed = pcg((this.seed ^ number) >>> 0);
-		const s = this.sample;
-		this.sampleShape(seed, s);
-		let px = s[0] as number;
-		let py = s[1] as number;
-		let pz = s[2] as number;
-		let vx = s[3] as number;
-		let vy = s[4] as number;
-		let vz = s[5] as number;
+		seeds[NUMBER] = number;
+		randomize(seeds, this.random);
+		const r = this.record;
+		this.sampleShape();
 		if (at) {
-			px += at[0] as number;
-			py += at[1] as number;
-			pz += at[2] as number;
-		} else if (this.options.follow) {
-			// From the emitter's space to the world, between its places in the two frames, then
-			// into the system's space.
-			const a = this.lastEmitter;
-			const b = this.emitter;
-			const tx = (a[12] as number) + ((b[12] as number) - (a[12] as number)) * share;
-			const ty = (a[13] as number) + ((b[13] as number) - (a[13] as number)) * share;
-			const tz = (a[14] as number) + ((b[14] as number) - (a[14] as number)) * share;
-			const wx = (b[0] as number) * px + (b[4] as number) * py + (b[8] as number) * pz + tx;
-			const wy = (b[1] as number) * px + (b[5] as number) * py + (b[9] as number) * pz + ty;
-			const wz = (b[2] as number) * px + (b[6] as number) * py + (b[10] as number) * pz + tz;
-			const dx = (b[0] as number) * vx + (b[4] as number) * vy + (b[8] as number) * vz;
-			const dy = (b[1] as number) * vx + (b[5] as number) * vy + (b[9] as number) * vz;
-			const dz = (b[2] as number) * vx + (b[6] as number) * vy + (b[10] as number) * vz;
-			const m = this.toLocal;
-			px =
-				(m[0] as number) * wx + (m[4] as number) * wy + (m[8] as number) * wz + (m[12] as number);
-			py =
-				(m[1] as number) * wx + (m[5] as number) * wy + (m[9] as number) * wz + (m[13] as number);
-			pz =
-				(m[2] as number) * wx + (m[6] as number) * wy + (m[10] as number) * wz + (m[14] as number);
-			vx = (m[0] as number) * dx + (m[4] as number) * dy + (m[8] as number) * dz;
-			vy = (m[1] as number) * dx + (m[5] as number) * dy + (m[9] as number) * dz;
-			vz = (m[2] as number) * dx + (m[6] as number) * dy + (m[10] as number) * dz;
-		}
+			for (let c = 0; c < 3; c++) r[c] = (r[c] as number) + (at[c] as number);
+		} else if (this.options.follow) this.placeFollowed();
 		const add = velocity ?? this.options.velocity;
-		if (add) {
-			vx += add[0] as number;
-			vy += add[1] as number;
-			vz += add[2] as number;
-		}
-		const lifetime = between(this.lifetime, seed, 11);
-		const index = number % this.buffer.capacity;
-		this.buffer.write(index, px, py, pz, time - this.base, vx, vy, vz, lifetime, seed);
-		this.growBirths(px, py, pz);
+		if (add) for (let c = 0; c < 3; c++) r[4 + c] = (r[4 + c] as number) + (add[c] as number);
+		const shortest = this.lifetime[0];
+		r[RECORD_LIFE] = shortest + (this.lifetime[1] - shortest) * (this.random[LIFE] as number);
+		r[RECORD_TIME] = (this.span[BIRTH_TIME] as number) - this.base;
+		const seed = (seeds[PARTICLE_SEED] as number) & 0xffff;
+		this.buffer.write(number % this.buffer.capacity, r, seed);
+		this.growBirths();
 		const subs = this.options.subEmitters;
-		if (subs)
-			for (let k = 0; k < subs.length; k++)
-				this.planEvent(k, time, lifetime, seed, px, py, pz, vx, vy, vz);
-	}
-
-	/** Writes a place and a velocity from the shape, in the emitter's space, into `out`. */
-	private sampleShape(seed: number, out: Float64Array): void {
-		const shape = this.options.shape ?? { type: 'point' };
-		const speed = between(this.speed, seed, 12);
-		const u = chance(seed, 13);
-		const v = chance(seed, 14);
-		const w = chance(seed, 15);
-		let px = 0;
-		let py = 0;
-		let pz = 0;
-		// A direction: up, or the option's, within the spread; the sphere's and the cone's own.
-		const d = this.direction;
-		if (shape.type === 'cone') this.cap(shape.angle, u, v, true);
-		else this.cap(this.options.spread ?? 0, u, v, false);
-		switch (shape.type) {
-			case 'sphere': {
-				const z = 2 * u - 1;
-				const r = Math.sqrt(1 - z * z);
-				const a = 2 * Math.PI * v;
-				d[0] = r * Math.cos(a);
-				d[1] = z;
-				d[2] = r * Math.sin(a);
-				const radius = shape.radius * (shape.surface ? 1 : Math.cbrt(w));
-				px = (d[0] as number) * radius;
-				py = (d[1] as number) * radius;
-				pz = (d[2] as number) * radius;
-				break;
-			}
-			case 'cone':
-			case 'disc': {
-				const r = shape.radius * Math.sqrt(w);
-				const a = 2 * Math.PI * chance(seed, 16);
-				px = r * Math.cos(a);
-				pz = r * Math.sin(a);
-				break;
-			}
-			case 'box':
-				px = (w - 0.5) * (shape.size[0] as number);
-				py = (chance(seed, 16) - 0.5) * (shape.size[1] as number);
-				pz = (chance(seed, 17) - 0.5) * (shape.size[2] as number);
-				break;
-		}
-		out[0] = px;
-		out[1] = py;
-		out[2] = pz;
-		out[3] = (d[0] as number) * speed;
-		out[4] = (d[1] as number) * speed;
-		out[5] = (d[2] as number) * speed;
+		if (subs) for (let k = 0; k < subs.length; k++) this.planEvent(k);
 	}
 
 	/**
-	 * Writes a random direction within `angle` radians of up, or of the option's direction unless
-	 * `up`, evenly over the cap of the sphere that the angle cuts.
+	 * Moves the record's place and velocity from the emitter's space to the world, between the
+	 * emitter's places in the two frames, then into the system's space.
 	 */
-	private cap(angle: number, u: number, v: number, up: boolean): void {
-		const cos = 1 - u * (1 - Math.cos(angle));
-		const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
-		const a = 2 * Math.PI * v;
-		const x = sin * Math.cos(a);
-		const z = sin * Math.sin(a);
-		const out = this.direction;
-		const f = this.frame;
-		if (up || !this.options.direction) {
-			out[0] = x;
-			out[1] = cos;
-			out[2] = z;
-			return;
+	private placeFollowed(): void {
+		const r = this.record;
+		const a = this.lastEmitter;
+		const b = this.emitter;
+		const m = this.toLocal;
+		const p = this.point;
+		const d = this.inherited;
+		const share = this.span[SHARE] as number;
+		for (let c = 0; c < 3; c++) {
+			const from = a[12 + c] as number;
+			const moved = from + ((b[12 + c] as number) - from) * share;
+			p[c] = moved;
+			d[c] = 0;
+			for (let k = 0; k < 3; k++) {
+				const axis = b[4 * k + c] as number;
+				p[c] = (p[c] as number) + axis * (r[k] as number);
+				d[c] = (d[c] as number) + axis * (r[4 + k] as number);
+			}
 		}
-		// The cap turns from up onto the direction: f holds the frame whose y axis is the direction.
-		out[0] = (f[0] as number) * x + (f[3] as number) * cos + (f[6] as number) * z;
-		out[1] = (f[1] as number) * x + (f[4] as number) * cos + (f[7] as number) * z;
-		out[2] = (f[2] as number) * x + (f[5] as number) * cos + (f[8] as number) * z;
+		for (let c = 0; c < 3; c++) {
+			let place = m[12 + c] as number;
+			let speed = 0;
+			for (let k = 0; k < 3; k++) {
+				place += (m[4 * k + c] as number) * (p[k] as number);
+				speed += (m[4 * k + c] as number) * (d[k] as number);
+			}
+			r[c] = place;
+			r[4 + c] = speed;
+		}
 	}
 
-	/** Records when a new particle's sub-emitter fires, if it does within its life. */
-	private planEvent(
-		sub: number,
-		time: number,
-		lifetime: number,
-		seed: number,
-		px: number,
-		py: number,
-		pz: number,
-		vx: number,
-		vy: number,
-		vz: number,
-	): void {
+	/** Writes a place and a velocity from the shape, in the emitter's space, into the record. */
+	private sampleShape(): void {
+		const shape = this.options.shape;
+		const rand = this.random;
+		const r = this.record;
+		const speed = this.speed[0] + (this.speed[1] - this.speed[0]) * (rand[SPEED] as number);
+		const u = rand[U] as number;
+		const v = rand[W] as number;
+		const w = rand[R] as number;
+		let px = 0;
+		let py = 0;
+		let pz = 0;
+		let dx: number;
+		let dy: number;
+		let dz: number;
+		if (shape?.type === 'sphere') {
+			const z = 2 * u - 1;
+			const ring = Math.sqrt(1 - z * z);
+			const a = 2 * Math.PI * v;
+			dx = ring * Math.cos(a);
+			dy = z;
+			dz = ring * Math.sin(a);
+			const at = shape.radius * (shape.surface ? 1 : Math.cbrt(w));
+			px = dx * at;
+			py = dy * at;
+			pz = dz * at;
+		} else {
+			// A direction within the cone's angle of up, or within the spread of the option's
+			// direction, evenly over the cap of the sphere that the angle cuts.
+			const cone = shape?.type === 'cone';
+			const angle = shape?.type === 'cone' ? shape.angle : (this.options.spread ?? 0);
+			const cos = 1 - u * (1 - Math.cos(angle));
+			const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
+			const a = 2 * Math.PI * v;
+			const x = sin * Math.cos(a);
+			const z = sin * Math.sin(a);
+			const f = cone ? IDENTITY : this.frame;
+			dx = (f[0] as number) * x + (f[3] as number) * cos + (f[6] as number) * z;
+			dy = (f[1] as number) * x + (f[4] as number) * cos + (f[7] as number) * z;
+			dz = (f[2] as number) * x + (f[5] as number) * cos + (f[8] as number) * z;
+			if (shape?.type === 'cone' || shape?.type === 'disc') {
+				const radius = shape.radius * Math.sqrt(w);
+				const turn = 2 * Math.PI * (rand[ANGLE] as number);
+				px = radius * Math.cos(turn);
+				pz = radius * Math.sin(turn);
+			} else if (shape?.type === 'box') {
+				px = (w - 0.5) * (shape.size[0] as number);
+				py = ((rand[BOX_Y] as number) - 0.5) * (shape.size[1] as number);
+				pz = ((rand[BOX_Z] as number) - 0.5) * (shape.size[2] as number);
+			}
+		}
+		r[0] = px;
+		r[1] = py;
+		r[2] = pz;
+		r[4] = dx * speed;
+		r[5] = dy * speed;
+		r[6] = dz * speed;
+	}
+
+	/** Records when the newest particle's sub-emitter `sub` fires, if it does within its life. */
+	private planEvent(sub: number): void {
 		const m = this.motion;
+		const r = this.record;
 		const on = this.options.subEmitters?.[sub]?.on;
+		const lifetime = r[RECORD_LIFE] as number;
 		let age = lifetime;
 		if (m.groundMode !== GROUND_NONE) {
-			const hit = impact(m, px, py, pz, vx, vy, vz, lifetime);
+			const io = this.flightNumbers;
+			for (let k = 0; k < 3; k++) {
+				io[P + k] = r[k] as number;
+				io[V + k] = r[4 + k] as number;
+			}
+			io[T] = lifetime;
+			impact(m, io);
+			const hit = io[HIT] as number;
 			if (on === 'ground' && hit < 0) return;
 			if (hit >= 0 && (on === 'ground' || m.groundMode === GROUND_KILL)) age = hit;
 		} else if (on === 'ground') return;
-		if (this.eventCount * EVENT_FLOATS >= this.events.length) return;
+		if ((this.eventCount + 1) * EVENT_FLOATS > this.events.length) return;
 		const e = this.events;
 		const at = this.eventCount++ * EVENT_FLOATS;
-		e[at] = time + age;
+		e[at] = (this.span[BIRTH_TIME] as number) + age;
 		e[at + 1] = sub;
-		e[at + 2] = px;
-		e[at + 3] = py;
-		e[at + 4] = pz;
-		e[at + 5] = time;
-		e[at + 6] = vx;
-		e[at + 7] = vy;
-		e[at + 8] = vz;
-		e[at + 9] = seed;
+		for (let k = 0; k < 3; k++) {
+			e[at + 2 + BIRTH + k] = r[k] as number;
+			e[at + 2 + VELOCITY + k] = r[4 + k] as number;
+		}
+		e[at + 2 + AGE] = age;
+		e[at + 2 + SEED] = this.seeds[PARTICLE_SEED] as number;
 	}
 
-	/** Fires the sub-emitters whose events fall due by `now`. */
-	private fireEvents(now: number): void {
+	/** Fires the sub-emitters whose events fall due by now. */
+	private fireEvents(): void {
 		const subs = this.options.subEmitters;
 		if (!subs || this.eventCount === 0) return;
 		const e = this.events;
 		const s = this.state;
 		const w = this.world;
 		const local = this.childLocal;
+		const input = this.particle;
+		const p = this.point;
 		this.object.getWorldMatrix(w as unknown as Mat4Like);
 		let child: ParticleSystem | undefined;
 		for (let k = 0; k < this.eventCount; ) {
 			const at = k * EVENT_FLOATS;
-			if ((e[at] as number) > now) {
+			if ((e[at] as number) > this.time) {
 				k++;
 				continue;
 			}
 			const sub = subs[e[at + 1] as number] as SubEmitter;
-			const age = (e[at] as number) - (e[at + 5] as number);
-			stateAt(
-				this.motion,
-				e[at + 2] as number,
-				e[at + 3] as number,
-				e[at + 4] as number,
-				e[at + 6] as number,
-				e[at + 7] as number,
-				e[at + 8] as number,
-				age,
-				e[at + 9] as number,
-				s,
-			);
+			for (let j = 0; j < PARTICLE_FLOATS; j++) input[j] = e[at + 2 + j] as number;
+			stateAt(this.motion, input, s);
 			// From this system's space to the world, then into the sub-emitter's space.
 			if (child !== sub.system) {
 				child = sub.system;
 				child.object.getWorldMatrix(local as unknown as Mat4Like);
 				mat4.invert(local as unknown as Mat4Like, local as unknown as Mat4Like);
 			}
-			const wx =
-				(w[0] as number) * s.px +
-				(w[4] as number) * s.py +
-				(w[8] as number) * s.pz +
-				(w[12] as number);
-			const wy =
-				(w[1] as number) * s.px +
-				(w[5] as number) * s.py +
-				(w[9] as number) * s.pz +
-				(w[13] as number);
-			const wz =
-				(w[2] as number) * s.px +
-				(w[6] as number) * s.py +
-				(w[10] as number) * s.pz +
-				(w[14] as number);
-			const p = this.point;
-			p[0] =
-				(local[0] as number) * wx +
-				(local[4] as number) * wy +
-				(local[8] as number) * wz +
-				(local[12] as number);
-			p[1] =
-				(local[1] as number) * wx +
-				(local[5] as number) * wy +
-				(local[9] as number) * wz +
-				(local[13] as number);
-			p[2] =
-				(local[2] as number) * wx +
-				(local[6] as number) * wy +
-				(local[10] as number) * wz +
-				(local[14] as number);
+			for (let c = 0; c < 3; c++) {
+				const world =
+					(w[c] as number) * s.px +
+					(w[4 + c] as number) * s.py +
+					(w[8 + c] as number) * s.pz +
+					(w[12 + c] as number);
+				input[c] = world;
+			}
+			for (let c = 0; c < 3; c++) {
+				let place = local[12 + c] as number;
+				for (let j = 0; j < 3; j++) place += (local[4 * j + c] as number) * (input[j] as number);
+				p[c] = place;
+			}
 			const inherit = sub.inheritVelocity ?? 0;
 			const v = this.inherited;
 			v[0] = s.vx * inherit;
@@ -616,76 +648,66 @@ export class ParticleSystem {
 		this.births.fill(-Infinity, 9, 12);
 	}
 
-	/** Grows this span's box of births by a birth place. */
-	private growBirths(x: number, y: number, z: number): void {
+	/** Grows this span's box of births by the newest birth place. */
+	private growBirths(): void {
 		const b = this.births;
-		b[0] = Math.min(b[0] as number, x);
-		b[1] = Math.min(b[1] as number, y);
-		b[2] = Math.min(b[2] as number, z);
-		b[3] = Math.max(b[3] as number, x);
-		b[4] = Math.max(b[4] as number, y);
-		b[5] = Math.max(b[5] as number, z);
+		const r = this.record;
+		for (let c = 0; c < 3; c++) {
+			b[c] = Math.min(b[c] as number, r[c] as number);
+			b[3 + c] = Math.max(b[3 + c] as number, r[c] as number);
+		}
 	}
 
 	/**
 	 * Gives the system's object a culling sphere around every live particle: the births of this
-	 * span of the longest lifetime and the one before, grown by how far a particle can move.
+	 * span of the longest lifetime and the one before, grown by how far a particle can move. The
+	 * object keeps its sphere while the new one fits in it and is not much smaller, so a steady
+	 * emitter sets its bounds only now and then.
 	 */
-	private updateBounds(now: number): void {
+	private updateBounds(): void {
 		const b = this.births;
-		const life = this.lifetime[1];
-		if (now >= this.epochEnd) {
+		if (this.time >= this.epochEnd) {
 			b.copyWithin(6, 0, 6);
 			b.fill(Infinity, 0, 3);
 			b.fill(-Infinity, 3, 6);
-			this.epochEnd = now + life;
+			this.epochEnd = this.time + this.lifetime[1];
 		}
-		const min = (k: number) => Math.min(b[k] as number, b[k + 6] as number);
-		const max = (k: number) => Math.max(b[k + 3] as number, b[k + 9] as number);
-		if (!(min(0) <= max(0))) return;
-		const add = this.options.velocity;
-		const speed =
-			this.speed[1] + (add ? Math.hypot(add[0] as number, add[1] as number, add[2] as number) : 0);
-		const size = this.options.size?.[1] ?? 0.1;
-		const grow = reach(this.motion, speed, life) + size * Math.max(1, this.options.aspect ?? 1);
-		const cx = (min(0) + max(0)) / 2;
-		const cy = (min(1) + max(1)) / 2;
-		const cz = (min(2) + max(2)) / 2;
-		const radius = Math.hypot(max(0) - cx, max(1) - cy, max(2) - cz) + grow;
 		const o = this.bounds;
-		if (o[0] === cx && o[1] === cy && o[2] === cz && o[3] === radius) return;
-		o[0] = cx;
-		o[1] = cy;
-		o[2] = cz;
+		const center = this.center;
+		let squared = 0;
+		let moved = 0;
+		for (let c = 0; c < 3; c++) {
+			const low = Math.min(b[c] as number, b[6 + c] as number);
+			const high = Math.max(b[3 + c] as number, b[9 + c] as number);
+			if (!(low <= high)) return;
+			const middle = (low + high) / 2;
+			squared += (high - middle) * (high - middle);
+			moved += (middle - (o[c] as number)) * (middle - (o[c] as number));
+			center[c] = middle;
+		}
+		const radius = Math.sqrt(squared) + this.grow;
+		const kept = o[3] as number;
+		if (Math.sqrt(moved) + radius <= kept && radius > kept * BOUNDS_SLACK) return;
+		for (let c = 0; c < 3; c++) o[c] = center[c] as number;
 		o[3] = radius;
-		this.point[0] = cx;
-		this.point[1] = cy;
-		this.point[2] = cz;
-		this.object.setBounds(this.point, radius);
+		this.object.setBounds(center, radius);
 	}
 
 	/**
-	 * Moves the buffer's time back by `shift` seconds, with every record's birth time, so the
-	 * GPU's 32-bit times keep their precision in a system that runs for hours.
+	 * Moves the buffer's time back by whole seconds, with every record's birth time, so the GPU's
+	 * 32-bit times keep their precision in a system that runs for hours.
 	 */
-	private rebase(shift: number): void {
+	private rebase(): void {
+		const shift = Math.floor(this.time - this.base - this.lifetime[1] - 1);
 		if (shift <= 0) return;
 		const count = Math.min(this.emitted, this.buffer.capacity);
-		const record = this.record;
+		const saved = this.saved;
+		const r = this.record;
 		for (let i = 0; i < count; i++) {
-			this.buffer.read(i, record);
-			this.buffer.write(
-				i,
-				record[0] as number,
-				record[1] as number,
-				record[2] as number,
-				(record[3] as number) - shift,
-				record[4] as number,
-				record[5] as number,
-				record[6] as number,
-				record[7] as number,
-				record[8] as number,
-			);
+			this.buffer.read(i, saved);
+			for (let k = 0; k < 8; k++) r[k] = saved[k] as number;
+			r[RECORD_TIME] = (r[RECORD_TIME] as number) - shift;
+			this.buffer.write(i, r, saved[8] as number);
 		}
 		this.base += shift;
 	}
@@ -709,19 +731,19 @@ function defaultCapacity(options: ParticleSystemOptions): number {
 }
 
 /**
- * Makes a particle system in the scene: an emitter, and the engine's particle buffer that it fills.
- * Call the system's `update(dt)` once per frame in `onLateUpdate`. The first system downloads the
- * engine's particle code. Throws E1108 for a capacity out of range, and E1406 when the particle
- * code does not download.
+ * Makes a particle system in the sketch's scene: an emitter, and the engine's particle buffer that
+ * it fills. Call the system's `update()` once per frame in `onLateUpdate`. The first system
+ * downloads the engine's particle code. Throws E1108 for a capacity out of range, and E1406 when
+ * the particle code does not download.
  *
  * @category api/particles
  */
 export async function createParticles(
-	scene: Scene,
+	context: SketchContext,
 	options: ParticleSystemOptions,
 ): Promise<ParticleSystem> {
 	const capacity = options.capacity ?? defaultCapacity(options);
-	const buffer = await scene.createParticleBuffer({ ...options, capacity });
+	const buffer = await context.scene.createParticleBuffer({ ...options, capacity });
 	const { object } = buffer;
 	if (options.parent) object.setParent(options.parent);
 	const position = options.position;
@@ -733,5 +755,5 @@ export async function createParticles(
 		options.follow.getWorldPosition(place);
 		object.setPosition(place[0] as number, place[1] as number, place[2] as number);
 	}
-	return new ParticleSystem(buffer, options);
+	return new ParticleSystem(buffer, options, context.time);
 }

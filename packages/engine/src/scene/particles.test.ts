@@ -32,10 +32,10 @@ function buffer(capacity: number, additive = true) {
 describe('particle buffers', () => {
 	test('a record keeps its birth, velocity, lifetime and seed, and marks run together', () => {
 		const { particles, marks } = buffer(8);
-		particles.write(2, 1, 2, 3, 4.5, -1, 0.5, 0, 1.75, 0x1234);
-		particles.write(3, 0, 0, 0, 5, 0, 0, 0, 2, 7);
-		particles.write(6, 0, 0, 0, 6, 0, 0, 0, 0.5, 9);
-		particles.setFrame(6, 7);
+		particles.write(2, [1, 2, 3, 4.5, -1, 0.5, 0, 1.75], 0x1234);
+		particles.write(3, [0, 0, 0, 5, 0, 0, 0, 2], 7);
+		particles.write(6, [0, 0, 0, 6, 0, 0, 0, 0.5], 9);
+		particles.commit();
 		const out = new Float32Array(9);
 		particles.read(2, out);
 		expect([...out.slice(0, 7)]).toEqual([1, 2, 3, 4.5, -1, 0.5, 0]);
@@ -47,9 +47,10 @@ describe('particle buffers', () => {
 		]);
 	});
 
-	test('the frame values hold the time and the records the draw reads, at most the capacity', () => {
+	test('the frame values follow the values, where the core reads them', () => {
 		const { particles, values } = buffer(8);
-		particles.setFrame(3.5, 20);
+		particles.frame[0] = 3.5;
+		particles.frame[1] = 8;
 		expect(values[PARTICLE_PARAM_FLOATS]).toBe(3.5);
 		expect(values[PARTICLE_PARAM_FLOATS + 1]).toBe(8);
 	});

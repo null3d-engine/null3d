@@ -195,8 +195,8 @@ export default defineSketch(async (context) => {
 			pose(time.now);
 			if (frames) Atomics.add(frames, 0, 1);
 		},
-		onLateUpdate(dt) {
-			for (const system of particles) system.update(dt);
+		onLateUpdate() {
+			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
 });
@@ -206,11 +206,8 @@ export default defineSketch(async (context) => {
  * bounce off the ground, and glows from a texture made in code that fade near the boxes behind
  * them, so the frame copies the opaque depth.
  */
-async function createParticleFountains({
-	scene,
-	textures,
-}: SketchContext): Promise<ParticleSystem[]> {
-	const fountain = await createParticles(scene, {
+async function createParticleFountains(context: SketchContext): Promise<ParticleSystem[]> {
+	const fountain = await createParticles(context, {
 		rate: 4000,
 		lifetime: [1.5, 2.5],
 		shape: { type: 'cone', radius: 0.5, angle: 0.4 },
@@ -221,8 +218,8 @@ async function createParticleFountains({
 		colors: ['#9cc8ff', '#ffffff'],
 		alphaOverLife: [1, 1, 0],
 	});
-	const glows = await createParticles(scene, {
-		...particleTextures.glow(textures),
+	const glows = await createParticles(context, {
+		...particleTextures.glow(context.textures),
 		position: [0, S1_BOB_HEIGHT, 0],
 		rate: 1500,
 		lifetime: 3,

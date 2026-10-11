@@ -12,7 +12,7 @@ summary: "createParticles: emitters, bursts and sub-emitters; closed-form GPU mo
 
 ```mermaid
 flowchart LR
-    update["system.update(dt)<br/>in onLateUpdate"] --> births["Records of the particles<br/>born in the frame"]
+    update["system.update()<br/>in onLateUpdate"] --> births["Records of the particles<br/>born in the frame"]
     births --> buffer["The particle buffer<br/>in engine memory"]
     buffer --> gpu["The vertex shader works out<br/>each particle at its age"]
     gpu --> screen["Quads in the<br/>transparent pass"]
@@ -34,7 +34,7 @@ import { createParticles, particleTextures } from '@null3d/particles';
 export default defineSketch(async (ctx) => {
   const { scene, textures } = ctx;
   scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 2, 6], target: [0, 1, 0] }));
-  const sparks = await createParticles(scene, {
+  const sparks = await createParticles(ctx, {
     ...particleTextures.spark(textures),
     position: [0, 0.5, 0],
     rate: 200,
@@ -51,14 +51,14 @@ export default defineSketch(async (ctx) => {
     alphaOverLife: [1, 0],
   });
   return {
-    onLateUpdate(dt) {
-      sparks.update(dt);
+    onLateUpdate() {
+      sparks.update();
     },
   };
 });
 ```
 
-Call `update(dt)` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now.
+Pass the whole sketch context, `ctx`, as the first argument: the system reads its scene, and the frame's step from its clock. Call `update()` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now. `update` allocates nothing. `update(dt)` steps by `dt` seconds in place of the frame's step.
 
 ## Emitters
 
@@ -91,8 +91,8 @@ With `follow: object`, the system emits from that object's place and turn, and p
 A sub-emitter is another system that bursts where a particle of this system dies or first meets the ground. A firework's rocket bursts into sparks, and a raindrop splashes.
 
 ```ts
-const sparkle = await createParticles(scene, { lifetime: 1.2, speed: [3, 5], shape: { type: 'sphere', radius: 0.1 } });
-const rockets = await createParticles(scene, {
+const sparkle = await createParticles(ctx, { lifetime: 1.2, speed: [3, 5], shape: { type: 'sphere', radius: 0.1 } });
+const rockets = await createParticles(ctx, {
   rate: 0.8,
   lifetime: 1.4,
   speed: 14,
@@ -168,7 +168,7 @@ three.js has no particle system of its own. Projects build one from `THREE.Point
 | A sprite atlas in `PointsMaterial.map` | `map` with `flipbook` |
 | `blending: THREE.AdditiveBlending`, `depthWrite: false` | `blending: 'additive'`; particles never write depth |
 | Velocity and gravity updated in the loop | `speed`, `gravity`, `drag`, `wind` and `turbulence` |
-| three.quarks's `ParticleSystem` and `BatchedRenderer` | `createParticles`, with `system.update(dt)` in `onLateUpdate` |
+| three.quarks's `ParticleSystem` and `BatchedRenderer` | `createParticles`, with `system.update()` in `onLateUpdate` |
 
 ## Related pages
 

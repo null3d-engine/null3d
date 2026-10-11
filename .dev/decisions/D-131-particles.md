@@ -67,6 +67,8 @@ The first runs of B and of the WebGL2 rows measured nothing real. The compute ro
 
 How the data was produced: a scratch page draws each route with raw WebGPU and WebGL2, served with the isolation headers. Playwright runs it in headless Chrome: 3 warm-up rounds, then 12 rounds of 8 iterations, and the median of the rounds.
 
+**Allocation.** `bun run bench:allocation --particles` on the Mac's GPU on 11 October 2026, S1 with two systems that emit 5,500 particles per second, one of them soft. The first version of the add-on allocated 3,671 bytes per frame on the sketch's thread: it passed each particle's numbers as arguments to calls that the engine did not inline, which boxed every number. The add-on now keeps them in typed arrays and fields, and the buffer's `write` takes a typed array. The thread then allocated 345 bytes per frame on WebGPU and 342 on WebGL2, the same as S1 without particles within a few bytes, apart from the sample's own loop. The culling sphere changes only when the births outgrow it or shrink well inside it, as a call that sets it boxes its radius. The soft system's depth copy adds one render pass, whose encoder takes 64 bytes on WebGPU, as each of bloom's passes does.
+
 ## Decision
 
 Option A for the motion, the soft particles' depth copy for soft particles, and one sorted object per system.
@@ -74,6 +76,6 @@ Option A for the motion, the soft particles' depth copy for soft particles, and 
 ## Consequences
 
 - The engine: `scene.createParticleBuffer` (first use) and the `ParticleBuffer` class. The particle templates (53 to 56) and bind layouts (32, 33 and 35). The depth copy pass in the render graph, and the shader manifest's `particles` set.
-- The add-on `@null3d/particles`: emitters, bursts, sub-emitters, the follow mode for trails, culling bounds, and textures made in code.
+- The add-on `@null3d/particles`: `createParticles(ctx, options)` and `system.update()`, which reads the frame's step from the sketch's clock, as the camera controls read `ctx`. Emitters, bursts, sub-emitters, the follow mode for trails, culling bounds, and textures made in code.
 - Docs: `api/particles`, the three.js mapping's particles entry, and the develop skill's quick reference and recipe.
 - Limits: a system does not sort its own particles, cast shadows or take light. Views other than the camera's draw particles without the soft fade.

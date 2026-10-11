@@ -1704,7 +1704,7 @@
       "three": "Points or InstancedMesh particles moved on the CPU / three.quarks ParticleSystem / three-nebula",
       "status": "changed",
       "since": "0.2",
-      "target": "await createParticles(scene, { rate, bursts, lifetime, shape, speed, gravity, drag, wind, turbulence, size, colors, colorOverLife, blending, map, flipbook }) from @null3d/particles; system.update(dt) in onLateUpdate",
+      "target": "await createParticles(ctx, { rate, bursts, lifetime, shape, speed, gravity, drag, wind, turbulence, size, colors, alphaOverLife, blending, map, flipbook }) from @null3d/particles; system.update() in onLateUpdate",
       "notes": "three.js has no particle system. A port replaces the loop that moves Points or InstancedMesh rows with an emitter whose particles the GPU moves in closed form: gravity, drag toward the wind, turbulence and a ground that bounces them. Write the effect's look as curves over life in place of per-frame color and size code. AdditiveBlending becomes blending 'additive'; particles never write depth. A sprite atlas becomes map with flipbook. three.quarks's sub-emitters become subEmitters on 'death' or 'ground'. A system does not sort its own particles, cast shadows or take light.",
       "docs": "api/particles",
       "detect": "\\b(ParticleSystem|BatchedRenderer|ParticleEmitter)\\b|three\\.quarks|three-nebula"

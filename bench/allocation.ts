@@ -310,6 +310,13 @@ const REFLECTION_REPLAY_BUDGET = 3 * 64;
 const TRANSMISSION_REPLAY_BUDGET = 64;
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--particles`:
+ * the encoder of the render pass that copies the opaque depth for the soft particles, at bloom's
+ * allowance per pass.
+ */
+const PARTICLES_REPLAY_BUDGET = 64;
+
+/**
  * The bytes per frame that the WebGPU backend's mip levels may allocate with `--transmission`: the
  * encoders of the render passes that make the copy's levels, one per level after the first, for a
  * render size of up to 4096 pixels. On the Mac the page's ten such passes allocated about 17 bytes
@@ -623,6 +630,7 @@ async function main(): Promise<void> {
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(replay && particles ? PARTICLES_REPLAY_BUDGET : 0) +
 					(name === 'generateMipmaps webgpu/backend.ts' && transmission
 						? TRANSMISSION_MIPS_BUDGET
 						: 0) +

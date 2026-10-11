@@ -59,7 +59,7 @@ export default defineSketch(async (ctx) => {
 	const firelight = { color: '#ff8a3a', intensity: 6, range: 9, position: [0, 0.8, 0] as const };
 	const glow = scene.createPointLight(firelight);
 	// Flames fade at the ground, embers wander up, smoke billows, leaves settle and fireflies blink.
-	const fire = await createParticles(scene, {
+	const fire = await createParticles(ctx, {
 		...maps.flame(textures),
 		rate: 70,
 		lifetime: [0.55, 0.85],
@@ -71,7 +71,7 @@ export default defineSketch(async (ctx) => {
 		alphaOverLife: [0, 1, 0.7, 0],
 		softness: 0.25,
 	});
-	const embers = await createParticles(scene, {
+	const embers = await createParticles(ctx, {
 		...maps.spark(textures),
 		position: [0, 0.3, 0],
 		rate: 26,
@@ -85,7 +85,7 @@ export default defineSketch(async (ctx) => {
 		intensity: 7,
 		alphaOverLife: [1, 1, 0],
 	});
-	const smoke = await createParticles(scene, {
+	const smoke = await createParticles(ctx, {
 		...maps.smoke(textures),
 		blending: 'normal',
 		position: [0, 1.1, 0],
@@ -100,7 +100,7 @@ export default defineSketch(async (ctx) => {
 		colors: ['#8a8a92', '#707078'],
 		alphaOverLife: [0, 0.6, 0.35, 0],
 	});
-	const leaves = await createParticles(scene, {
+	const leaves = await createParticles(ctx, {
 		...maps.leaves(textures),
 		blending: 'normal',
 		position: CANOPY,
@@ -119,7 +119,7 @@ export default defineSketch(async (ctx) => {
 		colors: ['#e8701a', '#d9a520'],
 		alphaOverLife: [0, 1, 1, 0],
 	});
-	const fireflies = await createParticles(scene, {
+	const fireflies = await createParticles(ctx, {
 		...maps.glow(textures),
 		position: [-1, 0.9, -1.5],
 		rate: 6,
@@ -142,8 +142,8 @@ export default defineSketch(async (ctx) => {
 			const blow = math.lerp(0.5, math.clamp(view.point[0] * 0.4, -1.2, 1.2), view.steering);
 			smoke.set({ wind: [blow, 0.45, 0] });
 		},
-		onLateUpdate(dt) {
-			for (const system of systems) system.update(dt);
+		onLateUpdate() {
+			for (const system of systems) system.update();
 		},
 	};
 });

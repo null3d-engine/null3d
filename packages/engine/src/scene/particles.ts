@@ -236,14 +236,20 @@ const FACINGS: Readonly<Record<ParticleFacing, number>> = {
 const scratch = new Float32Array(1);
 const scratchBits = new Uint32Array(scratch.buffer);
 
-/** The bits of the 16-bit float nearest below a positive `value`, at most the largest finite one. */
-function halfBits(value: number): number {
-	scratch[0] = value;
-	const bits = scratchBits[0] as number;
-	const exponent = ((bits >>> 23) & 0xff) - 112;
-	if (exponent <= 0) return 0;
-	if (exponent >= 31) return 0x7bff;
-	return (exponent << 10) | ((bits >>> 13) & 0x3ff);
+/** Writes up to three numbers of `v` into `b` from `at`, when `v` is given. */
+function putVector(
+	b: Float32Array,
+	at: number,
+	v: Vec3Like | readonly number[] | undefined,
+	n = 3,
+) {
+	if (!v) return;
+	for (let k = 0; k < n; k++) b[at + k] = v[k] as number;
+}
+
+/** Writes `v` into `b` at `at`, when it is given. */
+function putNumber(b: Float32Array, at: number, v: number | undefined) {
+	if (v !== undefined) b[at] = v;
 }
 
 /**
@@ -286,8 +292,9 @@ function isOneColor(colors: ColorInput | readonly [ColorInput, ColorInput]): col
  * A particle buffer: a scene object that draws a quad for each live particle record. The
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
  * born, with `write`. The GPU moves it and changes its look as it ages, as the buffer's values
- * say. It stops drawing the particle at the end of its lifetime. Call `setFrame` once per frame
- * with the buffer's time.
+ * say. It stops drawing the particle at the end of its lifetime. Once per frame, write the
+ * buffer's time and the records the GPU reads into `frame`, and call `commit`. Every call takes
+ * typed arrays and whole numbers, so a frame's calls allocate nothing.
  *
  * @category api/particles
  */
@@ -296,6 +303,7 @@ export class ParticleBuffer {
 	private floats!: Float32Array;
 	private words!: Uint32Array;
 	private block!: Float32Array;
+	private frameValues!: Float32Array;
 	/** The records written since the last frame and not yet marked, as a start and an end. */
 	private start = 0;
 	private end = 0;
@@ -326,42 +334,30 @@ export class ParticleBuffer {
 		const records = core.glue.particleRecords(id);
 		this.floats = core.f32(records, words);
 		this.words = core.u32(records, words);
-		this.block = core.f32(
-			core.glue.particleValues(id),
-			C.PARTICLE_PARAM_FLOATS + C.PARTICLE_FRAME_FLOATS,
-		);
+		const values = core.glue.particleValues(id);
+		this.block = core.f32(values, C.PARTICLE_PARAM_FLOATS);
+		this.frameValues = core.f32(values + C.PARTICLE_PARAM_FLOATS * 4, C.PARTICLE_FRAME_FLOATS);
 		this.generation = core.generation;
 	}
 
 	/**
-	 * Writes the record of particle `index`, from 0 to the capacity, which is born at `time` in the
-	 * buffer's seconds at (x, y, z) with the velocity (vx, vy, vz), in the space of the buffer's
-	 * object, and lives `lifetime` seconds. `seed` (0 to 65,535) picks the particle's random size,
-	 * turn, spin, color and first frame.
+	 * Writes the record of particle `index`, from 0 to the capacity. `record` holds eight numbers:
+	 * the birth place (x, y, z) in the space of the buffer's object, the birth time in the buffer's
+	 * seconds, the velocity (x, y, z), and the lifetime in seconds. `seed`, from 0 to 65,535, picks
+	 * the particle's random size, turn, spin, color and first frame.
 	 */
-	write(
-		index: number,
-		x: number,
-		y: number,
-		z: number,
-		time: number,
-		vx: number,
-		vy: number,
-		vz: number,
-		lifetime: number,
-		seed: number,
-	): void {
+	write(index: number, record: ArrayLike<number>, seed: number): void {
 		this.views();
 		const at = index * 8;
 		const f = this.floats;
-		f[at] = x;
-		f[at + 1] = y;
-		f[at + 2] = z;
-		f[at + 3] = time;
-		f[at + 4] = vx;
-		f[at + 5] = vy;
-		f[at + 6] = vz;
-		this.words[at + 7] = (halfBits(lifetime) << 16) | (seed & 0xffff);
+		for (let k = 0; k < 7; k++) f[at + k] = record[k] as number;
+		// The lifetime as the 16-bit float nearest below it, at most the largest finite one.
+		scratch[0] = record[7] as number;
+		const bits = scratchBits[0] as number;
+		const exponent = ((bits >>> 23) & 0xff) - 112;
+		const half =
+			exponent <= 0 ? 0 : exponent >= 31 ? 0x7bff : (exponent << 10) | ((bits >>> 13) & 0x3ff);
+		this.words[at + 7] = (half << 16) | (seed & 0xffff);
 		if (index === this.end) this.end++;
 		else {
 			this.mark();
@@ -392,63 +388,52 @@ export class ParticleBuffer {
 	}
 
 	/**
-	 * Sets the buffer's time in seconds, which ages its particles, and how many records from the
-	 * first the GPU reads, for this frame. Call it once per frame, after the frame's writes.
+	 * The frame's values, which the GPU reads in each frame: the buffer's time in seconds, which ages
+	 * its particles, then how many records from the first the GPU reads, at most the capacity.
 	 */
-	setFrame(time: number, count: number): void {
+	get frame(): Float32Array {
 		this.views();
+		return this.frameValues;
+	}
+
+	/** Sends the records written since the last call to the GPU with the next frame. Call it once per frame. */
+	commit(): void {
 		this.mark();
-		this.block[C.PARTICLE_PARAM_FLOATS] = time;
-		this.block[C.PARTICLE_PARAM_FLOATS + 1] = Math.min(Math.max(count, 0), this.capacity);
 	}
 
 	/** Changes the values that `values` gives, from the next frame on; the rest keep theirs. */
 	set(values: ParticleValues): void {
 		this.views();
 		const b = this.block;
-		const vec = (at: number, v: Vec3Like | undefined) => {
-			if (!v) return;
-			b[at] = v[0] as number;
-			b[at + 1] = v[1] as number;
-			b[at + 2] = v[2] as number;
-		};
-		const num = (at: number, v: number | undefined) => {
-			if (v !== undefined) b[at] = v;
-		};
-		const pair = (at: number, v: readonly [number, number] | undefined) => {
-			if (!v) return;
-			b[at] = v[0];
-			b[at + 1] = v[1];
-		};
-		vec(V.gravity, values.gravity);
-		num(V.drag, values.drag);
-		vec(V.wind, values.wind);
-		num(V.turbulence, values.turbulence);
-		num(V.turbulenceScale, values.turbulenceScale);
-		num(V.turbulenceSpeed, values.turbulenceSpeed);
+		putVector(b, V.gravity, values.gravity);
+		putNumber(b, V.drag, values.drag);
+		putVector(b, V.wind, values.wind);
+		putNumber(b, V.turbulence, values.turbulence);
+		putNumber(b, V.turbulenceScale, values.turbulenceScale);
+		putNumber(b, V.turbulenceSpeed, values.turbulenceSpeed);
 		if (values.groundHeight !== undefined) {
 			b[V.groundHeight] = values.groundHeight;
 			if (b[V.groundMode] === 0) b[V.groundMode] = GROUND_MODES.bounce;
 		}
 		if (values.groundMode !== undefined) b[V.groundMode] = GROUND_MODES[values.groundMode];
-		num(V.restitution, values.restitution);
-		num(V.friction, values.friction);
-		num(V.nearFade, values.nearFade);
-		num(V.softness, values.softness);
-		pair(V.size, values.size);
-		num(V.aspect, values.aspect);
-		num(V.stretch, values.stretch);
-		pair(V.rotation, values.rotation);
-		pair(V.spin, values.spin);
+		putNumber(b, V.restitution, values.restitution);
+		putNumber(b, V.friction, values.friction);
+		putNumber(b, V.nearFade, values.nearFade);
+		putNumber(b, V.softness, values.softness);
+		putVector(b, V.size, values.size, 2);
+		putNumber(b, V.aspect, values.aspect);
+		putNumber(b, V.stretch, values.stretch);
+		putVector(b, V.rotation, values.rotation, 2);
+		putVector(b, V.spin, values.spin, 2);
 		if (values.facing !== undefined) b[V.facing] = FACINGS[values.facing];
-		num(V.intensity, values.intensity);
-		num(V.opacity, values.opacity);
-		num(V.alphaCutoff, values.alphaCutoff);
-		if (values.colors !== undefined) {
-			const { colors } = values;
-			const [first, second] = isOneColor(colors) ? [colors, colors] : colors;
-			b.set(this.linear(first), V.colorA);
-			b.set(this.linear(second), V.colorB);
+		putNumber(b, V.intensity, values.intensity);
+		putNumber(b, V.opacity, values.opacity);
+		putNumber(b, V.alphaCutoff, values.alphaCutoff);
+		const { colors } = values;
+		if (colors !== undefined) {
+			const one = isOneColor(colors);
+			b.set(this.linear(one ? colors : colors[0]), V.colorA);
+			b.set(this.linear(one ? colors : colors[1]), V.colorB);
 		}
 		const tint = values.colorOverLife?.map(this.linear);
 		if (tint) writeCurve(b, V.colorOverLife, 4, tint.length, 3, (i, c) => tint[i]?.[c] ?? 1);

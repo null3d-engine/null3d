@@ -6,7 +6,8 @@
 import { defineSketch } from '@null3d/engine';
 import { createParticles, particleTextures } from '@null3d/particles';
 
-export default defineSketch(async ({ scene, materials, geometry, textures }) => {
+export default defineSketch(async (ctx) => {
+	const { scene, materials, geometry, textures } = ctx;
 	scene.setBackground('#1d2330');
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({ fov: 50, position: [0, 2.4, 7], target: [0, 1.2, 0] }),
@@ -24,7 +25,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 		position: [1.6, 0.4, -0.8],
 	});
 
-	const fountain = await createParticles(scene, {
+	const fountain = await createParticles(ctx, {
 		position: [-2.2, 0.05, 0],
 		rate: 160,
 		lifetime: [1.4, 2],
@@ -40,7 +41,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 		alphaOverLife: [1, 0.8, 0],
 		seed: 1,
 	});
-	const smoke = await createParticles(scene, {
+	const smoke = await createParticles(ctx, {
 		...particleTextures.smoke(textures),
 		blending: 'normal',
 		position: [0, 0.1, -1],
@@ -59,7 +60,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 		softness: 0.3,
 		seed: 2,
 	});
-	const sparks = await createParticles(scene, {
+	const sparks = await createParticles(ctx, {
 		...particleTextures.spark(textures),
 		position: [1.6, 0.85, -0.8],
 		rate: 90,
@@ -76,7 +77,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 		alphaOverLife: [1, 0],
 		seed: 3,
 	});
-	const leaves = await createParticles(scene, {
+	const leaves = await createParticles(ctx, {
 		...particleTextures.leaves(textures),
 		blending: 'normal',
 		position: [2.8, 3.2, 0.5],
@@ -97,8 +98,8 @@ export default defineSketch(async ({ scene, materials, geometry, textures }) => 
 	});
 	const systems = [fountain, smoke, sparks, leaves];
 	return {
-		onLateUpdate(dt) {
-			for (const system of systems) system.update(dt);
+		onLateUpdate() {
+			for (const system of systems) system.update();
 		},
 	};
 });
