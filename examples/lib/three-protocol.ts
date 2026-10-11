@@ -73,6 +73,7 @@ export type FromThree =
 			/** The scene's own code and the render calls, the two parts of `cpuMs`. */
 			codeMs: number | null;
 			renderMs: number | null;
+			/** Frames measured, or 0 when no frame drew anything. */
 			frames: number;
 	  }
 	/** The frame rate, a few times a second, which the panel's header shows. */

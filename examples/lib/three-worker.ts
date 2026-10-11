@@ -211,6 +211,13 @@ class ThreeRuntime {
 	private reportTimer: ReturnType<typeof setInterval> | null = null;
 	/** Instances drawn in the frame, from three.js's own count of each draw. */
 	private objects = 0;
+	/**
+	 * Frames whose render calls drew anything, and the time of the last one. While three.js still
+	 * builds its shaders, its render calls can return at once and draw nothing, and such frames
+	 * must not count as drawn.
+	 */
+	private drawnFrames = 0;
+	private lastDrawn = -Infinity;
 	private gpuTimer: GpuTimer | null = null;
 
 	constructor(
@@ -455,6 +462,10 @@ class ThreeRuntime {
 		drawer.render();
 		this.gpuTimer?.after();
 		const end = performance.now();
+		if ((renderer.info.render.drawCalls ?? renderer.info.render.calls ?? 0) > 0) {
+			this.drawnFrames++;
+			this.lastDrawn = end;
+		}
 		if (interval > 0) this.rings.add(time, interval, end - start, posed - start, end - posed);
 	};
 
@@ -554,9 +565,12 @@ class ThreeRuntime {
 		const renderer = this.renderer;
 		if (!renderer) return;
 		const means = this.means;
-		this.rings.window(performance.now() - WINDOW_MS, means);
-		const frames = means[0] as number;
-		const fps = means[1] as number;
+		const now = performance.now();
+		this.rings.window(now - WINDOW_MS, means);
+		// Frames that drew nothing show no frame rate.
+		const drawing = this.lastDrawn >= now - WINDOW_MS;
+		const frames = drawing ? (means[0] as number) : 0;
+		const fps = drawing ? (means[1] as number) : 0;
 		if (!this.sampling) {
 			this.post({ type: 'rate', frames, fps });
 			return;
@@ -579,19 +593,47 @@ class ThreeRuntime {
 		this.post({ type: 'figures', figures });
 	}
 
+	/**
+	 * Measures `seconds` of frames from the first frame that draws, after waiting at most as long
+	 * for it. A measurement in which no frame draws reports no frames.
+	 */
 	measure(id: number, seconds: number): void {
-		const since = performance.now();
+		const asked = performance.now();
+		const wait = setInterval(() => {
+			const now = performance.now();
+			if (this.lastDrawn >= asked) {
+				clearInterval(wait);
+				this.measureFrom(id, seconds, now);
+			} else if (now - asked >= seconds * 1000) {
+				clearInterval(wait);
+				this.post({
+					type: 'measured',
+					id,
+					frames: 0,
+					fps: 0,
+					cpuMs: null,
+					codeMs: null,
+					renderMs: null,
+				});
+			}
+		}, 50);
+	}
+
+	private measureFrom(id: number, seconds: number, since: number): void {
+		const drawnBefore = this.drawnFrames;
 		setTimeout(() => {
 			const means = this.means;
 			this.rings.window(since, means);
+			const drew = this.drawnFrames > drawnBefore;
+			const frames = drew ? (means[0] as number) : 0;
 			this.post({
 				type: 'measured',
 				id,
-				frames: means[0] as number,
-				fps: means[1] as number,
-				cpuMs: means[0] ? (means[2] as number) : null,
-				codeMs: means[0] ? (means[3] as number) : null,
-				renderMs: means[0] ? (means[4] as number) : null,
+				frames,
+				fps: drew ? (means[1] as number) : 0,
+				cpuMs: frames ? (means[2] as number) : null,
+				codeMs: frames ? (means[3] as number) : null,
+				renderMs: frames ? (means[4] as number) : null,
 			});
 		}, seconds * 1000);
 	}

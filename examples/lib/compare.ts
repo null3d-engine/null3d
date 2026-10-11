@@ -104,6 +104,11 @@ export interface ComparisonMeasurement {
 	 * measurement, where the browser reports them.
 	 */
 	mainThread?: StatsMainThread | null;
+	/**
+	 * True when the engine drew no frame of the scene in the measurement, such as while three.js
+	 * builds its shaders. Its frame rate is then 0, not the rate of empty frames.
+	 */
+	noFrame?: boolean;
 }
 
 /** A comparison that runs, with one engine. */
@@ -462,6 +467,7 @@ async function startThree(
 					fps: data.fps,
 					cpuMs: data.cpuMs,
 					detail: { codeMs: data.codeMs, renderMs: data.renderMs },
+					...(data.frames === 0 && { noFrame: true }),
 				});
 				measurements.delete(data.id);
 				return;
