@@ -308,7 +308,21 @@ The choices, and why:
 
 #### Frame rates of the Creek on the Mac
 
-The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. The display ran at 120 Hz, and the load was 3 to 7. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
+The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
+
+With the models and the grass's row values, on 11 October 2026:
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 6.3 to 7.4 ms | 102 to 106 fps, GPU 10.4 to 12.3 ms |
+| Golden hour | 120 fps, GPU 6.4 to 6.6 ms | 100 to 102 fps, GPU 11.1 to 12.6 ms |
+| Blue hour | 120 fps, GPU 6.4 to 6.6 ms | 94 to 96 fps, GPU 11.3 to 13.7 ms |
+| Night | 120 fps, GPU 6.4 to 7.2 ms | 92 to 96 fps, GPU 13.3 to 14.6 ms |
+| Studio | 119 to 120 fps, GPU 5.9 to 7.2 ms | 95 to 96 fps, GPU 12.5 to 13.6 ms |
+
+WebGPU drew 3.7 to 4.1 million triangles a frame, and WebGL2 6.4 million. The load was 6 when the WebGPU readings began. Another run then started, and the load reached 18 during the WebGL2 readings, so those are rough.
+
+With the stand-ins, on 10 October 2026, at a load of 3 to 7:
 
 | Mood | WebGPU, High | WebGL2, Medium |
 | --- | --- | --- |
@@ -318,8 +332,7 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 | Night | 119 to 120 fps, GPU 6.9 to 7.1 ms | 102 to 116 fps, GPU 9.4 to 13.4 ms |
 | Studio | 120 fps, GPU 5.7 to 6.9 ms | 120 fps, GPU 7.0 to 7.8 ms |
 
-WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
-
+Then WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
 
 ## Groups and titles (owner, 9 October 2026)
 
