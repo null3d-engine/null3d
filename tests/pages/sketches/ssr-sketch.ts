@@ -54,7 +54,7 @@ export default defineSketch(({ scene, materials, geometry, post, quality, render
 	scene.createAmbientLight({ intensity: 0.35 });
 
 	const box = geometry.box({ width: 1.2, height: 1.6, depth: 1.2 });
-	const solid = (color: string) => materials.standard({ color, roughness: 0.6 });
+	const solid = (color = '') => materials.standard({ color, roughness: 0.6 });
 	scene.createMesh({ mesh: box, material: solid('#e03030'), position: [-2.2, 0.8, 0.8] });
 	scene.createMesh({ mesh: box, material: solid('#30c040'), position: [2.2, 0.8, 0.8] });
 	scene.createMesh({
