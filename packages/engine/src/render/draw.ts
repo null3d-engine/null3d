@@ -78,23 +78,32 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 
 /**
  * Loads the texture generators' code and shaders for a GPU path, as the backend of that path runs
- * them: a page downloads them with the first generator that its sketch asks for.
+ * them: environment maps and reflection probes' filters. A page downloads them with the first
+ * generator that its sketch asks for.
  */
 function generatorLoader(tier: Tier): () => Promise<unknown> {
 	if (tier === 'webgl2')
 		return async () => {
-			const [code, shaders] = await Promise.all([
+			const [code, environment, probes] = await Promise.all([
 				import('../gpu/environment'),
 				import('../generated/shaders-environment-glsl'),
+				import('../generated/shaders-probe-glsl'),
 			]);
-			return code.webgl2EnvironmentGenerator(shaders.ENVIRONMENT_SHADER.webgl2);
+			return {
+				environment: code.webgl2EnvironmentGenerator(environment.ENVIRONMENT_SHADER.webgl2),
+				probes: code.webgl2ProbeFilter(probes.PROBE_SHADER.webgl2),
+			};
 		};
 	return async () => {
-		const [code, shaders] = await Promise.all([
+		const [code, environment, probes] = await Promise.all([
 			import('../gpu/environment'),
 			import('../generated/shaders-environment-wgsl'),
+			import('../generated/shaders-probe-wgsl'),
 		]);
-		return code.webgpuEnvironmentGenerator(shaders.ENVIRONMENT_SHADER.webgpu);
+		return {
+			environment: code.webgpuEnvironmentGenerator(environment.ENVIRONMENT_SHADER.webgpu),
+			probes: code.webgpuProbeFilter(probes.PROBE_SHADER.webgpu),
+		};
 	};
 }
 

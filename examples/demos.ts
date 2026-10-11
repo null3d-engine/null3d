@@ -154,6 +154,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'reflection-probes',
+		group: 'Light, materials and effects',
+		sketch: new URL('./reflection-probes/sketch.ts', import.meta.url),
+		code: 'reflection-probes/',
+		title: 'Reflection probes',
+		scene: 'Two-room gallery',
+		summary:
+			"A warm room and a cool room over one polished stone floor, each with a reflection probe, so the floor reflects its own room where the walls stand. A chrome ball and a gold ring drift through the doorway and take each room's light in turn.",
+		controls: `${CAMERA} Move the mouse, or tap, and the ball follows. Press B to turn box projection off and on.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),

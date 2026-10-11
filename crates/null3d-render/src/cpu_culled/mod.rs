@@ -119,12 +119,13 @@ use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
+use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
-use crate::view::{ViewFrame, ViewId};
+use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices, write_row_values};
 use layout::{BatchSlot, Clusters, Drawn, Layout, RESIDENT, STREAMED};
@@ -174,8 +175,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = DOF + 1;
+    /// Each camera view's list of reflection probes, one slot per view.
+    pub const PROBE_LISTS: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = PROBE_LISTS + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -223,8 +226,13 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
+    /// The blank texture array that frame groups bind while the scene has no reflection probe.
+    pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
+    /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
+    /// through (see [`crate::probes::ProbeTextures`]).
+    pub const PROBE_TEXTURES: u32 = BLANK_PROBES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = STREAMED_VALUES + RING;
+    pub const TARGETS: u32 = PROBE_TEXTURES + 4;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -399,6 +407,12 @@ pub struct CpuCulledRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The reflection probes' array that the camera views' frame groups bind, with its
+    /// generation, or `None` for the blank one.
+    bound_probes: Option<(u32, u32)>,
+    /// True when the last frame wrote a view's list of probes, so the next writes the lists
+    /// again even when the scene has no probe left.
+    probes_listed: bool,
 }
 
 impl CpuCulledRenderer {
@@ -518,6 +532,8 @@ impl CpuCulledRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            bound_probes: None,
+            probes_listed: false,
         }
     }
 
@@ -823,6 +839,7 @@ impl CpuCulledRenderer {
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
             + sizes::OBJECT_RANGE_BYTES as usize
+            + views * probes::LIST_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -857,6 +874,18 @@ impl CpuCulledRenderer {
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::PROBE_LISTS,
+                MAX_VIEWS as u32 * probes::LIST_STRIDE,
+                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
+            ],
+        )?;
+        probes::create_blank(list, ids::BLANK_PROBES)?;
+        self.settings.probes_mut().set_textures(ProbeTextures {
+            first: ids::PROBE_TEXTURES,
+        });
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -1114,6 +1143,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
+        self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
@@ -1136,6 +1166,9 @@ impl CpuCulledRenderer {
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
             transmission: ids::BLANK_TRANSMISSION,
+            probes: self
+                .bound_probes
+                .map_or(ids::BLANK_PROBES, |(array, _)| array),
         };
         // Only the camera's view copies its opaque color for surfaces that let light through.
         let copy = self.graph.transmission_texture();
@@ -1188,14 +1221,30 @@ impl CpuCulledRenderer {
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings.record_materials(input, list, arena, table)?;
+        self.graph.set_probe_filter(self.settings.probes().filter());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
+        // So may the reflection probes' array, which the probes' work makes again.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
-        if environment != self.bound_environment {
+        let probes = self.settings.probes().array();
+        if environment != self.bound_environment || probes != self.bound_probes {
             self.bound_environment = environment;
+            self.bound_probes = probes;
             lit.environment = environment;
+            lit.probes = probes.map_or(ids::BLANK_PROBES, |(array, _)| array);
             for index in 0..self.opaque.views() {
                 Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
+            }
+        }
+        let list_probes = self.probes_listed || probes.is_some();
+        self.probes_listed = probes.is_some();
+        for index in 0..views.min(MAX_VIEWS) {
+            let view = ViewId::from_index(index);
+            if let (true, Some(frame)) = (list_probes, self.culling.frame(view)) {
+                let listed = self.settings.probe_list(view, frame);
+                let (at, bytes) = arena.push(listed.as_bytes())?;
+                let offset = index as u32 * probes::LIST_STRIDE;
+                list.push(Op::WriteBuffer, &[ids::PROBE_LISTS, offset, at, bytes])?;
             }
         }
         for index in 0..views {
@@ -1476,6 +1525,8 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
+        // The capture views of a probe that captures in this frame cull with the others.
+        self.settings.prepare_probe_capture(input.frame);
         let (scene, parity, canvas, scale) = (
             input.scene,
             input.parity(),
@@ -1672,6 +1723,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.bound_probes = None;
+        self.probes_listed = false;
         self.background.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
@@ -1697,6 +1750,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
+        self.settings.probes_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

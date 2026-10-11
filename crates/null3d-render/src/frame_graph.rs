@@ -553,6 +553,10 @@ pub(crate) struct FrameGraph {
     transmission_built: bool,
     /// True when the declared passes hold the copy.
     transmission_declared: bool,
+    /// The words of the frame's reflection probe filter, which runs after the capture views'
+    /// passes and before the camera's first render pass, or `None` in a frame that captures no
+    /// probe (see [`crate::probes`]).
+    probe_filter: Option<[u32; 10]>,
     /// The textures that the copy reads and draws into, found once for each compile of the graph,
     /// which the count says.
     transmission_target: Option<(u32, u32, u32)>,
@@ -676,6 +680,7 @@ impl FrameGraph {
             transmission_wanted: false,
             transmission_built: false,
             transmission_declared: false,
+            probe_filter: None,
             transmission_target: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
@@ -2305,6 +2310,11 @@ impl FrameGraph {
         self.first_texture + LAYER_VIEWS + first_view + layer
     }
 
+    /// Sets the frame's reflection probe filter, which [`Self::record`] records.
+    pub(crate) fn set_probe_filter(&mut self, filter: Option<[u32; 10]>) {
+        self.probe_filter = filter;
+    }
+
     /// Records the plan's render and compute passes, then submits them. The graph records the
     /// final pass, and `record` the commands of each other declared pass. Each render pass clears
     /// its color targets to `clear`, except the outline mask's pass, which clears to zero: no
@@ -2321,6 +2331,9 @@ impl FrameGraph {
             .graph
             .plan()
             .expect("the graph compiled before the frame records");
+        // The camera's passes read the capture views' targets, so the plan orders every capture
+        // pass before them, and the probe's filter runs between.
+        let mut filter = self.probe_filter;
         for step in plan.steps() {
             match step.kind {
                 StepKind::Compute => {
@@ -2343,6 +2356,15 @@ impl FrameGraph {
                         skips(role) || !self.draws(role)
                     }) {
                         continue;
+                    }
+                    let camera = passes.iter().any(|&pass| {
+                        matches!(
+                            self.roles[pass.index()],
+                            Role::Prepass(ViewId::CAMERA) | Role::Opaque(ViewId::CAMERA)
+                        )
+                    });
+                    if camera && let Some(words) = filter.take() {
+                        list.push(Op::ProbeFilter, &words)?;
                     }
                     let masks = passes
                         .iter()

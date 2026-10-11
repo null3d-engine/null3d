@@ -152,13 +152,14 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PipelineCache, Prepass};
+use crate::probes::{self, ProbeTextures};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
 use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
-use crate::view::{ViewFrame, ViewId};
+use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
@@ -198,6 +199,12 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 /// dispatch covers. A device that offers more gains nothing from a larger binding.
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
     MAX_WORKGROUPS_PER_DIMENSION * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
+
+/// The texture array of reflection probes that frame groups bind: the probes' array once the GPU
+/// holds one, or the blank one.
+fn probe_array(probes: Option<(u32, u32)>) -> u32 {
+    probes.map_or(ids::BLANK_PROBES, |(array, _)| array)
+}
 
 /// The error of a table that memory could not grow for.
 fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
@@ -302,12 +309,15 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = DOF + 1;
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    /// Each camera view's list of reflection probes, one slot per view.
+    pub const PROBE_LISTS: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = PROBE_LISTS + 1;
 
-    /// three.js's table of the split-sum terms of specular light.
-    pub const DFG: u32 = 1;
-    /// The custom values of materials: one row of texels per material.
-    pub const CUSTOM_VALUES: u32 = DFG + 1;
+    /// The blank texture array that frame groups bind while the scene has no reflection probe.
+    pub const BLANK_PROBES: u32 = 1;
+    /// The custom values of materials: one row of texels per material, then three.js's table of
+    /// the split-sum terms of specular light in the columns after the first rows.
+    pub const CUSTOM_VALUES: u32 = BLANK_PROBES + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// The blank cube that the frame's groups bind while the scene has no environment.
@@ -333,8 +343,11 @@ mod ids {
     /// The row values of instance batches, two texels per source, which the vertex shaders of rows
     /// with row values read.
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
+    /// through (see [`crate::probes::ProbeTextures`]).
+    pub const PROBE_TEXTURES: u32 = ROW_VALUES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = ROW_VALUES + 1;
+    pub const TARGETS: u32 = PROBE_TEXTURES + 4;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -542,6 +555,12 @@ pub struct GpuDrivenRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The reflection probes' array that the camera views' frame groups bind, with its
+    /// generation, or `None` for the blank one.
+    bound_probes: Option<(u32, u32)>,
+    /// True when the last frame wrote a view's list of probes, so the next writes the lists
+    /// again even when the scene has no probe left.
+    probes_listed: bool,
     /// The texel rows of the row values texture, 0 before it exists.
     value_rows: u32,
 }
@@ -660,6 +679,8 @@ impl GpuDrivenRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            bound_probes: None,
+            probes_listed: false,
             value_rows: 0,
         }
     }
@@ -932,6 +953,7 @@ impl GpuDrivenRenderer {
             size: s.size,
         }));
         self.graph.set_skinning(self.skinning.dispatches());
+        self.settings.prepare_probe_capture(input.frame);
         self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
@@ -983,6 +1005,7 @@ impl GpuDrivenRenderer {
                     ao_texture,
                     self.bound_environment,
                     transmission(view),
+                    probe_array(self.bound_probes),
                 )?;
             }
         }
@@ -1068,7 +1091,7 @@ impl GpuDrivenRenderer {
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
-            dfg::upload(list, arena, ids::DFG, 0)?;
+            dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
         }
         let pages_remade = self
             .meshes
@@ -1087,11 +1110,15 @@ impl GpuDrivenRenderer {
             values: ids::CUSTOM_VALUES,
         };
         let groups_remade = self.settings.record_materials(input, list, arena, table)?;
+        self.graph.set_probe_filter(self.settings.probes().filter());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
+        // So may the reflection probes' array, which the probes' work makes again.
         let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
-        if environment != self.bound_environment {
+        let probes = self.settings.probes().array();
+        if environment != self.bound_environment || probes != self.bound_probes {
             self.bound_environment = environment;
+            self.bound_probes = probes;
             for index in 0..views {
                 let view = ViewId::from_index(index);
                 opaque::bind_frame(
@@ -1102,6 +1129,7 @@ impl GpuDrivenRenderer {
                     ao_texture,
                     environment,
                     transmission(view),
+                    probe_array(probes),
                 )?;
             }
         }
@@ -1252,10 +1280,16 @@ impl GpuDrivenRenderer {
         self.transparent.size(list, &self.sorted, views)?;
 
         let render_size = self.graph.render_size();
+        let list_probes = self.probes_listed || self.bound_probes.is_some();
+        self.probes_listed = self.bound_probes.is_some();
         for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
             if let Some(frame) = frame {
                 opaque::upload(list, arena, view, frame)?;
+                if list_probes {
+                    let probes = self.settings.probe_list(view, frame);
+                    opaque::upload_probes(list, arena, view, &probes)?;
+                }
                 let levels = if occlusion && self.graph.occludes(view) {
                     Some(*self.pyramids.upload(list, arena, view, render_size)?)
                 } else {
@@ -1493,8 +1527,8 @@ impl GpuDrivenRenderer {
             Op::CreateTexture,
             &[
                 ids::CUSTOM_VALUES,
-                MATERIAL_TEXELS,
-                materials,
+                MATERIAL_TEXELS + dfg::SIZE,
+                materials.max(dfg::SIZE),
                 1,
                 format::RGBA32_FLOAT,
                 texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
@@ -1511,7 +1545,18 @@ impl GpuDrivenRenderer {
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
-        dfg::create(list, ids::DFG)?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::PROBE_LISTS,
+                MAX_VIEWS as u32 * probes::LIST_STRIDE,
+                usage::UNIFORM | usage::COPY_DST,
+            ],
+        )?;
+        probes::create_blank(list, ids::BLANK_PROBES)?;
+        self.settings.probes_mut().set_textures(ProbeTextures {
+            first: ids::PROBE_TEXTURES,
+        });
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
@@ -1540,7 +1585,9 @@ impl GpuDrivenRenderer {
         } else {
             0
         };
-        let views = camera_views * (per_view(&self.layout) + pyramids) + per_view(&self.outlined);
+        let views = camera_views
+            * (per_view(&self.layout) + pyramids + probes::LIST_BYTES as usize)
+            + per_view(&self.outlined);
         let tiles = self.settings.tile_settings().tiles as usize;
         let cascades = (MAX_CASCADES + tiles.min(MAX_TILES)) * per_view(&self.casters);
         let tables =
@@ -1617,6 +1664,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.bound_probes = None;
+        self.probes_listed = false;
         self.value_rows = 0;
         self.background.reset_gpu();
         self.graph.reset_gpu();
@@ -1642,6 +1691,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
         self.settings.sky_maps_mut().reset_gpu();
+        self.settings.probes_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

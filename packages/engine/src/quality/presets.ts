@@ -173,6 +173,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// The texels across the largest level of each reflection probe's map, an octahedral map of the
+	// whole sphere. A probe captures the scene through six views of half that size, and costs its
+	// pixels only while it captures. 256 keeps a polished floor's reflection sharp on a desktop's
+	// screen. Low's 128 takes a quarter of the memory, for phones' small screens. A change makes
+	// the maps again and captures every probe again (D-149).
+	probeSize: {
+		presets: [128, 256, 256, 256],
+		changes: 'live',
+		values: [128, 256, 512],
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
 	// phones and tablets it cost the job workers several times what it saved in drawing (D-22). A
@@ -380,6 +390,12 @@ export interface QualitySettings {
 	 * the reflections' textures again.
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
+	/**
+	 * The texels across the largest level of each reflection probe's map: 128, 256 or 512. A larger
+	 * map gives sharper reflections on polished surfaces, and takes four times the memory for each
+	 * step. It changes during play, which makes the maps again and captures every probe again.
+	 */
+	probeSize: 128 | 256 | 512;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then

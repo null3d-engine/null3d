@@ -32,6 +32,7 @@ use super::skin::DrawGroups;
 use crate::environment;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::pipelines::PassTargets;
+use crate::probes::{self, ProbeList};
 use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
@@ -57,7 +58,8 @@ pub(super) const ROW_VALUES_BINDING: u32 = 16;
 pub(super) const OBJECT_RANGES_BINDING: u32 = 17;
 
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
-/// the materials' custom values, three.js's table of the split-sum terms of specular light, the
+/// the materials' custom values, with three.js's table of the split-sum terms of specular light,
+/// the reflection probes' array, which is `probes`, and the view's list of probes, the
 /// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
 /// that reads four of its texels at once, the camera's light grid and light records, the shadow
 /// atlas of point and spot lights, which is `atlas`, with its comparison sampler and its tiles,
@@ -75,13 +77,15 @@ pub(super) fn bind_frame(
     occlusion: u32,
     environment: u32,
     transmission: u32,
+    probes: u32,
 ) -> Result<(), RecordError> {
     let entry = |binding: u32, kind: u32, id: u32| [binding, kind, id, 0, 0];
+    let list_offset = view.index() as u32 * probes::LIST_STRIDE;
     let entries = [
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
-        entry(3, resource_kind::TEXTURE, ids::DFG),
+        entry(probes::ARRAY_BINDING, resource_kind::TEXTURE, probes),
         entry(4, resource_kind::TEXTURE, shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
@@ -98,15 +102,35 @@ pub(super) fn bind_frame(
             resource_kind::BUFFER,
             ids::OBJECT_RANGES,
         ),
+        [
+            probes::LIST_BINDING,
+            resource_kind::BUFFER,
+            ids::PROBE_LISTS,
+            list_offset,
+            probes::LIST_BYTES,
+        ],
     ];
     let listed = 5 * entries.len();
-    let mut words = [0u32; 3 + 5 * 16 + environment::ENTRY_WORDS];
+    let mut words = [0u32; 3 + 5 * 17 + environment::ENTRY_WORDS];
     let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
     words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
     words[3..3 + listed].copy_from_slice(entries.as_flattened());
     words[3 + listed..]
         .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
     list.push(Op::CreateBindGroup, &words)?;
+    Ok(())
+}
+
+/// Uploads a view's list of reflection probes into its slot.
+pub(super) fn upload_probes(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    view: ViewId,
+    probes: &ProbeList,
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(probes.as_bytes())?;
+    let offset = view.index() as u32 * probes::LIST_STRIDE;
+    list.push(Op::WriteBuffer, &[ids::PROBE_LISTS, offset, at, bytes])?;
     Ok(())
 }
 

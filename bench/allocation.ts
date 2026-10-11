@@ -44,7 +44,9 @@
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
 // view into in every frame. `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--prepass` turns the depth prepass on, in any scene.
+// frame. `--probes` places two reflection probes over S1 that capture again in turns in every
+// frame, so each frame draws six capture views and runs a probe's filter. `--prepass` turns the
+// depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -87,6 +89,7 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --probes --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { defaultEnvironment, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
@@ -314,6 +317,21 @@ const TRANSMISSION_REPLAY_BUDGET = 64;
  */
 const TRANSMISSION_MIPS_BUDGET = 11 * 32;
 
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--probes`:
+ * the encoders of the six capture views' culling passes, render passes and the passes that copy
+ * their images upright, at bloom's allowance per pass.
+ */
+const PROBES_REPLAY_BUDGET = 6 * 3 * 64;
+
+/**
+ * The bytes per frame that a reflection probe's filter may allocate on WebGPU with `--probes`: the
+ * encoder of each of its render passes, at bloom's allowance per pass. A filter of probes 256 texels
+ * across draws 6 passes that copy the views' images, 42 that make the chain's levels and 7 that
+ * fill the probe's levels.
+ */
+const PROBE_FILTER_BUDGET = 55 * 64;
+
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
@@ -473,13 +491,15 @@ async function main(): Promise<void> {
 		const reflection = args.includes('--reflection') ? '&reflection' : '';
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';
+		const probes = args.includes('--probes') ? '&probes=always' : '';
+		if (probes && scene !== 's1') throw new Error('--probes places probes over S1 only');
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// The demo run keeps the scene running until the page closes, with no measurement of the
 		// page's own, so no timer of the page's runs and the engine never stops before the samples end.
-		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `demo&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${probes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -618,6 +638,8 @@ async function main(): Promise<void> {
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(replay && probes ? PROBES_REPLAY_BUDGET : 0) +
+					(name === 'draw webgpu/probes.ts' && probes ? PROBE_FILTER_BUDGET : 0) +
 					(name === 'generateMipmaps webgpu/backend.ts' && transmission
 						? TRANSMISSION_MIPS_BUDGET
 						: 0) +

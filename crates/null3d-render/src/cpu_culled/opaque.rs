@@ -65,6 +65,8 @@ pub(super) struct LitTextures {
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
     pub(super) transmission: u32,
+    /// The reflection probes' texture array, or the blank one.
+    pub(super) probes: u32,
 }
 
 /// The ring slots a view's frame draws from.
@@ -260,8 +262,9 @@ impl Opaque {
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
     /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
     /// `lit` with the tiles' uniform block, the texture of ambient occlusion, the environment's
-    /// cube texture of `lit` with its sampler, and the copy of the opaque color of `lit`, which
-    /// the environment's sampler reads too. A shadow cascade's or a shadow tile's
+    /// cube texture of `lit` with its sampler, the copy of the opaque color of `lit`, which the
+    /// environment's sampler reads too, and the reflection probes' array of `lit`, which it
+    /// reads as well, with the view's list of probes. A shadow cascade's or a shadow tile's
     /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
@@ -300,6 +303,7 @@ impl Opaque {
             occlusion,
             environment,
             transmission: copy,
+            probes,
         }) = lit
         else {
             let mut words = [0; 23];
@@ -308,7 +312,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 63 + environment::ENTRY_WORDS];
+        let mut words = [0; 73 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
         words[23..48].copy_from_slice(&[
             4,
@@ -338,7 +342,7 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 16]);
             words[48..53].copy_from_slice(&[
                 7,
                 resource_kind::TEXTURE,
@@ -354,7 +358,19 @@ impl Opaque {
                 0,
                 0,
             ]);
-            words[63..]
+            words[63..73].copy_from_slice(&[
+                crate::probes::ARRAY_BINDING,
+                resource_kind::TEXTURE,
+                probes,
+                0,
+                0,
+                crate::probes::LIST_BINDING_WEBGL2,
+                resource_kind::BUFFER,
+                ids::PROBE_LISTS,
+                view.index() as u32 * crate::probes::LIST_STRIDE,
+                crate::probes::LIST_BYTES,
+            ]);
+            words[73..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }

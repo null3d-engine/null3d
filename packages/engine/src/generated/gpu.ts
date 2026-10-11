@@ -41,6 +41,7 @@ export const OP_RELEASE_IMAGE = 51;
 export const OP_DESTROY_PIPELINE = 52;
 export const OP_GENERATE_TEXTURE = 54;
 export const OP_SKY_MAP_STEP = 55;
+export const OP_PROBE_FILTER = 56;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;

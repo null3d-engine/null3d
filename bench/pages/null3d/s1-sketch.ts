@@ -34,6 +34,10 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `probes` switch places two reflection probes whose boxes split the swarm's space in half
+// and blend across the middle, for the probes' cost on every lit pixel. `probes=always` captures
+// them again in turns in every frame, for the allocation sample and the cost of the captures and
+// their filters while the swarm moves.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -76,6 +80,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const probes = switches.get('probes');
+	if (probes !== null) createProbes(context, probes === 'always');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -302,6 +308,21 @@ function createWater(
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** Adds the `probes` switch's two reflection probes, which split the swarm's space in half. */
+function createProbes({ scene }: SketchContext, always: boolean) {
+	const reach = S1_EXTENT + S1_BOB_HEIGHT + 4;
+	for (const side of [-1, 1])
+		scene.createReflectionProbe({
+			box: {
+				min: [side < 0 ? -reach : -2, -reach, -reach],
+				max: [side < 0 ? 2 : reach, reach, reach],
+			},
+			position: [(side * reach) / 2, 0, 0],
+			blend: 4,
+			refresh: always ? 'always' : 'once',
+		});
 }
 
 /** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */

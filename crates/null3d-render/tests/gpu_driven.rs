@@ -131,11 +131,12 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // The camera's render pass resolves into the canvas. The side view's draws into an image of
     // its own, which resolves for the copy into its target. The textures: the color and depth
     // targets, the side view's image and target, the shadow map and the shadow atlas, one texel
-    // each while no light casts shadows, the table of specular terms, the materials' custom
-    // values, the environment's blank cube, the blank textures that stand in for ambient
-    // occlusion and for the copy that surfaces which let light through sample, the views' cell
-    // offsets, the white texel that the side view's texture shows until it draws, and the row
-    // values texture of instance batches, one texel row while no batch has row values.
+    // each while no light casts shadows, the blank array of reflection probes, the materials'
+    // custom values, which hold the table of specular terms too, the environment's blank cube,
+    // the blank textures that stand in for ambient occlusion and for the copy that surfaces which
+    // let light through sample, the views' cell offsets, the white texel that the side view's
+    // texture shows until it draws, and the row values texture of instance batches, one texel row
+    // while no batch has row values.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
     assert_eq!(count(&commands, Op::CreateTexture), 14);
@@ -259,10 +260,10 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::CreateComputePipeline), 4);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
-    // light casts shadows, the table of specular terms, the materials' custom values, the
-    // environment's blank cube, the blank textures that stand in for ambient occlusion and for
-    // the copy that surfaces which let light through sample, the views' cell offsets, and the row
-    // values texture of instance batches.
+    // light casts shadows, the blank array of reflection probes, the materials' custom values,
+    // which hold the table of specular terms too, the environment's blank cube, the blank
+    // textures that stand in for ambient occlusion and for the copy that surfaces which let light
+    // through sample, the views' cell offsets, and the row values texture of instance batches.
     assert_eq!(count(&commands, Op::CreateTexture), 11);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.

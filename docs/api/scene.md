@@ -3,7 +3,7 @@ id: api/scene
 title: Scene
 status: experimental
 since: "0.1"
-summary: "Creating objects; models and copies; find; background, environment, fog, sky; warmUp."
+summary: "Creating objects; models and copies; find; background, environment, reflection probes, fog, sky; warmUp."
 ---
 
 # Scene
@@ -208,6 +208,46 @@ scene.setEnvironment(sunset, { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
 | `rotation` | `[0, 0, 0]` | The environment's turn, as Euler angles in radians in the order X, Y, Z, as `scene.environmentRotation` |
 
 Each call sets both options, and an option left out takes its default. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the light on that material. The scene draws without a file's environment until its map is on the GPU. The built-in room's map and the sky's map are whole in the first frame that uses them. The sky's map follows the sky background: after a change of the sky, the scene takes the new light 19 frames later. The scene draws without the environment again after `environment.destroy()`. Development builds throw E1203 for a number that is not finite and E1108 for a negative intensity. They throw E1213 for a value that is not an environment. Every build throws E1101 for an environment that was destroyed. [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights a surface, and what it costs.
+
+## Reflection probes
+
+`createReflectionProbe` lights the surfaces inside a box with the scene around a point, in place of the environment. A polished floor then reflects the room's walls where they stand. [Lighting and environment](../concepts/lighting.md#reflection-probes) says how probes capture, blend and cost.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, input }) => {
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  // The hall, and the smaller shop inside it, which wins where the boxes overlap.
+  scene.createReflectionProbe({ box: { min: [-10, 0, -6], max: [10, 5, 6] }, blend: 2 });
+  const shop = scene.createReflectionProbe({
+    box: { min: [2, 0, -2], max: [6, 3, 2] },
+    position: [4, 1.2, 0],
+    blend: 0.5,
+  });
+  return {
+    onUpdate() {
+      // The shop's window display changes on a key: capture it again in a frame soon.
+      if (input.wasPressed('KeyR')) shop.capture();
+    },
+  };
+});
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `box` | Required | `{ min, max }`: the box that the probe lights, from its corner of least x, y and z to the opposite one, in meters in the world |
+| `position` | The box's center | The point that the probe captures the scene from |
+| `blend` | 1 | How far beyond the box's sides the probe fades out, in meters. The probe lights its whole box. 0 gives a hard edge |
+| `intensity` | 1 | The factor of the probe's light |
+| `boxProjection` | true | Reflections meet the box's sides. false reads the probe as light from far away |
+| `refresh` | `'once'` | `'once'` captures when the probe is made or moved, and on `probe.capture()`. `'always'` captures again and again, one probe a frame in turns |
+| `layers` | The default layer | The layers of the objects that the captures draw |
+| `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
+
+`probe.set(options)` sets every option again: a new position or new layers capture again. `probe.capture()` captures again after objects around the probe moved. `probe.destroy()` removes the probe, and its box takes the light of other probes or of the environment from the next frame.
+
+A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws E1430 past its limit. Development builds throw E1213 for an option that probes do not take, E1203 for a number that is not finite, and E1108 for a negative blend or intensity, or a box whose `min` does not lie below its `max`. They also throw E1101 for a call on a probe that was destroyed.
 
 ## Fog
 

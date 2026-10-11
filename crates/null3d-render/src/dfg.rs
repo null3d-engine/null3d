@@ -29,7 +29,7 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //! THE SOFTWARE.
 
-use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, view};
+use null3d_gpu::drawlist::{DrawList, Op};
 
 use crate::frame::{RecordError, UploadArena};
 
@@ -121,28 +121,9 @@ pub(crate) const fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(sign | ((exponent + 127 - 15) << 23) | (fraction << 13))
 }
 
-/// Records the creation of the table's texture under id `texture`.
-pub(crate) fn create(list: &mut DrawList, texture: u32) -> Result<(), RecordError> {
-    list.push(
-        Op::CreateTexture,
-        &[
-            texture,
-            SIZE,
-            SIZE,
-            1,
-            format::RGBA32_FLOAT,
-            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
-            1,
-            1,
-            view::D2,
-        ],
-    )?;
-    Ok(())
-}
-
-/// Records the upload of the table's texels into the texture that [`create`] made, or into the
-/// first rows of another `RGBA32_FLOAT` texture from texel `column` across, as WebGL2 keeps it
-/// beside the material table's rows.
+/// Records the upload of the table's texels into the first rows of an `RGBA32_FLOAT` texture from
+/// texel `column` across: beside the material table's rows on WebGL2, and beside the materials'
+/// custom values on WebGPU.
 pub(crate) fn upload(
     list: &mut DrawList,
     arena: &mut UploadArena,

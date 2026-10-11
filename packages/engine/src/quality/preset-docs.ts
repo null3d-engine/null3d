@@ -91,6 +91,10 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	probeSize: {
+		label: 'Reflection probe maps',
+		print: (value) => `${value} x ${value}`,
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
