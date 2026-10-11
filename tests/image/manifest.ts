@@ -494,7 +494,9 @@ export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
  * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
  * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
  * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
- * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes.
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes. With
+ * ?lamps a point light and a spot light light the map as they light the main view, and the map
+ * draws the sun's and the spot light's shadows where the main view draws them.
  * Compatibility mode draws the 8-bit path with MSAA, where the copy turns the pass's display color
  * back to linear. The scene pass spec checks the boxes' colors in the screen's corners.
  */
@@ -504,7 +506,12 @@ function minimapTests(): ImageTest[] {
 		sketch: `${MINIMAP_SKETCH}${query}`,
 		hold: 0,
 	});
-	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+	return [
+		test('minimap', ''),
+		test('minimap-clear', '?clear'),
+		test('minimap-layers', '?layers'),
+		test('minimap-lamps', '?lamps'),
+	];
 }
 
 /** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
@@ -517,9 +524,10 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
- * The quarter test draws the reflection at a quarter of the render size. The scale-50 test draws
- * the frame at a render scale of 0.5, where the reflection's texture takes the smaller size and
- * the pass fills it whole. The batches test builds each box from an instance batch, the red one
+ * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
+ * boxes with a point light and a spot light, which their reflections show too. The scale-50 test
+ * draws the frame at a render scale of 0.5, where the reflection's texture takes the smaller size
+ * and the pass fills it whole. The batches test builds each box from an instance batch, the red one
  * with a custom material, so the pass draws both kinds of batch. The reflection spec checks where
  * the boxes' reflections land, and that no magenta shows.
  */
@@ -533,6 +541,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-mirror', ''),
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
+		test('reflection-lamps', '?lamps'),
 		test('reflection-scale-50', '?half'),
 		test('reflection-batches', '?batches'),
 	];

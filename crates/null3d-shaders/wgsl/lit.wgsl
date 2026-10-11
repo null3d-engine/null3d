@@ -817,12 +817,13 @@ fn light_surface(
 #ifdef TRANSLUCENCY
     // The sun lights a surface that lets light through on either side, so the lookup always
     // runs, from the side that the sun falls on.
-    sun_color *= sun_shadow(relative, lit_side(normal, to_sun), to_sun);
+    let seen = relative + engine_frame.shadow_origin.xyz;
+    sun_color *= sun_shadow(seen, lit_side(normal, to_sun), to_sun);
 #else
     // A surface that faces away from the sun gets none of its light whatever the shadow map
     // holds, so it skips the lookup and the filter's reads.
     if dot(normal, to_sun) > 0.0 {
-        sun_color *= sun_shadow(relative, normal, to_sun);
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun);
     }
 #endif
 #endif

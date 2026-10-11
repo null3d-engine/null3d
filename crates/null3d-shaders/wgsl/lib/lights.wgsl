@@ -141,11 +141,12 @@ fn clustered_light(
 #ifdef RECEIVE_SHADOWS
         let tile = light.penumbra.w;
         if tile > 0.5 && strength > 0.0 {
+            let seen = relative + frame.shadow_origin.xyz;
 #ifdef TRANSLUCENCY
             let side = lit_side(normal, to_light);
-            strength *= light_shadow(u32(tile) - 1u, relative, side, to_light, gap);
+            strength *= light_shadow(u32(tile) - 1u, seen, side, to_light, gap);
 #else
-            strength *= light_shadow(u32(tile) - 1u, relative, normal, to_light, gap);
+            strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
 #endif
         }
 #endif
