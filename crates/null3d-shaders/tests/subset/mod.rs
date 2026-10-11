@@ -18,7 +18,7 @@ pub fn repository_subset(names: &[&str]) -> Inputs {
     let mut manifest: Table = toml::from_str(&inputs.manifest).expect("the shader manifest");
 
     let shaders = table(manifest.get_mut("shaders"));
-    shaders.retain(|name, _| names.contains(&name.as_str()));
+    shaders.retain(|name, _| names.contains(&name));
     assert_eq!(
         shaders.len(),
         names.len(),
