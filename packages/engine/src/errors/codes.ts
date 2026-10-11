@@ -124,7 +124,7 @@ const DOCS = {
 	E1206: {
 		title: 'Invalid mesh arrays',
 		cause:
-			'geometry.fromArrays() received arrays that make no mesh, scene.createLines() received points that make no line, or scene.createPoints() received arrays that make no points. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number. Points need at least 1 point, with 3 or 4 numbers of color each.',
+			'geometry.fromArrays() received arrays that make no mesh, scene.createLines() received points that make no line, or scene.createPoints() received arrays that make no points. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A line needs at least 2 points, and pairs of points need an even number. Points need at least 1 point, with 3 or 4 numbers of color each. Or mesh.updateVertices() received values that do not fit the mesh: an attribute the mesh lacks or that takes no updates, another array type than the mesh keeps, or vertices past its last one.',
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},

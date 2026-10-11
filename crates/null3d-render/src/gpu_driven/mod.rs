@@ -299,7 +299,10 @@ mod ids {
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = DOF + 1;
+    /// The table of object ranges, which the vertex shaders of custom materials that read an
+    /// instance's index or an object's id search.
+    pub const OBJECT_RANGES: u32 = DOF + 1;
+    pub const PAGES: u32 = OBJECT_RANGES + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -737,8 +740,14 @@ impl GpuDrivenRenderer {
         let filter = self.settings.shadow_quality().filter;
         let settings = &self.settings;
         let sways = |material| settings.sways(material);
-        self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
+        self.tiles.plan(
+            input,
+            tile_settings,
+            filter,
+            camera.as_ref(),
+            settings.meshes(),
+            &sways,
+        );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let passes = CasterPasses {
@@ -923,7 +932,7 @@ impl GpuDrivenRenderer {
             size: s.size,
         }));
         self.graph.set_skinning(self.skinning.dispatches());
-        self.settings.pace_views();
+        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1228,6 +1237,7 @@ impl GpuDrivenRenderer {
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
+        self.layout.upload_object_ranges(list, arena)?;
         self.layout.update_skinned(list, arena, input.scene)?;
         if shadows {
             self.casters.update_skinned(list, arena, input.scene)?;
@@ -1493,6 +1503,14 @@ impl GpuDrivenRenderer {
                 view::D2,
             ],
         )?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::OBJECT_RANGES,
+                sizes::OBJECT_RANGE_BYTES,
+                usage::UNIFORM | usage::COPY_DST,
+            ],
+        )?;
         dfg::create(list, ids::DFG)?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
@@ -1585,6 +1603,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         if let Some(first) = moves.morph_texels {
             self.skinning.morph_mut().deltas_moved(first);
         }
+    }
+
+    fn meshes_updated(&mut self, _id: u32, _positions: bool) {
+        self.meshes.updated(self.settings.meshes().updated());
     }
 
     fn mesh_gpu_bytes(&self) -> u64 {

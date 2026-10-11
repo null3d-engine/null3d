@@ -692,8 +692,8 @@
       "three": "TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry",
       "status": "direct",
       "since": "0.2",
-      "target": "The same generators from @null3d/geometry",
-      "notes": "Not built yet. Until then, build the vertices with three.js's generator and pass the arrays to geometry.fromArrays. Same parameters as three.js; Shape and Path objects are ported too.",
+      "target": "geometry.fromArrays(torusKnot({ radius, tube, tubularSegments, radialSegments, p, q })), and icosahedron, octahedron, tetrahedron, dodecahedron, polyhedron, lathe, shape, extrude and tube, from @null3d/geometry",
+      "notes": "Install @null3d/geometry. Each function takes the constructor's arguments as named options with three.js's defaults, and returns arrays with three.js's vertices, normals and texture coordinates for geometry.fromArrays. Shape, Path, the curves and ShapeUtils come with the same names and methods, but points are [x, y] or [x, y, z] arrays, not Vector2 or Vector3. ExtrudeGeometry's caps and sides form one mesh, which takes one material.",
       "docs": "api/geometry",
       "detect": "\\b(TorusKnot|Icosahedron|Octahedron|Tetrahedron|Dodecahedron|Polyhedron|Lathe|Extrude|Shape|Tube)Geometry\\b|\\bnew\\s+(THREE\\.)?Shape\\s*\\("
     },
@@ -714,8 +714,8 @@
       "three": "attribute.needsUpdate / setUsage(DynamicDrawUsage) (vertices changing every frame)",
       "status": "changed",
       "since": "0.2",
-      "target": "meshAsset.updateVertices(name, data, start, count)",
-      "notes": "Not built yet. Until then, move vertices with a vertex-offset function, or make a new mesh with geometry.fromArrays and mesh.setMesh. For many moving objects, use instances instead of rewriting vertices.",
+      "target": "mesh.updateVertices(name, values, start, count)",
+      "notes": "Pass the attribute's values of every vertex, in the array type the mesh was made with; start and count pick the vertices that change, as addUpdateRange does, but in vertices. The mesh keeps the bounding sphere it was made with, so give objects bounds with setBounds when vertices move outside it. Meshes with joints or morph targets take no updates. For many moving objects, use instances instead of rewriting vertices.",
       "docs": "api/geometry",
       "detect": "\\.attributes\\.\\w+\\.needsUpdate|\\.setUsage\\s*\\(|DynamicDrawUsage"
     },
@@ -858,7 +858,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
@@ -872,6 +872,17 @@
       "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option (0.2).",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
+    },
+    {
+      "id": "mat-shader-builtins",
+      "category": "Materials",
+      "three": "ShaderMaterial built-ins: uv1, gl_FragCoord, gl_InstanceID / instanceIndex, modelMatrix, normalMatrix, viewMatrix, projectionMatrix, cameraNear, cameraFar",
+      "status": "changed",
+      "since": "0.2",
+      "target": "input.uv1, input.fragCoord, input.instance, object.worldMatrix, object.normalMatrix, camera.view, camera.projection, camera.near, camera.far",
+      "notes": "The engine works relative to the camera, so its matrices do too. object.worldMatrix has its translation relative to the camera, and camera.view holds the camera's rotation only: camera.projection * camera.view * object.worldMatrix places a vertex, as projectionMatrix * modelViewMatrix does. object.position gives the origin in the world. object.normalMatrix turns normals into world space, where three.js's normalMatrix turns them into view space: multiply by camera.view for view space. camera.projection has reversed depth, 1 at the near plane. input.fragCoord counts from the top left, so gl_FragCoord.y becomes frame.resolution.y - input.fragCoord.y. input.instance is the row in an instance batch, 0 for an object of the scene. object.id and mesh.shaderId tell objects apart, which three.js leaves to uniforms. Only WGSL that reads uv1, instance, an id or the object's matrices pays for them.",
+      "docs": "shaders/builtins",
+      "detect": "\\b(modelMatrix|normalMatrix|viewMatrix|projectionMatrix|cameraNear|cameraFar|gl_FragCoord|gl_InstanceID|instanceIndex)\\b"
     },
     {
       "id": "mat-tsl",
@@ -1000,8 +1011,8 @@
       "three": "material.bumpMap / bumpScale",
       "status": "changed",
       "since": "0.2",
-      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump`",
-      "notes": "Not built yet. Until then, make the normal map from the bump map in an image tool. Normal maps are cheaper at run time and look the same or better.",
+      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump bump.png normal.ktx2 --scale <bumpScale>`",
+      "notes": "The scale matches three.js where one texel covers one screen pixel; three.js bumps look stronger farther away. Normal maps are cheaper at run time and look the same or better.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bbump(Map|Scale)\\b"
     },
@@ -1264,8 +1275,8 @@
       "three": "FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader",
       "status": "changed",
       "since": "0.2",
-      "target": "Convert to glTF before release, with Blender or another converter",
-      "notes": "Not built yet. `bunx @null3d/cli assets convert` (0.2) will convert them. The engine loads glTF only.",
+      "target": "Convert to glTF before release: `bunx @null3d/cli assets convert model.fbx model.glb` for FBX, OBJ with MTL, STL and PLY; Blender for Collada, 3DM and USDZ",
+      "notes": "The engine loads glTF only. The command keeps FBX skins, blend shapes and clips, turns materials into metal-rough ones, and puts units in meters with Y up. Bump maps become normal maps.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(FBX|OBJ|MTL|Collada|STL|PLY|3DM|USDZ|TDS|VRML|VTK|Rhino3dm)Loader\\b"
     },

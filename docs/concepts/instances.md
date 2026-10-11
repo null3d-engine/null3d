@@ -256,6 +256,10 @@ A batch that casts shadows casts them with its material's vertex offset, so the 
 
 Rows with colors or values draw with shader builds of their own, which a page downloads with its first such batch. The rows show from the frame after the builds arrive. With colors or values, a masked material tests its alpha against its cutoff, with neither alpha to coverage nor the alpha hash.
 
+### A row's place and its batch's id
+
+A custom material also reads each row's place in its batch as `input.instance`, from 0, in its `vertexOffset` and `surface` functions, as three.js's `gl_InstanceID` gives it. It needs no `values` array: a hue, a phase or a size that follows from the row's place costs the sketch nothing. Every row reads its batch's id as `object.id`, which is `batch.shaderId` in the sketch. [Built-in shader inputs](../shaders/builtins.md#object) describes both.
+
 ## Related pages
 
 - [Static and dynamic objects](static-dynamic.md): what each kind recomputes and uploads.

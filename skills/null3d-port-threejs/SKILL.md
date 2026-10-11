@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures. Draco models load as they are (0.2), so delete the `DRACOLoader` setup and its decoder files, then convert the models to meshopt with the same command.
+3. Models (0.2) and textures. The engine loads glTF only: convert FBX, OBJ, STL and PLY files with `bunx @null3d/cli assets convert <in> <out.glb>` (0.2). It keeps FBX skins, blend shapes and clips, and turns Draco compression into meshopt. Then optimize them with `bunx @null3d/cli assets optimize <in> <out>` (0.2), which writes integer vertices and KTX2 textures. Draco glTF models load as they are (0.2), so delete the `DRACOLoader` setup and its decoder files, then convert the models to meshopt with the optimize command.
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.
@@ -99,6 +99,8 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`. It 
 | `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change needs a new pipeline, whose objects draw nothing until it is built, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
+| `geometry.attributes.position.needsUpdate = true` after changing vertices | Keep the array, change it, and call `mesh.updateVertices('positions', positions)` (0.2) | It allocates nothing and uploads only the vertices that changed; the mesh keeps its first bounding sphere, so add `setBounds` when vertices move outside it |
+| `TorusKnotGeometry`, `ExtrudeGeometry`, `Shape` and the other extra geometry classes | `geometry.fromArrays(torusKnot({ ... }))` and the same classes from `@null3d/geometry` (0.2), with points as arrays | The functions return three.js's vertices for `fromArrays`; `ExtrudeGeometry`'s caps and sides become one mesh |
 | `mergeGeometries` to cut draw calls | Separate objects that share a mesh and material | They already share one draw (`guides/performance`) |
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
 | `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |
