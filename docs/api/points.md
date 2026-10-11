@@ -8,7 +8,7 @@ summary: "createPoints; size attenuation; textures."
 
 # Points
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
 
 ```mermaid
 flowchart LR
@@ -78,6 +78,7 @@ export default defineSketch(async ({ scene, time }) => {
 | `dynamic` | `false` | `true` updates and uploads every point in use, in every frame. A static batch updates only the points that you mark |
 | `layers` | `1`, layer 0 | The [layers](../concepts/render-layers.md) of every point, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every position is relative to, kept at full precision: [Batch origins](../concepts/large-worlds.md#batch-origins) |
+| `depthBias`, `alphaToCoverage` | None, `true` | As for any [material](materials.md) |
 
 `positions` that do not hold 3 numbers per point throw [E1206](../errors/E1206.md), and so do `colors` that do not hold 3 or 4 numbers per point. A batch of no points throws E1206 too. In development builds, a value that is not finite throws E1206. A size that is not above 0 throws [E1108](../errors/E1108.md), and one that is not finite throws [E1203](../errors/E1203.md).
 
