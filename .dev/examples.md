@@ -421,6 +421,26 @@ The choices, and why:
 
 The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
 
+With the beauty pass and the reflection trims, on 12 October 2026, at a load of 6.6 to 8.3. The first table keeps the engine's default target of 60 fps. The second sets `?target-fps=display`, so the governor defends 120 fps and lowers the render scale to reach it:
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 5.7 to 5.8 ms | 61 to 64 fps, GPU 15.2 to 17.1 ms, scale 0.7 |
+| Golden hour | 78 to 80 fps, GPU 15.2 to 19.4 ms | 60 to 61 fps, GPU 15.1 to 16 ms, scale 0.7 |
+| Blue hour | 91 to 92 fps, GPU 14 to 15.7 ms | 48 to 60 fps, GPU 17.4 to 21.6 ms, scale 0.6 to 0.7 |
+| Night | 92 to 96 fps, GPU 12.2 to 14.8 ms | 61 to 64 fps, GPU 14.9 to 16.1 ms, scale 0.6 |
+| Studio | 111 to 114 fps, GPU 10.3 to 11.7 ms | 60 to 64 fps, GPU 14.3 to 16 ms, scale 0.6 |
+
+| Mood, at the display's rate | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 118 to 120 fps, scale 0.8 to 0.85 | 59 to 79 fps, scale 0.6 |
+| Golden hour | 118 to 120 fps, scale 0.75 | 62 to 70 fps, scale 0.6 |
+| Blue hour | 120 fps, scale 0.8 | 61 to 78 fps, scale 0.6 |
+| Night | 120 fps, scale 0.85 | 59 to 62 fps, scale 0.6 |
+| Studio | 114 to 120 fps, scale 0.85 to 0.9 | 62 to 76 fps, scale 0.6 |
+
+WebGPU drew 4.4 to 4.9 million triangles a frame, and WebGL2 7.3 to 7.6 million. These readings drift: in one run, the same untouched build fell from 120 fps to 80 fps on WebGPU at golden hour, as the Mac warmed and other work ran beside it. So compare readings only within one run. WebGPU at High holds 120 fps in every mood with the render scale at 0.75 or more. WebGL2 at Medium does not reach 120 fps. At a scale of 0.6 its GPU time is still 13.5 to 17 ms, so the pixels are not what costs: the triangles and the passes are. Before the trims, without the reflection, WebGL2 drew 6.5 million triangles in place of 9 million.
+
 With the models and the grass's row values, on 11 October 2026:
 
 | Mood | WebGPU, High | WebGL2, Medium |
