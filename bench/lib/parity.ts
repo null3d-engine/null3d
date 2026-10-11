@@ -359,7 +359,7 @@ export interface FeatureScene {
 }
 
 const TWINS = '/bench/pages/threejs';
-/** The sketch switch that turns off tone mapping, for sketches whose image tests keep ACES. */
+/** The sketch switch that turns off tone mapping, for sketches whose image tests keep the default curve. */
 const NO_TONE = 'tone=none';
 
 /**
