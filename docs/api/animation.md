@@ -8,7 +8,7 @@ summary: "The animator; play, crossFade, clip weights, start times, 1D blends, l
 
 # Animation
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

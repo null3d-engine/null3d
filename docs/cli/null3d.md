@@ -8,7 +8,7 @@ summary: "create, test, bench, shot, assets, docs, port, skills, mcp, doctor."
 
 # The `null3d` command
 
-> Ships in null3D 0.1, with `assets optimize` and `assets env` from 0.2. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Of `assets`, only `optimize` and `env` are built. Coding agents must not use the others. `test` runs image tests, but no behavior tests yet.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `assets optimize` and `assets env`. The API is experimental, so it can still change between versions. The commands `create`, `docs`, `port`, `skills`, `mcp` and `doctor` are not built yet. Of `assets`, only `optimize` and `env` are built. Coding agents must not use the others. `test` runs image tests, but no behavior tests yet.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 

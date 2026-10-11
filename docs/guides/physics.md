@@ -8,7 +8,7 @@ summary: "Running Rapier or cannon-es in the sketch worker; copying transforms."
 
 # Using a physics library
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

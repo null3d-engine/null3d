@@ -8,7 +8,7 @@ summary: "Camera, time, object, instance and light values available to custom sh
 
 # Built-in shader inputs
 
-> Ships in null3D 0.1, with the values of batch rows in 0.2. The API is experimental, so it can still change between versions. The view and projection matrices, the camera's near and far planes, the object's matrices and id are not built yet. Nor are light values. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the values of batch rows. The API is experimental, so it can still change between versions. The view and projection matrices, the camera's near and far planes, the object's matrices and id are not built yet. Nor are light values. Coding agents must not use them.
 
 A custom material's WGSL reads four built-in values besides its inputs: `frame`, `camera`, `object` and `material`. The engine fills them before it calls your functions, in the vertex offset and in the surface function alike. Read them anywhere in your WGSL, as global values. A [full shader](../guides/custom-shaders.md#full-shaders) imports `frame`, `camera` and `object` from `null3d::builtins`, and fills them with `fill_builtins`.
 
