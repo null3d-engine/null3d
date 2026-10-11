@@ -13,14 +13,13 @@
 //! group is made again only when what it reads changed, so passes that stay still record only
 //! their draws.
 
-use null3d_gpu::drawlist::{
-    DrawList, Op, address, buffer_usage as usage, compare, filter, format, layout as bind_layout,
-    permutation, resource_kind, state_flags, texture_usage, view,
-};
+use null3d_gpu::drawlist::{DrawList, Op, format, layout as bind_layout, permutation, state_flags};
 
 use crate::bloom::bytes_of;
 use crate::camera::Mat4;
-use crate::effects::{BLOCK, BLOCK_BYTES, Block};
+use crate::effects::{
+    BLOCK, BLOCK_BYTES, Block, IDENTITY, create_effect_group, create_shared_objects, create_texel,
+};
 use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
@@ -28,11 +27,6 @@ use crate::view::{Fullscreen, MAX_VIEWS};
 
 /// Bytes of the uniform buffer: a block for each view.
 const BUFFER_BYTES: usize = MAX_VIEWS * BLOCK;
-
-/// The identity matrix, the inverse projection of a frame without a camera.
-const IDENTITY: Mat4 = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-];
 
 /// The GPU objects of the full-screen passes, which the frame builder's id ranges set.
 #[derive(Clone, Copy, Debug)]
@@ -194,33 +188,11 @@ impl FullscreenPasses {
         if !textures_made && self.bound[place] == Some((inputs, layout)) {
             return Ok(());
         }
-        list.push(
-            Op::CreateBindGroup,
-            &[
-                ids.first_group + place as u32,
-                layout,
-                4,
-                0,
-                resource_kind::BUFFER,
-                ids.buffer,
-                (place * BLOCK) as u32,
-                BLOCK_BYTES as u32,
-                1,
-                resource_kind::TEXTURE,
-                inputs.color,
-                0,
-                0,
-                2,
-                resource_kind::SAMPLER,
-                ids.sampler,
-                0,
-                0,
-                3,
-                resource_kind::TEXTURE,
-                inputs.depth,
-                0,
-                0,
-            ],
+        create_effect_group(
+            list,
+            (ids.first_group + place as u32, layout),
+            (ids.buffer, (place * BLOCK) as u32, BLOCK_BYTES as u32),
+            (inputs.color, ids.sampler, inputs.depth),
         )?;
         self.bound[place] = Some((inputs, layout));
         Ok(())
@@ -265,48 +237,7 @@ impl FullscreenPasses {
 /// Records the creation of the uniform buffer, the linear sampler, which clamps at the edges, and
 /// the blank color and depth texels.
 fn create_objects(list: &mut DrawList, ids: FullscreenIds) -> Result<(), RecordError> {
-    list.push(
-        Op::CreateBuffer,
-        &[
-            ids.buffer,
-            BUFFER_BYTES as u32,
-            usage::UNIFORM | usage::COPY_DST,
-        ],
-    )?;
-    list.push(
-        Op::CreateSampler,
-        &[
-            ids.sampler,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            address::CLAMP_TO_EDGE,
-            filter::LINEAR,
-            filter::LINEAR,
-            filter::NEAREST,
-            0f32.to_bits(),
-            0f32.to_bits(),
-            compare::NONE,
-            1,
-        ],
-    )?;
-    for (texture, texel_format) in [
-        (ids.blank_color, format::RGBA16_FLOAT),
-        (ids.blank_depth, format::R32_FLOAT),
-    ] {
-        list.push(
-            Op::CreateTexture,
-            &[
-                texture,
-                1,
-                1,
-                1,
-                texel_format,
-                texture_usage::TEXTURE_BINDING,
-                1,
-                1,
-                view::D2,
-            ],
-        )?;
-    }
-    Ok(())
+    create_shared_objects(list, (ids.buffer, BUFFER_BYTES), ids.sampler)?;
+    create_texel(list, ids.blank_color, format::RGBA16_FLOAT)?;
+    create_texel(list, ids.blank_depth, format::R32_FLOAT)
 }
