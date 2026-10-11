@@ -236,6 +236,10 @@ export const TEMPLATE_DOF_FILTER = 44;
 export const TEMPLATE_DOF_COMPOSITE = 45;
 export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_TRANSMISSION_COPY = 47;
+export const TEMPLATE_FOG_LIGHT = 57;
+export const TEMPLATE_FOG_SUM = 58;
+export const TEMPLATE_FOG_APPLY = 59;
+export const TEMPLATE_FOG_APPLY_MS = 60;
 export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;

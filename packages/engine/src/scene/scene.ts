@@ -2344,6 +2344,8 @@ export class Scene {
 	private sceneEnvironment: SceneEnvironment | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** True while the fog is volumetric. */
+	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -3570,13 +3572,20 @@ export class Scene {
 	/**
 	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
 	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
-	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
+	 * toward the main directional light. With `volumetric`, the sun and the point and spot lights
+	 * light the fog through their shadows. Null removes the fog. The background takes no fog, and a
 	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
 	 * value out of its range, and E1203 for a value that is not finite. Converting the color
 	 * allocates.
 	 */
 	setFog(fog: FogOptions | null): void {
-		setSceneFog(this.core.glue, fog);
+		this.fogVolume = setSceneFog(this.core.glue, fog);
+		if (this.fogVolume) this.makers?.materials.shaders.need('fog_volume');
+	}
+
+	/** @internal True while the scene's fog is volumetric, which needs HDR color. */
+	get needsHdr(): boolean {
+		return this.fogVolume;
 	}
 
 	/** The raycasts and overlap queries, made on the first call. */

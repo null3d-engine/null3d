@@ -167,6 +167,47 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the volumetric fog tests: a low sun behind pillars, or street lamps at night. */
+const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
+
+/** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
+const FOG_VOLUME_SIZE = [480, 270] as const;
+
+/**
+ * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
+ * the shadow of the box under the middle lamp, each beside the same fog with its sun glow alone, on
+ * every tier. Turned on during play, it draws the image of turning it on in the setup. At half the
+ * render scale the apply step draws into the corner of its target. With no slices, as on Low, and
+ * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
+ * keeps its glow and draws the image without the volumetric fog.
+ */
+function fogVolumeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FOG_VOLUME_SKETCH}${query}`,
+		hold: 1,
+		size: FOG_VOLUME_SIZE,
+	});
+	return [
+		test('fog-volume-off', ''),
+		test('fog-volume-sun', '?fog=on'),
+		test('fog-volume-night-off', '?night'),
+		test('fog-volume-night', '?night&fog=on'),
+		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
+		test('fog-volume-scale-50', '?scale=0.5&fog=on'),
+		{ ...test('fog-volume-no-slices', '?fog=on&slices=0'), reference: 'fog-volume-off' },
+		{
+			...test('fog-volume-8-bit', '?fog=on'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'fog-volume-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
 const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
 
@@ -1002,6 +1043,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...fogVolumeTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),

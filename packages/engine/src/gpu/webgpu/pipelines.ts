@@ -72,6 +72,10 @@ import {
 	TEMPLATE_DOF_SETUP_MS,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
+	TEMPLATE_FOG_APPLY,
+	TEMPLATE_FOG_APPLY_MS,
+	TEMPLATE_FOG_LIGHT,
+	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -751,9 +755,29 @@ export class Pipelines {
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
 			],
+			// The volumetric fog's sum binds as a step of bloom, and its apply step as depth of
+			// field's composite, with the summed grid in place of the blurred image.
+			[TEMPLATE_FOG_SUM, 'fog sum', shaders.fog_volume, 'sum', LAYOUT_BLOOM],
+			[TEMPLATE_FOG_APPLY, 'fog apply', shaders.fog_volume, 'apply', LAYOUT_DOF_COMPOSITE],
+			[
+				TEMPLATE_FOG_APPLY_MS,
+				'fog apply ms',
+				shaders.fog_volume_ms,
+				'apply',
+				LAYOUT_DOF_COMPOSITE_MS,
+			],
 		] as const) {
 			this.defineTemplate(id, { label, shader, pipeline, layouts: [layout], vertexBuffers: [] });
 		}
+		// The volumetric fog's light step reads the camera's frame group, as the background does,
+		// then its own settings, the last frame's grid and a sampler, as a step of bloom does.
+		this.defineTemplate(TEMPLATE_FOG_LIGHT, {
+			label: 'fog light',
+			shader: shaders.fog_light,
+			pipeline: 'light',
+			layouts: [LAYOUT_FRAME, LAYOUT_BLOOM],
+			vertexBuffers: [],
+		});
 		this.defineTemplate(TEMPLATE_VIEW_COPY, {
 			label: 'view copy',
 			shader: shaders.view_copy,

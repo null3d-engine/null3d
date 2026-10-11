@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -152,6 +152,33 @@ A curve sets how the fog thickens. The default, exponential fog, follows light t
 Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
 
 The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color, as in three.js's WebGPURenderer and in WebGLRenderer with a half-float target. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
+
+### Volumetric fog
+
+With the fog's `volumetric` option, the lights light the fog itself, through their shadows. A low sun shines through the gaps between trees in rays, and the trees' shadows cut dark lanes through the haze. A street lamp or a car's headlight casts a glowing cone, with the shadows of what stands in it. [Scene](../api/scene.md#volumetric-fog) lists the options.
+
+```mermaid
+flowchart LR
+    light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum step<br/>each cell adds up<br/>the cells in front of it"]
+    last["Last frame's grid"] --> light
+    sum --> apply["Apply step<br/>each pixel adds the<br/>light at its depth"]
+    scene["Scene color and depth"] --> apply
+    apply --> effects["Custom effects, depth of field,<br/>bloom, final pass"]
+```
+
+The engine lights a grid of cells that follow the camera's view, a technique called froxels, which Frostbite and Unreal Engine use too. The grid's columns and rows cover the view, and its slices run away from the camera, thin near it and thicker far away. Each frame runs three steps:
+
+1. The light step lights each cell once. It finds how dense the fog is there, from the fog's `density` and `heightFalloff`. It adds the sun's light where the sun's shadow map sees the cell, and the light of each point and spot light of the cell's cluster, through its shadow. A phase function sets how much of each light the fog sends toward the camera. It sends most when the camera looks into the light, as `anisotropy` sets.
+2. The sum step adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them.
+3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects.
+
+Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that hides the grid's steps, so rays show smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.
+
+The fog of the section above stays as it is: it dims each surface and mixes in the fog's color. The grid only adds the light that the sun and the lamps scatter toward the camera, and while it draws it replaces the sun glow. Past the grid's `distance`, the fog scatters the sun's light without shadows, in a closed formula, so no edge shows where the grid ends.
+
+The quality setting `fogSlices` sets the grid: 32 slices with 64 cells on the canvas's short side on Medium, 64 slices with 96 on High, and 96 slices with 128 on Ultra. On Low it is 0, and the fog keeps its sun glow, at no cost. The frame-budget governor's last step halves the slices that each frame draws. While the fog is not volumetric, nothing of it runs or downloads.
+
+Surfaces that blend or let light through, such as water and glass, draw before the apply step. They take the lit fog of the whole line of sight to the opaque surface behind them.
 
 ## Environment maps
 

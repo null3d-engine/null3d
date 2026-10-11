@@ -154,6 +154,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'light-shafts',
+		group: 'Light, materials and effects',
+		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		title: 'Light shafts and lit fog',
+		scene: 'Pine wood at sunset',
+		summary:
+			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is golden hour, right is dusk.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'gltf-model',
 		group: 'Light, materials and effects',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),

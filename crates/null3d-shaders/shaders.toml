@@ -359,6 +359,40 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+# The volumetric fog's light step (see fog_light.wgsl): one triangle over the grid's texture, which
+# lights each cell of the grid with the sun through its cascades and the clustered point and spot
+# lights through their shadow tiles. It binds the camera's frame group, so it builds with the
+# shadow lookups of RECEIVE_SHADOWS, and on WebGL2 with WEBGL2's data textures.
+[shaders.fog_light]
+file = "fog_light.wgsl"
+by_device = true
+pipelines.light = { vertex = "vs", fragment = "light" }
+variants.webgpu = { defs = ["RECEIVE_SHADOWS"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "RECEIVE_SHADOWS"], targets = ["glsl"] }
+
+# The volumetric fog's sum and apply steps (see fog_volume.wgsl): `sum` sums the grid's cells front
+# to back, and `apply` adds the summed light to the scene's color at the render size.
+[shaders.fog_volume]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.sum = { vertex = "vs", fragment = "sum" }
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The apply step from a multisampled depth target, whose sample 0 it reads. Only WebGPU reads
+# multisampled textures.
+[shaders.fog_volume_ms]
+file = "fog_volume.wgsl"
+by_device = true
+pipelines.apply = { vertex = "vs", fragment = "apply" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the volumetric fog's steps when the sketch first turns it on. The frames draw
+# the fog with its sun glow until the steps' pipelines are built.
+[first_use.fog_volume]
+shaders = ["fog_light", "fog_volume", "fog_volume_ms"]
+
 # The copy of a view's image into the target that materials sample, with its rows turned around,
 # so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
 # the view into its target directly.

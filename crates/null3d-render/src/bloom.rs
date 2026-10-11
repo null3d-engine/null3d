@@ -298,7 +298,7 @@ struct FinalBlock {
 /// The rows before the drawn corner of a texture of `extent` rows whose corner has `corner` rows:
 /// none on WebGPU, and the rows below it on WebGL2, which counts rows from the bottom and draws a
 /// corner into its top rows.
-const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
+pub(crate) const fn rows_before(extent: u32, corner: u32, rows_from_bottom: bool) -> u32 {
     if rows_from_bottom { extent - corner } else { 0 }
 }
 

@@ -1,6 +1,7 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then how often far shadow cascades draw, then the
-// shadow filter, then bloom's base, then ambient occlusion's scale. When the frames have time to
+// shadow filter, then bloom's base, then ambient occlusion's scale, then the volumetric fog's
+// slices. When the frames have time to
 // spare again, it raises them in the reverse order. It never changes a setting that is fixed while
 // a preset runs.
 //
@@ -25,7 +26,8 @@
 // turns instead, a longer interval would leave moving shadows further behind their casters. A bloom step happens only while
 // the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
 // narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
-// draws at half the render size: it draws at a quarter.
+// draws at half the render size: it draws at a quarter. The volumetric fog's step happens only
+// while it draws: each frame draws half its grid's slices, into the same textures.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it. Unoptimized code makes a number object for
@@ -155,7 +157,7 @@ const STATE_SIZE = 6;
  * The governor's levels: 0 at the highest scale with the settings as set, and one more for each
  * step down. They cover every scale of the widest range and every step past the scale.
  */
-const LEVELS = FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + 1 + 1;
+const LEVELS = FULL_SCALE / SCALE_STEP + 1 + farIntervalSteps(1) + 1 + 1 + 1 + 1;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -181,9 +183,11 @@ export class Governor {
 	 * the lowest above none after a step.
 	 */
 	aoScale = 0;
+	/** The halvings of the volumetric fog's slices: 0 with the setting as set, or 1 after its step. */
+	fogHalvings = 0;
 	/**
-	 * Counts each change of `farInterval`, `filter`, `bloomHalvings` or `aoScale`, so the frame loop
-	 * applies them.
+	 * Counts each change of `farInterval`, `filter`, `bloomHalvings`, `aoScale` or `fogHalvings`, so
+	 * the frame loop applies them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -212,6 +216,9 @@ export class Governor {
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
 	private ao = false;
+	/** The volumetric fog's slices that its step halves, and whether it is on. */
+	private fogSetting = 0;
+	private fog = false;
 
 	constructor() {
 		this.restart(0);
@@ -275,6 +282,17 @@ export class Governor {
 		this.applySteps();
 	}
 
+	/**
+	 * Sets the volumetric fog's slices that its step halves, and whether the sketch has it on, which
+	 * the step needs.
+	 */
+	setFog(on: boolean, slices: number): void {
+		if (on === this.fog && slices === this.fogSetting) return;
+		this.fog = on;
+		this.fogSetting = slices;
+		this.applySteps();
+	}
+
 	/** Turns the governor on or off. Off, the scale goes to the highest and the settings apply as set. */
 	setOn(on: boolean): void {
 		this.on = on;
@@ -289,7 +307,13 @@ export class Governor {
 	 * settings allow.
 	 */
 	get maxSteps(): number {
-		return this.intervalSteps() + this.filterSteps() + this.bloomSteps() + this.aoSteps();
+		return (
+			this.intervalSteps() +
+			this.filterSteps() +
+			this.bloomSteps() +
+			this.aoSteps() +
+			this.fogSteps()
+		);
 	}
 
 	/**
@@ -480,33 +504,42 @@ export class Governor {
 		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
 	}
 
+	/** The volumetric fog's step while it draws: it halves the slices that each frame draws. */
+	private fogSteps(): number {
+		return this.fog && this.fogSetting > 0 ? 1 : 0;
+	}
+
 	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the far cascades' interval doubles with each of its steps, the filter
-	 * takes the lightest after them, then bloom's base halves, and last ambient occlusion takes its
-	 * lowest scale.
+	 * takes the lightest after them, then bloom's base halves, then ambient occlusion takes its
+	 * lowest scale, and last the volumetric fog draws half its slices.
 	 */
 	private applySteps(): void {
 		const intervalSteps = this.intervalSteps();
 		const shadowSteps = intervalSteps + this.filterSteps();
 		const bloomSteps = this.bloomSteps();
-		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
+		const aoSteps = this.aoSteps();
+		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + aoSteps + this.fogSteps());
 		const doublings = Math.min(this.steps, intervalSteps);
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = this.steps > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
 		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		const fogHalvings = this.steps > shadowSteps + bloomSteps + aoSteps ? 1 : 0;
 		if (
 			farInterval === this.farInterval &&
 			filter === this.filter &&
 			bloomHalvings === this.bloomHalvings &&
-			aoScale === this.aoScale
+			aoScale === this.aoScale &&
+			fogHalvings === this.fogHalvings
 		)
 			return;
 		this.farInterval = farInterval;
 		this.filter = filter;
 		this.bloomHalvings = bloomHalvings;
 		this.aoScale = aoScale;
+		this.fogHalvings = fogHalvings;
 		this.stepChanges++;
 	}
 }

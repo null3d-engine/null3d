@@ -32,7 +32,7 @@ const RUN_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_HALF;
  * Features that move the 8-bit path to HDR color, whose pipelines then ask for builds without the
  * tone mapping bit. Preloading one on that path also loads the start's builds without the bit.
  */
-const HDR_FEATURES: ReadonlySet<string> = new Set(['bloom', 'dof']);
+const HDR_FEATURES: ReadonlySet<string> = new Set(['bloom', 'dof', 'fog_volume']);
 
 /**
  * Loads a device module: the start's module of the fixed bits `bits` when `feature` is undefined,

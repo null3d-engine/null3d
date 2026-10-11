@@ -1558,6 +1558,18 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// The volumetric fog's light step: one triangle over the grid's texture, which lights each cell
+    /// of the grid. It binds the camera's frame group at group 0, as the background does, and at
+    /// group 1 its settings, the last frame's grid and a sampler, as a step of bloom binds them.
+    pub const FOG_LIGHT: u32 = 57;
+    /// The volumetric fog's sum: one triangle over the summed grid's texture, which sums the cells
+    /// in front of each cell. It binds as a step of bloom does.
+    pub const FOG_SUM: u32 = 58;
+    /// The volumetric fog's apply step: one triangle over a target of the render size, which adds
+    /// the summed grid's light to the scene's color. It binds as depth of field's composite does.
+    pub const FOG_APPLY: u32 = 59;
+    /// [`FOG_APPLY`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const FOG_APPLY_MS: u32 = 60;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch.
     pub const CUSTOM_FIRST: u32 = 64;
@@ -1939,6 +1951,10 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("FOG_LIGHT", template::FOG_LIGHT),
+                ("FOG_SUM", template::FOG_SUM),
+                ("FOG_APPLY", template::FOG_APPLY),
+                ("FOG_APPLY_MS", template::FOG_APPLY_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

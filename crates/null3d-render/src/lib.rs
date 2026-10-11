@@ -69,6 +69,7 @@ pub mod effects;
 pub mod environment;
 mod final_pass;
 pub mod fog;
+pub mod fog_volume;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;

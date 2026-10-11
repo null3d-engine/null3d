@@ -1,6 +1,8 @@
 // The scene's fog. The core keeps it, and the lit and unlit shaders mix each object's linear color
 // toward the fog color by its straight-line distance from the camera, along a curve. The fog can
-// thin with height and glow toward the main directional light. The background takes no fog.
+// thin with height and glow toward the main directional light. The background takes no fog. The
+// volumetric fog lights the same fog with the sun and the point and spot lights, through their
+// shadows, in a grid that follows the camera's view (D-133).
 
 import { checkNumber, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
@@ -66,6 +68,40 @@ export interface FogOptions {
 	 * smaller glow. The default is 8.
 	 */
 	sunGlowExponent?: number;
+	/**
+	 * Lights the fog with the main directional light and the point and spot lights, through their
+	 * shadows: sun rays through gaps in trees, and glowing cones under lamps and headlights. `true`
+	 * takes the default options. While it draws, it replaces `sunGlow` with its own light of the
+	 * sun. It needs HDR color, and the quality setting `fogSlices` above 0: on the Low preset the
+	 * fog keeps its sun glow. The default is `false`.
+	 */
+	volumetric?: boolean | FogVolumeOptions;
+}
+
+/**
+ * Options of the volumetric fog in `scene.setFog`. The fog's `density` and `heightFalloff` say
+ * where the air holds fog, so the light falls through the same fog that dims the objects.
+ *
+ * @category api/scene
+ */
+export interface FogVolumeOptions {
+	/**
+	 * How much of the lights' light the fog scatters toward the camera, 0 or more: 1 scatters as
+	 * much as the fog's density gives. Raise it for bolder rays. The default is 1.
+	 */
+	intensity?: number;
+	/**
+	 * How much light the fog scatters forward, from -0.95 to 0.95: 0 scatters it evenly in every
+	 * direction, and values toward 0.95 gather it around the lights, as haze around a low sun.
+	 * The default is 0.6.
+	 */
+	anisotropy?: number;
+	/**
+	 * How far along the view the lit fog reaches, above 0. Past it, the fog still scatters the
+	 * sun's light, without shadows. A shorter reach gives finer rays near the camera. The default
+	 * is 100.
+	 */
+	distance?: number;
 }
 
 const DEFAULT_DENSITY = 0.01;
@@ -73,6 +109,11 @@ const DEFAULT_DENSITY = 0.01;
 const DEFAULT_NEAR = 1;
 const DEFAULT_FAR = 1000;
 const DEFAULT_SUN_GLOW_EXPONENT = 8;
+const DEFAULT_VOLUME_INTENSITY = 1;
+const DEFAULT_ANISOTROPY = 0.6;
+const DEFAULT_VOLUME_DISTANCE = 100;
+/** The strongest anisotropy, which keeps the phase function finite. */
+const MAX_ANISOTROPY = 0.95;
 
 const CURVES: Readonly<Record<FogCurve, number>> = {
 	exponential: FOG_CURVE_EXPONENTIAL,
@@ -135,11 +176,42 @@ function checkFog(fog: FogOptions, values: FogValues): void {
 		);
 }
 
-/** Gives the scene `fog`, or no fog for null. Converting the color allocates. */
-export function setSceneFog(glue: CoreGlue, fog: FogOptions | null): void {
+/**
+ * Throws E1108 for a volumetric fog option out of its range, and E1203 for a value that is not
+ * finite. Call it inside `if (DEV)`.
+ */
+function checkVolume(volume: FogVolumeOptions, values: readonly [number, number, number]): void {
+	const [intensity, anisotropy, distance] = values;
+	checkNumber(CALL, 'volumetric.intensity', intensity, FOG);
+	checkNumber(CALL, 'volumetric.anisotropy', anisotropy, FOG);
+	checkNumber(CALL, 'volumetric.distance', distance, FOG);
+	checkNotNegative('volumetric intensity', intensity);
+	if (!(Math.abs(anisotropy) <= MAX_ANISOTROPY))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the volumetric anisotropy ${anisotropy}; it takes a number from -0.95 to 0.95.`,
+		);
+	if (!(distance > 0))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the volumetric distance ${distance}; it takes a number above 0.`,
+		);
+	if ('density' in volume)
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got a density in volumetric. The volumetric fog takes the fog's own density: set density beside color.`,
+		);
+}
+
+/**
+ * Gives the scene `fog`, or no fog for null, and its volumetric fog. Returns true while the
+ * volumetric fog is on. Converting the color allocates.
+ */
+export function setSceneFog(glue: CoreGlue, fog: FogOptions | null): boolean {
 	if (fog === null) {
 		glue.setFog(FOG_CURVE_NONE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-		return;
+		glue.setFogVolume(false, 0, 0, 0, 0);
+		return false;
 	}
 	const values: FogValues = [
 		fog.density ?? DEFAULT_DENSITY,
@@ -150,7 +222,18 @@ export function setSceneFog(glue: CoreGlue, fog: FogOptions | null): void {
 		fog.sunGlow ?? 0,
 		fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT,
 	];
-	if (DEV) checkFog(fog, values);
+	const volume = fog.volumetric === true ? {} : fog.volumetric || undefined;
+	const volumeValues = [
+		volume?.intensity ?? DEFAULT_VOLUME_INTENSITY,
+		volume?.anisotropy ?? DEFAULT_ANISOTROPY,
+		volume?.distance ?? DEFAULT_VOLUME_DISTANCE,
+	] as const;
+	if (DEV) {
+		checkFog(fog, values);
+		if (volume) checkVolume(volume, volumeValues);
+	}
 	const [r, g, b] = linearColor(fog.color, CALL);
 	glue.setFog(CURVES[fog.curve ?? 'exponential'], r, g, b, ...values);
+	glue.setFogVolume(volume !== undefined, ...volumeValues, values[0]);
+	return volume !== undefined;
 }

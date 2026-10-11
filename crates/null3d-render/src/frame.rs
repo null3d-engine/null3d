@@ -36,6 +36,7 @@ use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
+use crate::fog_volume::{self, FogVolumeFrame, Volumetric};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale};
@@ -666,6 +667,12 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// The volumetric fog's settings while the sketch turns it on.
+    fog_volume: Option<Volumetric>,
+    /// The slices of the volumetric fog's grid, which the quality settings set: 0 draws none.
+    fog_slices: u32,
+    /// The governor's halvings of the slices that a frame draws.
+    fog_halvings: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -742,6 +749,9 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            fog_volume: None,
+            fog_slices: fog_volume::SLICE_COUNTS[1],
+            fog_halvings: 0,
             lut: None,
             vignette: None,
             environment: None,
@@ -998,6 +1008,73 @@ impl SceneSettings {
     /// makes no GPU object.
     pub fn set_dof_taps(&mut self, taps: u32) {
         self.dof_taps = taps;
+    }
+
+    /// Turns the volumetric fog on with its settings, or off with `None`, from the next recorded
+    /// frame on. It lights the scene's fog, so it draws only while the scene has fog.
+    pub fn set_fog_volume(&mut self, volumetric: Option<Volumetric>) {
+        self.fog_volume = volumetric;
+    }
+
+    /// Sets the slices of the volumetric fog's grid, one of [`fog_volume::SLICE_COUNTS`] or 0,
+    /// which draws none, from the next recorded frame on. A new count makes the grid's textures
+    /// again.
+    pub fn set_fog_slices(&mut self, slices: u32) {
+        self.fog_slices = slices;
+    }
+
+    /// Sets the governor's halvings of the slices that a frame draws of the volumetric fog's grid.
+    /// The grid keeps its textures, so a halving makes no GPU object.
+    pub fn set_fog_halvings(&mut self, halvings: u32) {
+        self.fog_halvings = halvings;
+    }
+
+    /// The volumetric fog's settings while it draws: while the sketch turns it on, the scene has
+    /// fog, its grid has slices, the scene draws HDR color and no debug view draws. While it
+    /// draws, the camera's view takes no sun glow, as the grid's sun light replaces it. In the few
+    /// frames before its pipelines are built, the fog then has neither.
+    pub fn fog_volume(&self) -> Option<Volumetric> {
+        self.fog_volume.filter(|_| {
+            self.lighting.fog.is_some()
+                && self.fog_slices > 0
+                && self.canvas.scene_color.is_hdr()
+                && !self.debug_view.is_debug()
+        })
+    }
+
+    /// What the volumetric fog draws with in a frame of `scene`'s positions of `parity`, for the
+    /// camera's view of a canvas of `canvas` pixels, or `None` while it is off or without a camera.
+    pub(crate) fn fog_volume_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<FogVolumeFrame> {
+        let volumetric = self.fog_volume()?;
+        let fog = self.lighting.fog.as_ref()?;
+        let view = self.views.first()?;
+        let (_, lens) = view.camera()?;
+        let (_, inverse_projection) = self.camera_projection(canvas)?;
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let camera = view.transform(scene, parity, aspect)?;
+        let at = camera.cell.absolute();
+        let drawn = (self.fog_slices >> self.fog_halvings.min(31)).max(fog_volume::SLICES_PER_ROW);
+        let [x, y, z, _] = self.lighting.sun_direction;
+        let [r, g, b, _] = self.lighting.sun_color;
+        Some(FogVolumeFrame {
+            volumetric,
+            slices: self.fog_slices,
+            drawn_slices: drawn.min(self.fog_slices),
+            density: volumetric.density * fog.density_share_at(at[1] as f32),
+            falloff: fog.height_falloff,
+            view_proj: camera.view_proj,
+            inverse_projection,
+            depth_row: camera.depth.row,
+            perspective: matches!(lens, Lens::Perspective(_)),
+            camera: at,
+            sun_direction: [x, y, z],
+            sun_color: [r, g, b],
+        })
     }
 
     /// What depth of field draws with in a frame of `scene`'s positions of `parity`, for the
@@ -1956,7 +2033,14 @@ impl SceneSettings {
             ambient: self.lighting.ambient,
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
-            fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
+            fog: {
+                let mut fog = fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure);
+                // The volumetric fog's sun light replaces the glow in the camera's view.
+                if view_id == ViewId::CAMERA && self.fog_volume().is_some() {
+                    fog.sun_glow = 0.0;
+                }
+                fog
+            },
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],

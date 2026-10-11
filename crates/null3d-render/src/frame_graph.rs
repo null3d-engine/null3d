@@ -133,6 +133,7 @@ use crate::camera::Mat4;
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
+use crate::fog_volume::{self, FogVolumeFrame, FogVolumeIds, FogVolumePass, FogVolumeSources};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::grading::Grading;
 use crate::graph::{
@@ -161,6 +162,7 @@ pub(crate) struct GraphIds {
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
     pub(crate) dof: DofIds,
+    pub(crate) fog: FogVolumeIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
     /// The copy of the camera's opaque color that surfaces which let light through sample.
@@ -253,6 +255,15 @@ const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
 /// read.
 const DOF_PASSES: [&str; dof::STEPS] = ["DofSetup", "DofGather", "DofTent", "DofComposite"];
 const DOF_TARGETS: [&str; dof::STEPS] = ["dofHalf0", "dofHalf1", "dofHalf2", "dofColor"];
+/// The volumetric fog's light steps, one for each of the two light textures that they write and
+/// take turns with, the light textures, the sum and its target, and the apply step and its target,
+/// which the custom effects, depth of field, bloom and the final pass read.
+const FOG_LIGHT_PASSES: [&str; 2] = ["FogLight0", "FogLight1"];
+const FOG_LIGHT: [&str; 2] = ["fogLight0", "fogLight1"];
+const FOG_SUM_PASS: &str = "FogSum";
+const FOG_SUMMED: &str = "fogSummed";
+const FOG_APPLY_PASS: &str = "FogApply";
+const FOG_COLOR: &str = "fogColor";
 /// An effect slot that holds no effect.
 const NO_EFFECT: Effect = Effect {
     template: 0,
@@ -355,6 +366,14 @@ pub(crate) enum Role {
     Effect(u8),
     /// A step of depth of field, by its place. The graph records it itself.
     Dof(u8),
+    /// The volumetric fog's light step into one of its two light textures, by the texture. The
+    /// graph records it, apart from the binding of the camera's frame group, which the builder
+    /// records. A frame draws the step of one texture and leaves out the other.
+    FogLight(u8),
+    /// The volumetric fog's sum, which the graph records itself.
+    FogSum,
+    /// The volumetric fog's apply step, which the graph records itself.
+    FogApply,
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
@@ -527,6 +546,21 @@ pub(crate) struct FrameGraph {
     /// The textures that depth of field's steps read, found once for each compile of the graph,
     /// which the count says.
     dof_textures: Option<(u32, DofSources)>,
+    /// The volumetric fog's steps and their GPU objects, once the sketch first turns it on.
+    fog_pass: Option<FogVolumePass>,
+    /// The GPU objects that the volumetric fog's steps take.
+    fog_ids: FogVolumeIds,
+    /// What the volumetric fog draws with in the frame, while the sketch turns it on.
+    fog: Option<FogVolumeFrame>,
+    /// True once the volumetric fog's pipelines draw: built, after the frame whose list created
+    /// them.
+    fog_built: bool,
+    /// The slices of the grid's textures that the declared passes hold, or 0 when they hold no
+    /// volumetric fog.
+    fog_declared: u32,
+    /// The textures that the volumetric fog's steps read, found once for each compile of the graph,
+    /// which the count says.
+    fog_textures: Option<(u32, FogVolumeSources)>,
     /// Ambient occlusion's steps and their GPU objects, once ambient occlusion first draws.
     ao_pass: Option<AoPass>,
     /// The GPU objects that ambient occlusion's steps take.
@@ -663,6 +697,12 @@ impl FrameGraph {
             dof_built: false,
             dof_declared: false,
             dof_textures: None,
+            fog_pass: None,
+            fog_ids: ids.fog,
+            fog: None,
+            fog_built: false,
+            fog_declared: 0,
+            fog_textures: None,
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
@@ -723,6 +763,8 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
+        self.fog_pass = None;
+        self.fog_built = false;
         // The copy's target takes the scene color's format, which its pipeline draws into.
         self.transmission_built = false;
         self.declared = false;
@@ -912,7 +954,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof
+        let fog = if self.fog.is_some() {
+            FogVolumePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + fog
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1048,11 +1095,21 @@ impl FrameGraph {
         self.final_pass.set_tone_curve(template);
     }
 
+    /// The resource that holds the scene's color after the scene's passes: the volumetric fog's
+    /// target while its steps are declared, or else the scene color. The custom effects read it.
+    fn scene_output(&self) -> &'static str {
+        if self.fog_declared > 0 {
+            FOG_COLOR
+        } else {
+            SCENE_COLOR
+        }
+    }
+
     /// The resource that holds the scene's color after the custom effects' passes: the last unit's
-    /// target, or the scene color without one. Depth of field reads it.
+    /// target, or the scene's output without one. Depth of field reads it.
     fn effects_output(&self) -> &'static str {
         match self.unit_count {
-            0 => SCENE_COLOR,
+            0 => self.scene_output(),
             count => EFFECT_TARGETS[count - 1],
         }
     }
@@ -1083,6 +1140,46 @@ impl FrameGraph {
     /// are built. Until then the frames draw without it.
     pub(crate) fn dof_draws(&self) -> bool {
         self.dof.is_some() && self.dof_built
+    }
+
+    /// Turns the volumetric fog on with what the frame draws it with, or off with `None`, for the
+    /// next frames. The passes are declared again only when it starts or stops drawing, or its
+    /// grid's textures change size, so a moving camera changes only the steps' block. The 8-bit
+    /// path draws no volumetric fog.
+    pub(crate) fn set_fog_volume(&mut self, fog: Option<FogVolumeFrame>) {
+        let was = self.fog_draws();
+        self.fog = fog.filter(|_| self.scene_color.is_hdr());
+        let slices = self.fog.map_or(0, |fog| fog.slices);
+        if self.fog_draws() != was || (self.fog_declared > 0 && slices != self.fog_declared) {
+            self.declared = false;
+        }
+        if !self.fog_draws()
+            && let Some(pass) = self.fog_pass.as_mut()
+        {
+            pass.forget_history();
+        }
+    }
+
+    /// True while the volumetric fog draws: the sketch turned it on on the HDR path, and its
+    /// pipelines are built. Until then the frames draw the fog with its sun glow.
+    pub(crate) fn fog_draws(&self) -> bool {
+        self.fog.is_some() && self.fog_built
+    }
+
+    /// The volumetric fog's steps, made for the scene depth's samples when first asked for, as
+    /// depth of field's are.
+    fn fog_steps(&mut self) -> &mut FogVolumePass {
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let rows_from_bottom = !self.gpu_culling;
+        self.fog_pass
+            .get_or_insert_with(|| FogVolumePass::new(self.fog_ids, samples, rows_from_bottom))
+    }
+
+    /// The volumetric fog's steps, which exist while their passes are declared.
+    fn fog_steps_ref(&self) -> &FogVolumePass {
+        self.fog_pass
+            .as_ref()
+            .expect("the volumetric fog's steps run once they are declared")
     }
 
     /// Depth of field's steps, made for the scene depth's samples when first asked for. WebGL2 has
@@ -1525,6 +1622,14 @@ impl FrameGraph {
             .extend(views.iter().map(|view| view.target().draws()));
         self.enable_views();
         self.declare_outline(color.samples);
+        self.fog_declared = if self.fog_draws() {
+            self.fog.map_or(0, |fog| fog.slices)
+        } else {
+            0
+        };
+        if self.fog_declared > 0 {
+            self.declare_fog(self.fog_declared);
+        }
         self.declare_effects();
         self.dof_declared = self.dof_draws();
         if self.dof_declared {
@@ -1641,7 +1746,7 @@ impl FrameGraph {
     /// before it left, and the scene's depth as every pass leaves it when one of its effects reads
     /// depth, and creates a target of its own.
     fn declare_effects(&mut self) {
-        let mut input = SCENE_COLOR;
+        let mut input = self.scene_output();
         for index in 0..self.unit_count {
             let unit = self.effect_units[index];
             let mut pass = Pass::new(EFFECT_PASSES[index], PassKind::Fullscreen)
@@ -1656,6 +1761,49 @@ impl FrameGraph {
             self.add(pass, Role::Effect(index as u8));
             input = EFFECT_TARGETS[index];
         }
+    }
+
+    /// Declares the volumetric fog's steps for a grid of `slices` slices: the two light steps, each
+    /// into a kept light texture that it reads the other one of, then the sum, which reads both,
+    /// and the apply step, which reads the scene's color and depth as every pass leaves them and
+    /// the sum's target. The light steps bind the camera's frame group, so they read what its
+    /// opaque pass reads of the lights and the shadows. The first light step reads the second's
+    /// texture as the frame starts, before the second step writes it.
+    fn declare_fog(&mut self, slices: u32) {
+        let size = fog_volume::grid_size(slices);
+        let grid = Target::color(fog_volume::GRID_FORMAT);
+        for name in FOG_LIGHT {
+            self.graph.keep(name, grid, size);
+        }
+        for (parity, name) in FOG_LIGHT_PASSES.into_iter().enumerate() {
+            let mut pass = Pass::new(name, PassKind::Fullscreen)
+                .size(size)
+                .writes(FOG_LIGHT[parity]);
+            pass = if parity == 0 {
+                pass.reads_so_far(FOG_LIGHT[1])
+            } else {
+                pass.reads(FOG_LIGHT[0])
+            };
+            if self.gpu_culling {
+                pass = pass.reads(LIGHT_GRID);
+            }
+            if self.shadow_map {
+                pass = pass.reads(SHADOW_MAP).reads(SHADOW_ATLAS);
+            }
+            self.add(pass, Role::FogLight(parity as u8));
+        }
+        let sum = Pass::new(FOG_SUM_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(FOG_LIGHT[0])
+            .reads(FOG_LIGHT[1])
+            .creates(FOG_SUMMED, grid);
+        self.add(sum, Role::FogSum);
+        let apply = Pass::new(FOG_APPLY_PASS, PassKind::Fullscreen)
+            .reads(SCENE_COLOR)
+            .reads(SCENE_DEPTH)
+            .reads(FOG_SUMMED)
+            .creates(FOG_COLOR, Target::color(fog_volume::FORMAT));
+        self.add(apply, Role::FogApply);
     }
 
     /// Declares depth of field's steps: the setup reads the custom effects' output and the scene
@@ -1873,6 +2021,18 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        let fog_built = self.fog.is_some() && {
+            let steps = self.fog_steps();
+            steps.request_pipelines(pipelines);
+            pipelines.all_built(steps.pipeline_ids(), pipelines_built)
+        };
+        if fog_built != self.fog_built {
+            let was = self.fog_draws();
+            self.fog_built = fog_built;
+            if self.fog_draws() != was {
+                self.declared = false;
+            }
+        }
         let ao_built = self.ao.is_some() && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
@@ -1970,6 +2130,7 @@ impl FrameGraph {
         self.upload_ao(list, arena)?;
         self.upload_effects(list, arena)?;
         self.upload_dof(list, arena)?;
+        self.upload_fog(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
         if !self.final_runs() {
@@ -2118,7 +2279,7 @@ impl FrameGraph {
         let mut colors = [0; MAX_EFFECTS];
         for (index, color) in colors.iter_mut().enumerate().take(self.unit_count) {
             let input = if index == 0 {
-                SCENE_COLOR
+                self.scene_output()
             } else {
                 EFFECT_TARGETS[index - 1]
             };
@@ -2160,6 +2321,39 @@ impl FrameGraph {
         let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
         self.dof_steps()
             .prepare(list, arena, frame_size, frame, sources, made)
+    }
+
+    /// Records the volumetric fog's objects and block while its steps are declared, and binds the
+    /// steps to the textures they read, found by name once for each compile of the graph.
+    fn upload_fog(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        let Some(frame) = self.fog.filter(|_| self.fog_declared > 0) else {
+            return Ok(());
+        };
+        let compiles = self.graph.compiles();
+        let sources = match self.fog_textures {
+            Some((at, sources)) if at == compiles => sources,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("each step of the volumetric fog reads a planned texture")
+                };
+                let sources = FogVolumeSources {
+                    lit: FOG_LIGHT.map(id),
+                    summed: id(FOG_SUMMED),
+                    color: id(SCENE_COLOR),
+                    depth: id(SCENE_DEPTH),
+                };
+                self.fog_textures = Some((compiles, sources));
+                sources
+            }
+        };
+        let (frame_size, made) = ((self.canvas, self.scale), self.textures_made);
+        self.fog_steps()
+            .prepare(list, arena, frame_size, &frame, sources, made)
     }
 
     /// Binds the copy of the camera's opaque color to the scene color that it reads while it is
@@ -2377,6 +2571,14 @@ impl FrameGraph {
                                 .as_ref()
                                 .expect("depth of field's steps run once they are declared")
                                 .record(list, usize::from(step))?,
+                            Role::FogLight(parity) => {
+                                let fog = self.fog_steps_ref();
+                                fog.begin_light(list)?;
+                                record(list, Role::FogLight(parity))?;
+                                fog.draw(list)?;
+                            }
+                            Role::FogSum => self.fog_steps_ref().record(list, 1)?,
+                            Role::FogApply => self.fog_steps_ref().record(list, 2)?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
@@ -2400,6 +2602,10 @@ impl FrameGraph {
     fn draws(&self, role: Role) -> bool {
         match (role, &self.bloom_pass) {
             (Role::Bloom(step), Some(bloom)) => bloom.draws(usize::from(step)),
+            (Role::FogLight(parity), _) => self
+                .fog_pass
+                .as_ref()
+                .is_some_and(|fog| fog.parity() == usize::from(parity)),
             _ => true,
         }
     }
@@ -2577,6 +2783,9 @@ impl FrameGraph {
         }
         if let Some(dof) = self.dof_pass.as_mut() {
             dof.reset_gpu();
+        }
+        if let Some(fog) = self.fog_pass.as_mut() {
+            fog.reset_gpu();
         }
         if let Some(copies) = self.view_copies.as_mut() {
             copies.reset_gpu();
@@ -2823,6 +3032,11 @@ mod tests {
             buffer: 13,
             sampler: 13,
             first_group: 50,
+        },
+        fog: FogVolumeIds {
+            buffer: 14,
+            sampler: 14,
+            first_group: 60,
         },
         view_copy: Some(ViewCopyIds { first_group: 40 }),
         transmission: TransmissionIds {

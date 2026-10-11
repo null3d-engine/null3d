@@ -408,6 +408,30 @@ describe('the bloom steps', () => {
 		expect(LOWEST_AO_SCALE).toBe(250);
 	});
 
+	it("halve the volumetric fog's slices after ambient occlusion's step, while it draws", () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, 500);
+		controller.setFog(true, 64);
+		expect(controller.fogHalvings).toBe(0);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.aoScale} ${controller.fogHalvings}`);
+		}
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then the fog
+		// draws half its slices.
+		expect(seen).toEqual(['950 500 0', '950 250 0', '950 250 1']);
+		expect(controller.maxSteps).toBe(2);
+		// Turned off, it takes its step back at once, and changes what draws.
+		const before = controller.stepChanges;
+		controller.setFog(false, 64);
+		expect([controller.steps, controller.fogHalvings]).toEqual([1, 0]);
+		expect(controller.stepChanges).toBe(before + 1);
+		// With no slices it draws nothing to step.
+		controller.setFog(true, 0);
+		expect(controller.maxSteps).toBe(1);
+	});
+
 	it('take no step from the smallest base', () => {
 		const { controller, ladder } = controlled(950);
 		controller.setBloom(true, SMALLEST_BLOOM_SIZE);

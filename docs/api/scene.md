@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1, with the environment, the sky and environment backgrounds, the sky's environment and `timeOfDay` from 0.2. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with the environment, the sky and environment backgrounds, the sky's environment, `timeOfDay` and volumetric fog from 0.2. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -240,6 +240,32 @@ scene.setFog({ color: '#b8c4d0', density: 0.04, sunGlow: 1.5 });
 Height fog sums the fog along each line of sight. A view down into the mist then sees thick fog, and a view up sees clear air. The sun glow takes the color and the intensity of the scene's main directional light, so it follows the light as it moves. Shadows do not block the glow.
 
 The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+
+### Volumetric fog
+
+With `volumetric`, the main directional light and the point and spot lights light the fog through their shadows. A low sun's light falls between trees in rays, and each lamp casts a glowing cone. `volumetric: true` takes the defaults.
+
+```ts
+scene.setFog({
+  color: '#56606e',
+  density: 0.03,
+  heightFalloff: 0.1,
+  sunGlow: 0.8,
+  volumetric: { intensity: 2, anisotropy: 0.7, distance: 60 },
+});
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `intensity` | 1 | How much of the lights' light the fog scatters toward the camera, 0 or more. At 1 it scatters as much as its density gives. Raise it for bolder rays |
+| `anisotropy` | 0.6 | How much light the fog scatters forward, from -0.95 to 0.95. At 0 it scatters light evenly in every direction. Values toward 0.95 gather the light around the lights, as haze around a low sun does |
+| `distance` | 100 | How far along the view the lit fog reaches, above 0. A shorter reach gives finer rays near the camera |
+
+The lit fog takes the fog's `density` and `heightFalloff`, so it lights the same air that dims the objects. It takes `density` with every curve, the linear one too. While it draws, its own light of the sun replaces `sunGlow`, with the shadows. Past its `distance`, the fog still scatters the sun's light, without shadows, so no edge shows.
+
+The lit fog needs HDR color. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA, as bloom does. On a device with no HDR target, the fog keeps its sun glow. The quality setting `fogSlices` sets its detail: 32 slices on Medium, 64 on High and 96 on Ultra. On Low it is 0, so phones draw the fog with its sun glow at no cost. Surfaces that blend or let light through, such as water and glass, take the lit fog of the whole line of sight to the opaque surface behind them. [Lighting and environment](../concepts/lighting.md#volumetric-fog) says how it works and what it costs.
+
+Development builds throw E1108 for a negative `intensity`, an `anisotropy` outside -0.95 to 0.95, a `distance` that is not above 0, and a `density` inside `volumetric`. They throw E1203 for a value that is not a finite number.
 
 ## Time of day
 

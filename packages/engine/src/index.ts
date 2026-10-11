@@ -104,7 +104,7 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FogCurve, FogOptions } from './scene/fog';
+export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type {
 	LineBatch,

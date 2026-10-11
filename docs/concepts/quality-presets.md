@@ -277,6 +277,7 @@ Dynamic resolution is the first part of the frame-budget governor. The scale can
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 3. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
 4. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
+5. The volumetric fog draws half the slices of its grid, into the same textures, so its rays turn a little coarser along the view and no texture is made. This step happens only while the volumetric fog draws.
 
 Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 

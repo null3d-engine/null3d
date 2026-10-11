@@ -247,6 +247,17 @@
       "detect": "\\bFogExp2\\b"
     },
     {
+      "id": "volumetric-fog",
+      "category": "Scene graph",
+      "three": "VolumeNodeMaterial (webgpu_volume_lighting) / GodRaysEffect",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })",
+      "notes": "three.js has no lit fog in its core. Its webgpu_volume_lighting example marches rays through a box with VolumeNodeMaterial, lit by point and spot lights with shadows. null3D lights the scene's own fog instead, in a grid that follows the camera's view, with the sun's shadow cascades and the point and spot lights' shadows. Drop the box: the fog's density and heightFalloff say where the air holds haze, and its scattering intensity becomes intensity. The god rays effects of add-on libraries blur a mask of the sky toward the sun on the screen. null3D's rays also come from lamps and from shadows off the screen. It draws where the quality setting fogSlices is above 0: Medium and up. On Low the fog keeps its sunGlow.",
+      "docs": "api/scene",
+      "detect": "\\bVolumeNodeMaterial\\b|\\bGodRays(Effect|Pass)?\\b"
+    },
+    {
       "id": "group",
       "category": "Scene graph",
       "three": "new Group() / new Object3D()",

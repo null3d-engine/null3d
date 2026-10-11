@@ -25,7 +25,9 @@
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
-// sample of post.set's focus point and depth of field's steps.
+// sample of post.set's focus point and depth of field's steps. The `fog` switch gives the scene
+// height fog with the volumetric fog on, for the allocation sample of its steps, whose block the
+// core writes again in every frame as the camera orbits.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -93,6 +95,13 @@ export default defineSketch(async (context) => {
 	const focus: [number, number, number] = [0, 0, 0];
 	const lens = { dof: { aperture: 2, focusPoint: focus } };
 	const dof = switches.has('dof');
+	if (switches.has('fog'))
+		context.scene.setFog({
+			color: '#8090a0',
+			density: 0.01,
+			heightFalloff: 0.05,
+			volumetric: true,
+		});
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })

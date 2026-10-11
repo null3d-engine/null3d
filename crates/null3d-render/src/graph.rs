@@ -188,6 +188,17 @@ pub enum Size {
     },
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
+    /// Tiles side by side, `columns` across and `rows` down, each of the canvas's shape with
+    /// `short` texels on its short side, as the slices of the volumetric fog's grid lie. The render
+    /// scale leaves the size whole.
+    Tiles {
+        /// Texels on the short side of each tile.
+        short: u16,
+        /// Tiles across.
+        columns: u8,
+        /// Tiles down.
+        rows: u8,
+    },
     /// A fixed size in pixels, such as a shadow map's.
     Fixed {
         /// Width in pixels.
@@ -222,7 +233,30 @@ impl Size {
                 };
                 Self::halve((side(canvas.0), side(canvas.1)), halvings)
             }
+            Self::Tiles {
+                short,
+                columns,
+                rows,
+            } => {
+                let tile = Self::tile(short, canvas);
+                (
+                    tile.0 * u32::from(columns.max(1)),
+                    tile.1 * u32::from(rows.max(1)),
+                )
+            }
         }
+    }
+
+    /// One tile of a [`Size::Tiles`] for a canvas of `canvas` pixels: the canvas's shape with
+    /// `short` texels on its short side, rounded, and at least one texel each way.
+    pub fn tile(short: u16, canvas: (u32, u32)) -> (u32, u32) {
+        let canvas = (canvas.0.max(1), canvas.1.max(1));
+        let least = u64::from(canvas.0.min(canvas.1));
+        let side = |pixels: u32| {
+            let scaled = (u64::from(pixels) * u64::from(short) + least / 2) / least;
+            (scaled as u32).max(1)
+        };
+        (side(canvas.0), side(canvas.1))
     }
 
     /// The texels on the short side of a [`Size::ShortSide`] of `texels` before its halvings:
@@ -244,7 +278,9 @@ impl Size {
         match self {
             Self::Full => render,
             Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } => self.extent(canvas),
+            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } | Self::Tiles { .. } => {
+                self.extent(canvas)
+            }
         }
     }
 
@@ -270,6 +306,11 @@ impl Size {
                     u32::from(texels) >> halvings.min(15)
                 )
             }
+            Self::Tiles {
+                short,
+                columns,
+                rows,
+            } => format!("{columns} x {rows} tiles of {short} texels on the short side"),
         }
     }
 }

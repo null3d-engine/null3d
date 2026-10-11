@@ -107,9 +107,10 @@ use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
+use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows, joined_rows,
+    SceneSettings, UploadArena, bind_frame_group, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::{GraphError, RenderGraph};
@@ -172,7 +173,9 @@ mod ids {
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = DOF + 1;
+    /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
+    pub const FOG_VOLUME: u32 = DOF + 1;
+    pub const PAGES: u32 = FOG_VOLUME + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -236,8 +239,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The linear sampler of the volumetric fog's steps.
+    pub const FOG_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -271,8 +276,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the volumetric fog's steps, after the copy's.
+    pub const FOG_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the volumetric fog's.
+    pub const TEXTURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -464,6 +471,11 @@ impl CpuCulledRenderer {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
+                        },
+                        fog: FogVolumeIds {
+                            buffer: ids::FOG_VOLUME,
+                            sampler: ids::FOG_SAMPLER,
+                            first_group: ids::FOG_GROUPS,
                         },
                         view_copy: None,
                         transmission: TransmissionIds {
@@ -1073,6 +1085,11 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
+        self.graph.set_fog_volume(self.settings.fog_volume_frame(
+            input.scene,
+            input.parity(),
+            input.canvas,
+        ));
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1389,6 +1406,11 @@ impl CpuCulledRenderer {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
                     let group = ids::frame_group(ViewId::CAMERA) + light_slot;
                     lines.record(list, group, &[slot, slot])
+                }
+                Role::FogLight(_) => {
+                    let slot = opaque.frame_slot(ViewId::CAMERA);
+                    let group = ids::frame_group(ViewId::CAMERA) + light_slot;
+                    bind_frame_group(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
             },

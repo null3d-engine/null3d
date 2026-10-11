@@ -130,6 +130,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'governor',
 			'depthPrepass',
@@ -169,6 +170,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
@@ -196,6 +198,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'softwareOcclusion',
 			'governor',
@@ -245,6 +248,7 @@ describe('presetSettings', () => {
 			bloomSize: 128,
 			aoScale: 0,
 			dofSamples: 0,
+			fogSlices: 0,
 			reflectionScale: 0.25,
 			softwareOcclusion: false,
 			shadowFilter: 3,
@@ -270,6 +274,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0,
 			dofSamples: 22,
+			fogSlices: 32,
 			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
@@ -295,6 +300,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 43,
+			fogSlices: 64,
 			reflectionScale: 0.5,
 			softwareOcclusion: true,
 			shadowFilter: 5,
@@ -320,6 +326,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 71,
+			fogSlices: 96,
 			reflectionScale: 1,
 			softwareOcclusion: true,
 			shadowFilter: 5,
@@ -415,7 +422,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, fogSlices, reflectionScale, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

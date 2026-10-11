@@ -237,6 +237,7 @@ describe('SketchQuality.lower', () => {
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
 			dofSamples: low.dofSamples,
+			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
@@ -264,6 +265,7 @@ describe('SketchQuality.lower', () => {
 			'farCascadeInterval',
 			'bloomSize',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'softwareOcclusion',
 		]);
