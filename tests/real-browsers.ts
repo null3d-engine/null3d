@@ -27,6 +27,8 @@
 //   bun tests/real-browsers.ts --plan tab-memory --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan tab-memory --lan ipad-safari --attended
 //   bun tests/real-browsers.ts --plan soak --lan ipad-safari --minutes 30
+//   bun tests/real-browsers.ts --plan soak --scenes s5,s6 --lan ipad-safari
+//   bun tests/real-browsers.ts --plan showcase --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan warm-up-time --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan governor --allow-no-webgpu --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan texture-cache --android chrome --lan ipad-safari
@@ -54,8 +56,11 @@
 //                       then a scene too heavy for the GPU whose frame rate the governor must bring
 //                       back, tab-memory, which grows GPU textures, GPU buffers and a WebAssembly
 //                       memory in steps until the browser closes the tab, soak, which loses the GPU
-//                       on purpose in every thread mode and then plays S4 for many minutes on each
-//                       GPU path, recording each GPU loss, warm-up-time, which times how long the
+//                       on purpose in every thread mode and then plays S4, or the scenes of
+//                       --scenes, for many minutes on each GPU path, recording each GPU loss,
+//                       showcase, which runs S4, S5 and S6 for 10 minutes on each GPU path, each
+//                       of which must hold its target frame rate, then times them against their
+//                       three.js twins, warm-up-time, which times how long the
 //                       pipelines of each benchmark scene and demo hold up the first frame, with
 //                       fresh shaders and with compiled ones, or scale, which finds the largest
 //                       count of S1's objects or S5's characters at which three.js holds 30
@@ -73,10 +78,10 @@
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
-//   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, loads at
-//                       each maximum of the memory plan, 20 by default, where 0 runs only the
-//                       counts of how many engines fit at once, cold and warm loads of each
-//                       thread mode in the startup plan, 5 by default, rounds of the tab
+//   --runs <count>      fresh runs of each bench or showcase plan page, the protocol's 5 by
+//                       default, loads at each maximum of the memory plan, 20 by default, where 0
+//                       runs only the counts of how many engines fit at once, cold and warm
+//                       loads of each thread mode in the startup plan, 5 by default, rounds of the tab
 //                       memory plan, 1 by default, loads of each scene with fresh shaders in
 //                       the warm-up time plan, 2 by default, or runs of the texture cache plan's
 //                       four loads, 5 by default, or loads of the object growth page on each GPU
@@ -85,10 +90,12 @@
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
 //   --scenes <list>     the bench plan's scenes: s1, s1-static, s1-cells, s2, s3, s4, s5, s6; or the
-//                       scale plan's: s1, s5. The default is s1
+//                       scale plan's: s1, s5. The default is s1. The showcase plan's scenes, s4,
+//                       s5 and s6 by default, and the soak plan's, s4 by default
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run.
-//                       In the occlusion-s6 plan, each side's seconds in each round, 10 by default
+//                       In the showcase plan, the sustained runs' seconds, 300 by default. In the
+//                       occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split evenly, and an item stays with the items
@@ -410,18 +417,21 @@ export function parseArgs(args: readonly string[]): Options {
 	for (const [flag, given] of [
 		['--jobs', options.jobs],
 		['--pages', options.pages],
-		['--seconds', options.seconds],
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
+	if (options.seconds && !['bench', 'showcase', 'occlusion-s6'].includes(options.plan))
+		throw new Error(`--seconds works with --plan bench, showcase or occlusion-s6 only\n${USAGE}`);
 	if (options.scenes && options.plan === SCALE_PLAN) {
 		const other = options.scenes.filter((scene) => !isScaleScene(scene));
 		if (other.length > 0)
 			throw new Error(
 				`--scenes: the scale plan searches ${SCALE_SCENES.join(' and ')} only; leave out ${other.join(', ')}`,
 			);
-	} else if (options.scenes && options.plan !== 'bench')
-		throw new Error(`--scenes works with --plan bench or --plan ${SCALE_PLAN} only\n${USAGE}`);
+	} else if (options.scenes && !['bench', 'showcase', 'soak'].includes(options.plan))
+		throw new Error(
+			`--scenes works with --plan bench, showcase, soak or ${SCALE_PLAN} only\n${USAGE}`,
+		);
 	if (options.minutes && options.plan !== 'soak')
 		throw new Error(`--minutes works with --plan soak only\n${USAGE}`);
 	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
@@ -1019,6 +1029,7 @@ export const REFRESH_SPREAD = 0.1;
  */
 export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bench',
+	'showcase',
 	'startup',
 	'governor',
 	'skinning',
