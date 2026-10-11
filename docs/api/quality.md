@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, the 
 
 # Quality API
 
-> Ships in null3D 0.1, with `quality.setBudget` from null3D 0.2. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `quality.setBudget`. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 

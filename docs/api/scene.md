@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Ships in null3D 0.1, with the environment, the sky and environment backgrounds, the sky's environment and `timeOfDay` from 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment and `timeOfDay`. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
