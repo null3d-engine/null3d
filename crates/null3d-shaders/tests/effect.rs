@@ -152,7 +152,8 @@ fn an_effect_samples_its_textures_draws_alone_and_keeps_room_for_their_layers() 
 var glow: texture_2d<f32>;
 
 fn effect(input: EffectInput) -> vec4f {
-    let halo = textureSampleLevel(glow, glowSampler, input.uv, 0.0);
+    let step = 1.0 / effectInputSize();
+    let halo = textureSampleLevel(glow, glowSampler, effectPassUv(input.uv + step), 0.0);
     return input.color + halo * uniforms.strength;
 }
 ",

@@ -329,11 +329,14 @@ impl View {
     }
 
     /// Takes a mirror view's size and layers for the frame: the preset's halvings `halvings`
-    /// unless it has its own, and the camera's layers `camera_layers` unless it has its own.
+    /// unless it has its own, and the camera's layers `camera_layers` unless it has its own. Its
+    /// target takes a share of the canvas, which it fills whole at any render scale, so a material
+    /// reads it at the place where its surface shows on the screen.
     pub(crate) fn follow_camera(&mut self, halvings: u8, camera_layers: u32) {
         let Some(mirroring) = self.mirror else {
             return;
         };
+        self.target.whole = true;
         self.target.halvings = mirroring.halvings.unwrap_or(halvings);
         if mirroring.follows_layers {
             self.layers = camera_layers;
@@ -527,6 +530,7 @@ mod tests {
         let mut follows = View::mirror(mirror, None, None);
         follows.follow_camera(2, 0b101);
         assert_eq!(follows.target().halvings, 2);
+        assert_eq!(follows.target().graph_size(), Size::Share(2));
         assert_eq!(follows.layers(), 0b101);
         assert_eq!(follows.mirrored(), Some(&mirror));
         let mut own = View::mirror(mirror, Some(0), Some(0b10));

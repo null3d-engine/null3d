@@ -3004,7 +3004,7 @@ mod tests {
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
-    fn a_mirror_view_draws_at_its_share_of_the_render_size_and_culls_once() {
+    fn a_mirror_view_fills_its_share_of_the_canvas_and_culls_once() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.set_occlusion(true);
         let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
@@ -3015,7 +3015,7 @@ mod tests {
         reflection.follow_camera(1, 1);
         frames.sync(&[View::default(), reflection, shown()]);
         let size = |view: usize| frames.graph().pass_size(frames.opaque[view].1);
-        assert_eq!(size(1), Size::HALF);
+        assert_eq!(size(1), Size::Share(1));
         assert_eq!(size(2), Size::Full);
         assert!(frames.occludes(ViewId::CAMERA));
         assert!(
@@ -3026,7 +3026,7 @@ mod tests {
         // A new share of the render size declares the passes again.
         reflection.follow_camera(2, 1);
         frames.sync(&[View::default(), reflection, shown()]);
-        assert_eq!(frames.graph().pass_size(frames.opaque[1].1), Size::QUARTER);
+        assert_eq!(frames.graph().pass_size(frames.opaque[1].1), Size::Share(2));
     }
 
     /// A full-screen pass of template 70 that reads `source`, of half the canvas's size.
