@@ -9,16 +9,19 @@
 // card's figures. The page adds what only it can measure, where the browser offers it: its
 // JavaScript heap and the whole page's memory. Only the header button takes the pointer, so drags
 // on the rest of the panel still reach the canvas.
-// overlay-look.ts holds the look.
+// stats-panel.ts holds the panel on the page, which a three.js page shows too, and overlay-look.ts
+// holds its look.
 
 import type { EngineMode } from '../page/engine';
-import { checkTargetFps } from '../quality/check';
 import { refreshRate, sampleFrames } from '../shared/metrics';
-import { addStyles, buildPanel, keepKeys, StatsCard, StatsHeader } from './overlay-look';
+import type { FrameMode } from './overlay-look';
 import { PageMemorySampler, pageHeapBytes } from './page-meters';
 import { type FrameStats, FrameStatsWindow, type StatsSources } from './stats';
 import type { StatsOverlayOptions } from './stats-options';
+import { StatsPanel } from './stats-panel';
 import type { StatsFigures } from './stats-text';
+
+export { OVERLAY_ATTRIBUTE } from './stats-panel';
 
 /** What the overlay reads. */
 export interface OverlaySetup {
@@ -42,16 +45,6 @@ export interface OverlaySetup {
 
 /** How often the overlay reads new figures and follows the canvas. */
 const REFRESH_MS = 250;
-/** The attribute that marks the overlay's element. */
-export const OVERLAY_ATTRIBUTE = 'data-null3d-stats';
-
-/** The host element's own style: its place on the page, over everything, apart from the pointer. */
-const HOST_STYLE: Partial<CSSStyleDeclaration> = {
-	position: 'absolute',
-	zIndex: '2147483647',
-	margin: '0',
-	pointerEvents: 'none',
-};
 
 /** What only the page measures, beside the engine's frame figures. */
 export interface PageFigures {
@@ -85,9 +78,7 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 }
 
 export class StatsOverlay {
-	private readonly host: HTMLDivElement;
-	private readonly header = new StatsHeader();
-	private readonly card = new StatsCard();
+	private readonly panel: StatsPanel;
 	/** True where the GPU path can time the GPU's work. */
 	private readonly gpuTimer: boolean;
 	/**
@@ -95,13 +86,10 @@ export class StatsOverlay {
 	 * single-thread build, or undefined in the pipelined mode.
 	 */
 	private readonly bothSteps: string | undefined;
+	private readonly frameMode: FrameMode;
 	private readonly window: FrameStatsWindow;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private readonly pageMemory: PageMemorySampler;
-	private collapsed: boolean;
-	/** The offsets that `follow` last wrote, so an unchanged place writes nothing. */
-	private x = Number.NaN;
-	private y = Number.NaN;
 
 	constructor(
 		private readonly setup: OverlaySetup,
@@ -115,42 +103,31 @@ export class StatsOverlay {
 		const sketch =
 			mode.latency === 'single' || mode.sketchThread === 'main' ? 'main' : 'sketch-worker';
 		this.bothSteps = mode.renderThread === sketch ? sketch : undefined;
+		this.frameMode = mode.latency;
 		this.window = new FrameStatsWindow(metrics, setup.threads, sources);
 		this.pageMemory = new PageMemorySampler(() => (setup.sharedMemory ? sources.wasmBytes() : 0));
-		this.collapsed = options.collapsed === true;
-		if (!this.collapsed) this.sample(true);
-		const host = document.createElement('div');
-		host.setAttribute(OVERLAY_ATTRIBUTE, '');
-		Object.assign(host.style, HOST_STYLE);
-		const root = host.attachShadow({ mode: 'open' });
-		addStyles(root);
-		const panel = buildPanel();
-		const { button } = this.header;
-		// The shadow root holds the only element with this id.
-		this.card.element.id = 'card';
-		button.setAttribute('aria-controls', 'card');
-		button.addEventListener('click', this.toggle);
-		button.addEventListener('keydown', keepKeys);
-		button.addEventListener('keyup', keepKeys);
-		panel.append(button, this.card.element);
-		root.append(panel);
-		this.host = host;
-		this.showCollapsed();
-		if (!this.collapsed) this.updateCard();
-		document.body.append(host);
-		this.follow();
+		const collapsed = options.collapsed === true;
+		if (!collapsed) this.sample(true);
+		this.panel = new StatsPanel(setup.canvas, {
+			collapsed,
+			onToggle: (closed) => {
+				this.sample(!closed);
+				if (!closed) this.updateCard();
+			},
+		});
+		if (!collapsed) this.updateCard();
 		this.timer = setInterval(() => this.refresh(), REFRESH_MS);
 	}
 
 	/** Changes the options that `options` names. */
 	configure(options: StatsOverlayOptions): void {
-		if (options.collapsed !== undefined) this.setCollapsed(options.collapsed);
+		if (options.collapsed !== undefined) this.panel.setCollapsed(options.collapsed);
 	}
 
 	remove(): void {
 		clearInterval(this.timer);
-		this.host.remove();
-		if (!this.collapsed) this.sample(false);
+		this.panel.remove();
+		if (!this.panel.collapsed) this.sample(false);
 	}
 
 	/**
@@ -163,71 +140,31 @@ export class StatsOverlay {
 		else this.pageMemory.stop();
 	}
 
-	/** A click on the header, or Enter or Space on it, shows or hides the details. */
-	private readonly toggle = (event: MouseEvent): void => {
-		this.setCollapsed(!this.collapsed);
-		// A pointer's click hands the keys back to the page, so a key that the sketch reads, such
-		// as Space, does not press the button again. A key's click (detail 0) keeps the focus.
-		if (event.detail > 0) this.header.button.blur();
-	};
-
-	private setCollapsed(collapsed: boolean): void {
-		if (collapsed === this.collapsed) return;
-		this.collapsed = collapsed;
-		this.sample(!collapsed);
-		this.showCollapsed();
-		if (!collapsed) this.updateCard();
-	}
-
-	private showCollapsed(): void {
-		this.header.button.setAttribute('aria-expanded', this.collapsed ? 'false' : 'true');
-		this.card.element.hidden = this.collapsed;
-	}
-
 	private refresh(): void {
-		this.follow();
+		this.panel.follow();
 		if (!this.window.update()) return;
-		const { frames, presentedFps } = this.window.stats;
-		const refreshHz = refreshRate(this.setup.metrics);
-		this.header.update(frames, presentedFps, checkTargetFps(refreshHz, this.setup.maxTargetFps));
-		if (!this.collapsed) this.updateCard();
+		if (this.panel.collapsed) {
+			const { frames, presentedFps } = this.window.stats;
+			this.panel.showRate(frames, presentedFps, this.refreshHz(), this.setup.maxTargetFps);
+		} else this.updateCard();
 	}
 
-	/** Shows the card's figures against the engine's target, which follows the display's rate. */
+	/** The display's refresh rate, as the thread that draws measures it. */
+	private refreshHz(): number {
+		return refreshRate(this.setup.metrics);
+	}
+
 	private updateCard(): void {
-		const refreshHz = refreshRate(this.setup.metrics);
 		const figures: StatsFigures = overlayFigures(this.window.stats, {
 			jsHeapBytes: pageHeapBytes(),
 			page: this.pageMemory.page,
 		});
-		this.card.update(
-			figures,
-			checkTargetFps(refreshHz, this.setup.maxTargetFps),
-			refreshHz,
-			this.gpuTimer,
-			this.bothSteps,
-			this.setup.mode.latency,
-		);
-	}
-
-	/**
-	 * Puts the overlay on the canvas's top-right corner, and hides it while the canvas is off the
-	 * page. The overlay's right offset keeps it to the corner as the card opens and closes.
-	 */
-	private follow(): void {
-		const { canvas } = this.setup;
-		const { host } = this;
-		host.hidden = !canvas.isConnected;
-		const rect = canvas.getBoundingClientRect();
-		const x = document.documentElement.clientWidth - rect.right - scrollX;
-		const y = rect.top + scrollY;
-		if (x !== this.x) {
-			this.x = x;
-			host.style.right = `${x}px`;
-		}
-		if (y !== this.y) {
-			this.y = y;
-			host.style.top = `${y}px`;
-		}
+		this.panel.update(figures, {
+			refreshHz: this.refreshHz(),
+			maxTargetFps: this.setup.maxTargetFps,
+			gpuTimer: this.gpuTimer,
+			mode: this.frameMode,
+			bothSteps: this.bothSteps,
+		});
 	}
 }
