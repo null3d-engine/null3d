@@ -137,29 +137,49 @@ class Runners {
 		this.runners ??= this.start(error);
 		let best = this.runners[0] as Runner;
 		for (const runner of this.runners) if (runner.running < best.running) best = runner;
+		// While every job worker has a task, the tasks ask for twice the job workers.
+		if (best.running > 0 && this.host) best = this.addJobRunners(this.host) ?? best;
 		return best;
+	}
+
+	/**
+	 * Asks for twice the job workers that take tasks, and adds a runner for each new one. Returns
+	 * the first new runner, or undefined when the engine has no more job workers to start.
+	 */
+	private addJobRunners(host: JobTaskHost): Runner | undefined {
+		const runners = this.runners as Runner[];
+		const added = this.jobRunners(host, runners.length + 1, host.want(2 * (runners.length + 1)));
+		runners.push(...added);
+		return added[0];
+	}
+
+	/**
+	 * Runners for the job workers from index `from` up to `asked`. With two or more job workers,
+	 * the first stays in the job loop for the frames, so it takes no tasks.
+	 */
+	private jobRunners(host: JobTaskHost, from: number, asked: number): Runner[] {
+		const indices: number[] = [];
+		for (let index = Math.max(from, asked > 1 ? 1 : 0); index < asked; index++) indices.push(index);
+		return indices.map((index) => {
+			const port = host.ports[index] as MessagePort;
+			port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
+			return {
+				modules: new Set(),
+				running: 0,
+				send(request, transfer) {
+					// The call comes first, so the count covers the request by the time it arrives.
+					host.call(index);
+					port.postMessage(request, transfer);
+				},
+			};
+		});
 	}
 
 	/** The job workers that take tasks; or, without job workers, a task worker that starts now. */
 	private start(error: WasmError): Runner[] {
 		const host = this.host;
-		if (host) {
-			// With two or more job workers, the first stays in the job loop for the frames.
-			const ports = host.ports.length > 1 ? host.ports.slice(1) : host.ports;
-			return ports.map((port) => {
-				const index = host.ports.indexOf(port);
-				port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
-				return {
-					modules: new Set(),
-					running: 0,
-					send(request, transfer) {
-						// The call comes first, so the count covers the request by the time it arrives.
-						host.call(index);
-						port.postMessage(request, transfer);
-					},
-				};
-			});
-		}
+		// The tasks start on the first job workers, and ask for more as they pile up.
+		if (host) return this.jobRunners(host, 0, host.want(2));
 		const worker = spawnWorker(
 			() =>
 				new Worker(new URL('../workers/task-worker.ts', import.meta.url), {

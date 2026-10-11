@@ -2,7 +2,8 @@
 //! job workers cull and sort the rows (see [`crate::sorted`]), and each frame writes one compacted
 //! instance per visible row, in sorted order, into the view's sorted instance buffer: the three
 //! rows of its world matrix moved by its cell's offset from the camera, then its ids, as the
-//! culling shader writes the opaque ones. Instance data reaches vertex shaders only through
+//! culling shader writes the opaque ones: its material, the first joint of its skin, and its source,
+//! where the vertex shaders of rows with row values find them. Instance data reaches vertex shaders only through
 //! vertex buffers, so each draw binds its slice of that buffer at vertex slot 1, and its first
 //! instance stays 0.
 
@@ -156,6 +157,7 @@ impl Transparent {
                 }
                 put_u32(out, 12, material);
                 put_u32(out, 13, first_joint);
+                put_u32(out, 14, row.place);
             }
         };
         let count = items.len() as u32;

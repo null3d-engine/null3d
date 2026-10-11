@@ -71,7 +71,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 Each setter splits each number into a whole number of cells and a 32-bit rest of at most half a cell. The rest keeps 0.03 mm or better, at any distance. The engine adds the whole cells to the cell of the rest. `getPosition`, `translate` and `lookAt` read the whole position back. So a move of a millimeter stays a millimeter.
 
-The mode costs a few operations in each position setter. It also takes 12 bytes of engine memory for each object that the scene can hold, about 192 KB. Use it for scenes that reach beyond about 100 km from the origin. There, a 32-bit position moves in steps of 8 mm or more. Instance batches do not need the mode: give each one an origin instead.
+The mode costs a few operations in each position setter. It also takes 12 bytes of engine memory for each place in the scene's object tables. That is about 12 KB at the start, and more as the tables grow. Use it for scenes that reach beyond about 100 km from the origin. There, a 32-bit position moves in steps of 8 mm or more. Instance batches do not need the mode: give each one an origin instead.
 
 ## Batch origins
 

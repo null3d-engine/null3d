@@ -3,12 +3,12 @@ id: api/controls
 title: "Camera controls (@null3d/controls)"
 status: experimental
 since: "0.1"
-summary: "Orbit and map controls (0.1); fly and first-person controls (0.2)."
+summary: "Orbit and map controls (0.1); fly and first-person controls, with pointer lock (0.2)."
 ---
 
 # Camera controls (@null3d/controls)
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Fly and first-person controls come in 0.2. Coding agents must not use these parts.
+> Orbit and map controls ship in null3D 0.1, and fly and first-person controls in null3D 0.2. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ flowchart LR
     update --> camera["The camera's position,<br/>turned toward the target"]
 ```
 
-The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad and touch. Orbit controls turn the camera around a target point, as in a model viewer. Map controls pan over the ground, as in a map or a strategy game. Both take three.js's option names and defaults. For the same input, they give the camera the pose that three.js's `OrbitControls` and `MapControls` give it.
+The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard. Orbit controls turn the camera around a target point, as in a model viewer. Map controls pan over the ground, as in a map or a strategy game. [Fly controls](#fly-controls) move the camera in all directions, as in a flight game. [First-person controls](#first-person-controls) walk it over the ground and look around, as in a first-person game. Each takes three.js's option names and defaults. For the same input, each gives the camera the pose that three.js's controls of the same name give it.
 
 The controls run in the sketch, where the camera is. They add no DOM listeners: `controls.update(dt)` reads [`ctx.input`](input.md) once per frame and moves the camera.
 
@@ -118,6 +118,106 @@ return {
 };
 ```
 
+## Fly controls
+
+`createFlyControls(ctx, camera, options)` makes fly controls, which three.js calls `FlyControls`. They move the camera along its own axes and turn it about them, so the camera can loop and roll.
+
+```ts
+import { createFlyControls } from '@null3d/controls';
+
+const controls = createFlyControls(ctx, camera, { movementSpeed: 10, rollSpeed: Math.PI / 24 });
+return {
+  onUpdate(dt) {
+    controls.update(dt);
+  },
+};
+```
+
+| Input | Fly controls |
+| --- | --- |
+| W, S | Move forward and back |
+| A, D | Move left and right |
+| R, F | Move up and down |
+| Arrow keys | Turn up, down, left and right |
+| Q, E | Roll left and right |
+| The pointer's place on the canvas | Turn: not at all at the middle, and at full speed at an edge |
+| Left and right buttons | Move forward and back |
+
+- `movementSpeed` is in world units per second. `rollSpeed` sets how fast the keys and the pointer turn the camera. At full turn, the camera turns about twice `rollSpeed` radians per second, as in three.js.
+- The pointer steers whenever it moves over the canvas, and its turn holds until it moves again. With `dragToLook: true`, the pointer steers only during a drag, and the buttons do not move the camera.
+- `autoForward: true` moves the camera forward all the time, unless S or the right button moves it back.
+- The keys add to the pointer's turn. In three.js, the pointer's last move replaces the arrow keys' turn.
+
+## First-person controls
+
+`createFirstPersonControls(ctx, camera, options)` makes first-person controls. They take the place of two three.js controls. Without a pointer lock, they act as `FirstPersonControls`. While the canvas holds the [pointer lock](#pointer-lock), the mouse turns the view as `PointerLockControls` turn it.
+
+```ts
+import { createFirstPersonControls } from '@null3d/controls';
+
+const controls = createFirstPersonControls(ctx, camera, { movementSpeed: 4, lookSpeed: 0.1 });
+return {
+  onUpdate(dt) {
+    controls.update(dt);
+  },
+};
+```
+
+| Input | First-person controls |
+| --- | --- |
+| W or Up, S or Down | Walk forward and back over the ground |
+| A or Left, D or Right | Walk left and right |
+| R, F | Move up and down |
+| Left drag, or one finger | Look around, and walk forward along the view |
+| Right drag, or two fingers | Look around, and walk back along the view |
+| Middle drag | Look around |
+| The mouse, while the pointer is locked | Look around |
+
+- The keys walk over the ground, in the direction the view faces around +Y. Two keys at once walk no faster than one.
+- A drag turns the view at a speed that grows with the drag's length, in `lookSpeed` degrees per second for each pixel. While a key walks forward or back, a press only looks.
+- Moves and turns start and stop smoothly: each frame applies `dampingFactor` of the change of speed that remains. The share suits the frame's step, so the motion takes the same time at every frame rate. At 60 frames per second, it matches three.js.
+- A drag tips the view at most 85 degrees above or below the level. `constrainVertical` with `verticalMin` and `verticalMax` limits it further, and `lookVertical: false` keeps the view level.
+- `heightSpeed`, with `heightCoef`, `heightMin` and `heightMax`, walks faster forward the higher the camera is. `autoForward` walks forward along the view all the time.
+- `lookAt(x, y, z)` turns the camera toward a point.
+
+## Pointer lock
+
+The page asks the browser to lock the pointer to the canvas with `engine.requestPointerLock()` ([Page API](engine.md#the-running-engine)). The browser then hides the pointer and sends the mouse's movement, with no edge to stop it. Browsers lock the pointer only right after the user acts, so call it in a click or key handler on the page:
+
+```ts
+// main.ts, on the page
+canvas.addEventListener('click', () => {
+  engine.requestPointerLock().catch(() => {
+    // E1425: the browser refused, such as on a phone, or just after the user pressed Esc
+  });
+});
+```
+
+While the pointer is locked, `ctx.input.pointer.locked` is true, and `pointer.dx` and `pointer.dy` give the mouse's movement ([Input](input.md#the-pointer)). First-person controls then turn the view by the movement, as three.js's `PointerLockControls` do:
+
+- Each pixel turns the view by 0.002 radians times `pointerSpeed`.
+- The view stays between `minPolarAngle` and `maxPolarAngle` from +Y.
+- A drag looks around no more, and the buttons do not walk, so the sketch can use them, for example to fire.
+
+The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine also ends it.
+
+To port code that moves the camera itself with `PointerLockControls`, set `movementSpeed: 0`, so the keys do not walk, and call the controls' `moveForward(distance)` and `moveRight(distance)`. As in three.js, `moveForward` walks over the ground at right angles to the camera's right, and `getDirection(out)` gives the direction of the view:
+
+```ts
+const controls = createFirstPersonControls(ctx, camera, { movementSpeed: 0 });
+return {
+  onUpdate(dt) {
+    controls.update(dt);
+    const walk = (ctx.input.isDown('KeyW') ? 1 : 0) - (ctx.input.isDown('KeyS') ? 1 : 0);
+    const strafe = (ctx.input.isDown('KeyD') ? 1 : 0) - (ctx.input.isDown('KeyA') ? 1 : 0);
+    controls.moveForward(walk * 5 * dt); // 5 metres a second
+    controls.moveRight(strafe * 5 * dt);
+  },
+};
+```
+
+The [first-person and fly controls demo](https://github.com/null3d-engine/null3d/tree/main/examples/walk-and-fly) walks through a ruined temple. A click asks for the pointer lock, and Space switches between first-person and fly controls.
+
 ## Differences from three.js
 
 - The controls take the sketch context and the camera: `createOrbitControls(ctx, camera, options)`. They need no DOM element, and have no `connect`, `disconnect`, `dispose` or `listenToKeyEvents`.
@@ -127,12 +227,18 @@ return {
 - `rotateLeft`, `rotateUp`, `pan`, `dollyIn` and `dollyOut` take effect at the next `update`, not at once.
 - The controls orbit around +Y. three.js orbits around the camera's `up`, which is +Y unless a page changes it.
 - three.js takes a frame's events one at a time. When two fingers move in the same frame, its pan differs from null3D's by a few percent of the move.
+- Fly and first-person controls keep the camera's pose in double precision, as three.js does. At each `update` they take a pose that the sketch set, and carry on from it.
+- First-person controls turn the camera with no roll. `PointerLockControls` keep a roll that the camera had.
+- While the pointer is locked, the mouse's moves in one frame add up before the polar limits apply. three.js applies them after each move, so a frame whose moves reach a limit and come back can end at a different angle.
+- `FirstPersonControls` and `PointerLockControls` are one set of controls, so `lock`, `unlock`, `isLocked` and the `lock` and `unlock` events have no equivalent. The page locks the pointer with `engine.requestPointerLock()`, and the sketch reads `input.pointer.locked`.
+- When two fingers are down, the first finger's movement turns the view. three.js takes the movement of any finger from where the last finger touched down.
 
 ## Related pages
 
 - [Input](input.md): the pointer, the wheel and the touches that the controls read.
 - [Cameras](cameras.md): the camera that the controls move.
-- [The three.js mapping](../porting/threejs-mapping.md): `OrbitControls` and `MapControls` beside their null3D names.
+- [Page API](engine.md): `engine.requestPointerLock()`.
+- [The three.js mapping](../porting/threejs-mapping.md): `OrbitControls`, `MapControls`, `FlyControls`, `FirstPersonControls` and `PointerLockControls` beside their null3D names.
 
 ## API reference
 

@@ -8,7 +8,7 @@ summary: "Cascades that stay still as the camera turns and blend where they meet
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches neither cast nor receive shadows yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them since 0.2. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -23,6 +23,8 @@ flowchart LR
 ```
 
 A directional light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. An object casts shadows with `castShadows: true`, and shadows fall on it with `receiveShadows: true`. All three are false by default, as in three.js.
+
+An [instance batch](instances.md) takes the same two options in `scene.createInstances`, and the setters `setCastShadows` and `setReceiveShadows`. They hold for every row, as three.js's `castShadow` and `receiveShadow` hold for every instance of an `InstancedMesh`. Each cascade and each light's tile culls the rows one by one, as the camera's view does. A dynamic batch that casts counts as a moving caster: a far cascade that its rows touch draws in every frame while `followMovingCasters` is on. Sprite, point and line batches cast and receive no shadows.
 
 The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade by its distance from the camera. It compares its depth from the light with the depth in the map.
 

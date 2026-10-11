@@ -329,6 +329,10 @@ pub struct Target {
     /// True when shaders read the target as an array, even one of one layer, as a shadow map whose
     /// cascade count changes is read.
     pub array: bool,
+    /// True for a target with a whole chain of mip levels, down to one texel. Passes draw into its
+    /// first level, through a view of that level, and the frame makes the others from it after
+    /// the last render pass that draws it.
+    pub mipmapped: bool,
 }
 
 impl Target {
@@ -340,6 +344,7 @@ impl Target {
             samples: 1,
             layers: 1,
             array: false,
+            mipmapped: false,
         }
     }
 
@@ -351,6 +356,7 @@ impl Target {
             samples: 1,
             layers: 1,
             array: false,
+            mipmapped: false,
         }
     }
 
@@ -369,6 +375,14 @@ impl Target {
         Self {
             array: true,
             ..self
+        }
+    }
+
+    /// The same target, read as an array of one layer, with a whole chain of mip levels.
+    pub const fn mipmapped(self) -> Self {
+        Self {
+            mipmapped: true,
+            ..self.array()
         }
     }
 

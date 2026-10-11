@@ -3,12 +3,12 @@ id: api/cameras
 title: Cameras
 status: experimental
 since: "0.1"
-summary: "Perspective and orthographic cameras; screenToRay; worldToScreen; layers."
+summary: "Perspective and orthographic cameras; a perspective camera's focal length; screenToRay; worldToScreen; layers."
 ---
 
 # Cameras
 
-> Ships in null3D 0.1, with `screenToRay` and `worldToScreen` from null3D 0.2. The API is experimental, so it can still change between versions.
+> Ships in null3D 0.1, with `screenToRay`, `worldToScreen` and `setFocalLength` from null3D 0.2. The API is experimental, so it can still change between versions.
 
 A camera is the object that the engine draws the scene from. There are two kinds: `scene.createPerspectiveCamera` makes a perspective camera, and `scene.createOrthographicCamera` makes an orthographic one. `scene.setActiveCamera` picks the camera that the canvas shows.
 
@@ -41,6 +41,20 @@ A perspective camera shows near things larger than far things, as the eye does.
 The defaults match three.js's `PerspectiveCamera`. The aspect ratio follows the canvas in every frame, so a camera needs no call when the canvas changes size.
 
 The field of view goes from 0 to 180 degrees, and the near plane must lie in front of the camera, beyond 0. In development builds, values outside these ranges throw E1108.
+
+### Focal length
+
+A photographer picks a lens by its focal length. `setFocalLength(millimetres)` sets the field of view of that lens on a full-frame camera. That camera's sensor is 36 by 24 mm. A lens of 24 mm is wide, one of 50 mm is normal, and one of 85 mm suits portraits. The `focalLength` property reads the focal length back from the field of view. The default field of view of 50 degrees is a lens of about 25.7 mm.
+
+```ts
+const camera = scene.createPerspectiveCamera({ position: [0, 1.6, 4], target: [0, 1, 0] });
+camera.setFocalLength(85);
+post.set({ dof: { aperture: 1.8, focusDistance: 4 } });
+```
+
+[Depth of field](post.md#depth-of-field) takes the active camera's focal length unless its settings give one, so the blur matches the framing. The aperture and the focus distance live in `post.set`'s `dof` settings, because they change only the blur. The [depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens) runs a dolly zoom. Its lens goes from 35 to 85 mm while the camera backs away, so the board keeps its size.
+
+three.js's `setFocalLength` measures its film gauge, 35 mm by default, along the canvas's longer side. null3D measures the sensor's 24 mm along the height, so the field of view stays the same on every canvas shape. The two agree on a square canvas with three.js's `filmGauge` set to 24. A focal length that is not above 0 throws E1108 in development builds.
 
 ## Orthographic cameras
 

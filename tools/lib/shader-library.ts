@@ -26,6 +26,7 @@ export const PUBLIC_MODULES = [
 	'vertex',
 	'depth',
 	'sdf',
+	'reflection',
 ] as const;
 
 export interface LibraryItem {

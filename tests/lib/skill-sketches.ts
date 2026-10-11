@@ -1,11 +1,12 @@
-// The complete sketches that the agent skills show: each TypeScript code block in a skill's
-// Markdown whose code exports `defineSketch(...)`. The tests type check them against the engine
-// and draw them in hold mode, so every call that such a sketch shows exists and runs. A sketch
-// under a heading that names a later version, such as (0.2), (after 1.0) or (later in 0.1), uses
-// parts that are not built yet. The tests leave it out until its heading loses the version.
+// The complete sketches that the agent skills and the docs' cookbook show: each TypeScript code
+// block in their Markdown whose code exports `defineSketch(...)`. The tests type check them against
+// the engine and draw them in hold mode, so every call that such a sketch shows exists and runs. A
+// sketch under a heading that names a later version, such as (0.2), (after 1.0) or (later in 0.1),
+// uses parts that are not built yet. The tests leave it out until its heading loses the version.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { walkFiles } from '../../tools/lib/files.ts';
+import { sampleUrl } from '../../tools/lib/sample-url.ts';
 
 /** A complete sketch in a skill's Markdown. */
 export interface SkillSketch {
@@ -71,11 +72,34 @@ export function sketchesIn(file: string, text: string): SkillSketch[] {
 	return sketches;
 }
 
-/** Every complete sketch in the skills under `root`, each with a unique name. */
-export function skillSketches(root: string): SkillSketch[] {
-	const sketches = walkFiles(root, 'skills', (path) => path.endsWith('.md')).flatMap((file) =>
-		sketchesIn(file, readFileSync(join(root, file), 'utf8')),
+/** The folders whose Markdown holds sketches that the tests run. */
+const SKETCH_FOLDERS = ['skills', 'docs/cookbook'];
+
+/**
+ * The files that the cookbook's recipes load, at the addresses a project would serve them from,
+ * and the pinned sample file that the tests serve in each one's place. A recipe names a file with
+ * a string literal in single quotes.
+ */
+const RECIPE_FILES: Readonly<Record<string, string>> = {
+	'/models/knight.glb': sampleUrl('sources/characters/kaykit-knight/Knight.glb'),
+	'/models/morph-cube.glb': sampleUrl(
+		'sources/khronos/AnimatedMorphCube/glTF-Binary/AnimatedMorphCube.glb',
+	),
+	'/env/sunset.hdr': sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr'),
+};
+
+/** A sketch's code with each recipe file's address replaced by its sample file's address. */
+const withSampleFiles = (code: string) =>
+	Object.entries(RECIPE_FILES).reduce(
+		(text, [from, to]) => text.replaceAll(`'${from}'`, `'${to}'`),
+		code,
 	);
+
+/** Every complete sketch in the skills and the cookbook under `root`, each with a unique name. */
+export function skillSketches(root: string): SkillSketch[] {
+	const sketches = SKETCH_FOLDERS.flatMap((folder) =>
+		walkFiles(root, folder, (path) => path.endsWith('.md')),
+	).flatMap((file) => sketchesIn(file, readFileSync(join(root, file), 'utf8')));
 	const counts = new Map<string, number>();
 	for (const sketch of sketches) {
 		const base = slug(
@@ -94,8 +118,9 @@ export const runnableSketches = (root: string): SkillSketch[] =>
 
 /**
  * Writes each sketch into `dir` as `<name>.ts`, with a tsconfig.json that type checks them all as
- * a project's sketches, and returns the sketches' paths from `root`. Each file is written in full
- * and then renamed, so a server that reads it at the same time never sees half of it.
+ * a project's sketches, and returns the sketches' paths from `root`. Each sketch loads sample files
+ * in place of the files that a recipe names. Each file is written in full and then renamed, so a
+ * server that reads it at the same time never sees half of it.
  */
 export function writeSketches(
 	root: string,
@@ -105,7 +130,9 @@ export function writeSketches(
 	mkdirSync(dir, { recursive: true });
 	const base = relative(dir, join(root, 'tsconfig.web.base.json'));
 	const files: [string, string][] = [
-		...sketches.map((sketch) => [`${sketch.name}.ts`, sketch.code] as [string, string]),
+		...sketches.map(
+			(sketch) => [`${sketch.name}.ts`, withSampleFiles(sketch.code)] as [string, string],
+		),
 		[
 			'tsconfig.json',
 			JSON.stringify({

@@ -1,5 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
+// Each GPU path's renderers load on demand, in a file of their own, so a thread downloads only the
+// renderers of the path that it draws with.
 
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import {
@@ -10,33 +12,17 @@ import {
 	loadWgslFeature,
 	loadWgslShaders,
 } from '../generated/shaders';
-import { type CanvasHolder, clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
-import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import type { CanvasHolder } from '../gpu/canvas-release';
+import type { Completion } from '../gpu/completion';
 import { DeviceShaderSet } from '../gpu/device-shaders';
-import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
-import {
-	contextFinished,
-	reclaimContext,
-	releaseContext,
-	simulateContextLoss,
-	webgl2Context,
-} from '../gpu/webgl2/context';
-import { GpuTimer } from '../gpu/webgpu/gpu-timer';
-import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
+import { reclaimContext, webgl2Context } from '../gpu/webgl2/context';
 import type { PowerPreference } from '../page/capabilities';
 import { type CoreDevice, TEXTURE_COMPRESSION } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { ImageTable } from '../shared/images';
-import { type FrameRecorder, Phase } from '../shared/metrics';
+import type { FrameRecorder } from '../shared/metrics';
 import type { Tier } from '../shared/tier';
-import {
-	contextLoss,
-	contextRestored,
-	deviceLoss,
-	type GpuErrorReport,
-	GpuErrorWatch,
-} from './loss';
-import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
+import { contextLoss, contextRestored, type GpuErrorReport } from './loss';
 import { freshSalt, saltShaders } from './shader-salt';
 
 export type { Tier } from '../shared/tier';
@@ -133,171 +119,6 @@ export function linearToSrgb(c: number): number {
 	return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
 }
 
-class WebGPURenderer implements Renderer {
-	readonly transparent = false;
-	private readonly context: GPUCanvasContext;
-	private readonly format: GPUTextureFormat;
-	private readonly timer: GpuTimer | undefined;
-	private readonly pass = new RenderPassSetup();
-	/** The clear color as the pass setup reads it, opaque. */
-	private readonly clearColor = Float32Array.of(0, 0, 0, 1);
-	readonly completions: QueueCompletion | undefined;
-	private simulated = false;
-	readonly lost: Promise<string>;
-	readonly errors: GpuErrorWatch;
-
-	constructor(
-		readonly tier: Tier,
-		private readonly device: GPUDevice,
-		readonly canvas: RenderCanvas,
-		metrics: ArrayBufferLike | undefined,
-		gpuError?: GpuErrorReport,
-	) {
-		this.lost = deviceLoss(device, () => this.simulated);
-		this.errors = new GpuErrorWatch(device, gpuError);
-		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
-		if (!context) throw new Error('the canvas has no WebGPU context');
-		this.context = context;
-		this.format = navigator.gpu.getPreferredCanvasFormat();
-		this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
-		this.timer = metrics && GpuTimer.create(device, metrics);
-		this.completions = metrics && new QueueCompletion(device.queue, metrics);
-	}
-
-	resize(width: number, height: number): void {
-		this.canvas.width = Math.max(1, width);
-		this.canvas.height = Math.max(1, height);
-	}
-
-	private clear(view: GPUTextureView, background: FrameInput['background']): void {
-		const encoder = this.device.createCommandEncoder();
-		this.timer?.markStart(encoder);
-		const pass = this.pass;
-		const color = this.clearColor;
-		color[0] = linearToSrgb(background[0]);
-		color[1] = linearToSrgb(background[1]);
-		color[2] = linearToSrgb(background[2]);
-		pass.setColor(view, undefined, true, true, color, 0);
-		pass.setTimestampWrites(this.timer?.passWrites(true));
-		encoder.beginRenderPass(pass.descriptor).end();
-		this.timer?.endFrame();
-		submitOne(this.device.queue, encoder.finish());
-		this.timer?.afterSubmit();
-	}
-
-	prepare(): boolean {
-		return true;
-	}
-
-	readonly building = false;
-
-	drawFrame(input: FrameInput, record: FrameRecorder): void {
-		const start = performance.now();
-		this.timer?.beginFrame(input.frame);
-		this.clear(this.context.getCurrentTexture().createView(), input.background);
-		this.completions?.afterSubmit(input.frame);
-		record.addPhase(Phase.Replay, performance.now() - start);
-	}
-
-	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		const { width, height } = this.canvas;
-		const pixels = await captureWebGPU(this.device, width, height, 'rgba8unorm', (texture) =>
-			this.clear(texture.createView(), input.background),
-		);
-		return { width, height, pixels };
-	}
-
-	simulateLoss(): void {
-		this.simulated = true;
-		this.device.destroy();
-	}
-
-	finished(): Promise<void> {
-		return this.device.queue.onSubmittedWorkDone();
-	}
-
-	drawBlank(): void {
-		clearWebGPUCanvas(this.device, this.context);
-	}
-
-	destroy(): void {
-		this.errors.stop();
-		this.timer?.destroy();
-		this.context.unconfigure();
-		this.device.destroy();
-	}
-}
-
-class WebGL2Renderer implements Renderer {
-	readonly tier: Tier = 'webgl2';
-	readonly transparent = false;
-	readonly completions: FenceCompletion | undefined;
-	private readonly release = new AbortController();
-	readonly lost: Promise<string>;
-
-	constructor(
-		readonly canvas: RenderCanvas,
-		private readonly gl: WebGL2RenderingContext,
-		metrics: ArrayBufferLike | undefined,
-	) {
-		this.lost = contextLoss(canvas, this.release.signal);
-		this.completions = metrics && new FenceCompletion(gl, metrics);
-	}
-
-	resize(width: number, height: number): void {
-		this.canvas.width = Math.max(1, width);
-		this.canvas.height = Math.max(1, height);
-		this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-	}
-
-	private clear(background: FrameInput['background']): void {
-		const gl = this.gl;
-		gl.clearColor(
-			linearToSrgb(background[0]),
-			linearToSrgb(background[1]),
-			linearToSrgb(background[2]),
-			1,
-		);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-	}
-
-	prepare(): boolean {
-		return true;
-	}
-
-	readonly building = false;
-
-	drawFrame(input: FrameInput, record: FrameRecorder): void {
-		const start = performance.now();
-		this.clear(input.background);
-		this.completions?.afterSubmit(input.frame);
-		record.addPhase(Phase.Replay, performance.now() - start);
-	}
-
-	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		this.clear(input.background);
-		const { width, height } = this.canvas;
-		return { width, height, pixels: readbackWebGL2(this.gl, width, height) };
-	}
-
-	simulateLoss(): void {
-		simulateContextLoss(this.gl);
-	}
-
-	finished(): Promise<void> {
-		return contextFinished(this.gl);
-	}
-
-	drawBlank(): void {
-		clearWebGL2Canvas(this.gl);
-	}
-
-	destroy(): void {
-		this.release.abort();
-		releaseContext(this.gl);
-	}
-}
-
 /** The loaded shaders, or a fresh copy that the browser must compile again when the device asks. */
 const freshIf = <Shaders extends FirstUseShaders>(device: CoreDevice, shaders: Promise<Shaders>) =>
 	device.freshShaders ? shaders.then((loaded) => saltShaders(loaded, freshSalt())) : shaders;
@@ -342,23 +163,33 @@ async function deviceShaders(
 	return shaders;
 }
 
+/** Loads the renderers of the WebGPU path, which a thread downloads only to draw with WebGPU. */
+const loadWebGPURenderers = () => import('./webgpu-renderers');
+
+/** Loads the renderers of the WebGL2 path, which a thread downloads only to draw with WebGL2. */
+const loadWebGL2Renderers = () => import('./webgl2-renderers');
+
 /**
- * Starts the download of the device module that a renderer on `tier` with the fixed bits `bits`
- * loads first, so that it overlaps the core's download. The renderer's own load later gets the
- * same module, because the browser keeps one module for each address. That load reports a
- * failure, so this one ignores it.
+ * Starts the downloads of what a renderer on `tier` with the fixed bits `bits` loads first: its
+ * GPU path's renderers and its device module of shaders. They then overlap the core's download.
+ * The renderer's own loads later get the same modules, because the browser keeps one module for
+ * each address. Those loads report a failure, so these ignore it.
  */
-export function preloadDeviceShaders(tier: Tier, bits: number): void {
-	const load = tier === 'webgl2' ? loadGlslShaders : loadWgslShaders;
-	load(bits).catch(() => undefined);
+export function preloadDeviceFiles(tier: Tier, bits: number): void {
+	const webgl2 = tier === 'webgl2';
+	(webgl2 ? loadWebGL2Renderers() : loadWebGPURenderers()).catch(() => undefined);
+	(webgl2 ? loadGlslShaders : loadWgslShaders)(bits).catch(() => undefined);
 }
 
-/** Creates the renderer for a tier on the canvas this thread owns. */
+/**
+ * Creates the renderer for a tier on the canvas this thread owns, with the renderers of the tier's
+ * GPU path, which load here unless a preload started them.
+ */
 export async function createRenderer(
 	canvas: RenderCanvas,
 	options: RendererOptions,
 ): Promise<Renderer> {
-	const { scene, device, metrics } = options;
+	const { scene, device } = options;
 	if (options.tier === 'webgl2') {
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
@@ -370,53 +201,28 @@ export async function createRenderer(
 		try {
 			// After a loss, the context must come back before the engine can draw with it again. A
 			// context that an earlier engine on the canvas gave up comes back when asked. A scene's
-			// shaders download meanwhile.
-			const [, , shaders, timing] = await Promise.all([
+			// shaders and the path's renderers download meanwhile.
+			const [, , shaders, timing, renderers] = await Promise.all([
 				reclaimContext(canvas),
 				contextRestored(gl),
 				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
 				options.glTiming && import('../gpu/webgl2/call-timing'),
+				loadWebGL2Renderers(),
 			]);
 			// The context may have been lost again during the downloads. The renderer starts on a
 			// context that is back, in the same task, so its own listener hears the next loss.
 			while (gl.isContextLost()) await contextRestored(gl);
-			if (scene && shaders)
-				return new WebGL2SceneRenderer(
-					canvas,
-					timing && options.glTiming ? timing.timeGlCalls(gl, metrics, options.glTiming) : gl,
-					scene.memory,
-					scene.control,
-					metrics,
-					device,
-					options.imageTable,
-					shaders,
-				);
-			return new WebGL2Renderer(canvas, gl, metrics);
+			return renderers.webgl2Renderer(canvas, gl, options, shaders, timing || undefined);
 		} finally {
 			starting.abort();
 		}
 	}
-	const [gpu, shaders] = await Promise.all([
+	const [gpu, shaders, renderers] = await Promise.all([
 		requestDevice(options),
 		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
+		loadWebGPURenderers(),
 	]);
-	if (scene && shaders) {
-		const renderer = new WebGPUSceneRenderer(
-			gpu.tier,
-			gpu.device,
-			canvas,
-			scene.memory,
-			scene.control,
-			metrics,
-			options.imageTable,
-			shaders,
-			device.transparent,
-			options.gpuError,
-		);
-		renderer.setSkinningMode(device.skinning);
-		return renderer;
-	}
-	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
+	return renderers.webgpuRenderer(gpu, canvas, options, shaders);
 }
 
 /**

@@ -6,6 +6,7 @@ import type { Vec3Like } from '../math/types';
 import type { ColorInput } from '../scene/color';
 import type { Camera, DirectionalLight, Object3D } from '../scene/scene';
 import type { FrameStats } from './stats';
+import type { StatsOverlayOptions } from './stats-options';
 
 /**
  * Options for `debug.grid`.
@@ -60,17 +61,24 @@ export type DebugView = 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' |
  */
 export interface Debug {
 	/**
-	 * Shows an overlay of frame figures over the top-left corner of the canvas, or hides it with
-	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, and CPU time per
-	 * frame of each thread and phase. The page draws the overlay and updates it twice a second. Its
-	 * code downloads at the first call.
+	 * Shows an overlay of frame figures over the top-right corner of the canvas, or hides it with
+	 * `false`: the GPU path, the quality preset, the render scale, the frame rates, CPU time per
+	 * frame of each thread and phase, GPU time, draw calls, triangles and objects drawn, memory, and
+	 * the page thread's long tasks and input delay. Its header is a button with the frame rate,
+	 * which shows and hides the other figures. Options pick whether the overlay starts collapsed to
+	 * its header. The page draws the overlay and updates it a few times a second. Its code
+	 * downloads at the first call. The page's `engine.stats` shows and hides the same overlay, and
+	 * the last call wins. Each call sends a message to the page, so call it when the choice
+	 * changes, not in every frame.
 	 */
-	stats(show?: boolean): void;
+	stats(show?: boolean | StatsOverlayOptions): void;
 	/**
 	 * The figures that the stats overlay shows, for the sketch: means per frame over about the last
 	 * half second. Call it each time you need figures, and read them from the object it returns. It
 	 * allocates nothing, so a sketch can call it every frame. Its code downloads at the first call,
-	 * so the figures are 0 until about half a second after that call.
+	 * so the figures are 0 until about half a second after that call. The first call also turns on
+	 * the figures that the engine samples, for the engine's life: GPU time on one frame in eleven,
+	 * the memory of textures and meshes, and on WebGPU the counts of the objects that the GPU culls.
 	 */
 	frameStats(): FrameStats;
 	/**

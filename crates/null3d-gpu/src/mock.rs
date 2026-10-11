@@ -730,9 +730,9 @@ impl MockBackend {
             "mip levels are made for 2d-array textures of one sample",
         )?;
         check(
-            format::makes_mipmaps(texture.format),
+            format::draws_mipmaps(texture.format),
             op,
-            "mip levels are made for RGBA8 and sRGB RGBA8 textures",
+            "mip levels are made for RGBA8, sRGB RGBA8 and the HDR targets' textures",
         )?;
         check(
             texture.mips > 1,
@@ -944,6 +944,11 @@ impl MockBackend {
                 self.generators.remove(&o[0]);
             }
             Op::GenerateTexture => self.generate_texture(op, o)?,
+            Op::SkyMapStep => {
+                self.generate_texture(op, o)?;
+                self.texture(op, o[0])?;
+                check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
+            }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);

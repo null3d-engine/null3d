@@ -68,7 +68,7 @@ scene.instantiate(ship);
 | --- | --- | --- |
 | Equal meshes, materials, textures and vertex data | One copy, which every node that used a copy then uses | The engine draws all objects of one mesh and material together, and uploads each mesh once |
 | Triangle order | Reordered for the GPU's vertex cache, and vertices in the order that triangles use them | The GPU shades fewer vertices and reads memory in order |
-| Positions | 16-bit integers in 16,384 steps across each mesh, with `KHR_mesh_quantization` | Half the size of floats. A mesh 100 m long gets steps of 6 mm |
+| Positions | 16-bit integers in 16,384 steps across each mesh, with `KHR_mesh_quantization`, unless the mesh's extras keep them as floats | Half the size of floats. A mesh 100 m long gets steps of 6 mm |
 | Normals and tangents | 8-bit integers | A quarter of the size. Directions stay within about 1 degree |
 | Texture coordinates | 16-bit integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform per material |
 | Vertex colors, joint weights | 8-bit integers | Weights still add up to one |
@@ -76,6 +76,8 @@ scene.instantiate(ship);
 | Buffers | Compressed with meshopt (`EXT_meshopt_compression`) | Smaller downloads. The engine decodes them on load, with no loss, and fetches the decoder only for such files |
 
 The integers need a transform that turns them back into positions. The command puts it in the mesh's node when nothing else moves with the node. A node with children, a light, a camera or an animation keeps its transform. Its mesh then moves to a new child node of the same name. Each instance of an instancing node takes the transform too, and so do the bind matrices of a skin.
+
+The steps follow the mesh's longest side. So a mesh that spreads small parts over a large space gets coarse steps. One mesh that holds a city's buildings of one material, 760 m across, gets steps of 4.6 cm, and buildings that meet can open gaps. The extras `"quantizePositions": false` keep that mesh's positions as 32-bit floats. Its other vertex data still takes integers, and meshopt still compresses its buffers.
 
 Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
 

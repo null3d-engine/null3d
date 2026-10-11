@@ -77,7 +77,7 @@ Still to run:
 
 The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`.
 
-S1 and S1-static are each one instance batch, and instance batches cast no shadows yet. So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
+S1 and S1-static are each one instance batch, whose rows cast no shadows (batches cast only with `castShadows`, since M2-R6). So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
 
 What to expect: per visible instance and pass, the index path writes 60 bytes less. It reads about as many bytes, but through storage buffers instead of the vertex fetch. S1-static uploads no matrices, so the copies are a larger share of its frame's work than in S1.
 

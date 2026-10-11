@@ -38,7 +38,8 @@ output folder's textures folder, named by their contents, so models that share a
 its file.
 
 Meshes: equal meshes, materials and textures merged into one, vertices reordered for the GPU's
-vertex cache, then stored as 8-bit and 16-bit integers (KHR_mesh_quantization).
+vertex cache, then stored as 8-bit and 16-bit integers (KHR_mesh_quantization). A mesh whose
+glTF extras hold "quantizePositions": false keeps its positions as floats.
 Clips: keys at the rate the engine keeps them, 16-bit rotations, one key for a track that never
 changes, so the engine copies them at load. No key or track is dropped.
 Textures: PNG and JPEG images encoded to KTX2 with every mip level, each side at its nearest

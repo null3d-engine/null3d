@@ -23,7 +23,7 @@ export const ERROR_FIXES = {
 	E1109:
 		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Split a mesh of millions of vertices into smaller meshes, or simplify it. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1110:
-		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. If your code writes no engine memory, this is an engine bug: report it with the message.',
+		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. For a row of a static batch, call markDirty(start, count) on the batch after you write its arrays, or create the batch with dynamic: true. If your code writes no engine memory, this is an engine bug: report it with the message.',
 	E1111:
 		'Destroy the objects and instance batches that use the mesh or model first, with destroy() on each. Then destroy the mesh or model, in the same frame or later. Destroying the group that scene.instantiate() returned takes the whole copy of a model. To keep an object and drop its mesh, give it another mesh with setMesh() first.',
 	E1203:
@@ -47,7 +47,7 @@ export const ERROR_FIXES = {
 	E1216:
 		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
-		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', and no alphaToCoverage.",
+		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive' or 'multiply'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask' or 'blend', and no alphaToCoverage. A material with transmission takes 'opaque' or 'blend', and a custom one needs WGSL that sets the surface's transmission.",
 	E1218:
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
@@ -112,6 +112,8 @@ export const ERROR_FIXES = {
 		"Add what the message names to the page's Content-Security-Policy. Its worker-src needs blob: and the origin of the engine's files, and its script-src and connect-src need that origin. For example: worker-src 'self' blob: https://cdn.example.com; script-src 'self' https://cdn.example.com 'wasm-unsafe-eval'; connect-src 'self' https://cdn.example.com. Or serve the engine's files from the page's own origin.",
 	E1423:
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
+	E1425:
+		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:

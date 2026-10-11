@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/controls",
 	"version": "0.0.0",
-	"description": "Orbit and map camera controls for null3D sketches, with three.js's option names and behavior.",
+	"description": "Orbit, map, fly and first-person camera controls for null3D sketches, with three.js's option names and behavior.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",
@@ -18,6 +18,8 @@
 		"3d",
 		"camera",
 		"orbit-controls",
+		"first-person",
+		"pointer-lock",
 		"threejs"
 	],
 	"type": "module",

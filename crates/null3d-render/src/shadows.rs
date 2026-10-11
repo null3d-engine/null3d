@@ -74,6 +74,8 @@
 
 use null3d_core::cells::{CELL_SIZE, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::handle::Handle;
+use null3d_core::instances::BatchTable;
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
@@ -650,26 +652,44 @@ impl CascadeSchedule {
     }
 }
 
-/// The scene objects that cast shadows and move in every frame: each dynamic object, and each
-/// object under a dynamic one, that has a mesh and casts shadows. The list follows the scene's
-/// structure, so it changes only in frames where the structure changed.
+/// The casters that move in every frame: each dynamic object, and each object under a dynamic
+/// one, that has a mesh and casts shadows, and each dynamic instance batch that casts shadows. A
+/// caster whose material moves its vertices by a vertex offset of its own counts too, as its
+/// shadow may sway in every frame. The list follows the scene's structure, so it changes only in
+/// frames where the structure changed.
 #[derive(Debug, Default)]
 pub struct MovingCasters {
     slots: Vec<u32>,
+    batches: Vec<Handle>,
     /// True once the list matches the scene's structure.
     built: bool,
 }
 
 impl MovingCasters {
     /// Lists the scene's moving casters again when its structure changed, or when the list was
-    /// never built. Allocates only when the list grows past its largest size so far.
-    pub fn update(&mut self, scene: &SceneStorage, structure_changed: bool) {
+    /// never built. `sways` says whether a material, by engine id, moves its vertices by a vertex
+    /// offset. Allocates only when the list grows past its largest size so far.
+    pub fn update(
+        &mut self,
+        scene: &SceneStorage,
+        batches: &BatchTable,
+        structure_changed: bool,
+        sways: impl Fn(u32) -> bool,
+    ) {
         if self.built && !structure_changed {
             return;
         }
         self.built = true;
         self.slots.clear();
+        self.batches.clear();
+        for (id, batch) in batches.iter() {
+            let moving = batch.is_dynamic() || sways(batch.material());
+            if moving && batch.shadows() & flags::CAST_SHADOWS != 0 {
+                self.batches.push(id);
+            }
+        }
         let (parents, slot_flags, meshes) = (scene.parents(), scene.flags(), scene.meshes());
+        let materials = scene.materials();
         let moves = |slot: usize| {
             let mut at = slot;
             loop {
@@ -684,7 +704,8 @@ impl MovingCasters {
         };
         let high = scene.slots().high_water() as usize;
         for slot in 0..high {
-            if meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0 && moves(slot) {
+            let casts = meshes[slot] != 0 && slot_flags[slot] & flags::CAST_SHADOWS != 0;
+            if casts && (moves(slot) || sways(materials[slot])) {
                 self.slots.push(slot as u32);
             }
         }
@@ -696,11 +717,12 @@ impl MovingCasters {
     }
 
     /// True when a visible moving caster on the layers `layers` touches `bounds`, in the world
-    /// output of frame parity `parity`. Casters beyond the box's face toward the light count, as
-    /// they draw into it flattened onto that face.
+    /// output of frame parity `parity`: a scene object, or an active row of a batch. Casters beyond
+    /// the box's face toward the light count, as they draw into it flattened onto that face.
     pub fn touch(
         &self,
         scene: &SceneStorage,
+        batches: &BatchTable,
         parity: usize,
         layers: u32,
         bounds: &CascadeBox,
@@ -709,16 +731,34 @@ impl MovingCasters {
         let (slot_flags, slot_layers, cells) = (scene.flags(), scene.layers(), scene.cells());
         let table = scene.cell_table();
         let size = f64::from(CELL_SIZE);
-        self.slots.iter().any(|&slot| {
+        let touches = |cell: u32, center: [f32; 3], radius: f32| {
+            let cell = table.coords(cell);
+            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(center[k]));
+            bounds.touches(center, radius)
+        };
+        let objects = self.slots.iter().any(|&slot| {
             let s = slot as usize;
             if slot_flags[s] & flags::VISIBLE == 0 || slot_layers[s] & layers == 0 {
                 return false;
             }
-            let cell = table.coords(cells[s]);
-            let local = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
-            let center = std::array::from_fn(|k| f64::from(cell[k]) * size + f64::from(local[k]));
-            bounds.touches(center, spheres.radii[s])
-        })
+            let center = [spheres.xs[s], spheres.ys[s], spheres.zs[s]];
+            touches(cells[s], center, spheres.radii[s])
+        });
+        objects
+            || self.batches.iter().any(|&id| {
+                let Ok(batch) = batches.get(id) else {
+                    return false;
+                };
+                if batch.layers() & layers == 0 {
+                    return false;
+                }
+                let spheres = batch.world(parity).spheres();
+                let rows = batch.frame_active_count(parity) as usize;
+                (0..rows).any(|r| {
+                    let center = [spheres.xs[r], spheres.ys[r], spheres.zs[r]];
+                    touches(batch.cells()[r], center, spheres.radii[r])
+                })
+            })
     }
 }
 
@@ -738,6 +778,9 @@ pub struct ShadowFrame {
     pub drawn: u32,
     /// How the shadow map stores depth.
     pub depth: CascadeDepth,
+    /// The frame's clock, as the camera's view has it, which the vertex offsets of custom
+    /// materials' casters read.
+    pub clock: [f32; 4],
 }
 
 impl ShadowFrame {
@@ -769,6 +812,8 @@ impl ShadowFrame {
                 view_proj: cascade.view_proj,
                 camera_position: [x, y, z, 0.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
+                clock: self.clock,
+                camera_world: camera_world(self.camera),
                 ..FrameUniform::default()
             },
             frustum: cascade.frustum,
@@ -782,6 +827,13 @@ impl ShadowFrame {
     pub fn uniform(&self) -> ShadowUniform {
         ShadowUniform::new(&self.cascades, &self.settings, self.depth)
     }
+}
+
+/// The world position of the camera that a shadow view's sources are relative to, as a view's
+/// uniform block holds it, which the built-in values of custom materials' casters read.
+pub(crate) fn camera_world(camera: CellPosition) -> [f32; 4] {
+    let [x, y, z] = camera.absolute().map(|v| v as f32);
+    [x, y, z, 0.0]
 }
 
 /// How the cascades' shadow map stores depth. Each cascade's depth runs from 0 to 1 over its box,
@@ -1364,10 +1416,13 @@ mod tests {
             layers: 1,
             drawn: 0b111,
             depth: CascadeDepth::default(),
+            clock: [2.5, 0.016, 0.0, 0.0],
         };
         let size = SETTINGS.map_size as f32;
         for (k, cascade) in frame.cascades.used().iter().enumerate() {
             let uniform = frame.view_frame(k).uniform;
+            // Custom materials' casters read the frame's clock, as the camera's view has it.
+            assert_eq!(uniform.clock, frame.clock);
             // The direction toward the light, as an orthographic camera's position gives it.
             let [x, y, z, w] = uniform.camera_position;
             let toward = DOWN_AND_ACROSS.map(|v| -v);

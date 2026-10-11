@@ -120,6 +120,23 @@ export function followPath(
 	};
 }
 
+/** The name of the message in which a sketch hands its page the count of the frames it stepped. */
+export const FRAMES_MESSAGE = 'bench-frames';
+
+/**
+ * With the `frames` switch in the sketch module's address, hands the page a shared count of the
+ * frames the sketch steps, and returns the count to raise once per frame, or undefined without the
+ * switch. A tool reads the count on the page: on a software GPU the display's frames outrun the
+ * frames the engine computes and draws, so only this count divides the workers' work by frame.
+ * Raising it allocates nothing.
+ */
+export function frameCount({ page }: SketchContext, moduleUrl: string): Int32Array | undefined {
+	if (!new URL(moduleUrl).searchParams.has('frames')) return undefined;
+	const count = new Int32Array(new SharedArrayBuffer(4));
+	page.post(FRAMES_MESSAGE, count);
+	return count;
+}
+
 /**
  * The name of the message in which a sketch tells its page the render scale and how many quality
  * steps it has seen, for the page's trace of each second.

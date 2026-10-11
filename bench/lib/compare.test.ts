@@ -323,14 +323,46 @@ describe('comparing two builds', () => {
 		expect(comparisons.every((c) => c.scene === 's1')).toBe(true);
 	});
 
-	test('reports the GPU time of each build where the runs timed it', () => {
-		const webgpu = page([1, 1, 1], [1, 1, 1], { gpuMs: 2 });
-		const webgl2 = page([1, 1, 1], [1, 1, 1], {}, 's1', 'null3d-webgl2');
-		const { gpu } = compare([...webgpu, ...webgl2]);
-		expect(gpu).toEqual([
-			{ scene: 's1', kind: 'null3d-webgpu', baselineMs: 2, newMs: 2 },
-			{ scene: 's1', kind: 'null3d-webgl2', baselineMs: null, newMs: null },
+	/** Runs of one page whose CPU time stays at 1 ms, with each build's GPU times in round order. */
+	const gpuPage = (baseline: readonly (number | null)[], next: readonly (number | null)[]) => [
+		...baseline.map((gpuMs, k) => run('baseline', k + 1, result(1, { gpuMs }))),
+		...next.map((gpuMs, k) => run('new', k + 1, result(1, { gpuMs }))),
+	];
+	const gpuTime = (runs: readonly BuildRun[]) =>
+		compare(runs).comparisons.find((c) => c.measure === 'gpu-time');
+
+	test('judges GPU time where the runs of both builds timed the GPU', () => {
+		// A slowdown of the GPU's work alone, as a shader that the GPU's compiler handles badly.
+		const slower = gpuTime(gpuPage([1.9, 1.9, 2], [30, 28, 40]));
+		expect(slower).toMatchObject({ result: 'slower', rounds: 3, allowedMs: 0.475 });
+		expect(compare(gpuPage([1.9, 1.9, 2], [30, 28, 40])).comparisons.map((c) => c.result)).toEqual([
+			'same',
+			'same',
+			'slower',
 		]);
+		expect(gpuTime(gpuPage([4, 4, 4], [1.9, 2, 2]))?.result).toBe('faster');
+	});
+
+	test('allows GPU time a wide rule, since the GPU changes its clock with its load', () => {
+		expect(RULES['gpu-time']).toEqual({ share: 0.25, floorMs: 0.3 });
+		// 20% slower stays within the share, and 0.25 ms more within the floor of a short frame.
+		expect(gpuTime(gpuPage([4, 4, 4], [4.8, 4.8, 4.8]))?.result).toBe('same');
+		expect(gpuTime(gpuPage([1, 1, 1], [1.25, 1.25, 1.25]))?.result).toBe('same');
+		expect(gpuTime(gpuPage([4, 4, 4], [5.2, 5.2, 5.2]))?.result).toBe('slower');
+	});
+
+	test('leaves GPU time out where too few rounds have it from both builds', () => {
+		// CI's Mac machine has no GPU timer, so no run times the GPU there.
+		expect(gpuTime(gpuPage([null, null, null], [null, null, null]))).toBeUndefined();
+		expect(gpuTime(gpuPage([2, 2, 2], [null, null, null]))).toBeUndefined();
+		// Only the rounds in which both builds timed the GPU compare.
+		expect(gpuTime(gpuPage([2, null, 2], [3, 3, null]))).toBeUndefined();
+		expect(gpuTime(gpuPage([2, 2, null], [3, 3, 3]))).toMatchObject({
+			rounds: 2,
+			baseline: { runs: 2 },
+			new: { runs: 3 },
+			result: 'slower',
+		});
 	});
 
 	test('gives a slower page the trailer that names it', () => {
@@ -395,7 +427,7 @@ describe('the expected-change trailer', () => {
 			'Bench-Expected: the whole engine got slower',
 			'Bench-Expected: s1: yes',
 			'Bench-Expected: s3: a new scene that does not exist',
-			'Bench-Expected: s1/null3d-webgpu/gpu-time: the GPU does more work now',
+			'Bench-Expected: s1/null3d-webgpu/gpu-memory: the GPU holds more now',
 			'Bench-Expected: s1/null3d-webgpu/own-work/extra: one part too many here',
 			'Bench-Expected: s1//own-work: an empty part in the middle',
 			'Bench-Expected: s1/threejs-webgl: a page that the comparison does not run',
@@ -407,7 +439,7 @@ describe('the expected-change trailer', () => {
 		expect(problems[1]).toContain('it needs the benchmarks, a colon and a reason');
 		expect(problems[2]).toContain('"s3" is not a scene');
 		expect(problems[3]).toContain(
-			'"gpu-time" is not a measure; use one of busiest-thread, own-work',
+			'"gpu-memory" is not a measure; use one of busiest-thread, own-work, gpu-time',
 		);
 		expect(problems[4]).toContain('is not a benchmark');
 		expect(problems[5]).toContain('is not a benchmark');
@@ -564,7 +596,7 @@ describe('the report', () => {
 		browser: 'Chrome 152 on macOS',
 	};
 
-	test('gives the verdict, each comparison, GPU time, the runs dropped and the trailers', () => {
+	test('gives the verdict, each comparison with GPU time, the runs dropped and the trailers', () => {
 		const runs = [
 			...page([2, 2, 2], [2.5, 2.5, 2.5], { gpuMs: 3 }),
 			run('new', 4, result(2, { refreshHz: 30 })),
@@ -600,7 +632,11 @@ describe('the report', () => {
 			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 1.000 (1.000 to 1.000) | +0.0% | 0.0% | same |',
 		);
 		expect(text).toContain(
-			'GPU time per frame, reported and not judged: s1 null3d-webgpu 3.000 ms to 3.000 ms.',
+			'| s1 | null3d-webgpu | GPU time | 3.000 (3.000 to 3.000) | 3.000 (3.000 to 3.000) | +0.0% | 0.0% | same |',
+		);
+		expect(text).not.toContain('| s2 | null3d-webgl2 | GPU time');
+		expect(text).toContain(
+			'A run in a browser that times the GPU also gives the median GPU time per frame. The change',
 		);
 		expect(text).toContain(
 			'Refresh rate: 60 Hz on every page. Dropped runs: new s1 null3d-webgpu round 4 (it measured a refresh rate of 30 Hz, not 60 Hz).',
@@ -630,7 +666,10 @@ describe('the report', () => {
 			'**Passed**: no page is slower than its rule allows without a Bench-Expected trailer that names it.',
 		);
 		expect(text).toContain(
-			'A page fails when its busiest thread is more than 8% and 0.05 ms slower, or its own work more than 15% and 0.05 ms slower, and the change is more than 2 times its noise.',
+			'A page fails when its busiest thread is more than 8% and 0.05 ms slower, or its own work more than 15% and 0.05 ms slower, or its GPU time more than 25% and 0.3 ms slower, and the change is more than 2 times its noise.',
+		);
+		expect(text).toContain(
+			'A run in a browser that times the GPU also gives the median GPU time per frame, and no page here has it from both builds.',
 		);
 		expect(text).toContain(
 			'Not compared: s2 null3d-webgpu, as the new build kept 2 runs of 2 and the baseline 0 runs of 2, so 0 rounds have a run of each, and a comparison needs 2.',
@@ -798,6 +837,8 @@ describe('recorded comparisons of identical builds', () => {
 		const before: Record<Measure, Rule> = {
 			'busiest-thread': { share: 0.05, floorMs: 0.01 },
 			'own-work': { share: 0.15, floorMs: 0.02 },
+			// The recorded runs timed no GPU, so GPU time's rule decides nothing here.
+			'gpu-time': RULES['gpu-time'],
 		};
 		const failed = recorded.filter((comparison) =>
 			compareBuilds(selectRuns(runsOf(comparison)), [], before, 0).comparisons.some(

@@ -1406,6 +1406,20 @@ impl TextureStore {
             .then(|| (self.array_id(slot.array), key.mips))
     }
 
+    /// The GPU id, the mip levels and the generator id of a cube texture whose generator has run,
+    /// or `None` for any other texture.
+    pub fn generated_cube(&self, texture: Handle) -> Option<(u32, u32, u32)> {
+        let slot = self.slot(texture).ok()?;
+        let key = self.arrays[slot.array as usize].key;
+        match slot.state {
+            State::Uploaded {
+                source: Source::Generated { id },
+                ..
+            } if key.kind == Kind::Cube => Some((self.array_id(slot.array), key.mips, id)),
+            _ => None,
+        }
+    }
+
     /// The GPU bytes of a texture: its layers, with every mip level that the GPU holds.
     pub fn bytes(&self, texture: Handle) -> Result<u64, TextureError> {
         let key = self.arrays[self.slot(texture)?.array as usize].key;

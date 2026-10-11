@@ -1,26 +1,14 @@
-// The renderers of the scene, one per GPU path. The sketch thread records each frame into a draw
-// list in engine memory; a renderer replays the frame's list straight from that memory, and records
-// the frame's GPU time where it has one, its upload bytes and its draw calls. A frame's list starts
-// with the pipelines it creates, which begin to build, without blocking, when the frame is first
-// prepared.
+// What the scene renderers of both GPU paths share. The sketch thread records each frame into a
+// draw list in engine memory; a renderer replays the frame's list straight from that memory, and
+// records the frame's GPU time where it has one, its upload bytes and its draw calls. A frame's list
+// starts with the pipelines it creates, which begin to build, without blocking, when the frame is
+// first prepared. Each path's renderers are in a file of their own, which a thread downloads only
+// for the path that it draws with.
 
-import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
-import { clearWebGL2Canvas, clearWebGPUCanvas } from '../gpu/canvas-release';
-import { FenceCompletion, QueueCompletion } from '../gpu/completion';
-import type { DeviceShaderSet } from '../gpu/device-shaders';
 import type { JoinedBuilds } from '../gpu/effect-join';
-import { captureWebGPU, readbackWebGL2 } from '../gpu/readback';
-import { WebGL2Backend } from '../gpu/webgl2/backend';
-import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
-import { WebGL2GpuTimer } from '../gpu/webgl2/gpu-timer';
-import { WebGPUBackend } from '../gpu/webgpu/backend';
-import { GpuTimer } from '../gpu/webgpu/gpu-timer';
-import type { CoreDevice } from '../page/limits';
+import type { GpuMemory } from '../gpu/memory';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
-import type { ImageTable } from '../shared/images';
-import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
-import { contextLoss, deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
-import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
+import { Counter, type FrameRecorder } from '../shared/metrics';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
@@ -47,21 +35,33 @@ interface SceneBackend {
 		skippedDraws: number;
 		/** GPU objects other than pipelines that the replays made. */
 		objects: number;
+		/** Triangles that the draws drew. */
+		triangles: number;
+		/** Instances that the draws drew. */
+		instances: number;
 	};
 	resetCounts(): void;
+	/** The GPU memory that the backend holds. */
+	readonly gpuMemory: GpuMemory;
 	/** The backend's builds of joined effects' shaders. */
 	readonly joins: JoinedBuilds;
 }
 
-/** Adds what the backend did since its last reset to a frame's record, then resets its counts. */
-function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
+/**
+ * Adds what the backend did since its last reset to a frame's record, then resets its counts. While
+ * the page reads the frame figures, it also publishes the GPU memory that the backend holds.
+ */
+export function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
 	const { counts } = backend;
+	if (record.figures) record.publishGpuMemory(backend.gpuMemory.bytes);
 	record.count(Counter.UploadBytes, counts.uploadBytes);
 	record.count(Counter.DrawCalls, counts.drawCalls);
 	record.count(Counter.Dispatches, counts.dispatches ?? 0);
 	record.count(Counter.Pipelines, counts.pipelines);
 	record.count(Counter.SkippedDraws, counts.skippedDraws);
 	record.count(Counter.GpuObjects, counts.objects);
+	record.count(Counter.Triangles, counts.triangles);
+	record.count(Counter.DrawnObjects, counts.instances);
 	backend.resetCounts();
 }
 
@@ -174,285 +174,5 @@ export class FrameReplay {
 			this.prepared = frame;
 		}
 		return this.rests[parity] as number;
-	}
-}
-
-export class WebGPUSceneRenderer implements Renderer {
-	private readonly backend: WebGPUBackend;
-	private readonly context: GPUCanvasContext;
-	private readonly format: GPUTextureFormat;
-	private readonly frames: FrameReplay;
-	readonly completions: QueueCompletion | undefined;
-	private simulated = false;
-	readonly lost: Promise<string>;
-	readonly errors: GpuErrorWatch;
-
-	/**
-	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
-	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
-	 */
-	constructor(
-		readonly tier: Tier,
-		private readonly device: GPUDevice,
-		readonly canvas: RenderCanvas,
-		memory: WebAssembly.Memory,
-		control: ArrayBufferLike,
-		metrics: ArrayBufferLike | undefined,
-		images: ImageTable | undefined,
-		shaders: DeviceShaderSet,
-		readonly transparent: boolean,
-		gpuError?: GpuErrorReport,
-	) {
-		this.lost = deviceLoss(device, () => this.simulated);
-		this.errors = new GpuErrorWatch(device, gpuError);
-		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
-		if (!context) throw new Error('the canvas has no WebGPU context');
-		this.context = context;
-		this.format = navigator.gpu.getPreferredCanvasFormat();
-		context.configure({
-			device,
-			format: this.format,
-			alphaMode: transparent ? 'premultiplied' : 'opaque',
-		});
-		this.backend = new WebGPUBackend(
-			device,
-			context,
-			this.format,
-			shaders.shaders,
-			undefined,
-			images,
-		);
-		this.backend.moreShaders = shaders;
-		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
-		this.backend.timer = metrics && GpuTimer.create(device, metrics);
-		this.completions = metrics && new QueueCompletion(device.queue, metrics);
-		this.frames = new FrameReplay(this.backend, memory, control);
-	}
-
-	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
-	resize(): void {}
-
-	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
-	setSkinningMode(mode: number): void {
-		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
-			this.backend.skinWithFloatDirections();
-	}
-
-	prepare(frame: number): boolean {
-		return this.frames.prepare(frame);
-	}
-
-	get building(): boolean {
-		return this.backend.building;
-	}
-
-	/**
-	 * Draws a frame, and records what the backend did since the last draw: the frame's work, and
-	 * the pipelines that started to build for it.
-	 */
-	drawFrame(input: FrameInput, record: FrameRecorder): void {
-		const start = performance.now();
-		const { backend } = this;
-		backend.timer?.beginFrame(input.frame);
-		this.frames.replay(input.frame);
-		this.completions?.afterSubmit(input.frame);
-		record.addPhase(Phase.Replay, performance.now() - start);
-		recordCounts(record, backend);
-	}
-
-	/**
-	 * Replays the frame taken last into an offscreen copy of the canvas, once every pipeline is
-	 * built, and reads its pixels back.
-	 */
-	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		const frame = await this.frames.builtTaken();
-		const { width, height } = this.canvas;
-		const pixels = await captureWebGPU(this.device, width, height, this.format, (texture) => {
-			this.backend.canvasTarget = texture;
-			try {
-				this.frames.replay(frame);
-			} finally {
-				this.backend.endCapture();
-				this.backend.resetCounts();
-			}
-		});
-		return { width, height, pixels };
-	}
-
-	simulateLoss(): void {
-		this.simulated = true;
-		this.device.destroy();
-	}
-
-	finished(): Promise<void> {
-		return this.device.queue.onSubmittedWorkDone();
-	}
-
-	drawBlank(): void {
-		clearWebGPUCanvas(this.device, this.context);
-	}
-
-	destroy(): void {
-		this.frames.abandon();
-		this.errors.stop();
-		this.backend.timer?.destroy();
-		this.backend.destroy();
-		this.context.unconfigure();
-		this.device.destroy();
-	}
-}
-
-export class WebGL2SceneRenderer implements Renderer {
-	readonly tier: Tier = 'webgl2';
-	readonly transparent: boolean;
-	readonly lost: Promise<string>;
-	readonly completions: FenceCompletion | undefined;
-	/** GPU time per frame, where the context has timer queries and the page measures. */
-	private readonly timer: WebGL2GpuTimer | undefined;
-	private readonly backend: WebGL2Backend;
-	private readonly frames: FrameReplay;
-	private readonly release = new AbortController();
-
-	/** The canvas's sized format, which a capture's stand-in takes: RGBA8 with alpha, else RGB8. */
-	private readonly canvasFormat: number;
-
-	/**
-	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
-	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
-	 * The device also gives the depth mode, and whether the canvas is transparent, with alpha.
-	 * `images` holds the images that texture uploads read. `shaders` are the GLSL builds that the
-	 * device loaded, which load another module when a pipeline needs it.
-	 */
-	constructor(
-		readonly canvas: RenderCanvas,
-		private readonly gl: WebGL2RenderingContext,
-		memory: WebAssembly.Memory,
-		control: ArrayBufferLike,
-		metrics: ArrayBufferLike | undefined,
-		device: CoreDevice,
-		images: ImageTable | undefined,
-		shaders: DeviceShaderSet,
-	) {
-		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(
-			gl,
-			canvas,
-			shaders.shaders,
-			device.sharedUploads,
-			device.depth,
-			images,
-			device.parallelCompile,
-			device.transparent,
-		);
-		this.backend.moreShaders = shaders;
-		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
-		this.transparent = device.transparent;
-		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
-		this.completions = metrics && new FenceCompletion(gl, metrics);
-		this.timer = metrics && WebGL2GpuTimer.create(gl, metrics);
-		this.frames = new FrameReplay(this.backend, memory, control);
-	}
-
-	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
-	resize(): void {}
-
-	/**
-	 * Ends a frame's work quietly when the browser took the context away during it. WebGL counts
-	 * the context as lost at once, so the GL calls after the loss fail, but the loss event comes
-	 * later, in a task of its own, and starts the recovery. Any other error goes on.
-	 */
-	private lostDuring(error: unknown): void {
-		if (!this.gl.isContextLost()) throw error;
-	}
-
-	prepare(frame: number): boolean {
-		try {
-			return this.frames.prepare(frame);
-		} catch (error) {
-			this.lostDuring(error);
-			return false;
-		}
-	}
-
-	/** True while a pipeline is building, and while the context is lost, which builds nothing. */
-	get building(): boolean {
-		try {
-			return this.backend.building;
-		} catch (error) {
-			this.lostDuring(error);
-			return true;
-		}
-	}
-
-	/**
-	 * Draws a frame, and records what the backend did since the last draw: the frame's work, and
-	 * the pipelines that started to build for it. A frame during which the context is lost draws
-	 * nothing more, and the loss's recovery follows.
-	 */
-	drawFrame(input: FrameInput, record: FrameRecorder): void {
-		const start = performance.now();
-		try {
-			this.timer?.beginFrame(input.frame);
-			this.frames.replay(input.frame);
-			this.timer?.endFrame();
-		} catch (error) {
-			this.lostDuring(error);
-		}
-		this.completions?.afterSubmit(input.frame);
-		record.addPhase(Phase.Replay, performance.now() - start);
-		recordCounts(record, this.backend);
-	}
-
-	/**
-	 * Replays the frame taken last into an offscreen stand-in for the canvas, of the canvas's format
-	 * and size, once every pipeline is built, and reads its pixels back.
-	 */
-	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		const frame = await this.frames.builtTaken();
-		const gl = this.gl;
-		const { width, height } = this.canvas;
-		const framebuffer = gl.createFramebuffer();
-		const color = gl.createRenderbuffer();
-		if (!framebuffer || !color) throw new Error('WebGL2 could not make a capture target');
-		gl.bindRenderbuffer(gl.RENDERBUFFER, color);
-		gl.renderbufferStorage(gl.RENDERBUFFER, this.canvasFormat, width, height);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
-		this.backend.canvasTarget = { framebuffer, width, height };
-		try {
-			this.frames.replay(frame);
-		} catch (error) {
-			this.lostDuring(error);
-			throw new Error('the browser took the WebGL2 context away during the capture');
-		} finally {
-			this.backend.canvasTarget = undefined;
-			this.backend.resetCounts();
-		}
-		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-		const pixels = readbackWebGL2(gl, width, height);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.deleteFramebuffer(framebuffer);
-		gl.deleteRenderbuffer(color);
-		return { width, height, pixels };
-	}
-
-	simulateLoss(): void {
-		simulateContextLoss(this.gl);
-	}
-
-	finished(): Promise<void> {
-		return contextFinished(this.gl);
-	}
-
-	drawBlank(): void {
-		clearWebGL2Canvas(this.gl);
-	}
-
-	destroy(): void {
-		this.frames.abandon();
-		this.release.abort();
-		if (!this.gl.isContextLost()) this.timer?.destroy();
-		this.backend.destroy();
-		releaseContext(this.gl);
 	}
 }

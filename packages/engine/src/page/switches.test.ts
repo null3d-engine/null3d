@@ -23,11 +23,13 @@ describe('parseSwitches', () => {
 			cells: true,
 			prepass: undefined,
 			occlusion: undefined,
+			occlusionBuffer: undefined,
 			skinning: 'lean',
 			indexInstances: false,
 			shadowDepthBits: 16,
 			textureCache: true,
 			fps: undefined,
+			targetFps: undefined,
 			queue: undefined,
 			jobs: undefined,
 			join: true,
@@ -35,9 +37,17 @@ describe('parseSwitches', () => {
 			preset: undefined,
 			hold: undefined,
 			bench: false,
+			stats: undefined,
 			glTiming: undefined,
 			replayDelay: undefined,
 		});
+	});
+
+	it('sizes the software occlusion buffer with ?occlusion-buffer=, and leaves it to the core otherwise', () => {
+		expect(parseSwitches('?occlusion-buffer=384x216').occlusionBuffer).toBe(384 * 216);
+		expect(parseSwitches('?occlusion-buffer=256x144').occlusionBuffer).toBe(256 * 144);
+		for (const bad of ['384', '384x', 'x216', '384x216x2', '0x216', '2048x1024', 'big'])
+			expect(parseSwitches(`?occlusion-buffer=${bad}`).occlusionBuffer).toBeUndefined();
 	});
 
 	it('picks how WebGPU skins with ?skinning=, and the lean skinning pass otherwise', () => {
@@ -97,6 +107,16 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('shows the stats overlay with a bare ?stats or ?stats=on, and hides it with ?stats=off', () => {
+		expect(parseSwitches('?stats').stats).toBe(true);
+		expect(parseSwitches('?gpu=webgl2&stats=on').stats).toBe(true);
+		expect(parseSwitches('?stats=off').stats).toBe(false);
+		expect(parseSwitches('?stats=maybe').stats).toBeUndefined();
+		expect(parseSwitches('?stats=collapsed').stats).toEqual({ collapsed: true });
+		expect(parseSwitches('?stats=open').stats).toEqual({ collapsed: false });
+		expect(parseSwitches('?gpu=webgl2').stats).toBeUndefined();
 	});
 
 	it('reads ?replay-delay, a whole number of ms up to a second', () => {
@@ -170,6 +190,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=off').queue).toBe(Number.POSITIVE_INFINITY);
 		expect(parseSwitches('?queue=0').queue).toBeUndefined();
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
+	});
+
+	it('reads the target frame rate: display or a whole number', () => {
+		expect(parseSwitches('?target-fps=display').targetFps).toBe('display');
+		expect(parseSwitches('?target-fps=120').targetFps).toBe(120);
+		for (const value of ['0', '59.94', 'max', ''])
+			expect(parseSwitches(`?target-fps=${value}`).targetFps).toBeUndefined();
 	});
 
 	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {

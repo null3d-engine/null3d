@@ -33,6 +33,11 @@ export const DEFAULT_NEAR = 0.1;
 export const DEFAULT_FAR = 2000;
 /** The height of three.js's default orthographic view, from bottom -1 to top 1. */
 export const DEFAULT_ORTHO_HEIGHT = 2;
+/**
+ * Half the height of a full-frame sensor, 36 by 24 mm, in millimetres: a lens's focal length and
+ * the vertical field of view relate through it, as depth of field's lens does in the core.
+ */
+export const HALF_SENSOR_MM = 12;
 
 const EDGES = ['left', 'right', 'top', 'bottom'] as const;
 

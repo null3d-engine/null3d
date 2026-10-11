@@ -3,12 +3,12 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds."
+summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; sky and environment backgrounds; the sky's light and time of day."
 ---
 
 # Lighting and environment
 
-> Ships in null3D 0.1, with environment maps and backgrounds from 0.2. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1, with environment maps, backgrounds, fog, light units, hemisphere lights' light, the sky's light and time of day from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets do not set the light limits yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ flowchart LR
     sketch --> env["Environment<br/>cube map and diffuse light"]
     object --> frame{"Each frame:<br/>visible, and on the<br/>camera's layers?"}
     table --> frame
-    frame --> main["The first directional light,<br/>and the ambient lights"]
+    frame --> main["The first directional light,<br/>the ambient and hemisphere lights"]
     frame --> list["Point and spot lights<br/>whose ranges reach the view"]
     list --> grid["Light grid<br/>the lights of each cluster,<br/>on the GPU or the job workers"]
     main --> shading["Standard material shading"]
@@ -30,7 +30,7 @@ Every light is a scene object with a row in the engine's light table. The object
 Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
-2. The first directional light created that remains, the sum of the ambient lights, and the scene's environment become the light that standard materials reflect.
+2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
@@ -131,6 +131,14 @@ Because each light is an object, it moves, turns, hides and has a parent the way
 
 Point and spot lights that move in most frames should be dynamic, with `dynamic: true`, as any object that moves in most frames should be. [Static and dynamic objects](static-dynamic.md) explains the choice.
 
+A glTF file's lights (`KHR_lights_punctual`) become directional, point and spot lights in each copy of the model, in the same units. A light on a node that a clip moves is left out ([Animation](../api/animation.md#models-from-gltf-files)).
+
+## Ambient and hemisphere lights
+
+An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis, as three.js's `HemisphereLight` does. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
+
+Both lights are diffuse only, as in three.js: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
+
 ## Lights far from the origin
 
 The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
@@ -159,6 +167,8 @@ export default defineSketch(async ({ scene, assets, materials, geometry }) => {
   // scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'), { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
   // Or the HDR image itself, which the GPU filters at load:
   // scene.setEnvironment(await assets.loadEnvironment('/hdri/sunset_2k.hdr'));
+  // Or the sky that `scene.setBackground({ sky })` draws, which follows its sun:
+  // scene.setEnvironment(await assets.skyEnvironment());
   const chrome = materials.standard({ color: '#d8d8d8', metalness: 1, roughness: 0.1 });
   scene.createMesh({ mesh: geometry.sphere(), material: chrome });
   return {};
@@ -175,6 +185,8 @@ three.js builds the same data in the browser on every visit with `PMREMGenerator
 The engine also reads the HDR image itself, a Radiance (`.hdr`) or OpenEXR (`.exr`) file, as three.js's `HDRLoader` and `EXRLoader` do with `PMREMGenerator`. A worker reads the file, and the GPU filters it at load with the asset tool's steps. On every GPU path, the map lies on average within a tenth of a step of 255 of the tool's map of the same file. As in the tool's map, light past the 16-bit float limit, such as an unclipped sun, keeps its share of the rough levels.
 
 The built-in room needs no file. The GPU draws three.js's room into a cube map and filters it for each roughness when a sketch first asks for it, as three.js's `PMREMGenerator.fromScene` does. It follows the asset tool's steps, so it gives the same map as `bunx @null3d/cli assets env --builtin room`.
+
+The sky's environment needs no file either. The GPU draws the sky that `scene.setBackground({ sky })` shows into a cube map, and filters it for each roughness. three.js makes the same light with `PMREMGenerator.fromScene` on a scene that holds its `Sky`. It makes it again with another call after each change. The engine's map follows the sky by itself: when the sun moves, the map refreshes over the next frames. [Sky and backgrounds](#sky-and-backgrounds) says how.
 
 ### How an environment lights a surface
 
@@ -193,6 +205,7 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 | --- | --- |
 | `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env`, or from a Radiance or OpenEXR file that the GPU filters at load |
 | `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)`. The GPU makes it, so no file downloads |
+| `assets.skyEnvironment()` | The light of the scene's sky, which follows the sky background. The GPU makes it, so no file downloads |
 | `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
 | `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
 
@@ -201,12 +214,13 @@ three.js's PMREM blurs its levels a little less than the GGX distribution of its
 - A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
 - An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time. So no frame shows the scene without the file's light. Load HDR files while the scene loads, as you would ask for the room.
 - An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
-- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 8 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
 - Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
-- A map of the default size takes 2 MB of GPU memory. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 10 ms on a MacBook Pro. After each change of the sky, it makes the map again in 7 steps, one a frame. Each step takes under 1.1 ms on a MacBook Pro. The scene draws with the old map until the last step, so no frame waits for a whole map. A sky that changes in every frame pays one step in every frame.
+- A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
 - The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 the cube map takes one of the 16 texture units that a fragment shader may use. A standard material with all eight maps, an alpha mask and shadows uses all 16.
+- On WebGL2 a fragment shader may use 16 texture units. The standard material uses at most 12 of them, the cube map included, so four stay free. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. WebGPU has no such limit.
 
 The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
@@ -244,7 +258,37 @@ The engine draws a background after the opaque objects, at the far plane, with t
 - A cube map reads its six images as three.js's `CubeTextureLoader` maps them: seen from inside the cube, mirrored across x.
 - The sky is three.js's `Sky`, the Preetham daylight model, with its sun disc and its clouds. Its formulas and constants are three.js's, in their order. The engine's parity scenes compare the sky, a blurred environment background and a cube map with three.js. Each matches under three.js's own image rule, on every GPU path.
 
-The sky lights nothing. For light that matches it, add a directional light along the sun and an environment, as three.js's examples do.
+The sky lights nothing by itself, as in three.js. For light that matches it, add a directional light along the sun, and light the scene with the sky's environment:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, time }) => {
+  const sunPosition: [number, number, number] = [0, 0.3, -1];
+  const settings = { sunPosition, turbidity: 3 };
+  const background = { sky: settings };
+  scene.setBackground(background);
+  scene.setEnvironment(await assets.skyEnvironment(), { intensity: 0.2 });
+  const sun = scene.createDirectionalLight({ direction: [0, -0.3, 1], intensity: 3 });
+  return {
+    onUpdate() {
+      // The sun sinks and rises. The environment's light follows with no call.
+      sunPosition[1] = 0.2 + 0.15 * Math.sin(time.now * 0.1);
+      sun.setDirection(-sunPosition[0], -sunPosition[1], -sunPosition[2]);
+      scene.setBackground(background);
+    },
+  };
+});
+```
+
+`assets.skyEnvironment()` resolves once the code and the shaders that make the map are ready. The next frame makes the whole map before it draws. From then on the map shows the sky of the last `setBackground({ sky })` call, or the sky's defaults before the first.
+
+- The map shows the same sun, air and clouds as the background. It leaves out the sun's disc: the directional light gives the sun's own light, and a disc in the map would light every surface twice.
+- After a change of the sky, the engine makes the map again in 20 short steps, one a frame. The first six draw the sky, one face of the cube each. The next thirteen filter the levels, one level or part of one each. The last step puts every new level into the map. The scene draws with the old map until then. The diffuse light changes in the same frame as the reflections.
+- So the light follows a moved sun 19 frames after the frame of the move, about 320 ms at 60 frames per second. A change during a refresh waits until it ends: then it takes up to 39 frames.
+- The steps are short so that a phone keeps its frame rate. On a software GPU, the longest step takes under 6 ms.
+- The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
+- three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
 ### Background cost
 
@@ -262,9 +306,60 @@ The sky lights nothing. For light that matches it, add a directional light along
 - Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
 - `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
 
+## Time of day
+
+`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background, so the fog fades into the sky's horizon.
+
+```ts
+import { defineSketch, timeOfDay } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, post }) => {
+  const day = timeOfDay('goldenHour');
+  scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
+  scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
+  scene.createDirectionalLight({ ...day.light, castShadows: true });
+  scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+  post.set({ exposure: day.exposure });
+  return {};
+});
+```
+
+| Preset | Hour | The sun | The light |
+| --- | --- | --- | --- |
+| `'afternoon'` | 15:00 | 38 degrees up | A white sun and a blue sky |
+| `'goldenHour'` | 17:36 | 5 degrees up | A low orange sun |
+| `'blueHour'` | 18:24 | 5 degrees under the horizon | A deep blue sky with the sunset's glow, and the moon |
+| `'night'` | 23:00 | Far under the horizon | A navy sky lit from the moon, and the moon |
+
+The sun rises toward +X at 6, stands toward -Z at noon, 60 degrees up, and sets toward -X at 18. The option `heading` turns that path about +Y, in radians, and `noonElevation` sets the noon sun's height.
+
+The result holds plain values. Apply them to your own objects, as above:
+
+| Value | Apply it to |
+| --- | --- |
+| `sky` | `scene.setBackground({ sky })`. Add the clouds and their `time` of your own: `{ ...day.sky, cloudCoverage: 0.3 }` |
+| `skyIntensity` | The sky background's and the sky environment's `intensity` |
+| `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light at least 25 degrees up |
+| `fog` | `scene.setFog`: the `color` of the sky's horizon and the `sunGlow`. Choose the curve and the density for your scene |
+| `ambient` | An ambient light's `color` and `intensity`, for a scene without the sky's environment. A scene lit by the sky's environment needs none |
+| `exposure` | `post.set({ exposure })`: 1 by day, up to 3.5 at night |
+
+The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
+
+- three.js's sky is far brighter than the lights' usual range. By day `skyIntensity` is 0.15, so the sun outshines the sky's diffuse light about two to one, and the fog's color can match the horizon.
+- three.js's sky gives no light once its sun is about 2.3 degrees under the horizon, and the tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
+- At night the sky's own sun stands at the moon's place, and `skyIntensity` dims it: the "day for night" sky of film. The sky is a navy blue with a lighter horizon and a faint glow around the moon. Its sun's disc draws a small moon, and the sky's environment lights the scene a dim blue. `showSunDisc: false` hides the moon's disc.
+- As the sun sinks from 6 to 12 degrees under the horizon, the sunset's sky fades straight into the moon's sky. No frame goes dark between them. The sky draws both at once: `sky.secondSunPosition` is the moon's place, and `sky.secondSkyWeight` is the moon sky's share. At other times the weight is 0, so pass the whole `sky` each time.
+- Each call returns a new object, and `setColor` converts a color. So call `timeOfDay` when the time changes, not in every frame of a still scene. For a day that passes, a few calls a second are enough: the sky's environment takes about 20 frames to follow anyway.
+
+## Lights in scene passes
+
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach. It draws no point or spot lights and no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
+- [Shadows](shadows.md): shadow cascades, the shadow atlas of spot and point lights, and cut-out shadows.
 - [Scene](../api/scene.md#fog): the fog's options.
 - [Objects and transforms](../api/objects.md): the calls that lights share with every object.
 - [Render layers](render-layers.md): which cameras a light lights.
@@ -272,3 +367,4 @@ The sky lights nothing. For light that matches it, add a directional light along
 - [The asset pipeline](../guides/assets-pipeline.md#environment-maps): the command that makes environment maps.
 - [Assets](../api/assets.md#environments): the calls that load environments and cube maps.
 - [The environment light demo](https://github.com/null3d-engine/null3d/tree/main/examples/environment): rough and smooth spheres in an HDR file's light, an EXR file's light and the built-in room.
+- [The time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day): a day passes over a lighthouse in 40 seconds. The sketch calls `timeOfDay` each time the hour moves on by three minutes, and the sky's light follows the sun.

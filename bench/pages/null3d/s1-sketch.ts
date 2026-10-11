@@ -19,29 +19,53 @@
 // allocation sample of the tiles' marks and their cap.
 // The `environment` switch lights the swarm with the built-in room, and turns it and changes its
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
-// light. The `effects` switch adds two custom effects, one of which reads the scene's depth, and
+// light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
+// changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
-// allocation sample of post.setEffectUniform and the effects' passes.
+// allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
+// of field on, focused on a point that sweeps through the swarm every frame, for the allocation
+// sample of post.set's focus point and depth of field's steps.
+// The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
+// swarm and the background into, for the allocation sample of the pass and for its cost: the
+// camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
+// time. `reflection=full`, `half` and `quarter` give the pass that share of the render size, and
+// the switch alone takes the preset's.
+// The `transmission` switch puts clear water that lets light through under the swarm, for the
+// allocation sample and the cost of the copy of the opaque colors that it samples, and of its
+// shading.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
+// The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
+// switch makes the swarm's rows cast and receive them, for the cost of a large batch in the shadow
+// passes and for the allocation sample of its rows as moving casters. The `rowValues` switch gives
+// every row a color and values that change every frame, read by a custom material that sways and
+// tints each box, for the allocation sample of the row values' uploads.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
-import { s1Camera } from '../../scenes/spec';
+import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
 import { createMorphedRow, readMorphed } from './morphed';
-import { followPath, readCount, setUpView } from './sketch-common';
+import { followPath, frameCount, readCount, readShadows, setUpView } from './sketch-common';
 import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 
 export default defineSketch(async (context) => {
 	const { time } = context;
-	const moveCamera = followPath(setUpView(context), s1Camera);
+	const cascades = readShadows(import.meta.url);
+	const moveCamera = followPath(
+		setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades }),
+		s1Camera,
+	);
 	const switches = new URL(import.meta.url).searchParams;
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
 		? await createSpriteSwarm(context, count)
 		: switches.has('lines')
 			? await createLineSwarm(context, count)
-			: createSwarm(context, count, true, undefined, switches.has('blend')).pose;
+			: createSwarm(context, count, true, undefined, switches.has('blend'), {
+					shadows: switches.has('batchShadows'),
+					rowValues: switches.has('rowValues'),
+				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
 	createLabels(context, Number(switches.get('labels') ?? 0));
@@ -49,6 +73,9 @@ export default defineSketch(async (context) => {
 	const outlined = switches.has('outline');
 	if (outlined) createOutlined(context);
 	const moveCasters = switches.has('tileShadows') ? createTileShadows(context) : undefined;
+	const reflection = switches.get('reflection');
+	if (reflection !== null) createWater(context, reflection);
+	if (switches.has('transmission')) createClearWater(context);
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -62,6 +89,10 @@ export default defineSketch(async (context) => {
 	if (ao) context.quality.set({ aoScale: 0.5 });
 	const bloom = switches.has('bloom');
 	const glow = { bloom: { intensity: 0.15 } };
+	// Depth of field's focus point, changed in place, so a frame's call allocates no array.
+	const focus: [number, number, number] = [0, 0, 0];
+	const lens = { dof: { aperture: 2, focusPoint: focus } };
+	const dof = switches.has('dof');
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -78,6 +109,8 @@ export default defineSketch(async (context) => {
 	let room: Environment | undefined;
 	// The sky's settings, changed in place: its sun rises and sets, and its clouds drift.
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
+	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
+	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -96,10 +129,15 @@ export default defineSketch(async (context) => {
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
 		});
+	if (skyMode === 'light')
+		void context.assets.skyEnvironment().then((loaded) => {
+			context.scene.setEnvironment(loaded);
+		});
 	if (switches.has('environment'))
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
 		});
+	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -109,6 +147,10 @@ export default defineSketch(async (context) => {
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
+		}
+		if (hemispheres) {
+			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
+			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
 		}
 		if (room) {
 			turn[1] = 0.5 * t;
@@ -128,6 +170,11 @@ export default defineSketch(async (context) => {
 			glow.bloom.intensity = 0.15 + 0.05 * Math.sin(t);
 			context.post.set(glow);
 		}
+		if (dof) {
+			focus[0] = 20 * Math.sin(0.7 * t);
+			focus[2] = 20 * Math.cos(0.5 * t);
+			context.post.set(lens);
+		}
 		if (tint && haze) {
 			warm[2] = 0.9 + 0.1 * Math.sin(t);
 			context.post.setEffectUniform(tint, 'color', warm);
@@ -140,9 +187,11 @@ export default defineSketch(async (context) => {
 		context.post.set(settings);
 	};
 	pose(time.now);
+	const frames = frameCount(context, import.meta.url);
 	return {
 		onUpdate() {
 			pose(time.now);
+			if (frames) Atomics.add(frames, 0, 1);
 		},
 	};
 });
@@ -166,6 +215,22 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
+/**
+ * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
+ * warm one tilted an eighth of a turn about X.
+ */
+function createHemispheres({ scene }: SketchContext) {
+	const tilt = Math.sin(Math.PI / 8);
+	return [
+		scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' }),
+		scene.createHemisphereLight({
+			skyColor: '#ffd9a8',
+			groundColor: '#202830',
+			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
+		}),
+	] as const;
+}
+
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
 const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';
 /** The meshopt sample model, which the `decode` switch loads after each round of textures. */
@@ -187,6 +252,73 @@ async function decodeWithoutEnd({ assets }: SketchContext): Promise<void> {
 		for (const texture of textures) texture.destroy();
 		await assets.loadGltf(MESHOPT_CUBE);
 	}
+}
+
+/** The water's height, below the lowest boxes of the swarm and their bobbing. */
+const WATER_HEIGHT = -S1_EXTENT - S1_BOB_HEIGHT - 2;
+
+/** The reflection pass's share of the render size, by the `reflection` switch's value. */
+const REFLECTION_SCALES = { full: 1, half: 0.5, quarter: 0.25 } as const;
+
+/** Water that ripples with the sketch time, and reads the reflection where it shows on the screen. */
+const WATER = /* wgsl */ `
+#import null3d::reflection::{reflection_uv}
+
+var mirror: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz * 0.15;
+    let slope = vec2f(cos(p.x + frame.time), cos(p.y * 1.3 + frame.time * 1.7)) * 0.08;
+    s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
+    let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
+    let uv = reflection_uv(clip, s.normal.xz * 0.05);
+    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb, 1.0);
+    return s;
+}
+`;
+
+/** Adds the `reflection` switch's water under the swarm, and the pass that it reflects. */
+function createWater(
+	{ scene, geometry, materials, render, textures }: SketchContext,
+	size: string,
+) {
+	const scale = REFLECTION_SCALES[size as keyof typeof REFLECTION_SCALES];
+	const pass = render.addPass({
+		kind: 'reflection',
+		writes: 'water',
+		plane: { point: [0, WATER_HEIGHT, 0] },
+		...(scale ? { scale } : {}),
+	});
+	const material = materials.shader({
+		wgsl: WATER,
+		color: '#0b2a33',
+		roughness: 0.05,
+		textures: { mirror: textures.fromPass(pass) },
+	});
+	const water = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material,
+		position: [0, WATER_HEIGHT, 0],
+	});
+	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** Adds the `transmission` switch's clear water under the swarm, which lets the light below through. */
+function createClearWater({ scene, geometry, materials }: SketchContext) {
+	const water = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({
+			roughness: 0.05,
+			ior: 1.33,
+			transmission: 1,
+			thickness: 4,
+			attenuationColor: '#3a8a90',
+			attenuationDistance: 20,
+		}),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	water.setRotationEuler(-Math.PI / 2, 0, 0);
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */
