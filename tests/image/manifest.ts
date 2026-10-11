@@ -1649,6 +1649,39 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold,
 		size: [480, 270] as const,
 	})),
+	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
+	// each of three switch distances. Every GPU path must draw the first path's image, so each
+	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
+	// the levels switching at once and in their fading bands, and one copy casts a coarser level's
+	// shadow onto a wall.
+	{
+		name: 'lod',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-fade',
+		sketch: 'tests/pages/sketches/lod-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'lod-shadows',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?shadows',
+		hold: 0,
+		size: [480, 270],
+	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a

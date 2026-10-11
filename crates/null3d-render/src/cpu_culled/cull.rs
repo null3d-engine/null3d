@@ -48,8 +48,10 @@ use null3d_core::alloc::reserve_keeping;
 use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CullRun, CullSet, CullView, NO_BUCKET, SetLayers, SetOrder,
+    self as core_culling, BY_ROW, BucketedCull, CullRun, CullSet, CullView, LevelChoice, LevelRows,
+    NO_BUCKET, RowRadii, SetLayers, SetOrder,
 };
+use null3d_core::levels::{LevelLink, LevelRule};
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
@@ -365,6 +367,7 @@ impl Culling {
         clusters: &mut Clusters,
         cells: &CellCulling,
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
+        rule_of: &dyn Fn(ViewId) -> LevelRule,
         sorted: Option<&SortedLayout>,
         mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
@@ -457,9 +460,38 @@ impl Culling {
                 layers: scene_layers,
             }
         };
+        // The rows of each set by row, as the choice of levels reads them. Batches whose rows pick
+        // levels are never culled in clusters.
+        let level_rows = |set: u32| -> LevelRows<'_> {
+            if set < FIRST_BATCH_SET {
+                return LevelRows {
+                    spheres: scene.world(parity).spheres(),
+                    cells: core_culling::RowCells::Rows(scene.cells()),
+                    radii: RowRadii::Rows(scene.local_radii()),
+                };
+            }
+            let k = (set - FIRST_BATCH_SET) as usize;
+            let slot = &slots[k % slots.len()];
+            let batch = batches.get(slot.id).expect("the layout names live batches");
+            LevelRows {
+                spheres: batch.world(parity).spheres(),
+                cells: batch.common_cell().map_or(
+                    core_culling::RowCells::Rows(batch.cells()),
+                    core_culling::RowCells::One,
+                ),
+                radii: RowRadii::One(batch.local_radius()),
+            }
+        };
+        let links = &layout.level_links;
+        let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
         for (k, view) in self.views.iter_mut().enumerate() {
             let Some(frame) = &view.frame else {
                 continue;
+            };
+            let choice = LevelChoice {
+                rule: rule_of(ViewId::from_index(first + k)),
+                links,
+                rows: &level_rows,
             };
             let buffer = occlusion
                 .as_ref()
@@ -483,7 +515,11 @@ impl Culling {
             view.tested = self.runs.iter().map(|run| run.end - run.start).sum();
             // Room for the view's runs, which the cells in view decide; it grows only when a view
             // sees more cells than any view did before.
-            let by_row = self.runs.iter().filter(|run| run.bucket == BY_ROW).count();
+            let by_row = self
+                .runs
+                .iter()
+                .filter(|run| run.bucket == BY_ROW || picks(run.bucket))
+                .count();
             let room = &layout.room;
             view.culls[parity].try_reserve(
                 room.rows,
@@ -504,6 +540,7 @@ impl Culling {
                 &self.runs,
                 &layout.scene_buckets,
                 layout.buckets.len() as u32,
+                Some(&choice),
                 &mut view.culls[parity],
             );
             view.occluded = view.culls[parity].hidden() as u32;

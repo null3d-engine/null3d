@@ -356,6 +356,7 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         &world.runs,
         &world.row_buckets,
         4,
+        None,
         &mut world.bucketed,
     );
 

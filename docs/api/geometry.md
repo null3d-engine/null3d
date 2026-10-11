@@ -3,7 +3,7 @@ id: api/geometry
 title: Geometry
 status: experimental
 since: "0.1"
-summary: "Generators with three.js parameters; meshes from arrays; morph targets; vertex formats; large meshes."
+summary: "Generators with three.js parameters; meshes from arrays; morph targets; levels of detail; vertex formats; large meshes."
 ---
 
 # Geometry
@@ -152,6 +152,20 @@ A mesh keeps the attributes that you give it, each in the type that it came in. 
 
 Meshes of one vertex format share GPU buffers, so the engine draws them with few changes of GPU state. Meshes of different formats draw apart, so keep the meshes of a scene in few formats. Give a mesh only the attributes that its materials use. The generators' meshes all have one format: a position, a normal and `uvs` as floats, 32 bytes per vertex.
 
+## Levels of detail
+
+`mesh.setLevels` gives a mesh simpler copies of itself, from the most detailed down. Each has its error: the largest distance between its surface and the mesh's, in the units of the mesh's positions. Every object and instance batch that draws the mesh then picks one level per frame. It draws the coarsest level whose error covers fewer pixels on the screen than the `lodThreshold` quality setting:
+
+```ts
+const rock = geometry.fromArrays(rockArrays(2000));
+rock.setLevels([
+	{ mesh: geometry.fromArrays(rockArrays(500)), error: 0.01 },
+	{ mesh: geometry.fromArrays(rockArrays(120)), error: 0.05 },
+]);
+```
+
+Each level must have the mesh's vertex attributes, as it draws with the same material and shading. A level can give the `distance` at which it switches in, as three.js's `LOD.addLevel` does, in place of its error. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them, each with its error. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the rule, the fading bands and the shadows, and how glTF files from the asset tool bring their levels.
+
 ## Destroying a mesh
 
 `mesh.destroy()` frees a mesh that the scene no longer draws. Destroy the objects and instance batches that use it first. They can go in the same frame, just before the mesh:
@@ -186,6 +200,7 @@ A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 a
 | `geometry.morphAttributes.color = [...]` | `morphTargets: { colors: [...] }`, with `colors` on the mesh |
 | `mesh.morphTargetDictionary` | `mesh.mesh.morphTargetNames`, a list in target order; `setMorphWeight` takes a name too |
 | `geometry.dispose()` | `mesh.destroy()`, once no object or batch uses the mesh |
+| `lod.addLevel(object, distance)` | `mesh.setLevels([{ mesh, distance }])` on the base mesh ([Levels of detail](../concepts/lod.md#from-threejs)) |
 
 [three.js to null3D](../porting/threejs-mapping.md) lists every mapping.
 

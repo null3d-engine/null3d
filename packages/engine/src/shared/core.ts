@@ -122,11 +122,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	cellsRefused(): number;
 	/**
-	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
-	 * is the newest frame that the thread that draws drew with every pipeline built, as for
-	 * `recordFrame`.
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `scale`
+	 * is the frame's render scale in thousandths, which picks levels of detail, and `built` the
+	 * newest frame that the thread that draws drew with every pipeline built, as for `recordFrame`.
 	 */
-	cullFrame(frame: number, width: number, height: number, built: number): number;
+	cullFrame(frame: number, width: number, height: number, scale: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -293,6 +293,12 @@ export interface CoreGlue extends CoreErrors {
 	 * next frame gives their ids to later meshes once no object or batch names them.
 	 */
 	destroyMeshes(count: number): number;
+	/**
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
+	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
+	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 */
+	setMeshLevels(base: number, count: number, fades: boolean): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -618,11 +624,19 @@ export interface CoreGlue extends CoreErrors {
 		cascadeBlend: number,
 	): number;
 	/**
+	 * How objects and batches pick their meshes' levels of detail, from the next frame on: the
+	 * error in pixels under which a coarser level draws, 0 for none, what the shadow maps' views
+	 * multiply it by, and whether two levels hand over in a fading band.
+	 */
+	setLevelQuality(threshold: number, shadowFactor: number, fades: boolean): number;
+	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
 	 * cast shadows.
 	 */
 	shadowCasters(): number;
+	/** 1 while some mesh has levels of detail, which the governor's detail steps need, else 0. */
+	hasLevels(): number;
 	/**
 	 * The address of the block of the background's values (`BACKGROUND_VALUE_*`), 32-bit floats
 	 * that TypeScript writes before it calls `setBackgroundSource`.
@@ -812,6 +826,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBlocker',
 	'meshRadius',
 	'destroyMeshes',
+	'setMeshLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
@@ -875,7 +890,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setRenderScaling',
 	'setPixelRatio',
 	'setShadowQuality',
+	'setLevelQuality',
 	'shadowCasters',
+	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
 	'setFog',

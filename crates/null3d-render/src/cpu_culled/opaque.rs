@@ -184,11 +184,13 @@ fn for_each_call(
 }
 
 /// The visible instances of each draw, by its place in `draws`: the entries of its bucket's slice
-/// of the index list, where the slice of bucket `b` starts at `starts[b]`.
+/// of the index list, where the slice of bucket `b` starts at `starts[b]`, two words each in a
+/// fade bucket.
 fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32 + 'a {
     move |d| {
         let b = draws[d].bucket as usize;
-        starts[b + 1] - starts[b]
+        let words = starts[b + 1] - starts[b];
+        if draws[d].pairs { words / 2 } else { words }
     }
 }
 
@@ -673,6 +675,7 @@ mod tests {
             bucket: 0,
             index_count: 36,
             first_index: 0,
+            pairs: false,
         }
     }
 

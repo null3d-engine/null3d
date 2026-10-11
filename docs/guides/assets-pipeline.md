@@ -8,7 +8,7 @@ summary: "optimize, env, convert; LODs; texture compression; blockers and stored
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
+> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -181,7 +181,7 @@ The levels go into the file with `MSFT_lod`. Each node with levels stores the er
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
-The engine does not draw levels of detail yet, and draws the full mesh. three.js's `GLTFLoader` also ignores `MSFT_lod`.
+`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. Skinned meshes draw their full mesh for now. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
 
 ### Fewer triangles in the full mesh
 

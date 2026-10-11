@@ -465,3 +465,8 @@ export const ARRAYS_PROBLEM_MORPH_TOO_LARGE = 8;
 export const ARRAYS_PROBLEM_MORPH_LENGTH = 9;
 export const ARRAYS_PROBLEM_MORPH_NOT_FINITE = 10;
 export const ARRAYS_PROBLEM_NOT_FINITE = 16;
+
+export const LEVEL_PROBLEM_TOO_MANY = 1;
+export const LEVEL_PROBLEM_ERRORS = 2;
+export const LEVEL_PROBLEM_MESH = 3;
+export const LEVEL_PROBLEM_FORMAT = 4;

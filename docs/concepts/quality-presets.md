@@ -266,19 +266,21 @@ A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderSca
 ```mermaid
 flowchart LR
     over["1 s over budget"] --> scale["1. Render scale: 0.05 lower,<br/>down to minRenderScale"]
-    scale -- "still over budget" --> far["2. Far shadow cascades:<br/>half as often, down to every 8th frame"]
-    far -- "still over budget" --> filter["3. Shadow filter: 3 x 3 texels"]
+    scale -- "still over budget" --> detail["2. Levels of detail:<br/>twice the threshold, twice at most"]
+    detail -- "still over budget" --> far["3. Far shadow cascades:<br/>half as often, down to every 8th frame"]
+    far -- "still over budget" --> filter["4. Shadow filter: 3 x 3 texels"]
     room["5 s with time to spare"] --> back["One step back up,<br/>in the reverse order"]
 ```
 
-Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the live shadow settings and the effects' settings, one step at a time:
+Dynamic resolution is the first part of the frame-budget governor. The scale can stop at `minRenderScale` while frames still take too long. The governor then lowers the detail, the live shadow settings and the effects' settings, one step at a time:
 
+1. The `lodThreshold` of the [levels of detail](lod.md) doubles, twice at most, so coarser levels draw nearer the camera. A level's error stays under the threshold, so two pixels look much as one does, while far objects lose most of their vertices. This step happens only while a mesh has levels.
 1. The far shadow cascades draw half as often, for example every 4th frame instead of every 2nd, and at most every 8th frame. This step needs a directional light with two cascades or more.
 2. The shadow filter blends 3 x 3 texels instead of 5 x 5.
 3. Bloom's chain halves its base, once, while the base has more than 64 texels on the canvas's shorter side. Each level draws into a corner of half its target, so the chain loses its finest level. The glow keeps its size, with a softer core, and no target is made. This step happens only while bloom is on.
 4. Ambient occlusion draws at a quarter of the render size instead of half. This step happens only while ambient occlusion draws at half the size.
 
-Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
+Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. A lower render scale picks coarser levels of detail too, as the render height counts in each level's error in pixels. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 
 Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the [target frame rate](#the-target-frame-rate): by default the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls, and the target falls with it.
 

@@ -301,6 +301,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'forest',
+		group: 'Scale',
+		sketch: new URL('./forest/sketch.ts', import.meta.url),
+		title: 'Levels of detail',
+		scene: 'Pine forest',
+		summary:
+			'40,000 pines over rolling hills at golden hour, and 8,000 on phones, in one instance batch. Each pine has four levels of detail, from 6,400 triangles down to 40, and every tree picks its own in each frame by its size on the screen. Near a switch the two levels share the pixels, so no tree pops.',
+		controls: `${CAMERA} Press L to draw every tree at its full detail, and again to bring the levels back.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'far-from-origin',
 		group: 'Scale',
 		sketch: new URL('./far-from-origin/sketch.ts', import.meta.url),

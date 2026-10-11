@@ -363,6 +363,26 @@ describe('the shadow steps', () => {
 });
 
 describe('the bloom steps', () => {
+	it('doubles the threshold of the levels of detail twice after the scale, only while a mesh has levels', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setShadows(5, 1, true);
+		controller.setCasters(1, false);
+		controller.setLevels(true);
+		const seen: string[] = [];
+		for (let k = 0; k < 4; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.detailFactor} ${controller.filter}`);
+		}
+		// The scale drops once, then the threshold doubles twice, then the filter lightens.
+		expect(seen).toEqual(['950 1 5', '950 2 5', '950 4 5', '950 4 3']);
+		expect([controller.steps, controller.maxSteps]).toEqual([3, 3]);
+		// A scene without levels takes the detail steps back at once, and changes what draws.
+		const before = controller.stepChanges;
+		controller.setLevels(false);
+		expect([controller.steps, controller.detailFactor, controller.filter]).toEqual([1, 1, 3]);
+		expect(controller.stepChanges).toBe(before + 1);
+	});
+
 	it("halves bloom's base after the shadow steps, only while bloom is on", () => {
 		const { controller, untilStep } = controlled(900);
 		controller.setShadows(5, 2, true);
@@ -432,9 +452,10 @@ describe('the governor in the frame loop', () => {
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
 		render.setRefreshHz(refreshHz);
-		const scene = { casters: 0, loading: false };
+		const scene = { casters: 0, levels: false, loading: false };
 		const reads: GovernorScene = {
 			shadowCasters: () => scene.casters,
+			hasLevels: () => scene.levels,
 			loading: () => scene.loading,
 		};
 		const resolution = new GovernorLoop(new Governor(), metrics, reads, maxTargetHz);

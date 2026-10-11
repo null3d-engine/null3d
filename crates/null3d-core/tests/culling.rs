@@ -278,6 +278,7 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
                 &runs,
                 &row_buckets,
                 BUCKETS,
+                None,
                 &mut out,
             );
             let (entries, starts) =
@@ -376,7 +377,16 @@ fn runs_through_a_list_of_rows_list_the_rows_that_culling_each_row_keeps() {
                 layers: 0b1,
                 occlusion: None,
             };
-            let n = cull_into_buckets(&jobs, view, &sets, &[run(set, cell)], &[], 1, &mut out);
+            let n = cull_into_buckets(
+                &jobs,
+                view,
+                &sets,
+                &[run(set, cell)],
+                &[],
+                1,
+                None,
+                &mut out,
+            );
             // The reference tests each listed row on the view's layer where it lies, in the list's
             // order.
             let expected: Vec<u32> = list
@@ -443,6 +453,7 @@ fn a_run_of_copied_spheres_in_several_cells_panics() {
         &[run],
         &[],
         1,
+        None,
         &mut out,
     );
 }
@@ -504,6 +515,7 @@ fn a_bucketed_output_without_room_for_the_runs_panics() {
         &[run],
         &[],
         1,
+        None,
         &mut BucketedCull::default(),
     );
 }
@@ -520,4 +532,113 @@ fn a_short_output_panics() {
         SphereArrays::new(&v, &v, &v, &v),
         &mut out,
     );
+}
+
+/// Rows of one sphere each, of radius 1 and scale 1, straight ahead of the camera at `distances`,
+/// culled into a mesh's three levels and their fade buckets: buckets 0 to 2 are the levels, 3 to 5
+/// their fade buckets. Returns each bucket's words.
+fn cull_levels(distances: &[f32], by_row: bool, band: f32) -> Vec<Vec<u32>> {
+    use null3d_core::culling::{LevelChoice, LevelRows, RowCells, RowRadii};
+    use null3d_core::levels::{LevelLink, LevelRule, NO_LINK};
+    let n = distances.len();
+    let (xs, ys) = (vec![0.0; n], vec![0.0; n]);
+    let zs: Vec<f32> = distances.iter().map(|d| -d).collect();
+    let rs = vec![1.0; n];
+    let spheres = SphereArrays::new(&xs, &ys, &zs, &rs);
+    let frustum = Frustum::from_view_projection(&perspective(1.0, 1.0, 0.1, 1000.0));
+    let view = CullView {
+        frustum: &frustum,
+        offsets: &OFFSETS,
+        layers: ALL_LAYERS,
+        occlusion: None,
+    };
+    // Level 1 switches in past 5 m and level 2 past 20 m, with a factor of 100.
+    let link = |error: f32, next: u32, fade: u32| LevelLink { error, next, fade };
+    let links = [
+        link(0.0, 1, 3),
+        link(0.05, 2, 4),
+        link(0.2, NO_LINK, 5),
+        LevelLink::NONE,
+        LevelLink::NONE,
+        LevelLink::NONE,
+    ];
+    let rows = |_| LevelRows {
+        spheres,
+        cells: RowCells::One(0),
+        radii: RowRadii::One(1.0),
+    };
+    let choice = LevelChoice {
+        rule: LevelRule {
+            factor: 100.0,
+            orthographic: false,
+            band,
+        },
+        links: &links,
+        rows: &rows,
+    };
+    let run = CullRun {
+        set: 0,
+        start: 0,
+        end: n as u32,
+        bucket: if by_row { BY_ROW } else { 0 },
+        base: 0,
+        cell: 0,
+    };
+    let row_buckets = vec![0; n];
+    let mut out = BucketedCull::default();
+    out.try_reserve(4 * n as u32, 1, 1, 6).unwrap();
+    cull_into_buckets(
+        &null3d_core::jobs::JobSystem::new(0),
+        view,
+        &|_| CullSet {
+            spheres,
+            cells: &[],
+            order: SetOrder::Rows,
+            layers: SetLayers::All(DEFAULT_LAYERS),
+        },
+        &[run],
+        &row_buckets,
+        6,
+        Some(&choice),
+        &mut out,
+    );
+    let starts = out.bucket_starts();
+    (0..6)
+        .map(|b| out.indices()[starts[b] as usize..starts[b + 1] as usize].to_vec())
+        .collect()
+}
+
+#[test]
+fn rows_pick_the_level_their_distance_and_scale_give() {
+    let distances = [3.0, 4.9, 8.0, 19.0, 30.0, 400.0];
+    for by_row in [false, true] {
+        let buckets = cull_levels(&distances, by_row, 0.0);
+        assert_eq!(
+            buckets[0],
+            [0, 1],
+            "rows nearer than 5 m draw the base level"
+        );
+        assert_eq!(buckets[1], [2, 3], "rows from 5 m to 20 m draw level 1");
+        assert_eq!(buckets[2], [4, 5], "rows past 20 m draw level 2");
+        assert!(buckets[3..].iter().all(Vec::is_empty), "no band, no fade");
+    }
+}
+
+#[test]
+fn rows_inside_a_band_list_pairs_in_both_levels_fade_buckets() {
+    // 5.375 m lies halfway through level 1's band, and 21.2 m two fifths into level 2's.
+    let distances = [5.375, 8.0, 21.2];
+    let buckets = cull_levels(&distances, true, 0.15);
+    let bits = |word: u32| f32::from_bits(word);
+    assert!(buckets[0].is_empty() && buckets[2].is_empty());
+    assert_eq!(buckets[1], [1]);
+    // Each fade bucket holds the row, then its fade value: positive for the new level, negative
+    // for the old one.
+    let (old, new) = (&buckets[3], &buckets[4]);
+    assert_eq!((old.len(), new.len()), (2, 4));
+    assert_eq!((new[0], old[0]), (0, 0));
+    assert!((bits(new[1]) - 0.5).abs() < 1e-3 && (bits(old[1]) + 0.5).abs() < 1e-3);
+    let fading = &buckets[5];
+    assert_eq!((fading[0], new[2]), (2, 2));
+    assert!((bits(fading[1]) - 0.4).abs() < 1e-3 && (bits(new[3]) + 0.4).abs() < 1e-3);
 }

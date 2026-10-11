@@ -58,6 +58,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_volume',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
+	'MSFT_lod',
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 ];
@@ -433,6 +434,20 @@ export interface NodeData {
 	morphJoint?: number;
 	/** The morph weights of the node's mesh, when the node gives its own in place of the mesh's. */
 	weights?: number[];
+	/** The levels of detail of the node's mesh, from `MSFT_lod`, when it gives any. */
+	levels?: NodeLevels;
+}
+
+/**
+ * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
+ * level's node, from the most detailed down, and each level's error from the asset tool's
+ * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
+ * node's own first.
+ */
+export interface NodeLevels {
+	meshes: number[];
+	errors?: number[];
+	coverage?: number[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -1343,9 +1358,41 @@ function parseNodes(
 			const targets = (meshes[data.mesh] as MeshData).weights?.length ?? 0;
 			data.weights = numbers(node.weights, targets, undefined, `${what}'s weights`);
 		}
+		const lod = extensions.MSFT_lod as Entry | undefined;
+		if (lod && data.mesh >= 0) data.levels = parseLevels(lod, node, defs, meshes.length, what);
 		return data;
 	});
 	return { nodes, place };
+}
+
+/**
+ * A node's levels of detail from its `MSFT_lod` extension: the meshes of the level nodes it names,
+ * which need not be in the scene, and their errors or screen coverage from the node's extras. A
+ * level node without a mesh ends the list there. Errors or coverage of the wrong length are left
+ * out, and the loader then gives the mesh no levels.
+ */
+function parseLevels(
+	lod: Entry,
+	node: Entry,
+	defs: readonly Entry[],
+	meshCount: number,
+	what: string,
+): NodeLevels | undefined {
+	const meshes: number[] = [];
+	for (const id of list(lod.ids, `${what}'s MSFT_lod ids`)) {
+		const level = defs[index(id, defs.length, `${what}'s MSFT_lod level`)] as Entry;
+		if (level.mesh === undefined) break;
+		meshes.push(index(level.mesh, meshCount, `${what}'s MSFT_lod level's mesh`));
+	}
+	if (meshes.length === 0) return undefined;
+	const extras = (node.extras ?? {}) as Entry;
+	const read = (value: unknown, length: number) =>
+		Array.isArray(value) && value.length >= length && value.every((n) => typeof n === 'number')
+			? (value.slice(0, length) as number[])
+			: undefined;
+	const errors = read(extras.NULL3D_lod_error, meshes.length);
+	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
+	return { meshes, errors, coverage };
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */

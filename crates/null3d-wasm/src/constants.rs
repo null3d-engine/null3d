@@ -364,6 +364,30 @@ pub mod arrays_problem {
     pub const NOT_FINITE: u32 = 16;
 }
 
+/// The second detail of a failure to give a mesh levels of detail: what is wrong with the levels.
+pub mod level_problem {
+    use null3d_render::levels::LevelError;
+
+    /// More levels than a mesh holds, its base mesh included.
+    pub const TOO_MANY: u32 = 1;
+    /// An error that is not finite, not above 0, or not above the error of the level before.
+    pub const ERRORS: u32 = 2;
+    /// A level that names no live mesh, or the base mesh itself.
+    pub const MESH: u32 = 3;
+    /// A level whose vertices have other attributes than the base mesh's.
+    pub const FORMAT: u32 = 4;
+
+    /// The problem of a refused set of levels.
+    pub fn of(error: LevelError) -> u32 {
+        match error {
+            LevelError::TooMany => TOO_MANY,
+            LevelError::Errors => ERRORS,
+            LevelError::Mesh => MESH,
+            LevelError::Format => FORMAT,
+        }
+    }
+}
+
 /// The arrays of the animation table that `animationArrays` returns.
 pub mod animation_field {
     /// The clip of each sample slot, as 32-bit unsigned integers.
@@ -1208,6 +1232,15 @@ pub fn typescript() -> String {
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
+            ],
+        ),
+        (
+            "LEVEL_PROBLEM",
+            &[
+                ("TOO_MANY", level_problem::TOO_MANY),
+                ("ERRORS", level_problem::ERRORS),
+                ("MESH", level_problem::MESH),
+                ("FORMAT", level_problem::FORMAT),
             ],
         ),
     ];

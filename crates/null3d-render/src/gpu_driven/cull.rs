@@ -53,16 +53,19 @@ use super::pyramid::Levels;
 use crate::cells::{CellCulling, CellMask};
 use crate::frame::{CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes};
 use crate::view::{MAX_VIEW_IDS, ViewFrame, ViewId};
+use null3d_core::levels::LevelRule;
 
 /// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
-/// runs of the cell order, and the view's row of the cell offsets texture.
-const CULL_PLANES_BYTES: u32 = 112;
+/// runs of the cell order, the view's row of the cell offsets texture, and the level choice's
+/// inputs (see [`LevelRule::uniform`]).
+const CULL_PLANES_BYTES: u32 = 128;
 /// The words of the culling planes that hold the source count, the view's layer mask, the count
 /// of runs and the view's row of offsets.
 const SOURCES_WORD: usize = 24;
 const LAYERS_WORD: usize = 25;
 const RANGES_WORD: usize = 26;
 const OFFSETS_ROW_WORD: usize = 27;
+const LEVELS_WORD: usize = 28;
 /// Where the runs of the cell order start in the culling parameters: after the planes.
 const RANGES_OFFSET: u32 = CULL_PLANES_BYTES;
 /// Bytes of one run of the cell order: its first position, its end, its first workgroup, and
@@ -354,7 +357,8 @@ impl Culling {
     /// cell, the runs of the cell order of the cells it can see. `sources` is the scene's layout,
     /// whose sources and cell order every view culls, and `drawn` the layout whose buckets the
     /// view draws. Resets its indirect draws' instance counts to zero, and notes the workgroups of
-    /// its dispatch. A view that culls in two phases gets `pyramid`'s levels too, the values its
+    /// its dispatch. `detail` gives the inputs of the view's choice of levels of detail. A view that
+    /// culls in two phases gets `pyramid`'s levels too, the values its
     /// late dispatch reads, and both sets of its indirect draws reset.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
@@ -368,8 +372,15 @@ impl Culling {
         scene: &SceneStorage,
         cells: &CellCulling,
         pyramid: Option<&Levels>,
+        detail: &LevelRule,
     ) -> Result<(), RecordError> {
         let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
+        for (word, value) in params[LEVELS_WORD..LEVELS_WORD + 4]
+            .iter_mut()
+            .zip(detail.uniform())
+        {
+            *word = value.to_bits();
+        }
         for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
             for (value, word) in plane.iter().zip(out) {
                 *word = value.to_bits();

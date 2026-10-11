@@ -173,6 +173,28 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
+	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
+	// scale picks coarser levels too. 0 draws every mesh's base level. D-137 gives the figures.
+	lodThreshold: {
+		presets: [2, 1, 1, 1],
+		changes: 'live',
+		values: { min: 0, max: 16, heavierBelow: true },
+	},
+	// What the shadow maps multiply the threshold by, so that casters draw a coarser level than the
+	// camera sees: shadows blur the difference, and the shadow passes draw every caster again.
+	lodShadowFactor: {
+		presets: [4, 2, 2, 2],
+		changes: 'live',
+		values: { min: 1, max: 16, heavierBelow: true },
+	},
+	// Whether two levels hand over in a short dithered band past each switch distance. Low switches
+	// at once: the dither's discard costs tile GPUs their hidden-surface removal in the band.
+	lodFade: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Its cost on phones is not
 	// measured yet, so these values follow the plan until device runs settle them (D-41).
@@ -380,10 +402,31 @@ export interface QualitySettings {
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
 	/**
+	 * The error in pixels under which a mesh's coarser level of detail draws (see
+	 * `mesh.setLevels`). Each object and instance row draws the coarsest level whose error covers
+	 * fewer pixels than this on the screen, at the render scale. A larger number draws coarser
+	 * levels nearer the camera, which costs less. 0 draws every mesh's base level. It takes a number
+	 * from 0 to 16, and changes during play.
+	 */
+	lodThreshold: number;
+	/**
+	 * What the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level
+	 * than the camera sees. 1 draws the camera's level. It takes a number from 1 to 16, and changes
+	 * during play.
+	 */
+	lodShadowFactor: number;
+	/**
+	 * Whether two levels of detail hand over in a short band past each switch distance, where a
+	 * dither pattern shares the pixels between them, so a switch does not pop. False switches at
+	 * once. It changes during play.
+	 */
+	lodFade: boolean;
+	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
-	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
-	 * bloom's size while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
-	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
+	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
+	 * bloom's size while bloom is on, and ambient occlusion's scale while it draws. It raises them
+	 * again, in the reverse order, once frames have time to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
 	 */

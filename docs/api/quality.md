@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, fram
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend`, `lodThreshold`, `lodShadowFactor`, `lodFade` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -66,7 +66,10 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
 | `followMovingCasters` | `true` or `false`: whether a far shadow cascade draws in every frame while a moving caster touches it. `false` keeps each far cascade to its turns, so a far moving shadow can trail its caster by a few frames. Every preset turns it on. | During play. |
 | `shadowCascadeBlend` | A number from 0 to 0.5: the share of each shadow cascade's length, at its far end, over which its shadows blend into the next cascade's. 0 hands over at once. | During play. |
-| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale and the shadow settings when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the shadow settings as set. |
+| `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |
+| `lodShadowFactor` | A number from 1 to 16: what the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level than the camera sees. 1 draws the camera's level. | During play. |
+| `lodFade` | `true` or `false`: whether two levels of detail hand over in a short dithered band past each switch distance. `false` switches at once. | During play. |
+| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the detail and the shadow settings when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the settings as set. |
 | `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 | `shadowTiles` | A whole number from 0 to 24: the tiles of the shadow atlas that spot and point lights cast their shadows into. 0 turns their shadows off. | At the start only. The page's `shadowTiles` option sets it. |
 | `shadowTileSize` | 256, 512, 1,024 or 2,048: the texels on each side of a tile of the shadow atlas. | At the start only. The page's `shadowTileSize` option sets it. |
@@ -106,7 +109,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first, then the live shadow settings. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
+When frames take too long, the engine lowers the render scale first, then the levels of detail, then the live shadow settings. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
 
 | Member | What it holds |
 | --- | --- |

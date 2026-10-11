@@ -45,6 +45,7 @@ import type {
 	MaterialData,
 	MeshData,
 	NodeData,
+	NodeLevels,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -297,6 +298,42 @@ interface Made {
 	rig?: AnimationRig;
 }
 
+/** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
+const COVERAGE_HEIGHT = 1080;
+
+/**
+ * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
+ * primitive of each level node's mesh. Each level's error comes from the asset tool's
+ * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
+ * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
+ * high. Levels whose meshes have other primitives, or no errors, are left out, and so are levels
+ * that a mesh cannot take, with a note.
+ */
+function setFileLevels(
+	base: readonly MeshGeometry[],
+	levels: NodeLevels,
+	data: GltfData,
+	meshOf: (k: number) => MeshGeometry[],
+): void {
+	const count = base.length;
+	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
+	const lower = levels.meshes.map(meshOf);
+	for (const [p, mesh] of base.entries()) {
+		const errors =
+			levels.errors ??
+			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
+		if (!errors) return;
+		try {
+			mesh.setLevels(
+				lower.map((meshes, j) => ({ mesh: meshes[p] as MeshGeometry, error: errors[j] })),
+			);
+		} catch (error) {
+			data.notes.push(`the levels of detail of a mesh (${(error as Error).message})`);
+			return;
+		}
+	}
+}
+
 /** The prefab of a parsed file, once its textures and materials exist. */
 async function buildPrefab(
 	context: GltfContext,
@@ -339,6 +376,7 @@ async function buildPrefab(
 		const parent = n.parent < 0 ? 0 : (placed[n.parent] as number);
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
+		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
 		const parts = (mesh?.primitives ?? []).map((p, k) => ({
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),

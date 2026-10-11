@@ -462,7 +462,8 @@ impl Compiler {
                 // Only WGSL that sets the surface's transmission has the builds that let light
                 // through, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
-                // that the default surface multiplies.
+                // that the default surface multiplies. They have no builds of a fading level of
+                // detail, so their levels switch at once.
                 let skins = !variant.targets.contains(&Target::Wgsl);
                 let left_out = [
                     "HALF",
@@ -471,6 +472,7 @@ impl Compiler {
                     "SAMPLE_MASK",
                     "ALPHA_COVERAGE",
                     "ALPHA_HASH",
+                    "LOD_FADE",
                 ];
                 let permutations = variant
                     .permutations

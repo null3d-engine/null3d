@@ -169,6 +169,9 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    level_error: f32,
+    next_level: u32,
+    fade_bucket: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -411,7 +414,12 @@ fn fragment_color(m: Material, color: vec3f, alpha: f32) -> vec4f {
 fn instance_of(record: vec4u, instance: u32) -> Instance {
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let shift = record.w;
+#ifdef LOD_FADE
+    // A fade bucket's entries come in pairs: the entry, then its fade value.
+    let slot = record.x + instance * 2u;
+#else
     let slot = record.x + (instance >> shift);
+#endif
     let entry = textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
     var source = entry & ((1u << CELL_SHIFT) - 1u);
     if shift != 0u {
@@ -483,6 +491,43 @@ fn find_instance(i: InstanceIn) -> Instance {
     return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true, i.ids.z, false);
 #endif
 }
+
+#ifdef LOD_FADE
+/// The fade value of the instance that a vertex shader invocation draws, from a fade bucket of a
+/// level of detail: positive for the level that a band hands over to, negative for the level it
+/// hands over from. On WebGPU the culling shader writes it into the copy's fourth id, and on
+/// WebGL2 it follows the instance's entry in the index list.
+fn instance_fade(i: InstanceIn) -> f32 {
+#ifdef WEBGL2
+#ifdef DRAW_INDEX
+    let record = draws.items[i.draw];
+#else
+    let record = draws.items[0];
+#endif
+    let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
+    let slot = record.x + i.instance * 2u + 1u;
+    return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+#else
+    return bitcast<f32>(i.ids.w);
+#endif
+}
+
+/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade`: the
+/// pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies under a positive fade value,
+/// or at or over the size of a negative one. The two levels of a band take the fade value with
+/// opposite signs, so each pixel draws one of them, and a fade value of 0 keeps every pixel.
+fn lod_kept(fade: f32, pixel: vec2f) -> bool {
+    let p = vec2u(pixel) & vec2u(3u);
+    let low = p & vec2u(1u);
+    let high = p >> vec2u(1u);
+    // The 2 × 2 dither is 0, 2 on its first row and 3, 1 on its second.
+    let cell = 4u * (2u * (low.x ^ low.y) + low.y) + 2u * (high.x ^ high.y) + high.y;
+    let value = (f32(cell) + 0.5) / 16.0;
+    let new_side = fade > 0.0;
+    let kept_new = value < fade;
+    return select(value >= -fade, kept_new, new_side);
+}
+#endif
 
 /// The instance's world matrix, relative to the camera.
 fn transform_of(found: Instance) -> Transform {

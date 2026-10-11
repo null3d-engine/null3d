@@ -18,10 +18,11 @@ use null3d_core::clusters::{
 use null3d_core::culling::{CULL_CHUNK, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
+use null3d_core::levels::{LevelLink, NO_LINK};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, sizes, template};
+use null3d_gpu::drawlist::{DrawList, permutation, sizes, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -30,6 +31,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
     put_u32,
 };
+use crate::levels::{BucketKey, expand_level_keys, is_fade_key, links_of};
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
@@ -61,10 +63,9 @@ pub(super) enum Drawn {
 /// bucket.
 const CASTER_MATERIAL: u32 = 1;
 
-/// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
-/// group of the material's map, the vertex page of the mesh's first part, the engine mesh and
-/// material ids, and the data texture.
-type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
+// group of the material's map, the vertex page of the mesh's first part, the engine mesh id or a
+// level key (see `crate::levels`), the material id, and the data texture.
 
 /// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
 /// entries are rows, then the bucket whose entries are clusters of rows.
@@ -93,12 +94,15 @@ pub(super) struct Draw {
     pub(super) bucket: u32,
     pub(super) index_count: u32,
     pub(super) first_index: u32,
+    /// True for a draw of a fade bucket, whose entries come in pairs, so it draws half as many
+    /// instances as its bucket lists words.
+    pub(super) pairs: bool,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, whether its rows have
 /// row values, which the row values texture beside its data texture holds at the same rows, its
-/// bucket of rows (the bucket after it takes its clusters), and, for a static batch, its first
-/// cluster in the cluster texture.
+/// bucket of rows (the bucket after it takes its clusters), whether its rows pick levels of
+/// detail, and, for a static batch, its first cluster in the cluster texture.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BatchSlot {
     pub(super) id: Handle,
@@ -106,13 +110,15 @@ pub(super) struct BatchSlot {
     pub(super) values: bool,
     pub(super) base: u32,
     pub(super) bucket: u32,
+    pub(super) levels: bool,
     pub(super) first_cluster: u32,
 }
 
 impl BatchSlot {
-    /// True for a static batch that draws: one whose rows can be culled in clusters.
+    /// True for a static batch that draws: one whose rows can be culled in clusters. The rows of a
+    /// batch whose mesh has levels each pick their own level, so they are culled one by one.
     pub(super) fn clustered(&self) -> bool {
-        !self.dynamic && self.bucket != NO_BUCKET
+        !self.dynamic && self.bucket != NO_BUCKET && !self.levels
     }
 }
 
@@ -154,8 +160,11 @@ pub(super) struct Layout {
     /// Scratch for rebuilds of the outlined layout: the second draw of each bucket.
     second_draws: Vec<Draw>,
     /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere
-    /// or draws in the transparent pass.
+    /// or draws in the transparent pass. A slot of a mesh with levels names its base level's.
     pub(super) scene_buckets: Vec<u32>,
+    /// Each bucket's level of detail: its level's error, the bucket of rows of the next coarser
+    /// level and its fade bucket, or none for a bucket without levels.
+    pub(super) level_links: Vec<LevelLink>,
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
@@ -195,6 +204,7 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.scene_buckets.clear();
+        self.level_links.clear();
         self.batches.clear();
         self.waiting.clear();
         self.room = CullRoom::default();
@@ -254,6 +264,7 @@ impl Layout {
                 values,
                 base: *rows,
                 bucket: NO_BUCKET,
+                levels: false,
                 first_cluster: clusters,
             });
             *rows = rows.saturating_add(batch.capacity());
@@ -379,6 +390,13 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        // A skinned or morphed object draws its base level: it skins and morphs in the vertex
+        // shader, from vertices that the levels do not have.
+        let eligible =
+            |key: &BucketKey| key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0;
+        let levels = settings.levels();
+        let fades = drawn == Drawn::Scene && settings.levels_fade();
+        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
         self.depthless = self
             .key_counts
             .iter()
@@ -410,9 +428,25 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.second_draws.clear();
-        for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
+        self.level_links.clear();
+        for &(key, _) in &self.key_counts {
+            let (pipeline, textures, _, mesh, material, group) = key;
+            let mesh = levels
+                .mesh_of_key(mesh)
+                .expect("level keys name known levels");
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (first, prepass) = pipelines_of(pipelines, pipeline);
+            // A fading level draws only part of its pixels, so its depth stays out of the prepass.
+            let pairs = is_fade_key(&key);
+            let prepass = if pairs { 0 } else { prepass };
+            // Each key's bucket of rows is at twice its place in the keys.
+            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            self.level_links.push(LevelLink {
+                error: links.error,
+                next: links.next.map_or(NO_LINK, |key| 2 * key),
+                fade: links.fade.map_or(NO_LINK, |key| 2 * key),
+            });
+            self.level_links.push(LevelLink::NONE);
             let second = (drawn == Drawn::Outlined)
                 .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
             let pipeline = first;
@@ -432,6 +466,7 @@ impl Layout {
                         bucket,
                         index_count: part.index_count,
                         first_index: part.first_index,
+                        pairs,
                     };
                     self.draws.push(draw);
                     if let Some(second) = second {
@@ -454,13 +489,34 @@ impl Layout {
         }
         let mut runs = self.scene_rows.div_ceil(CULL_CHUNK);
         let mut batch_rows = 0u32;
+        // Runs whose rows pick levels look their buckets up, as the scene's runs do.
+        let mut by_row = self.scene_rows.div_ceil(CULL_CHUNK);
+        let links = &self.level_links;
+        let picks = |bucket: u32| links.get(bucket as usize).is_some_and(LevelLink::has_next);
+        // Rows that fade list two pairs of words in place of one entry.
+        let mut fading_rows = if picks_any(&self.scene_buckets, links) {
+            self.scene_rows
+        } else {
+            0
+        };
         for ((_, batch), slot) in batches.iter().zip(&mut self.batches) {
             slot.bucket = bucket_of(batch_key(batch));
+            slot.levels = picks(slot.bucket);
             if slot.bucket != NO_BUCKET {
-                runs += batch.capacity().div_ceil(CULL_CHUNK);
+                let chunks = batch.capacity().div_ceil(CULL_CHUNK);
+                runs += chunks;
                 batch_rows = batch_rows.saturating_add(batch.capacity());
+                if slot.levels {
+                    by_row += chunks;
+                    fading_rows = fading_rows.saturating_add(batch.capacity());
+                }
             }
         }
+        let fading_words = if fades {
+            fading_rows.saturating_mul(3)
+        } else {
+            0
+        };
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
         // draw.
@@ -484,14 +540,21 @@ impl Layout {
             Drawn::Casters | Drawn::Outlined => self.scene_rows.saturating_add(batch_rows),
         };
         self.room = CullRoom {
-            rows: listed,
+            rows: listed.saturating_add(fading_words),
             runs,
-            by_row: self.scene_rows.div_ceil(CULL_CHUNK),
+            by_row,
             buckets: self.buckets.len() as u32,
             batches: self.batches.len() as u32,
         };
         Ok(())
     }
+}
+
+/// True when a scene slot's bucket has coarser levels.
+fn picks_any(scene_buckets: &[u32], links: &[LevelLink]) -> bool {
+    scene_buckets
+        .iter()
+        .any(|&bucket| links.get(bucket as usize).is_some_and(LevelLink::has_next))
 }
 
 impl Layout {
