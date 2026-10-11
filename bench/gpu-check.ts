@@ -32,7 +32,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { REPO_ROOT } from '../tests/lib/server.ts';
-import { cachedBaseline, prepareBaseline, readPreparedBaseline } from './lib/baseline-cache';
+import { cachedBaseline, prepareBaseline, readPreparedBaseline, run } from './lib/baseline-cache';
 import type { Comparison } from './lib/compare';
 import {
 	GPU_CHECK_PAGE,
@@ -85,12 +85,6 @@ export function parseGpuCheckArgs(args: readonly string[]): GpuCheckOptions {
 
 const git = (cwd: string, ...args: string[]) =>
 	execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
-
-/** Runs a command with its output on this terminal, and throws when it fails. */
-function run(cwd: string, command: string, ...args: string[]): void {
-	const { status } = spawnSync(command, args, { cwd, stdio: 'inherit' });
-	if (status !== 0) throw new Error(`${command} ${args.join(' ')} failed in ${cwd}`);
-}
 
 const CHECK_DIR = join(REPO_ROOT, 'target/gpu-check');
 /** The step that makes the builds, as a command, for the messages that name it. */

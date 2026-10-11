@@ -150,7 +150,7 @@ The GPU check needs a quiet computer only while it times. So it runs in two step
 - Older checks built a worktree of the merge base beside each checkout, named after it with `-gpu-check-base`. Each took 1.3 GB, and each new copy of the repository built main from nothing. `--prepare` removes the checkout's old one.
 - `bun run bench:run --compare <dir>,.` also takes a prepared baseline's folder as its baseline.
 
-GPU_CHECK_FIGURES
+On the owner's Mac on 11 October 2026, `--measure` held the quiet window for 3.75 minutes and built nothing. The old check held it for 6.6 to 14.3 minutes, most of it for builds. The first `--prepare` with an empty cache took 30 minutes in the CPU lane, while other builds ran. [D-109](decisions/D-109-gpu-time-guard.md#addendum-2026-10-11-two-steps-and-a-shared-baseline) gives the figures.
 
 Add `--shard 2/3` to run only the pages of one shard, as a CI shard does. Each run writes its record to `runs.json` beside its summary. `bun run bench:run --merge <folder>` judges the records under a folder as one comparison, as the report job does. It needs no browser, and fails only when the records miss a page: the verdict is in `summary.json`.
 

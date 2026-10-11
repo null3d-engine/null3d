@@ -75,7 +75,7 @@ export function cachedBaseline(commit: string, cache = BASELINE_CACHE): string |
 }
 
 /** Runs a command with its output on this terminal, and throws when it fails. */
-function run(cwd: string, command: string, ...args: string[]): void {
+export function run(cwd: string, command: string, ...args: string[]): void {
 	const { status } = spawnSync(command, args, { cwd, stdio: 'inherit' });
 	if (status !== 0) throw new Error(`${command} ${args.join(' ')} failed in ${cwd}`);
 }

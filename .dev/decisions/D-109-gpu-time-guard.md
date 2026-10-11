@@ -66,7 +66,7 @@ How the data was produced: `bun run bench:run --compare` on the Mac, the records
 
 The coordinator asked on 11 October 2026 for a shorter quiet window per check. Helpers queue each check as a timing run, which holds the Mac alone, and checks waited up to 45 minutes for their turn.
 
-Most of a check's window went to builds, not to timing. Each of the two presets built both checkouts' benchmark pages with Vite, about 20 s each, so 4 page builds per check. A new copy of the repository also built its own worktree of main's merge base, with `bun install` and a full Rust build, beside the checkout. The logs of 8 October show windows of 14.3 minutes (5.4 of them for the builds), 9 minutes with a new base and 6.6 minutes with a base that built only the changes. A recheck with nothing to build took 3.7 minutes. 14 such base worktrees sat beside the helpers' checkouts, 1.3 GB each, for 8 distinct commits.
+Most of a check's window went to builds. Each of the two presets built both checkouts' benchmark pages with Vite, about 20 s each, so 4 page builds per check. A new copy of the repository also built its own worktree of main's merge base beside the checkout, with `bun install` and a full Rust build. The logs of 8 October show windows of 14.3 minutes, 5.4 of them for the builds. Another took 9 minutes with a new base, and 6.6 minutes with a base that built only the changes. A recheck with nothing to build took 3.7 minutes. 14 such base worktrees sat beside the helpers' checkouts, 1.3 GB each, for 8 distinct commits.
 
 The timing itself cannot get shorter without a looser check. 3 rounds is the fewest that the comparison rules judge, and the run and warm-up times are part of the noise work on S6.
 
@@ -77,4 +77,9 @@ Decision:
 - A comparison keeps each checkout's build of the pages with a stamp of its sources, and builds it again only when they change. So the two presets build the pages once, and in `--prepare`, before the window.
 - `--prepare` removes the checkout's old `-gpu-check-base` worktree.
 
-GPU_CHECK_ADDENDUM_FIGURES
+Results, on the owner's Mac on 11 October 2026, Chrome 155:
+
+- `--measure` held the quiet window for 3.75 minutes (225 s), at a 1-minute load of 4.2 to 5.3. It built nothing. It printed `GPU-Checked: bdcfa752a..dd17d4afb passed: s4 medium 3.94 to 3.96 ms (+0.7%); s6 medium 4.72 to 4.72 ms (-0.0%); s4 high 3.94 to 3.95 ms (+0.3%); s6 high 4.95 to 4.91 ms (-0.9%)`.
+- The old check held the window for 6.6 to 14.3 minutes in the logs of 8 October above. No new run of it was made: it would have held the quiet window for its builds while the queue waited.
+- The first `--prepare` took 30 minutes in the CPU lane, at background priority and a load of 12 to 14. The cache was empty, so the builder worktree installed and built main from nothing. A later check on the same commit of main finds the baseline in the cache and builds only its own checkout and pages. A new commit of main rebuilds only what changed in the builder.
+- The cache held 127 MB for the baseline and 1.4 GB for the builder worktree. One builder replaces a 1.3 GB base worktree per copy of the repository.
