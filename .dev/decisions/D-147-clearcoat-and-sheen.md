@@ -1,6 +1,6 @@
 # D-147: Clearcoat and sheen
 
-Status: proposed by the helper of M2-EX30 on 11 October 2026. The owner approved the map slots' trade-off on 11 October 2026 ("The owner's ruling"). The measurements under "Data" follow with the build. Date: 2026-10-11. Task: M2-EX30.
+Status: decided by the helper of M2-EX30 on 12 October 2026, for the owner's review. The owner approved the map slots' trade-off on 11 October 2026 ("The owner's ruling"). Date: 2026-10-11. Task: M2-EX30.
 
 Summary: The standard material takes a clear coat and a sheen layer, with the names and formulas of three.js's `MeshPhysicalMaterial`, and the glTF loader reads `KHR_materials_clearcoat` and `KHR_materials_sheen` into them. The sheen's loss of energy comes from three.js's curve fit, a stated approximation that needs no table. One permutation bit, `COAT_SHEEN`, gives both layers shader builds that load on first use. The layers' maps take three map slots that a layered material cannot use otherwise, so no GPU path binds a texture more.
 
@@ -79,7 +79,7 @@ So a layered material takes no light map and no specular maps. Its specular valu
 
 ### Shader builds
 
-One permutation bit, `COAT_SHEEN`, builds both layers, in the standard material's templates with and without maps. A layer that a material does not use is skipped in a branch that every pixel of the draw takes the same way. Two bits would make three times the builds, for a cost that only materials with one layer save. The builds load on first use, in the `layers` feature's files, which claim the builds that they share with skinning, morph targets and the alpha modes, so those files do not grow. A layered material's row grows by two `vec4f`s, which only the `COAT_SHEEN` builds read.
+One permutation bit, `COAT_SHEEN`, builds both layers, in the standard material's templates with and without maps. A layer that a material does not use is skipped in a branch that every pixel of the draw takes the same way. Two bits would make three times the builds, for a cost that only materials with one layer save. The builds load on first use, in the `coat_sheen` feature's files, which claim the builds that they share with skinning and morph targets, so those files do not grow. Alpha to coverage, the alpha hash and transmission claim shared builds too, from lower bits, so their files take the builds that join them with the layers (see "Data"). A layered material's row grows by two `vec4f`s, which only the `COAT_SHEEN` builds read.
 
 Custom materials get the layers too. The surface record gains `clearcoat`, `clearcoatRoughness`, `clearcoatNormal`, `sheenColor` and `sheenRoughness`. Only WGSL that names them builds the `COAT_SHEEN` builds, as only WGSL that names `transmission` builds the transmission builds. A wet stone can then set its coat from a wetness of its own.
 
@@ -95,16 +95,21 @@ On 11 October 2026 the owner approved option E: the coat and sheen maps take the
 
 ## Data
 
-To come with the build: the sheen fit's error table, parity with three.js on all three GPU paths, the image tests of the Khronos models, the shader files' sizes, the build counts, the allocation check, the size check, the GPU check, and the cost in S1 on the Mac's GPU with the layers on and off.
+Measured on 11 and 12 October 2026 in Chrome on the Mac's GPU (Apple M5 Max), and on SwiftShader on the Mac for CI's images.
 
-## Decision
-
-Pending the data. The options chosen above are three.js's formulas with its sheen fit, the options of `materials.standard`, the three aliased map slots, and one first-use permutation bit for both layers.
+- The sheen fit: three.js's curve against the integral of the Charlie lobe with Estevez and Kulla's visibility. It is within 0.06 where the view's cosine is 0.5 or more and the roughness 0.3 or more. At grazing views it is low: 0.2 to 0.3 below at cosines of 0.05 to 0.1, and 0.81 below at worst, at roughness 0.1 and cosine 0.05. The mean difference over the grid is 0.13. The split-sum table's spare channels can hold a true albedo table later at no binding cost.
+- Parity with three.js r186, nine Khronos model scenes on three tiers: 27 of 27 pass. On WebGPU, 0.000% to 0.018% of the pixels differ, and on WebGL2 0.000% to 0.020%. In compatibility mode, the clear coat test differs in 0.135% of the pixels, all on bright edges over black that compatibility mode's 8-bit path averages. Its scene takes a limit of 0.2%, like the instanced cubes. The toy car differs in 0.106% there, under the 0.18% by which three.js's two renderers differ.
+- The stained-glass lamp (`gltf-ktx2`) now draws its clear coat: 0.16% to 0.18% of its pixels differ from three.js, down from 0.27% to 0.39%. Its image references did not change.
+- Image tests: 958 per set on the Mac's GPU and on SwiftShader. The 922 earlier tests draw as before, and the 36 new ones (12 tests on three tiers) have references in both sets. The custom material that keeps the default surface draws the standard material's image. The layers turned off draw within one step of 8-bit color of a material without them.
+- Shader files: the first-use files of the layers are 20.3 to 24.8 KB after Brotli, under the 32 KB limit. The builds that join the layers with alpha to coverage, the alpha hash or transmission go to those features' files, by the rule that the lowest bit claims a shared build. Those files grew by 20% to 30%, to 28.9 KB at most. The start's JavaScript grew in `page-renderer.js` (+2.3%) and `gltf-worker.js` (+3.1%).
+- Allocation: S1 with every box coated and sheened, on WebGPU, allocates 238.9 bytes per frame in the sketch worker and 561.5 in the render worker, within the budgets. On WebGL2 they allocate 220.7 and 162.7 bytes. A first WebGL2 sample put the sketch worker's clock reads 2.4 bytes over their budget of 4, at a place that the layers do not touch, and a second sample passed.
+- GPU check: S4 and S6 at Medium and High changed by -0.5% to +0.9%, within the noise.
+- Cost in S1, with every box of the swarm coated and sheened, 3 runs of 10 s: on WebGPU the GPU time rose from 2.92 to 3.70 ms per frame (+0.78 ms, +27%). The CPU time stayed at 1.63 to 1.65 ms. On WebGL2 the GPU figure went from 4.66 to 4.12 ms, within its spread from run to run, so it shows no cost that it can measure.
 
 ## Consequences
 
-- Code: the bit and the feature in `crates/null3d-gpu/src/drawlist.rs`; the row, its values and the map slots in `crates/null3d-render/src/materials.rs`; the draw key in `frame.rs`; the shaders `lib/coat_sheen.wgsl`, `lit.wgsl`, `lib/lights.wgsl`, `lib/globals.wgsl` and `lib/mesh.wgsl`, with the `layers` feature in the shader manifest; the custom materials' detection in the shader crate; the options in `packages/engine/src/scene/resources.ts`; the glTF reader.
+- Code: the bit and the feature in `crates/null3d-gpu/src/drawlist.rs`; the row, its values and the map slots in `crates/null3d-render/src/materials.rs`; the draw key in `frame.rs`; the shaders `lib/coat_sheen.wgsl`, `lit.wgsl`, `lib/lights.wgsl`, `lib/globals.wgsl` and `lib/mesh.wgsl`, with the `coat_sheen` feature in the shader manifest; the custom materials' detection in the shader crate; the options in `packages/engine/src/scene/resources.ts`; the glTF reader.
 - Docs: `api/materials`, `concepts/materials`, `shaders/surface-functions`, `api/assets` and `concepts/assets`, and the mapping entries `mat-physical`, `mat-clearcoat` and `mat-sheen`.
 - Skills: the develop skill's quick reference and materials notes, and the port skill's materials notes.
-- Tests: unit tests of the row, the builds, the options and the glTF reader; image tests of the layers, their maps, a custom material and the Khronos models; parity scenes with three.js; the first-use download test; a layers switch for `bench:allocation` and the benchmark pages.
+- Tests: unit tests of the row, the builds, the options and the glTF reader; image tests of the layers, their maps, a custom material and the Khronos models; parity scenes with three.js; the first-use download test; a `--coat-sheen` switch for `bench:allocation`, and a `coatSheen` switch for the benchmark pages.
 - Sample content: the Khronos models ClearCoatTest, ClearCoatCarPaint, ClearcoatWicker, SheenChair, SheenCloth, SheenTestGrid and ToyCar join the sample-assets repository.

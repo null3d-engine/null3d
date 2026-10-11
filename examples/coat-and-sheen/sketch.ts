@@ -41,7 +41,7 @@ export default defineSketch(async (ctx) => {
 	// The floor, wet cobbles in the rain.
 	scene.createMesh({
 		mesh: geometry.plane({ width: 40, height: 40 }),
-		material: materials.shader({ wgsl: cobbles, color: '#9a948c', roughness: 0.9 }),
+		material: materials.shader({ wgsl: cobbles, color: '#77716a', roughness: 0.85 }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
 	});
@@ -98,7 +98,7 @@ export default defineSketch(async (ctx) => {
 
 	// Velvet: a crimson curtain behind, and a teal seat beside the plinth.
 	scene.createMesh({
-		mesh: geometry.plane({ width: 9, height: 4.5, widthSegments: 240, heightSegments: 8 }),
+		mesh: geometry.plane({ width: 16, height: 6, widthSegments: 400, heightSegments: 8 }),
 		material: materials.shader({
 			wgsl: drapes,
 			color: '#3d0410',
@@ -107,7 +107,7 @@ export default defineSketch(async (ctx) => {
 			sheenRoughness: 0.35,
 			doubleSided: true,
 		}),
-		position: [0, 2.25, -3.2],
+		position: [0, 3, -3.2],
 		castShadows: true,
 		receiveShadows: true,
 	});
