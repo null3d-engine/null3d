@@ -4,7 +4,7 @@ null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both, or a full shader's `@vertex` and `@fragment` entry points. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
 
-Versions: `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials (0.2): each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. So are post effects (0.2): `post.addEffect` with `fn effect(input: EffectInput) -> vec4f`. The other inputs and built-in values that the tables below mark (0.2) come later in 0.2, as do custom passes. A port that needs a later part waits for it, or keeps its values in the standard options.
+Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. `materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials (0.2): each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. So are post effects (0.2): `post.addEffect` with `fn effect(input: EffectInput) -> vec4f`. Scene and reflection passes (`render.addPass`, 0.2) are built too, and so are the inputs and built-in values of three.js's shader materials (0.2): `uv1`, `instance`, `fragCoord`, the camera's matrices and planes, and the object's matrices and id. Full-screen passes of your own WGSL are (0.2, not built yet). A port that needs a part that is not built yet waits for it, or keeps its values in the standard options.
 
 ## Contents
 
@@ -32,7 +32,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
 
-Surface functions keep instancing, shadows, fog and both backends working, and skinning when it comes in 0.2. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, uniforms or standard values.
+Surface functions keep instancing, shadows, fog and both backends working, and skinning. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, uniforms or standard values.
 
 ## 2. GLSL to WGSL
 
@@ -83,7 +83,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 | `normalMatrix` (view space in three.js) | `input.normal` is already in world space. `object.normalMatrix` (0.2) turns a mesh normal into world space; multiply by `camera.view` for view space |
 | `cameraPosition` | `camera.position` |
 | Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.normal` |
-| `instanceMatrix`, `instanceColor` | The engine applies the instance's transform. A batch made with `colors: true` multiplies each row's color into `input.vertexColor` (0.2; 0.1 stores the colors only) |
+| `instanceMatrix`, `instanceColor` | The engine applies the instance's transform. A batch made with `colors: true` multiplies each row's color into `input.vertexColor` (0.2) |
 | Instanced attributes (`InstancedBufferAttribute`), such as a per-instance phase or tint | `object.values` (0.2): four floats per row from a batch made with `values: true`, in `vertexOffset` and surface functions. Pack up to four numbers per instance into them |
 | Uniform `time` passed by the app | `frame.time` |
 | `#include <fog_fragment>` and fog uniforms | Nothing: fog is applied after the surface function |

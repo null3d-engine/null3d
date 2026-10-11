@@ -5,14 +5,14 @@
     {
       "id": 1,
       "prompt": "Set up a null3d scene for a turntable product viewer: the sneaker model is at /models/sneaker.glb. I want soft studio lighting, an orbit camera that can't go below the floor, and a soft shadow on the floor. It has to run well on phones.",
-      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch sets up a directional light with an ambient fill light, orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. The answer says that glTF loading, environments, and the shadow catcher come in 0.2, that hemisphere lights do not light surfaces yet, uses a placeholder until then, and gives asset advice with versions.",
+      "expected_output": "A page.ts and sketch.ts pair for engine 0.1: the page creates the engine; the sketch loads the sneaker with assets.loadGltf and scene.instantiate, lights it with a directional light and a soft fill such as assets.builtinEnvironment('room'), and sets up orbit controls limited above the floor, a floor that receives the light's shadow, and warm-up behind a loading step. The answer marks materials.shadowCatcher as not built yet if it names it, and gives asset advice for phones.",
       "files": [],
       "expectations": [
         "page.ts calls createEngine with the canvas and the sketch module, and sketch.ts uses defineSketch",
-        "States that glTF loading comes in engine 0.2, and does not present assets.loadGltf or scene.instantiate as working in 0.1; it uses a placeholder mesh or asks how to proceed",
+        "Loads the sneaker with assets.loadGltf and places it with scene.instantiate, with no placeholder mesh",
         "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
-        "The floor mesh receives shadows and the directional light casts them; materials.shadowCatcher, if named, is marked as 0.2",
-        "Lighting uses a directional light and an ambient light; a hemisphere light, if used, is marked as 0.2, and an environment, if named, is marked as 0.2",
+        "The floor mesh receives shadows and the directional light casts them; materials.shadowCatcher, if named, is marked as not built yet",
+        "Lighting uses a directional light with a soft fill: an environment such as assets.builtinEnvironment('room'), an ambient light or a hemisphere light; none of them is presented as not built",
         "The code awaits scene.warmUp() or preloads assets before showing the model",
         "No DOM access appears in sketch.ts and onUpdate allocates nothing",
         "Recommends small textures and meshes for phones, and marks bunx @null3d/cli assets optimize as 0.2 if it names it"
@@ -51,11 +51,10 @@
     {
       "id": 4,
       "prompt": "In my null3d RTS prototype, clicking a unit should select it with an outline and show its name and health in an HTML label above it.",
-      "expected_output": "The answer states first that object events, raycasts, outlines and tracked labels come in engine 0.2. For 0.2 it shows units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; the outline through post.set and setOutlined; labels with ui.trackLabel in the sketch and engine.labels.bind on the page; and health messages only on change.",
+      "expected_output": "The answer shows units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; the outline through post.set and setOutlined; labels with ui.trackLabel in the sketch and engine.labels.bind on the page; and health messages only on change.",
       "files": [],
       "expectations": [
-        "States before any code that object events, raycasts, outlines and tracked labels come in engine 0.2, and that the docs status decides",
-        "Does not present obj.on, scene.raycast, post.set({ outline }) or ui.trackLabel as working in 0.1",
+        "Presents obj.on, scene.raycast, post.set({ outline }) and ui.trackLabel as built, not as planned or missing",
         "Selection uses obj.on('click') or camera.screenToRay with scene.raycast using ray and hit objects created once",
         "A layer mask limits picking to units",
         "The outline uses post.set({ outline }) and setOutlined(true) on the selected unit only",
@@ -72,7 +71,7 @@
         "Names the Cross-Origin-Opener-Policy same-origin and Cross-Origin-Embedder-Policy require-corp headers",
         "Mentions CORS or Cross-Origin-Resource-Policy headers for assets from other origins",
         "Mentions that Safari does not support COEP credentialless",
-        "Suggests checking crossOriginIsolated and the errors in the browser console; bunx @null3d/cli doctor, if named, is marked as 0.3",
+        "Suggests checking crossOriginIsolated and the errors in the browser console; bunx @null3d/cli doctor, if named, is marked as not built yet",
         "Points to getting-started/hosting",
         "Mentions the single-threaded fallback when headers cannot be set"
       ]
@@ -80,23 +79,23 @@
     {
       "id": 6,
       "prompt": "Use null3d to add motion blur to my racing game.",
-      "expected_output": "The answer says motion blur is not in null3d, does not invent a post.set option for it, and explains that a custom effect cannot read the frame before, so it offers to skip it or to fake speed another way, such as a radial blur effect toward the screen's center with post.addEffect, which needs engine 0.2.",
+      "expected_output": "The answer says motion blur is not in null3d, does not invent a post.set option for it, and explains that a custom effect cannot read the frame before, so it offers to skip it or to fake speed another way, such as a radial blur effect toward the screen's center with post.addEffect, which is built.",
       "files": [],
       "expectations": [
         "States that motion blur is not part of null3d or that its docs status must be checked",
         "Does not use a nonexistent option such as post.set({ motionBlur })",
-        "Offers a workaround using post.addEffect, marked as engine 0.2, or explains the trade-off of skipping it",
+        "Offers a workaround using post.addEffect, presented as built, or explains the trade-off of skipping it",
         "Mentions the cost of wide blurs on phones"
       ]
     },
     {
       "id": 7,
       "prompt": "Use null3d to add depth of field to my cinematic camera, like an 85 mm lens wide open, focused on the hero.",
-      "expected_output": "The answer sets the camera's lens with camera.setFocalLength(85) and turns depth of field on with post.set({ dof: { aperture, focusPoint } }), both marked as engine 0.2. It passes the hero's position as the focus point each frame from an array changed in place, and says that depth of field draws where the quality setting dofSamples is above 0, which is 0 on Low.",
+      "expected_output": "The answer sets the camera's lens with camera.setFocalLength(85) and turns depth of field on with post.set({ dof: { aperture, focusPoint } }), both built. It passes the hero's position as the focus point each frame from an array changed in place, and says that depth of field draws where the quality setting dofSamples is above 0, which is 0 on Low.",
       "files": [],
       "expectations": [
-        "Uses camera.setFocalLength(85) for the lens, marked as engine 0.2",
-        "Uses post.set({ dof: { ... } }) with an f-number aperture such as 1.4 or 1.8, marked as engine 0.2",
+        "Uses camera.setFocalLength(85) for the lens",
+        "Uses post.set({ dof: { ... } }) with an f-number aperture such as 1.4 or 1.8",
         "Focuses with focusPoint on the hero's position, passed again each frame without allocating, or with focusDistance",
         "Mentions that the Low preset draws no depth of field unless quality.set({ dofSamples }) turns it on"
       ]

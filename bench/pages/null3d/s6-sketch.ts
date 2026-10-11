@@ -12,7 +12,8 @@
 // held frame loads everything before it draws.
 //
 // The engine runs it with the quality preset that it chooses, as S4 does: the preset decides the
-// shadows, ambient occlusion (High and Ultra) and software occlusion culling (Medium and up).
+// shadows and ambient occlusion (High and Ultra). Every preset leaves software occlusion culling
+// off.
 //
 // Clicks pick buildings: a label names the picked building where the click hit it. Labels follow the
 // eight tallest towers. With `?demo`, the stats overlay shows the frame's phases, and Space pauses

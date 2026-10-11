@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are custom post effects and tone curves (0.2). Sections 1 to 6 and 8 to 10 apply now, apart from the parts marked (0.2) that say they come later. Custom passes (section 7) are not built yet. Do not ship code that uses a part until its docs page says it is built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and scene and reflection passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
 
 ## Contents
 
@@ -12,7 +12,7 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 4. Uniforms, textures and per-instance data
 5. Vertex offsets and full shaders
 6. Custom post effects and tone curves (0.2)
-7. Custom passes (later in 0.2)
+7. Custom passes
 8. Portable WGSL rules
 9. Imports from the shader library
 10. Debugging shaders
@@ -22,14 +22,14 @@ Custom materials with surface functions, uniforms, vertex offsets, the built-in 
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows follow the offset) |
 | Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
 | A full-screen image effect, or a tone curve of your own | Post effect or tone curve (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
 
-A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, and later `fn vertexOffset`), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
+A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, `fn vertexOffset` or both), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
 
 ## 2. Surface functions
 
@@ -116,7 +116,7 @@ The engine renders relative to the camera. `input.relativePosition` is therefore
 
 ## 4. Uniforms, textures and per-instance data
 
-Uniforms are built, and so are textures (0.2). Per-instance data comes in 0.2. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
+Uniforms are built, and so are textures (0.2) and per-instance data (0.2). The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
 
 ```ts
 materials.shader({
@@ -211,7 +211,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 
 - Exactly this signature; the build rejects another.
 - Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
-- Shadows use the unmoved vertices.
+- Shadows follow the moved vertices, and draw again in every frame.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
 A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
@@ -304,7 +304,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
-- Full-screen passes of your own WGSL come later in 0.2. Until then, write full-screen WGSL as a custom effect (section 5). Docs: `api/render`, `guides/custom-passes`.
+- Full-screen passes of your own WGSL are (0.2, not built yet). Until then, write full-screen WGSL as a custom effect (section 6). Docs: `api/render`, `guides/custom-passes`.
 
 A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
 
