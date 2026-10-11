@@ -8,7 +8,7 @@ summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvi
 
 # Assets
 
-> Ships in null3D 0.1, with glTF models, color grading tables and environments from 0.2. The API is experimental, so it can still change between versions. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds glTF models, color grading tables and environments. The API is experimental, so it can still change between versions. Morph targets load but do not draw. glTF files with Draco compression do not load yet. Coding agents must not use these parts.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 

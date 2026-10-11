@@ -273,7 +273,7 @@ So the compute pass fails the rule on this iPad too.
 
 ## Addendum, 2026-10-08: the owner's ruling
 
-On 8 October 2026, at about 11:00, the owner ruled on this record: the vertex shaders skin on WebGPU by default. The rule decided it. The figures that decided it are in the addenda above:
+On 8 October 2026 the owner ruled on this record: the vertex shaders skin on WebGPU by default. The rule decided it. The figures that decided it are in the addenda above:
 
 - With every knight walking in S5, the compute pass saved at most 4.3% of the GPU time (the cloud iPad), against the rule's 10%. It saved 4.1% on the Pixel 9, 1% on the Mac's Chrome and 0% on the Pixel 11, and cost 5.6% more on the Galaxy S25.
 - On the timing page, the vertex shaders were faster on every phone and on the cloud iPad, at 2 and 4 cascades. The compute pass took 4% to 79% more GPU time.
