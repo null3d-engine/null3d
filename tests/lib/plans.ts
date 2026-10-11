@@ -52,6 +52,7 @@ import {
 	soakProblems,
 	soakRow,
 } from '../../bench/pages/lib/device-soak.ts';
+import { summarizeTrace } from '../../bench/pages/lib/trace.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
@@ -218,6 +219,8 @@ export type Check =
 			page: BenchPageKind;
 			jobs?: number;
 			reflection?: ReflectionSize;
+			/** A showcase scene's sustained run, which must hold its target frame rate. */
+			sustained?: true;
 	  }
 	/** The visual page of a benchmark scene: its shadow figures and frames, on one GPU path. */
 	| { kind: 'visual'; tier: Tier; scene: BenchScene }
@@ -255,7 +258,7 @@ export type Check =
 	/** The tab memory page, which grows one kind of memory until something gives. */
 	| { kind: 'tab-memory'; growth: GrowthKind; tier?: Tier; round: number }
 	/** A benchmark scene played for many minutes and measured once a minute. */
-	| { kind: 'soak'; tier: Tier; minutes: number }
+	| { kind: 'soak'; tier: Tier; scene: BenchScene; minutes: number }
 	/** The scene page after a simulated GPU loss: the engine must draw the whole scene again. */
 	| { kind: 'recovery'; tier: Tier; run: ImageRun }
 	/** The warm-up time page with a scene's sketch, with fresh shaders or with those compiled before. */
@@ -627,7 +630,7 @@ export function checksPlan(): PlanItem<Check>[] {
 
 /**
  * The image tests of the smoke plan: one for each main feature of the engine's drawing. Each one
- * runs on every GPU tier, in its first thread mode.
+ * runs on every GPU tier, in its first thread mode. M2's features follow M1's.
  */
 export const SMOKE_IMAGE_TESTS: ReadonlySet<string> = new Set([
 	's1',
@@ -643,9 +646,41 @@ export const SMOKE_IMAGE_TESTS: ReadonlySet<string> = new Set([
 	'point-shadows',
 	'tone-aces',
 	'custom-surface',
+	// glTF's extensions, copies of a loaded model, and the asset tool's output
+	'gltf-meshopt-khr',
+	'gltf-instancing',
+	'gltf-lights',
+	'gltf-copies',
+	'asset-scene-optimized',
+	'texture-budget',
+	// Animation, skinning and morph targets
+	'gltf-animated',
+	'skinning-shadows',
+	'morph',
+	// Environment light and backgrounds
+	'environment-room',
+	'background-sky',
+	// The effects chain
+	'bloom-soft',
+	'ao-default',
+	'lut-vignette',
+	'outline-plain',
+	'effects',
+	// Sprites and wide lines, far from the origin, and custom material textures
+	'sprites',
+	'lines',
+	'cells-1000km',
+	'custom-textures',
+	// Software occlusion culling, and the showcase scenes
+	'occlusion-on',
+	's5',
+	's6',
 ]);
 
-/** The page kinds of the checks plan that the smoke plan keeps on every GPU path. */
+/**
+ * The page kinds of the checks plan that the smoke plan keeps on every GPU path, with M2's pages
+ * that found device faults: the KTX2 formats, the skinning pass and the environment generator.
+ */
 const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'capabilities',
 	'isolation',
@@ -655,6 +690,9 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'mip-levels',
 	'preset-change',
 	'stats',
+	'ktx2',
+	'skin-pass',
+	'environment-generator',
 ]);
 
 /** Whether the smoke plan keeps an item of the checks plan. */
@@ -682,7 +720,8 @@ function inSmokePlan({ id, check }: PlanItem<Check>): boolean {
  * A short version of the checks plan, about a tenth of its pages, for a device in a cloud session
  * of limited time. It keeps the pages that find a device's faults soonest: the capability report,
  * isolation, every shader's compile, the shader library, uploads, presets, warm-up and stats on
- * each GPU path, the main features' image tests, the restarts of each build, and starts and stops
+ * each GPU path, the KTX2 formats, the skinning pass and the environment generator, the main
+ * features' image tests, the restarts of each build, and starts and stops
  * in frames, as the runner page runs every page. New GPU tiers and thread modes join by the same
  * rules.
  */
@@ -837,6 +876,82 @@ export function benchPlan({
 		...timed,
 		...scenes.flatMap((scene) => tiers.map((tier) => visualItem(scene, tier, count))),
 	];
+}
+
+/** The showcase scenes of M2's gate: S4, the phone town, S5, the crowd, and S6, the city. */
+export const SHOWCASE_SCENES: readonly BenchScene[] = ['s4', 's5', 's6'];
+/**
+ * The warm-up and the measured seconds of a sustained run: a 10-minute run, as M1's gate ran S4.
+ */
+export const SUSTAINED_SECONDS = 300;
+/**
+ * The percentage of a sustained run's measured seconds that must hold the target frame rate, as
+ * the gates ask of each showcase scene.
+ */
+export const SUSTAINED_HELD_PERCENT = 95;
+/**
+ * The rest before each sustained run after the first, so that a phone or a tablet starts each one
+ * cooler than the last one left it.
+ */
+export const SUSTAINED_REST_SECONDS = 300;
+/** The pages that the showcase plan compares: null3D's two GPU paths and their three.js twins. */
+const SHOWCASE_PAGES: readonly BenchPageKind[] = [
+	'null3d-webgpu',
+	'null3d-webgl2',
+	'threejs-webgpu',
+	'threejs-webgl',
+];
+
+/**
+ * The showcase scenes as the gate measures them on a device. First comes a sustained run of each
+ * scene on each of null3D's GPU paths: `seconds` of warm-up and `seconds` measured, with the
+ * preset that the engine chooses, dynamic resolution and the governor, as an app runs. Each must
+ * hold its target frame rate in 95% of its measured seconds. The device rests before each one after
+ * the first. Then `runs` runs of each scene's null3D pages and their three.js twins take turns, for
+ * the comparison of CPU time per frame. A device that lacks a GPU path skips its pages.
+ */
+export function showcasePlan({
+	runs = BENCH_RUNS,
+	scenes = SHOWCASE_SCENES,
+	seconds = SUSTAINED_SECONDS,
+}: PlanSettings = {}): PlanItem<Check>[] {
+	const sustained = scenes.flatMap((scene) =>
+		TIERS.map((tier, k): PlanItem<Check> => {
+			const item = benchItem(`sustained-${scene}-${tier}`, `null3d-${tier}`, { seconds }, scene);
+			const first = scene === scenes[0] && k === 0;
+			return {
+				...item,
+				...(!first && {
+					restSeconds: SUSTAINED_REST_SECONDS,
+					timeoutSeconds: item.timeoutSeconds + SUSTAINED_REST_SECONDS,
+				}),
+				check: { ...item.check, sustained: true } as Check,
+			};
+		}),
+	);
+	const compared = Array.from({ length: runs }, (_, run) =>
+		scenes.flatMap((scene) =>
+			SHOWCASE_PAGES.map((page) => benchItem(`bench-${scene}-${page}-${run + 1}`, page, {}, scene)),
+		),
+	).flat();
+	return [...sustained, ...compared];
+}
+
+/**
+ * What is wrong with a sustained run's trace: too few of its measured seconds held the target frame
+ * rate, the display's rate up to the engine's cap, or the run gave no trace or no rate to judge.
+ */
+function sustainedProblems(result: ItemResult): string[] {
+	const { trace, stats } = result as ItemResult & Partial<BenchResult>;
+	if (!trace || trace.length === 0) return ['the run recorded no trace of its seconds'];
+	const summary = summarizeTrace(trace, stats?.refreshHz ?? null);
+	if (summary.heldSeconds === null) return ['the page knew no refresh rate to set the target'];
+	const percent = (100 * summary.heldSeconds) / summary.seconds;
+	return percent >= SUSTAINED_HELD_PERCENT
+		? []
+		: [
+				`${summary.heldSeconds} of ${summary.seconds} seconds held ${summary.targetFps} fps (${Math.floor(percent)}%), under ${SUSTAINED_HELD_PERCENT}%`,
+			];
 }
 
 /** The image test manifest's depth precision tests, by name. */
@@ -1365,18 +1480,25 @@ export function tabMemoryPlan({ runs = 1 }: PlanSettings = {}): PlanItem<Check>[
 
 /** Minutes of each soak, unless the plan names another number. */
 export const SOAK_MINUTES = 30;
-/** The soaked scene: S4, a city that a full-screen app on a phone or a tablet draws. */
-const SOAK_SCENE: BenchScene = 's4';
+/**
+ * The soaked scenes, unless the plan names others: S4, a city that a full-screen app on a phone or
+ * a tablet draws.
+ */
+const SOAK_SCENES: readonly BenchScene[] = ['s4'];
 /** Time to start the soaked page and build its scene, on top of its minutes. */
 const SOAK_START_SECONDS = 180;
 
 /**
  * The soak and recovery test. First the scene page loses its GPU on purpose in each thread mode on
- * each GPU path, and must draw the whole scene again on a new device. Then S4 plays for `minutes`
- * on each GPU path, from the benchmark pages' production build, measured once a minute: the run's
- * summary gives the GPU losses that the engine recovered from, the frame rates and the memory.
+ * each GPU path, and must draw the whole scene again on a new device. Then each of `scenes` plays
+ * for `minutes` on each GPU path, from the benchmark pages' production build, measured once a
+ * minute: the run's summary gives the GPU losses that the engine recovered from, the frame rates
+ * and the memory.
  */
-export function soakPlan({ minutes = SOAK_MINUTES }: PlanSettings = {}): PlanItem<Check>[] {
+export function soakPlan({
+	minutes = SOAK_MINUTES,
+	scenes = SOAK_SCENES,
+}: PlanSettings = {}): PlanItem<Check>[] {
 	return [
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
@@ -1392,15 +1514,14 @@ export function soakPlan({ minutes = SOAK_MINUTES }: PlanSettings = {}): PlanIte
 				),
 			),
 		),
-		...TIERS.map((tier) => ({
-			id: `soak-${SOAK_SCENE}-${tier}`,
-			path: loadPath(
-				BENCH_BUILD,
-				pagePath(SOAK_SCENE, `null3d-${tier}`, `soak=${minutes}`).slice(1),
-			),
-			timeoutSeconds: minutes * SOAK_SAMPLE_SECONDS + SOAK_START_SECONDS,
-			check: { kind: 'soak' as const, tier, minutes },
-		})),
+		...scenes.flatMap((scene) =>
+			TIERS.map((tier) => ({
+				id: `soak-${scene}-${tier}`,
+				path: loadPath(BENCH_BUILD, pagePath(scene, `null3d-${tier}`, `soak=${minutes}`).slice(1)),
+				timeoutSeconds: minutes * SOAK_SAMPLE_SECONDS + SOAK_START_SECONDS,
+				check: { kind: 'soak' as const, tier, scene, minutes },
+			})),
+		),
 	];
 }
 
@@ -1542,6 +1663,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	smoke: smokePlan,
 	parity: parityPlan,
 	bench: benchPlan,
+	showcase: showcasePlan,
 	memory: memoryPlan,
 	depth: depthPlan,
 	startup: startupPlan,
@@ -2216,6 +2338,7 @@ export function judge(
 				...(frames > 0 ? [] : ['the run measured no frames']),
 				...(frames > 0 && !timed ? ['the run recorded no CPU time'] : []),
 				...(jobs ? [jobs] : []),
+				...(frames > 0 && check.sustained ? sustainedProblems(result) : []),
 			];
 		}
 		case 'hold':
@@ -2404,8 +2527,12 @@ export function benchRows(
 				visual.set(visualName(check), result as unknown as VisualResult);
 		}
 		if (check.kind !== 'bench') continue;
-		const { scene, page, jobs, reflection } = check;
-		const kind = reflection ? `${page} reflection=${reflection}` : page;
+		const { scene, page, jobs, reflection, sustained } = check;
+		const kind = sustained
+			? `${page} sustained`
+			: reflection
+				? `${page} reflection=${reflection}`
+				: page;
 		const key = `${scene} ${kind} ${jobs ?? ''}`;
 		const group = groups.get(key) ?? {
 			scene,
@@ -2792,7 +2919,7 @@ export function tabMemorySummary(
 }
 
 /**
- * The soaks as a Markdown table: for each GPU path, the preset that ran and what the preset check
+ * The soaks as a Markdown table: for each scene on each GPU path, the preset that ran and what the preset check
  * measured, the minutes measured, the GPU losses that the engine recovered from and when, the
  * median and lowest frame rates of a minute, the growth of the WebAssembly memory, and the
  * engine's failures. Undefined when the plan has no soaks.
@@ -2806,8 +2933,10 @@ export function soakSummary(
 		const result = resultOf(id);
 		const report = result?.soak as SoakReport | undefined;
 		if (!report)
-			return [`| ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | | |`];
-		return [soakRow(check.tier, report, result?.mode as SoakMode | undefined)];
+			return [
+				`| ${check.scene} | ${check.tier} | ${result ? failureText(result) : NO_RESULT} | | | | | | |`,
+			];
+		return [soakRow(check.scene, check.tier, report, result?.mode as SoakMode | undefined)];
 	});
 	return rows.length === 0 ? undefined : [...SOAK_TABLE_HEAD, ...rows].join('\n');
 }

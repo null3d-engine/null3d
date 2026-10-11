@@ -3,9 +3,10 @@
 // camera runs a loop of `work` steps for each of its pixels, so the GPU's work follows the pixels
 // that the scene draws. On the page's 'load' message the sketch spins its thread for `spinMs` in
 // each frame and sets the plane's loop, showing the plane only with a loop. On 'governor' it turns
-// the governor on or off. It posts the governor's state at the start, and after each step: the
-// render scale, the steps past it, the far cascades' interval and the shadow filter. ?min= sets
-// the lowest render scale in percent.
+// the governor on or off. It registers a budget for a system of its own, which the governor
+// scales too. It posts the governor's state at the start, and after each step: the render scale,
+// the budget's scale, the steps past the render scale, the far cascades' interval and the shadow
+// filter. ?min= sets the lowest render scale in percent.
 import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
 import {
 	SHADOW_CAMERA,
@@ -112,10 +113,12 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 		} else if (name === 'governor') quality.set({ governor: data as boolean });
 	});
 
+	let budgetScale = 1;
 	const post = () => {
 		const { governor } = quality;
 		page.post('governor-state', [
 			quality.renderScale,
+			budgetScale,
 			governor.steps,
 			governor.farCascadeInterval,
 			governor.shadowFilter,
@@ -123,7 +126,16 @@ export default defineSketch(({ scene, materials, geometry, quality, page }) => {
 	};
 	let scale = quality.renderScale;
 	quality.onChange(post);
-	post();
+	// The spin stays as it is at every scale of the budget, so the load still takes every step.
+	quality.setBudget({
+		name: 'walk',
+		ms: 1,
+		min: GOVERNOR.budgetMin,
+		onScale: (next) => {
+			budgetScale = next;
+			post();
+		},
+	});
 	let spins = 0;
 	return {
 		onUpdate() {
