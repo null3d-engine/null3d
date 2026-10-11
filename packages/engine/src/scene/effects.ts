@@ -536,16 +536,12 @@ export function writeTextures(
 	values: Float32Array,
 	handles: Uint32Array,
 	call: string,
-): Texture[] {
+): void {
 	const declared = compiled.textures;
-	const slots = textureSlots(declared, given ?? {}, call);
-	const used: Texture[] = [];
-	slots.forEach((texture, slot) => {
+	textureSlots(declared, given ?? {}, call).forEach((texture, slot) => {
 		handles[slot] = texture?.handle ?? 0;
-		if (texture) used.push(texture);
-		else values[(declared[slot] as { offset: number }).offset] = -1;
+		if (!texture) values[(declared[slot] as { offset: number }).offset] = -1;
 	});
-	return used;
 }
 
 /** The uniform `name` of an effect, or throws E1216. */
