@@ -4,7 +4,7 @@
 // through the water, bent by the ripples and tinted by its depth. Caustics, the sunlight that the
 // ripples focus, play over the bed. The water is clear at its edges, where it is shallow, and foams
 // where it meets the banks and the stones, with a trail of foam downstream of each stone.
-import type { MeshArrays, SketchContext, Texture } from '@null3d/engine';
+import type { MeshArrays, QualityPreset, SketchContext, Texture } from '@null3d/engine';
 import { STREAM_REACH, WATER } from './land';
 
 /** A stone where it breaks the water: its middle and its radius at the water's height. */
@@ -16,6 +16,11 @@ export interface Obstacle {
 
 /** The area of the map of foam around the stones, in meters, and its texels on each side. */
 const FOAM = { x: 30, z: 6.5, width: 1024, height: 224 } as const;
+/**
+ * The frames between two draws of the reflection at each preset. The camera drifts slowly, so a
+ * reflection drawn every other frame looks the same, at half the cost of the scene's costliest pass.
+ */
+const REFLECT_EVERY: Record<QualityPreset, number> = { low: 2, medium: 2, high: 1, ultra: 1 };
 
 const wgsl = /* wgsl */ `
 #import null3d::reflection::{reflection_uv}
@@ -179,12 +184,16 @@ function foamMap({ textures }: SketchContext, obstacles: readonly Obstacle[]): T
 export interface Water {
 	/** Sets the caustics' light, a linear color whose brightness is their strength. */
 	setCaustics(light: readonly [number, number, number]): void;
+	/** Draws the reflection as often as the preset affords. */
+	fit(preset: QualityPreset): void;
+	/** Switches the reflection on in the frames that draw it. */
+	update(): void;
 }
 
 /**
  * Makes the water and the reflection pass that mirrors the creek's banks in it. The pass draws layer
- * 0 alone, which leaves out the grass far from the water. The stones that break the water give it
- * its foam.
+ * 0 alone, which leaves out the grass far from the water and what lies on or under the water. The
+ * stones that break the water give it its foam.
  */
 export function createWater(
 	ctx: SketchContext,
@@ -193,9 +202,13 @@ export function createWater(
 ): Water {
 	const { scene, geometry, materials, textures, render } = ctx;
 	const plane = { point: [0, WATER, 0] } as const;
-	const mirror = textures.fromPass(
-		render.addPass({ kind: 'reflection', writes: 'creek', plane, layers: 1 }),
-	);
+	const pass = render.addPass({
+		kind: 'reflection',
+		writes: 'creek',
+		plane,
+		layers: 1,
+	});
+	const mirror = textures.fromPass(pass);
 	const material = materials.shader({
 		wgsl,
 		color: '#ffffff',
@@ -216,7 +229,16 @@ export function createWater(
 		receiveShadows: true,
 	});
 	const light: [number, number, number] = [0, 0, 0];
+	let every = 1;
+	let frame = 0;
 	return {
+		fit(preset) {
+			every = REFLECT_EVERY[preset];
+		},
+		update() {
+			frame = (frame + 1) % every;
+			render.setPassEnabled(pass, frame === 0);
+		},
 		setCaustics(next) {
 			light[0] = next[0];
 			light[1] = next[1];

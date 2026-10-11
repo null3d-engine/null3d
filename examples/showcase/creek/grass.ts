@@ -13,7 +13,7 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import { random } from '../../lib/procedural';
-import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
+import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 
 /** Tufts of grass at each preset, over the three tuft shapes. */
 export const TUFTS: Record<QualityPreset, number> = {
@@ -113,8 +113,6 @@ function tuft(seed: number): MeshArrays {
 /** A scratch quaternion for each tuft's turn. */
 const spin = quat.create();
 
-/** The layer of the grass far from the water, which the camera draws and the reflection does not. */
-export const INLAND_LAYER = 2;
 /** Tufts nearer the water than this many half widths of the stream show in its reflection. */
 const EDGE = 1.7;
 /** The width of the squares that group nearby rows, in meters. */
@@ -205,7 +203,7 @@ export function createGrass(
 				material,
 				castShadows: near,
 				receiveShadows: true,
-				layers: near ? 1 : INLAND_LAYER,
+				layers: near ? 1 : UNREFLECTED_LAYER,
 				values: true,
 			});
 			// A batch made with values has its array.

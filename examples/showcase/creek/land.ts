@@ -6,6 +6,11 @@ import { Noise, type TexelSample, terrain, textureSet } from '../../lib/procedur
 
 /** The height of the water's surface. */
 export const WATER = 0;
+/**
+ * The layer of what the camera draws and the water's reflection leaves out: the grass far from the
+ * water, the pebbles and the floating leaves, which lie under or on the water's plane.
+ */
+export const UNREFLECTED_LAYER = 2;
 /** The width and depth of the land, in meters, centered on the origin. */
 export const LAND = 160;
 

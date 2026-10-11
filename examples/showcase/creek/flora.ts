@@ -11,7 +11,7 @@ import {
 } from '@null3d/engine';
 import { random, within } from '../../lib/procedural';
 import type { Crown } from './air';
-import { groundHeight, streamHalf, streamZ, WATER } from './land';
+import { groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 import { type Models, PLANT_KINDS, type PlantKind, placed, type TreeKind } from './models';
 import { CAVE } from './stones';
 
@@ -123,6 +123,7 @@ export async function createFlora(
 			dynamic: true,
 			castShadows: true,
 			receiveShadows: true,
+			layers: UNREFLECTED_LAYER,
 		}),
 	);
 	const drift = Float32Array.from({ length: FLOATING * 3 * 4 }, () => next());

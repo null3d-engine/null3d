@@ -10,7 +10,7 @@ import {
 	type SketchContext,
 } from '@null3d/engine';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
-import { fromStream, groundHeight, streamHalf, streamZ, WATER } from './land';
+import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 import { type Part, placed } from './models';
 import type { Obstacle } from './water';
 
@@ -153,6 +153,7 @@ export function createStones(
 				// Wet pebbles: glossy, at the water's edge and under it.
 				material: materials.standard({ color, roughness: 0.35, ...maps }),
 				receiveShadows: true,
+				layers: UNREFLECTED_LAYER,
 			});
 			for (let row = 0; row < capacity; ) {
 				const x = -20 + 40 * next();

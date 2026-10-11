@@ -13,8 +13,8 @@ import { interact } from '../../lib/interact';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
-import { createGrass, INLAND_LAYER } from './grass';
-import { createLand, WATER } from './land';
+import { createGrass } from './grass';
+import { createLand, UNREFLECTED_LAYER, WATER } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
@@ -64,7 +64,7 @@ export default defineSketch(async (ctx) => {
 		fov: FOV,
 		near: 0.05,
 		far: 2000,
-		layers: 1 | INLAND_LAYER,
+		layers: 1 | UNREFLECTED_LAYER,
 	});
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, {
@@ -85,6 +85,7 @@ export default defineSketch(async (ctx) => {
 	const fit = () => {
 		grass.fit(quality.preset);
 		stones.fit(quality.preset);
+		water.fit(quality.preset);
 	};
 	fit();
 
@@ -150,6 +151,7 @@ export default defineSketch(async (ctx) => {
 			if (dslr) post.set(lens);
 			flora.update(t);
 			air.update(t);
+			water.update();
 		},
 		onLateUpdate() {
 			shafts.update();
