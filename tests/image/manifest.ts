@@ -524,7 +524,8 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
- * The quarter test draws the reflection at a quarter of the render size. The reflection spec
+ * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
+ * boxes with a point light and a spot light, which their reflections show too. The reflection spec
  * checks where the boxes' reflections land, and that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
@@ -537,6 +538,7 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-mirror', ''),
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
+		test('reflection-lamps', '?lamps'),
 	];
 }
 
