@@ -97,9 +97,9 @@ export const DEMOS: readonly Demo[] = [
 		group: 'Building scenes',
 		sketch: new URL('./extra-shapes/sketch.ts', import.meta.url),
 		title: 'Extra shapes',
-		scene: 'Shape gallery at dusk',
+		scene: 'Mirror floor at dusk',
 		summary:
-			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes.',
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
 		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
 		hold: 1,
 		timeoutSeconds: 60,
@@ -109,11 +109,11 @@ export const DEMOS: readonly Demo[] = [
 		group: 'Building scenes',
 		sketch: new URL('./vertex-updates/sketch.ts', import.meta.url),
 		title: 'Vertex updates',
-		scene: 'Wave pool',
+		scene: 'Pool at golden hour',
 		summary:
-			'A sheet of water whose waves move every frame. The sketch rewrites its positions and normals and passes them to mesh.updateVertices, which allocates nothing.',
-		controls: `${CAMERA} Move the mouse, or tap, to drop a wave on the water.`,
-		hold: 1,
+			"A glowing float leaves rings on a pool. Each frame the sketch rewrites the water's positions and normals and passes them to mesh.updateVertices, which allocates nothing.",
+		controls: `${CAMERA} Move the mouse, or tap, to lead the float.`,
+		hold: 2.5,
 		timeoutSeconds: 60,
 	},
 	{

@@ -1,73 +1,146 @@
-// Vertex updates: a sheet of water whose waves move every frame. The sketch keeps one array of
-// positions and one of normals, rewrites them in each update, and hands them to
+// Vertex updates: a stone pool at golden hour. A glowing float, which the pointer leads, leaves rings
+// on a slow swell. Each update rewrites one array of positions and one of normals, and hands them to
 // mesh.updateVertices, which allocates nothing. The engine uploads only the vertices that changed.
-// The mesh keeps the bounding sphere of the shape it was made with, so the sheet gets bounds of
-// its own that hold the highest waves.
-import { defineSketch } from '@null3d/engine';
+// The mesh keeps its first bounds, so the water gets bounds that hold the highest waves.
+import { defineSketch, timeOfDay, type Vec3, vec3 } from '@null3d/engine';
+import { interact } from '../lib/interact';
 
-/** Quads along each side of the sheet. */
-const SIDE = 64;
-/** The sheet's width and depth. */
-const SIZE = 6;
-/** The highest a wave rises above the sheet's middle. */
-const HEIGHT = 0.25;
+/** Quads along each side of the water, and the water's width and depth. */
+const SIDE = 96;
+const SIZE = 12;
+/** The run between the two neighbors that a normal's slopes span. */
+const STEP = (2 * SIZE) / SIDE;
+/** The highest that the swell and the rings rise together. */
+const HEIGHT = 0.2;
+/** How many rings move at once, the seconds between two of them, and their speed in m/s. */
+const RINGS = 12;
+const EVERY = 0.35;
+const SPEED = 1.6;
+/** The box that keeps the float inside the pool's rim. */
+const BOUNDS = [-5, 0, -5, 5, 0, 5] as const;
 
-/** The water's height at (x, z) and time t, and its slopes along x and z. */
-function wave(x: number, z: number, t: number, out: Float32Array): void {
-	const a = x * 1.5 + t * 2;
-	const b = z * 1.2 + t * 1.3;
-	out[0] = HEIGHT * Math.sin(a) * Math.cos(b);
-	out[1] = HEIGHT * 1.5 * Math.cos(a) * Math.cos(b);
-	out[2] = -HEIGHT * 1.2 * Math.sin(a) * Math.sin(b);
-}
+/** The float's own path while the pointer does not lead it: a slow loop over the pool. */
+const drift = (t: number, out: Vec3) =>
+	vec3.set(out, 3.2 * Math.sin(t * 0.45), 0, 2.4 * Math.sin(t * 0.9 + 0.6));
 
-export default defineSketch(({ scene, geometry, materials, time }) => {
-	scene.setBackground('#0d1620');
-	const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 4, 7], target: [0, 0, 0] });
+export default defineSketch(async (ctx) => {
+	const { scene, assets, geometry, materials, post, time } = ctx;
+	const day = timeOfDay(17.2, { heading: -2.4 });
+	scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
+	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
+	scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+	post.set({ exposure: day.exposure, bloom: { threshold: 1 }, ao: {}, vignette: {} });
+	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 30 } });
+	const camera = scene.createPerspectiveCamera({
+		fov: 45,
+		position: [0, 7, 11],
+		target: [0, 0, 0],
+	});
 	scene.setActiveCamera(camera);
-	scene.createDirectionalLight({ direction: [-1, -2, -1.5], intensity: 3 });
-	scene.createAmbientLight({ intensity: 0.4 });
+	const view = interact(ctx, camera, { target: [0, 0, 0], groundY: 0, bounds: BOUNDS });
 
+	// The pool's rim and the deck around it, in warm stone.
+	const stone = materials.standard({ color: '#c9b49a', roughness: 0.8 });
+	const deck = materials.standard({ color: '#8c7a66', roughness: 0.9 });
+	const rim = SIZE / 2 + 0.3;
+	for (const [x, z, w, d] of [
+		[0, -rim, SIZE + 1.2, 0.6],
+		[0, rim, SIZE + 1.2, 0.6],
+		[-rim, 0, 0.6, SIZE],
+		[rim, 0, 0.6, SIZE],
+	])
+		scene.createMesh({
+			mesh: geometry.box({ width: w, height: 0.5, depth: d }),
+			material: stone,
+			position: [x, 0.05, z],
+			castShadows: true,
+			receiveShadows: true,
+		});
+	scene.createMesh({
+		mesh: geometry.plane({ width: 400, height: 400 }),
+		material: deck,
+		position: [0, -0.2, 0],
+		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+		receiveShadows: true,
+	});
+
+	// The water: a grid whose heights the update writes, with normals from the heights around each.
 	const row = SIDE + 1;
 	const positions = new Float32Array(row * row * 3);
 	const normals = new Float32Array(row * row * 3);
 	const indices = new Uint16Array(SIDE * SIDE * 6);
-	for (let j = 0; j < SIDE; j++)
-		for (let i = 0; i < SIDE; i++) {
-			const a = j * row + i;
-			indices.set([a, a + row, a + 1, a + 1, a + row, a + row + 1], (j * SIDE + i) * 6);
-		}
-	const sample = new Float32Array(3);
-	/** Writes the sheet's positions and normals at time t. */
-	const shape = (t: number) => {
-		for (let j = 0; j < row; j++)
-			for (let i = 0; i < row; i++) {
-				const k = (j * row + i) * 3;
-				const x = (i / SIDE - 0.5) * SIZE;
-				const z = (j / SIDE - 0.5) * SIZE;
-				wave(x, z, t, sample);
-				const [y = 0, dx = 0, dz = 0] = sample;
-				const length = Math.hypot(dx, 1, dz);
-				positions[k] = x;
-				positions[k + 1] = y;
-				positions[k + 2] = z;
-				normals[k] = -dx / length;
-				normals[k + 1] = 1 / length;
-				normals[k + 2] = -dz / length;
-			}
-	};
-	shape(0);
+	for (let v = 0; v < row * row; v++) {
+		positions[v * 3] = ((v % row) / SIDE - 0.5) * SIZE;
+		positions[v * 3 + 2] = (Math.floor(v / row) / SIDE - 0.5) * SIZE;
+		normals[v * 3 + 1] = 1;
+	}
+	for (let q = 0; q < SIDE * SIDE; q++) {
+		const a = Math.floor(q / SIDE) * row + (q % SIDE);
+		indices.set([a, a + row, a + 1, a + 1, a + row, a + row + 1], q * 6);
+	}
 	const sheet = geometry.fromArrays({ positions, normals, indices });
 	const water = scene.createMesh({
 		mesh: sheet,
-		material: materials.standard({ color: '#2f7fb8', roughness: 0.25, metalness: 0.1 }),
+		material: materials.standard({ color: '#0b3d4a', roughness: 0.04 }),
+		receiveShadows: true,
 	});
-	// The corners reach past the flat sheet's sphere as the waves rise.
+	// The corners reach past the flat water's sphere as the waves rise.
 	water.setBounds([0, 0, 0], Math.hypot(SIZE / 2, HEIGHT, SIZE / 2));
 
+	// The float: a warm lamp that bloom spreads into a glow, with a light that the water reflects.
+	const float = scene.createMesh({
+		mesh: geometry.sphere({ radius: 0.22 }),
+		material: materials.standard({ color: '#000000', emissive: '#ffb35c', emissiveIntensity: 6 }),
+		dynamic: true,
+	});
+	scene.createPointLight({ parent: float, color: '#ffb35c', intensity: 20, range: 6 });
+
+	// Where each ring started, three numbers each, and when. Slots never used start long ago.
+	const rings = new Float32Array(RINGS * 3);
+	const starts = new Float32Array(RINGS).fill(-1e3);
+	const [here, past] = [vec3.create(), vec3.create()];
+	let next = 0;
+
 	return {
-		onUpdate() {
-			shape(time.now);
+		onUpdate(dt) {
+			const t = time.now;
+			view.update(dt);
+			// The float follows its path, or the pointer. A ring starts under it at each tick.
+			view.steer(drift(t, here));
+			for (; next <= t / EVERY; next++) {
+				view.steer(drift(next * EVERY, past));
+				rings.set(past, (next % RINGS) * 3);
+				starts[next % RINGS] = next * EVERY;
+			}
+			float.setPosition(here[0], 0.15 + 0.05 * Math.sin(t * 3), here[2]);
+
+			// Heights: a slow swell, plus each ring's crest, which fades as it spreads.
+			for (let v = 0; v < row * row; v++) {
+				const x = positions[v * 3];
+				const z = positions[v * 3 + 2];
+				let y = 0.04 * Math.sin(x * 0.8 + t * 1.2) * Math.cos(z * 0.6 + t * 0.9);
+				for (let k = 0; k < RINGS; k++) {
+					const age = t - starts[k];
+					if (age < 0 || age > 4) continue;
+					const r = Math.hypot(x - rings[k * 3], z - rings[k * 3 + 2]) - SPEED * age;
+					y += 0.08 * Math.exp(-1.2 * age - 5 * r * r) * Math.cos(r * 12);
+				}
+				positions[v * 3 + 1] = y;
+			}
+			// Normals from the slopes between each vertex's neighbors.
+			for (let v = 0; v < row * row; v++) {
+				const i = v % row;
+				const j = (v - i) / row;
+				const dx =
+					positions[(v + (i < SIDE ? 1 : 0)) * 3 + 1] - positions[(v - (i > 0 ? 1 : 0)) * 3 + 1];
+				const dz =
+					positions[(v + (j < SIDE ? row : 0)) * 3 + 1] -
+					positions[(v - (j > 0 ? row : 0)) * 3 + 1];
+				const length = Math.hypot(dx, STEP, dz);
+				normals[v * 3] = -dx / length;
+				normals[v * 3 + 1] = STEP / length;
+				normals[v * 3 + 2] = -dz / length;
+			}
 			sheet.updateVertices('positions', positions);
 			sheet.updateVertices('normals', normals);
 		},

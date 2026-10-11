@@ -199,7 +199,7 @@ The call follows these rules:
 - Values that do not fit the mesh throw [E1206](../errors/E1206.md), and so does a mesh with joints or morph targets.
 - The call allocates nothing, so a call in every frame makes no garbage.
 
-Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves waves over a sheet of water this way.
+Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves rings over a pool of water this way.
 
 The mesh keeps the bounding sphere of the vertices that it was made with, as three.js keeps a geometry's `boundingSphere` until you compute it again. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices. The first query after an update builds the mesh's tree again. So a scene that updates a large mesh and raycasts in each frame pays for a build in each frame. Shadows of point and spot lights draw again when a mesh that casts them changes.
 

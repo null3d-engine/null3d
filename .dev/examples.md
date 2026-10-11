@@ -121,6 +121,8 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| extra-shapes | The shapes, as in the generators demo |
+| vertex-updates | The glowing float, which leaves its rings where it goes |
 | time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
 | camera-lens | The focus, on the point of a piece or the board that a raycast finds |
 | morph-flowers | The tulips near the pointed point, which open |
@@ -331,13 +333,26 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
   Batch shadows come from M2-R6.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
 
+## The demos of the geometry package (M2-P2)
+
+The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| extra-shapes: Mirror floor at dusk | A shape from each function of `@null3d/geometry`, in three rows over a polished stone floor at dusk. A reflection pass mirrors them in the floor. The shapes run from gold, chrome and copper to blue-tinted glass and glazed clay. The flat heart glows enough to bloom |
+| vertex-updates: Pool at golden hour | A raised stone pool on a deck. A glowing float with a light of its own drifts over the water, and leaves a ring every 0.35 s on a slow swell. Each frame rewrites the water's heights and normals, and `updateVertices` uploads them |
+
+- The water's normals come from the heights of each vertex's neighbors, not from closed-form slopes. Twelve rings and a swell, each with its own slopes, took more lines than the 150-line limit left.
+- The rings start at fixed ticks of sketch time, from the float's path at each tick. So the hold-mode image is the same however many frames lead to it. While the pointer leads the float, each ring starts at the float's place instead.
+- The water's update writes into arrays that the sketch keeps, so it allocates nothing in a frame, as the demo's summary says.
+
 ## Groups and titles (owner, 9 October 2026)
 
 The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos. Compare with three.js lists the comparisons of `examples/compare/comparisons.ts`, Factory first, and Showcase waits for its scenes.
 
 | Group | Demos |
 | --- | --- |
-| Building scenes | generators, mesh-arrays, objects, layers |
+| Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
