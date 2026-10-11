@@ -11,8 +11,15 @@ filter = 'binary_id(null3d-render::no_alloc) | binary_id(null3d-core::no_alloc) 
 threads-required = 'num-cpus'
 priority = 100
 
-# The shader build's tests take the longest, so they start next, while the many short tests fill
-# the other threads.
+# The one test that builds every shader takes the longest, so it starts next, while the many short
+# tests fill the other threads. It runs two full builds at once, one on each of two threads. No
+# other test builds every shader: each process would build them again, since tests share nothing.
 [[profile.default.overrides]]
-filter = 'binary_id(null3d-shaders::build) | binary_id(null3d-shaders::cli)'
+filter = 'binary_id(null3d-shaders::build) & test(=the_repository_build_is_the_same_each_time_and_keeps_every_portability_rule)'
+threads-required = 2
 priority = 50
+
+# The custom material and effect tests build their templates' variants, which take seconds each.
+[[profile.default.overrides]]
+filter = 'binary_id(null3d-shaders::material) | binary_id(null3d-shaders::effect) | binary_id(null3d-shaders::pieces)'
+priority = 40
