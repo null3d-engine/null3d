@@ -29,7 +29,7 @@ fn surface(input: SurfaceInput) -> Surface {
     let hue = mix(vec3f(0.1, 0.85, 0.8), vec3f(0.65, 0.3, 1.0), saturate(t * 1.6));
     let color = mix(hue, vec3f(1.0, 0.6, 0.15), saturate(t * 2.0 - 1.0));
     s.baseColor = color * 0.08;
-    s.emissive = color * (0.2 + 2.5 * wave(input.instance) * input.uv.y * input.uv.y);
+    s.emissive = color * (0.15 + 4.0 * wave(input.instance) * input.uv.y * input.uv.y);
     return s;
 }
 `;
@@ -42,9 +42,10 @@ fn surface(input: SurfaceInput) -> Surface {
     // The height along the stone's own axis, from its origin.
     let axis = normalize(object.worldMatrix[1].xyz);
     let along = dot(input.relativePosition - object.worldMatrix[3].xyz, axis);
-    let band = smoothstep(0.42, 0.5, abs(fract(along * 2.5 - frame.time * 0.3) - 0.5));
-    let lit = select(0.15, 3.0, object.id == material.picked);
-    s.emissive = vec3f(1.0, 0.55, 0.2) * band * lit;
+    let band = smoothstep(0.32, 0.44, abs(fract(along * 2.0 - frame.time * 0.3) - 0.5));
+    // The picked stone's bands burn amber; the others keep a cool, faint glow.
+    let picked = object.id == material.picked;
+    s.emissive = select(vec3f(0.15, 0.25, 0.6), vec3f(6.0, 2.6, 0.7), picked) * band;
     return s;
 }
 `;
@@ -53,46 +54,49 @@ export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
 	const sun = [-0.7, 0.06, -0.7] as const;
 	scene.setBackground({ sky: { sunPosition: sun, turbidity: 6, rayleigh: 3, time: 0 } });
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.35 });
+	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
 	scene.setFog({ color: '#5a4a6a', density: 0.02, sunGlow: 0.8 });
-	post.set({ bloom: { intensity: 0.35, threshold: 1 }, vignette: {} });
-	const camera = scene.createPerspectiveCamera({ fov: 45, far: 500, position: [0, 5, 11.5] });
+	post.set({ bloom: { intensity: 0.5, threshold: 1 }, vignette: {} });
+	const camera = scene.createPerspectiveCamera({ fov: 45, far: 500, position: [0, 6, 12.5] });
 	camera.lookAt(0, 0.6, 0);
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target: [0, 0.6, 0] });
 	scene.createDirectionalLight({
 		direction: [-sun[0], -sun[1], -sun[2]],
 		color: '#ffb48a',
-		intensity: 2,
+		intensity: 3,
 		castShadows: true,
 	});
-	scene.createAmbientLight({ color: '#7d84c8', intensity: 0.6 });
+	scene.createHemisphereLight({ skyColor: '#9fa8e6', groundColor: '#4a3438', intensity: 1.4 });
 	scene.createMesh({
 		mesh: geometry.circle({ radius: 80, segments: 64 }),
-		material: materials.standard({ color: '#2a2630', roughness: 0.12, doubleSided: true }),
+		material: materials.standard({ color: '#2a2630', roughness: 0.45, doubleSided: true }),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
 	});
 
 	// The spiral: each crystal a little further out than the one before, at the golden angle.
 	math.seed(11);
-	const shard = geometry.cone({ radius: 0.09, height: 0.8, radialSegments: 6, heightSegments: 4 });
+	const shard = geometry.cone({ radius: 0.06, height: 0.7, radialSegments: 6, heightSegments: 4 });
 	const glow = materials.shader({ wgsl: crystals, roughness: 0.4 });
 	const spiral = scene.createInstances(shard, COUNT, { material: glow, castShadows: true });
 	for (let k = 0; k < COUNT; k++) {
-		const radius = 0.22 * Math.sqrt(k + 1);
+		const radius = 0.2 * Math.sqrt(k + 1);
 		const angle = k * GOLDEN;
 		const height = math.randFloat(0.6, 1.4);
-		spiral.positions.set([Math.cos(angle) * radius, 0.4 * height, Math.sin(angle) * radius], k * 3);
+		spiral.positions.set(
+			[Math.cos(angle) * radius, 0.35 * height, Math.sin(angle) * radius],
+			k * 3,
+		);
 		spiral.scales.set([1, height, 1], k * 3);
 	}
 	spiral.markDirty();
 
 	// Three stones around the spiral share one material, which lights the picked one.
-	const carved = materials.shader({ wgsl: stones, color: '#8a7f90', roughness: 0.45 });
-	const slab = geometry.box({ width: 1, height: 4, depth: 0.6 });
+	const carved = materials.shader({ wgsl: stones, color: '#b4a8bc', roughness: 0.5 });
+	const slab = geometry.box({ width: 1.4, height: 4.4, depth: 0.7 });
 	const ring = [-0.9, 0, 0.9].map((angle) => {
-		const at = [Math.sin(angle) * 6.5, 1.9, -Math.cos(angle) * 6.5] as const;
+		const at = [Math.sin(angle) * 6.5, 2.1, -Math.cos(angle) * 6.5] as const;
 		const stone = scene.createMesh({
 			mesh: slab,
 			material: carved,

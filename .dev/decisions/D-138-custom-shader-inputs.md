@@ -56,7 +56,7 @@ Both work relative to the camera, as every engine position does: `camera.view` i
 
 ### The object's matrices
 
-The world matrix is the instance's, which every vertex shader has. The vertex stage builds `object.worldMatrix` and `object.normalMatrix` from its rows. The fragment stage gets the rows as three flat values at locations 5, 6 and 7. Only the builds with maps (the tangent frame) and with the alpha hash use those locations, and custom materials have neither. The world matrix keeps its translation relative to the camera, so `camera.viewProjection * object.worldMatrix` places a vertex. `object.position` still gives the origin in the world. `normalMatrix` is the inverse transpose of the world matrix's 3 x 3 part, in world space. three.js's `normalMatrix` works in view space, so a port multiplies the result by `camera.view`.
+Every vertex shader has the instance's world matrix. The vertex stage builds `object.worldMatrix` and `object.normalMatrix` from its rows. The fragment stage gets the rows as three flat values at locations 5, 6 and 7. Only the builds with maps (the tangent frame) and with the alpha hash use those locations. Custom materials have neither. The world matrix keeps its translation relative to the camera, so `camera.viewProjection * object.worldMatrix` places a vertex. `object.position` still gives the origin in the world. `normalMatrix` is the inverse transpose of the world matrix's 3 x 3 part, in world space. three.js's `normalMatrix` works in view space, so a port multiplies the result by `camera.view`.
 
 A custom material with every input passes 13 values to its fragment stage, below compatibility mode's 14.
 
@@ -89,7 +89,7 @@ Option A for each part. Defs come from a scan of the WGSL, and the camera's matr
 
 ## Consequences
 
-- The custom shading word is full. `CUSTOM_OBJECT_IDS` takes bit 31, its last free bit: the template takes the low 16 bits, the vertex attributes 8, and the base color, textures, transmission, row values, caster and object ids the rest. The next flag of a custom shading needs a second word, which `createMaterial` passes beside the first, or a packing plan. One plan is to pack the vertex attributes, which use 6 of their 8 bits, and the texture count into fewer bits. The coordinator asked for this note on 11 October 2026.
+- The custom shading word is full. `CUSTOM_OBJECT_IDS` takes bit 31, its last free bit. The template takes the low 16 bits and the vertex attributes 8. The base color, textures, transmission, row values, caster and object ids take the rest. The next flag of a custom shading needs a second word, which `createMaterial` passes beside the first, or a packing plan. One plan is to pack the vertex attributes, which use 6 of their 8 bits, and the texture count into fewer bits. The coordinator asked for this note on 11 October 2026.
 
 - Code: the shader compiler's scan of inputs; `lit.wgsl`, `null3d::builtins`, `null3d::mesh` and `null3d::vertex`; the frame's block; the render crate's `object_ranges` module and both builders' table; WebGPU's frame and depth layouts.
 - Docs: [Built-in shader inputs](../../docs/shaders/builtins.md), [Surface functions](../../docs/shaders/surface-functions.md), the three.js mapping of `ShaderMaterial`.

@@ -50,7 +50,7 @@ The values of the camera that the view draws from.
 | `near` | `f32` | The distance of the camera's near plane |
 | `far` | `f32` | The distance of the camera's far plane |
 
-The engine stores depth reversed on every GPU path: clip space's depth is 1 at the near plane and 0 at the far plane. `camera.projection` gives that depth. A light draws each shadow, so a vertex offset reads zeros for the camera's `view` and `projection` in a shadow pass.
+The engine stores depth reversed on every GPU path. Clip space's depth is 1 at the near plane and 0 at the far plane. `camera.projection` gives that depth. A light draws each shadow, so a vertex offset reads zeros for the camera's `view` and `projection` in a shadow pass.
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
