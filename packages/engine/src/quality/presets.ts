@@ -244,6 +244,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// The texels across the largest level of each reflection probe's map, an octahedral map of the
+	// whole sphere. A probe captures the scene through six views of half that size, and costs its
+	// pixels only while it captures. 256 keeps a polished floor's reflection sharp on a desktop's
+	// screen. Low's 128 takes a quarter of the memory, for phones' small screens. A change makes
+	// the maps again and captures every probe again (D-149).
+	probeSize: {
+		presets: [128, 256, 256, 256],
+		changes: 'live',
+		values: [128, 256, 512],
+	},
 	// The most area lights that one frame shades: the ones that give the camera the most light when
 	// more are in view, and a light that crosses the cap fades over a few frames. An area light costs
 	// a surface several times what a point light costs, so phones shade fewer. A change makes no GPU
@@ -551,6 +561,12 @@ export interface QualitySettings {
 	 * the reflections' textures again.
 	 */
 	reflectionScale: 0.25 | 0.5 | 1;
+	/**
+	 * The texels across the largest level of each reflection probe's map: 128, 256 or 512. A larger
+	 * map gives sharper reflections on polished surfaces, and takes four times the memory for each
+	 * step. It changes during play, which makes the maps again and captures every probe again.
+	 */
+	probeSize: 128 | 256 | 512;
 	/**
 	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
 	 * more are in view, the ones that give the camera the most light shade: the brightest and

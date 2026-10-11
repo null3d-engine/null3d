@@ -151,6 +151,7 @@ export type {
 	VignetteSettings,
 } from './scene/post';
 export type { Prefab, PrefabBounds, PrefabNode } from './scene/prefab';
+export type { ReflectionProbe, ReflectionProbeOptions } from './scene/probes';
 export type {
 	OverlapHit,
 	QueryOptions,

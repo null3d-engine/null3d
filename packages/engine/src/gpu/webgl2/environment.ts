@@ -187,8 +187,9 @@ export function environmentGenerator(
 		return ready;
 	};
 	const run: CubeGenerator['run'] = (host, target, size, levels, source, read) => {
-		// The engine core fills a sky map in stages, with the sky's settings.
-		if (source === 'sky') return;
+		// The engine core fills a sky map in stages, with the sky's settings, and runs each probe's
+		// filter on its own.
+		if (source === 'sky' || source === 'probes') return;
 		const { gl } = host;
 		const { programs, samplers, units } = keep(host);
 		const alignment = gl.getParameter(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT) as number;

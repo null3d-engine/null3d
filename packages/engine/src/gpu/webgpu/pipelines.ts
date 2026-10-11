@@ -255,6 +255,12 @@ const ROW_VALUES_BINDING = 16;
  */
 const OBJECT_RANGES_BINDING = 17;
 
+/**
+ * The binding of the view's list of reflection probes in the frame group, which the lit shading
+ * reads beside the probes' texture array at binding 3 (decision record D-149).
+ */
+const PROBE_LIST_BINDING = 18;
+
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
 
@@ -586,15 +592,17 @@ export class Pipelines {
 			rowValues,
 			objectRanges,
 		]);
-		// The materials' custom values, the light tables (the table of specular terms and the area
-		// lights' tables, in the layers of one array), then the shadow map, whose depths the
-		// receivers read as floats, the sampler that compares depths in the shadow atlas, the
-		// cascades, the camera's light grid and light list, the shadow atlas of point and spot lights
-		// with its tiles, the light probe grids' 3D texture, ambient occlusion's texture, which the
-		// lit shading reads with textureLoad, the environment's cube map with its filtering sampler,
-		// the sampler that reads four texels of the shadow map at once, the copy of the opaque color
-		// that surfaces which let light through sample with the environment's sampler, and the row
-		// values of instance batches and the table of object ranges, which only vertex shaders read.
+		// The materials' custom values, with the table of specular terms in the columns after the
+		// first rows, the light tables and the reflection probes' maps in the layers of one array,
+		// then the shadow map, whose depths the receivers read as floats, the sampler that compares
+		// depths in the shadow atlas, the cascades, the camera's light grid and light list, the
+		// shadow atlas of point and spot lights with its tiles, the light probe grids' 3D texture,
+		// ambient occlusion's texture, which the lit shading reads with textureLoad, the
+		// environment's cube map with its filtering sampler, the sampler that reads four texels of
+		// the shadow map at once, the copy of the opaque color that surfaces which let light through
+		// sample with the environment's sampler, the row values of instance batches and the table
+		// of object ranges, which only vertex shaders read, and the view's list of reflection
+		// probes.
 		const probeGrid: GPUBindGroupLayoutEntry = {
 			binding: 10,
 			visibility: fragment,
@@ -636,6 +644,7 @@ export class Pipelines {
 			transmission,
 			rowValues,
 			objectRanges,
+			{ binding: PROBE_LIST_BINDING, visibility: fragment, buffer: { type: 'uniform' } },
 		];
 		this.defineLayout(LAYOUT_FRAME, 'frame', frame);
 		// The decals' frame group leaves out the probe grid, which no decal build reads, so that a

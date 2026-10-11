@@ -18,6 +18,7 @@ import type { CubeGenerator } from './environment';
 import type { GpuTimer } from './gpu-timer';
 import { IndirectArguments } from './indirect-arguments';
 import { Pipelines, type RenderTemplate, SKIN_BUILDS } from './pipelines';
+import type { Generators } from './probes';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
@@ -250,7 +251,10 @@ export class WebGPUBackend {
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.joins = new JoinedBuilds(this.images.shaders);
-		this.images.warmGeneratorsWith((code) => (code as CubeGenerator).prepare(device));
+		this.images.warmGeneratorsWith((code) => {
+			const { environment, probes } = code as Generators;
+			return Promise.all([environment.prepare(device), probes.prepare(device)]);
+		});
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -534,7 +538,7 @@ export class WebGPUBackend {
 	private generateTexture(op: number, words: Uint32Array, floats: Float32Array, a: number): void {
 		const texture = this.need(this.textures, words[a] as number, 'texture');
 		const id = words[a + 1] as number;
-		const code = this.images.generatorCodeFor<CubeGenerator>(id);
+		const code = this.images.generatorCodeFor<Generators>(id).environment;
 		this.generators = code;
 		if (op === G.OP_SKY_MAP_STEP) {
 			const panorama = words[a + 3] as number;
@@ -542,6 +546,31 @@ export class WebGPUBackend {
 			const encoder = this.commandEncoder();
 			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
 		} else code.run(this.device, texture, this.images.generator(id)[0]);
+	}
+
+	/** The six capture views' images of the probe that a filter makes, kept so it allocates none. */
+	private readonly probeFaces: GPUTexture[] = [];
+
+	/**
+	 * Makes a reflection probe's map from its six capture views' images, in the frame's commands,
+	 * ahead of its passes, with the filter of the generators' code under the command's image id.
+	 */
+	private filterProbe(words: Uint32Array, a: number): void {
+		const probes = this.need(this.textures, words[a] as number, 'texture');
+		const chain = this.need(this.textures, words[a + 1] as number, 'texture');
+		const code = this.images.generatorCodeFor<Generators>(words[a + 3] as number).probes;
+		for (let face = 0; face < 6; face++)
+			this.probeFaces[face] = this.need(this.textures, words[a + 4 + face] as number, 'texture');
+		const layer = words[a + 2] as number;
+		code.run(
+			this.device,
+			this.commandEncoder(),
+			probes,
+			chain,
+			layer,
+			this.probeFaces,
+			this.gpuMemory,
+		);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -997,6 +1026,9 @@ export class WebGPUBackend {
 				case G.OP_GENERATE_TEXTURE:
 				case G.OP_SKY_MAP_STEP:
 					this.generateTexture(op, words, floats, a);
+					break;
+				case G.OP_PROBE_FILTER:
+					this.filterProbe(words, a);
 					break;
 				case G.OP_GENERATE_MIPMAPS:
 					this.generateMipmaps(words[a] as number, words[a + 1] as number);

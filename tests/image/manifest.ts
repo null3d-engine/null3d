@@ -714,6 +714,31 @@ function ssrTests(): ImageTest[] {
 
 /** The sketch of weighted blending's crossing panes and overlapping puffs. */
 const WEIGHTED_SKETCH = 'tests/pages/sketches/weighted-sketch.ts';
+/** The sketch of the reflection probe tests: a room of glowing walls over a mirror floor. */
+export const PROBE_SKETCH = 'tests/pages/sketches/probe-sketch.ts';
+
+/**
+ * Reflection probes on every tier. A probe fills a room whose walls glow a color each, so the
+ * mirror floor and a chrome ball reflect each wall on its own side, where it stands: the probe spec
+ * checks the colors there. The rough test blurs the floor's reflections, from the probe's rougher
+ * levels. The flat test turns box projection off, so the floor reflects the walls as if they lay
+ * far away. The blend test splits the room into two probes that fade into each other. The probe
+ * captures in the held frame, whose filter runs before the camera's passes.
+ */
+function probeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${PROBE_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('probe-room', ''),
+		test('probe-rough', '?rough'),
+		test('probe-flat', '?flat'),
+		test('probe-blend', '?two'),
+	];
+}
+
 /** The sketch of the glass scene, which three.js's transmission draws too. */
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
@@ -1238,6 +1263,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...minimapTests(),
 	...reflectionTests(),
 	...ssrTests(),
+	...probeTests(),
 	...fullscreenTests(),
 	...occlusionTests(),
 	...gradingTests(),

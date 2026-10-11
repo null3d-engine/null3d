@@ -465,7 +465,7 @@ Each feature gets a decision record of its own when it is built.
 | Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
 | Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
-| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 | D-142 |
+| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 ([D-149](decisions/D-149-reflection-probes.md)) | D-142 |
 | Weighted blended transparency | Smoke and fire, and glass: `blending: 'weighted'` | M2-EX33 | D-142, [D-150](decisions/D-150-weighted-blended-transparency.md) |
 | Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |

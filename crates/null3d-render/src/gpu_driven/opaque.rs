@@ -44,6 +44,7 @@ use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::PassTargets;
 use crate::probe_grid;
+use crate::probes::{self, ProbeList};
 use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
@@ -82,19 +83,22 @@ pub(super) struct FrameInputs {
     pub environment: u32,
     pub probe_grid: u32,
     pub transmission: u32,
+    pub probes: u32,
 }
 
 /// The entries of a frame group, before the environment's.
-const FRAME_ENTRIES: usize = 16;
+const FRAME_ENTRIES: usize = 17;
 
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
-/// the materials' custom values, the light tables, the shadow map with its cascades and the
-/// sampler that reads four of its texels at once, the light grid and light records, the shadow
-/// atlas with its comparison sampler and its tiles, the texture of ambient occlusion, the
-/// environment's cube texture with its sampler, the light probe grids' texture, the copy of the
-/// opaque color, which the environment's sampler reads too, and the row values of instance
-/// batches and the table of object ranges. A new shadow map, atlas, occlusion texture,
-/// environment, grid, copy, row values texture or light buffers needs the group again.
+/// the materials' custom values, with three.js's table of the split-sum terms of specular light,
+/// the shadow map with its cascades and the sampler that reads four of its texels at once, the
+/// light grid and light records, the shadow atlas with its comparison sampler and its tiles, the
+/// texture of ambient occlusion, the environment's cube texture with its sampler, the light probe
+/// grids' texture, the copy of the opaque color, which the environment's sampler reads too, the
+/// row values of instance batches, the table of object ranges, and the reflection probes' array,
+/// which carries the light tables' layers, with the view's list of probes. A new shadow map,
+/// atlas, occlusion texture, environment, grid, copy, row values texture, light buffers or probes
+/// array needs the group again.
 pub(super) fn bind_frame(
     list: &mut DrawList,
     view: ViewId,
@@ -133,7 +137,7 @@ fn push_frame_group(
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
-        entry(3, resource_kind::TEXTURE, ids::LIGHT_TABLES),
+        entry(probes::ARRAY_BINDING, resource_kind::TEXTURE, inputs.probes),
         entry(4, resource_kind::TEXTURE, inputs.shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
@@ -158,6 +162,13 @@ fn push_frame_group(
             resource_kind::BUFFER,
             ids::OBJECT_RANGES,
         ),
+        [
+            probes::LIST_BINDING,
+            resource_kind::BUFFER,
+            ids::PROBE_LISTS,
+            view.index() as u32 * probes::LIST_STRIDE,
+            probes::LIST_BYTES,
+        ],
     ];
     let mut words = [0u32; 3 + 5 * FRAME_ENTRIES + environment::ENTRY_WORDS];
     let mut end = 3;
@@ -173,6 +184,19 @@ fn push_frame_group(
     let count = ((end - 3) / 5) as u32;
     words[..3].copy_from_slice(&[group, layout, count]);
     list.push(Op::CreateBindGroup, &words[..end])?;
+    Ok(())
+}
+
+/// Uploads a view's list of reflection probes into its slot.
+pub(super) fn upload_probes(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    view: ViewId,
+    probes: &ProbeList,
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(probes.as_bytes())?;
+    let offset = view.index() as u32 * probes::LIST_STRIDE;
+    list.push(Op::WriteBuffer, &[ids::PROBE_LISTS, offset, at, bytes])?;
     Ok(())
 }
 
