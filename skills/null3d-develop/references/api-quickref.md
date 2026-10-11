@@ -39,6 +39,7 @@ const engine = await createEngine({
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
+  softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -171,6 +172,7 @@ mesh.setRenderOrder(n);                                             // blended o
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 mesh.setMorphWeight('Smile', 0.8);   mesh.getMorphWeight(0);       // (0.2) by name or number; E1218 for a target it lacks
 mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
+mesh.shaderId;                       // (0.2) the number a custom material reads as object.id
 ```
 
 - Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions.
@@ -196,6 +198,7 @@ rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
 rocks.scales;      // Float32Array, 3 floats per row
 rocks.colors;      // Float32Array, 4 floats per row, when colors: true
 rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
+rocks.shaderId;    // (0.2) every row's object.id in custom WGSL; input.instance is the row
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
