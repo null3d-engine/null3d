@@ -177,7 +177,7 @@ The command plans the levels as follows:
 3. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
 4. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
 
-The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them.
+The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place, and their errors in `NULL3D_lod_error` change to those steps.
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 

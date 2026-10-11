@@ -137,8 +137,9 @@
 # alpha hash, transmission and index-read instances, which batches with row values never draw
 # with, and loads on first use. LOD_FADE draws a level of detail inside the band where it hands
 # over to the next: each instance's fade value and a 4 × 4 ordered dither keep the pixels of its
-# side of the band. It builds without skins, morph targets, alpha to coverage, the alpha hash,
-# transmission and index-read instances, and loads on first use. Custom materials build none of
+# side of the band, after the mask's own test by its cutoff or by coverage. It builds without
+# skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
+# use. Custom materials build none of
 # its builds: their levels switch at once.
 [shaders.lit]
 file = "lit.wgsl"

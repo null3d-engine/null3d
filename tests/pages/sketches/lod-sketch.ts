@@ -3,9 +3,10 @@
 // holds two copies of one switch, at 94% and 106% of the distance where its level switches in.
 // Each copy stands where the rule puts that distance on this canvas, so it keeps its size on the
 // screen at any canvas size. Settings: `?batch` draws the copies as rows of one instance batch,
-// `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone, and
-// `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser level than the
-// copy itself.
+// `?crisp` turns the fading bands off, so each copy past a switch draws its new level alone,
+// `?mask` draws with a mask smoothed by alpha to coverage, as foliage does, which passes every
+// pixel, and `?shadows` draws one large copy in front of a wall, whose shadow draws a coarser
+// level than the copy itself.
 import { defineSketch, type MeshArrays, type Vec3 } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -78,7 +79,12 @@ export default defineSketch(({ scene, geometry, materials, quality, engine }) =>
 	);
 	if (!base) return;
 	base.setLevels(lower.map((mesh, k) => ({ mesh, error: ERRORS[k] as number })));
-	const material = materials.standard({ color: '#ffffff', roughness: 0.5, vertexColors: true });
+	const material = materials.standard({
+		color: '#ffffff',
+		roughness: 0.5,
+		vertexColors: true,
+		...(params.has('mask') && { alphaMode: 'mask' as const, alphaToCoverage: true }),
+	});
 
 	// The factor of the rule on this canvas: the drawn height in pixels times P[1][1], over twice
 	// the threshold. A copy of scale 1 switches to level j past ERRORS[j - 1] times it.

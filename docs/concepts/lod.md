@@ -8,7 +8,7 @@ summary: "LOD groups; generated LODs; per-instance selection."
 
 # Levels of detail
 
-> Experimental. Skinned and morphed objects, and materials that blend or let light through, draw their base mesh at every distance. Custom materials switch levels at once, with no fading band.
+> Experimental. Skinned and morphed objects, and materials that blend or let light through, draw their base mesh at every distance. Custom materials, and masks with the `'hash'` alpha mode, switch levels at once, with no fading band.
 
 ```mermaid
 flowchart LR
@@ -47,7 +47,7 @@ Errors grow from level to level. The asset tool works out each level's error for
 bunx @null3d/cli assets optimize models/ public/models/ --lod
 ```
 
-Each level has about half the triangles of the level above, and shares the mesh's vertices. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps their errors in its extras, as `NULL3D_lod_error`. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh. Another tool may store screen coverage alone, in `MSFT_screencoverage`. The loader then works out each error from the coverage, for a screen 1,080 pixels high.
+Each level has about half the triangles of the level above, and shares the mesh's vertices. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps their errors in its extras, as `NULL3D_lod_error`. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh. Another tool may store screen coverage alone, in `MSFT_screencoverage`. The loader then works out each error from the coverage, for a screen 1,080 pixels high. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps and converts the errors to those steps.
 
 ## How the engine picks a level
 

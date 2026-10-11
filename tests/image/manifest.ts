@@ -1652,8 +1652,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
 	// each of three switch distances. Every GPU path must draw the first path's image, so each
 	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
-	// the levels switching at once and in their fading bands, and one copy casts a coarser level's
-	// shadow onto a wall.
+	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
+	// to coverage, and one copy casts a coarser level's shadow onto a wall.
 	{
 		name: 'lod',
 		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
@@ -1675,6 +1675,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/lod-sketch.ts',
 		hold: 0,
 		size: [480, 270],
+	},
+	// The fading bands of a mask smoothed by alpha to coverage, whose alpha passes every pixel, must
+	// draw the opaque bands' image.
+	{
+		name: 'lod-fade-coverage',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?mask',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-fade',
 	},
 	{
 		name: 'lod-shadows',

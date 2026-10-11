@@ -886,10 +886,10 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
-    /// A fading level's builds dither its pixels with a plain mask test at most: skinned, morphed,
-    /// transmissive and index-read instances never fade, and a mask that tests its alpha by
-    /// coverage or by the hash switches its levels at once.
-    pub const APART: [(u32, u32); 23] = [
+    /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
+    /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
+    /// that tests its alpha by the hash switches its levels at once.
+    pub const APART: [(u32, u32); 22] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -911,7 +911,6 @@ pub mod permutation {
         (LOD_FADE, MORPH),
         (LOD_FADE, INSTANCE_INDEX),
         (LOD_FADE, TRANSMISSION),
-        (LOD_FADE, ALPHA_COVERAGE),
         (LOD_FADE, ALPHA_HASH),
     ];
 

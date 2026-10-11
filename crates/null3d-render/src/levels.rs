@@ -10,7 +10,7 @@
 //! names it by a level key ([`level_key`]), so a level's bucket never merges with the bucket of an
 //! object that draws the same simple mesh as a mesh of its own.
 
-use null3d_gpu::drawlist::{permutation, state_flags, template};
+use null3d_gpu::drawlist::{permutation, template};
 
 use crate::meshes::MeshStorage;
 use crate::pipelines::DrawKey;
@@ -204,11 +204,11 @@ const NO_FADE: u32 = permutation::SKIN
     | permutation::MORPH
     | permutation::INSTANCE_INDEX
     | permutation::TRANSMISSION
-    | permutation::ALPHA_COVERAGE
     | permutation::ALPHA_HASH;
 
 /// True when a pipeline has builds of a fading level: the engine's standard and unlit templates,
-/// with a plain mask test at most. Custom materials and the debug views switch levels at once.
+/// opaque or with a mask tested by its cutoff or by coverage. Custom materials, masks tested by the
+/// hash and the debug views switch levels at once.
 pub(crate) fn fades_its_way(key: DrawKey) -> bool {
     matches!(
         key.template,
@@ -217,7 +217,6 @@ pub(crate) fn fades_its_way(key: DrawKey) -> bool {
             | template::INSTANCED_UNLIT
             | template::INSTANCED_UNLIT_MAP
     ) && key.permutation & NO_FADE == 0
-        && key.state & state_flags::ALPHA_TO_COVERAGE == 0
 }
 
 /// True when a bucket key draws a fading level.
@@ -345,6 +344,33 @@ pub(crate) fn links_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipelines::DepthBias;
+
+    #[test]
+    fn masks_by_cutoff_or_coverage_fade_and_masks_by_the_hash_switch_at_once() {
+        let key = |permutation| DrawKey {
+            template: template::INSTANCED_LIT,
+            permutation,
+            vertex_format: 0,
+            state: 0,
+            bias: DepthBias::NONE,
+        };
+        let mask = permutation::ALPHA_MASK;
+        let coverage = mask | permutation::ALPHA_COVERAGE;
+        assert!(fades_its_way(key(0)));
+        assert!(fades_its_way(key(mask)));
+        assert!(fades_its_way(key(coverage)));
+        assert!(fades_its_way(key(coverage | permutation::SAMPLE_MASK)));
+        assert!(!fades_its_way(key(mask | permutation::ALPHA_HASH)));
+        assert!(!fades_its_way(key(permutation::SKIN)));
+        // Every key that fades has its fading build.
+        for word in [0, mask, coverage, coverage | permutation::SAMPLE_MASK] {
+            assert!(
+                permutation::buildable(word | permutation::LOD_FADE),
+                "{word:#x}"
+            );
+        }
+    }
 
     #[test]
     fn level_keys_round_trip_and_never_equal_a_mesh_id() {

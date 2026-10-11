@@ -72,6 +72,18 @@ The fade amount reaches the fragment shader as a flat value:
 - WebGPU: the culling shader writes it into the free fourth word of the copy's ids. The sign says which side: positive for the new level, negative for the old.
 - WebGL2: the index list's entries have no spare bits (23 bits of row, 9 of cell). A fade bucket's entries take two words: the entry, then the fade amount's bits. Its draw record marks the pairs, and the fading builds read both.
 
+### Masks with alpha to coverage
+
+Foliage draws with masks, and a mask smooths its cut edges with alpha to coverage by default. Without a fade, every tree in a forest would pop at its switches. So the fading builds also build with alpha to coverage, and with the sample mask builds that WebGPU's targets without alpha use for it.
+
+| Option | Verdict |
+| --- | --- |
+| The pixel dither after the coverage test: the shader works out the coverage as before, then drops the pixels of the other level | Chosen. Each kept pixel keeps its smoothed edge, and the two levels still never share a pixel. It needs no new shader code, only the builds |
+| Scaling the coverage by the fade amount | Rejected. The GPU turns the same alpha into the same samples in both levels. At `t = 0.5` both levels would cover the same half of each pixel's samples, and leave the other half empty, so the band would show holes |
+| Writing each level's own samples with a sample mask | Rejected. WebGL2 has no sample mask output, so the two paths would fade differently |
+
+The masks that test their alpha by the hash keep their switch at once, so that the fading set stays small. The same dither would work after the hash test (follow-up 3).
+
 ### Shadows
 
 Shadow cascades, shadow tiles, mirrors and the outline view already place every source relative to the main camera. So `d` is the main camera's distance in every view, and each shadow view picks with the main camera's `k`, not its own orthographic projection. A shadow view multiplies the threshold by the preset's shadow factor, so its casters draw a coarser level. Shadow views do not fade: they draw the level that the rule picks.
@@ -105,6 +117,14 @@ To be measured. The rows below give the plan.
 
 To be measured: a dense forest of instanced trees and a skyline of objects, on the Mac's GPU, with levels on and off, on each path. GPU time per frame, CPU time per thread, triangles drawn.
 
+### Trees with leaf cards
+
+Creek's trees will come from glTF files whose leaves are cards: quads with an alpha-masked leaf texture. On 11 October 2026, a test tree went through `assets optimize --lod`. It had a trunk of 384 triangles and 600 cards of 2 triangles each, 1,584 triangles in all. The tool wrote no levels for it.
+
+The cause is in the level planner ([D-91](D-91-level-planning.md)). It locks each list's border, so the lists of a mesh still meet. Every vertex of a card lies on the card's border, so no card can lose a triangle. The trunk halves to 192 triangles, but the step keeps 1,392 of 1,584, more than three quarters, and the planner stops before the first level. Without the lock, meshopt's simplifier folds each card into one triangle. That cuts away half of each card's leaf texture, so it is no answer either.
+
+So for trees with leaf cards, the planner needs a step of its own for lists of separate cards: keep a share of the cards, spread evenly over the crown, and grow each kept card so that the crown keeps its cover. The error of such a level is the size of the cards it drops. Until then, an author can make the levels in Blender and export them with `MSFT_lod`, which the loader reads. The forest demo's procedural pines make their levels in code.
+
 ## Decision
 
 Pending the data.
@@ -113,7 +133,7 @@ Pending the data.
 
 - Skinned and morphed objects draw their base level: their vertices come from regions of their own, which levels do not have yet.
 - Blended and transmissive sources draw their base level: the transparent pass sorts them on the job workers with buckets of its own.
-- Custom materials, and masks that test their alpha by coverage or by the hash, switch levels at once: their builds have no fading level.
+- Custom materials, and masks that test their alpha by the hash, switch levels at once: their builds have no fading level. Masks with alpha to coverage, the default for foliage, fade: the dither drops whole pixels after the coverage test, so each kept pixel keeps its smoothed edge (see "Masks with alpha to coverage" below).
 - A static batch with levels is not culled in groups of 64 rows on WebGL2, so each row can pick its own level.
 - Levels are separate engine meshes, so the levels from a glTF file that share the base mesh's vertices take a copy of them each.
 - The three.js mapping's `LOD (addLevel)` entry maps to `mesh.setLevels`, with distances converted at a 50 degree field of view on a screen 1,080 pixels high.
@@ -122,5 +142,6 @@ Pending the data.
 
 1. Levels for skinned objects, first. Battle's armies are skinned, so they gain nothing yet. The WebGPU skinning pass skins each object's vertices into a region of its own. Each level would need a region, and the skinning pass would skin only the level that the object draws. A skinned object's level can be picked on the CPU before the skinning pass, as skinned objects are few. Expected gain, an estimate to measure: S5's Knight has 4,957 vertices, and its first level switches in at 12.8 m (D-91), each level halving the one above. An army seen from 30 to 60 m away would draw levels 2 and 3, a quarter to an eighth of the vertices. Skinning and vertex shading would then cost about a third of today's, so the skinning pass and the shadow passes, which grow with the vertices, would take roughly half their GPU time or less.
 2. Levels for blended and transmissive sources, in the transparent pass's own buckets.
-3. Fading builds for custom materials, which double their builds, and for alpha to coverage and the alpha hash.
+3. Fading builds for custom materials, which double their builds, and for the alpha hash.
 4. Levels as index ranges of the base mesh's vertices, so a file's levels take no copy of them.
+5. Levels for trees with leaf cards in the asset tool: a step that keeps a share of the cards and grows them ("Trees with leaf cards" above). Creek needs it to use levels for trees from files.

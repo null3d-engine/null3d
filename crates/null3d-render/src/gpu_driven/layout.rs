@@ -1206,10 +1206,11 @@ mod tests {
             ]
         );
         // Each record holds its sphere's centre, where the culling shader reads it, then the
-        // first joint of a skin, which no bucket here has, and 0 for a slice of copies.
+        // first joint of a skin, which no bucket here has, 0 for a slice of copies, and zeros for
+        // the level of detail of a mesh without levels.
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8..], [0, 0]);
+        assert_eq!(record[8..], [0; 5]);
     }
 }
