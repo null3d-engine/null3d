@@ -8,7 +8,7 @@ summary: "Orbit and map controls (0.1); fly and first-person controls, with poin
 
 # Camera controls (@null3d/controls)
 
-> Orbit and map controls ship in null3D 0.1, and fly and first-person controls in null3D 0.2. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the fly and first-person controls. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR

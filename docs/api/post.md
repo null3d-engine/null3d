@@ -8,7 +8,7 @@ summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambie
 
 # Post-processing API
 
-> Ships in null3D 0.1, with bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves in 0.2. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
 
 `ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
 

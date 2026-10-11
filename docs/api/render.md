@@ -8,7 +8,7 @@ summary: "render.addPass for scene passes and reflection passes that draw into t
 
 # Render graph API
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Scene passes, reflection passes, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph` are built. Full-screen passes of your own WGSL are not built yet, so coding agents must not use them: use [custom effects](post.md#custom-effects) for full-screen WGSL.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Scene passes, reflection passes, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph` are built. Full-screen passes of your own WGSL are not built yet, so coding agents must not use them: use [custom effects](post.md#custom-effects) for full-screen WGSL.
 
 ```mermaid
 flowchart LR

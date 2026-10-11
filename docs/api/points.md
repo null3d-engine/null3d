@@ -8,7 +8,7 @@ summary: "createPoints; size attenuation; textures."
 
 # Points
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Points do not cast or receive shadows, and overlap queries do not find them. Coding agents must not rely on either.
 
 ```mermaid
 flowchart LR

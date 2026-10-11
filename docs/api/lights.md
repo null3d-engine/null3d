@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Ships in null3D 0.1, with the light from the sky and the light of hemisphere lights from 0.2. The API is experimental, so it can still change between versions. Surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky and the light of hemisphere lights. The API is experimental, so it can still change between versions. Surfaces show one directional light. That light, spot lights and point lights cast shadows. Coding agents must not rely on these parts.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 

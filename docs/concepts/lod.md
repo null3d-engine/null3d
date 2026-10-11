@@ -8,7 +8,7 @@ summary: "LOD groups; generated LODs; per-instance selection."
 
 # Levels of detail
 
-> Experimental. The asset tool makes levels of detail for a model's meshes, and stores each level's error. Not built yet: the engine draws only the full mesh, LOD groups made in code, and the choice of a level for each object. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The asset tool makes levels of detail for a model's meshes, and stores each level's error. Not built yet: the engine draws only the full mesh, LOD groups made in code, and the choice of a level for each object. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR

@@ -28,6 +28,8 @@ Docs pages carry `since: "0.1"`, `"0.2"` or `"0.3"`, and the skills label calls 
 
 M3 sets the rule for these labels before 0.1.0 ([D-108](decisions/D-108-first-release.md)). Then it changes the release script's check, the gate's release step, the README's version labels and the skills to match. Until then, the labels stay as they are, because the release script and the M1 exit gate's docs item read them.
 
+On 11 October 2026 the notes under the pages' titles stopped saying "Ships in null3D 0.2", which named a release that will not come. A note now opens with its page's step and release, such as "Roadmap step 0.2, first released in null3D 0.1.0." That wording lives in `tools/lib/steps.ts` alone. The docs check holds every written page's note to it, and refuses "null3D 0.2" or "null3D 0.3" in a page. So M3 changes the wording in one place. The `since` rule itself stays M3's.
+
 ## One-time setup
 
 - A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.

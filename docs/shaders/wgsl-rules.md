@@ -8,7 +8,7 @@ summary: "The three shared language features; optional features; flat interpolat
 
 # WGSL rules for portable shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine draws custom materials with [surface functions](surface-functions.md) and [full shaders](../guides/custom-shaders.md#full-shaders). It draws no other shader of your own yet, so coding agents must not write one.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine draws custom materials with [surface functions](surface-functions.md) and [full shaders](../guides/custom-shaders.md#full-shaders). It draws no other shader of your own yet, so coding agents must not write one.
 
 One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports.
 

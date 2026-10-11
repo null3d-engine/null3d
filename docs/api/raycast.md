@@ -8,7 +8,7 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. Pixel-exact GPU picking is not built yet, so coding agents must not use it. Queries test a skinned character in its bind pose, not in its animated pose.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Pixel-exact GPU picking is not built yet, so coding agents must not use it. Queries test a skinned character in its bind pose, not in its animated pose.
 
 ```mermaid
 flowchart LR
