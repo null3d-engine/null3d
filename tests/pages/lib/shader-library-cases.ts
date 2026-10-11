@@ -1512,6 +1512,37 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return floats(add(xyz(i.f(1)), along));
 		},
 	},
+	// The 4 x 4 matrix of a transform's rows, column by column, as WGSL keeps a matrix.
+	{
+		name: 'vertex::affine_matrix',
+		cases: transformCase,
+		expected: (i) => {
+			const [x, y, z] = rows(i) as [V4, V4, V4];
+			return floats(...[0, 1, 2, 3].map((k) => [x[k]!, y[k]!, z[k]!, k === 3 ? 1 : 0]));
+		},
+	},
+	// The inverse transpose of a transform's 3 x 3 part, column by column, of transforms far from
+	// flat, so that the inverse stays well within the floats' precision.
+	{
+		name: 'vertex::affine_normal_matrix',
+		cases: samples((random) => {
+			const i = new Inputs();
+			for (let k = 0; k < 3; k++) {
+				const row = values(random, 4, -0.4, 0.4);
+				row[k] = (row[k] ?? 0) + (random() < 0.5 ? -1.5 : 1.5);
+				i.setF(k, row);
+			}
+			return i;
+		}),
+		expected: (i) => {
+			const [a, b, c] = rows(i).map(xyz) as [V3, V3, V3];
+			const det = dot(a, cross(b, c));
+			const inverseTranspose = [cross(b, c), cross(c, a), cross(a, b)].map((r) =>
+				scale(r, 1 / det),
+			);
+			return floats(...[0, 1, 2].map((k) => inverseTranspose.map((r) => r[k]!)));
+		},
+	},
 	{
 		name: 'color::tone_map_agx_punchy',
 		cases: uniform(3, 0.01, 8),

@@ -36,7 +36,11 @@
 //                     the runs above
 //   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
 //                     build b. Each checkout's pages get a production build of their own, served
-//                     on its own port, NULL3D_PORT's and the next. Every page runs at the High
+//                     on its own port, NULL3D_PORT's and the next. The build stays in
+//                     target/bench-pages-baseline or -new, and the next comparison reuses it while
+//                     the checkout's sources and engine build stay the same. The baseline a may
+//                     also be a prepared baseline from the GPU check's cache, whose pages are
+//                     built already (bench/lib/baseline-cache.ts). Every page runs at the High
 //                     preset, within each GPU path's ceiling, with the quality governor off,
 //                     unless --switches names them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
@@ -71,6 +75,12 @@ import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
+import {
+	type PreparedBaseline,
+	preparedPages,
+	readPreparedBaseline,
+	switchesOf,
+} from './lib/baseline-cache';
 import {
 	BUILDS,
 	type Build,
@@ -108,7 +118,13 @@ import {
 	summaryRow,
 	sweepReport,
 } from './lib/report';
-import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
+import {
+	comparePagesDir,
+	DEV_OPTION,
+	pagesText,
+	serveBenchPages,
+	serveBuiltPages,
+} from './lib/serve';
 import { S5_DEFAULT_COUNT } from './scenes/s5';
 import { S6_FULL_COUNT } from './scenes/s6';
 import {
@@ -455,9 +471,13 @@ function git(dir: string, ...args: string[]): string {
 /**
  * Each checkout's commit as its short hash and subject, the messages of the commits that the new
  * build adds to the baseline, where expected-change trailers are, and the page sources that those
- * commits change. A checkout outside git goes by its folder, with no messages and no page changes.
+ * commits change. A checkout outside git goes by its folder, with no messages and no page changes,
+ * and a prepared baseline by the commit that its record names.
  */
-function commitsOf(roots: Record<Build, string>): {
+function commitsOf(
+	roots: Record<Build, string>,
+	preparedBaseline: PreparedBaseline | null,
+): {
 	labels: Record<Build, string>;
 	messages: string[];
 	pageFiles: string[];
@@ -466,9 +486,11 @@ function commitsOf(roots: Record<Build, string>): {
 	const labels = { ...roots };
 	for (const build of BUILDS)
 		try {
-			const sha = git(roots[build], 'rev-parse', 'HEAD');
+			const record = build === 'baseline' ? preparedBaseline : null;
+			const sha = record?.commit ?? git(roots[build], 'rev-parse', 'HEAD');
+			const subject = record?.subject ?? git(roots[build], 'log', '-1', '--format=%s', sha);
 			shas[build] = sha;
-			labels[build] = `${sha.slice(0, 7)} "${git(roots[build], 'log', '-1', '--format=%s', sha)}"`;
+			labels[build] = `${sha.slice(0, 7)} "${subject}"`;
 		} catch {}
 	if (!shas.baseline || !shas.new) return { labels, messages: [], pageFiles: [] };
 	const range = `${shas.baseline}..${shas.new}`;
@@ -485,21 +507,6 @@ function commitsOf(roots: Record<Build, string>): {
 	}
 }
 
-/**
- * The comparison switches of a checkout's commit, or none when its comparison had none. They come
- * from the checkout's own comparison code.
- */
-async function switchesOf(root: string): Promise<readonly string[]> {
-	try {
-		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
-			COMPARISON_SWITCHES?: readonly string[];
-		};
-		return code.COMPARISON_SWITCHES ?? [];
-	} catch {
-		return [];
-	}
-}
-
 /** The browser and the machine, in a few words for the report. */
 function machineText(browser: Browser, name: BenchOptions['browser']): string {
 	const cores = cpus();
@@ -513,9 +520,9 @@ const RECORD_FILE = 'runs.json';
 
 /**
  * Runs the null3d pages of two built checkouts in turns, and returns the record of the runs. Each
- * checkout's pages get a production build of their own, which a server of their own serves; with
- * `--dev`, each checkout's dev server serves its pages. Every run's result goes to `dir`. With
- * `--shard`, only the shard's share of the pages runs.
+ * checkout's pages get a production build of their own, which a server of their own serves, and a
+ * prepared baseline's pages are built already; with `--dev`, each checkout's dev server serves its
+ * pages. Every run's result goes to `dir`. With `--shard`, only the shard's share of the pages runs.
  */
 async function runComparison(
 	browser: Browser,
@@ -524,9 +531,18 @@ async function runComparison(
 	dir: string,
 ): Promise<ComparisonRecord> {
 	const roots: Record<Build, string> = { baseline: resolve(baselineDir), new: resolve(newDir) };
-	for (const root of Object.values(roots))
-		if (!existsSync(join(root, BUILT_CORE)))
-			throw new Error(`${root} holds no built engine: run bun run build there first`);
+	const preparedBaseline = readPreparedBaseline(roots.baseline);
+	if (preparedBaseline && options.dev)
+		throw new Error(`${roots.baseline} holds a production build only: leave out ${DEV_OPTION}`);
+	const isPrepared = (build: Build) => build === 'baseline' && preparedBaseline !== null;
+	for (const build of BUILDS)
+		if (!isPrepared(build) && !existsSync(join(roots[build], BUILT_CORE)))
+			throw new Error(`${roots[build]} holds no built engine: run bun run build there first`);
+	// The folder that holds each build's pages: a prepared baseline's build, or the checkout itself.
+	const pageRoots: Record<Build, string> = {
+		baseline: preparedBaseline ? preparedPages(roots.baseline) : roots.baseline,
+		new: roots.new,
+	};
 	const plan = (options.scenes ?? COMPARED_SCENES).flatMap((scene) =>
 		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
 	);
@@ -534,7 +550,7 @@ async function runComparison(
 	// A scene that one checkout lacks, such as a benchmark that the new build adds, has nothing to
 	// compare with, so it runs in neither.
 	const hasScene = (scene: BenchScene) =>
-		Object.values(roots).every((root) =>
+		Object.values(pageRoots).every((root) =>
 			existsSync(join(root, pagePath(scene, 'null3d-webgpu').split('?')[0] as string)),
 		);
 	for (const scene of new Set(share.map((page) => page.scene)))
@@ -555,12 +571,16 @@ async function runComparison(
 		// The new build takes the port after the dev server's, where the HTTPS server would be.
 		const urls = {} as Record<Build, string>;
 		for (const [index, build] of BUILDS.entries()) {
-			const server = await serveBenchPages({
-				dev: options.dev,
-				root: roots[build],
-				port: HTTP_PORT + index,
-				outDir: join(REPO_ROOT, `target/bench-pages-${build}`),
-			});
+			const port = HTTP_PORT + index;
+			const server = isPrepared(build)
+				? await serveBuiltPages(pageRoots[build], port)
+				: await serveBenchPages({
+						dev: options.dev,
+						root: roots[build],
+						port,
+						outDir: comparePagesDir(build),
+						reuse: true,
+					});
 			servers.push(server);
 			urls[build] = server.url;
 		}
@@ -582,15 +602,16 @@ async function runComparison(
 	} finally {
 		for (const server of servers) server.stop();
 	}
-	const { labels, messages, pageFiles } = commitsOf(roots);
+	const { labels, messages, pageFiles } = commitsOf(roots, preparedBaseline);
 	const { warmup, measure } = runSeconds(options.seconds);
+	const baselineSwitches = preparedBaseline?.switches ?? (await switchesOf(roots.baseline));
 	return {
 		shard: options.shard,
 		plan,
 		pages: share,
 		commits: labels,
 		messages,
-		measurementChanges: measurementChanges(pageFiles, await switchesOf(roots.baseline)),
+		measurementChanges: measurementChanges(pageFiles, baselineSwitches),
 		browser: `${machineText(browser, options.browser)}, on each commit's ${pagesText(options.dev)}`,
 		runs: options.runs,
 		warmupSeconds: warmup,

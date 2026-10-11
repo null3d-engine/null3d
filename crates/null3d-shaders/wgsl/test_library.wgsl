@@ -302,12 +302,22 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return triple(null3d::lighting::ambient_irradiance(f[0].xyz, f[1].xyz, f[2].xyz, f[3].xyz, f[4].xyz));
         }
 #endif
+#ifdef VERTEX
+        case 104u: {
+            let m = null3d::vertex::affine_matrix(f[0], f[1], f[2]);
+            return floats(m[0], m[1], m[2], m[3]);
+        }
+        case 105u: {
+            let n = null3d::vertex::affine_normal_matrix(f[0], f[1], f[2]);
+            return floats(vec4f(n[0], 0.0), vec4f(n[1], 0.0), vec4f(n[2], 0.0), vec4f(0.0));
+        }
+#endif
 #ifdef COLOR
-        case 104u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
+        case 106u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
 #endif
 #ifdef LIGHTING
-        case 105u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
-        case 106u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
+        case 107u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
+        case 108u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
