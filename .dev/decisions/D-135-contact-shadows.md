@@ -80,6 +80,7 @@ The coordinator ruled on 11 October 2026 how the features share ambient occlusio
 From the surface at each texel, a ray goes toward the sun for `contactDistance` meters. A ray toward the camera stops short of the camera's plane. The ray's two ends project onto the screen. The march takes its steps between them, where the depth value changes linearly, so each step's depth is exact.
 
 - A step is in shadow when the ray lies behind the depth copy's surface by more than a bias and less than a thickness. The bias is 0.4% of the surface's distance from the camera. The thickness is half the reach, so a ray behind a thin pole does not stay in shadow.
+- The depth copy holds each texel's depth at one point, its center. A step between two centers compares the ray with the depth that the start texel's slope predicts at the step's own point. The slope comes from the start's nearer neighbour on each axis, so an object's edge does not bend it. Without this, flat ground seen at a low angle shaded itself in rows of dots: on the Mac, the walking demo's far ground changed in 31% to 49% of its pixels, and the morph test's eggs gained dots along their sides.
 - Interleaved gradient noise jitters each texel's steps. The depth-aware read blends four texels, which softens the jitter's dots.
 - A hit's shadow fades over the last half of the reach, so each shadow ends softly.
 - Shadows fade over the last 5% of the screen at each edge, where rays leave the depth copy.
