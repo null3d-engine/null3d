@@ -53,9 +53,21 @@ export function createAnimatedCrowd(
 	const animators: Animator[] = [];
 	// The handler does nothing, so the sample counts only what the engine allocates to call it.
 	const hear = () => {};
-	// The rotation and the point that the joint overrides take, which each frame changes in place.
+	// The rotation and the point that the joint overrides take, which each frame changes in place,
+	// and the frame's time, which the joint step reads.
 	const bend = [0, 0, 0, 1];
 	const target = new Float64Array(3);
+	const now = new Float64Array(1);
+	// The joint calls run in a step of their own that takes no fractions. The frame step is too
+	// large for the browser to inline every call into it, and a fraction passed to a call that it
+	// does not inline is boxed.
+	const turnJoints = (animator: Animator, k: number) => {
+		const t = now[0] as number;
+		if (k % 4 === 1) {
+			animator.setJointRotation(7, bend, 0.5 + 0.5 * Math.sin(t + k));
+			animator.addJointRotation(12, bend);
+		} else if (k % 4 === 3) animator.lookAt(target, undefined, 0.5 + 0.5 * Math.cos(t + k));
+	};
 	for (let k = 0; k < count; k++) {
 		const position: [number, number, number] = [(k % 16) - 7.5, 0, 6 + Math.floor(k / 16)];
 		const dancer = scene.createMesh({ mesh, material, position, name: `dancer${k}` });
@@ -83,14 +95,12 @@ export function createAnimatedCrowd(
 		target[0] = 3 * Math.cos(t);
 		target[1] = 1.5;
 		target[2] = 6 + 3 * Math.sin(t);
+		now[0] = t;
 		for (let k = 0; k < animators.length; k++) {
 			const animator = animators[k] as Animator;
 			const kind = k % 3;
 			animator.setLayerWeight(1, 0.5 + 0.5 * Math.sin(t + k));
-			if (k % 4 === 1) {
-				animator.setJointRotation(7, bend, 0.5 + 0.5 * Math.sin(t + k));
-				animator.addJointRotation(12, bend);
-			} else if (k % 4 === 3) animator.lookAt(target, undefined, 0.5 + 0.5 * Math.cos(t + k));
+			turnJoints(animator, k);
 			if (kind === 1) animator.setBlend(0.4 + 0.4 * Math.sin(t + k));
 			else if (kind === 2) animator.setWeight('run', 0.5 + 0.5 * Math.cos(t + k));
 			if ((frame + k) % FADE_EVERY !== 0) continue;

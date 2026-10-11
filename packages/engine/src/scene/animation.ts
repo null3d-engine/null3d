@@ -749,7 +749,10 @@ export class Animator implements Described {
 	 * nothing.
 	 */
 	setJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
-		this.override('setJointRotation', joint, C.JOINT_OVERRIDE_SET, rotation, weight);
+		const call = 'setJointRotation';
+		if (DEV) this.checkUnit(call, weight);
+		const slot = this.override(call, joint, C.JOINT_OVERRIDE_SET, rotation);
+		this.system.jointOverrides(call)[slot + C.JOINT_OVERRIDE_WEIGHT] = weight;
 	}
 
 	/**
@@ -760,7 +763,10 @@ export class Animator implements Described {
 	 * frame costs nothing.
 	 */
 	addJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
-		this.override('addJointRotation', joint, C.JOINT_OVERRIDE_ADD, rotation, weight);
+		const call = 'addJointRotation';
+		if (DEV) this.checkUnit(call, weight);
+		const slot = this.override(call, joint, C.JOINT_OVERRIDE_ADD, rotation);
+		this.system.jointOverrides(call)[slot + C.JOINT_OVERRIDE_WEIGHT] = weight;
 	}
 
 	/** Removes the rotations that `setJointRotation` and `addJointRotation` gave a joint. */
@@ -796,18 +802,7 @@ export class Animator implements Described {
 			for (let k = 0; k < 3; k++) checks.checkNumber(call, 'target', target[k] as number, this);
 			this.checkUnit(call, weight);
 		}
-		if (options !== undefined) {
-			const read = this.lookOptions(call, options);
-			// Engine memory keeps the chain, so options read before need no copy again. The shared
-			// record holds whichever options were not frozen last.
-			if (read !== this.looking || read === sharedLook) {
-				this.looking = read;
-				this.system.jointOverrides(call).set(read.floats, first + C.JOINT_OVERRIDE_LOOK_COUNT);
-			}
-		} else if (this.looking === undefined)
-			refuse(
-				`${call}() got no options on ${this.describe()}, which looks at nothing yet. Name the joints that turn in the first call, for example lookAt(target, { joints: ['Neck', 'Head'] }).`,
-			);
+		if (options !== undefined || this.looking === undefined) this.useLook(call, options, first);
 		const table = this.system.jointOverrides(call);
 		const targets = this.system.lookTargets();
 		const at = (this.instance - 1) * 3;
@@ -1015,19 +1010,14 @@ export class Animator implements Described {
 
 	/**
 	 * Writes a rotation override of `mode` for `joint` into the slot that holds one of the same
-	 * joint and mode, or else into the first empty slot.
+	 * joint and mode, or else into the first empty slot, and returns the slot. The caller writes
+	 * the weight itself, because a fraction passed to a call that the browser does not inline is
+	 * boxed.
 	 */
-	private override(
-		call: string,
-		joint: number | string,
-		mode: number,
-		rotation: QuatLike,
-		weight: number,
-	): void {
+	private override(call: string, joint: number | string, mode: number, rotation: QuatLike): number {
 		if (DEV) {
 			checks.checkLive(call, this.object);
 			for (let k = 0; k < 4; k++) checks.checkNumber(call, 'rotation', rotation[k] as number, this);
-			this.checkUnit(call, weight);
 		}
 		const index = this.jointAt(call, joint) + 1;
 		const table = this.system.jointOverrides(call);
@@ -1051,9 +1041,26 @@ export class Animator implements Described {
 		table[r + 1] = rotation[1] as number;
 		table[r + 2] = rotation[2] as number;
 		table[r + 3] = rotation[3] as number;
-		table[slot + C.JOINT_OVERRIDE_WEIGHT] = weight;
 		table[slot + C.JOINT_OVERRIDE_MODE] = mode;
 		table[slot + C.JOINT_OVERRIDE_JOINT] = index;
+		return slot;
+	}
+
+	/**
+	 * Copies the chain of a look-at's `options` into engine memory, or refuses a first look-at
+	 * without options. Options read before need no copy again, since engine memory keeps the
+	 * chain. The shared record holds whichever options were not frozen last, so it is copied each
+	 * time.
+	 */
+	private useLook(call: string, options: LookAtOptions | undefined, first: number): void {
+		if (options === undefined)
+			refuse(
+				`${call}() got no options on ${this.describe()}, which looks at nothing yet. Name the joints that turn in the first call, for example lookAt(target, { joints: ['Neck', 'Head'] }).`,
+			);
+		const read = this.lookOptions(call, options);
+		if (read === this.looking && read !== sharedLook) return;
+		this.looking = read;
+		this.system.jointOverrides(call).set(read.floats, first + C.JOINT_OVERRIDE_LOOK_COUNT);
 	}
 
 	/** The index of `joint`, a name or an index, which it checks in every build. */

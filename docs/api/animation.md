@@ -260,6 +260,24 @@ In each frame, the clips blend first, then each joint rotation applies in the or
 
 A scene that never calls a joint call pays nothing: the engine makes the table of joint overrides at the first call. After that, an object without overrides costs a few reads in each frame. A joint rotation costs one quaternion blend. A look-at costs a few matrix products for each joint between the skeleton's root and the chain's last joint.
 
+The calls allocate nothing, but a weight that changes in each frame can. The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. To keep a crowd's weights from boxing, call the joint calls from a small function of its own. Give it only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
+
+```ts
+const now = new Float64Array(1);
+const aimCrowd = (anim: Animator, k: number) => {
+  anim.lookAt(enemyPosition, undefined, 0.5 + 0.5 * Math.sin(now[0] + k));
+};
+
+return {
+  onUpdate() {
+    now[0] = time.now;
+    for (let k = 0; k < crowd.length; k++) aimCrowd(crowd[k], k);
+  },
+};
+```
+
+The default weight, 1, is a small whole number, which never boxes. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+
 ## Events
 
 `onEvent(name, handler)` calls `handler` each time a playing clip reaches an event of that name. It returns a function that removes the handler. The handler gets the event's `name`, its `clip` and its `layer`. The animator passes the same object to every handler, so copy what you keep.
