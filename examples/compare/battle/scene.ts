@@ -12,7 +12,6 @@
 // and runs five times a second for each soldier, spread over the steps.
 
 import {
-	boxGeometry,
 	type CameraLoop,
 	type CompareMode,
 	clamp,
@@ -33,6 +32,7 @@ import {
 import { addSprite, FIRE_FRAMES, type SpriteRows } from '../../lib/particles';
 import type { DeviceClass, RampPlan } from '../../lib/ramp';
 import {
+	broadleafTree,
 	clothGeometry,
 	deadTree,
 	grassClump,
@@ -43,8 +43,10 @@ import {
 	placed,
 	rockGeometry,
 	ruinedWall,
+	type TreeParts,
 	tankParts,
 	taperedCylinder,
+	tracerStreak,
 	turn,
 } from './shapes';
 
@@ -71,6 +73,8 @@ export const MODELS = {
 	},
 } as const;
 export type ModelName = keyof typeof MODELS;
+/** The soldier's rifle: a mesh of its own under the right hand's joint. */
+export const RIFLE = 'AK';
 
 /** The four clips of both models, by the number that the simulation keeps. */
 export const CLIP_NAMES = ['idle', 'run', 'shoot', 'die'] as const;
@@ -103,6 +107,11 @@ const MECH = { speed: 1.7, range: 60, fireSeconds: 0.6, hitChance: 0.35 } as con
 const TANK = { speed: 1.4, range: 95, fireSeconds: 4.5, blastRadius: 4.5, blastKills: 6 } as const;
 const DEAD_SECONDS = 4;
 const TURN_RATE = 3;
+/**
+ * How a fighting unit aims: true turns its whole body toward its target. False keeps the body's
+ * heading and leaves the aim to the upper body, for when joint overrides can turn the spine.
+ */
+export const AIM_WITH_WHOLE_BODY = true;
 /** Units search for targets once every this many steps: five times a second at 120 steps. */
 const SEARCH_EVERY = 24;
 const TRACER_SPEED = 160;
@@ -206,12 +215,12 @@ export function terrainHeight(x: number, z: number): number {
 	return landHeight(x, z) + (inField ? craterHeight(x, z) : 0);
 }
 
-/** How scorched the ground is at (x, z), from 0 to 1: darkest in and around each crater. */
+/** How scorched the ground is at (x, z), from 0 to 1: darkest on and around each crater's rim. */
 function scorch(x: number, z: number): number {
 	let s = 0;
 	for (const c of CRATERS) {
 		const r = Math.hypot(x - c.x, z - c.z) / c.radius;
-		if (r < 2.4) s = Math.max(s, 1 - smoothstep((r - 0.6) / 1.8));
+		if (r < 2.4) s = Math.max(s, (1 - smoothstep((r - 0.6) / 1.8)) * smoothstep(r / 0.6));
 	}
 	return s;
 }
@@ -233,32 +242,44 @@ function fieldNoise(x: number, z: number, scale: number, seed: number): number {
 }
 
 /**
- * The ground's color at a point, linear: dry grass and earth by noise, trampled dirt where the
- * armies march, scorched earth around craters, and darker hills.
+ * The ground's layers at a point, from 0 to 1 each, which the ground shader mixes: grass, mud and
+ * scorch, and how dry the grass is. Grass grows in patches and thins where the armies march; mud
+ * lies in the trampled lanes and in the craters' wet bottoms; scorched earth rings each crater.
+ * The hills carry meadow, lush in broad swathes. The shader adds bare rock on steep and high
+ * ground.
  */
-export function groundColor(x: number, z: number, y: number): [number, number, number] {
-	const n = 0.6 * fieldNoise(x, z, 0.05, 3) + 0.4 * fieldNoise(x, z, 0.21, 4);
+export function groundLayers(x: number, z: number, y: number): [number, number, number, number] {
+	const patch = 0.6 * fieldNoise(x, z, 0.05, 3) + 0.4 * fieldNoise(x, z, 0.21, 4);
 	const broad = fieldNoise(x, z, 0.012, 5);
-	const grass: [number, number, number] = [0.075, 0.09, 0.032];
-	const dry: [number, number, number] = [0.2, 0.15, 0.075];
-	const dirt: [number, number, number] = [0.15, 0.105, 0.065];
-	const burnt: [number, number, number] = [0.028, 0.025, 0.022];
-	const stone: [number, number, number] = [0.15, 0.14, 0.12];
 	const trampled =
 		clamp(1 - (Math.abs(z) - 30) / 50, 0, 1) * clamp(1 - (Math.abs(x) - 120) / 80, 0, 1);
 	const s = scorch(x, z);
-	const mix = (a: readonly number[], b: readonly number[], t: number) =>
-		[0, 1, 2].map((k) => lerp(a[k] as number, b[k] as number, t)) as [number, number, number];
-	let c = mix(grass, dry, smoothstep(clamp((n - 0.5) * 2.2 + 0.5 + (broad - 0.5) * 0.8, 0, 1)));
-	c = mix(c, dirt, trampled * (0.55 + 0.4 * n));
-	c = mix(c, burnt, s * 0.92);
-	// The hills carry dark meadow in broad patches, and turn to bare stone as they climb.
-	const hill = smoothstep(clamp((y - 4) / 20, 0, 1));
-	const meadow = smoothstep(clamp((fieldNoise(x, z, 0.009, 10) - 0.35) * 3, 0, 1));
-	c = mix(c, [0.045, 0.06, 0.028], hill * meadow * 0.85);
-	c = mix(c, stone, smoothstep(clamp((y - 22) / 40 + (broad - 0.5) * 0.8, 0, 1)) * 0.75);
-	const shade = 1 - clamp(y / 160, 0, 0.3);
-	return [c[0] * shade, c[1] * shade, c[2] * shade];
+	const hill = smoothstep((y - 4) / 20);
+	const meadow = smoothstep((fieldNoise(x, z, 0.009, 10) - 0.3) * 3);
+	const grass = clamp(
+		lerp(smoothstep(patch * 1.5 - 0.25), 0.65 + 0.35 * meadow, hill) *
+			(1 - 0.85 * trampled) *
+			(1 - s),
+		0,
+		1,
+	);
+	const mud = clamp(
+		trampled * (0.35 + 0.65 * fieldNoise(x, z, 0.08, 12)) + 0.9 * craterBottom(x, z),
+		0,
+		1,
+	);
+	const dry = clamp(0.25 + 0.9 * (broad - 0.5) + 0.5 * (patch - 0.5) - 0.4 * hill * meadow, 0, 1);
+	return [grass, mud, s, dry];
+}
+
+/** How deep in a crater's wet bottom the point lies, from 0 at its edge to 1 in its middle. */
+function craterBottom(x: number, z: number): number {
+	let w = 0;
+	for (const c of CRATERS) {
+		const r = Math.hypot(x - c.x, z - c.z) / c.radius;
+		if (r < 0.75) w = Math.max(w, smoothstep((0.75 - r) / 0.45));
+	}
+	return w;
 }
 
 /** The detailed field's mesh, and the land's mesh around it. The land sinks under the field. */
@@ -272,7 +293,7 @@ export function terrainMeshes(): { field: MeshData; land: MeshData } {
 		Math.round((2 * halfX) / step),
 		Math.round((2 * halfZ) / step),
 		terrainHeight,
-		groundColor,
+		groundLayers,
 	);
 	const inside = (x: number, z: number) => Math.abs(x) < halfX - 1e-3 && Math.abs(z) < halfZ - 1e-3;
 	const land = heightGrid(
@@ -283,7 +304,7 @@ export function terrainMeshes(): { field: MeshData; land: MeshData } {
 		Math.round((2 * LAND.halfX) / LAND.step),
 		Math.round((2 * LAND.halfZ) / LAND.step),
 		(x, z) => landHeight(x, z) - (inside(x, z) ? 1.5 : 0),
-		(x, z) => groundColor(x, z, landHeight(x, z)),
+		(x, z) => groundLayers(x, z, landHeight(x, z)),
 	);
 	return { field, land };
 }
@@ -310,7 +331,7 @@ const placeAt = (x: number, z: number, yaw: number, scale: number, variant = 0):
 	variant,
 });
 
-/** Variants of the rock and the dead tree. */
+/** Variants of the rock, and of the trees on the flanks: two broadleaf trees and a dead one. */
 export const ROCK_VARIANTS = 4;
 export const TREE_VARIANTS = 3;
 
@@ -400,7 +421,11 @@ export const GRASS: readonly Placed[] = (() => {
 		const x = (hash01(BATTLE_SEED, k, 41) * 2 - 1) * FIELD.halfX;
 		const z = (hash01(BATTLE_SEED, k, 42) * 2 - 1) * FIELD.halfZ;
 		const patch = fieldNoise(x, z, 0.05, 3);
-		const keep = (inLanes(z) ? 0.08 : 0.55) * smoothstep(patch * 1.4 - 0.2) * (1 - scorch(x, z));
+		const keep =
+			(inLanes(z) ? 0.08 : 0.55) *
+			smoothstep(patch * 1.4 - 0.2) *
+			(1 - scorch(x, z)) *
+			(1 - craterBottom(x, z));
 		if (hash01(BATTLE_SEED, k, 43) > keep) continue;
 		out.push(
 			placeAt(
@@ -873,8 +898,11 @@ export function stepBattle(s: BattleState): void {
 			const dz = (s.z[target] as number) - z;
 			if (dx * dx + dz * dz <= stats.range * stats.range) {
 				s.state[i] = UnitState.fight;
-				const heading = turnToward(s.heading[i] as number, Math.atan2(dx, dz), dt);
-				s.heading[i] = heading;
+				const bearing = Math.atan2(dx, dz);
+				const heading = AIM_WITH_WHOLE_BODY
+					? turnToward(s.heading[i] as number, bearing, dt)
+					: bearing;
+				if (AIM_WITH_WHOLE_BODY) s.heading[i] = heading;
 				setClip(s, i, Clip.shoot);
 				const cooldown = (s.cooldown[i] as number) - dt;
 				if (cooldown <= 0) {
@@ -1085,8 +1113,8 @@ export type BattleMesh =
 export function battleMeshes(): {
 	single: Record<Exclude<BattleMesh, 'rock' | 'tree' | 'pine' | 'wall' | 'grass'>, MeshData>;
 	rocks: MeshData[];
-	trees: MeshData[];
-	pines: MeshData[];
+	trees: TreeParts[];
+	pines: TreeParts[];
 	walls: MeshData[];
 	grass: MeshData[];
 } {
@@ -1114,12 +1142,16 @@ export function battleMeshes(): {
 					{ position: [1.2, TANK_TURRET_HEIGHT + 0.25, 0.8], rotation: turn(0, 1, 0, 0.6 + 0.4) },
 				],
 			]),
-			// A tracer is a thin streak of light along +Z; a shell a short dark slug.
-			tracer: boxGeometry(0.05, 0.05, 3),
+			// A tracer is a thin streak of light that trails its head; a shell a short dark slug.
+			tracer: tracerStreak(4.5, 0.045),
 			shell: placed(cylinderGeometry(0.1, 0.5, 8), { rotation: turn(1, 0, 0, Math.PI / 2) }),
 		},
 		rocks: Array.from({ length: ROCK_VARIANTS }, (_, k) => rockGeometry(BATTLE_SEED * 13 + k)),
-		trees: Array.from({ length: TREE_VARIANTS }, (_, k) => deadTree(BATTLE_SEED * 17 + k)),
+		trees: Array.from({ length: TREE_VARIANTS }, (_, k) =>
+			k < TREE_VARIANTS - 1
+				? broadleafTree(BATTLE_SEED * 17 + k)
+				: { wood: deadTree(BATTLE_SEED * 17 + k) },
+		),
 		pines: Array.from({ length: PINE_VARIANTS }, (_, k) => pineTree(BATTLE_SEED * 23 + k)),
 		walls: RUINS.map((wall, k) =>
 			ruinedWall(wall.length, wall.height, BATTLE_SEED + k, wall.height > 3),
@@ -1155,6 +1187,15 @@ export function battleTriangles(count: number, meshes: ReturnType<typeof battleM
 			(sum, p) => sum + triangleCount(variants[p.variant % variants.length] as MeshData),
 			0,
 		);
+	const treeTriangles = (list: readonly Placed[], variants: TreeParts[]) =>
+		placedTriangles(
+			list,
+			variants.map((t) => t.wood),
+		) +
+		list.reduce((sum, p) => {
+			const foliage = variants[p.variant % variants.length]?.foliage;
+			return sum + (foliage ? triangleCount(foliage) : 0);
+		}, 0);
 	return (
 		(units - mechs) * MODELS.soldier.triangles +
 		mechs * MODELS.mech.triangles +
@@ -1162,8 +1203,8 @@ export function battleTriangles(count: number, meshes: ReturnType<typeof battleM
 		triangleCount(single.field) +
 		triangleCount(single.land) +
 		placedTriangles(ALL_ROCKS, meshes.rocks) +
-		placedTriangles(TREES, meshes.trees) +
-		placedTriangles(PINES, meshes.pines) +
+		treeTriangles(TREES, meshes.trees) +
+		treeTriangles(PINES, meshes.pines) +
 		placedTriangles(GRASS, meshes.grass) +
 		meshes.walls.reduce((sum, m) => sum + triangleCount(m), 0) +
 		TANK_TRAPS.length * triangleCount(single.trap) +
@@ -1191,6 +1232,10 @@ export interface BattleMaterial {
 	doubleSided?: boolean;
 	/** True for things that cast no shadow, such as tracers. */
 	noShadow?: boolean;
+	/** Where the surface's alpha falls below this, it draws nothing, as foliage cards cut their outline. */
+	alphaCutoff?: number;
+	/** True for glows that add their light, times their alpha, to what lies behind, and hide nothing. */
+	additive?: boolean;
 }
 
 /** Each army's colors: its tanks' paint, its flag, and the tint of its soldiers' uniforms. */
@@ -1200,11 +1245,26 @@ export const ARMIES = [
 ] as const;
 
 export const BATTLE_MATERIALS = {
-	/** The field and the land: the ground surface, tinted by the terrain's vertex colors. */
-	ground: { color: '#ffffff', surface: 'ground', repeat: 0.35, vertexColors: true },
+	/** The field and the land: the ground shader mixes its layers by the terrain's vertex colors. */
+	ground: { color: '#ffffff', vertexColors: true },
 	rock: { color: '#8a8378', surface: 'rock', repeat: 0.5 },
-	tree: { color: '#3a3029', roughness: 0.9, metalness: 0 },
-	pine: { color: '#1f2a18', roughness: 0.9, metalness: 0 },
+	/** Trunks and branches. */
+	bark: { color: '#b5a593', surface: 'bark' },
+	/** The cards of the pines' needles and of the broadleaf trees' leaves, cut out by their alpha. */
+	needles: {
+		color: '#ffffff',
+		surface: 'needles',
+		vertexColors: true,
+		doubleSided: true,
+		alphaCutoff: 0.5,
+	},
+	leaves: {
+		color: '#ffffff',
+		surface: 'leaves',
+		vertexColors: true,
+		doubleSided: true,
+		alphaCutoff: 0.5,
+	},
 	trap: { color: '#6b4a36', surface: 'paint', repeat: 2 },
 	wall: { color: '#b8ab95', surface: 'masonry' },
 	pole: { color: '#4a3b2c', roughness: 0.8, metalness: 0 },
@@ -1213,13 +1273,73 @@ export const BATTLE_MATERIALS = {
 		roughness: 1,
 		metalness: 0,
 		emissive: '#ffcf7a',
-		emissiveIntensity: 14,
+		emissiveIntensity: 18,
+		vertexColors: true,
+		doubleSided: true,
+		additive: true,
 		noShadow: true,
 	},
 	shell: { color: '#2b2b2b', roughness: 0.4, metalness: 0.8, noShadow: true },
 	grass: { color: '#9a9a5e', roughness: 0.85, metalness: 0, doubleSided: true },
 	flag: { color: '#ffffff', roughness: 0.9, metalness: 0, doubleSided: true },
 } as const satisfies Record<string, BattleMaterial>;
+
+/**
+ * The ground shader's layers, each a surface made in code with its tiles per meter, and the linear
+ * tints that turn their light maps into lush and dry grass, earth, wet mud, scorched earth and
+ * stone. The field's vertex colors give each layer's share (`groundLayers`).
+ */
+export const GROUND_LOOK = {
+	layers: {
+		grass: { surface: 'grass', repeat: 0.55 },
+		earth: { surface: 'ground', repeat: 0.35 },
+		rock: { surface: 'rock', repeat: 0.12 },
+	},
+	tints: {
+		lush: '#89955a' as Hex,
+		dry: '#d7bc89' as Hex,
+		earth: '#9c846a' as Hex,
+		mud: '#5d5348' as Hex,
+		scorch: '#45423f' as Hex,
+		stone: '#aea99d' as Hex,
+	},
+} as const satisfies {
+	layers: Record<'grass' | 'earth' | 'rock', { surface: SurfaceKind; repeat: number }>;
+	tints: Record<string, Hex>;
+};
+
+/** A color's linear values from its sRGB hex, times `scale`, as both engines' uniforms take them. */
+export function linearColor(hex: Hex, scale = 1): [number, number, number] {
+	const value = Number.parseInt(hex.slice(1), 16);
+	return [16, 8, 0].map((shift) => {
+		const c = ((value >> shift) & 255) / 255;
+		return (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4) * scale;
+	}) as [number, number, number];
+}
+
+/**
+ * The units' surfaces, which the unit shader draws from each vertex color: its color, and its
+ * surface class in alpha (skin, glowing vents, rubber and leather and wood, bare metal, painted
+ * steel, cloth). The palette is darker and less saturated than the models' toy colors. Cloth shows
+ * a weave with worn patches, painted steel chips to bare metal, and the mech's armor shows panels
+ * with seams. Mud climbs the legs, soot darkens patches above it, the vents glow, and a soft rim of
+ * the dusk sky's light outlines each unit. `detailScale` is tiles of the detail texture per unit of
+ * the model's texture coordinates, and `mudHeight` how high the mud reaches, in meters.
+ */
+export const UNIT_LOOK = {
+	soldier: { detail: 'fabric', detailScale: 2.5, panels: 0, mudHeight: 0.55 },
+	mech: { detail: 'panels', detailScale: 0.28, panels: 1, mudHeight: 1.4 },
+	rifle: { detail: 'fabric', detailScale: 2.5, panels: 0, mudHeight: 0 },
+	saturation: 0.7,
+	shade: 0.8,
+	mud: '#3b2e22' as Hex,
+	rim: { color: '#8a9ac0' as Hex, strength: 0.35 },
+	glow: { color: '#ff7a2a' as Hex, strength: 6 },
+} as const satisfies Record<
+	'soldier' | 'mech' | 'rifle',
+	{ detail: SurfaceKind; detailScale: number; panels: number; mudHeight: number }
+> &
+	Record<string, unknown>;
 
 /** A wreck's charred steel: dark, rough, with embers that glow in its cracks (the ember shader). */
 export const WRECK_LOOK = {
@@ -1256,9 +1376,11 @@ export const BATTLE_LOOK = {
 		rayleigh: 3.2,
 		mieCoefficient: 0.003,
 		mieDirectionalG: 0.85,
-		cloudCoverage: 0.42,
-		cloudDensity: 0.5,
-		cloudElevation: 0.55,
+		// A broken deck of heavy cloud, low and large, dark against the last light.
+		cloudCoverage: 0.62,
+		cloudDensity: 0.8,
+		cloudElevation: 0.35,
+		cloudScale: 0.00012,
 	},
 	/** The sky as the background, and its environment light. */
 	skyIntensity: 0.85,

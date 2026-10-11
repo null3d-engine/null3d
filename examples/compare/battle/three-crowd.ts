@@ -20,11 +20,15 @@ import {
 	unitKindOf,
 } from './scene';
 import { type ClipPoser, poseUnitMixer, unitActions } from './three-pose';
+import type { unitNodes } from './three-shaders';
+
+type UnitSurfaceNodes = ReturnType<typeof unitNodes>;
 
 type WebGPUModule = typeof WebGPU;
 type TSLModule = typeof TSL;
 type UintNode = WebGPU.Node<'uint'>;
 type Vec4Node = WebGPU.Node<'vec4'>;
+type Vec3Node = WebGPU.Node<'vec3'>;
 
 /** Texture rows are this many texels wide. */
 const TABLE_WIDTH = 2048;
@@ -101,8 +105,12 @@ export interface CrowdOptions {
 	name: ModelName;
 	/** The most units of both kinds: the crowd makes room for its share of them. */
 	capacity: number;
-	/** Each army's material, whose color tints the model's vertex colors. */
-	uniforms: ThreeModule.MeshStandardMaterial[];
+	/** Each army's tint, linear, which the cloth and the paint of its units take. */
+	tints: readonly (readonly [number, number, number])[];
+	/** A unit's surface, from its tint and the place of its feet (`unitNodes`). */
+	surface(tint: Vec3Node, feet: Vec3Node): UnitSurfaceNodes;
+	/** The rifles' material. */
+	rifle: ThreeModule.Material;
 	shadows: boolean;
 	/** Tables in float textures: WebGPURenderer's WebGL2 mode. */
 	textures: boolean;
@@ -148,13 +156,12 @@ export class DrawCrowd {
 		const group = new webgpu.Group();
 		this.object = group as unknown as ThreeModule.Object3D;
 		this.chunkSize = options.textures ? TEXTURE_CHUNK_UNITS : units;
-		// The army's tint of each slot, which multiplies the model's vertex colors.
+		// The army's tint of each slot, which its cloth and paint take.
 		const tints = new Float32Array(units * 3);
 		for (let i = 0; i < capacity; i++) {
 			const slot = this.slotOf[i] as number;
 			if (slot < 0) continue;
-			const color = (options.uniforms[i & 1] as ThreeModule.MeshStandardMaterial).color;
-			tints.set([color.r, color.g, color.b], slot * 3);
+			tints.set(options.tints[i & 1] as readonly number[], slot * 3);
 		}
 		for (let first = 0; first < units; first += this.chunkSize) {
 			const size = Math.min(this.chunkSize, units - first);
@@ -174,7 +181,7 @@ export class DrawCrowd {
 			const source = rifle as ThreeModule.Mesh;
 			const batch = new webgpu.InstancedMesh(
 				source.geometry as never,
-				source.material as never,
+				options.rifle as never,
 				units,
 			);
 			batch.instanceMatrix.setUsage(webgpu.DynamicDrawUsage);
@@ -248,8 +255,7 @@ export class DrawCrowd {
 				bones.read(at.add(uint(3))),
 			);
 		};
-		const material = new webgpu.MeshStandardNodeMaterial({ roughness: 0.8, metalness: 0 });
-		material.vertexColors = true;
+		const material = new webgpu.MeshStandardNodeMaterial();
 		material.positionNode = Fn(() => {
 			const unit = instanceIndex;
 			const joints = attribute('skinIndex', 'uvec4');
@@ -265,7 +271,16 @@ export class DrawCrowd {
 			normalLocal.assign(mat3(toWorld).mul(attribute('normal', 'vec3')).normalize());
 			return toWorld.mul(vec4(attribute('position', 'vec3'), 1)).xyz;
 		})();
-		material.colorNode = units.read(instanceIndex.mul(uint(5)).add(uint(4)));
+		const at = instanceIndex.mul(uint(5));
+		const surface = this.options.surface(
+			units.read(at.add(uint(4))).xyz,
+			units.read(at.add(uint(3))).xyz,
+		);
+		material.colorNode = surface.color;
+		material.roughnessNode = surface.roughness;
+		material.metalnessNode = surface.metalness;
+		material.normalNode = surface.normal;
+		material.emissiveNode = surface.emissive;
 		const mesh = new webgpu.Mesh(geometry as never, material);
 		mesh.frustumCulled = false;
 		mesh.castShadow = this.options.shadows;

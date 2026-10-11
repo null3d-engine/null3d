@@ -66,7 +66,8 @@ function expectValidMesh(mesh: MeshData): void {
 	const vertices = mesh.position.length / 3;
 	expect(mesh.normal.length).toBe(vertices * 3);
 	expect(mesh.uv.length).toBe(vertices * 2);
-	if (mesh.color) expect(mesh.color.length).toBe(vertices * 3);
+	if (mesh.color)
+		expect([3, 4].map((channels) => vertices * channels)).toContain(mesh.color.length);
 	expect(mesh.index.length % 3).toBe(0);
 	for (const i of mesh.index) expect(i).toBeLessThan(vertices);
 	for (const v of mesh.position) expect(Number.isFinite(v)).toBe(true);
@@ -283,7 +284,9 @@ describe('the field', () => {
 		const all = [
 			...Object.values(meshes.single),
 			...meshes.rocks,
-			...meshes.trees,
+			...[...meshes.trees, ...meshes.pines].flatMap((tree) =>
+				tree.foliage ? [tree.wood, tree.foliage] : [tree.wood],
+			),
 			...meshes.walls,
 			...meshes.grass,
 		];
@@ -306,7 +309,7 @@ describe('the field', () => {
 	});
 
 	test('the surfaces of the field are made in code', () => {
-		for (const kind of ['ground', 'rock', 'masonry', 'camo'] as const) {
+		for (const kind of ['ground', 'grass', 'rock', 'masonry', 'camo', 'bark'] as const) {
 			const maps = surfaceMaps(kind, 16, 7);
 			expect(maps.color.data.length).toBe(16 * 16 * 4);
 			expect(maps.color.colorSpace).toBe('srgb');

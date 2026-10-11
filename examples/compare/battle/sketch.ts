@@ -34,6 +34,7 @@ import {
 import {
 	effectsFromText,
 	gradeTable,
+	type Hex,
 	type MeshData,
 	modeFromText,
 	SIM_STEP,
@@ -68,12 +69,15 @@ import {
 	FLAGS,
 	flightTransform,
 	GRASS,
+	GROUND_LOOK,
 	LIGHT_COUNT,
+	linearColor,
 	MODELS,
 	type ModelName,
 	PINES,
 	type Placed,
 	particleCapacity,
+	RIFLE,
 	RUINS,
 	SURFACE_SIZE,
 	setActiveUnits,
@@ -83,6 +87,7 @@ import {
 	TANK_TURRET_HEIGHT,
 	TOWER,
 	TREES,
+	UNIT_LOOK,
 	UnitKind,
 	unitKindOf,
 	WIND,
@@ -91,6 +96,7 @@ import {
 	writeLights,
 	writeParticles,
 } from './scene';
+import type { TreeParts } from './shapes';
 
 /** Units that each frame makes or destroys, within the engine's queue of changes. */
 const UNITS_PER_FRAME = 400;
@@ -139,6 +145,164 @@ fn surface(input: SurfaceInput) -> Surface {
     let low = clamp(1.4 - (input.worldPosition.y - object.position.y) * 0.6, 0.0, 1.0);
     s.emissive = material.ember * (material.glow * cracks * pulse * low * patches);
     s.roughness = mix(s.roughness, 1.0, cracks);
+    return s;
+}
+`;
+
+/**
+ * The ground: grass, earth, wet mud, scorched earth and bare rock, each with its own color and
+ * normal maps, mixed by the terrain's vertex colors, the slope and the height. Each layer shows
+ * through the one over it where its heights rise higher, and a far larger copy of the earth's
+ * heights shades the whole, so the tiles do not repeat to the eye.
+ */
+const groundLayers = /* wgsl */ `
+struct Uniforms {
+    lush: vec3f,
+    grassRepeat: f32,
+    dry: vec3f,
+    earthRepeat: f32,
+    earth: vec3f,
+    rockRepeat: f32,
+    mud: vec3f,
+    scorch: vec3f,
+    stone: vec3f,
+}
+
+var grassColor: texture_2d<f32>;
+var grassNormal: texture_2d<f32>;
+var earthColor: texture_2d<f32>;
+var earthNormal: texture_2d<f32>;
+var rockColor: texture_2d<f32>;
+var rockNormal: texture_2d<f32>;
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let p = input.worldPosition.xz;
+    let layers = input.vertexColor;
+    let gp = p * material.grassRepeat;
+    let ep = p * material.earthRepeat;
+    let rp = p * material.rockRepeat;
+    let grass = textureSample(grassColor, grassColorSampler, gp);
+    let soil = textureSample(earthColor, earthColorSampler, ep);
+    let rock = textureSample(rockColor, rockColorSampler, rp);
+    let grassBump = textureSample(grassNormal, grassNormalSampler, gp).xyz * 2.0 - 1.0;
+    let soilBump = textureSample(earthNormal, earthNormalSampler, ep).xyz * 2.0 - 1.0;
+    let rockBump = textureSample(rockNormal, rockNormalSampler, rp).xyz * 2.0 - 1.0;
+    let broad = textureSample(earthColor, earthColorSampler, p * 0.011).a;
+
+    let grassShare = clamp(layers.r * 1.8 - 0.4 + (grass.a - soil.a) * 0.9, 0.0, 1.0);
+    let blade = grass.rgb * mix(material.lush, material.dry, layers.a);
+    var color = mix(soil.rgb * material.earth, blade, grassShare);
+    var bump = mix(soilBump, grassBump, grassShare);
+    var rough = mix(0.93, 0.85, grassShare);
+    // Mud fills the hollows of the earth first, smooth and wet.
+    let mudShare = clamp(layers.g * 1.6 - 0.3 + (0.5 - soil.a) * 0.8, 0.0, 1.0);
+    color = mix(color, soil.rgb * material.mud, mudShare);
+    bump = mix(bump, vec3f(0.0, 0.0, 1.0), mudShare * 0.7);
+    rough = mix(rough, 0.35, mudShare);
+    let scorchShare = clamp(layers.b * 1.5 - 0.2 + (soil.a - 0.5) * 0.6, 0.0, 1.0);
+    color = mix(color, soil.rgb * material.scorch, scorchShare);
+    rough = mix(rough, 0.97, scorchShare);
+    // Rock shows on steep slopes and high ground.
+    let steep = 1.0 - input.normal.y;
+    let height = (input.worldPosition.y - 40.0) / 60.0;
+    let rockShare = clamp((steep - 0.2) * 5.0 + height + rock.a - 0.5, 0.0, 1.0);
+    color = mix(color, rock.rgb * material.stone, rockShare);
+    bump = mix(bump, rockBump, rockShare);
+    rough = mix(rough, 0.85, rockShare);
+
+    // The maps run along x and z, so their tangent follows x across the slope.
+    let n = input.normal;
+    let tangent = normalize(vec3f(1.0, 0.0, 0.0) - n * n.x);
+    s.normal = normalize(tangent * bump.x + cross(tangent, n) * bump.y + n * bump.z);
+    s.baseColor = color * (0.75 + 0.5 * broad);
+    s.roughness = rough;
+    s.metalness = 0.0;
+    return s;
+}
+`;
+
+/**
+ * The soldiers', mechs' and rifles' surfaces, from each vertex color: its color, and its surface
+ * class in alpha. Cloth shows its weave and worn patches; painted steel takes the army's tint,
+ * chips to bare metal and, on the mech, shows panel seams; metal's roughness varies; mud climbs the
+ * legs and soot darkens patches above it; vents glow; and a soft rim of the sky's light outlines
+ * each unit. The detail map's normals bend the light through a frame worked out from the
+ * screen-space change of position and texture coordinates, as the models carry no tangents.
+ */
+const unitSurface = /* wgsl */ `
+struct Uniforms {
+    tint: vec3f,
+    detailScale: f32,
+    mud: vec3f,
+    mudHeight: f32,
+    rim: vec3f,
+    shade: f32,
+    glow: vec3f,
+    saturation: f32,
+    panels: f32,
+}
+
+var detailColor: texture_2d<f32>;
+var detailNormal: texture_2d<f32>;
+
+fn share(part: f32, code: f32) -> f32 {
+    return clamp(1.0 - abs(part - code) * 5.0, 0.0, 1.0);
+}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let part = input.vertexColor.a;
+    let skin = share(part, 0.0);
+    let glow = share(part, 0.2);
+    let rubber = share(part, 0.4);
+    let metal = share(part, 0.6);
+    let paint = share(part, 0.8);
+    let cloth = share(part, 1.0);
+    let uv = input.uv * material.detailScale;
+    let detail = textureSample(detailColor, detailColorSampler, uv);
+    let bump = textureSample(detailNormal, detailNormalSampler, uv).xyz * 2.0 - 1.0;
+    let wear = textureSample(detailColor, detailColorSampler, input.uv * 0.31).a;
+    let speck = textureSample(detailColor, detailColorSampler, input.uv * 1.7 + 0.37).a;
+
+    var base = input.vertexColor.rgb;
+    base = mix(vec3f(dot(base, vec3f(0.2126, 0.7152, 0.0722))), base, material.saturation);
+    base *= material.shade * mix(vec3f(1.0), material.tint, cloth + paint);
+    base *= mix(1.0, detail.r * 1.25, cloth + material.panels * paint);
+    base = mix(base, base * 1.45, cloth * smoothstep(0.62, 0.8, wear));
+    let seam = material.panels * paint * (1.0 - smoothstep(0.03, 0.1, detail.a));
+    let worn = material.panels * (1.0 - smoothstep(0.08, 0.2, detail.a)) * smoothstep(0.45, 0.7, wear);
+    let chip = paint * clamp(smoothstep(0.72, 0.8, speck) + worn - seam, 0.0, 1.0);
+    base = mix(base * (1.0 - 0.7 * seam), vec3f(0.3, 0.29, 0.27), chip);
+    let height = input.worldPosition.y - object.position.y;
+    let mudOn = min(material.mudHeight * 100.0, 1.0);
+    let mudLine = max(material.mudHeight, 0.01) * (0.7 + 0.6 * wear);
+    let mud = mudOn * (1.0 - skin - glow) * (1.0 - smoothstep(mudLine * 0.6, mudLine, height));
+    base = mix(base, material.mud * (0.8 + 0.4 * speck), mud * 0.85);
+    base *= 1.0 - mudOn * (1.0 - glow) * 0.6 * smoothstep(0.72, 0.9, wear);
+    s.baseColor = base;
+    s.metalness = clamp(metal * 0.85 + chip * 0.8, 0.0, 1.0) * (1.0 - mud);
+    let rough = skin * 0.55 + glow * 0.4 + rubber * 0.7 + metal * (0.3 + 0.35 * wear)
+        + paint * (0.5 + 0.25 * wear) + cloth * 0.92;
+    s.roughness = mix(mix(rough, 0.35, chip), 0.95, mud);
+
+    let n = s.normal;
+    let p = input.relativePosition;
+    let dp1 = dpdx(p);
+    let dp2 = dpdy(p);
+    let duv1 = dpdx(uv);
+    let duv2 = dpdy(uv);
+    let dp2perp = cross(dp2, n);
+    let dp1perp = cross(n, dp1);
+    let t = dp2perp * duv1.x + dp1perp * duv2.x;
+    let b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let across = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+    let bumped = normalize(t * (across * bump.x) + b * (across * bump.y) + n * bump.z);
+    s.normal = normalize(mix(n, bumped, (cloth + material.panels * paint) * (1.0 - 0.6 * mud)));
+
+    let pulse = 0.75 + 0.25 * sin(frame.time * 3.0 + object.position.x * 0.7);
+    let facing = clamp(dot(s.normal, input.viewDirection), 0.0, 1.0);
+    s.emissive = material.glow * (glow * pulse) + material.rim * (pow(1.0 - facing, 3.0) * (1.0 - glow));
     return s;
 }
 `;
@@ -258,11 +422,27 @@ export default defineSketch(
 			}
 			return made;
 		};
+		const madeMaterials = new Map<BattleMaterial, Material<StandardValues>>();
+		/** The material of a spec, made once for each spec. */
 		const material = (spec: BattleMaterial): Material<StandardValues> => {
+			let made = madeMaterials.get(spec);
+			if (!made) {
+				made = makeMaterial(spec);
+				madeMaterials.set(spec, made);
+			}
+			return made;
+		};
+		const makeMaterial = (spec: BattleMaterial): Material<StandardValues> => {
 			const common = {
 				color: spec.color,
 				vertexColors: spec.vertexColors,
 				doubleSided: spec.doubleSided,
+				...(spec.alphaCutoff === undefined
+					? {}
+					: { alphaMode: 'mask' as const, alphaCutoff: spec.alphaCutoff }),
+				...(spec.additive
+					? { alphaMode: 'blend' as const, blending: 'additive' as const, depthWrite: false }
+					: {}),
 			};
 			if (spec.surface) {
 				const { color, orm, normal } = surface(spec.surface);
@@ -293,7 +473,26 @@ export default defineSketch(
 		const M = BATTLE_MATERIALS;
 
 		// The ground: the detailed field and the land around it.
-		const ground = material(M.ground);
+		const { grass: grassLayer, earth: earthLayer, rock: rockLayer } = GROUND_LOOK.layers;
+		const ground = materials.shader({
+			wgsl: groundLayers,
+			color: M.ground.color,
+			vertexColors: true,
+			uniforms: {
+				...GROUND_LOOK.tints,
+				grassRepeat: grassLayer.repeat,
+				earthRepeat: earthLayer.repeat,
+				rockRepeat: rockLayer.repeat,
+			},
+			textures: {
+				grassColor: surface(grassLayer.surface).color,
+				grassNormal: surface(grassLayer.surface).normal,
+				earthColor: surface(earthLayer.surface).color,
+				earthNormal: surface(earthLayer.surface).normal,
+				rockColor: surface(rockLayer.surface).color,
+				rockNormal: surface(rockLayer.surface).normal,
+			},
+		});
 		scene.createMesh({ mesh: toMesh(data.single.field), material: ground, ...shadows(M.ground) });
 		scene.createMesh({
 			mesh: toMesh(data.single.land),
@@ -343,8 +542,29 @@ export default defineSketch(
 			});
 		};
 		scatterVariants(data.rocks, ALL_ROCKS, M.rock, -0.1);
-		scatterVariants(data.trees, TREES, M.tree);
-		scatterVariants(data.pines, PINES, M.pine);
+		/** Each variant's wood in bark, and its foliage cards, at the places of the list. */
+		const scatterTrees = (
+			variants: TreeParts[],
+			list: readonly Placed[],
+			leaves: BattleMaterial,
+		) => {
+			scatterVariants(
+				variants.map((tree) => tree.wood),
+				list,
+				M.bark,
+			);
+			variants.forEach((tree, v) => {
+				if (tree.foliage)
+					scatter(
+						toMesh(tree.foliage),
+						list.filter((p) => p.variant === v),
+						material(leaves),
+						leaves,
+					);
+			});
+		};
+		scatterTrees(data.trees, TREES, M.leaves);
+		scatterTrees(data.pines, PINES, M.needles);
 		scatter(toMesh(data.single.trap), TANK_TRAPS, material(M.trap), M.trap);
 		const grass = materials.shader({
 			wgsl: swayGrass,
@@ -433,13 +653,35 @@ export default defineSketch(
 		// The armies' soldiers and mechs, from the two model files.
 		const [soldier, mech] = await Promise.all([
 			assets.loadGltf(sampleUrl('sources/characters/battle-soldier/soldier.glb')),
-			assets.loadGltf(sampleUrl('sources/characters/quaternius-mech/mech.glb')),
+			assets.loadGltf(sampleUrl('sources/characters/battle-mech/mech.glb')),
 		]);
 		const prefabs = { soldier, mech };
-		// Each army tints the models' vertex colors with its own material.
-		const uniforms = ARMIES.map((army) =>
-			materials.standard({ color: army.tint, vertexColors: true, roughness: 0.8, metalness: 0 }),
-		);
+		// Each army's soldiers and mechs, and every rifle, draw with the unit shader.
+		const U = UNIT_LOOK;
+		const unitMaterial = (look: (typeof U)['soldier' | 'mech' | 'rifle'], tint: Hex) => {
+			const maps = surface(look.detail);
+			return materials.shader({
+				wgsl: unitSurface,
+				vertexColors: true,
+				uniforms: {
+					tint,
+					detailScale: look.detailScale,
+					mud: U.mud,
+					mudHeight: look.mudHeight,
+					rim: linearColor(U.rim.color, U.rim.strength),
+					shade: U.shade,
+					glow: linearColor(U.glow.color, U.glow.strength),
+					saturation: U.saturation,
+					panels: look.panels,
+				},
+				textures: { detailColor: maps.color, detailNormal: maps.normal },
+			});
+		};
+		const unitMaterials = {
+			soldier: ARMIES.map((army) => unitMaterial(U.soldier, army.tint)),
+			mech: ARMIES.map((army) => unitMaterial(U.mech, army.tint)),
+		};
+		const rifleMaterial = unitMaterial(U.rifle, '#ffffff');
 		const units: UnitObject[] = [];
 		let shown = state.active;
 		const rotation = quat.create();
@@ -457,7 +699,8 @@ export default defineSketch(
 				castShadows: effects.shadows,
 				receiveShadows: effects.shadows,
 			});
-			(copy.find(facts.mesh) as Mesh).setMaterial(uniforms[i & 1] as Material);
+			(copy.find(facts.mesh) as Mesh).setMaterial(unitMaterials[name][i & 1] as Material);
+			if (name === 'soldier') (copy.find(RIFLE) as Mesh).setMaterial(rifleMaterial);
 			const animator = copy.animator();
 			const clip = state.clip[i] as number;
 			animator.play(CLIP_NAMES[clip], {

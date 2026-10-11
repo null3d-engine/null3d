@@ -48,12 +48,15 @@ import {
 	FLAGS,
 	flightTransform,
 	GRASS,
+	GROUND_LOOK,
 	LIGHT_COUNT,
+	linearColor,
 	MODELS,
 	type ModelName,
 	PINES,
 	type Placed,
 	particleCapacity,
+	RIFLE,
 	RUINS,
 	SURFACE_SIZE,
 	setActiveUnits,
@@ -63,6 +66,7 @@ import {
 	TANK_TURRET_HEIGHT,
 	TOWER,
 	TREES,
+	UNIT_LOOK,
 	UnitKind,
 	unitKindOf,
 	WIND,
@@ -71,9 +75,10 @@ import {
 	writeLights,
 	writeParticles,
 } from './scene';
+import type { TreeParts } from './shapes';
 import { DrawCrowd } from './three-crowd';
 import { type ClipPoser, poseUnitMixer, unitActions } from './three-pose';
-import { battleShaders, GRASS_PHASE, grassPhase } from './three-shaders';
+import { battleShaders, type DetailMaps, GRASS_PHASE, grassPhase } from './three-shaders';
 
 /** A BufferGeometry that holds the shared mesh data as it is. */
 function toGeometry(three: Three, mesh: MeshData): ThreeModule.BufferGeometry {
@@ -81,7 +86,10 @@ function toGeometry(three: Three, mesh: MeshData): ThreeModule.BufferGeometry {
 	geometry.setAttribute('position', new three.BufferAttribute(mesh.position, 3));
 	geometry.setAttribute('normal', new three.BufferAttribute(mesh.normal, 3));
 	geometry.setAttribute('uv', new three.BufferAttribute(mesh.uv, 2));
-	if (mesh.color) geometry.setAttribute('color', new three.BufferAttribute(mesh.color, 3));
+	if (mesh.color) {
+		const channels = mesh.color.length / (mesh.position.length / 3);
+		geometry.setAttribute('color', new three.BufferAttribute(mesh.color, channels));
+	}
 	geometry.setIndex(new three.BufferAttribute(mesh.index, 1));
 	geometry.computeBoundingSphere();
 	return geometry;
@@ -175,11 +183,25 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 			return copy;
 		});
 	};
+	const madeMaterials = new Map<BattleMaterial, ThreeModule.MeshStandardMaterial>();
+	/** The material of a spec, made once for each spec. */
 	const material = (spec: BattleMaterial): ThreeModule.MeshStandardMaterial => {
+		let made = madeMaterials.get(spec);
+		if (!made) {
+			made = makeMaterial(spec);
+			madeMaterials.set(spec, made);
+		}
+		return made;
+	};
+	const makeMaterial = (spec: BattleMaterial): ThreeModule.MeshStandardMaterial => {
 		const common = {
 			color: spec.color,
 			vertexColors: spec.vertexColors === true,
 			side: spec.doubleSided ? three.DoubleSide : three.FrontSide,
+			alphaTest: spec.alphaCutoff ?? 0,
+			...(spec.additive
+				? { transparent: true, blending: three.AdditiveBlending, depthWrite: false }
+				: {}),
 		};
 		if (spec.surface) {
 			const [map, orm, normalMap] = surface(
@@ -218,8 +240,17 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 		return object;
 	};
 
-	// The ground.
-	const ground = material(M.ground);
+	// The ground: each layer's color and normal maps, mixed by the ground shader.
+	const layerMaps = (kind: SurfaceKind) => {
+		const [color, , normal] = surface(kind, 1) as ThreeModule.Texture[];
+		return { color: color as ThreeModule.Texture, normal: normal as ThreeModule.Texture };
+	};
+	const { grass: grassLayer, earth: earthLayer, rock: rockLayer } = GROUND_LOOK.layers;
+	const ground = shaders.ground({
+		grass: layerMaps(grassLayer.surface),
+		earth: layerMaps(earthLayer.surface),
+		rock: layerMaps(rockLayer.surface),
+	});
 	still(withShadows(new three.Mesh(toGeometry(three, data.single.field), ground), M.ground));
 	const land = new three.Mesh(toGeometry(three, data.single.land), ground);
 	land.receiveShadow = effects.shadows;
@@ -268,8 +299,25 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 		});
 	};
 	scatterVariants(data.rocks, ALL_ROCKS, M.rock, -0.1);
-	scatterVariants(data.trees, TREES, M.tree);
-	scatterVariants(data.pines, PINES, M.pine);
+	/** Each variant's wood in bark, and its foliage cards, at the places of the list. */
+	const scatterTrees = (variants: TreeParts[], list: readonly Placed[], leaves: BattleMaterial) => {
+		scatterVariants(
+			variants.map((tree) => tree.wood),
+			list,
+			M.bark,
+		);
+		variants.forEach((tree, v) => {
+			if (tree.foliage)
+				scatter(
+					toGeometry(three, tree.foliage),
+					list.filter((p) => p.variant === v),
+					material(leaves),
+					leaves,
+				);
+		});
+	};
+	scatterTrees(data.trees, TREES, M.leaves);
+	scatterTrees(data.pines, PINES, M.needles);
 	scatter(toGeometry(three, data.single.trap), TANK_TRAPS, material(M.trap), M.trap);
 	const grass = shaders.grass({
 		color: M.grass.color,
@@ -338,18 +386,20 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 	const loader = new GLTFLoader();
 	const [soldier, mech] = await Promise.all([
 		loader.loadAsync(sampleUrl('sources/characters/battle-soldier/soldier.glb')),
-		loader.loadAsync(sampleUrl('sources/characters/quaternius-mech/mech.glb')),
+		loader.loadAsync(sampleUrl('sources/characters/battle-mech/mech.glb')),
 	]);
 	const models = { soldier, mech };
-	const uniforms = ARMIES.map(
-		(army) =>
-			new three.MeshStandardMaterial({
-				color: army.tint,
-				vertexColors: true,
-				roughness: 0.8,
-				metalness: 0,
-			}),
-	);
+	// Each army's soldiers and mechs, and every rifle, draw with the unit shader.
+	const U = UNIT_LOOK;
+	const detail = (kind: SurfaceKind): DetailMaps => {
+		const [color, , normal] = surface(kind, 1) as ThreeModule.Texture[];
+		return { color: color as ThreeModule.Texture, normal: normal as ThreeModule.Texture };
+	};
+	const unitMaterials = {
+		soldier: ARMIES.map((army) => shaders.unit(U.soldier, army.tint, detail(U.soldier.detail))),
+		mech: ARMIES.map((army) => shaders.unit(U.mech, army.tint, detail(U.mech.detail))),
+	};
+	const rifleMaterial = shaders.unit(U.rifle, '#ffffff', detail(U.rifle.detail));
 
 	/** The scene-graph mode: a copy of the model per unit, with its own mixer. */
 	const sceneGraphUnits = (): Units => {
@@ -372,9 +422,12 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 				const mesh = object as ThreeModule.SkinnedMesh;
 				if (!mesh.isMesh) return;
 				mesh.castShadow = mesh.receiveShadow = effects.shadows;
-				if (!mesh.isSkinnedMesh) return;
+				if (!mesh.isSkinnedMesh) {
+					if (mesh.name === RIFLE) mesh.material = rifleMaterial;
+					return;
+				}
 				if (mesh.name === MODELS[name].mesh)
-					mesh.material = uniforms[i & 1] as ThreeModule.Material;
+					mesh.material = unitMaterials[name][i & 1] as ThreeModule.Material;
 				let sphere = spheres.get(name);
 				if (!sphere) {
 					mesh.geometry.computeBoundingSphere();
@@ -414,7 +467,12 @@ runThreeWorker(async ({ three, options, anisotropy }) => {
 				DrawCrowd.create(three, models[name], {
 					name,
 					capacity: capacity,
-					uniforms: uniforms as ThreeModule.MeshStandardMaterial[],
+					tints: ARMIES.map((army) => linearColor(army.tint)),
+					surface: (tint, feet) => {
+						if (!shaders.unitNodes) throw new Error('The crowd needs WebGPURenderer.');
+						return shaders.unitNodes(U[name], detail(U[name].detail), tint, feet);
+					},
+					rifle: rifleMaterial,
 					shadows: effects.shadows,
 					textures: options.forceWebGL === true,
 				}),

@@ -32,6 +32,11 @@ export interface Comparison {
 	ramps: Readonly<Record<DeviceClass, RampPlan>>;
 	/** The frame that the image tests hold: its simulation time in seconds and its count. */
 	hold: { readonly seconds: number; readonly count: number };
+	/**
+	 * The count that the image tests hold on SwiftShader, CI's software GPU, where the hold count's
+	 * every frame up to the held one would take minutes: hold mode draws each of them on the CPU.
+	 */
+	swiftShaderHoldCount?: number;
 	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
 	objectsAt(count: number, mode: CompareMode): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */
@@ -62,6 +67,7 @@ export const COMPARISONS: readonly Comparison[] = [
 			}),
 		ramps: BATTLE_RAMPS,
 		hold: BATTLE_HOLD,
+		swiftShaderHoldCount: 120,
 		objectsAt: battleObjects,
 		shadowTiles: 0,
 		modes: {

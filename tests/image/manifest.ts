@@ -1940,6 +1940,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				hold: comparison.hold.seconds,
 				tiers: ['webgpu', 'webgl2'],
 				timeoutSeconds: 90,
+				...(comparison.swiftShaderHoldCount !== undefined && {
+					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
+				}),
 			};
 			return [
 				test,

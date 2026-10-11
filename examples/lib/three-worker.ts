@@ -35,6 +35,8 @@ export interface ThreeSky {
 	cloudCoverage: number;
 	cloudDensity: number;
 	cloudElevation: number;
+	/** The size of the clouds' pattern, three.js's default when left out. */
+	cloudScale?: number;
 }
 
 /** A sun: a directional light whose shadows fall in cascades over the camera's view. */
@@ -361,6 +363,7 @@ class ThreeRuntime {
 			cloudCoverage: sky.cloudCoverage,
 			cloudDensity: sky.cloudDensity,
 			cloudElevation: sky.cloudElevation,
+			cloudScale: sky.cloudScale ?? 0.0002,
 		};
 		if (this.options.renderer === 'webgpu') {
 			const { SkyMesh } = await import('three/addons/objects/SkyMesh.js');
