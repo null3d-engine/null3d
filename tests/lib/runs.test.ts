@@ -1464,8 +1464,10 @@ describe('the bench plan', () => {
 		expect(item?.timeoutSeconds).toBe(2 * 300 + 60);
 		expect(parseArgs(['--plan', 'bench', '--seconds', '300', 'Safari']).seconds).toBe(300);
 		expect(() => parseArgs(['--plan', 'memory', '--seconds', '300'])).toThrow(
-			'--seconds works with --plan bench only',
+			'--seconds works with --plan bench, showcase or occlusion-s6 only',
 		);
+		expect(parseArgs(['--plan', 'showcase', '--seconds', '60', 'Safari']).seconds).toBe(60);
+		expect(parseArgs(['--plan', 'occlusion-s6', '--seconds', '5', 'Safari']).seconds).toBe(5);
 	});
 
 	it('takes the number of runs and the instance count', () => {
@@ -1943,8 +1945,10 @@ describe('parseArgs', () => {
 		);
 		expect(() => parseArgs(['--plan', 'bench', '--scenes', ''])).toThrow('--scenes: use some of');
 		expect(() => parseArgs(['--plan', 'parity', '--scenes', 's2'])).toThrow(
-			'--scenes works with --plan bench or --plan scale only',
+			'--scenes works with --plan bench, showcase, soak or scale only',
 		);
+		expect(parseArgs(['--plan', 'soak', '--scenes', 's5,s6']).scenes).toEqual(['s5', 's6']);
+		expect(parseArgs(['--plan', 'showcase', '--scenes', 's6']).scenes).toEqual(['s6']);
 		expect(() =>
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
 		).toThrow('leave out threejs-webgl');
