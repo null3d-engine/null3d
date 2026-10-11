@@ -1483,6 +1483,337 @@
 			]
 		},
 		{
+			"id": "khronos/ClearCoatTest",
+			"title": "Clear Coat Test",
+			"purpose": "KHR_materials_clearcoat: coat factor, roughness, coat and base normal maps, beside uncoated twins",
+			"authors": [
+				{
+					"name": "Ed Mackey"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/ClearCoatTest",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/ClearCoatTest",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "ClearCoatTest",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/ClearCoatTest/LICENSE.md",
+					"bytes": 796,
+					"sha256": "2a21cbc5df494391458b194dee0d2a42009de72c3af135ab17546109727117ff"
+				},
+				{
+					"path": "sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb",
+					"bytes": 258048,
+					"sha256": "c3a1cbe318cd043b937130af4eb83ec2ea0b03613387b1b7d769dfab4ac15948"
+				},
+				{
+					"path": "sources/khronos/ClearCoatTest/metadata.json",
+					"bytes": 712,
+					"sha256": "4679ed589da3c9e6477d2149f1328ee4d21472d9840a4367ec0b2c05f002b69c"
+				}
+			]
+		},
+		{
+			"id": "khronos/ClearCoatCarPaint",
+			"title": "Clear Coat Car Paint",
+			"purpose": "KHR_materials_clearcoat over a flake normal map, as car paint",
+			"authors": [
+				{
+					"name": "Eric Chadwick"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/ClearCoatCarPaint",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/ClearCoatCarPaint",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "ClearCoatCarPaint",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/ClearCoatCarPaint/LICENSE.md",
+					"bytes": 782,
+					"sha256": "c2c2a4b4638cc863715b52abc5b4e060080bbe4fc1ed737265268d18ca368bd3"
+				},
+				{
+					"path": "sources/khronos/ClearCoatCarPaint/glTF-Binary/ClearCoatCarPaint.glb",
+					"bytes": 116948,
+					"sha256": "4d4b32f2ef6d341191f6b6d6834f2b192762c878cd25d44e6b4b14514cd4be93"
+				},
+				{
+					"path": "sources/khronos/ClearCoatCarPaint/metadata.json",
+					"bytes": 710,
+					"sha256": "5c9f1bd82e6b211381fc114f6451e22b122a40a27c5f4167191470fa8bea4f14"
+				}
+			]
+		},
+		{
+			"id": "khronos/ClearcoatWicker",
+			"title": "Clearcoat Wicker",
+			"purpose": "KHR_materials_clearcoat with a coat normal map over textured wicker",
+			"authors": [
+				{
+					"name": "Eric Chadwick"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/ClearcoatWicker",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/ClearcoatWicker",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "ClearcoatWicker",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/ClearcoatWicker/LICENSE.md",
+					"bytes": 778,
+					"sha256": "625cc9e6acf2055201162048d083b017e7f59c82ebb29c09eb1f648360eb7f4b"
+				},
+				{
+					"path": "sources/khronos/ClearcoatWicker/glTF-Binary/ClearcoatWicker.glb",
+					"bytes": 1299752,
+					"sha256": "f162b0cd7f8e6b7cef211eec57762165a78039676b8592ce1f965e2ddb34e843"
+				},
+				{
+					"path": "sources/khronos/ClearcoatWicker/metadata.json",
+					"bytes": 739,
+					"sha256": "b4e845954648203f9ac72ffb4b78ca01d18f965dd9f3a8df544bffb6c53473a5"
+				}
+			]
+		},
+		{
+			"id": "khronos/SheenChair",
+			"title": "Sheen Chair",
+			"purpose": "KHR_materials_sheen on velvet, with textured wood and fabric",
+			"authors": [
+				{
+					"name": "Eric Chadwick"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SheenChair",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SheenChair",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SheenChair",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SheenChair/LICENSE.md",
+					"bytes": 773,
+					"sha256": "52912ef39b0f19a2bf816de4fc5a161d058c334a912633f5470cf2c83e9c10c5"
+				},
+				{
+					"path": "sources/khronos/SheenChair/glTF-Binary/SheenChair.glb",
+					"bytes": 4125648,
+					"sha256": "f0af2a2b102d28d540236306ae19f8fb36842df76bd38cf76f063f9bd2853399"
+				},
+				{
+					"path": "sources/khronos/SheenChair/metadata.json",
+					"bytes": 662,
+					"sha256": "a47e16c7cfaad0411769163dafcd4eeba8bd5327772d468e67d0e398a6965b65"
+				}
+			]
+		},
+		{
+			"id": "khronos/SheenCloth",
+			"title": "Sheen Cloth",
+			"purpose": "KHR_materials_sheen with a sheen texture whose alpha holds the roughness, as a .gltf file with separate images",
+			"authors": [
+				{
+					"name": "Microsoft"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SheenCloth",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SheenCloth",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SheenCloth",
+				"variants": [
+					"glTF"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SheenCloth/LICENSE.md",
+					"bytes": 773,
+					"sha256": "8e53964dcfe1d96b58064e4906222a9ef126fa3fc22d8cac59db0542366a915a"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/SheenCloth.bin",
+					"bytes": 3479088,
+					"sha256": "4ed1f49797ce52b9f653b8650a31fa249fac99524303b0e153804365fb7e45b1"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/SheenCloth.gltf",
+					"bytes": 6854,
+					"sha256": "00a2cbc0d2ad4788dbfc00da3c51f252fd8e6003dbfda80b087a548fe3550f02"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/SheenCloth_AO.jpg",
+					"bytes": 139947,
+					"sha256": "5b40abcf27c3c8a3ccf16e4672da35a1b27680c4037c1b27f390398aaaa896ff"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/technicalFabricSmall_basecolor_256.png",
+					"bytes": 125026,
+					"sha256": "e945c0b2aa6e3987d8bb8af23aca58a3f75cce2992bb4803bec8cac6cde8474e"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/technicalFabricSmall_normal_256.png",
+					"bytes": 127852,
+					"sha256": "299b1ccf8957d451d7841672b1750b5cfcea65fee1c97eec6b086dc3fdeea838"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/technicalFabricSmall_orm_256.png",
+					"bytes": 131303,
+					"sha256": "41c04abdb9531d00a4ac832d41f02cd549c7be74886c4d492475cfb95d239a20"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/glTF/technicalFabricSmall_sheen_256.png",
+					"bytes": 170368,
+					"sha256": "479c3c65b1b9161701c5587cdfccf42a2de38d4d5365b6b904daf9ba8b7b9aab"
+				},
+				{
+					"path": "sources/khronos/SheenCloth/metadata.json",
+					"bytes": 642,
+					"sha256": "637e75a8a577ae59a62742bb545b32217ef93b24571b6504f8f8313e33adc6be"
+				}
+			]
+		},
+		{
+			"id": "khronos/SheenTestGrid",
+			"title": "Sheen Test Grid",
+			"purpose": "KHR_materials_sheen: a grid of sheen colors and roughnesses",
+			"authors": [
+				{
+					"name": "Eric Chadwick"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/SheenTestGrid",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/SheenTestGrid",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "SheenTestGrid",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/SheenTestGrid/LICENSE.md",
+					"bytes": 775,
+					"sha256": "6cd28ebc2ac334391e49933dadfb0f5ab448b5ebdf5fd8603be49b91c572abcf"
+				},
+				{
+					"path": "sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb",
+					"bytes": 1841064,
+					"sha256": "b3d82dde0ae6b93bef1a8085ec05540b21139f9917bfe771135c5aed9ba1c101"
+				},
+				{
+					"path": "sources/khronos/SheenTestGrid/metadata.json",
+					"bytes": 658,
+					"sha256": "95a4dc50f219a13f8a2ff01a953f6efd0570054b0f6c1f9051ff89eef805cb15"
+				}
+			]
+		},
+		{
+			"id": "khronos/ToyCar",
+			"title": "Toy Car",
+			"purpose": "KHR_materials_clearcoat, KHR_materials_sheen and KHR_materials_transmission in one product scene",
+			"authors": [
+				{
+					"name": "Guido Odendahl",
+					"role": "initial car model",
+					"license": "CC0-1.0"
+				},
+				{
+					"name": "Eric Chadwick",
+					"role": "extensions and scene composition",
+					"license": "CC0-1.0"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/edc7c9e67c639d230715049ee31f9a96a6babbbe/Models/ToyCar",
+			"fetched": "2026-10-11",
+			"changes": "None. Kept the glTF-Binary variant, the licence file and the metadata file.",
+			"dir": "sources/khronos/ToyCar",
+			"origin": {
+				"kind": "khronos",
+				"commit": "edc7c9e67c639d230715049ee31f9a96a6babbbe",
+				"model": "ToyCar",
+				"variants": [
+					"glTF-Binary"
+				]
+			},
+			"files": [
+				{
+					"path": "sources/khronos/ToyCar/LICENSE.md",
+					"bytes": 911,
+					"sha256": "6e7c41dba03a561a67197a5aba92219bcc462806d69d13d8aba1c0ccbe183253"
+				},
+				{
+					"path": "sources/khronos/ToyCar/glTF-Binary/ToyCar.glb",
+					"bytes": 5422412,
+					"sha256": "01a60862de55cd4b9f3acfab0b0def86451800f9c42467fcd61052c16cb9838c"
+				},
+				{
+					"path": "sources/khronos/ToyCar/metadata.json",
+					"bytes": 1070,
+					"sha256": "4ccccf4f019521aea50d462a8b20b876478aca456ab6adde17cd8e4a53110b73"
+				}
+			]
+		},
+		{
 			"id": "characters/kaykit-knight",
 			"title": "KayKit Adventurers 1.0: Knight",
 			"purpose": "Crowd character: 41 joints and 76 clips",

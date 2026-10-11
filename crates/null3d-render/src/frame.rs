@@ -1848,7 +1848,8 @@ impl SceneSettings {
     /// material asks for it, and a double-sided material culls no faces. The material's depth options and depth bias set the pipeline's depth state, and a
     /// blended material's blending sets its blend state, which draws it in the transparent pass.
     /// A material that lets light through draws with the shader variant that samples the copy of
-    /// the opaque objects behind it, in the transparent pass too, where its shading has one.
+    /// the opaque objects behind it, in the transparent pass too, where its shading has one. A
+    /// layered material draws with the builds that light its clear coat and sheen.
     /// A debug view replaces the key with its own (see [`DebugView::draw_key`]).
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         self.rows_pipeline_of(mesh, material, false)
@@ -1889,6 +1890,7 @@ impl SceneSettings {
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
+        let layers = has(feature::COAT_SHEEN) && shading.layers();
         let rows = row_values && shading.reads_row_values() && !transmits;
         let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
@@ -1904,7 +1906,8 @@ impl SceneSettings {
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
-                | bit(rows, permutation::ROW_VALUES),
+                | bit(rows, permutation::ROW_VALUES)
+                | bit(layers, permutation::COAT_SHEEN),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)

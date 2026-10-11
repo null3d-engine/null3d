@@ -537,6 +537,8 @@ function reflectionTests(): ImageTest[] {
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** The sketch of the clear coats and sheens. */
+const COAT_SHEEN_SKETCH = 'tests/pages/sketches/coat-sheen-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1874,6 +1876,18 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
+	// function sets its coat, in the room's light. The layers spec checks that layers turned off
+	// draw as no layers do.
+	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0 },
+	// The coated and sheened balls with a custom material that keeps the default surface: they
+	// draw as the standard material does, so the references are copies of the coat-sheen test's.
+	{
+		name: 'coat-sheen-custom',
+		sketch: `${COAT_SHEEN_SKETCH}?custom`,
+		hold: 0,
+		reference: 'coat-sheen',
+	},
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

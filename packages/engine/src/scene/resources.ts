@@ -5,11 +5,16 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_COAT,
+	MAP_SLOT_COAT_NORMAL,
+	MAP_SLOT_COAT_ROUGHNESS,
 	MAP_SLOT_EMISSIVE,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_METAL_ROUGH,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_OCCLUSION,
+	MAP_SLOT_SHEEN_COLOR,
+	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
@@ -17,6 +22,7 @@ import {
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
@@ -29,6 +35,9 @@ import {
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
+	MATERIAL_PARAM_CLEARCOAT,
+	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
+	MATERIAL_PARAM_CLEARCOAT_ROUGHNESS,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
@@ -41,6 +50,8 @@ import {
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SHEEN_COLOR,
+	MATERIAL_PARAM_SHEEN_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_THICKNESS,
@@ -68,6 +79,7 @@ import {
 } from '../generated/core';
 import {
 	PERMUTATION_CASTER,
+	PERMUTATION_COAT_SHEEN,
 	PERMUTATION_ROW_VALUES,
 	PERMUTATION_TRANSMISSION,
 } from '../generated/gpu';
@@ -861,6 +873,30 @@ export interface StandardValues extends MaterialOptions {
 	 * `Infinity`.
 	 */
 	attenuationDistance?: number;
+	/**
+	 * How much of a clear coat covers the surface, from 0 to 1, as three.js's
+	 * `MeshPhysicalMaterial.clearcoat`: a thin, shiny layer, as on car paint, varnish or a wet
+	 * stone, with its own highlights and reflection. It dims what lies below it where it reflects
+	 * light. Give it, or another option of a clear coat or a sheen, when you create the material, to
+	 * change it later. The default is 0.
+	 */
+	clearcoat?: number;
+	/** How rough the clear coat is, from 0 (a mirror) to 1, as three.js's `clearcoatRoughness`. The default is 0. */
+	clearcoatRoughness?: number;
+	/**
+	 * How strongly the coat normal map bends the coat's normals along u and along v, as three.js's
+	 * `clearcoatNormalScale`. The default is `[1, 1]`, and negative values flip a direction.
+	 */
+	clearcoatNormalScale?: readonly [number, number];
+	/**
+	 * The color of a sheen, the soft glow at grazing angles of velvet, cloth and fuzz, as three.js's
+	 * `sheenColor`, in the forms that `color` takes. three.js's `sheen` multiplies it; here the
+	 * color alone sets the sheen. Black gives none. Give it, or another option of a clear coat or a
+	 * sheen, when you create the material, to change it later. The default is black.
+	 */
+	sheenColor?: ColorInput;
+	/** How rough the sheen is, from 0 to 1, as three.js's `sheenRoughness`: rougher sheens spread wider. The default is 1. */
+	sheenRoughness?: number;
 }
 
 /**
@@ -907,6 +943,26 @@ export interface StandardMaps {
 	specularIntensityMap?: Texture;
 	/** The specular color, in sRGB. Its color multiplies `specularColor`. */
 	specularColorMap?: Texture;
+	/**
+	 * The clear coat in red, in linear color, which multiplies `clearcoat`. A material with a clear
+	 * coat or a sheen takes no light map and no specular maps, since its layers' maps take their
+	 * places.
+	 */
+	clearcoatMap?: Texture;
+	/**
+	 * The clear coat's roughness in green, in linear color, which multiplies `clearcoatRoughness`.
+	 * With `clearcoatMap`, it is the same texture, as glTF packs them.
+	 */
+	clearcoatRoughnessMap?: Texture;
+	/** The clear coat's normals in tangent space, in linear color, which `clearcoatNormalScale` scales. */
+	clearcoatNormalMap?: Texture;
+	/** The sheen color, in sRGB, whose color multiplies `sheenColor`. */
+	sheenColorMap?: Texture;
+	/**
+	 * The sheen's roughness in alpha, which multiplies `sheenRoughness`. With `sheenColorMap`, it is
+	 * the same texture, as glTF packs them: an sRGB texture keeps its alpha linear.
+	 */
+	sheenRoughnessMap?: Texture;
 }
 
 /**
@@ -1126,7 +1182,10 @@ type Ranged =
 	| 'specularIntensity'
 	| 'envIntensity'
 	| 'transmission'
-	| 'thickness';
+	| 'thickness'
+	| 'clearcoat'
+	| 'clearcoatRoughness'
+	| 'sheenRoughness';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -1151,6 +1210,9 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
 	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
+	['clearcoat', MATERIAL_PARAM_CLEARCOAT, 1, 'clearcoat'],
+	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1, 'clearcoatRoughness'],
+	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS, 1, 'sheenRoughness'],
 ];
 
 /** The core's slot of each map option. */
@@ -1163,13 +1225,63 @@ const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
 	['lightMap', MAP_SLOT_LIGHT],
 	['specularIntensityMap', MAP_SLOT_SPECULAR_INTENSITY],
 	['specularColorMap', MAP_SLOT_SPECULAR_COLOR],
+	['clearcoatMap', MAP_SLOT_COAT],
+	['clearcoatRoughnessMap', MAP_SLOT_COAT_ROUGHNESS],
+	['clearcoatNormalMap', MAP_SLOT_COAT_NORMAL],
+	['sheenColorMap', MAP_SLOT_SHEEN_COLOR],
+	['sheenRoughnessMap', MAP_SLOT_SHEEN_ROUGHNESS],
 ];
+
+/** The values of a clear coat and a sheen, any of which gives a material its layers. */
+const LAYER_VALUES = [
+	'clearcoat',
+	'clearcoatRoughness',
+	'clearcoatNormalScale',
+	'sheenColor',
+	'sheenRoughness',
+] as const;
+
+/** The maps of a clear coat and a sheen. */
+const LAYER_MAPS = [
+	'clearcoatMap',
+	'clearcoatRoughnessMap',
+	'clearcoatNormalMap',
+	'sheenColorMap',
+	'sheenRoughnessMap',
+] as const;
+
+/** The maps whose slots a layered material's maps take. */
+const DISPLACED_MAPS = ['lightMap', 'specularIntensityMap', 'specularColorMap'] as const;
+
+/**
+ * True for a map that a layered material leaves out, which development builds refuse with E1217:
+ * a map whose slot the layers' maps take, and the second map of a pair that is not the texture of
+ * the first. Production builds skip the check, so the material draws without the map rather than
+ * read it as a layer's.
+ */
+function skipsMap(options: StandardOptions, key: keyof StandardMaps): boolean {
+	if ((DISPLACED_MAPS as readonly string[]).includes(key)) return true;
+	if (key === 'clearcoatRoughnessMap')
+		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
+	if (key === 'sheenRoughnessMap')
+		return !!options.sheenColorMap && options.sheenColorMap !== options.sheenRoughnessMap;
+	return false;
+}
+
+/** True when `options` give the material a clear coat or a sheen. */
+function hasLayers(options: StandardOptions): boolean {
+	return (
+		LAYER_VALUES.some((key) => options[key] !== undefined) ||
+		LAYER_MAPS.some((key) => options[key] !== undefined)
+	);
+}
 
 /** Throws E1108 for a pair or a transform with a number that is not finite. */
 function checkNumbers(values: AnyValues, call: string): void {
-	const { normalScale, uvTransform } = values;
+	const { normalScale, clearcoatNormalScale, uvTransform } = values;
 	const numbers = [
 		...(normalScale ?? []),
+		...(clearcoatNormalScale ?? []),
 		...(uvTransform?.offset ?? []),
 		...(uvTransform?.repeat ?? []),
 		uvTransform?.rotation ?? 0,
@@ -1177,7 +1289,7 @@ function checkNumbers(values: AnyValues, call: string): void {
 	if (!numbers.every(Number.isFinite))
 		throw new EngineError(
 			'E1108',
-			`${call}() got a normalScale or uvTransform that is not finite.`,
+			`${call}() got a normalScale, clearcoatNormalScale or uvTransform that is not finite.`,
 		);
 }
 
@@ -1219,6 +1331,7 @@ function writeValues(
 	emissive: readonly number[] | undefined,
 	specular: readonly number[] | undefined,
 	attenuation: readonly number[] | undefined,
+	sheen: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -1245,11 +1358,14 @@ function writeValues(
 			attenuation[1] as number,
 			attenuation[2] as number,
 		);
+	if (sheen)
+		write(MATERIAL_PARAM_SHEEN_COLOR, sheen[0] as number, sheen[1] as number, sheen[2] as number);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
 	}
-	const { normalScale, uvTransform, ior, attenuationDistance: distance } = values;
+	const { normalScale, clearcoatNormalScale, uvTransform, ior } = values;
+	const distance = values.attenuationDistance;
 	if (ior !== undefined) {
 		write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
 		write(MATERIAL_PARAM_IOR, ior, 0, 0);
@@ -1258,6 +1374,13 @@ function writeValues(
 	if (distance !== undefined)
 		write(MATERIAL_PARAM_ATTENUATION_DISTANCE, distance < Infinity ? distance : 0, 0, 0);
 	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
+	if (clearcoatNormalScale)
+		write(
+			MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
+			clearcoatNormalScale[0],
+			clearcoatNormalScale[1],
+			0,
+		);
 	if (uvTransform) {
 		// three.js's texture matrix with its center at the origin, by rows.
 		const [x, y] = uvTransform.offset ?? [0, 0];
@@ -1316,6 +1439,7 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
  */
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
+	if (hasLayers(options)) checkLayerMaps(options, call);
 	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
 		throw new EngineError(
 			'E1217',
@@ -1338,6 +1462,31 @@ function checkFeatures(options: StandardOptions, call: string): void {
 	}
 }
 
+/**
+ * Throws E1217 for a layered material with a map whose slot its layers take, and for a pair of
+ * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
+ */
+function checkLayerMaps(options: StandardOptions, call: string): void {
+	const displaced = DISPLACED_MAPS.find((key) => options[key] !== undefined);
+	if (displaced)
+		throw new EngineError(
+			'E1217',
+			`${call}() got ${displaced} with a clear coat or a sheen, whose maps take its place. Bake its light or specular values into the other maps, or use a material without layers.`,
+		);
+	for (const [first, second, packed] of [
+		['clearcoatMap', 'clearcoatRoughnessMap', 'the roughness in the green of the clear coat map'],
+		['sheenColorMap', 'sheenRoughnessMap', 'the roughness in the alpha of the sheen color map'],
+	] as const) {
+		const a = options[first];
+		const b = options[second];
+		if (a && b && a !== b)
+			throw new EngineError(
+				'E1217',
+				`${call}() got a ${first} and a ${second} that are two textures. Give one texture for both, with ${packed}, as glTF packs them.`,
+			);
+	}
+}
+
 /** The core's feature bits of `options`. */
 function featureBits(options: StandardOptions): number {
 	return (
@@ -1353,7 +1502,8 @@ function featureBits(options: StandardOptions): number {
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
 			: 0) |
 		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0) |
-		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0)
+		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0) |
+		(hasLayers(options) ? MATERIAL_FEATURE_COAT_SHEEN : 0)
 	);
 }
 
@@ -1375,6 +1525,8 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'ior',
 	'attenuationColor',
 	'attenuationDistance',
+	'sheenColor',
+	'clearcoatNormalScale',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1520,7 +1672,8 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const emissive = linearOrNone(values.emissive, call);
 		const specular = specularOrNone(values.specularColor, call);
 		const attenuation = linearOrNone(values.attenuationColor, call);
-		writeValues(core, id, call, values, color, emissive, specular, attenuation);
+		const sheen = linearOrNone(values.sheenColor, call);
+		writeValues(core, id, call, values, color, emissive, specular, attenuation, sheen);
 	}
 
 	/**
@@ -1602,20 +1755,29 @@ export class Materials {
 	}
 
 	/** Creates a material in the engine core, with its standard options, and returns its id. */
-	private createId(shading: number, options: StandardOptions, call: string): number {
+	private createId(
+		shading: number,
+		options: StandardOptions,
+		call: string,
+		layered = hasLayers(options),
+	): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
 		const specular = specularOrNone(options.specularColor, call);
 		const attenuation = linearOrNone(options.attenuationColor, call);
+		const sheen = linearOrNone(options.sheenColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
 		}
 		const opacity = options.opacity ?? 1;
-		const features = featureBits(options);
-		// The shaders that let light through load on first use: the download starts with the
-		// material, before any object draws with it.
+		const features =
+			(featureBits(options) & ~MATERIAL_FEATURE_COAT_SHEEN) |
+			(layered ? MATERIAL_FEATURE_COAT_SHEEN : 0);
+		// The shaders that let light through, and those of a clear coat and a sheen, load on first
+		// use: the download starts with the material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		if (features & MATERIAL_FEATURE_COAT_SHEEN) this.shaders.need('coat_sheen');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
@@ -1623,10 +1785,10 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive, specular, attenuation);
+		writeValues(core, id, call, values, undefined, emissive, specular, attenuation, sheen);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
-			if (!map) continue;
+			if (!map || (layered && skipsMap(options, key))) continue;
 			const second = map.uvSet === 1 ? 1 : 0;
 			core.checkGrowth(
 				core.glue.setMaterialMap(id, slot, map.handle, second),
@@ -1688,6 +1850,12 @@ export class Materials {
 				'E1217',
 				`${call}() got transmission, but its WGSL never sets the surface's transmission, so it has no builds that let light through. Set it in fn surface, such as s.transmission = 1.0.`,
 			);
+		const layered = builds(compiled, PERMUTATION_COAT_SHEEN);
+		if (DEV && !layered && hasLayers(options))
+			throw new EngineError(
+				'E1217',
+				`${call}() got a clear coat or a sheen, but its WGSL never names the surface's layers, so it has no builds that light them. Set them in fn surface, such as s.clearcoat = 1.0 or s.sheenColor = vec3f(1.0).`,
+			);
 		const uniforms = new Map(compiled.uniforms.map((u) => [u.name, u]));
 		for (const name of uniforms.keys())
 			if (STANDARD_VALUES.has(name))
@@ -1706,7 +1874,7 @@ export class Materials {
 			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0) |
 			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
 			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0);
-		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
+		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call, layered);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);
 		const { core } = this;

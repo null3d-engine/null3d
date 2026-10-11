@@ -827,9 +827,13 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The surface has a clear coat, a sheen or both above its base, as three.js's
+    /// `MeshPhysicalMaterial` draws them: a second GGX lobe at the coat's normal and roughness,
+    /// and the Charlie lobe of cloth. The material's row holds their values in two more `vec4f`s.
+    pub const COAT_SHEEN: u32 = 1 << 30;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 25] = [
+    pub const NAMES: [(&str, u32); 26] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -855,6 +859,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("COAT_SHEEN", COAT_SHEEN),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -880,7 +885,9 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
-    pub const APART: [(u32, u32); 17] = [
+    /// The layers shade, so casters never have them, and only the test switch reads instances by
+    /// index, which no layered build needs.
+    pub const APART: [(u32, u32); 19] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -898,6 +905,8 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (COAT_SHEEN, INSTANCE_INDEX),
+        (COAT_SHEEN, CASTER),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1389,9 +1398,9 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: eleven `vec4f`s. On WebGL2 each row is a
-    /// row of eleven `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 176;
+    /// Bytes of one material's row in the material table: thirteen `vec4f`s. On WebGL2 each row
+    /// is a row of thirteen `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 208;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;

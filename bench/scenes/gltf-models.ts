@@ -51,7 +51,15 @@ export interface ModelScene {
 	 * bounds of a skinned mesh hold the pose, and null3D's the bind pose.
 	 */
 	frame?: { center: readonly [number, number, number]; radius: number };
+	/**
+	 * True when the HDR environment of the backgrounds scene lights the model too, as
+	 * `scene.environment` in three.js: a clear coat and a sheen show their reflections there.
+	 */
+	environment?: boolean;
 }
+
+/** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
+export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
 
 /**
  * The model scenes by name. Each names a feature of the loader: metal-rough materials with their
@@ -68,7 +76,10 @@ export interface ModelScene {
  * gltfpack compresses it (tests/lib/meshopt-fixtures.ts), which the repository keeps. The Khronos
  * name's file covers every mode and filter. The Draco scenes draw the sample content's skinned
  * Draco model, and the coordinates test model as Draco's encoder compresses it
- * (tests/lib/draco-fixtures.ts), each against its uncompressed scene.
+ * (tests/lib/draco-fixtures.ts), each against its uncompressed scene. The Khronos models of
+ * KHR_materials_clearcoat and KHR_materials_sheen draw under the sun, and two of them also under the
+ * HDR environment, whose light the coat reflects and the sheen gathers. The toy car has a coat, a
+ * sheen and glass in one model.
  */
 export const MODEL_SCENES = {
 	'metal-rough': {
@@ -151,6 +162,33 @@ export const MODEL_SCENES = {
 		file: () => colorMorphBuilder().glb(),
 		frame: { center: [0, 0.05, 0.1], radius: 1.05 },
 		view: [0.3, 0.35, 1],
+	},
+	clearcoat: { url: sampleUrl('sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb') },
+	'clearcoat-env': {
+		url: sampleUrl('sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb'),
+		environment: true,
+	},
+	'clearcoat-car-paint': {
+		url: sampleUrl('sources/khronos/ClearCoatCarPaint/glTF-Binary/ClearCoatCarPaint.glb'),
+		environment: true,
+	},
+	'clearcoat-wicker': {
+		url: sampleUrl('sources/khronos/ClearcoatWicker/glTF-Binary/ClearcoatWicker.glb'),
+		view: [0.4, 0.5, 1],
+	},
+	'sheen-chair': {
+		url: sampleUrl('sources/khronos/SheenChair/glTF-Binary/SheenChair.glb'),
+		view: [0.6, 0.35, 1],
+	},
+	'sheen-cloth': { url: sampleUrl('sources/khronos/SheenCloth/glTF/SheenCloth.gltf') },
+	'sheen-grid': { url: sampleUrl('sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb') },
+	'sheen-grid-env': {
+		url: sampleUrl('sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb'),
+		environment: true,
+	},
+	'toy-car': {
+		url: sampleUrl('sources/khronos/ToyCar/glTF-Binary/ToyCar.glb'),
+		view: [0.7, 0.45, 1],
 	},
 } as const satisfies Record<string, ModelScene>;
 

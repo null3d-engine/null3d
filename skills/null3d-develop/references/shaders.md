@@ -58,6 +58,11 @@ struct Surface {
   reflection: vec4f,       // (0.2) light from the mirror direction in rgb, its share of the environment's reflection in a
   transmission: f32,       // (0.2) share of the light behind that passes through; WGSL that sets it builds the see-through shaders
   thickness: f32,          // (0.2) depth of the volume under the point, in the mesh's own units
+  clearcoat: f32,          // (0.2) clear coat, 0 to 1; WGSL that names a layer field builds the layered shaders
+  clearcoatRoughness: f32, // (0.2) the coat's roughness
+  clearcoatNormal: vec3f,  // (0.2) the coat's normal, world space; starts as the mesh's normal
+  sheenColor: vec3f,       // (0.2) cloth and velvet glow, linear RGB; black gives none
+  sheenRoughness: f32,     // (0.2) how wide the sheen spreads
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```

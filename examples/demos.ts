@@ -130,6 +130,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'coat-and-sheen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),
+		code: 'coat-and-sheen/',
+		title: 'Clear coat and sheen',
+		scene: 'Rainy showroom',
+		summary:
+			'Car paint with metal flakes under a mirror-smooth clear coat, a varnished plinth, wet cobbles whose puddles are a clear coat with rain rings, and velvet that glows at its edges with sheen.',
+		controls: `${CAMERA} Move the mouse, or tap, and a blue lamp follows it across the floor.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),

@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes. A material with a clear coat or a sheen refuses a light map and specular maps, whose places the maps of its layers take, and two textures for a pair of layer maps that glTF packs into one.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -400,9 +400,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, lines, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coat_sheen, coverage, cutout, dof, effect_groups, hash, instance_index, lines, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {

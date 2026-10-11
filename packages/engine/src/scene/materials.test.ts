@@ -3,8 +3,13 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_COAT,
+	MAP_SLOT_COAT_NORMAL,
+	MAP_SLOT_COAT_ROUGHNESS,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
+	MAP_SLOT_SHEEN_COLOR,
+	MAP_SLOT_SHEEN_ROUGHNESS,
 	MAP_SLOT_SPECULAR_COLOR,
 	MAP_SLOT_SPECULAR_INTENSITY,
 	MATERIAL_FEATURE_ADDITIVE,
@@ -12,6 +17,7 @@ import {
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_COAT_SHEEN,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
@@ -21,6 +27,9 @@ import {
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
+	MATERIAL_PARAM_CLEARCOAT,
+	MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE,
+	MATERIAL_PARAM_CLEARCOAT_ROUGHNESS,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
@@ -32,6 +41,8 @@ import {
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_REFLECTANCE,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_SHEEN_COLOR,
+	MATERIAL_PARAM_SHEEN_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
 	MATERIAL_PARAM_UV_U,
@@ -44,7 +55,12 @@ import {
 	SHADING_UNLIT,
 	SHADING_UNLIT_MAP,
 } from '../generated/core';
-import { SIZE_MATERIAL_BYTES, VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
+import {
+	PERMUTATION_COAT_SHEEN,
+	SIZE_MATERIAL_BYTES,
+	VERTEX_COLOR,
+	VERTEX_UV0,
+} from '../generated/gpu';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
@@ -76,6 +92,11 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_REFLECTANCE, 1],
 	[MATERIAL_PARAM_SPECULAR_COLOR, 3],
 	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	[MATERIAL_PARAM_CLEARCOAT, 1],
+	[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
+	[MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE, 2],
+	[MATERIAL_PARAM_SHEEN_COLOR, 3],
+	[MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
 ]);
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
@@ -398,6 +419,80 @@ describe('Material.set', () => {
 		expect(table[0]).toEqual(before);
 	});
 
+	test('gives a material with any layer option its layers, and writes their values', () => {
+		const { table, features, materials } = fakeCore();
+		const paint = materials.standard({
+			clearcoat: 1,
+			clearcoatRoughness: 0.1,
+			clearcoatNormalScale: [0.5, -0.5],
+		});
+		const velvet = materials.standard({ sheenColor: [0.5, 0.25, 1], sheenRoughness: 0.4 });
+		materials.standard({ clearcoat: 0 });
+		materials.standard({ roughness: 0.5 });
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_COAT_SHEEN)).toEqual([
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			0,
+		]);
+		const row = (k: number) => table[k] as number[];
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT]).toBe(1);
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT_ROUGHNESS]).toBe(0.1);
+		const scale = MATERIAL_PARAM_CLEARCOAT_NORMAL_SCALE;
+		expect(row(0).slice(scale, scale + 2)).toEqual([0.5, -0.5]);
+		const sheen = MATERIAL_PARAM_SHEEN_COLOR;
+		expect(row(1).slice(sheen, sheen + 3)).toEqual([0.5, 0.25, 1]);
+		expect(row(1)[MATERIAL_PARAM_SHEEN_ROUGHNESS]).toBe(0.4);
+		paint.set({ clearcoat: 0.25 });
+		velvet.set({ sheenColor: '#ffffff' });
+		expect(row(0)[MATERIAL_PARAM_CLEARCOAT]).toBe(0.25);
+		expect(row(1).slice(sheen, sheen + 3)).toEqual([1, 1, 1]);
+		for (const values of [{ clearcoat: 1.5 }, { clearcoatRoughness: -1 }, { sheenRoughness: 2 }])
+			expect(thrown(() => paint.set(values)).code).toBe('E1108');
+		expect(thrown(() => paint.set({ clearcoatNormalScale: [Number.NaN, 1] })).code).toBe('E1108');
+	});
+
+	test('puts the layer maps in their places, and refuses the maps whose slots they take', () => {
+		const { maps, features, materials } = fakeCore();
+		const coat = texture(5);
+		const sheen = texture(7, 1);
+		materials.standard({
+			clearcoatMap: coat,
+			clearcoatRoughnessMap: coat,
+			clearcoatNormalMap: texture(6),
+			sheenColorMap: sheen,
+			sheenRoughnessMap: sheen,
+		});
+		expect((features[0] ?? 0) & MATERIAL_FEATURE_COAT_SHEEN).toBe(MATERIAL_FEATURE_COAT_SHEEN);
+		expect(maps).toEqual([
+			[1, MAP_SLOT_COAT, 5, 0],
+			[1, MAP_SLOT_COAT_ROUGHNESS, 5, 0],
+			[1, MAP_SLOT_COAT_NORMAL, 6, 0],
+			[1, MAP_SLOT_SHEEN_COLOR, 7, 1],
+			[1, MAP_SLOT_SHEEN_ROUGHNESS, 7, 1],
+		]);
+		const light = thrown(() => materials.standard({ clearcoat: 1, lightMap: texture(8) }));
+		expect(light.code).toBe('E1217');
+		expect(light.message).toStartWith(
+			'E1217: materials.standard() got lightMap with a clear coat or a sheen,',
+		);
+		const specular = thrown(() =>
+			materials.standard({ sheenColor: '#ffffff', specularColorMap: texture(8) }),
+		);
+		expect(specular.code).toBe('E1217');
+		const pair = thrown(() =>
+			materials.standard({ clearcoatMap: texture(8), clearcoatRoughnessMap: texture(9) }),
+		);
+		expect(pair.message).toStartWith(
+			'E1217: materials.standard() got a clearcoatMap and a clearcoatRoughnessMap that are two textures.',
+		);
+		const sheens = thrown(() =>
+			materials.standard({ sheenColorMap: texture(8), sheenRoughnessMap: texture(9) }),
+		);
+		expect(sheens.code).toBe('E1217');
+		expect(features).toHaveLength(1);
+	});
+
 	test('checks the map values before it changes any', () => {
 		const { table, materials } = fakeCore();
 		const stone = materials.standard();
@@ -610,6 +705,28 @@ describe('materials.shader', () => {
 		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.75);
 		const error = thrown(() => custom.set({ roughness: 2 }));
 		expect(error.message).toStartWith('E1108: materials.shader.set() got the roughness 2');
+	});
+
+	test('gives custom materials their layers only where the WGSL names them', () => {
+		const { features, materials } = fakeCore();
+		const plain = compiledMaterial();
+		const wet = {
+			...compiledMaterial(),
+			variants: { webgpu_layers: { permutation: PERMUTATION_COAT_SHEEN } },
+		};
+		materials.shader({ wgsl: wet });
+		materials.shader({ wgsl: wet, clearcoat: 0.5 });
+		materials.shader({ wgsl: plain });
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_COAT_SHEEN)).toEqual([
+			MATERIAL_FEATURE_COAT_SHEEN,
+			MATERIAL_FEATURE_COAT_SHEEN,
+			0,
+		]);
+		const refused = thrown(() => materials.shader({ wgsl: plain, sheenColor: '#ffffff' }));
+		expect(refused.code).toBe('E1217');
+		expect(refused.message).toStartWith(
+			"E1217: materials.shader() got a clear coat or a sheen, but its WGSL never names the surface's layers,",
+		);
 	});
 
 	test('refuses WGSL that the Vite plugin did not compile, and whole shaders', () => {

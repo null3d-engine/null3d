@@ -372,6 +372,24 @@ fn sets_transmission(tokens: &[Token]) -> bool {
         .any(|pair| pair[0].text == "." && pair[1].text == "transmission")
 }
 
+/// The fields of the surface record that a layered material's builds light: the clear coat's and
+/// the sheen's values.
+const LAYER_FIELDS: [&str; 5] = [
+    "clearcoat",
+    "clearcoatRoughness",
+    "clearcoatNormal",
+    "sheenColor",
+    "sheenRoughness",
+];
+
+/// True when a custom material's WGSL sets or reads one of the surface's layer values, so the
+/// material can have a clear coat or a sheen.
+fn names_coat_sheen(tokens: &[Token]) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].text == "." && LAYER_FIELDS.contains(&pair[1].text))
+}
+
 /// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
 /// draw index in `null3d::mesh`, and the directive goes at the top of the file.
 const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
@@ -438,6 +456,7 @@ impl Compiler {
         }
 
         let transmits = sets_transmission(&tokens);
+        let layered = names_coat_sheen(&tokens);
         let offsets = declared.iter().any(|hook| hook.def == VERTEX_OFFSET_DEF);
         let mut variants: BTreeMap<String, Variant> = template
             .variants
@@ -460,7 +479,8 @@ impl Compiler {
                 // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
-                // through, so other materials keep their builds as few as before. Every material
+                // through, and only WGSL that names a layer's value has the builds of the clear
+                // coat and the sheen, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies.
                 let skins = !variant.targets.contains(&Target::Wgsl);
@@ -477,6 +497,7 @@ impl Compiler {
                     .iter()
                     .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
+                    .filter(|bit| layered || *bit != "COAT_SHEEN")
                     .cloned()
                     .collect();
                 let variant = Variant {
