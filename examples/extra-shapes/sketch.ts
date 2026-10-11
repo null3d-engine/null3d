@@ -21,7 +21,7 @@ import { interact } from '../lib/interact';
 
 /** The floor's height, under the lowest row of shapes, and the point that the camera looks at. */
 const FLOOR = -3.2;
-const AIM = [0, -0.4, 0] as const;
+const AIM = [0, -0.6, 0] as const;
 /** The place of the shape at `i` in reading order: three rows of three. */
 const placeOf = (i: number): Vec3 => [((i % 3) - 1) * 2.6, (1 - Math.floor(i / 3)) * 2.2, 0];
 /** The lathe's profile: the radius and height of each point, from the foot to the lip of a vase. */
@@ -74,15 +74,15 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time } = ctx;
-	const dusk = timeOfDay(18.4, { heading: -2.6 });
+	const dusk = timeOfDay(17.4, { heading: -1.45 });
 	scene.setBackground({ sky: dusk.sky }, { intensity: dusk.skyIntensity });
-	scene.setEnvironment(await assets.skyEnvironment(), { intensity: dusk.skyIntensity });
+	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
+	scene.createAmbientLight({ color: dusk.fog.color, intensity: 0.5 });
 	scene.setFog({ color: dusk.fog.color, density: 0.012, sunGlow: dusk.fog.sunGlow });
 	post.set({ exposure: dusk.exposure, bloom: { threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
 	scene.createDirectionalLight({ ...dusk.light, castShadows: true, shadow: { distance: 40 } });
-	const camera = scene.createPerspectiveCamera({ fov: 45, position: [0, 1, 10], target: AIM });
+	const camera = scene.createPerspectiveCamera({ fov: 40, position: [0, 0.3, 10], target: AIM });
 	scene.setActiveCamera(camera);
-	// The pointer points at an upright plane in front of the shapes.
 	const view = interact(ctx, camera, { target: AIM, planeZ: 3 });
 	const plane = { point: [0, FLOOR, 0] } as const;
 	const mirror = textures.fromPass(render.addPass({ kind: 'reflection', writes: 'floor', plane }));

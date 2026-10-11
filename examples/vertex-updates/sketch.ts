@@ -25,7 +25,7 @@ const drift = (t: number, out: Vec3) =>
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, time } = ctx;
-	const day = timeOfDay(17.2, { heading: -2.4 });
+	const day = timeOfDay(17.8, { heading: -1.45 });
 	scene.setBackground({ sky: day.sky }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
 	scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
@@ -33,15 +33,15 @@ export default defineSketch(async (ctx) => {
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 30 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
-		position: [0, 7, 11],
-		target: [0, 0, 0],
+		position: [0, 3.2, 10.5],
+		target: [0, 0, -1],
 	});
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: [0, 0, 0], groundY: 0, bounds: BOUNDS });
+	const view = interact(ctx, camera, { target: [0, 0, -1], groundY: 0, bounds: BOUNDS });
 
 	// The pool's rim and the deck around it, in warm stone.
-	const stone = materials.standard({ color: '#c9b49a', roughness: 0.8 });
-	const deck = materials.standard({ color: '#8c7a66', roughness: 0.9 });
+	const stone = materials.standard({ color: '#d8c6ab', roughness: 0.8 });
+	const deck = materials.standard({ color: '#a39079', roughness: 0.9 });
 	const rim = SIZE / 2 + 0.3;
 	for (const [x, z, w, d] of [
 		[0, -rim, SIZE + 1.2, 0.6],
@@ -81,7 +81,7 @@ export default defineSketch(async (ctx) => {
 	const sheet = geometry.fromArrays({ positions, normals, indices });
 	const water = scene.createMesh({
 		mesh: sheet,
-		material: materials.standard({ color: '#0b3d4a', roughness: 0.04 }),
+		material: materials.standard({ color: '#06303c', roughness: 0.03 }),
 		receiveShadows: true,
 	});
 	// The corners reach past the flat water's sphere as the waves rise.
@@ -118,7 +118,7 @@ export default defineSketch(async (ctx) => {
 			for (let v = 0; v < row * row; v++) {
 				const x = positions[v * 3];
 				const z = positions[v * 3 + 2];
-				let y = 0.04 * Math.sin(x * 0.8 + t * 1.2) * Math.cos(z * 0.6 + t * 0.9);
+				let y = 0.06 * Math.sin(x * 0.8 + t * 1.2) * Math.cos(z * 0.6 + t * 0.9);
 				for (let k = 0; k < RINGS; k++) {
 					const age = t - starts[k];
 					if (age < 0 || age > 4) continue;
