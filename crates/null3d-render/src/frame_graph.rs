@@ -1099,6 +1099,21 @@ impl FrameGraph {
         self.inverse_projection = projection.map(|(_, inverse)| inverse);
     }
 
+    /// Takes the values of the custom effects and the full-screen passes of `effects` and `views`
+    /// for the frame's uploads, as the frame's texture work left their textures' layers. The passes
+    /// themselves stay as they were declared.
+    pub(crate) fn set_post_values(&mut self, effects: &[Effect], views: &[View]) {
+        let count = self.effect_count;
+        for (own, given) in self.effects[..count].iter_mut().zip(effects) {
+            own.values = given.values;
+        }
+        for (own, given) in self.declared_views.iter_mut().zip(views) {
+            if let (Some(own), Some(given)) = (own.fullscreen_pass_mut(), given.fullscreen_pass()) {
+                own.values = given.values;
+            }
+        }
+    }
+
     /// Makes the final pass draw with the custom tone curve whose pipelines take the templates from
     /// `template` on, or with its own curves with `None`, from the next frame on.
     pub(crate) fn set_tone_curve(&mut self, template: Option<u32>) {
@@ -1430,7 +1445,7 @@ impl FrameGraph {
         self.view_images.clear();
         self.view_images.push(None);
         // A full-screen pass draws its target whole, with one sample, on both paths.
-        let one_sample = Target::color(self.view_target_format()).array();
+        let one_sample = Target::color(self.view_target_format()).array().shown();
         self.fullscreen_views = 0;
         for (index, view) in views.iter().enumerate().skip(1) {
             let size = view_size(view);

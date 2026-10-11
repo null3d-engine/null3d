@@ -147,7 +147,7 @@ post.setEffectUniform(darken, 'amount', 0.8);   // pass.uniforms.amount.value = 
 
 This example is symmetric, so the uv flip does not matter here. It keeps the alpha: `input.color` holds color multiplied by its coverage, which alpha holds.
 
-A chain that renders into render targets of its own, such as a blur at half size that a later pass adds back, becomes full-screen passes. `render.addPass({ kind: 'fullscreen', wgsl, writes, scale: 0.5, input: 'sceneColor', textures })` runs an effect's WGSL into a texture of its own. Its `input.uv` belongs to its own texture, and `effectInputSize()` gives the input image's size. The effect that composites reads the pass's texture through `textures`. `OutlinePass`'s soft glow ports this way: a pass with `input: 'outlineMask'` blurs the mask, and `post.set({ outline: { width: 0 } })` drops the crisp line (engine docs `guides/custom-passes`, a soft outline glow).
+Some chains render into render targets of their own, such as a blur at half size that a later pass adds back. Each such step becomes a full-screen pass: `render.addPass({ kind: 'fullscreen', wgsl, writes, scale: 0.5, input: 'sceneColor', textures })`. It runs an effect's WGSL into a texture of its own. Its `input.uv` belongs to its own texture, and `effectInputSize()` gives the input image's size. The effect that composites reads the pass's texture through `textures`. `OutlinePass`'s soft glow ports this way. A pass with `input: 'outlineMask'` blurs the mask, and `post.set({ outline: { width: 0 } })` drops the crisp line (engine docs `guides/custom-passes`, a soft outline glow).
 
 ## 7. Tone curves (0.2)
 

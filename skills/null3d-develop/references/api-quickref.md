@@ -541,7 +541,7 @@ render.setPassUniform(blur, 'radius', 4);   // allocates nothing
 post.addEffect({ wgsl: addBlur, textures: { blur: textures.fromPass(blur) } }); // effects take textures too
 ```
 
-- A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light, fog, the point and spot lights their view sees, and the scene's background (a scene pass with `clearColor` shows that color instead). A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
+- A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
 - A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 

@@ -894,6 +894,21 @@ impl SceneSettings {
         }
     }
 
+    /// Writes the layer of each texture that the custom effects and full-screen passes sample into
+    /// their values again, once the frame's texture work has given the passes' targets their
+    /// textures and finished uploads, so a texture samples in the frame that makes it ready.
+    pub(crate) fn update_post_layers(&mut self) {
+        let textures = &self.textures;
+        for effect in &mut self.effects {
+            write_layers(textures, &effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            }
+        }
+    }
+
     /// How the sketch joins its effects.
     pub(crate) fn effect_joins(&self) -> &EffectJoins {
         &self.effect_joins
@@ -2053,6 +2068,12 @@ fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut
     slots[..maps.textures.len()].copy_from_slice(&maps.textures);
     maps.group = textures.map_set_group(&slots).unwrap_or(0);
     maps.views = textures.group_pass_views(maps.group);
+    write_layers(textures, maps, values);
+}
+
+/// Writes the layer of each texture of `maps` into its float of `values`, -1 while its image is
+/// not on the GPU. A slot without a texture leaves its float alone.
+fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) {
     for (slot, &texture) in maps.textures.iter().enumerate() {
         if !texture.is_none() {
             values[EffectMaps::layer_float(slot)] = textures
