@@ -33,7 +33,7 @@ Low, the phone's preset, leaves out the costliest work:
 - Ambient occlusion draws nothing on Low and Medium, even when the sketch turns it on.
 - Bloom's chain starts from a base of 128 pixels, a quarter of the base on the other presets.
 - FXAA smooths edges in place of MSAA, whose samples cost a phone's GPU more memory traffic.
-- On WebGL2, each object keeps only its 8 largest morph target weights, and occlusion culling on the job workers is off.
+- On WebGL2, each object keeps only its 8 largest morph target weights.
 - On WebGL2, the depth prepass draws on every preset. In the S4 benchmark on an iPad, it took Low from 38 to 60 frames per second ([Performance guide](performance.md#the-depth-prepass)).
 
 [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) lists every setting of each preset.
