@@ -257,7 +257,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Joint overrides',
 		scene: 'Knights watch a wisp',
 		summary:
-			'Seven KayKit Knights stand in a ring at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit.',
+			'Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit.',
 		assets:
 			'Shows joint overrides on a skinned character and its clips, which load from a glTF file.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the wisp.`,
