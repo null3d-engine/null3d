@@ -63,6 +63,26 @@ export const GRADING_LUTS = {
 
 export type GradingLutName = keyof typeof GRADING_LUTS;
 
+/**
+ * The warm table's numbers, as the sample content's script writes them into its `.cube` file: 33
+ * texels a side, red fastest, each color rounded to five decimals. A table from these numbers holds
+ * the file's texels, so it draws the file's image.
+ */
+export function gradingWarmNumbers(): Float64Array {
+	const size = 33;
+	const numbers = new Float64Array(size ** 3 * 3);
+	const round = (value: number) => Number(Math.min(Math.max(value, 0), 1).toFixed(5));
+	let at = 0;
+	for (let b = 0; b < size; b++)
+		for (let g = 0; g < size; g++)
+			for (let r = 0; r < size; r++) {
+				numbers[at++] = round(0.02 + (r / (size - 1)) ** 0.95 * 1.04);
+				numbers[at++] = round(0.01 + (g / (size - 1)) * 1.01);
+				numbers[at++] = round((b / (size - 1)) ** 1.05 * 0.9);
+			}
+	return numbers;
+}
+
 /** The vignette that the twin draws with three.js's `VignetteShader`. */
 export const GRADING_VIGNETTE_THREE = { offset: 1.2, darkness: 1.1 } as const;
 

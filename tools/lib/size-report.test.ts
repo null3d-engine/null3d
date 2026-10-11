@@ -4,6 +4,7 @@ import {
 	budgetProblems,
 	DOWNLOADS,
 	downloadSizes,
+	ENGINE_PARTS,
 	ENGINE_SOURCE,
 	FIRST_USE_SHADER_BUDGET,
 	findEngineParts,
@@ -253,6 +254,26 @@ describe('downloadSizes', () => {
 		expect(downloadSizes(sizes, downloads)).toEqual([
 			{ mode: 'pipelined', size: size(130, 58, 45) },
 		]);
+	});
+});
+
+describe('DOWNLOADS', () => {
+	it("gives each thread mode on each GPU path, with that path's renderers and shaders only", () => {
+		const pipelined = DOWNLOADS.filter(({ mode }) => mode.startsWith('pipelined,'));
+		expect(pipelined.map(({ mode, shaders }) => [mode, shaders])).toEqual([
+			['pipelined, WebGPU', 'shaders-wgsl'],
+			['pipelined, WebGL2', 'shaders-glsl'],
+		]);
+		expect(pipelined[0]?.parts).toContain('render-worker-webgpu.js');
+		expect(pipelined[0]?.parts).not.toContain('render-worker-webgl2.js');
+		expect(pipelined[1]?.parts).toContain('render-worker-webgl2.js');
+		for (const { parts } of DOWNLOADS) {
+			const shared = parts.filter((part) => part.endsWith('-gpu-shared.js'));
+			expect(shared).toHaveLength(1);
+			const known = ENGINE_PARTS.map(({ name }) => name);
+			for (const part of parts) expect(known).toContain(part);
+		}
+		expect(DOWNLOADS).toHaveLength(10);
 	});
 });
 

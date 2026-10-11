@@ -1,6 +1,6 @@
 # D-18: How the asset tool is built
 
-Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
+Status: decided by the owner, 2026-10-03, from the research of that day. Measured on S6's content with the built tool, 2026-10-04. The clip step measured and added, 2026-10-05, with near-constant tracks stored once by the owner's ruling of that day. A mesh's extras can keep its positions as floats, approved by the owner on 2026-10-08 for S6's merged towers. Date: 2026-10-03. Tasks: M2-B1, M2-B7.
 
 Summary: JavaScript on the official WebAssembly encoders, with the formats that the engine also reads from its Rust core built to WebAssembly, and the Vite plugin running the same steps with a cache. Every machine writes the same bytes. One encoder per thread did S6's 144 textures in 18 to 26 s on the Mac, against 130 s for the native encoder with all cores on one texture at a time.
 
@@ -134,7 +134,7 @@ Textures are capped at 2048 x 2048, which the 32-bit encoder takes. A 64-bit bui
 
 | Step | Setting | Why |
 | --- | --- | --- |
-| Positions | Unsigned 14-bit integers in 16 bits, plain, in steps of 1/16,383 of the longest side of the mesh's group | gltfpack's default; meshopt compresses fewer bits better. A 100 m building gets 6 mm steps |
+| Positions | Unsigned 14-bit integers in 16 bits, plain, in steps of 1/16,383 of the longest side of the mesh's group. A mesh whose glTF extras hold `"quantizePositions": false` keeps 32-bit floats | gltfpack's default; meshopt compresses fewer bits better. A 100 m building gets 6 mm steps. The setting serves a mesh that spreads small parts over a large space, such as S6's towers merged by material ([D-106](D-106-s6-city.md#addendum-2026-10-08-one-tower-mesh-per-material)) |
 | Normals, tangents | Signed bytes, normalized | gltfpack's default; the test scene's normals stay within 0.02 of their sources |
 | Texture coordinates | 16-bit normalized integers when every value lies from 0 to 1, else floats | Values past 1 would need a texture transform, and the engine's materials keep one transform for all maps |
 | Colors, joint weights | Normalized bytes; weights keep their sum at one | |

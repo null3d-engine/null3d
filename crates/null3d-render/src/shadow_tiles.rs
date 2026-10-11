@@ -67,6 +67,7 @@
 
 use null3d_core::cells::{CellCoords, CellPosition};
 use null3d_core::culling::Frustum;
+use null3d_core::handle::Handle;
 use null3d_core::lights::{LightShadow, NOT_VISIBLE, VisibleLight, kind};
 use null3d_core::morph::NOT_LINKED;
 use null3d_core::scene::{SceneStorage, flags};
@@ -79,6 +80,7 @@ use crate::camera::{Affine, Mat4, ViewDepth, multiply, view_matrix};
 use crate::frame::{FrameInput, NO_MESH, RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
 use crate::pipelines::PassTargets;
+use crate::shadows::camera_world;
 use crate::view::ViewFrame;
 
 /// The most tiles of the shadow atlas.
@@ -113,6 +115,9 @@ pub const FILTER_REACH: u32 = 3;
 /// tiles that hold no depth of their light yet (decision record D-61). Two point lights' cubes:
 /// the High preset's sixteen tiles and the Ultra preset's twenty-four take two frames at most.
 pub const MAX_REDRAWS: usize = 12;
+
+/// The moved rows of a casting batch between two checks of whether every tile must draw already.
+const MARKED_CHECK_ROWS: usize = 64;
 
 /// How the shadow atlas is set up: the start values of the quality preset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,17 +287,9 @@ struct Caster {
 }
 
 impl Caster {
-    /// True when the caster draws into the tile of `light` whose view is `shape`: it shows, shares
-    /// a layer with the light, and its sphere reaches into the light's range and the tile's view.
-    fn casts_into(&self, light: &LightShadow, shape: &TileShape) -> bool {
-        let Some(center) = self.center_from(light) else {
-            return false;
-        };
-        shape.touches(center, self.sphere[3])
-    }
-
     /// Where the caster's sphere center lies from `light`, when the caster shows, shares a layer
-    /// with the light and its sphere reaches into the light's range.
+    /// with the light and its sphere reaches into the light's range. The caster then draws into
+    /// each tile of the light whose view its sphere touches.
     fn center_from(&self, light: &LightShadow) -> Option<[f32; 3]> {
         let [x, y, z, radius] = self.sphere;
         if radius == HIDDEN_RADIUS || light.layers & self.layers == 0 {
@@ -303,6 +300,18 @@ impl Caster {
         let reach = light.range + radius;
         (dot(center, center) <= reach * reach).then_some(center)
     }
+}
+
+/// An instance batch that casts shadows, with its layers and active rows as the module last saw
+/// them.
+#[derive(Clone, Copy, Debug)]
+struct BatchCaster {
+    id: Handle,
+    layers: u32,
+    active: u32,
+    /// True when the batch's material moves its vertices by a vertex offset, so its shadows may
+    /// change in every frame.
+    sways: bool,
 }
 
 /// A light that the frame gives tiles: its place in the shadow list, its first tile, its tiles,
@@ -340,6 +349,8 @@ pub struct ShadowTiles {
     casters_known: bool,
     /// The scene slots of skinned and morphed objects, while `casters_known` holds.
     posed: Vec<u32>,
+    /// The instance batches that cast shadows, while `casters_known` holds.
+    batches: Vec<BatchCaster>,
     /// The last frame whose draw list created a pipeline.
     last_new_pipeline: u32,
 }
@@ -366,6 +377,7 @@ impl ShadowTiles {
             casters: Vec::new(),
             casters_known: false,
             posed: Vec::new(),
+            batches: Vec::new(),
             last_new_pipeline: 0,
         }
     }
@@ -399,14 +411,16 @@ impl ShadowTiles {
 
     /// Plans the tiles of the frame `input`, with `settings` and the shadow filter's square of
     /// `filter` texels, for the camera's view `camera`, or for no camera: then no tile draws.
-    /// Allocates only when more lights cast shadows, or the scene holds more objects, than in any
-    /// frame before.
+    /// `sways` says whether a material, by engine id, moves its vertices by a vertex offset, which
+    /// its casters' shadows follow in every frame. Allocates only when more lights cast shadows, or
+    /// the scene holds more objects, than in any frame before.
     pub fn plan(
         &mut self,
         input: &FrameInput<'_>,
         settings: TileSettings,
         filter: u32,
         camera: Option<&ViewFrame>,
+        sways: &dyn Fn(u32) -> bool,
     ) {
         self.frames = [None; MAX_TILES];
         self.waiting = 0;
@@ -429,8 +443,9 @@ impl ShadowTiles {
                 self.shapes[(lit.first + face) as usize] = TileShape::of(light, face, shape.size);
             }
         }
-        self.mark_moved_casters(input, shadows);
-        self.mark_posed_casters(input, shadows);
+        self.mark_moved_casters(input, shadows, sways);
+        self.mark_posed_casters(input, shadows, sways);
+        self.mark_moved_batches(input, shadows);
         self.uniform = TileUniform::default();
         let size = shape.size as f32;
         self.uniform.kernel = [size, 1.0 / size, filter as f32, 0.0];
@@ -469,7 +484,9 @@ impl ShadowTiles {
                     continue;
                 }
                 fresh += usize::from(!slot.held);
-                self.frames[tile] = Some(view.frame(camera.camera, light.layers));
+                let mut frame = view.frame(camera.camera, light.layers);
+                frame.uniform.clock = camera.uniform.clock;
+                self.frames[tile] = Some(frame);
             }
         }
         self.cap_redraws(fresh);
@@ -773,8 +790,14 @@ impl ShadowTiles {
     /// Marks the tiles whose views a caster that moved since the module last saw it touches,
     /// before or after the move, as tiles that must draw. Remembers every caster from scratch, and
     /// marks every tile, when it knows none yet, the upload list overflowed or the structure
-    /// changed.
-    fn mark_moved_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    /// changed. A skinned, morphed or swaying caster joins the casters whose poses the module
+    /// checks in every frame.
+    fn mark_moved_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        sways: &dyn Fn(u32) -> bool,
+    ) {
         let scene = input.scene;
         let slots = scene.slots().high_water() as usize + 1;
         if self.casters.len() < slots {
@@ -787,13 +810,33 @@ impl ShadowTiles {
         }
         if !self.casters_known || input.snapshot.overflowed() || input.structure_changed {
             self.posed.clear();
+            let materials = scene.materials();
             for (slot, caster) in self.casters[..slots].iter_mut().enumerate().skip(1) {
                 *caster = caster_of(input, slot);
-                if caster.pose != 0 {
+                if caster.pose != 0 || sways(materials[slot]) {
                     // Room for every slot is reserved above, so this never allocates.
                     self.posed.push(slot as u32);
                 }
             }
+            self.batches.clear();
+            let casting = || {
+                input
+                    .batches
+                    .iter()
+                    .filter(|(_, batch)| batch.shadows() & flags::CAST_SHADOWS != 0)
+            };
+            if self.batches.try_reserve(casting().count()).is_err() {
+                self.slots.iter_mut().for_each(|slot| slot.clean = false);
+                return;
+            }
+            let parity = input.parity();
+            self.batches
+                .extend(casting().map(|(id, batch)| BatchCaster {
+                    id,
+                    layers: batch.layers(),
+                    active: batch.frame_active_count(parity),
+                    sways: sways(batch.material()),
+                }));
             self.casters_known = true;
             self.slots.iter_mut().for_each(|slot| slot.clean = false);
             return;
@@ -815,11 +858,84 @@ impl ShadowTiles {
         }
     }
 
+    /// Marks the tiles whose views a row of a casting batch touches, before or after its move, as
+    /// tiles that must draw, for each row that the batch's update changed in this frame. A batch
+    /// whose active count or layers changed marks every tile, and so does a batch that sways, in
+    /// every frame, as its rows may cast anywhere. The row scan stops once every tile of
+    /// the frame's lights must draw, so a large batch that moves costs little more than one that
+    /// stands still; later batches still record their active count and layers.
+    fn mark_moved_batches(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+        if !self.casters_known {
+            return;
+        }
+        let parity = input.parity();
+        let table = input.scene.cell_table();
+        let (mut all, mut full) = (false, false);
+        for k in 0..self.batches.len() {
+            let known = self.batches[k];
+            let Ok(batch) = input.batches.get(known.id) else {
+                all = true;
+                continue;
+            };
+            let (layers, active) = (batch.layers(), batch.frame_active_count(parity));
+            if known.sways {
+                all = true;
+                continue;
+            }
+            if layers != known.layers || active != known.active {
+                self.batches[k] = BatchCaster {
+                    layers,
+                    active,
+                    ..known
+                };
+                all = true;
+                continue;
+            }
+            if all || full || batch.frame() != input.frame {
+                continue;
+            }
+            let (now, before) = (batch.world(parity), batch.world(parity ^ 1));
+            let cells = batch.cells();
+            'rows: for range in batch.changed_ranges() {
+                let (start, end) = (
+                    range.start as usize,
+                    (range.start + range.count).min(active),
+                );
+                for (row, &cell) in cells.iter().enumerate().take(end as usize).skip(start) {
+                    if (row - start) % MARKED_CHECK_ROWS == 0 && self.all_marked() {
+                        full = true;
+                        break 'rows;
+                    }
+                    let (before, now) = (before.sphere(row), now.sphere(row));
+                    if before == now {
+                        continue;
+                    }
+                    let caster = |sphere| Caster {
+                        sphere,
+                        cell: table.coords(cell),
+                        layers,
+                        ..Caster::default()
+                    };
+                    self.mark(shadows, &caster(before), &caster(now));
+                }
+            }
+        }
+        if all {
+            self.slots.iter_mut().for_each(|slot| slot.clean = false);
+        }
+    }
+
     /// Marks the tiles whose views a skinned or morphed caster touches as tiles that must draw,
     /// when its pose changed since the module last saw it. A pose can change while the caster's
-    /// sphere stays, as when an animated character moves its hands in front of its body. Only
-    /// casters within reach of a light that holds tiles stamp their pose.
-    fn mark_posed_casters(&mut self, input: &FrameInput<'_>, shadows: &[LightShadow]) {
+    /// sphere stays, as when an animated character moves its hands in front of its body. A
+    /// swaying caster marks its tiles in every frame. Only casters within reach of a light that
+    /// holds tiles stamp their pose.
+    fn mark_posed_casters(
+        &mut self,
+        input: &FrameInput<'_>,
+        shadows: &[LightShadow],
+        sways: &dyn Fn(u32) -> bool,
+    ) {
         if !self.casters_known {
             return;
         }
@@ -836,7 +952,7 @@ impl ShadowTiles {
                 continue;
             }
             let pose = pose_of(input, slot);
-            if pose != before.pose {
+            if pose != before.pose || sways(input.scene.materials()[slot]) {
                 let now = Caster { pose, ..before };
                 self.casters[slot] = now;
                 self.mark(shadows, &before, &now);
@@ -849,13 +965,29 @@ impl ShadowTiles {
     fn mark(&mut self, shadows: &[LightShadow], before: &Caster, now: &Caster) {
         for lit in &self.lit {
             let light = &shadows[lit.shadow as usize];
+            let (from_before, from_now) = (before.center_from(light), now.center_from(light));
+            if from_before.is_none() && from_now.is_none() {
+                continue;
+            }
             for tile in lit.first as usize..(lit.first + lit.faces) as usize {
                 let shape = &self.shapes[tile];
-                if before.casts_into(light, shape) || now.casts_into(light, shape) {
+                let touches = |center: Option<[f32; 3]>, caster: &Caster| {
+                    center.is_some_and(|center| shape.touches(center, caster.sphere[3]))
+                };
+                if touches(from_before, before) || touches(from_now, now) {
                     self.slots[tile].clean = false;
                 }
             }
         }
+    }
+
+    /// True when every tile of the frame's lights must draw already, so no caster can mark more.
+    fn all_marked(&self) -> bool {
+        self.lit.iter().all(|lit| {
+            self.slots[lit.first as usize..(lit.first + lit.faces) as usize]
+                .iter()
+                .all(|slot| !slot.clean)
+        })
     }
 }
 
@@ -1065,6 +1197,7 @@ impl TileView {
                 view_proj: self.view_proj,
                 camera_position: [x, y, z, 1.0],
                 target_size: [size, size, 1.0 / size, 1.0 / size],
+                camera_world: camera_world(camera),
                 ..FrameUniform::default()
             },
             camera,

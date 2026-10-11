@@ -54,6 +54,8 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_emissive_strength',
 	'KHR_materials_specular',
 	'KHR_materials_ior',
+	'KHR_materials_transmission',
+	'KHR_materials_volume',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
 	'KHR_meshopt_compression',
@@ -223,6 +225,45 @@ function indexOfRefraction(extension: Entry | undefined, what: string): number {
 }
 
 /**
+ * How a material lets light through, from its KHR_materials_transmission and KHR_materials_volume
+ * extensions, or none for a transmission factor of 0. A masked material lets no light through, as
+ * the engine draws such a material with no mask. The maps of transmission and thickness are not
+ * drawn yet: the factors stand alone, and `notes` says so.
+ */
+function transmissionOf(
+	extensions: Entry,
+	what: string,
+	masked: boolean,
+	notes: string[],
+): TransmissionData | undefined {
+	const transmission = extensions.KHR_materials_transmission as Entry | undefined;
+	const factor = unit(transmission?.transmissionFactor ?? 0, `${what}'s transmissionFactor`);
+	if (factor === 0) return undefined;
+	if (masked) {
+		notes.push(
+			`${what} lets light through with the alpha mode MASK, which the engine does not draw`,
+		);
+		return undefined;
+	}
+	const volume = (extensions.KHR_materials_volume ?? {}) as Entry;
+	if (transmission?.transmissionTexture !== undefined || volume.thicknessTexture !== undefined)
+		notes.push(`${what}'s transmission and thickness textures, which the engine does not draw yet`);
+	const color = numbers(volume.attenuationColor, 3, [1, 1, 1], `${what}'s attenuationColor`);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s attenuationColor has a component outside 0 to 1`);
+	const given = volume.attenuationDistance;
+	const distance = given === undefined ? Infinity : finite(given, `${what}'s attenuationDistance`);
+	if (!(distance > 0))
+		broken(`${what}'s attenuationDistance is ${distance}, and it takes more than 0`);
+	return {
+		factor,
+		thickness: unit(volume.thicknessFactor ?? 0, `${what}'s thicknessFactor`, Infinity),
+		attenuationColor: [color[0] as number, color[1] as number, color[2] as number],
+		attenuationDistance: distance,
+	};
+}
+
+/**
  * Each component type's bytes and the typed array that holds it. Callers look it up by a number,
  * which never names a property that every object has.
  */
@@ -337,6 +378,18 @@ export interface TextureUse {
 	mipmaps: boolean;
 }
 
+/** How a material lets light through, as KHR_materials_transmission and KHR_materials_volume give it. */
+export interface TransmissionData {
+	/** The transmission factor, above 0. */
+	factor: number;
+	/** The volume's thickness factor, in the mesh's own units: 0 for a thin wall. */
+	thickness: number;
+	/** The color that white light takes after the attenuation distance: linear RGB. */
+	attenuationColor: [number, number, number];
+	/** The attenuation distance in world units, or `Infinity` for a volume that absorbs nothing. */
+	attenuationDistance: number;
+}
+
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
 export interface UvTransformData {
 	offset: [number, number];
@@ -367,6 +420,11 @@ export interface MaterialData {
 	specularIntensity: number;
 	/** KHR_materials_specular's specular color factor: linear RGB, which may exceed 1. */
 	specularColor: [number, number, number];
+	/**
+	 * KHR_materials_transmission's factor, with KHR_materials_volume's values, for a material
+	 * that lets light through: none for a factor of 0.
+	 */
+	transmission?: TransmissionData;
 	maps: {
 		map?: number;
 		metalnessRoughnessMap?: number;
@@ -939,6 +997,7 @@ export function parseGltf(
 		const alphaMode = String(material.alphaMode ?? 'OPAQUE');
 		if (alphaMode !== 'OPAQUE' && alphaMode !== 'MASK' && alphaMode !== 'BLEND')
 			broken(`${what} has the alpha mode ${alphaMode}`);
+		const transmission = transmissionOf(extensions, what, alphaMode === 'MASK', notes);
 		const data: MaterialData = {
 			name: text(material.name),
 			unlit,
@@ -968,6 +1027,7 @@ export function parseGltf(
 			],
 			maps,
 		};
+		if (transmission) data.transmission = transmission;
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);

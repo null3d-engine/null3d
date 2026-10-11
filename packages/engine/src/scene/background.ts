@@ -23,6 +23,8 @@ import {
 	BACKGROUND_VALUE_MIE_DIRECTIONAL_G,
 	BACKGROUND_VALUE_RAYLEIGH,
 	BACKGROUND_VALUE_ROTATION,
+	BACKGROUND_VALUE_SECOND_SKY_WEIGHT,
+	BACKGROUND_VALUE_SECOND_SUN_POSITION,
 	BACKGROUND_VALUE_SUN_DISC,
 	BACKGROUND_VALUE_SUN_POSITION,
 	BACKGROUND_VALUE_TIME,
@@ -103,6 +105,17 @@ export interface SkyOptions {
 	time?: number;
 	/** Whether the sky shows the sun's disc. The default is true. */
 	showSunDisc?: boolean;
+	/**
+	 * A point toward the sun of a second sky, which adds its light to this sky's at
+	 * `secondSkyWeight`, with the same air and clouds. `timeOfDay` fades the moon's sky in over
+	 * the sunset's sky with it. The default is straight up.
+	 */
+	secondSunPosition?: readonly [number, number, number];
+	/**
+	 * The weight of the second sky's light beside this sky's, 0 or more. Both then take the
+	 * background's `intensity`. The default is 0, no second sky, which costs nothing.
+	 */
+	secondSkyWeight?: number;
 }
 
 /**
@@ -153,10 +166,12 @@ const SKY_DEFAULTS = {
 	cloudScale: 0.0002,
 	cloudSpeed: 0.00002,
 	time: 0,
+	secondSunPosition: [0, 1, 0],
+	secondSkyWeight: 0,
 } as const;
 
 /** The sky's settings that take one number. */
-type SkyNumber = Exclude<keyof SkyOptions, 'sunPosition' | 'showSunDisc'>;
+type SkyNumber = Exclude<keyof SkyOptions, 'sunPosition' | 'showSunDisc' | 'secondSunPosition'>;
 
 /** The lowest value of each of the sky's numbers, and the highest where it has one. */
 const SKY_RANGES: Readonly<Record<SkyNumber, readonly [number, number]>> = {
@@ -170,6 +185,7 @@ const SKY_RANGES: Readonly<Record<SkyNumber, readonly [number, number]>> = {
 	cloudScale: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],
 	cloudSpeed: [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY],
 	time: [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY],
+	secondSkyWeight: [0, Number.POSITIVE_INFINITY],
 };
 
 /**
@@ -222,7 +238,7 @@ export class SceneBackground {
 			kind = BACKGROUND_KIND_CUBEMAP;
 			texture = source.texture.handle;
 		} else {
-			this.writeSky(values, source.sky);
+			writeSky(values, source.sky);
 		}
 		const status = this.core.glue.setBackgroundSource(kind, texture);
 		this.core.check(status, CALL, 'a texture', true);
@@ -231,30 +247,6 @@ export class SceneBackground {
 	/** Draws only the background color from the next frame on. */
 	clear(): void {
 		this.core.glue.setBackgroundSource(BACKGROUND_KIND_NONE, 0);
-	}
-
-	/**
-	 * Writes the sky's settings into the block, each read once by its name and written straight
-	 * in. A fraction read from an object for a comparison as well, or read by a key that changes,
-	 * becomes an object of its own in the browser.
-	 */
-	private writeSky(values: Float32Array, sky: SkyOptions): void {
-		const d = SKY_DEFAULTS;
-		const sun = sky.sunPosition ?? d.sunPosition;
-		values[BACKGROUND_VALUE_SUN_POSITION] = sun[0];
-		values[BACKGROUND_VALUE_SUN_POSITION + 1] = sun[1];
-		values[BACKGROUND_VALUE_SUN_POSITION + 2] = sun[2];
-		values[BACKGROUND_VALUE_TURBIDITY] = sky.turbidity ?? d.turbidity;
-		values[BACKGROUND_VALUE_RAYLEIGH] = sky.rayleigh ?? d.rayleigh;
-		values[BACKGROUND_VALUE_MIE_COEFFICIENT] = sky.mieCoefficient ?? d.mieCoefficient;
-		values[BACKGROUND_VALUE_MIE_DIRECTIONAL_G] = sky.mieDirectionalG ?? d.mieDirectionalG;
-		values[BACKGROUND_VALUE_CLOUD_COVERAGE] = sky.cloudCoverage ?? d.cloudCoverage;
-		values[BACKGROUND_VALUE_CLOUD_DENSITY] = sky.cloudDensity ?? d.cloudDensity;
-		values[BACKGROUND_VALUE_CLOUD_ELEVATION] = sky.cloudElevation ?? d.cloudElevation;
-		values[BACKGROUND_VALUE_CLOUD_SCALE] = sky.cloudScale ?? d.cloudScale;
-		values[BACKGROUND_VALUE_CLOUD_SPEED] = sky.cloudSpeed ?? d.cloudSpeed;
-		values[BACKGROUND_VALUE_TIME] = sky.time ?? d.time;
-		values[BACKGROUND_VALUE_SUN_DISC] = sky.showSunDisc === false ? 0 : 1;
 	}
 
 	/** The core's block of values, through a view made again after the memory grew. */
@@ -266,6 +258,45 @@ export class SceneBackground {
 		}
 		return this.values;
 	}
+}
+
+/**
+ * Writes the sky's settings into the background's block, each read once by its name and written
+ * straight in. A fraction read from an object for a comparison as well, or read by a key that
+ * changes, becomes an object of its own in the browser.
+ */
+function writeSky(values: Float32Array, sky: SkyOptions): void {
+	const d = SKY_DEFAULTS;
+	const sun = sky.sunPosition ?? d.sunPosition;
+	values[BACKGROUND_VALUE_SUN_POSITION] = sun[0];
+	values[BACKGROUND_VALUE_SUN_POSITION + 1] = sun[1];
+	values[BACKGROUND_VALUE_SUN_POSITION + 2] = sun[2];
+	values[BACKGROUND_VALUE_TURBIDITY] = sky.turbidity ?? d.turbidity;
+	values[BACKGROUND_VALUE_RAYLEIGH] = sky.rayleigh ?? d.rayleigh;
+	values[BACKGROUND_VALUE_MIE_COEFFICIENT] = sky.mieCoefficient ?? d.mieCoefficient;
+	values[BACKGROUND_VALUE_MIE_DIRECTIONAL_G] = sky.mieDirectionalG ?? d.mieDirectionalG;
+	values[BACKGROUND_VALUE_CLOUD_COVERAGE] = sky.cloudCoverage ?? d.cloudCoverage;
+	values[BACKGROUND_VALUE_CLOUD_DENSITY] = sky.cloudDensity ?? d.cloudDensity;
+	values[BACKGROUND_VALUE_CLOUD_ELEVATION] = sky.cloudElevation ?? d.cloudElevation;
+	values[BACKGROUND_VALUE_CLOUD_SCALE] = sky.cloudScale ?? d.cloudScale;
+	values[BACKGROUND_VALUE_CLOUD_SPEED] = sky.cloudSpeed ?? d.cloudSpeed;
+	values[BACKGROUND_VALUE_TIME] = sky.time ?? d.time;
+	values[BACKGROUND_VALUE_SUN_DISC] = sky.showSunDisc === false ? 0 : 1;
+	const second = sky.secondSunPosition ?? d.secondSunPosition;
+	values[BACKGROUND_VALUE_SECOND_SUN_POSITION] = second[0];
+	values[BACKGROUND_VALUE_SECOND_SUN_POSITION + 1] = second[1];
+	values[BACKGROUND_VALUE_SECOND_SUN_POSITION + 2] = second[2];
+	values[BACKGROUND_VALUE_SECOND_SKY_WEIGHT] = sky.secondSkyWeight ?? d.secondSkyWeight;
+}
+
+/**
+ * @internal Writes the sky's defaults into the background's block of `values` unless a sky
+ * background wrote its settings there, so a sky map shows the default sky until the first one.
+ */
+export function writeSkyDefaults(values: Float32Array): void {
+	const sun = BACKGROUND_VALUE_SUN_POSITION;
+	// Only a sky background writes the sun's position, and it is never zero.
+	if (values[sun] === 0 && values[sun + 1] === 0 && values[sun + 2] === 0) writeSky(values, {});
 }
 
 /** True for a background source of the sky. */
@@ -307,13 +338,15 @@ function checkBackground(source: BackgroundSource, options: BackgroundOptions | 
 			'E1213',
 			`${CALL}() got ${String(settings)} for sky, which takes an object of the sky's settings.`,
 		);
-	checkTriple('sky.sunPosition', settings.sunPosition);
-	const sun = settings.sunPosition;
-	if (sun && sun[0] === 0 && sun[1] === 0 && sun[2] === 0)
-		throw new EngineError(
-			'E1108',
-			`${CALL}() got [0, 0, 0] for sky.sunPosition, which gives the sun no direction. Give a point toward the sun.`,
-		);
+	for (const name of ['sunPosition', 'secondSunPosition'] as const) {
+		checkTriple(`sky.${name}`, settings[name]);
+		const sun = settings[name];
+		if (sun && sun[0] === 0 && sun[1] === 0 && sun[2] === 0)
+			throw new EngineError(
+				'E1108',
+				`${CALL}() got [0, 0, 0] for sky.${name}, which gives the sun no direction. Give a point toward the sun.`,
+			);
+	}
 	for (const name of Object.keys(SKY_RANGES) as SkyNumber[]) {
 		const value = settings[name];
 		if (value === undefined) continue;

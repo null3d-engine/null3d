@@ -145,6 +145,40 @@ describe('offlineFiles', () => {
 		expect(list.features.ktx2).toEqual(['assets/basis_transcoder-i9.wasm']);
 	});
 
+	it("puts both GPU paths' renderers and their shared code in the start", () => {
+		// The render worker loads one GPU path's renderers on demand, and starts the code that both
+		// paths share beside them; each path's file imports that shared file.
+		const worker = 'assets/render-worker-m2.js';
+		const paths = ['assets/webgpu-renderers-n3.js', 'assets/webgl2-renderers-o4.js'];
+		const shared = 'assets/scene-renderer-p5.js';
+		const drawing = [
+			...build.map((f) =>
+				f.fileName === 'assets/index-a1.js'
+					? {
+							...f,
+							text: `${f.text} new Worker(new URL("./render-worker-m2.js", import.meta.url))`,
+						}
+					: f,
+			),
+			file(worker, {
+				modules: ['workers/render-worker'],
+				loads: [...paths, shared],
+				text: '"./shaders-wgsl-e5.js"',
+			}),
+			...paths.map((name, i) =>
+				file(name, {
+					modules: [i === 0 ? 'render/webgpu-renderers' : 'render/webgl2-renderers'],
+					imports: [worker, shared],
+				}),
+			),
+			file(shared, { modules: ['render/scene-renderer'], imports: [worker] }),
+		];
+		const list = offlineFiles(drawing);
+		for (const name of [worker, ...paths, shared]) expect(list.start).toContain(name);
+		for (const files of Object.values(list.features))
+			for (const name of [...paths, shared]) expect(files).not.toContain(name);
+	});
+
 	it('gives a version that changes with the files', () => {
 		const renamed = build.map((f) =>
 			f.fileName === 'assets/stray-j0.txt' ? { ...f, fileName: 'assets/stray-k1.txt' } : f,

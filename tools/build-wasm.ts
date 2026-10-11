@@ -53,6 +53,7 @@ import { memoryImportLimits } from '../packages/engine/src/shared/wasm-limits';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { keptCommits } from './hooks/check-trailers';
+import { coreSourcesStamp, stampGlue } from './lib/core-sources';
 import { ensureShaderModules } from './lib/shader-modules';
 import {
 	type BaseChoice,
@@ -341,7 +342,11 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 /** The Rust build folder of a variant, relative to the checkout. */
 const buildFolder = (variant: Variant) => `target/wasm-${variant.name}`;
 
-function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): void {
+/**
+ * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
+ * the Rust sources that the build read.
+ */
+function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, stamp: string): void {
 	const targetDir = buildFolder(variant);
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
 	run(
@@ -363,10 +368,9 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 	rmSync(join(root, outDir), { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
 	run(bindgen, ['--target', 'web', '--out-dir', outDir, '--out-name', 'null3d', linked]);
-	if (variant.releasesInstance) {
-		const glue = join(root, outDir, 'null3d.js');
-		writeFileSync(glue, addReleaseInstance(readFileSync(glue, 'utf8')));
-	}
+	const glue = join(root, outDir, 'null3d.js');
+	const text = readFileSync(glue, 'utf8');
+	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
 	const wasm = `${outDir}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
@@ -604,7 +608,9 @@ async function main(): Promise<void> {
 	else {
 		const cargoLock = readFileSync(join(root, 'Cargo.lock'), 'utf8');
 		const bindgen = await wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen'));
-		for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
+		// The stamp of the sources as the build starts, which the builds then read.
+		const stamp = coreSourcesStamp(root);
+		for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames, stamp);
 		if (!options.sizesOnly) buildToolModules();
 	}
 	if (options.pagesOnly) return;

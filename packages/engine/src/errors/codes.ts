@@ -81,14 +81,14 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped before is not free yet. The engine then tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 300 with per-row colors or values. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped before is not free yet. The engine then tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. A row of a static instance, sprite or point batch that changed without markDirty() raises it too: the engine updates only the marked rows, and development builds check the drawn rows before each batch update, a share of a large batch in each frame. Release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},
@@ -138,7 +138,7 @@ const DOCS = {
 	E1208: {
 		title: 'Invalid texture',
 		cause:
-			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format, or numbers that make no color grading table. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
 		example:
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
@@ -176,7 +176,7 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take.',
+			'A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials also refuse the alpha options that they do not take, and a material that lets light through refuses the mask and hash alpha modes.',
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		since: '0.1',
 	},
@@ -255,7 +255,7 @@ const DOCS = {
 	E1402: {
 		title: 'Engine core out of date',
 		cause:
-			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads.',
+			"The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. When null3D's own dev server serves the engine from a checkout of its repository, the check also compares the stamp of the Rust sources that the core was built from with the stamp of the checkout's sources. A core built before a merge or an edit of those sources then fails at once, before it can run with code that expects another core.",
 		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 		since: '0.1',
 	},
@@ -400,9 +400,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, lines, morph, skinning and sprites, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, instance_index, lines, morph, skinning, sprites, texcoords.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {
@@ -419,6 +419,13 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
 		example:
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
+		since: '0.2',
+	},
+	E1425: {
+		title: 'Pointer lock refused',
+		cause:
+			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
+		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
 		since: '0.2',
 	},
 	E1501: {

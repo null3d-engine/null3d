@@ -725,6 +725,13 @@ class FileMaterials {
 			specularIntensityMap: map(m.maps.specularIntensityMap),
 			specularColorMap: map(m.maps.specularColorMap),
 		};
+		const through = m.transmission;
+		if (through) {
+			options.transmission = through.factor;
+			options.thickness = through.thickness;
+			options.attenuationColor = through.attenuationColor;
+			options.attenuationDistance = through.attenuationDistance;
+		}
 		return materials.standard(options);
 	}
 }

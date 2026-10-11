@@ -2,18 +2,21 @@
 // control block, where the sketch reads them at the start of its next frame. The page writes input
 // only while the sketch runs. When the window loses focus, the page hides, a touch turns into a
 // scroll, or the engine stops listening, every held key and button is released, so none stays down
-// in the sketch.
+// in the sketch. While the canvas holds the pointer lock, the browser keeps the pointer still, so
+// pointer records carry the mouse's movement in place of its position.
 
 import {
 	EVENT_KEY_DOWN,
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
 	EVENT_POINTER_LEAVE,
+	EVENT_POINTER_LOCK,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
 	FLAG_ALT,
 	FLAG_CONTROL,
+	FLAG_LOCKED,
 	FLAG_META,
 	FLAG_PEN,
 	FLAG_PRIMARY,
@@ -59,14 +62,23 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 	const keys = new Map(KEY_CODES.map((code, key) => [code, key]));
 	const metaKeys = [keys.get('MetaLeft'), keys.get('MetaRight')];
 
+	let locked = false;
 	const pointer = (type: InputEventType) => (event: PointerEvent) => {
-		const rect = canvas.getBoundingClientRect();
-		const x = event.clientX - rect.left;
-		const y = event.clientY - rect.top;
+		// A locked pointer stays still, and its records hold the movement since its last event.
+		if (locked && type === EVENT_POINTER_LEAVE) return;
+		let x = event.movementX;
+		let y = event.movementY;
+		if (!locked) {
+			const rect = canvas.getBoundingClientRect();
+			x = event.clientX - rect.left;
+			y = event.clientY - rect.top;
+		}
 		const { pointerId: id } = event;
-		const flags = pointerFlags(event);
+		const flags = pointerFlags(event) | (locked ? FLAG_LOCKED : 0);
 		if (type === EVENT_POINTER_DOWN) {
-			held.pointerDown(id, x, y, event.button, flags);
+			// A release that the page makes for a locked pointer moves it no further.
+			if (locked) held.pointerDown(id, 0, 0, event.button, flags);
+			else held.pointerDown(id, x, y, event.button, flags);
 			// A drag that leaves the canvas keeps sending moves and ends with a release.
 			try {
 				canvas.setPointerCapture(id);
@@ -74,7 +86,7 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 				// The pointer is no longer active.
 			}
 		} else if (type === EVENT_POINTER_MOVE) {
-			held.pointerMove(id, x, y);
+			if (!locked) held.pointerMove(id, x, y);
 			if (ring.busy()) return;
 		}
 		// A release of a pointer the canvas never saw pressed belongs to the rest of the page.
@@ -120,6 +132,12 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 	const onVisibility = () => {
 		if (document.hidden) releaseAll();
 	};
+	const writeLock = (on: boolean) => {
+		if (on === locked) return;
+		locked = on;
+		ring.write(EVENT_POINTER_LOCK, 0, 0, on ? 1 : 0, 0, 0, 0);
+	};
+	const onLockChange = () => writeLock(document.pointerLockElement === canvas);
 
 	let listening = false;
 	return {
@@ -139,10 +157,14 @@ export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike
 				document.addEventListener('visibilitychange', onVisibility);
 				canvas.addEventListener('wheel', onWheel, { passive: true });
 				canvas.addEventListener('contextmenu', onContextMenu);
+				document.addEventListener('pointerlockchange', onLockChange);
+				onLockChange();
 				gamepads.start();
 				return;
 			}
 			releaseAll();
+			writeLock(false);
+			document.removeEventListener('pointerlockchange', onLockChange);
 			gamepads.stop();
 			canvas.removeEventListener('pointermove', onMove);
 			canvas.removeEventListener('pointerdown', onDown);
