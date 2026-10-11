@@ -382,9 +382,8 @@ fn material_translucency(id: u32) -> vec4f {
 }
 #endif
 
-#ifdef TRANSMISSION
-/// The values of material `id` that let light through, which only the builds that let light
-/// through read.
+/// The values of material `id` that let light through, and its volume's: only the builds that let
+/// light through, or through a thin surface, call it, and the build drops it from the others.
 fn material_transmission(id: u32) -> MaterialTransmission {
 #ifdef WEBGL2
     return MaterialTransmission(
@@ -395,20 +394,6 @@ fn material_transmission(id: u32) -> MaterialTransmission {
     return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
 #endif
 }
-#else ifdef TRANSLUCENCY
-/// The same values for the builds that let light through a thin surface, whose volume dims that
-/// light. The two kinds of builds never meet.
-fn material_transmission(id: u32) -> MaterialTransmission {
-#ifdef WEBGL2
-    return MaterialTransmission(
-        textureLoad(materials, vec2u(9u, id), 0),
-        textureLoad(materials, vec2u(10u, id), 0),
-    );
-#else
-    return MaterialTransmission(materials[id].transmission, materials[id].attenuation);
-#endif
-}
-#endif
 
 /// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
 /// holds a custom material's uniforms. Vertex and fragment shaders can both read it. On WebGL2 the
