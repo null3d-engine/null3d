@@ -36,7 +36,7 @@ On WebGPU, the GPU culls the scene itself. The engine records one draw for each 
 
 On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU, which a frame updates only where matrices changed. Dynamic instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)). Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading, the same texture maps and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
 
-Every feature works on both paths, or its page describes its WebGL2 fallback. The page downloads only the shaders of the path that it draws with. Other work differs by path too:
+Every feature works on both paths, or its page describes its WebGL2 fallback. The page downloads only the renderers and the shaders of the path that it draws with. Other work differs by path too:
 
 | Work | WebGPU | WebGL2 |
 | --- | --- | --- |

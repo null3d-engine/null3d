@@ -7,6 +7,7 @@
 // so the grid cell that holds an object does not change its hashes.
 
 import { EngineError } from '../errors/engine-error';
+import * as C from '../generated/core';
 
 /** The values the check hashes for each object, in the order that the error message names them. */
 const FIELDS = ['position', 'rotation', 'scale', 'bounding sphere'] as const;
@@ -170,6 +171,149 @@ export class UnmarkedWrites {
 		return new EngineError(
 			'E1110',
 			`the ${FIELDS[field]} of ${first.describe()} changed without a setter.${others}`,
+		);
+	}
+}
+
+/** What the batch check reads of the engine's memory. */
+export interface BatchMemory {
+	readonly generation: number;
+	readonly glue: { batchArrays(batch: number, field: number): number };
+	i32(address: number, length: number): Int32Array;
+}
+
+/** A static batch that the check watches. */
+export interface WatchedBatch {
+	readonly id: number;
+	/** The batch's rows: its capacity. */
+	readonly count: number;
+	/** The rows that draw, from the first. */
+	readonly activeRows: number;
+	describe(): string;
+}
+
+/** A row field of a batch: the field that `batchArrays` takes, and its 32-bit words per row. */
+export type RowField = readonly [field: number, words: number];
+
+/** The most rows of one batch that the check hashes in a frame. */
+export const ROWS_PER_CHECK = 8192;
+
+/** A watched batch, with word views of its row arrays and its dirty bits, and a hash per row. */
+interface BatchWatch {
+	readonly batch: WatchedBatch;
+	readonly fields: readonly RowField[];
+	/** The words of each row field, then the dirty bits', from the memory of `generation`. */
+	readonly views: Int32Array[];
+	generation: number;
+	/** Each row's hash, as the check last read it. */
+	readonly seen: Int32Array;
+	/** One bit a row: marked dirty since the check last read the row. */
+	readonly marked: Int32Array;
+	/** The first row that the next check hashes. */
+	next: number;
+}
+
+/**
+ * Development builds only: finds rows of a static instance, sprite or point batch that changed
+ * without `markDirty`. A static batch recomputes and uploads only its marked rows, so such a write
+ * reaches the screen late or never. Before each batch update, which clears the marks, the check
+ * notes every marked row. It then hashes a slice of the drawn rows, and compares each hash with the
+ * one it read before. A row whose hash changed while no mark was noted since is a write that
+ * skipped `markDirty`. The slices take turns, so a large batch costs a bounded time per frame, and
+ * a write to one of its rows is found within a few frames.
+ */
+export class UnmarkedRows {
+	private readonly watched: BatchWatch[] = [];
+
+	/** `rowsPerCheck` is the most rows of one batch that a check hashes. */
+	constructor(
+		private readonly core: BatchMemory,
+		private readonly rowsPerCheck = ROWS_PER_CHECK,
+	) {}
+
+	/**
+	 * Watches a static batch whose rows have `fields`. Its rows start dirty, so the first checks
+	 * take their hashes.
+	 */
+	watch(batch: WatchedBatch, fields: readonly RowField[]): void {
+		this.watched.push({
+			batch,
+			fields,
+			views: [],
+			generation: -1,
+			seen: new Int32Array(batch.count),
+			marked: new Int32Array(Math.ceil(batch.count / 32)),
+			next: 0,
+		});
+	}
+
+	/** Stops watching a batch, once it is destroyed. */
+	forget(batch: WatchedBatch): void {
+		const at = this.watched.findIndex((watch) => watch.batch === batch);
+		if (at >= 0) this.watched.splice(at, 1);
+	}
+
+	/** The word views of a watched batch's rows and dirty bits, made again after memory grew. */
+	private viewsOf(watch: BatchWatch): Int32Array[] {
+		const { core } = this;
+		if (watch.generation === core.generation) return watch.views;
+		const { id, count } = watch.batch;
+		watch.views.length = 0;
+		for (const [field, words] of watch.fields)
+			watch.views.push(core.i32(core.glue.batchArrays(id, field), count * words));
+		watch.views.push(
+			core.i32(core.glue.batchArrays(id, C.BATCH_FIELD_DIRTY_WORDS), Math.ceil(count / 64) * 2),
+		);
+		watch.generation = core.generation;
+		return watch.views;
+	}
+
+	/**
+	 * Notes each static batch's marked rows, hashes its next slice of drawn rows, and returns E1110
+	 * when a row in it changed with no mark. Call it right before the batch update.
+	 */
+	check(): EngineError | undefined {
+		let first: WatchedBatch | undefined;
+		let firstRow = 0;
+		let more = 0;
+		for (let b = 0; b < this.watched.length; b++) {
+			const watch = this.watched[b] as BatchWatch;
+			const views = this.viewsOf(watch);
+			const { fields, seen, marked } = watch;
+			const dirty = views[fields.length] as Int32Array;
+			for (let w = 0; w < marked.length; w++)
+				marked[w] = (marked[w] as number) | (dirty[w] as number);
+			const rows = watch.batch.activeRows;
+			const start = watch.next < rows ? watch.next : 0;
+			const end = Math.min(rows, start + this.rowsPerCheck);
+			watch.next = end;
+			for (let row = start; row < end; row++) {
+				let hash = 0;
+				for (let f = 0; f < fields.length; f++) {
+					const words = (fields[f] as RowField)[1];
+					const view = views[f] as Int32Array;
+					for (let k = row * words, last = k + words; k < last; k++)
+						hash = (Math.imul(hash, 31) + (view[k] as number)) | 0;
+				}
+				const bit = 1 << (row & 31);
+				const word = row >>> 5;
+				const wasMarked = ((marked[word] as number) & bit) !== 0;
+				marked[word] = (marked[word] as number) & ~bit;
+				if (hash === seen[row]) continue;
+				seen[row] = hash;
+				if (wasMarked) continue;
+				if (first === undefined) {
+					first = watch.batch;
+					firstRow = row;
+				} else more++;
+			}
+		}
+		if (first === undefined) return undefined;
+		const others =
+			more === 0 ? '' : ` ${more} more row${more === 1 ? '' : 's'} changed that way too.`;
+		return new EngineError(
+			'E1110',
+			`row ${firstRow} of ${first.describe()} changed without markDirty.${others}`,
 		);
 	}
 }

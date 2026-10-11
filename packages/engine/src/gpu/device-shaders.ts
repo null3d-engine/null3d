@@ -19,14 +19,20 @@ import {
 } from '../generated/shaders';
 import { variantFor } from './variants';
 
-/** The permutation bits that a device fixes and that a pipeline's word can hold. */
-const PIPELINE_DEVICE_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP;
+/**
+ * The permutation bits that stay as the device fixed them for the whole run: the draw index and
+ * half precision. Every mesh pipeline of a device with the draw index holds it. A full-screen
+ * pass's word lacks it, as its shader has no build with it, yet a feature's module that holds
+ * both kinds of build is the one of the device's bits. Tone mapping is the one fixed bit that a
+ * pipeline's word can change.
+ */
+const RUN_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_HALF;
 
 /**
  * Features that move the 8-bit path to HDR color, whose pipelines then ask for builds without the
  * tone mapping bit. Preloading one on that path also loads the start's builds without the bit.
  */
-const HDR_FEATURES: ReadonlySet<string> = new Set(['bloom']);
+const HDR_FEATURES: ReadonlySet<string> = new Set(['bloom', 'dof']);
 
 /**
  * Loads a device module: the start's module of the fixed bits `bits` when `feature` is undefined,
@@ -80,7 +86,7 @@ export class DeviceShaderSet {
 	 */
 	ready(variants: ShaderVariants, permutation: number, target: 'wgsl' | 'glsl'): boolean {
 		if (variantFor(variants, permutation, target)) return true;
-		const bits = (permutation & PIPELINE_DEVICE_BITS) | (this.bits & PERMUTATION_HALF);
+		const bits = (permutation & PERMUTATION_TONE_MAP) | (this.bits & RUN_BITS);
 		const name = this.names.get(variants);
 		const feature = name === undefined ? undefined : firstUseFeature(name, permutation);
 		const key = this.loadModule(feature, bits);
@@ -100,7 +106,7 @@ export class DeviceShaderSet {
 	 * loads only once. Resolves once each module has arrived or failed to.
 	 */
 	preload(features: Iterable<string>): Promise<void> {
-		const bits = this.bits & (PIPELINE_DEVICE_BITS | PERMUTATION_HALF);
+		const bits = this.bits & (RUN_BITS | PERMUTATION_TONE_MAP);
 		const keys: string[] = [];
 		const ask = (feature: string, at: number) => {
 			const key = this.loadModule(feature, at);

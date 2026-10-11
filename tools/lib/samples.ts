@@ -8,6 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+	copyFileSync,
 	createReadStream,
 	createWriteStream,
 	existsSync,
@@ -286,6 +287,25 @@ export function namedSamples(root: string, folders = SCANNED): NamedSample[] {
 	};
 	for (const folder of folders) if (existsSync(join(root, folder))) visit(folder);
 	return out;
+}
+
+/**
+ * Copies every pinned sample file that the code under `folders` names into `outDir`, each at its
+ * path there, from the cache that `bun run samples:fetch` fills. A build that ships the demos
+ * outside the repository's servers, such as a website's, runs it and sets VITE_NULL3D_SAMPLES_BASE
+ * to that folder. Returns the paths that it copied.
+ */
+export function copyNamedSamples(root: string, outDir: string, folders = ['examples']): string[] {
+	const paths = [...new Set(namedSamples(root, folders).map((named) => named.path))].filter(
+		(path): path is string => path !== null,
+	);
+	for (const path of paths) {
+		const source = join(samplesDir(root), path);
+		if (!existsSync(source)) throw new Error(`${path} is missing: run bun run samples:fetch`);
+		mkdirSync(dirname(join(outDir, path)), { recursive: true });
+		copyFileSync(source, join(outDir, path));
+	}
+	return paths;
 }
 
 /** What makes an asset unfit to ship: a licence outside CC0 and CC BY, or a missing attribution field. */

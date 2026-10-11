@@ -58,7 +58,7 @@ Ten models draw as image tests on all three tiers. The parity test compares each
 | `gltf-vertex-colors` (VertexColorTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 | `gltf-texture-coordinates` (TextureCoordinateTest) | 0%, 0%, 0% | 0%, 0%, 0% |
 
-Two scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior, which three.js draws and null3D does not read, so it takes 1%. All its differing pixels lie on the glass and its beads. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
+Two scenes pass under limits of their own, in `MODEL_LIMITS` of `bench/lib/parity.ts`. The lamp's glass uses `KHR_materials_transmission`, volume and ior, which three.js draws and null3D does not read, so it takes 1%. All its differing pixels lie on the glass and its beads. Since null3D draws transmission ([D-122](D-122-transmission.md)), 0.27% to 0.39% differ on the Mac, all on the stained glass, whose transmission map and clear coat null3D does not draw. The limit is now 0.5%. The instanced cubes put black faces beside white ones at hundreds of edges. Compatibility mode's 8-bit path averages those edges after it encodes the colors, so the scene takes 0.5%. It matches exactly on the other tiers.
 
 ### Copies
 

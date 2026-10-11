@@ -976,10 +976,12 @@ impl Compiler {
                     });
                     if resolves && !state.sampled.is_empty() {
                         // Each layer resolves after the last render pass that draws it. With one
-                        // layer that is the last to draw the target; for an array, the first
-                        // render pass that draws any layer is a safe start.
+                        // layer that is the last to draw the target, or an earlier one that a pass
+                        // samples it after; for an array, the first render pass that draws any
+                        // layer is a safe start.
                         let first_resolve = if state.target.layers == 1 {
-                            state.attached.last
+                            self.last_attached_before(index as u16, state.sampled.first)
+                                .unwrap_or(state.attached.last)
                         } else {
                             state.attached.first
                         };
@@ -1057,20 +1059,32 @@ impl Compiler {
                     LoadOp::Clear
                 };
                 // A multisampled color target is only drawn into; passes sample its resolved
-                // texture. Each layer resolves at the end of the last render pass that draws it.
-                let drawn_later =
-                    self.attached_in(resource, attachment.layer, index + 1..self.plan.steps.len());
+                // texture. Each layer resolves at the end of the last render pass that draws it,
+                // and a target of one layer also at the end of each earlier render pass that a
+                // pass samples it after, before the next render pass draws it again.
+                let steps = self.plan.steps.len();
+                let next_draw = (index + 1..steps)
+                    .find(|&later| self.attached_in(resource, attachment.layer, later..later + 1));
+                let drawn_later = next_draw.is_some();
                 let later = if state.target.resolves() {
                     drawn_later
                 } else {
                     state.uses.last > at
                 };
-                let resolve = if !state.target.resolves() || drawn_later {
+                let sampled_between = state.target.layers == 1
+                    && self.sampled_in(graph, resource, index + 1..next_draw.unwrap_or(steps));
+                let resolve = if !state.target.resolves() {
                     None
-                } else if !state.sampled.is_empty() {
-                    placement.sampled
+                } else if drawn_later {
+                    if sampled_between {
+                        placement.sampled
+                    } else {
+                        None
+                    }
                 } else if resolved_in(graph, self.plan.passes(&step), resource) {
                     Some(Surface::Canvas)
+                } else if !state.sampled.is_empty() {
+                    placement.sampled
                 } else {
                     None
                 };
@@ -1106,6 +1120,27 @@ impl Compiler {
                     (a.resource.0 == resource && a.layer == layer)
                         || (resource == 0 && a.resolve == Some(Surface::Canvas))
                 })
+        })
+    }
+
+    /// The last step before `step` that draws into the first layer of the target, if any.
+    fn last_attached_before(&self, resource: u16, step: u16) -> Option<u16> {
+        (0..step as usize)
+            .rev()
+            .find(|&at| self.attached_in(resource, 0, at..at + 1))
+            .map(|at| at as u16)
+    }
+
+    /// True when a pass of a step in `steps` samples the target.
+    fn sampled_in(&self, graph: Decls<'_>, resource: u16, steps: Range<usize>) -> bool {
+        self.plan.steps[steps].iter().any(|step| {
+            self.plan.passes(step).iter().any(|pass| {
+                !graph.resolves(pass.index())
+                    && graph
+                        .uses(pass.index())
+                        .iter()
+                        .any(|a| a.resource == resource && !a.mode.writes())
+            })
         })
     }
 

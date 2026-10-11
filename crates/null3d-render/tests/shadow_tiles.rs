@@ -7,7 +7,7 @@ mod common;
 
 use std::collections::HashSet;
 
-use common::{World, count};
+use common::{BATCH_ROWS, World, count};
 use null3d_core::animation::{Channel, Interpolation, Play, SourceTrack, resample};
 use null3d_core::lights::{LightTable, kind};
 use null3d_core::scene::{Command, flags};
@@ -168,6 +168,50 @@ fn webgl2_tiles_draw_only_when_their_casters_or_lights_move() {
         };
         tiles_draw_only_when_their_casters_or_lights_move(CpuCulledRenderer::new(config));
     }
+}
+
+/// Checks that a caster which moves while every tile must draw already is still remembered where
+/// it went: its next move, far from every light, draws no tile, on either builder.
+fn casters_that_move_while_every_tile_must_draw_are_remembered<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // Larger tiles leave every tile to draw, and the box leaves the light's reach meanwhile.
+    let larger = TileSettings {
+        size: 512,
+        ..TWO_TILES
+    };
+    world.renderer.settings_mut().set_tile_settings(larger);
+    world.scene.set_position(lit_box, [30.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // It moves on, out of reach before and after: no tile draws.
+    world.scene.set_position(lit_box, [40.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
 }
 
 #[test]
@@ -490,6 +534,77 @@ fn webgl2_a_caster_s_layer_change_draws_its_light_s_tile() {
     a_caster_s_layer_change_draws_its_light_s_tile(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     ));
+}
+
+/// Places every row of the world's batch at `x` on the ground line, and the first row at `first`,
+/// and marks the rows for the next update.
+fn place_rows<B: Tiles>(world: &mut World<B>, x: f32, first: [f32; 3]) {
+    let batch = world.batches.get_mut(world.batch).unwrap();
+    for position in batch.positions_mut().as_chunks_mut::<3>().0 {
+        position.copy_from_slice(&[x, 0.5, 0.0]);
+    }
+    batch.positions_mut()[..3].copy_from_slice(&first);
+    batch.mark_dirty(0, BATCH_ROWS).unwrap();
+}
+
+/// Checks that a row of a batch that casts draws its light's tile when it moves within the light's
+/// reach, and no tile when it moves beyond it, and that a batch that does not cast draws none, on
+/// either builder.
+fn a_casting_batch_s_moved_row_draws_its_light_s_tile<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let far = [30.0, 0.5, 0.0];
+    place_rows(&mut world, far[0], far);
+    let mut mock = MockBackend::default();
+    let casts = |world: &mut World<B>, bits: u32| {
+        world
+            .batches
+            .get_mut(world.batch)
+            .unwrap()
+            .set_shadows(bits);
+    };
+    casts(&mut world, flags::CAST_SHADOWS);
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // A row beyond the light's reach moves: no tile.
+    place_rows(&mut world, far[0], [31.0, 0.5, 0.0]);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // A row moves into its reach: the tile draws once, then rests.
+    place_rows(&mut world, far[0], [-3.0, 0.5, 0.0]);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // The batch stops casting: the tile draws once more, as its shadow goes. A row that then
+    // moves within the light's reach draws no tile.
+    casts(&mut world, flags::RECEIVE_SHADOWS);
+    step(&mut world, &mut mock, true);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    place_rows(&mut world, far[0], [-2.5, 0.5, 0.0]);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_a_casting_batch_s_moved_row_draws_its_light_s_tile() {
+    a_casting_batch_s_moved_row_draws_its_light_s_tile(GpuDrivenRenderer::new(Default::default()));
+}
+
+#[test]
+fn webgl2_a_casting_batch_s_moved_row_draws_its_light_s_tile() {
+    for multi_draw in [true, false] {
+        let config = CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        };
+        a_casting_batch_s_moved_row_draws_its_light_s_tile(CpuCulledRenderer::new(config));
+    }
 }
 
 /// Checks that a skinned caster that stands still while its clip moves an inner joint draws its

@@ -44,6 +44,7 @@ import {
 	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIER_PAIRS,
 	TIERS,
+	TRANSMISSION_MAX_DIFFERENT_PERCENT,
 	VIGNETTE_MAX_DIFFERENT_PERCENT,
 } from './parity';
 
@@ -264,7 +265,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give alpha to coverage, the alpha hash, the masked shadows, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give alpha to coverage, the alpha hash, the masked shadows, the glass, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
@@ -279,11 +280,14 @@ describe('feature scenes', () => {
 		// The vignette is a sanity comparison; the table alone keeps three.js's rule.
 		expect(featureScene('lut-vignette')?.limit).toBe(VIGNETTE_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('lut-cube')?.limit).toBeUndefined();
+		// The 8-bit path averages the glass's edges after it encodes them.
+		expect(featureScene('transmission')?.limit).toBe(TRANSMISSION_MAX_DIFFERENT_PERCENT);
 		const looser = FEATURE_SCENES.filter((scene) => scene.limit !== undefined);
 		expect(looser.map((scene) => scene.test)).toEqual([
 			'alpha-coverage',
 			'alpha-hash',
 			'alpha-mask-shadows',
+			'transmission',
 			'points',
 			'gltf-instancing',
 			'gltf-ktx2',

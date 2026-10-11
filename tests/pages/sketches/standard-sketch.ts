@@ -3,7 +3,8 @@
 // (columns, from 0 to 1), lit by a sun and an ambient light. `?scene=grid&env=room`, `&env=venice`
 // or `&env=studio` lights the grid with an environment alone (bench/scenes/standard-grid.ts):
 // a file's map from the asset tool, or with `&hdr` the HDR file itself, which the engine filters at
-// load. `&rotate` turns the environment a quarter turn. ?tone=none turns off the engine's
+// load. `&rotate` turns the environment a quarter turn, and `&hemisphere` adds a hemisphere light
+// to the environment's light. ?tone=none turns off the engine's
 // default of ACES, as the parity test asks: the grid's three.js twin draws with no tone mapping,
 // three.js's default. `?scene=features` draws what a material fixes when it is created, in
 // pairs: an emissive sphere beside a plain one, a flat-shaded sphere beside a smooth one, a
@@ -19,6 +20,7 @@ import {
 	GRID_COLOR,
 	GRID_ENVIRONMENT_ROTATION,
 	GRID_ENVIRONMENTS,
+	GRID_HEMISPHERE,
 	GRID_SPHERE,
 	GRID_SUN,
 	type GridEnvironmentName,
@@ -52,6 +54,7 @@ export default defineSketch(async (ctx) => {
 					);
 		const rotation = params.has('rotate') ? GRID_ENVIRONMENT_ROTATION : undefined;
 		world.setEnvironment(env, { rotation });
+		if (params.has('hemisphere')) world.createHemisphereLight(GRID_HEMISPHERE);
 	} else {
 		world.createDirectionalLight(GRID_SUN);
 		world.createAmbientLight(GRID_AMBIENT);

@@ -64,7 +64,9 @@
 //! left to claim, and it checks for frame work again before each further task. A worker already
 //! inside a task when a frame job starts joins the job when that task ends, so background work
 //! delays a frame job's helpers by at most one task each, and never blocks the caller, which
-//! runs any chunk no worker has taken.
+//! runs any chunk no worker has taken. A host may start its job workers only as the work asks for
+//! them: then a task queued before any job worker has joined calls the host's hook from the
+//! settings, so the host starts some, and no queued task waits for a worker that never starts.
 //!
 //! # Calls from the host
 //!
@@ -81,7 +83,7 @@
 //! With a clock in its settings, the system adds up the time each job worker spends in frame
 //! chunks and background tasks. A worker adds a chunk's time before it counts the chunk as done,
 //! so when [`JobSystem::parallel_for`] returns, the time of every chunk is included.
-//! [`JobSystem::take_busy_ms`] reads a worker's total and starts it again from zero.
+//! [`JobSystem::take_busy_us`] reads a worker's total and starts it again from zero.
 //!
 //! # Sleeping
 //!
@@ -117,6 +119,10 @@ pub type ChunkFn<'a> = dyn Fn(Range<u32>, WorkerId) + Sync + 'a;
 /// A clock that the host provides, in milliseconds: the browser's `performance.now`, or a timer
 /// in native tests. Any thread may call it.
 pub type Clock = fn() -> f64;
+
+/// Asks the host to start job workers. The system calls it on the thread that queues a background
+/// task while no job worker has joined.
+pub type WantWorkers = fn();
 
 /// Identifies the thread running a chunk: [`WorkerId::CALLER`] for the thread that called
 /// [`JobSystem::parallel_for`], and `i + 1` for job worker `i`. Use it to index per-thread data.
@@ -168,6 +174,9 @@ pub struct JobConfig {
     pub spin_rounds: u32,
     /// The clock that times each job worker's work, or `None` to time nothing.
     pub clock: Option<Clock>,
+    /// The hook that asks the host for job workers when a background task is queued before any
+    /// has joined, or `None` for a host that starts them all at once.
+    pub want_workers: Option<WantWorkers>,
 }
 
 impl Default for JobConfig {
@@ -177,6 +186,7 @@ impl Default for JobConfig {
             background_capacity: DEFAULT_BACKGROUND_CAPACITY,
             spin_rounds: DEFAULT_SPIN_ROUNDS,
             clock: None,
+            want_workers: None,
         }
     }
 }
@@ -214,12 +224,22 @@ pub struct JobSystem {
     panicked: AtomicBool,
     /// True once a loop handed chunks to the job workers, until [`JobSystem::prepare_frame`] reads it.
     dispatched: AtomicBool,
+    /// Nanoseconds that the calling thread spent in loops that it handed out, since the host last
+    /// took the total: how much parallel work the frames have, whatever the job workers that run.
+    handed_ns: AtomicU64,
+    /// True while the calling thread times the loops that it hands out. Each reading of the
+    /// browser's clock allocates a number, so the host times them only while it may want more
+    /// job workers.
+    time_handed: AtomicBool,
     sleepers: AtomicU32,
     shutdown: AtomicBool,
     workers: u32,
     spin_rounds: u32,
     background: TaskQueue,
     clock: Option<Clock>,
+    want_workers: Option<WantWorkers>,
+    /// True once a job worker has entered [`JobSystem::worker_loop`].
+    joined: AtomicBool,
     /// Nanoseconds of work per job worker since its total was last taken.
     busy_ns: Box<[CachePadded<AtomicU64>]>,
     /// True while each job worker runs a frame chunk that it has not counted as done.
@@ -265,12 +285,16 @@ impl JobSystem {
             busy: AtomicBool::new(false),
             panicked: AtomicBool::new(false),
             dispatched: AtomicBool::new(false),
+            handed_ns: AtomicU64::new(0),
+            time_handed: AtomicBool::new(true),
             sleepers: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
             workers,
             spin_rounds: config.spin_rounds,
             background: TaskQueue::new(config.background_capacity),
             clock: config.clock,
+            want_workers: config.want_workers,
+            joined: AtomicBool::new(false),
             busy_ns: (0..workers)
                 .map(|_| CachePadded(AtomicU64::new(0)))
                 .collect(),
@@ -343,6 +367,10 @@ impl JobSystem {
         self.ticket
             .0
             .store(u64::from(chunks) << 32, Ordering::SeqCst);
+        let handed_at = self
+            .clock
+            .filter(|_| self.time_handed.load(Ordering::Relaxed))
+            .map(|now| now());
         self.dispatched.store(true, Ordering::Relaxed);
         self.wake_workers(true);
 
@@ -351,6 +379,10 @@ impl JobSystem {
         }
         while self.done.0.load(Ordering::Acquire) < chunks {
             spin_loop();
+        }
+        if let (Some(now), Some(at)) = (self.clock, handed_at) {
+            let ns = ((now() - at) * 1e6).max(0.0) as u64;
+            self.handed_ns.fetch_add(ns, Ordering::Relaxed);
         }
         let panicked = self.panicked.swap(false, Ordering::Relaxed);
         self.busy.store(false, Ordering::Release);
@@ -378,13 +410,20 @@ impl JobSystem {
     }
 
     /// Queues a background task. Fails with [`CoreError::CapacityExceeded`] when the queue is
-    /// full. With no job workers, tasks wait for [`JobSystem::run_background_tasks`].
+    /// full. With no job workers, tasks wait for [`JobSystem::run_background_tasks`]. Before any
+    /// job worker has joined, it asks the host for job workers through the settings' hook.
     pub fn spawn_background(&self, task: BackgroundTask) -> Result<(), CoreError> {
         if !self.background.push(task) {
             return Err(CoreError::CapacityExceeded {
                 resource: Resource::BackgroundTasks,
                 capacity: self.background.capacity(),
             });
+        }
+        if self.workers > 0
+            && !self.joined.load(Ordering::Acquire)
+            && let Some(want) = self.want_workers
+        {
+            want();
         }
         self.wake_workers(false);
         Ok(())
@@ -410,13 +449,27 @@ impl JobSystem {
         self.background.len()
     }
 
-    /// The milliseconds job worker `worker_index` spent on frame chunks and background tasks
-    /// since the last call for it, which starts its total again from zero. It is 0 without a
-    /// clock, and for an index past the worker count.
-    pub fn take_busy_ms(&self, worker_index: u32) -> f64 {
-        self.busy_ns
-            .get(worker_index as usize)
-            .map_or(0.0, |busy| busy.0.swap(0, Ordering::Relaxed) as f64 / 1e6)
+    /// The whole microseconds that the calling thread spent in loops it handed out to the job
+    /// workers since the last call, which starts the total again from zero. A host that starts job
+    /// workers as the work grows reads it. Without a clock it is always 0. A whole number reaches
+    /// JavaScript as a small integer, where a fraction would make a number object at each read.
+    pub fn take_handed_us(&self) -> u32 {
+        u32::try_from(self.handed_ns.swap(0, Ordering::Relaxed) / 1000).unwrap_or(u32::MAX)
+    }
+
+    /// Starts or stops the timing of the loops that the calling thread hands out. It starts on.
+    pub fn time_handed_loops(&self, on: bool) {
+        self.time_handed.store(on, Ordering::Relaxed);
+    }
+
+    /// The whole microseconds job worker `worker_index` spent on frame chunks and background
+    /// tasks since the last call for it, which starts its total again from zero. It is 0 without
+    /// a clock, and for an index past the worker count. A whole number reaches JavaScript as a
+    /// small integer, where a fraction would make a number object at each read.
+    pub fn take_busy_us(&self, worker_index: u32) -> u32 {
+        self.busy_ns.get(worker_index as usize).map_or(0, |busy| {
+            u32::try_from(busy.0.swap(0, Ordering::Relaxed) / 1000).unwrap_or(u32::MAX)
+        })
     }
 
     /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame
@@ -428,6 +481,7 @@ impl JobSystem {
         let Some(calls) = self.calls.get(worker_index as usize) else {
             return LoopExit::Stopped;
         };
+        self.joined.store(true, Ordering::Release);
         let me = WorkerId::job_worker(worker_index);
         let previous = CURRENT_WORKER.with(|c| c.replace(me.0));
         let mut idle_rounds = 0;

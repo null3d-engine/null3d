@@ -71,7 +71,8 @@ const BLOCK_SUBTILES_X: u32 = 4;
 const BLOCK_SUBTILES_Y: u32 = BAND_HEIGHT / SUBTILE_HEIGHT;
 /// Pixels across a row word of a band's scratch mask: four subtiles.
 const WORD_PIXELS: u32 = 32;
-/// The pixels that the buffer holds about, for any shape of target.
+/// The pixels that the buffer holds about, for any shape of target, unless the engine asks for
+/// another count.
 pub const TARGET_PIXELS: u32 = 256 * 144;
 /// The most triangles that one blocker mesh may have. A larger mesh blocks nothing.
 pub const MAX_BLOCKER_TRIANGLES: u32 = 4096;
@@ -116,6 +117,8 @@ pub struct BlockerMesh {
     edges: Vec<Edge>,
     /// True when every edge joins two triangles that run along it in opposite directions.
     closed: bool,
+    /// The sphere around its corners: the centre of their box, and the distance to the farthest.
+    sphere: [f32; 4],
 }
 
 impl BlockerMesh {
@@ -168,13 +171,37 @@ impl BlockerMesh {
         if triangles.is_empty() {
             return None;
         }
+        Some(Self::welded(xs, ys, zs, triangles))
+    }
+
+    /// A blocker of welded corners and the triangles between them.
+    fn welded(
+        mut xs: Vec<f32>,
+        mut ys: Vec<f32>,
+        mut zs: Vec<f32>,
+        triangles: Vec<[u32; 3]>,
+    ) -> BlockerMesh {
         let corners = xs.len() as u32;
+        let (mut lo, mut hi) = ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]);
+        for i in 0..xs.len() {
+            for (k, v) in [xs[i], ys[i], zs[i]].into_iter().enumerate() {
+                lo[k] = lo[k].min(v);
+                hi[k] = hi[k].max(v);
+            }
+        }
+        let centre: [f32; 3] = std::array::from_fn(|k| (lo[k] + hi[k]) * 0.5);
+        let radius = (0..xs.len())
+            .map(|i| {
+                let [x, y, z] = [xs[i] - centre[0], ys[i] - centre[1], zs[i] - centre[2]];
+                (x * x + y * y + z * z).sqrt()
+            })
+            .fold(0.0f32, f32::max);
         let padded = xs.len().next_multiple_of(4);
         for v in [&mut xs, &mut ys, &mut zs] {
             v.resize(padded, 0.0);
         }
         let (edges, closed) = edges_of(&triangles);
-        Some(BlockerMesh {
+        BlockerMesh {
             xs,
             ys,
             zs,
@@ -182,7 +209,77 @@ impl BlockerMesh {
             triangles,
             edges,
             closed,
-        })
+            sphere: [centre[0], centre[1], centre[2], radius],
+        }
+    }
+
+    /// The blocker's connected parts, each a blocker of its own: the triangles that share
+    /// corners, directly or through other triangles. A mesh that merges parts spread over a large
+    /// space, such as a city's buildings of one material, then blocks part by part, and each part
+    /// takes its place among the frame's blockers by its own distance. A blocker of one part
+    /// comes back whole.
+    pub fn into_parts(self) -> Vec<BlockerMesh> {
+        let n = self.corners as usize;
+        // Each corner's root among the corners that its triangles join.
+        let mut root: Vec<u32> = (0..self.corners).collect();
+        let find = |root: &mut [u32], mut c: u32| {
+            while root[c as usize] != c {
+                root[c as usize] = root[root[c as usize] as usize];
+                c = root[c as usize];
+            }
+            c
+        };
+        for tri in &self.triangles {
+            for k in 1..3 {
+                let (a, b) = (find(&mut root, tri[0]), find(&mut root, tri[k]));
+                if a != b {
+                    root[a.max(b) as usize] = a.min(b);
+                }
+            }
+        }
+        // Each part's number, in the order of its first corner, and each corner's new id.
+        let mut part = vec![u32::MAX; n];
+        let mut local = vec![0u32; n];
+        let mut sizes: Vec<u32> = Vec::new();
+        for c in 0..self.corners {
+            let r = find(&mut root, c) as usize;
+            if part[r] == u32::MAX {
+                part[r] = sizes.len() as u32;
+                sizes.push(0);
+            }
+            let p = part[r];
+            part[c as usize] = p;
+            local[c as usize] = sizes[p as usize];
+            sizes[p as usize] += 1;
+        }
+        if sizes.len() <= 1 {
+            return vec![self];
+        }
+        // Each part's corners as three arrays, and its triangles.
+        let mut parts: Vec<[Vec<f32>; 3]> = sizes
+            .iter()
+            .map(|&size| std::array::from_fn(|_| Vec::with_capacity(size as usize)))
+            .collect();
+        let mut triangles: Vec<Vec<[u32; 3]>> = vec![Vec::new(); sizes.len()];
+        for c in 0..n {
+            let [xs, ys, zs] = &mut parts[part[c] as usize];
+            xs.push(self.xs[c]);
+            ys.push(self.ys[c]);
+            zs.push(self.zs[c]);
+        }
+        for tri in &self.triangles {
+            triangles[part[tri[0] as usize] as usize].push(tri.map(|c| local[c as usize]));
+        }
+        parts
+            .into_iter()
+            .zip(triangles)
+            .map(|([xs, ys, zs], triangles)| Self::welded(xs, ys, zs, triangles))
+            .collect()
+    }
+
+    /// The sphere around its corners, in the mesh's space: centre and radius.
+    pub fn sphere(&self) -> [f32; 4] {
+        self.sphere
     }
 
     /// The number of triangles.
@@ -381,6 +478,8 @@ impl Screen {
 /// See the module's notes.
 #[derive(Clone, Debug, Default)]
 pub struct OcclusionBuffer {
+    /// The pixels that the buffer holds about, or 0 for [`TARGET_PIXELS`].
+    pixels: u32,
     width: u32,
     height: u32,
     tiles_x: u32,
@@ -447,20 +546,31 @@ impl OcclusionBuffer {
         (self.width, self.height)
     }
 
-    /// The buffer's size for a target of `width` x `height` pixels: about [`TARGET_PIXELS`] of
-    /// the same shape, whole subtile columns and whole bands.
-    pub fn size_for(width: u32, height: u32) -> (u32, u32) {
+    /// The buffer's size for a target of `width` x `height` pixels: about `pixels` of the same
+    /// shape, whole subtile columns and whole bands.
+    pub fn size_for(width: u32, height: u32, pixels: u32) -> (u32, u32) {
         let aspect = f64::from(width.max(1)) / f64::from(height.max(1));
         let round = |v: f64, step: u32| ((v / f64::from(step)).round() as u32).max(1) * step;
-        let w = round((f64::from(TARGET_PIXELS) * aspect).sqrt(), WORD_PIXELS).min(1024);
+        let w = round((f64::from(pixels) * aspect).sqrt(), WORD_PIXELS).min(1024);
         let h = round(f64::from(w) / aspect, BAND_HEIGHT).min(1024);
         (w, h)
+    }
+
+    /// Sets the pixels that the buffer holds about from the next resize on, or 0 for
+    /// [`TARGET_PIXELS`]. A larger buffer hides objects behind narrower gaps, for more work.
+    pub fn set_pixels(&mut self, pixels: u32) {
+        self.pixels = pixels;
     }
 
     /// Takes the size [`OcclusionBuffer::size_for`] gives a target of `width` x `height` pixels.
     /// Memory grows only when the size changes.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), TryReserveError> {
-        let (w, h) = Self::size_for(width, height);
+        let pixels = if self.pixels == 0 {
+            TARGET_PIXELS
+        } else {
+            self.pixels
+        };
+        let (w, h) = Self::size_for(width, height, pixels);
         if (w, h) == (self.width, self.height) {
             return Ok(());
         }
@@ -1353,10 +1463,15 @@ mod tests {
 
     #[test]
     fn sizes_keep_the_shape_in_whole_subtiles_and_bands() {
-        assert_eq!(OcclusionBuffer::size_for(1920, 1080), (256, 144));
-        let (w, h) = OcclusionBuffer::size_for(1080, 1920);
+        assert_eq!(
+            OcclusionBuffer::size_for(1920, 1080, TARGET_PIXELS),
+            (256, 144)
+        );
+        // Bands of 16 rows round the larger size's 216 rows up to 224.
+        assert_eq!(OcclusionBuffer::size_for(1920, 1080, 384 * 216), (384, 224));
+        let (w, h) = OcclusionBuffer::size_for(1080, 1920, TARGET_PIXELS);
         assert!(w % WORD_PIXELS == 0 && h % BAND_HEIGHT == 0 && h > w);
-        let (w, h) = OcclusionBuffer::size_for(1, 1);
+        let (w, h) = OcclusionBuffer::size_for(1, 1, TARGET_PIXELS);
         assert!(w == 192 && h == 192);
     }
 
@@ -1398,5 +1513,77 @@ mod tests {
         assert_eq!(mesh.triangle_count(), 12);
         assert_eq!(mesh.edge_count(), 18);
         assert!(mesh.is_closed());
+        assert_eq!(mesh.sphere(), [0.0, 0.0, 0.0, 3f32.sqrt()]);
+    }
+
+    /// The triangles of a box of half-size `half` around `centre`, with each face's corners
+    /// repeated, as generators make them.
+    fn box_soup(centre: [f32; 3], half: f32) -> Vec<f32> {
+        let mut soup = Vec::new();
+        for axis in 0..3 {
+            for sign in [-1.0f32, 1.0] {
+                // The face's corners, counter-clockwise seen from outside.
+                let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+                let corner = |a: f32, b: f32| {
+                    let mut p = [0.0; 3];
+                    p[axis] = sign;
+                    p[u] = a * sign;
+                    p[v] = b;
+                    std::array::from_fn::<f32, 3, _>(|k| centre[k] + p[k] * half)
+                };
+                let quad = [
+                    corner(-1., -1.),
+                    corner(1., -1.),
+                    corner(1., 1.),
+                    corner(-1., 1.),
+                ];
+                for i in [0, 1, 2, 0, 2, 3] {
+                    soup.extend_from_slice(&quad[i]);
+                }
+            }
+        }
+        soup
+    }
+
+    #[test]
+    fn a_mesh_of_boxes_far_apart_splits_into_one_part_per_box() {
+        use crate::bvh::mesh::TriangleSoup;
+        let centres = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 4.0, -300.0]];
+        let soup: Vec<f32> = centres.iter().flat_map(|&c| box_soup(c, 2.0)).collect();
+        let mesh = BlockerMesh::build(&TriangleSoup { positions: &soup }).expect("a blocker");
+        assert_eq!(mesh.triangle_count(), 36);
+        let whole = mesh.sphere();
+        assert!(
+            whole[3] > 150.0,
+            "the whole mesh's sphere spans the boxes: {whole:?}"
+        );
+        let parts = mesh.into_parts();
+        assert_eq!(parts.len(), 3);
+        for (part, centre) in parts.iter().zip(centres) {
+            assert_eq!(part.corner_count(), 8);
+            assert_eq!(part.triangle_count(), 12);
+            assert_eq!(part.edge_count(), 18);
+            assert!(part.is_closed());
+            assert_eq!(
+                part.sphere(),
+                [centre[0], centre[1], centre[2], 2.0 * 3f32.sqrt()]
+            );
+        }
+    }
+
+    #[test]
+    fn boxes_that_share_corners_stay_one_part() {
+        use crate::bvh::mesh::TriangleSoup;
+        // Two boxes stacked face to face share the four corners of that face.
+        let soup: Vec<f32> = [[0.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+            .iter()
+            .flat_map(|&c| box_soup(c, 1.0))
+            .collect();
+        let mesh = BlockerMesh::build(&TriangleSoup { positions: &soup }).expect("a blocker");
+        assert_eq!(mesh.corner_count(), 12);
+        let parts = mesh.into_parts();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].triangle_count(), 24);
+        assert_eq!(parts[0].sphere()[..3], [0.0, 1.0, 0.0]);
     }
 }

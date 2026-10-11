@@ -1,7 +1,9 @@
 // The built-in environments, which `assets.builtinEnvironment` imports the first time, so a page
 // without one never downloads this. The thread that draws makes each one's cube map on the GPU
 // (D-19), so the engine's package ships no file for it. Only the nine coefficients of each one's
-// diffuse light live here.
+// diffuse light live here, and the size of the sky's map: the GPU draws that map, and the engine
+// core works out its diffuse light (D-118). The module imports nothing, so it adds no file that the
+// page's start shares with it.
 
 /** A built-in environment: the size and the levels of its cube map, and its diffuse light. */
 export interface BuiltinEnvironment {
@@ -33,3 +35,16 @@ export const BUILTIN_ENVIRONMENTS = {
 		sh: Float32Array.from(ROOM_SH.flatMap((c) => [c, c, c])),
 	},
 } as const satisfies Record<string, BuiltinEnvironment>;
+
+/**
+ * The sky's map: faces of 256 texels and 6 levels, as the room's and an HDR file's maps, so a
+ * mirror shows the sky as sharp as their maps show theirs. The engine core works out its diffuse
+ * light, so its coefficients here stay 0. It refreshes in `stages` stages, one a frame, as the GPU
+ * code's plan of its draws splits them (D-118); a test checks that the two agree.
+ */
+export const SKY_MAP = {
+	size: 256,
+	levels: 6,
+	stages: 20,
+	sh: new Float32Array(27),
+} as const satisfies BuiltinEnvironment & { stages: number };

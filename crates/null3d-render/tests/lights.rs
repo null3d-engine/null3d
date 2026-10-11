@@ -1,5 +1,5 @@
-//! Light objects reach the frame: the main directional light and the ambient lights become the
-//! lighting of each view's uniform block, and the point lights the camera sees fill the light
+//! Light objects reach the frame: the main directional light and the ambient and hemisphere lights
+//! become the lighting of each view's uniform block, and the point lights the camera sees fill the light
 //! table's visible list, on both frame builders.
 
 mod common;
@@ -14,6 +14,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::fog::{self, Fog};
 use null3d_render::frame::{FrameBuilder, NO_MESH};
+use null3d_render::frame_data::FrameUniform;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::RenderScale;
 use null3d_render::output::{Output, ToneMapping};
@@ -52,9 +53,8 @@ fn record<B: FrameBuilder>(world: &mut World<B>, lights: &mut LightTable) {
     world.record(true);
 }
 
-/// The lighting of the camera view's uniform block: the sun's direction and color, and the
-/// ambient color.
-fn uniform<B: FrameBuilder>(world: &World<B>) -> [[f32; 4]; 3] {
+/// The camera view's uniform block.
+fn camera_uniform<B: FrameBuilder>(world: &World<B>) -> FrameUniform {
     let parity = world.scene.parity();
     let settings = world.renderer.settings();
     let frame = settings
@@ -66,24 +66,19 @@ fn uniform<B: FrameBuilder>(world: &World<B>) -> [[f32; 4]; 3] {
             world.render_scale,
         )
         .unwrap();
-    let u = frame.uniform;
+    frame.uniform
+}
+
+/// The lighting of the camera view's uniform block: the sun's direction and color, and the
+/// ambient color.
+fn uniform<B: FrameBuilder>(world: &World<B>) -> [[f32; 4]; 3] {
+    let u = camera_uniform(world);
     [u.sun_direction, u.sun_color, u.ambient]
 }
 
 /// The fog color of the camera view's uniform block.
 fn fog_color<B: FrameBuilder>(world: &World<B>) -> [f32; 3] {
-    let parity = world.scene.parity();
-    let settings = world.renderer.settings();
-    let frame = settings
-        .view_frame(
-            ViewId::CAMERA,
-            &world.scene,
-            parity,
-            world.canvas,
-            world.render_scale,
-        )
-        .unwrap();
-    frame.uniform.fog.color
+    camera_uniform(world).fog.color
 }
 
 fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
@@ -101,6 +96,16 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     lights
         .set_color(ambient, color::MAIN, [0.25, 0.5, 1.0])
         .unwrap();
+    // An upright hemisphere light, from an orange sky to a blue ground: half their sum joins the
+    // ambient light, and half their difference lies along +Y.
+    let (hemisphere, hemisphere_row) =
+        light(&mut world, &mut lights, kind::HEMISPHERE, [0.0; 3], 0.0);
+    lights
+        .set_color(hemisphere_row, color::MAIN, [1.0, 0.5, 0.0])
+        .unwrap();
+    lights
+        .set_color(hemisphere_row, color::GROUND, [0.0, 0.5, 1.0])
+        .unwrap();
     // The camera stands at z = 20 and looks down -Z: one light ahead of it, one behind it.
     let (_, ahead) = light(&mut world, &mut lights, kind::POINT, [1.0, 0.0, 0.0], 0.0);
     let (_, behind) = light(&mut world, &mut lights, kind::POINT, [0.0, 0.0, 40.0], 0.0);
@@ -113,7 +118,9 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
         direction[0].abs() < 1e-6 && (direction[1] + 1.0).abs() < 1e-6 && direction[2].abs() < 1e-6
     );
     assert_eq!(sun_color, [2.0, 2.0, 2.0, 0.0]);
-    assert_eq!(ambient_color, [0.25, 0.5, 1.0, 0.0]);
+    assert_eq!(ambient_color, [0.75, 1.0, 1.5, 0.0]);
+    let up = [[0.0; 4], [0.5, 0.0, -0.5, 0.0], [0.0; 4]];
+    assert_eq!(camera_uniform(&world).hemisphere, up);
     let visible = lights.visible();
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].light, ahead);
@@ -136,7 +143,11 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     record(&mut world, &mut lights);
     let [_, sun_color, ambient_color] = uniform(&world);
     assert_eq!(sun_color, [1.0, 1.0, 1.0, 0.0]);
-    assert_eq!(ambient_color, [0.125, 0.25, 0.5, 0.0]);
+    assert_eq!(ambient_color, [0.375, 0.5, 0.75, 0.0]);
+    assert_eq!(
+        camera_uniform(&world).hemisphere,
+        up.map(|axis| axis.map(|v| v * 0.5))
+    );
     assert_eq!(lights.visible()[0].color, [0.5; 3]);
     assert_eq!(fog_color(&world), [0.25, 0.25, 0.5]);
     world.frame += 1;
@@ -148,14 +159,18 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(uniform(&world)[1], [2.0, 2.0, 2.0, 0.0]);
     world.renderer.settings_mut().set_debug_view(DebugView::Lit);
 
-    // A hidden sun lights nothing in the next frame.
+    // A hidden sun and a hidden hemisphere light light nothing in the next frame.
     world.frame += 1;
-    world
-        .scene
-        .apply_commands(&[Command::set_visible(sun, false)], world.frame)
-        .unwrap();
+    let hide = [
+        Command::set_visible(sun, false),
+        Command::set_visible(hemisphere, false),
+    ];
+    world.scene.apply_commands(&hide, world.frame).unwrap();
     record(&mut world, &mut lights);
-    assert_eq!(uniform(&world)[1], [0.0; 4]);
+    let [_, sun_color, ambient_color] = uniform(&world);
+    assert_eq!(sun_color, [0.0; 4]);
+    assert_eq!(ambient_color, [0.125, 0.25, 0.5, 0.0]);
+    assert_eq!(camera_uniform(&world).hemisphere, [[0.0; 4]; 3]);
 }
 
 #[test]

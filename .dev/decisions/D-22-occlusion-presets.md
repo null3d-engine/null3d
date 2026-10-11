@@ -1,6 +1,6 @@
 # D-22: Occlusion culling per preset on each path
 
-Status: WebGPU rows decided from the Mac's timings, 2026-10-04, confirmed by the iPad's and the S25's timings, 2026-10-07, and by the Mac's G1 run, 2026-10-08. The WebGL2 rows (T-36, M2-I3) are pending. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
+Status: WebGPU rows decided from the Mac's timings, 2026-10-04, confirmed by the iPad's and the S25's timings, 2026-10-07, and by the Mac's G1 run, 2026-10-08. The WebGL2 rows (T-36, M2-I3) are pending; their method is set, 2026-10-08. Task: M2-I1 (WebGPU), M2-I3 (WebGL2).
 
 Summary: GPU occlusion culling is off on every preset for now. In a room scene whose walls hide 94% of its objects, a quiet Mac saved 37% on 4 October, but only 7% on 8 October. With another program drawing on the GPU, it cost 19% to 66% more. Desktops turn it on only if it saves 10% quiet and loses no more than 5% under load. A scene that marks no occluder pays nothing for it. On the owner's iPad and the cloud Galaxy S25, the same room cost 4% and 30% more GPU time with it.
 
@@ -10,7 +10,7 @@ On which presets does each path cull occluded objects: GPU occlusion culling on 
 
 ## Rule
 
-A preset turns a method on only where it saves more frame time than it costs on that preset's devices, with popping under M2-I3's threshold. GPU occlusion culling shows no object late (D-40), so on WebGPU the rule reduces to its GPU time per frame.
+A preset turns a method on only where it saves more frame time than it costs on that preset's devices, with popping within M2-I3's limits. Popping means both objects wrongly hidden at rest and objects late in motion ([below](#software-occlusion-culling-on-webgl2)). GPU occlusion culling shows no object late (D-40), so on WebGPU the rule reduces to its GPU time per frame.
 
 ## Data
 
@@ -55,7 +55,21 @@ With culling on, the compute pass of the pyramid and the second phase took 0.98 
 
 ### Software occlusion culling on WebGL2
 
-Pending: M2-I2 and M2-I3 (T-36).
+The figures are pending. T-36 runs on the S24+ or the cloud Galaxy S24, which has the same chip. It also runs on the owner's iPad and the cloud Galaxy S25 and Pixel 9, all with WebGL2 forced. The method, set on 2026-10-08 (M2-I3):
+
+- The scene is S6, the city, whole, from the benchmark pages' production build. Its towers and many kit buildings block the view, so it is the scene that the culling serves. The device runner's `occlusion-s6` plan loads `bench/pages/null3d/s6.html` with `?occlusion-turns` ([Devices](../devices.md#the-s6-occlusion-plan)).
+- Each load runs one preset, Low, Medium or High, with the governor off, so the render scale holds while the sides take turns. Every load forces WebGL2, where the job workers cull.
+- The culling runs off and on in turns in one engine: 4 rounds of 10 seconds a side. Each round flies its own quarter of the route, and both sides fly the same stretch from the same start. The side that runs first changes each round, so a device that warms through the run slows both sides alike.
+- Each side reports the medians of its rounds. They are the share of the entries in the view that the culling hid, the job workers' time and the sketch thread's culling step. Then come the render worker's time, the GPU time where the device has a timer, the frame interval and the draw calls.
+- The culling's cost is the job workers' added time plus the culling step's added time. The step includes the calling thread's share of the blockers' drawing. Its saving is the render worker's time plus the GPU's. It pays where the saving is larger than the cost, which is gate item 3's rule.
+- The buffer comes in two sizes, the core's 256 x 144 and the first round's 384 x 216. The `?occlusion-buffer=` switch sets the size. Its rows are bands of 16, so the larger size is 384 x 224 at 16:9.
+
+Popping. The gate's popping check means two figures, and both must stay within M2-I3's limits:
+
+- Wrongly hidden at rest: objects that the culling hides while they show, with the camera still. This plan measures it. After the timed rounds, the page holds the camera at 24 stops spread along the route. At each stop it reads the frame back twice with the culling off, then once with it on. The two frames with the culling off differ only by the device's own noise. A stop counts when the frame with the culling on differs from the first one by more than that noise plus 8 pixels. A small prop far down a street covers about that many. The limit is no such stop in any load. The culling hides only what lies wholly behind blockers, so one such stop is a fault, not a rate to allow. The page sends the frames of the first two such stops, and the runner saves them beside the run's results.
+- Late in motion: objects that show one or more frames late while the camera flies. The visual check's popping figure measures it (M2-L6). It draws the same camera flight with the culling on and off and counts the objects that show up late. The plan reports it beside the first figure once that figure lands, and its table shows a dash until then. The limit is no late object. The culling uses the frame's own camera and matrices and keeps nothing from earlier frames ([D-41](D-41-software-occlusion.md#same-frame-no-readback)), so no object can show late.
+
+The preset rows follow from the table that the runner prints for each device. It has one row per preset and buffer size. Each row gives the hidden share, the added and saved times, the frame interval with the culling off and on, and both popping figures.
 
 ## Decision
 

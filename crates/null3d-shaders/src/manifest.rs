@@ -133,6 +133,10 @@ pub struct Variant {
     /// the names of the bits it has as more defs.
     #[serde(default)]
     pub permutations: Vec<String>,
+    /// Permutation bits by name that every build of the variant holds: it makes only the
+    /// combinations with each of them.
+    #[serde(default)]
+    pub required: Vec<String>,
     /// The languages to write.
     pub targets: Vec<Target>,
 }
@@ -144,8 +148,8 @@ impl Variant {
     }
 
     /// Every build of the variant `name`, one for each combination of its permutation bits that
-    /// holds the bits each bit needs (`permutation::NEEDS`) and no pair of bits kept apart
-    /// (`permutation::APART`), in the order of their permutation words. The build without any bit
+    /// holds the bits each bit needs (`permutation::NEEDS`), the variant's `required` bits, and no
+    /// pair of bits kept apart (`permutation::APART`), in the order of their permutation words. The build without any bit
     /// takes the variant's name,
     /// and each other build adds the names of its bits in lowercase, in bit order: variant
     /// `webgl2` with `DRAW_INDEX` builds `webgl2` and `webgl2_draw_index`. The variant's names
@@ -157,6 +161,11 @@ impl Variant {
             .filter_map(|bit| permutation::bit(bit).map(|value| (bit.as_str(), value)))
             .collect();
         bits.sort_by_key(|&(_, value)| value);
+        let required = self
+            .required
+            .iter()
+            .filter_map(|bit| permutation::bit(bit))
+            .fold(0, |all, bit| all | bit);
         let mut builds: Vec<Build> = (0..1usize << bits.len())
             .map(|combination| {
                 let mut build = Build {
@@ -175,7 +184,10 @@ impl Variant {
                 build.defs.sort();
                 build
             })
-            .filter(|build| permutation::buildable(build.permutation))
+            .filter(|build| {
+                permutation::buildable(build.permutation)
+                    && build.permutation & required == required
+            })
             .collect();
         builds.sort_by_key(|build| build.permutation);
         builds

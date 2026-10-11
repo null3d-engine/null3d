@@ -52,7 +52,10 @@ export function hotKey(path: string, literal?: number): string {
 export function contractOf(shader: CompiledWgsl): string | null {
 	if (shader.kind !== 'material') return null;
 	const { uniforms, textures, locations, attributes, baseColor } = shader;
-	return JSON.stringify({ uniforms, textures, locations, attributes, baseColor });
+	// A vertex offset gives the material the builds of its shadow casters, which the engine picks
+	// when it creates the material.
+	const casts = shader.functions.includes('vertexOffset');
+	return JSON.stringify({ uniforms, textures, locations, attributes, baseColor, casts });
 }
 
 /**

@@ -2,7 +2,7 @@
 
 - Device: Galaxy S24 (SM-S921B), 8 GB, 360 x 780 at 3x, 10 cores
 - OS: Android 16
-- Browser: Chrome 149.0.7827.160
+- Browser: Chrome 152.0.7977.54
 - GPU: Samsung Xclipse 940 (ANGLE on Vulkan 1.3.279)
 - GPU paths: WebGL2; no WebGPU adapter
 - Where: BrowserStack Automate

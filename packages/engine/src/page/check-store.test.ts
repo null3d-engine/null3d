@@ -62,7 +62,7 @@ function report(change: Partial<CapabilityReport> = {}): CapabilityReport {
 	} as CapabilityReport;
 }
 
-const CONDITIONS = checkConditions(report(), 'webgpu', 'high', undefined);
+const CONDITIONS = checkConditions(report(), 'webgpu', 'high', undefined, 60);
 
 /** A store for a start under `conditions`, with a canvas of `area`, in `storage`. */
 const store = (storage: Storage, conditions = CONDITIONS, area = AREA) =>
@@ -72,37 +72,49 @@ describe('CheckStore', () => {
 	it('gives a later start the result that a start measured, marked as reused', () => {
 		const { storage } = memoryStorage();
 		expect(store(storage).read(NOW)).toBeUndefined();
-		store(storage).save(CHECK, undefined, NOW);
+		store(storage).save(CHECK, 60, NOW);
 		expect(store(storage).read(NOW + 1000)).toEqual({ ...CHECK, reused: true });
 	});
 
 	it('keeps one result for each sketch', () => {
 		const { storage } = memoryStorage();
-		store(storage).save(CHECK, undefined, NOW);
+		store(storage).save(CHECK, 60, NOW);
 		expect(new CheckStore(`${SKETCH}?n=2`, CONDITIONS, AREA, storage).read(NOW)).toBeUndefined();
 	});
 
 	it('stores no result that a start reused, and none against a lowered target', () => {
 		const { items, storage } = memoryStorage();
-		store(storage).save({ ...CHECK, reused: true }, undefined, NOW);
-		store(storage).save({ ...CHECK, targetFps: 30 }, undefined, NOW);
+		store(storage).save({ ...CHECK, reused: true }, 60, NOW);
+		store(storage).save({ ...CHECK, targetFps: 30 }, 60, NOW);
 		expect(items.size).toBe(0);
 		// A frame rate cap lowers the highest target with it.
 		store(storage).save({ ...CHECK, targetFps: 30 }, 30, NOW);
 		expect(items.size).toBe(1);
 	});
 
+	it("stores a check of the display's full rate from 60 frames a second up", () => {
+		const { items, storage } = memoryStorage();
+		const display = Number.POSITIVE_INFINITY;
+		const conditions = checkConditions(report(), 'webgpu', 'high', undefined, display);
+		store(storage, conditions).save({ ...CHECK, targetFps: 30 }, display, NOW);
+		expect(items.size).toBe(0);
+		store(storage, conditions).save({ ...CHECK, targetFps: 120 }, display, NOW);
+		expect(store(storage, conditions).read(NOW)?.targetFps).toBe(120);
+		// A start that defends another rate measures again.
+		expect(store(storage).read(NOW)).toBeUndefined();
+	});
+
 	it('stores and reads nothing for a canvas without an area', () => {
 		const { items, storage } = memoryStorage();
-		store(storage, CONDITIONS, 0).save(CHECK, undefined, NOW);
+		store(storage, CONDITIONS, 0).save(CHECK, 60, NOW);
 		expect(items.size).toBe(0);
-		store(storage).save(CHECK, undefined, NOW);
+		store(storage).save(CHECK, 60, NOW);
 		expect(store(storage, CONDITIONS, 0).read(NOW)).toBeUndefined();
 	});
 
 	it('counts storage that the browser refuses as empty', () => {
 		const { storage } = memoryStorage(true);
-		expect(() => store(storage).save(CHECK, undefined, NOW)).not.toThrow();
+		expect(() => store(storage).save(CHECK, 60, NOW)).not.toThrow();
 		expect(store(storage).read(NOW)).toBeUndefined();
 		expect(new CheckStore(SKETCH, CONDITIONS, AREA, undefined).read(NOW)).toBeUndefined();
 	});
@@ -129,7 +141,7 @@ describe('reusableCheck', () => {
 	});
 
 	it('applies under the same conditions only', () => {
-		const other = checkConditions(report(), 'webgpu', 'medium', undefined);
+		const other = checkConditions(report(), 'webgpu', 'medium', undefined, 60);
 		expect(reusableCheck(stored(), other, AREA, NOW)).toBeUndefined();
 	});
 
@@ -150,18 +162,21 @@ describe('reusableCheck', () => {
 });
 
 describe('checkConditions', () => {
-	it('changes with the GPU path, the start preset, the frame rate cap and the device', () => {
+	it('changes with the GPU path, the start preset, the frame rate cap, the target and the device', () => {
 		const variants = [
-			checkConditions(report(), 'webgl2', 'high', undefined),
-			checkConditions(report(), 'webgpu', 'medium', undefined),
-			checkConditions(report(), 'webgpu', 'high', 30),
-			checkConditions(report({ devicePixelRatio: 1 }), 'webgpu', 'high', undefined),
-			checkConditions(report({ screenMinEdge: 1440 }), 'webgpu', 'high', undefined),
+			checkConditions(report(), 'webgl2', 'high', undefined, 60),
+			checkConditions(report(), 'webgpu', 'medium', undefined, 60),
+			checkConditions(report(), 'webgpu', 'high', 30, 60),
+			checkConditions(report(), 'webgpu', 'high', undefined, 120),
+			checkConditions(report(), 'webgpu', 'high', undefined, Number.POSITIVE_INFINITY),
+			checkConditions(report({ devicePixelRatio: 1 }), 'webgpu', 'high', undefined, 60),
+			checkConditions(report({ screenMinEdge: 1440 }), 'webgpu', 'high', undefined, 60),
 			checkConditions(
 				report({ webgpu: { ...report().webgpu, adapterInfo: null } }),
 				'webgpu',
 				'high',
 				undefined,
+				60,
 			),
 		];
 		expect(new Set([CONDITIONS, ...variants]).size).toBe(variants.length + 1);
@@ -169,9 +184,9 @@ describe('checkConditions', () => {
 
 	it("reads only the GPU path's own report", () => {
 		const otherWebgl2 = report({ webgl2: { ...report().webgl2, renderer: 'another GPU' } });
-		expect(checkConditions(otherWebgl2, 'webgpu', 'high', undefined)).toBe(CONDITIONS);
-		expect(checkConditions(otherWebgl2, 'webgl2', 'high', undefined)).not.toBe(
-			checkConditions(report(), 'webgl2', 'high', undefined),
+		expect(checkConditions(otherWebgl2, 'webgpu', 'high', undefined, 60)).toBe(CONDITIONS);
+		expect(checkConditions(otherWebgl2, 'webgl2', 'high', undefined, 60)).not.toBe(
+			checkConditions(report(), 'webgl2', 'high', undefined, 60),
 		);
 	});
 });

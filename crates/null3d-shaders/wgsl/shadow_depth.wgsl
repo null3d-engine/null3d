@@ -31,7 +31,7 @@ enable draw_index;
 // in the VERTEX_COLOR builds and the base color map's alpha in the MAP builds, against the cutoff
 // in the ALPHA_MASK builds, or against the alpha hash in the ALPHA_HASH builds, whose pattern then
 // takes the light's pixels. Alpha to coverage casts at its cutoff, where its fade starts.
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, relative_position, world_normal}
+#import null3d::mesh::{InstanceIn, caster_clip, find_instance, relative_position}
 #import null3d::vertex::{mesh_position}
 #ifdef CUTOUT
 #import null3d::mesh::{material_of}
@@ -49,14 +49,6 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-
-/// How far a back face that faces straight away from the light moves toward it, in texels of the
-/// map where it stands.
-const CASTER_OFFSET_TEXELS: f32 = 1.0;
-/// The most that a back face moves, in meters. A floor that casts shadows compares its lit top with
-/// its own bottom, so a larger offset in a far cascade's coarse texels would shadow the top of a
-/// floor 20 cm thick.
-const CASTER_OFFSET_MAX: f32 = 0.05;
 
 #ifdef MAP
 // The map's bind group comes after the frame's group, and on WebGL2 after the groups of the draw
@@ -141,21 +133,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> @invariant @builtin(position) vec4f {
     let normal = rest_normal;
 #endif
     let relative = relative_position(found, position);
-    var clip = clip_of(found, relative);
-#ifdef CASTER_OFFSET
-    // A texel spans two clip units over the map's texels across. The first row of the matrix turns
-    // that into meters, at the caster's distance from a spot or point light.
-    let m = frame.view_proj;
-    let texel = 2.0 * clip.w * frame.target_size.z / length(vec3f(m[0].x, m[1].x, m[2].x));
-    let light = frame.camera_position;
-    let toward = normalize(light.xyz - relative * light.w);
-    // A face that lies on a receiver faces away from the light as squarely as the receiver faces
-    // it, and the share squared moves it. A face seen nearly edge-on from the light moves little,
-    // so the caster's lit faces beside it keep their light up to the edge.
-    let away = clamp(-dot(world_normal(found, normal), toward), 0.0, 1.0);
-    let offset = min(CASTER_OFFSET_TEXELS * away * away * texel, CASTER_OFFSET_MAX);
-    clip = clip_of(found, relative + toward * offset);
-#endif
+    var clip = caster_clip(found, relative, normal);
 #ifndef PREPASS
     clip.z = min(clip.z, clip.w);
 #endif

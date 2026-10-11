@@ -42,7 +42,7 @@ function host(hiddenMs: number): CheckHost & { lowered: number } {
 			return true;
 		},
 		uploading: () => false,
-		maxFps: undefined,
+		maxTargetFps: 60,
 		resumes: () => resumes,
 	};
 	return check;

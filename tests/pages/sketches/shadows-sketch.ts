@@ -5,7 +5,9 @@
 // keeps the standard look, so the image must match the one without it. ?tone=none turns off the
 // engine's default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
 // three.js's default. ?filter=<n> sets the shadow filter, 3 or 5 texels; 3 by default, so every
-// GPU tier draws the same image whatever preset it runs.
+// GPU tier draws the same image whatever preset it runs. ?batches draws the objects as rows of
+// instance batches, one for each mesh, material and pair of shadow options, which must cast and
+// receive as the objects do; ?batches=dynamic makes them dynamic batches.
 import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -25,6 +27,8 @@ const CASCADES = Number(params.get('cascades') ?? 3);
 const CUSTOM = params.has('custom');
 /** The shadow filter's texels on each side, from the sketch module's ?filter switch. */
 const FILTER = params.get('filter') === '5' ? 5 : 3;
+/** Whether the objects draw as instance rows, from the sketch module's ?batches switch. */
+const BATCHES = params.get('batches');
 
 /** A surface function that keeps the material's own look. */
 const plain = /* wgsl */ `
@@ -65,18 +69,37 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	// Objects share their meshes and materials, as the three.js twin's do.
 	const meshes = new Map<ShadowMeshName, MeshGeometry>();
 	const colors = new Map<string, Material>();
+	const rows = new Map<string, (typeof SHADOW_OBJECTS)[number][]>();
 	for (const object of SHADOW_OBJECTS) {
 		const mesh = meshes.get(object.mesh) ?? meshOf(object.mesh);
 		meshes.set(object.mesh, mesh);
 		const key = `${object.color} ${object.lit}`;
 		const material = colors.get(key) ?? materialOf(object.color, object.lit);
 		colors.set(key, material);
-		scene.createMesh({
-			mesh,
-			material,
-			position: object.position,
-			castShadows: object.cast,
-			receiveShadows: object.receive,
+		if (BATCHES === null) {
+			scene.createMesh({
+				mesh,
+				material,
+				position: object.position,
+				castShadows: object.cast,
+				receiveShadows: object.receive,
+			});
+			continue;
+		}
+		const group = `${object.mesh} ${key} ${object.cast} ${object.receive}`;
+		rows.set(group, [...(rows.get(group) ?? []), object]);
+	}
+	for (const group of rows.values()) {
+		const [first] = group as [(typeof SHADOW_OBJECTS)[number]];
+		const batch = scene.createInstances(meshes.get(first.mesh) as MeshGeometry, group.length, {
+			material: colors.get(`${first.color} ${first.lit}`) as Material,
+			dynamic: BATCHES === 'dynamic',
+			castShadows: first.cast,
+			receiveShadows: first.receive,
 		});
+		group.forEach((object, row) => {
+			batch.positions.set(object.position, row * 3);
+		});
+		batch.markDirty();
 	}
 });

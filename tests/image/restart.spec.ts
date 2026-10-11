@@ -221,24 +221,41 @@ const HELD = 'null3D test: the engine stopped while the render worker held a fra
 /**
  * Makes the render worker hold the first frame that it takes after it answers a capture, after it
  * found the frame's draw list and before it replays it, until the page stops the engine. It then
- * asks the core, through the render worker's own instance of it, for the address of the frame's
- * list, and fails the frame when the core no longer holds the list there: the core gives 0 once
- * the engine is gone.
+ * fails the frame when the page destroyed its engine meanwhile, which frees the frame's list. The
+ * page notes each call that destroys an engine in a shared flag, which it sends with each worker's
+ * start message.
  */
-const HOLD_FRAME_UNTIL_STOP = `if (self.name === 'null3d-render' && !self.__null3dHoldFrame) {
+const HOLD_FRAME_UNTIL_STOP = `if (typeof WorkerGlobalScope === 'undefined' && !self.__null3dHoldFrame) {
 	self.__null3dHoldFrame = true;
-	let control;
-	let core;
-	let armed = false;
-	self.addEventListener('message', (event) => {
-		if (event.data?.type === 'init') control = event.data.control;
-	});
+	const destroyed = new Int32Array(new SharedArrayBuffer(4));
+	const post = Worker.prototype.postMessage;
+	Worker.prototype.postMessage = function (message, ...rest) {
+		return post.call(this, message?.type === 'init' ? { ...message, destroyed } : message, ...rest);
+	};
 	WebAssembly.Instance = new Proxy(WebAssembly.Instance, {
 		construct(target, args) {
 			const made = Reflect.construct(target, args);
-			if (made.exports.drawListAddress) core = made.exports;
-			return made;
+			if (!made.exports.destroyEngine) return made;
+			const exports = {
+				...made.exports,
+				destroyEngine(...destroyArgs) {
+					Atomics.store(destroyed, 0, 1);
+					return made.exports.destroyEngine(...destroyArgs);
+				},
+			};
+			return new Proxy(made, {
+				get: (instance, key) => (key === 'exports' ? exports : Reflect.get(instance, key)),
+			});
 		},
+	});
+}
+if (self.name === 'null3d-render' && !self.__null3dHoldFrame) {
+	self.__null3dHoldFrame = true;
+	let control;
+	let destroyed;
+	let armed = false;
+	self.addEventListener('message', (event) => {
+		if (event.data?.type === 'init') ({ control, destroyed } = event.data);
 	});
 	const post = self.postMessage.bind(self);
 	self.postMessage = (message, options) => {
@@ -250,14 +267,12 @@ const HOLD_FRAME_UNTIL_STOP = `if (self.name === 'null3d-render' && !self.__null
 		if (armed && array.buffer === control && array.byteOffset === 0 && index === ${Slot.FramesTaken}) {
 			armed = false;
 			const slots = new Int32Array(control);
-			const parity = value & 1;
-			const list = Atomics.load(slots, ${Slot.DrawListAddress0} + parity);
 			const until = performance.now() + ${HOLD_MS};
 			while (Atomics.load(slots, ${Slot.Running}) !== 0 && performance.now() < until);
 			if (Atomics.load(slots, ${Slot.Running}) === 0) console.log('${HELD}');
 			const settled = performance.now() + ${SETTLE_MS};
 			while (performance.now() < settled);
-			if (core.drawListAddress(parity) !== list)
+			if (Atomics.load(destroyed, 0) !== 0)
 				throw new Error('the core freed the draw list while the render worker held its frame');
 		}
 		return store(array, index, value);
@@ -293,21 +308,24 @@ const JOB_STOPPED = /null3d-job-\d+: stopped/g;
 // A page that leaves while its engine runs, as a page in a frame does when the frame goes away,
 // still ends the job workers' blocking waits: the browser then stops the workers wherever they are,
 // and Safari never frees the shared memory of a thread that it stops inside such a wait. So on
-// pagehide every job worker leaves its loop and says so, before anything stops the engine.
+// pagehide every job worker leaves its loop and says so, before anything stops the engine. The
+// engine starts job workers as the work grows, so the page runs a scene with parallel work.
 for (const mode of THREADED_MODES) {
 	test(`a page that leaves without stopping the engine ends the job workers' waits, ${mode.name}`, async ({
 		page,
 	}) => {
-		await page.goto(`engine-frame.html?gpu=webgl2&${mode.query}`);
+		await page.goto(`engine-frame.html?gpu=webgl2&sketch=busy&${mode.query}`);
 		await expect
 			.poll(() => page.evaluate('window.__engineFrame?.engineFrame'), { timeout: 30_000 })
 			.toBe('running');
 		const trail = async () =>
 			String(await page.evaluate("window.__null3dProgress?.join('\\n') ?? ''"));
-		const jobs = (await trail()).match(JOB_STARTED)?.length ?? 0;
-		expect(jobs).toBeGreaterThan(0);
-		expect((await trail()).match(JOB_STOPPED)).toBeNull();
+		const count = async (pattern: RegExp) => (await trail()).match(pattern)?.length ?? 0;
+		await expect.poll(() => count(JOB_STARTED), { timeout: 30_000 }).toBeGreaterThan(0);
+		expect(await count(JOB_STOPPED)).toBe(0);
 		await page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide'))");
-		await expect.poll(async () => (await trail()).match(JOB_STOPPED)?.length ?? 0).toBe(jobs);
+		// A job worker that the work asked for just before the page left starts after it, and
+		// leaves the job loop at once.
+		await expect.poll(async () => (await count(JOB_STOPPED)) - (await count(JOB_STARTED))).toBe(0);
 	});
 }

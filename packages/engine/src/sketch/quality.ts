@@ -38,11 +38,8 @@ export interface QualityStart {
 	 * options give the texture memory. Without it, there is no cap.
 	 */
 	textureCapMiB?: number;
-	/**
-	 * Present when the engine checks the preset after its first frame. `fps` is the frame rate that
-	 * the ?fps= switch holds, which caps the check's target.
-	 */
-	check?: { fps?: number };
+	/** True when the engine checks the preset after its first frame. */
+	check?: boolean;
 }
 
 /** The texture memory of a sketch quality without textures, as tests make it. */

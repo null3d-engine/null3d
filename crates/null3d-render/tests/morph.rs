@@ -218,18 +218,18 @@ fn webgl2_morphs_in_the_vertex_shader_of_every_pass_that_draws_a_morphed_object(
         );
         assert_eq!(count(&first, Op::CreateComputePipeline), 0);
 
-        // Every instance group binds the morph textures of deltas and of weights last, after the
-        // joint texture and the texture of first joints and weights.
+        // Every instance group binds the morph textures of deltas and of weights after the joint
+        // texture and the texture of first joints and weights, then the two row values textures.
         let groups: Vec<Vec<u32>> = operands(&first, Op::CreateBindGroup)
             .into_iter()
             .filter(|g| g[1] == layout::INSTANCES)
             .collect();
         assert!(!groups.is_empty());
-        let [deltas, weights] = morph_textures(&first, &bound(&groups[0])[6..]);
+        let [deltas, weights] = morph_textures(&first, &bound(&groups[0])[6..8]);
         assert!(
             groups
                 .iter()
-                .all(|g| bound(g).len() == 8 && bound(g)[6..] == [deltas, weights])
+                .all(|g| bound(g).len() == 10 && bound(g)[6..8] == [deltas, weights])
         );
 
         // Later frames upload the weights and make nothing.
@@ -264,6 +264,9 @@ fn webgl2_draws_a_custom_material_on_a_morphed_mesh_at_rest() {
         attributes: 0,
         base_color: true,
         textures: 0,
+        transmission: false,
+        row_values: false,
+        caster: false,
     });
     world.add_morphed_with([0.0; 3], [1.0, 0.0], custom);
     let mut mock = MockBackend::default();

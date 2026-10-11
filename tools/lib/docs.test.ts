@@ -221,7 +221,7 @@ describe('the quality preset tables', () => {
 			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |',
 		);
 		expect(page).toContain(
-			"| Target frame rate | The display's refresh rate, at most 60 frames per second |",
+			"| Target frame rate | The display's refresh rate, at most 60 frames per second unless `targetFps` asks for more |",
 		);
 		expect(page).toContain('| Measurement of each preset | 500 ms |');
 	});

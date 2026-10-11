@@ -5,12 +5,13 @@
 
 mod common;
 
-use common::{BATCH_ROWS, World};
+use common::{BATCH_ROWS, World, base_format};
 use null3d_core::handle::Handle;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::geometry::{Geometry, box_geometry};
 use null3d_render::materials::{Shading, feature};
 use null3d_render::view::ViewId;
 
@@ -171,4 +172,78 @@ fn a_blocker_takes_the_shape_of_its_own_mesh() {
     world.scene.apply_commands(&hide, world.frame + 1).unwrap();
     let (_, without_corner) = step(&mut world, false);
     assert_eq!(with_corner, without_corner + 1, "the corner ball is hidden");
+}
+
+/// One mesh of `count` boxes of `size` metres in a grid of `columns`, centred on `centre` in the
+/// plane of x and y, one box apart, as a pipeline that merges a city's buildings by material
+/// makes it.
+fn merged_boxes(count: u32, columns: u32, size: f64, centre: [f32; 3]) -> Geometry {
+    let one = base_format(box_geometry(size, size, size, [1, 1, 1]).unwrap());
+    let stride = one.stride();
+    let corners = one.vertex_count() as u32;
+    let rows = count.div_ceil(columns);
+    let step = 2.0 * size as f32;
+    let mut merged = Geometry {
+        format: one.format,
+        ..Geometry::default()
+    };
+    for b in 0..count {
+        let at = [
+            centre[0] + ((b % columns) as f32 - (columns - 1) as f32 / 2.0) * step,
+            centre[1] + ((b / columns) as f32 - (rows - 1) as f32 / 2.0) * step,
+            centre[2],
+        ];
+        for v in one.vertices.chunks(stride) {
+            let mut v = v.to_vec();
+            for (k, offset) in at.iter().enumerate() {
+                let bytes = &mut v[k * 4..k * 4 + 4];
+                let p = f32::from_le_bytes(bytes.try_into().unwrap()) + offset;
+                bytes.copy_from_slice(&p.to_le_bytes());
+            }
+            merged.vertices.extend_from_slice(&v);
+        }
+        merged
+            .indices
+            .extend(one.indices.iter().map(|i| i + b * corners));
+    }
+    merged
+}
+
+#[test]
+fn a_merged_mesh_blocks_with_its_near_parts_first() {
+    // Five objects of one mesh whose boxes stand far behind everything, spread so wide that each
+    // object's sphere holds the camera. Their 1,700 boxes take more triangles than a frame's
+    // budget. Their blockers build in the first frame, which draws them whole. From the next
+    // frame on, the wall in front of the world's objects must draw: by each part's own sphere it
+    // is the nearest blocker, where by the objects' spheres it would wait behind them and miss
+    // the budget.
+    let (mut world, _) = walled();
+    world
+        .scene
+        .set_position(world.camera, [0.0, 0.0, 40.0])
+        .unwrap();
+    let far = merged_boxes(340, 34, 3.0, [0.0, 0.0, -50.0]);
+    let mesh = world
+        .renderer
+        .settings_mut()
+        .meshes_mut()
+        .add(&far)
+        .unwrap()
+        + 1;
+    let mut commands = Vec::new();
+    for _ in 0..5 {
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 120.0).unwrap();
+        commands.push(Command::create(
+            object,
+            Handle::NONE,
+            mesh,
+            flags::VISIBLE | flags::OCCLUDER,
+        ));
+        commands.push(Command::set_material(object, 1));
+    }
+    world.scene.apply_commands(&commands, 1).unwrap();
+    world.record(true);
+    let (_, occluded) = step(&mut world, false);
+    assert_eq!(occluded, ALL - 1, "the wall hides the world's objects");
 }

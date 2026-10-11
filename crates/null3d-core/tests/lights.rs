@@ -343,7 +343,6 @@ fn ambient_lights_add_up() {
     let mut world = World::new();
     let (_, a) = world.light(kind::AMBIENT, [0.0; 3], NO_TURN);
     let (_, b) = world.light(kind::AMBIENT, [0.0; 3], NO_TURN);
-    world.light(kind::HEMISPHERE, [0.0; 3], NO_TURN);
     world
         .lights
         .set_color(a, color::MAIN, [0.5, 0.0, 0.25])
@@ -356,6 +355,84 @@ fn ambient_lights_add_up() {
     let lit = world.frame(None);
     assert_eq!(lit.ambient, [1.0, 0.5, 0.75]);
     assert_eq!(lit.sun_color, [0.0; 3]);
+}
+
+/// The light that the frame's ambient and hemisphere sums give a surface with unit normal `n`, as
+/// the shaders add it up.
+fn summed(lit: &FrameLights, n: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|c| {
+        lit.ambient[c] + (0..3).map(|k| n[k] * lit.hemisphere[k][c]).sum::<f32>()
+    })
+}
+
+/// three.js's light from one hemisphere light, `getHemisphereLightIrradiance`: from the ground
+/// color to the sky color by the weight `0.5 * dot(n, up) + 0.5`.
+fn blend(n: [f32; 3], up: [f32; 3], sky: [f32; 3], ground: [f32; 3]) -> [f32; 3] {
+    let weight = 0.5 * (n[0] * up[0] + n[1] * up[1] + n[2] * up[2]) + 0.5;
+    std::array::from_fn(|c| ground[c] + (sky[c] - ground[c]) * weight)
+}
+
+#[test]
+fn hemisphere_lights_sum_to_three_js_blends_for_every_normal() {
+    let mut world = World::new();
+    let (_, ambient) = world.light(kind::AMBIENT, [0.0; 3], NO_TURN);
+    world
+        .lights
+        .set_color(ambient, color::MAIN, [0.1, 0.0, 0.0])
+        .unwrap();
+    // A blue sky over brown ground, straight up, at an intensity of 2.
+    let (upright_object, upright) = world.light(kind::HEMISPHERE, [0.0; 3], NO_TURN);
+    let (sky, ground) = ([0.3, 0.5, 0.9], [0.4, 0.25, 0.1]);
+    world.lights.set_color(upright, color::MAIN, sky).unwrap();
+    world
+        .lights
+        .set_color(upright, color::GROUND, ground)
+        .unwrap();
+    world
+        .lights
+        .set_value(upright, value::INTENSITY, 2.0)
+        .unwrap();
+    // A second light, turned a quarter turn about Z, so that its sky lies along -X; its position
+    // does not matter. Its colors stay white over white, which the default gives.
+    let quarter = turn([0.0, 0.0, 1.0], FRAC_PI_2);
+    let (tilted_object, tilted) = world.light(kind::HEMISPHERE, [5.0, -3.0, 2.0], quarter);
+    world
+        .lights
+        .set_color(tilted, color::GROUND, [0.0, 0.2, 0.0])
+        .unwrap();
+    world.exposure = 0.5;
+    let lit = world.frame(Some(&origin_view()));
+
+    let scaled = |rgb: [f32; 3], by: f32| rgb.map(|v| v * by);
+    let normals = [
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.6, 0.0, 0.8],
+        [0.48, -0.6, 0.64],
+    ];
+    for n in normals {
+        let first = blend(n, [0.0, 1.0, 0.0], scaled(sky, 1.0), scaled(ground, 1.0));
+        let second = blend(n, [-1.0, 0.0, 0.0], [0.5; 3], [0.0, 0.1, 0.0]);
+        let expected = std::array::from_fn(|c| [0.05, 0.0, 0.0][c] + first[c] + second[c]);
+        assert_close(summed(&lit, n), expected);
+    }
+    // No point, spot or directional light came of them.
+    assert!(world.lights.visible().is_empty());
+    assert_eq!(lit.sun_color, [0.0; 3]);
+
+    // Hidden, the hemisphere lights add nothing, and the axis colors return to zero.
+    world
+        .commands
+        .push(Command::set_visible(upright_object, false));
+    world
+        .commands
+        .push(Command::set_visible(tilted_object, false));
+    let lit = world.frame(None);
+    assert_close(lit.ambient, [0.05, 0.0, 0.0]);
+    assert_eq!(lit.hemisphere, [[0.0; 3]; 3]);
 }
 
 #[test]

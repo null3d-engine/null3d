@@ -2,7 +2,7 @@
 
 Status: M1's budget decided by the owner on 2026-09-30, and raised to 80 KB and then 100 KB on 2026-10-01. M2's budgets approved by the owner in writing on 2026-10-04, in [M2](#m2-the-start-and-the-files-that-load-later). The same day the owner added a limit for first-use shader files, two recorded exceptions and the gzip columns, in [Additions of 4 October 2026](#additions-of-4-october-2026). Date: 2026-09-30.
 
-Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start.
+Summary: M1: up to 100 KB for the engine's JavaScript that a page downloads, per thread mode and GPU path. M2: up to 140 KB at a page's start, and up to 16 KB for each file that loads on first use or after the first frame. A feature that a page does not use loads its code on first use. Each first-use shader file may take about 24 KB. Draco's decoder (59 KB) and, after 1.0, the area-light tables are recorded exceptions. The size report adds gzip and uncompressed columns: with gzip a WebGL2 page downloads 496 KB at its start. On 9 October 2026 each GPU path's renderers moved into files of their own. A page downloads those of its own path only. Every thread mode's start fell by 8.5 to 9.2 KB after Brotli. The largest is now 129.9 KB ([One GPU path's renderers](#one-gpu-paths-renderers-for-each-page-9-october-2026)).
 
 ## Question
 
@@ -431,3 +431,78 @@ Environment lighting (M2-E2, #283) adds image-based light to the lit templates, 
 The owner's decision: the gzip limit of each first-use shader file rises from 224 KB to 320 KB. The uncompressed limit stays 1,536 KB. The same day the owner raised the Brotli limit from 24 KB to 32 KB for the shadow filter's growth ([above](#first-use-shader-files)). The reason: browsers download over HTTPS with Brotli wherever the host offers it, and the Brotli limit holds. Only a host without Brotli sends gzip, and a file of a feature loads only on that feature's first use. 320 KB leaves about a sixth above the largest file today.
 
 `FIRST_USE_SHADER_BUDGET.gzip` in `tools/lib/size-report.ts` holds the new limit. AGENTS.md, the README, [Benchmarks](../benchmarks.md#download-size), D-51 and D-56 give it.
+
+## One GPU path's renderers for each page, 9 October 2026
+
+Status: done in the pull request of `perf/smaller-start`. Task: the start's size before 1.0 (D-117).
+
+### Question
+
+On main at ea5cb60eb, a pipelined page on WebGPU downloaded 137.9 KB of its 140 KB at its start. Depth of field (#453) adds 0.4 KB more. Transmission, per-row batch values and a prototype of temporal anti-aliasing must still land before 1.0 ([D-117](D-117-showcase-features-before-1-0.md)). Only the owner raises the budget. Which code that a page does not need at its start can leave it, in every thread mode? The engine must do the same work, draw as fast, and keep its API.
+
+### Data
+
+Each start file of the engine test page's production build, split by module with its source map. "Saves" is the file's size after Brotli less its size with the module's code taken out. The largest modules:
+
+| File | Brotli | Largest modules, and what each saves |
+| --- | --- | --- |
+| `render-worker.js` | 35.0 KB | the WebGL2 backend 8.2 KB, the WebGPU backend 3.7 KB, WebGPU's pipelines 3.0 KB, the shader loaders 1.8 KB, the scene renderers 1.2 KB, the frame loop 1.2 KB |
+| `sketch-worker.js` | 45.2 KB | the scene API 7.8 KB, the sketch runner 3.4 KB, resources 2.5 KB, assets 2.1 KB, mesh arrays 2.1 KB, sketch input 2.0 KB |
+| `page.js` | 30.8 KB | `createEngine` 5.7 KB, the error fix text 4.6 KB, the device probe 1.8 KB, the metrics writer 1.4 KB, `engine.measure`'s figures 1.2 KB |
+
+The file of the thread that draws held the renderers and backends of both GPU paths, and a page runs one. A WebGPU page downloaded about 9 KB of WebGL2 code that it never ran, and a WebGL2 page about 9 KB of WebGPU code. In M1, pull request 103 split them once, and the owner set that aside on 3 October 2026. The other candidates were near 1 KB each, and each would change when something happens. They were the frame figures of `engine.measure` on its first call, and the quality governor after the first frame. Others were pointer events on objects at the first handler, and GPU timing at the first measurement. The error fix text bends design principle 10, as option F says.
+
+### What changed
+
+- Each GPU path's renderers moved into a module of their own: `render/webgpu-renderers.ts` and `render/webgl2-renderers.ts`. `createRenderer` imports the one of its path. The rest of the drawing code stays where it was: the frame loops, the GPU loss recovery, the shader loaders and the renderer interface.
+- Right after the probe, the page tells the thread that draws its GPU path. The message (`load-shaders`) already started the download of the device's shader file. Now it also starts the path's renderers (`preloadDeviceFiles`). So they download beside the shader file while the core downloads.
+- The bundler puts the code that both paths' renderers use into a third file, which each path's file imports. It holds the frame replay, the completion trackers, the readback, the GPU memory count, joined effects and the vertex format helpers: 3.3 KB. On the page, Vite loads a file's imports together with the file. In a worker it does not. A worker would then ask for the third file only once its path's file had arrived, one round trip later. That round trip falls while the core downloads. There each round trip that the start waits for costs at least 562 ms on Slow 4G ([Start order](../implementation-notes.md#start-order)). So the null3D Vite plugin now does in each worker build what Vite does on the page (`worker-preload.ts`). An import on demand also starts the downloads of the files that its file imports and the worker lacks.
+- The WebGPU pipelines and the WebGL2 programs read the development constant themselves, as the KTX2 loader does. Their development builds add the debug views' templates. With the shared constant, the bundler kept the debug views' shaders in the start file of a production build. The check that drops them folds only inside the file that holds it. That cost about 13 KB after Brotli in the render worker's file.
+- The size report gives each thread mode on each GPU path. A path's start counts its own renderers, the shared file and its own largest shader file.
+
+Rejected:
+
+- An entry file of the render worker for each path, as #103 had. The page starts its workers before it probes the GPU, so their scripts and the core's loader download while the core does. A worker for one path could start only after the probe, about a round trip later.
+- Steering the bundler to keep the shared code in the start file. A bare import keeps a module only when the bundler finds side effects in it, and that held for one of the eight modules. Re-exports through one module change nothing, since the bundler follows them to each name's own module. A module of re-exports that loads beside the path's file split the page's start file into four.
+
+### Results
+
+`bun run build:check-size` against main at ea4df4b37, with depth of field. KB after Brotli at quality 11, and after gzip at level 9:
+
+| Thread mode and GPU path | Main, Brotli | This change, Brotli | Saved | Main, gzip | This change, gzip |
+| --- | --- | --- | --- | --- | --- |
+| pipelined, WebGPU | 138.3 KB | 129.9 KB | 8.5 KB | 176.2 KB | 165.0 KB |
+| pipelined, WebGL2 | 136.1 KB | 127.1 KB | 9.0 KB | 178.0 KB | 166.4 KB |
+| low latency, WebGPU | 136.0 KB | 127.3 KB | 8.7 KB | 173.4 KB | 162.1 KB |
+| low latency, WebGL2 | 133.7 KB | 124.6 KB | 9.2 KB | 175.2 KB | 163.6 KB |
+| drawing on the main thread, WebGPU | 135.6 KB | 127.0 KB | 8.6 KB | 173.1 KB | 161.7 KB |
+| drawing on the main thread, WebGL2 | 133.4 KB | 124.2 KB | 9.2 KB | 174.9 KB | 163.1 KB |
+| single-threaded, WebGPU | 128.8 KB | 120.2 KB | 8.6 KB | 165.2 KB | 153.9 KB |
+| single-threaded, WebGL2 | 126.6 KB | 117.4 KB | 9.2 KB | 167.0 KB | 155.2 KB |
+| sketch on the main thread, WebGPU | 132.8 KB | 124.3 KB | 8.5 KB | 169.8 KB | 158.5 KB |
+| sketch on the main thread, WebGL2 | 130.6 KB | 121.5 KB | 9.0 KB | 171.6 KB | 160.0 KB |
+
+On main, the size report counted each mode with the largest shader file of either path, a WebGPU file. The rows for WebGL2 above count the largest GLSL file instead. The largest start is now 129.9 KB, 93% of the budget. That leaves 10.1 KB for the features before 1.0.
+
+After Brotli, the render worker's own file is 10.5 KB. Its WebGPU renderers take 12.7 KB, its WebGL2 renderers 12.3 KB and the shared file 3.2 KB. In three files, a path's code takes about 1 KB more than in one file, because each file compresses alone.
+
+The start makes two more requests: the path's renderers and the shared file. It is not slower. `bun run bench:startup --modes all` made three cold loads of each mode on Slow 4G, against main at ea5cb60eb. It ran on a MacBook Pro in Chrome 155 on 9 October 2026, while the machine's load was below 8. The medians of the first frame done, in ms:
+
+| Thread mode | WebGPU, main | WebGPU, this change | WebGL2, main | WebGL2, this change |
+| --- | --- | --- | --- | --- |
+| pipelined | 4,834 | 4,797 | 4,833 | 4,781 |
+| low latency | 4,790 | 4,760 | 4,802 | 4,751 |
+| single-threaded | 4,731 | 4,693 | 4,719 | 4,682 |
+| drawing on the main thread | 5,080 | 5,052 | 5,066 | 5,019 |
+| sketch on the main thread | 4,783 | 4,749 | 4,784 | 4,723 |
+
+Every mode on both paths drew its first frame 28 to 61 ms sooner, with 8.3 to 9.4 KB less to download after compression.
+
+The renderers draw the same commands with the same shaders. `bun run bench:gpu-check` found no page slower than its rule allows. At Medium, S4's GPU time stayed at 3.91 ms and S6's went from 4.95 to 4.84 ms. At High the runs spread by 9 to 19%, and the check judged both scenes the same. The lowest S4 run was 2.76 ms on main and 2.77 ms with this change.
+
+### Consequences
+
+- `DOWNLOADS` in `tools/lib/size-report.ts` holds each thread mode on each GPU path, and `drawingParts` names the files that each thread that draws loads on demand.
+- A file that loads on demand must not keep code of the start's files alive through a development check. It reads the development constant itself.
+- The offline file list (`null3d-files.json`, D-102) puts both paths' renderers and the shared file in `start`. So a cached game also starts offline on the path that its first visit did not draw with. A unit test of `offline.ts` checks the list, and `bun run test:packages` starts the fresh project offline on both paths. A page that switches paths, such as a benchmark page, runs each path in a load of its own. It downloads each path's renderers the first time it draws with that path.
+- An engine test checks that a page downloads its own GPU path's renderers and not the other path's. It is the test "a page that uses no feature that loads on first use downloads none of their files".

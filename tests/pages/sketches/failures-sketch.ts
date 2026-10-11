@@ -1,6 +1,7 @@
-// A sketch for the failure tests: meshes that move each frame, 200 or ?meshes= of them. Thousands
-// make the core's transform and culling steps run as parallel loops on the job workers, and a few
-// hundred keep the frames quick on a software GPU. With ?fault=step in the sketch's
+// A sketch for the failure tests: meshes that move each frame, 200 or ?meshes= of them; a few
+// hundred keep the frames quick on a software GPU. With ?rows=, a batch of that many boxes behind
+// the camera also moves each frame: the engine updates its rows in parallel loops, which start job
+// workers, and the batch costs the GPU nothing. With ?fault=step in the sketch's
 // address, the engine's own frame step throws once, after some frames, from outside the sketch's
 // callbacks. On the page's thread it leaves its context on the page, so the page can call the
 // engine after it stopped, and counts its onDestroy calls there.
@@ -11,6 +12,7 @@ const FAULT = params.get('fault');
 /** The frame after which the frame step throws, with ?fault=step. */
 const FAULT_FRAME = 10;
 const MESHES = Number(params.get('meshes') ?? 200);
+const ROWS = Number(params.get('rows') ?? 0);
 const COLUMNS = 60;
 
 /** What a sketch on the page's thread leaves on the page. */
@@ -30,6 +32,8 @@ export default defineSketch((context) => {
 	const meshes = Array.from({ length: MESHES }, (_, k) =>
 		scene.createMesh({ mesh: box, material, position: [...place(k, 0)] }),
 	);
+	const batch =
+		ROWS > 0 ? scene.createInstances(box, ROWS, { material, dynamic: true }) : undefined;
 	const shared: FailuresSketch = { context, destroyed: 0 };
 	if (typeof document !== 'undefined')
 		(globalThis as { __failuresSketch?: FailuresSketch }).__failuresSketch = shared;
@@ -39,6 +43,14 @@ export default defineSketch((context) => {
 			for (let k = 0; k < meshes.length; k++) {
 				const [x, y, z] = place(k, offset);
 				meshes[k]?.setPosition(x, y, z);
+			}
+			if (batch) {
+				const positions = batch.positions;
+				for (let i = 0; i < ROWS; i++) {
+					positions[i * 3] = (i % 300) + offset;
+					positions[i * 3 + 1] = Math.floor(i / 300);
+					positions[i * 3 + 2] = 200;
+				}
 			}
 			if (FAULT === 'step' && time.frame === FAULT_FRAME) {
 				// The engine reads the clock right after this update, outside the sketch's callbacks.
