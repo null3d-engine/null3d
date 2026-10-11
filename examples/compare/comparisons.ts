@@ -37,6 +37,11 @@ export interface Comparison {
 	 * every frame up to the held one would take minutes: hold mode draws each of them on the CPU.
 	 */
 	swiftShaderHoldCount?: number;
+	/**
+	 * The image tests' time limit in seconds, for a scene whose held frame takes CI's slower machines
+	 * longer than the default limit to build and draw on SwiftShader.
+	 */
+	holdTimeoutSeconds?: number;
 	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
 	objectsAt(count: number, mode: CompareMode): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */
@@ -68,6 +73,7 @@ export const COMPARISONS: readonly Comparison[] = [
 		ramps: BATTLE_RAMPS,
 		hold: BATTLE_HOLD,
 		swiftShaderHoldCount: 120,
+		holdTimeoutSeconds: 240,
 		objectsAt: battleObjects,
 		shadowTiles: 0,
 		modes: {

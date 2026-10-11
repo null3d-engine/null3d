@@ -175,4 +175,5 @@ The owner raised the bar on 11 October 2026: every comparison meets the look bar
 ### Image tests and memory
 
 - Hold mode draws every frame up to the held one. On SwiftShader, CI's software GPU, Battle's held frame at 600 units took 17 to 72 seconds a test. So the SwiftShader references hold 120 units (`swiftShaderHoldCount`), and the Mac's hold 600.
+- With the approved look, the three.js tests still took 22 to 58 seconds each on SwiftShader on the Mac, one at a time, at 120 units. The null3D tests took 25 to 33 seconds, six tests at once. Factory's tests took 2.2 to 3.5 times as long in CI as on the Mac. So Battle's image tests may take 240 seconds (`holdTimeoutSeconds`), not the default 90.
 - The page's memory at 400 soldiers was 304 MB in null3D, with the effects off, and the browser's whole use 425 MB. Factory took 50 MB at 400 parts. The memory task looks into what takes it.
