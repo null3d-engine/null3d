@@ -2,7 +2,8 @@
 // While bloom is on the fold builds nothing, as bloom reads the effects' image. Once bloom is off
 // the fold's joined shader builds, and none fails or stays unbuilt, so the effect needs no pass of
 // its own. A loop once made the WebGL2 fold define the final pass's main twice, and the effect fell
-// back to a pass of its own with the same image.
+// back to a pass of its own with the same image. Compatibility mode runs without anti-aliasing:
+// with its MSAA the effect turns FXAA on, and effects never fold beside FXAA.
 import { expect, test } from '@playwright/test';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -20,7 +21,7 @@ interface EffectFoldResult {
 
 const TIERS = [
 	{ tier: 'webgpu', query: 'gpu=webgpu' },
-	{ tier: 'webgpu-compat', query: 'gpu=compat' },
+	{ tier: 'webgpu-compat', query: 'gpu=compat&antialias=none' },
 	{ tier: 'webgl2', query: 'gpu=webgl2' },
 ] as const;
 
