@@ -184,9 +184,13 @@ describe('texture generators on their way to the thread that draws', () => {
 		await arrived;
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect(table.generator(1)).toEqual(['room', code]);
+		expect(table.generatorCodeFor<typeof code>(1)).toBe(code);
 		expect(table.get(2)).toBe(later);
 		table.release(1);
 		expect(() => table.generator(1)).toThrow('draw list names generator 1, which does not exist');
+		expect(() => table.generatorCodeFor(1)).toThrow(
+			'draw list names generator 1, which does not exist',
+		);
 	});
 
 	test('cross a port by name, and count when their code did not load, which running one reports', async () => {

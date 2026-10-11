@@ -14,6 +14,7 @@
 
 import * as G from '../../generated/gpu';
 import { isAppleWebKit, webKitVersion } from '../../shared/webkit';
+import { GpuMemory } from '../memory';
 
 /** Bytes of one indexed indirect draw's arguments: five 32-bit words. */
 const ARGUMENT_BYTES = 20;
@@ -47,10 +48,12 @@ export class IndirectArguments {
 
 	/**
 	 * Copies when `copying` is true, as Apple's WebKit from before the fix needs. Otherwise each
-	 * draw reads the buffer that the draw list names.
+	 * draw reads the buffer that the draw list names. `memory` counts the copies' bytes with the
+	 * rest of the backend's GPU memory.
 	 */
 	constructor(
 		private readonly device: GPUDevice,
+		private readonly memory = new GpuMemory(),
 		readonly copying = needsOwnArguments(globalThis.navigator?.userAgent ?? ''),
 	) {}
 
@@ -127,6 +130,7 @@ export class IndirectArguments {
 
 	destroy(): void {
 		for (const copy of this.copies) copy.destroy();
+		this.memory.addBuffers(-this.copies.length * ARGUMENT_BYTES);
 		this.copies.length = 0;
 	}
 
@@ -157,6 +161,7 @@ export class IndirectArguments {
 				size: ARGUMENT_BYTES,
 				usage: G.BUFFER_USAGE_INDIRECT | G.BUFFER_USAGE_COPY_DST,
 			});
+			this.memory.addBuffers(ARGUMENT_BYTES);
 			this.copies[k] = copy;
 		}
 		return copy;

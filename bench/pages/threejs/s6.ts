@@ -6,7 +6,7 @@
 // - GLTFLoader loads each file once, with KTX2Loader for its textures and MeshoptDecoder for its
 //   compressed buffers. Each part of a kit model draws as one InstancedMesh with a row for each of
 //   its copies, which three.js's docs advise for many copies of one mesh, and which casts and
-//   receives shadows. Each tower box stays the Mesh that the loader made.
+//   receives shadows. The towers stay the Meshes that the loader made, one per material.
 // - It streams in as null3D's page does: the kit's copies draw once the kit file is in, and the
 //   towers join when theirs is. A timed run warms up once the city is whole.
 // - PMREMGenerator prefilters the environment's HDR file, and the Sky addon draws the sky.
@@ -45,6 +45,7 @@ import {
 	S6_VIEW_LIGHTS,
 	type S6Data,
 	type S6Layout,
+	s6BuildingAt,
 	s6Camera,
 	s6PartTransform,
 } from '../../scenes/s6';
@@ -120,7 +121,7 @@ runThreePage(
 		const pickedLabel = new CSS2DObject(labelTag(layer, ''));
 		pickedLabel.visible = false;
 		scene.add(pickedLabel);
-		const picker = pickingOf(three, camera, pickable, (building, point) => {
+		const picker = pickingOf(three, camera, pickable, data, (building, point) => {
 			pickedLabel.position.copy(point).setY(point.y + S6_PICK_RISE);
 			pickedLabel.visible = true;
 			pickedLabel.element.textContent = pickedText(building);
@@ -130,25 +131,25 @@ runThreePage(
 		// The towers join when their file is in, and the city is whole with its environment too.
 		const whole = Promise.all([towersLoad, environmentLoad]).then(([towers, hdr]) => {
 			const towersSeconds = seconds();
-			const created = new Set(data.boxOrder);
-			const boxes: ThreeModule.Mesh[] = [];
+			const created = new Set(data.towerOrder);
+			const meshes: ThreeModule.Mesh[] = [];
 			towers.scene.traverse((node) => {
 				const mesh = node as ThreeModule.Mesh;
 				if (!mesh.isMesh) return;
-				const row = Number(mesh.name.slice(1));
-				if (!created.has(row)) return;
+				const material = Number(mesh.name.slice(1));
+				if (!created.has(material)) return;
 				mesh.castShadow = true;
 				mesh.receiveShadow = true;
-				mesh.userData.building = data.building[row];
-				boxes.push(mesh);
+				mesh.userData.material = material;
+				meshes.push(mesh);
 			});
-			for (const box of boxes) {
-				setupMaterial?.(box.material as ThreeModule.Material);
-				box.geometry.computeBoundsTree = computeBoundsTree;
-				box.geometry.computeBoundsTree();
-				box.raycast = acceleratedRaycast;
-				pickable.push(box);
-				scene.add(box);
+			for (const mesh of meshes) {
+				setupMaterial?.(mesh.material as ThreeModule.Material);
+				mesh.geometry.computeBoundsTree = computeBoundsTree;
+				mesh.geometry.computeBoundsTree();
+				mesh.raycast = acceleratedRaycast;
+				pickable.push(mesh);
+				scene.add(mesh);
 			}
 			for (const label of data.labels) {
 				const k = label.row * 3;
@@ -291,6 +292,7 @@ function pickingOf(
 	three: Three,
 	camera: ThreeModule.PerspectiveCamera,
 	pickable: readonly ThreeModule.Object3D[],
+	data: S6Data,
 	picked: (building: number, point: ThreeModule.Vector3) => void,
 ): (event: MouseEvent) => void {
 	const raycaster = new three.Raycaster();
@@ -309,7 +311,7 @@ function pickingOf(
 		const { userData } = hit.object;
 		const building =
 			hit.instanceId === undefined
-				? (userData.building as number)
+				? s6BuildingAt(data, userData.material as number, hit.point.toArray())
 				: (userData.buildings as number[])[hit.instanceId];
 		if (building !== undefined && building >= 0) picked(building, hit.point);
 	};

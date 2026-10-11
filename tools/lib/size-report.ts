@@ -64,10 +64,36 @@ export interface EnginePart {
 }
 
 /**
+ * The parts of a thread's drawing code that it loads on demand, named after `prefix`, where
+ * `drawing` names the part that holds the thread's frame loops. Each GPU path's renderers load once
+ * the thread knows its path, with the code that both paths share beside them. The thread loads the
+ * WebGL call timing, the texture generators' steps, the reader of the GPU-culled draws' counts and
+ * the joiner of custom effects on first use.
+ */
+function drawingParts(prefix: string, drawing: string): EnginePart[] {
+	const webgpu = `${prefix}-webgpu.js`;
+	const shared = `${prefix}-gpu-shared.js`;
+	return [
+		{ name: webgpu, module: 'render/webgpu-renderers.ts', loadedBy: drawing },
+		{ name: `${prefix}-webgl2.js`, module: 'render/webgl2-renderers.ts', loadedBy: drawing },
+		{ name: shared, module: 'render/scene-renderer.ts', loadedBy: webgpu },
+		{ name: `${prefix}-call-timing.js`, module: 'gpu/webgl2/call-timing.ts', loadedBy: drawing },
+		{ name: `${prefix}-culled-counts.js`, module: 'gpu/webgpu/culled-counts.ts', loadedBy: webgpu },
+		{
+			name: `${prefix}-environment-generator.js`,
+			module: 'gpu/environment-steps.ts',
+			loadedBy: drawing,
+		},
+		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
+	];
+}
+
+/**
  * The parts of the engine's JavaScript. The early script that the Vite plugin adds to each page
  * starts the core's download, and every thread mode loads it. The renderer loads on demand on the
- * page and in the sketch worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
- * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
+ * page and in the sketch worker, so a page downloads it only for the thread that draws. Each GPU
+ * path's renderers load on demand in the thread that draws, so a page downloads one path's only
+ * (`drawingParts`). The sketch runner and the scene API load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
  * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file,
  * with the on-demand loader that it shares with the glTF loader. The KTX2 task, with the Basis
  * Universal transcoder's script, loads in a job worker, or in the task worker that the on-demand
@@ -83,6 +109,8 @@ export interface EnginePart {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * The reader of the counts of the draws that the GPU culls loads in the thread that draws on WebGPU,
+ * at the first frame that samples, such as with the stats overlay shown.
  * The built-in environments' numbers load in the thread that runs the sketch with the first one,
  * and the texture generators that make their maps on the GPU load in the thread that draws. The
  * code that joins custom effects into fewer passes loads in the thread that draws with the first
@@ -92,17 +120,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
-	{
-		name: 'page-call-timing.js',
-		module: 'gpu/webgl2/call-timing.ts',
-		loadedBy: 'page-renderer.js',
-	},
-	{
-		name: 'page-environment-generator.js',
-		module: 'gpu/environment-steps.ts',
-		loadedBy: 'page-renderer.js',
-	},
-	{ name: 'page-effect-joiner.js', module: 'gpu/effect-joiner.ts', loadedBy: 'page-renderer.js' },
+	...drawingParts('page', 'page-renderer.js'),
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-gltf.js', module: 'scene/gltf.ts', loadedBy: 'page-sketch-runner.js' },
@@ -134,21 +152,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-label-loop.js', module: 'page/label-loop.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
-	{
-		name: 'sketch-worker-call-timing.js',
-		module: 'gpu/webgl2/call-timing.ts',
-		loadedBy: 'sketch-worker-renderer.js',
-	},
-	{
-		name: 'sketch-worker-environment-generator.js',
-		module: 'gpu/environment-steps.ts',
-		loadedBy: 'sketch-worker-renderer.js',
-	},
-	{
-		name: 'sketch-worker-effect-joiner.js',
-		module: 'gpu/effect-joiner.ts',
-		loadedBy: 'sketch-worker-renderer.js',
-	},
+	...drawingParts('sketch-worker', 'sketch-worker-renderer.js'),
 	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-gltf.js', module: 'scene/gltf.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-tasks.js', module: 'shared/tasks.ts', loadedBy: 'sketch-worker-ktx2.js' },
@@ -185,21 +189,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-frame-stats.js', module: 'debug/stats.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
-	{
-		name: 'render-worker-call-timing.js',
-		module: 'gpu/webgl2/call-timing.ts',
-		loadedBy: 'render-worker.js',
-	},
-	{
-		name: 'render-worker-environment-generator.js',
-		module: 'gpu/environment-steps.ts',
-		loadedBy: 'render-worker.js',
-	},
-	{
-		name: 'render-worker-effect-joiner.js',
-		module: 'gpu/effect-joiner.ts',
-		loadedBy: 'render-worker.js',
-	},
+	...drawingParts('render-worker', 'render-worker.js'),
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'job-worker-ktx2.js', module: 'scene/ktx2-transcode.ts', loadedBy: 'job-worker.js' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
@@ -289,11 +279,19 @@ export interface Download {
 	shaders: string;
 }
 
-/** The parts that a page downloads in each thread mode of the engine. */
-export const DOWNLOADS: readonly Download[] = [
+/** A thread mode: the parts that a page downloads in it, and the prefix of its drawing parts. */
+interface ThreadMode {
+	mode: string;
+	parts: readonly string[];
+	/** The prefix of the names of the parts that the thread that draws loads for its GPU path. */
+	drawing: string;
+}
+
+/** The parts that a page downloads in each thread mode of the engine, on either GPU path. */
+const THREAD_MODES: readonly ThreadMode[] = [
 	{
 		mode: 'pipelined',
-		shaders: 'shaders-',
+		drawing: 'render-worker',
 		parts: [
 			'early-core.js',
 			'page.js',
@@ -305,7 +303,7 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 	{
 		mode: 'low latency',
-		shaders: 'shaders-',
+		drawing: 'sketch-worker',
 		parts: [
 			'early-core.js',
 			'page.js',
@@ -317,7 +315,7 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 	{
 		mode: 'drawing on the main thread',
-		shaders: 'shaders-',
+		drawing: 'page',
 		parts: [
 			'early-core.js',
 			'page.js',
@@ -329,7 +327,7 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 	{
 		mode: 'single-threaded',
-		shaders: 'shaders-',
+		drawing: 'page',
 		parts: [
 			'early-core.js',
 			'page.js',
@@ -340,7 +338,7 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 	{
 		mode: 'sketch on the main thread',
-		shaders: 'shaders-',
+		drawing: 'render-worker',
 		parts: [
 			'early-core.js',
 			'page.js',
@@ -351,6 +349,25 @@ export const DOWNLOADS: readonly Download[] = [
 		],
 	},
 ];
+
+/** The GPU paths: the name of each path's drawing parts, and the start of its shader parts' names. */
+const GPU_PATHS = [
+	{ name: 'WebGPU', part: 'webgpu', shaders: 'shaders-wgsl' },
+	{ name: 'WebGL2', part: 'webgl2', shaders: 'shaders-glsl' },
+] as const;
+
+/**
+ * The parts that a page downloads in each thread mode on each GPU path. The thread that draws loads
+ * the renderers of its own path only, with the code that both paths share, and its path's shader
+ * file.
+ */
+export const DOWNLOADS: readonly Download[] = THREAD_MODES.flatMap(({ mode, parts, drawing }) =>
+	GPU_PATHS.map((path) => ({
+		mode: `${mode}, ${path.name}`,
+		shaders: path.shaders,
+		parts: [...parts, `${drawing}-${path.part}.js`, `${drawing}-gpu-shared.js`],
+	})),
+);
 
 /**
  * The parts that no thread mode downloads at its start. Each loads on a feature's first use, or

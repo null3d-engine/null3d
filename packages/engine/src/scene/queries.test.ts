@@ -7,7 +7,7 @@ import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
 import type { OverlapHit, RaycastHit } from './queries';
 import { Material, MeshGeometry } from './resources';
-import { InstanceBatch, Scene } from './scene';
+import { InstanceBatch, NO_ROW_VALUES, Scene } from './scene';
 import type { SpriteBatch } from './sprites';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
@@ -253,7 +253,7 @@ describe('raycasts', () => {
 	test("a row of any core batch of a model's batch names the batch", () => {
 		const { scene, script } = fakeCore();
 		// A model of two meshes makes one batch of two core batches that share their rows.
-		const model = new InstanceBatch(scene, 5, 4, false, [6]);
+		const model = new InstanceBatch(scene, 5, 4, NO_ROW_VALUES, [6]);
 		(scene as unknown as { rememberBatch(batch: InstanceBatch): void }).rememberBatch(model);
 		const hit = newHit();
 		for (const part of [5, 6]) {
@@ -265,7 +265,7 @@ describe('raycasts', () => {
 
 	test('a row of a sprite, point or line batch names that batch', () => {
 		const { scene, script } = fakeCore();
-		const rows = new InstanceBatch(scene, 5, 4, false);
+		const rows = new InstanceBatch(scene, 5, 4);
 		(scene as unknown as { rememberBatch(batch: InstanceBatch): void }).rememberBatch(rows);
 		const sprites = { kind: 'sprites' } as unknown as SpriteBatch;
 		rows.face = sprites;

@@ -20,6 +20,7 @@ import {
 	EVENT_KEY_UP,
 	EVENT_POINTER_DOWN,
 	EVENT_POINTER_LEAVE,
+	EVENT_POINTER_LOCK,
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
@@ -32,6 +33,7 @@ import {
 	FIELD_X,
 	FIELD_Y,
 	FLAG_CONTROL,
+	FLAG_LOCKED,
 	FLAG_PRIMARY,
 	FLAG_TOUCH,
 	GAMEPAD_AXES,
@@ -89,6 +91,12 @@ export interface InputPointer {
 	readonly pinch: number;
 	/** True when the pointer is a finger on a touch screen. */
 	readonly isTouch: boolean;
+	/**
+	 * True while the canvas holds the pointer lock, which `engine.requestPointerLock()` asks for on
+	 * the page. The browser then hides the pointer and keeps it still: `x` and `y` stay where the lock
+	 * began, `dx` and `dy` give the mouse's movement, and objects take no pointer events.
+	 */
+	readonly locked: boolean;
 }
 
 /**
@@ -214,6 +222,7 @@ class PointerState implements InputPointer {
 	wheel = 0;
 	pinch = 0;
 	isTouch = false;
+	locked = false;
 	/** The pointer id of the last event, or -1 before the first. */
 	id = -1;
 	/**
@@ -338,7 +347,8 @@ export class InputReader implements Input, PointerInput {
 		while (this.next !== written) {
 			const base = (this.next & RING_MASK) * INPUT_EVENT_INTS;
 			const type = ints[base + FIELD_TYPE] as InputEventType;
-			const primary = ((ints[base + FIELD_FLAGS] as number) & FLAG_PRIMARY) !== 0;
+			const flags = ints[base + FIELD_FLAGS] as number;
+			const primary = (flags & FLAG_PRIMARY) !== 0;
 			// A press of the pointer after its release in this frame starts the next drag, which
 			// waits for the next frame with every event after it. Each frame's drag then belongs to
 			// one press, and two quick clicks count as two presses. Wheel scroll after the release
@@ -346,8 +356,10 @@ export class InputReader implements Input, PointerInput {
 			// ignore the wheel during a drag still take the scroll that comes after it.
 			if (released && (type === EVENT_WHEEL || (primary && type === EVENT_POINTER_DOWN))) break;
 			this.apply(base);
+			// A locked pointer's records hold movement, which points at no object.
 			if (
 				log !== undefined &&
+				(flags & FLAG_LOCKED) === 0 &&
 				(type === EVENT_POINTER_MOVE ||
 					type === EVENT_POINTER_DOWN ||
 					type === EVENT_POINTER_UP ||
@@ -486,6 +498,9 @@ export class InputReader implements Input, PointerInput {
 				if (code >= 0 && KEYS + code < this.controls)
 					this.setDown(KEYS + code, type === EVENT_KEY_DOWN);
 				break;
+			case EVENT_POINTER_LOCK:
+				this.pointer.locked = code === 1;
+				break;
 			case EVENT_WHEEL:
 				this.onWheel(floats[base + FIELD_Y] as number, ints[base + FIELD_FLAGS] as number);
 				break;
@@ -526,6 +541,20 @@ export class InputReader implements Input, PointerInput {
 		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y, frame);
 		if ((flags & FLAG_PRIMARY) === 0) return;
 		const { pointer } = this;
+		if ((flags & FLAG_LOCKED) !== 0) {
+			// A locked pointer stays where it is, and the record holds its movement.
+			pointer.dx += x;
+			pointer.dy += y;
+			if (pointer.buttons !== 0) {
+				pointer.dragDx += x;
+				pointer.dragDy += y;
+			}
+			pointer.id = id;
+			pointer.isTouch = false;
+			pointer.frame = frame;
+			this.setButtons(ints[base + FIELD_BUTTONS] as number);
+			return;
+		}
 		// A new pointer, such as a finger after the mouse, moves the pointer without movement. The
 		// buttons are still those of the previous event, so a press starts a drag and a release ends
 		// one at the event's own position.
@@ -544,10 +573,14 @@ export class InputReader implements Input, PointerInput {
 		pointer.y = y;
 		pointer.isTouch = (flags & FLAG_TOUCH) !== 0;
 		pointer.frame = frame;
-		const buttons = ints[base + FIELD_BUTTONS] as number;
+		this.setButtons(ints[base + FIELD_BUTTONS] as number);
+	}
+
+	/** Sets the pointer's buttons, and counts each mouse button's press or release. */
+	private setButtons(buttons: number): void {
 		const changed = buttons ^ this.mouseButtons;
 		this.mouseButtons = buttons;
-		pointer.buttons = buttons;
+		this.pointer.buttons = buttons;
 		// Buttons change on moves too: a second button pressed while one is held comes as a move.
 		for (let bit = 0; bit < MOUSE_BUTTONS; bit++)
 			if ((changed & (1 << bit)) !== 0)
