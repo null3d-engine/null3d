@@ -1924,6 +1924,7 @@ pub fn create_material(
             transmission: custom & shading::CUSTOM_TRANSMISSION != 0,
             row_values: custom & shading::CUSTOM_ROW_VALUES != 0,
             caster: custom & shading::CUSTOM_CASTER != 0,
+            object_ids: custom & shading::CUSTOM_OBJECT_IDS != 0,
         }),
         _ => Shading::Lit,
     };

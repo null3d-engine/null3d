@@ -175,6 +175,7 @@ console.log(render.dumpGraph());
 | E1502 | A name in `reads` that no pass writes. Or `render.removePass` on a pass whose texture another pass reads. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
 | E1504 | A pass that reads its own texture. |
+| E1505 | A pass whose targets one GPU render pass cannot hold together, such as a target of another size. |
 | E1101 | A call on a pass that `render.removePass` removed. |
 
 The core checks the whole graph when `render.addPass`, `render.removePass` or `textures.fromPass` changes it, so the call that breaks the graph throws.

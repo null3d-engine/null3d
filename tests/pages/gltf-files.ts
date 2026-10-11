@@ -1,7 +1,7 @@
 // Starts the engine live with the glTF files sketch, in the thread mode that the page's switches ask
 // for, and reports what the sketch found, with the thread mode. ?meshopt runs the sketch of files
-// with meshopt compression instead. Each sketch's address is a literal, so a production build ships
-// both.
+// with meshopt compression instead, and ?draco the sketch of files with Draco compression. Each
+// sketch's address is a literal, so a production build ships them all.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -14,7 +14,9 @@ run('gltf-files', async () => {
 		canvas,
 		sketch: params.has('meshopt')
 			? new URL('./sketches/gltf-meshopt-sketch.ts', import.meta.url)
-			: new URL('./sketches/gltf-files-sketch.ts', import.meta.url),
+			: params.has('draco')
+				? new URL('./sketches/gltf-draco-sketch.ts', import.meta.url)
+				: new URL('./sketches/gltf-files-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
 	});
 	const recorded = await new Promise<unknown>((resolve) =>

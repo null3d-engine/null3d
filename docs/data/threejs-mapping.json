@@ -858,7 +858,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
@@ -872,6 +872,17 @@
       "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option (0.2).",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
+    },
+    {
+      "id": "mat-shader-builtins",
+      "category": "Materials",
+      "three": "ShaderMaterial built-ins: uv1, gl_FragCoord, gl_InstanceID / instanceIndex, modelMatrix, normalMatrix, viewMatrix, projectionMatrix, cameraNear, cameraFar",
+      "status": "changed",
+      "since": "0.2",
+      "target": "input.uv1, input.fragCoord, input.instance, object.worldMatrix, object.normalMatrix, camera.view, camera.projection, camera.near, camera.far",
+      "notes": "The engine works relative to the camera, so its matrices do too. object.worldMatrix has its translation relative to the camera, and camera.view holds the camera's rotation only: camera.projection * camera.view * object.worldMatrix places a vertex, as projectionMatrix * modelViewMatrix does. object.position gives the origin in the world. object.normalMatrix turns normals into world space, where three.js's normalMatrix turns them into view space: multiply by camera.view for view space. camera.projection has reversed depth, 1 at the near plane. input.fragCoord counts from the top left, so gl_FragCoord.y becomes frame.resolution.y - input.fragCoord.y. input.instance is the row in an instance batch, 0 for an object of the scene. object.id and mesh.shaderId tell objects apart, which three.js leaves to uniforms. Only WGSL that reads uv1, instance, an id or the object's matrices pays for them.",
+      "docs": "shaders/builtins",
+      "detect": "\\b(modelMatrix|normalMatrix|viewMatrix|projectionMatrix|cameraNear|cameraFar|gl_FragCoord|gl_InstanceID|instanceIndex)\\b"
     },
     {
       "id": "mat-tsl",
@@ -1240,11 +1251,11 @@
       "id": "draco",
       "category": "Loaders",
       "three": "DRACOLoader + setDecoderPath",
-      "status": "changed",
+      "status": "direct",
       "since": "0.2",
-      "target": "Convert Draco files to meshopt with `bunx @null3d/cli assets optimize`. The engine does not load Draco files (E1417)",
-      "notes": "meshopt decodes faster and needs no separate decoder download.",
-      "docs": "guides/assets-pipeline",
+      "target": "Built in: assets.loadGltf(url) decodes Draco data",
+      "notes": "Delete the setup and the decoder files. The engine ships Draco's glTF decoder and downloads it, about 60 KB after Brotli, with the first Draco file. Convert the files to meshopt with `bunx @null3d/cli assets optimize`: meshopt files decode faster, with a decoder of about 6 KB.",
+      "docs": "concepts/assets",
       "detect": "\\bDRACOLoader\\b|setDecoderPath"
     },
     {

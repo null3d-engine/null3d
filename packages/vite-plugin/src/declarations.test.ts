@@ -34,6 +34,7 @@ function material(
 		locations: [],
 		attributes: 0,
 		baseColor: true,
+		objectIds: false,
 	};
 }
 
