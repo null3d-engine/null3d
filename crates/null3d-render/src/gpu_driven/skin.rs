@@ -559,7 +559,11 @@ impl Skinning {
             let computed = morphed || !self.mode.vertex_shader;
             self.computed += u32::from(computed);
             let first_part = self.parts.len() as u32;
-            let parts = if computed { meshes.parts(mesh) } else { &[] };
+            let parts = if computed {
+                meshes.parts(mesh, false)
+            } else {
+                &[]
+            };
             for part in parts {
                 if !self.pages.iter().any(|&(page, _)| page == part.page) {
                     if self.pages.len() == MAX_PAGES as usize {

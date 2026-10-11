@@ -693,6 +693,13 @@ pub struct SceneSettings {
     tiles: TileSettings,
     /// The materials' shading, or a debug view in its place.
     debug_view: DebugView,
+    /// True when materials with parallax draw it, as the quality preset says.
+    parallax: bool,
+    /// True when a material moved its casters' vertices since the last frame, so every shadow
+    /// cascade and tile draws again.
+    casters_moved: bool,
+    /// True when the point and spot lights' tiles draw again in this frame, for the same reason.
+    tiles_stale: bool,
     /// The camera object and lens that fit the main directional light's cascades in place of the
     /// camera's view, for the debug API's shadow camera.
     shadow_camera: Option<(Handle, Lens)>,
@@ -755,6 +762,9 @@ impl SceneSettings {
             pixel_ratio: 1.0,
             tiles: TileSettings::default(),
             debug_view: DebugView::Lit,
+            parallax: true,
+            casters_moved: false,
+            tiles_stale: false,
             shadow_camera: None,
             mirror_halvings: 1,
         }
@@ -816,6 +826,25 @@ impl SceneSettings {
         self.debug_view
     }
 
+    /// Lets materials with parallax draw it, or draws them with their displacement alone, from the
+    /// next rebuild of the draw tables on. Returns true when the choice changed, so the caller
+    /// rebuilds the draw tables.
+    pub fn set_parallax(&mut self, on: bool) -> bool {
+        std::mem::replace(&mut self.parallax, on) != on
+    }
+
+    /// True when a material, by id, draws parallax where its mesh has texture coordinates: it asks
+    /// for it, its displacement map lives, the quality preset allows it, and it is an opaque or
+    /// masked surface that draws triangles.
+    fn draws_parallax(&self, id: u32) -> bool {
+        let features = self.materials.features(id);
+        let unfit = feature::WIREFRAME | feature::TRANSMISSION | feature::BLEND;
+        self.parallax
+            && features & feature::PARALLAX != 0
+            && features & unfit == 0
+            && self.displaces(id)
+    }
+
     /// Draws the scene with a debug view, or with its materials with `DebugView::Lit`, from the
     /// next rebuild of the draw tables on. The wireframe view draws each mesh part's edge list,
     /// which the meshes keep from the first time it is asked for. Returns true when the view
@@ -825,7 +854,9 @@ impl SceneSettings {
             return false;
         }
         self.debug_view = view;
-        self.meshes.draw_edges(view == DebugView::Wireframe);
+        if view == DebugView::Wireframe {
+            self.meshes.keep_edges();
+        }
         true
     }
 
@@ -1246,6 +1277,10 @@ impl SceneSettings {
             |map| textures.ready_layer(map),
             |map| textures.premultiplied(map),
         );
+        // A displacement map whose image arrived moves its casters' vertices.
+        if layers_changed && self.materials.any_displacement() {
+            self.casters_moved = true;
+        }
         if let Some(ids) = self.materials.take_changed() {
             let rows = self.materials.rows(ids.clone());
             write_table_rows(list, arena, table, ids.start, rows)?;
@@ -1315,12 +1350,18 @@ impl SceneSettings {
         }
     }
 
-    /// True when a material has a map in any slot whose texture lives.
+    /// True when a material has a map in any slot whose texture lives, or a live displacement map.
     fn has_live_map(&self, id: u32) -> bool {
         self.materials
             .maps(id)
             .iter()
+            .chain([&self.materials.displacement_map(id)])
             .any(|&map| self.textures.is_live(map))
+    }
+
+    /// True when a material's displacement map moves its vertices: its texture lives.
+    fn displaces(&self, id: u32) -> bool {
+        self.textures.is_live(self.materials.displacement_map(id))
     }
 
     /// Gets the materials ready for a rebuild of the draw tables. Destroyed materials that no
@@ -1371,18 +1412,27 @@ impl SceneSettings {
                 _ => false,
             };
             let maps = self.materials.maps(id);
+            let height = self.materials.displacement_map(id);
+            let parallax = self.draws_parallax(id);
             self.map_groups[id as usize] = if !samples {
                 0
             } else if matches!(shading, Ok(Shading::Lit)) && self.shared_map_units > 0 {
                 let (group, units) = self
                     .textures
-                    .shared_map_group(&maps, self.shared_map_units)
-                    .unwrap_or((0, [None; MAP_SLOTS]));
-                self.materials
-                    .set_map_units(id, units.map(|unit| unit.unwrap_or(NO_UNIT)));
+                    .shared_map_group(&maps, height, parallax, self.shared_map_units)
+                    .unwrap_or((0, [None; MAP_SLOTS + 1]));
+                let unit = |unit: Option<u8>| unit.unwrap_or(NO_UNIT);
+                let mut slots = [NO_UNIT; MAP_SLOTS];
+                for (slot, &held) in slots.iter_mut().zip(&units) {
+                    *slot = unit(held);
+                }
+                self.materials.set_map_units(id, slots);
+                self.materials.set_height_unit(id, unit(units[MAP_SLOTS]));
                 group
             } else {
-                self.textures.map_set_group(&maps).unwrap_or(0)
+                self.textures
+                    .map_set_group(&maps, height, parallax)
+                    .unwrap_or(0)
             };
         }
     }
@@ -1640,6 +1690,18 @@ impl SceneSettings {
         self.lighting.shadow_quality = quality;
     }
 
+    /// Makes every shadow cascade and tile draw again in the next frame, as after a material moved
+    /// its casters' vertices, such as a new displacement scale.
+    pub fn mark_casters_moved(&mut self) {
+        self.casters_moved = true;
+    }
+
+    /// True once after [`Self::shadow_frame`] found that casters moved, when the point and spot
+    /// lights' tiles must draw again.
+    pub fn take_tiles_stale(&mut self) -> bool {
+        std::mem::take(&mut self.tiles_stale)
+    }
+
     /// Forgets what the shadow map's layers hold, so every cascade draws in the next frame with
     /// shadows. A builder calls it when it makes its GPU objects again.
     pub fn forget_shadow_maps(&mut self) {
@@ -1651,6 +1713,10 @@ impl SceneSettings {
     /// or `None` when the light casts no shadows or the camera has nothing to draw from. Call it
     /// once per frame, as it moves the cascades' update schedule on.
     pub fn shadow_frame(&mut self, input: &FrameInput<'_>) -> Option<ShadowFrame> {
+        if std::mem::take(&mut self.casters_moved) {
+            self.shadow_schedule.reset();
+            self.tiles_stale = true;
+        }
         let frame = self.fit_shadows(input);
         if frame.is_none() {
             self.shadow_schedule.reset();
@@ -1725,12 +1791,21 @@ impl SceneSettings {
     /// custom material's alpha comes from its own WGSL, so it casts its mesh's whole shape. A
     /// custom material with a vertex offset casts with its own template's caster builds
     /// ([`permutation::CASTER`]), which move each vertex by the offset, read the rows' values where
-    /// the pair reads them, and bind the material's textures.
+    /// the pair reads them, and bind the material's textures. A displaced standard material casts
+    /// the same way, moving each vertex by its displacement map, with its whole shape. A wireframe
+    /// material casts its lines.
     pub fn caster_of(&self, pipeline: DrawKey, material: u32) -> (DrawKey, u32) {
         let (faces, mut permutation) = if pipeline.state & state_flags::CULL_NONE != 0 {
             (state_flags::CULL_NONE, 0)
         } else {
             (state_flags::CULL_FRONT, permutation::CASTER_OFFSET)
+        };
+        // A wireframe material's shadows draw its lines, as three.js's do. A debug view's lines
+        // cast the mesh's triangles.
+        let lines = if self.materials.wireframe(material - 1) {
+            state_flags::LINE_LIST
+        } else {
+            0
         };
         if self.sways(material) && pipeline.template >= template::CUSTOM_FIRST {
             let key = DrawKey {
@@ -1739,7 +1814,20 @@ impl SceneSettings {
                     | permutation::CASTER
                     | (pipeline.permutation & permutation::ROW_VALUES),
                 vertex_format: pipeline.vertex_format,
-                state: faces,
+                state: faces | lines,
+                bias: DepthBias::NONE,
+            };
+            return (key, self.texture_group(material, pipeline));
+        }
+        // A displaced material casts with its own template's caster builds, which move each vertex
+        // as its view does.
+        if pipeline.permutation & permutation::DISPLACEMENT != 0 {
+            let moved = permutation::DISPLACEMENT | permutation::PARALLAX | permutation::SKIN;
+            let key = DrawKey {
+                template: pipeline.template,
+                permutation: permutation | permutation::CASTER | (pipeline.permutation & moved),
+                vertex_format: pipeline.vertex_format,
+                state: faces | lines,
                 bias: DepthBias::NONE,
             };
             return (key, self.texture_group(material, pipeline));
@@ -1762,7 +1850,7 @@ impl SceneSettings {
             template,
             permutation,
             vertex_format: pipeline.vertex_format,
-            state: faces,
+            state: faces | lines,
             bias: DepthBias::NONE,
         };
         (key, group)
@@ -1893,7 +1981,11 @@ impl SceneSettings {
         let covers = own_way && has(feature::ALPHA_TO_COVERAGE) && !hashed;
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
+            && self.materials.normal_slot_holds_normals(id)
             && format & vertex::TANGENT != 0;
+        let displaced = shading == Shading::StandardMaps && self.displaces(id);
+        let wireframe = has(feature::WIREFRAME);
+        let parallax = displaced && self.draws_parallax(id);
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         let key = ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
@@ -1902,9 +1994,12 @@ impl SceneSettings {
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
-                | bit(rows, permutation::ROW_VALUES),
+                | bit(rows, permutation::ROW_VALUES)
+                | bit(displaced, permutation::DISPLACEMENT)
+                | bit(parallax, permutation::PARALLAX),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
+                | bit(wireframe, state_flags::LINE_LIST)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
                 | bit(covers, state_flags::ALPHA_TO_COVERAGE)

@@ -648,6 +648,16 @@ impl InstanceBatch {
         self.local_radius
     }
 
+    /// Sets the mesh's local bounding radius, as a displaced material grows it, and marks every
+    /// row changed, so the next update moves each row's sphere.
+    pub fn set_local_radius(&mut self, radius: f32) {
+        if radius != self.local_radius {
+            self.local_radius = radius;
+            self.dirty.set_range(0, self.capacity);
+            self.dirty_any |= self.capacity > 0;
+        }
+    }
+
     /// The number of rows drawn: rows `0..active_count()`.
     pub fn active_count(&self) -> u32 {
         self.active

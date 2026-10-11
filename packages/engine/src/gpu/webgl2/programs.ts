@@ -74,8 +74,8 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
  * first, with sixteen. Group 1 has three slots, group 2 ten (the instance textures, then the two
  * textures that skinned meshes read, the two that morphed meshes read, and the two textures of the
- * row values of instance batches) and group 3 the last sixteen: the eight map textures, then their samplers, of which the standard material's shared
- * map units take the first six of each. Slots are no texture units: each program
+ * row values of instance batches) and group 3 the last eighteen: the eight map textures, then their samplers, of which the standard material's shared
+ * map units take the first six of each, then the displacement map's texture and sampler. Slots are no texture units: each program
  * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
  * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */

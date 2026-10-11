@@ -425,6 +425,10 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		sketchSwitches: NO_TONE,
 	},
 	{ test: 'standard-maps', twin: `${TWINS}/material-maps.html` },
+	// Bump maps, displacement maps with the normal or bump map of their heights, and wireframes,
+	// which draw as three.js's do. A displaced surface without either map bends its normals by the
+	// map's slope, which three.js does not, so relief-heights has no twin (D-136).
+	{ test: 'relief', twin: `${TWINS}/relief.html` },
 	{ test: 'alpha-mask', twin: `${TWINS}/alpha-mask.html` },
 	{
 		test: 'alpha-coverage',

@@ -3,6 +3,8 @@ import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_BUMP,
+	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_NORMAL,
 	MAP_SLOT_SPECULAR_COLOR,
@@ -18,8 +20,10 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
@@ -97,6 +101,8 @@ function fakeCore() {
 	const biases: [number, number][] = [];
 	/** The ids of the destroyed materials, in order. */
 	const destroyed: number[] = [];
+	/** Each displacement's material, scale and bias, as the core got them. */
+	const displacements: number[][] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
 	const change = (material: number, apply: (values: number[]) => void) => {
@@ -139,6 +145,10 @@ function fakeCore() {
 			change(material, () => {
 				maps.push([material, slot, handle, second]);
 			}),
+		setMaterialDisplacement: (material: number, scale: number, bias: number) =>
+			change(material, () => {
+				displacements.push([material, scale, bias]);
+			}),
 		setMaterialValues: (material: number, at: number, count: number, ...xyzw: number[]) => {
 			custom[material - 1]?.splice(at, count, ...xyzw.slice(0, count));
 			return 0;
@@ -162,6 +172,7 @@ function fakeCore() {
 		maps,
 		destroyed,
 		biases,
+		displacements,
 		materials: new Materials(
 			core,
 			new ShaderTemplates((template, shader) => sent.push([template, shader])),
@@ -330,6 +341,88 @@ describe('Material.set', () => {
 			[2, MAP_SLOT_BASE_COLOR, 8, 0],
 		]);
 		expect(shadings.slice(1)).toEqual([SHADING_UNLIT_MAP, SHADING_UNLIT]);
+	});
+
+	test('a bump map takes the normal slot unless a normal map or a wireframe does', () => {
+		const { maps, table, materials } = fakeCore();
+		const rock = materials.standard({ bumpMap: texture(5, 1), bumpScale: 3 });
+		materials.standard({ bumpMap: texture(6), normalMap: texture(7) });
+		materials.standard({ bumpMap: texture(8), wireframe: true });
+		expect(maps).toEqual([
+			[1, MAP_SLOT_BUMP, 5, 1],
+			[2, MAP_SLOT_NORMAL, 7, 0],
+		]);
+		const scale = () =>
+			(table[0] as number[]).slice(MATERIAL_PARAM_NORMAL_SCALE, MATERIAL_PARAM_NORMAL_SCALE + 2);
+		expect(scale()).toEqual([3, 3]);
+		// The bump scale takes the normal scale's place, which then has no effect.
+		rock.set({ normalScale: [0.5, 0.5] });
+		expect(scale()).toEqual([3, 3]);
+		rock.set({ bumpScale: -1 });
+		expect(scale()).toEqual([-1, -1]);
+	});
+
+	test('a displacement map sends its scale and bias, and grows the bounds by its farthest move', () => {
+		const { maps, displacements, materials } = fakeCore();
+		const plain = materials.standard({ displacementMap: texture(5) });
+		const hills = materials.standard({
+			displacementMap: texture(6, 1),
+			displacementScale: 4,
+			displacementBias: -3,
+		});
+		const flat = materials.standard({ displacementScale: 2 });
+		expect(maps).toEqual([
+			[1, MAP_SLOT_DISPLACEMENT, 5, 0],
+			[2, MAP_SLOT_DISPLACEMENT, 6, 1],
+		]);
+		expect(displacements).toEqual([[2, 4, -3]]);
+		expect([plain.boundsMargin, hills.boundsMargin, flat.boundsMargin]).toEqual([1, 3, 0]);
+		// set keeps the value that it does not get, and the margin never shrinks.
+		hills.set({ displacementBias: 0 });
+		expect(displacements.at(-1)).toEqual([2, 4, 0]);
+		expect(hills.boundsMargin).toBe(4);
+		hills.set({ displacementScale: 1 });
+		expect(displacements.at(-1)).toEqual([2, 1, 0]);
+		expect(hills.boundsMargin).toBe(4);
+		flat.set({ displacementScale: 5 });
+		expect(displacements).toHaveLength(3);
+	});
+
+	test('wireframe and parallax are features', () => {
+		const { features, materials } = fakeCore();
+		materials.standard({ wireframe: true });
+		materials.unlit({ wireframe: true });
+		materials.standard({ displacementMap: texture(5), parallax: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_WIREFRAME,
+			MATERIAL_FEATURE_WIREFRAME,
+			MATERIAL_FEATURE_PARALLAX,
+		]);
+	});
+
+	test('parallax needs a displacement map and an opaque or masked surface', () => {
+		const { table, materials } = fakeCore();
+		const alone = thrown(() => materials.standard({ parallax: true }));
+		expect(alone.code).toBe('E1217');
+		expect(alone.message).toStartWith(
+			"E1217: materials.standard() got parallax without a displacementMap; parallax reads the displacement map's heights.",
+		);
+		const blended = thrown(() =>
+			materials.standard({ displacementMap: texture(5), parallax: true, alphaMode: 'blend' }),
+		);
+		expect(blended.code).toBe('E1217');
+		expect(blended.message).toStartWith(
+			"E1217: materials.standard() got parallax with the alpha mode 'blend'; parallax takes an opaque or masked surface.",
+		);
+		const glass = thrown(() =>
+			materials.standard({ displacementMap: texture(5), parallax: true, transmission: 1 }),
+		);
+		expect(glass.message).toStartWith(
+			'E1217: materials.standard() got parallax with transmission;',
+		);
+		const bump = thrown(() => materials.standard({ bumpScale: Number.POSITIVE_INFINITY }));
+		expect(bump.code).toBe('E1108');
+		expect(table).toHaveLength(0);
 	});
 
 	test('writes map values, and the transform as three.js places a texture', () => {

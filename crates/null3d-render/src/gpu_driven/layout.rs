@@ -19,7 +19,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, state_flags, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
@@ -560,7 +560,7 @@ impl Layout {
         };
         let key_of = |pipeline: Option<DrawKey>, mesh, material, bounds, object: u32, skinned| {
             let pipeline = skin(pipeline?, skinned);
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
             let depth_key = match drawn {
@@ -689,8 +689,10 @@ impl Layout {
                 pipeline
             };
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let parts = meshes.parts(slot);
-            let (center, radius) = local_sphere(scene, bounds, slot.radius);
+            let parts = meshes.parts(slot, pipeline.state & state_flags::LINE_LIST != 0);
+            // A displaced material moves vertices past its mesh's sphere, by up to its margin.
+            let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
+            let (center, radius) = local_sphere(scene, bounds, slot.radius + margin);
             let object = bounds.checked_sub(OWN_BOUNDS);
             let skin = object.and_then(|object| skinning.object(object));
             if let (Some(object), Some(_)) = (object, skin) {

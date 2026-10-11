@@ -667,6 +667,10 @@ pub mod layout {
     /// texture at each binding from 0, then each one's sampler at the bindings after every
     /// texture. It sits where [`TEXTURES`] sits.
     pub const MATERIAL_MAPS: u32 = 6;
+    /// [`MATERIAL_MAPS`] with the displacement map visible to the fragment stage too, for the
+    /// builds of parallax occlusion mapping. The fragment stage then reads every sampled texture
+    /// that WebGPU's default limits give it, so only materials with parallax take it.
+    pub const MATERIAL_MAPS_PARALLAX: u32 = 34;
     /// Group 0 of depth-only pipelines, such as shadow casters': per-frame constants and the
     /// material table. It has no shadow map, so a pass that draws into the shadow map never binds
     /// it.
@@ -827,9 +831,18 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// The standard material's displacement map moves each vertex along its normal, as three.js's
+    /// `displacementMap` does. The vertex shader samples it from its own binding of the maps group,
+    /// with its values from the material's custom values.
+    pub const DISPLACEMENT: u32 = 1 << 26;
+    /// The fragment shader shifts where it reads the maps by parallax occlusion mapping: it steps
+    /// along the view ray through the displacement map's relief, so finer relief than the vertices
+    /// hides and shows the surface behind it. Its pipelines bind the maps group with the
+    /// displacement map visible to the fragment stage too.
+    pub const PARALLAX: u32 = 1 << 27;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 25] = [
+    pub const NAMES: [(&str, u32); 27] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -855,6 +868,8 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("DISPLACEMENT", DISPLACEMENT),
+        ("PARALLAX", PARALLAX),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -866,10 +881,11 @@ pub mod permutation {
 
     /// Bits that only make sense beside another bit, as (bit, the bit it needs). The shader build
     /// writes no build that has the first without the second, and no pipeline asks for one.
-    pub const NEEDS: [(u32, u32); 3] = [
+    pub const NEEDS: [(u32, u32); 4] = [
         (SAMPLE_MASK, ALPHA_COVERAGE),
         (ALPHA_COVERAGE, ALPHA_MASK),
         (ALPHA_HASH, ALPHA_MASK),
+        (PARALLAX, DISPLACEMENT),
     ];
     /// Pairs of bits that no build holds together, so the shader build makes no build with both.
     /// A mask tests its alpha one way, by coverage or by the hash. A mesh that WebGPU skins in the
@@ -880,7 +896,9 @@ pub mod permutation {
     /// skin nor morph, read their instances from the culling shader's copies, and test a mask
     /// against its cutoff; a surface that lets light through draws its rows without their values.
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
-    pub const APART: [(u32, u32); 17] = [
+    /// Displacement builds load on first use, so the test switch's builds do without them.
+    /// Parallax draws only opaque and masked surfaces, never one that lets light through.
+    pub const APART: [(u32, u32); 19] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -898,6 +916,8 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (DISPLACEMENT, INSTANCE_INDEX),
+        (PARALLAX, TRANSMISSION),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1827,6 +1847,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL", layout::FINAL),
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
+                ("MATERIAL_MAPS_PARALLAX", layout::MATERIAL_MAPS_PARALLAX),
                 ("DEPTH", layout::DEPTH),
                 ("LIGHT_CLUSTERS", layout::LIGHT_CLUSTERS),
                 ("BLOOM", layout::BLOOM),

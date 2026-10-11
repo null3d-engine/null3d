@@ -1349,6 +1349,8 @@ impl SceneStorage {
             op::SET_MATERIAL => {
                 let slot = self.created_slot(command.handle)?;
                 self.materials[slot as usize] = command.a;
+                // A displaced material grows the object's bounds, which TypeScript wrote.
+                self.dirty.set(slot);
             }
             op::SET_DYNAMIC => {
                 let slot = self.created_slot(command.handle)?;

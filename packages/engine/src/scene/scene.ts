@@ -1184,6 +1184,14 @@ export class Mesh extends Object3D {
 			checkLive('setMaterial', this);
 			checkSameEngine('setMaterial', 'material', material.core, this.scene);
 		}
+		// A displaced material moves vertices past the mesh's sphere, so the bounds grow to hold them.
+		const margin = material.boundsMargin;
+		const { mesh } = this;
+		const own = this.flags & C.FLAG_CUSTOM_BOUNDS;
+		if (mesh && !own && margin !== (this.material?.boundsMargin ?? 0)) {
+			this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + margin);
+			if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
+		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
 		this.material = material;
 	}
@@ -1197,7 +1205,7 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius);
+		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius + (this.material?.boundsMargin ?? 0));
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 		this.mesh = mesh;
@@ -2828,7 +2836,7 @@ export class Scene {
 			Mesh,
 			options,
 			mesh.id,
-			mesh.radius,
+			mesh.radius + material.boundsMargin,
 			flags,
 			material.id,
 			'createMesh',
@@ -3008,7 +3016,7 @@ export class Scene {
 			if (bounds && flags & C.FLAG_CUSTOM_BOUNDS) {
 				for (let i = 0; i < 3; i++) v.centers[slot * 3 + i] = bounds[i] as number;
 				v.radii[slot] = bounds[3] as number;
-			} else v.radii[slot] = n.mesh?.radius ?? 0;
+			} else v.radii[slot] = (n.mesh?.radius ?? 0) + (n.material?.boundsMargin ?? 0);
 			const up = n.parent < 0 ? (parent?.handle ?? 0) : (handles[n.parent] as number);
 			const mesh = n.mesh?.id ?? C.CORE_NO_MESH;
 			this.writeCommand(write++, C.COMMAND_CREATE | (flags << 8), handle, up, mesh);

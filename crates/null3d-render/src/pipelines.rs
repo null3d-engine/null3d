@@ -233,11 +233,13 @@ impl DrawKey {
     }
 
     /// True for a pair whose template places its vertices in a way that the depth template does not
-    /// follow: a custom material, whose vertex offset may move them, or a sprite material, whose
-    /// quads turn to face the camera. The prepass draws such a pair with its own vertex shader on
-    /// every path, as WebGL2 draws every pair ([`Prepass::OwnVertexShader`]).
+    /// follow: a custom material, whose vertex offset may move them, a displaced standard material,
+    /// or a sprite material, whose quads turn to face the camera. The prepass draws such a pair
+    /// with its own vertex shader on every path, as WebGL2 draws every pair
+    /// ([`Prepass::OwnVertexShader`]).
     pub const fn places_own_vertices(self) -> bool {
         self.template >= template::CUSTOM_FIRST
+            || self.permutation & permutation::DISPLACEMENT != 0
             || self.template == template::SPRITE
             || self.template == template::SPRITE_MAP
     }
@@ -416,9 +418,14 @@ impl PipelineCache {
     /// The ids of the pipelines that draw an opaque pair with `key` into a scene pass's `targets`:
     /// the one that shades it, and with a `prepass`, the one that draws its depth first, or 0 for a
     /// pair that stays out of it. After a depth prepass the pair shades only at the depth that the
-    /// prepass found; the occluders' pass leaves its shading as it is.
+    /// prepass found; the occluders' pass leaves its shading as it is. A pair that places its own
+    /// vertices hides nothing in the occluders' pass, which draws with the depth template: its
+    /// moved vertices would hide what the pair does not.
     pub fn opaque(&mut self, key: DrawKey, targets: PassTargets, prepass: Prepass) -> (u32, u32) {
         let depth = match key.prepass() {
+            Some(_) if prepass == Prepass::Occluders && key.places_own_vertices() => {
+                return (self.id(key.in_pass(targets)), 0);
+            }
             Some(depth) if prepass != Prepass::Off => depth,
             _ => return (self.id(key.in_pass(targets)), 0),
         };

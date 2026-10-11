@@ -26,12 +26,15 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_MATERIAL_MAPS_PARALLAX,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
 	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
+	PERMUTATION_DISPLACEMENT,
 	PERMUTATION_INSTANCE_INDEX,
+	PERMUTATION_PARALLAX,
 	PERMUTATION_PREPASS,
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
@@ -191,6 +194,12 @@ const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return v
 
 /** The map slots of a standard material, one texture array and sampler each. */
 const MAP_SLOTS = Array.from({ length: SIZE_MAP_SLOTS }, (_, slot) => slot);
+
+/**
+ * The binding of the displacement map's texture array in the maps group, after every slot's array
+ * and sampler, as the frame builder binds it. Its sampler takes the next binding.
+ */
+const HEIGHT_BINDING = 2 * SIZE_MAP_SLOTS;
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
@@ -487,10 +496,12 @@ export class Pipelines {
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
-		// A texture array for each map slot, then each slot's sampler. Custom materials' vertex
-		// stages sample their textures too.
+		// A texture array for each map slot, then each slot's sampler, then the displacement map's
+		// array and sampler. Custom materials' vertex stages sample their textures too. The
+		// displacement map is the vertex stage's alone, so the fragment stage keeps a sampled
+		// texture free, apart from the layout of parallax, whose fragment stage reads it too.
 		const maps = GPUShaderStage.VERTEX | fragment;
-		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', [
+		const mapEntries = (height: GPUShaderStageFlags): GPUBindGroupLayoutEntry[] => [
 			...MAP_SLOTS.map(
 				(binding): GPUBindGroupLayoutEntry => ({
 					binding,
@@ -505,7 +516,15 @@ export class Pipelines {
 					sampler: {},
 				}),
 			),
-		]);
+			{ binding: HEIGHT_BINDING, visibility: height, texture: { viewDimension: '2d-array' } },
+			{ binding: HEIGHT_BINDING + 1, visibility: height, sampler: {} },
+		];
+		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', mapEntries(GPUShaderStage.VERTEX));
+		this.defineLayout(
+			LAYOUT_MATERIAL_MAPS_PARALLAX,
+			'material maps with parallax',
+			mapEntries(maps),
+		);
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
@@ -961,7 +980,9 @@ export class Pipelines {
 	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		const ownPrepass = t.ownPrepass === true && (permutation & PERMUTATION_PREPASS) !== 0;
+		// A displaced material's prepass moves its vertices as its shading does.
+		const places = t.ownPrepass === true || (permutation & PERMUTATION_DISPLACEMENT) !== 0;
+		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
 		const build = ownPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader)
@@ -975,15 +996,21 @@ export class Pipelines {
 		// A custom material's shadow caster draws in the shadow passes, whose views bind the depth
 		// template's group in place of the frame group.
 		const caster = (permutation & PERMUTATION_CASTER) !== 0;
+		// Parallax reads the displacement map in the fragment stage too, through a layout of its own.
+		const parallax = (permutation & PERMUTATION_PARALLAX) !== 0;
 		const key =
-			template * 16 +
+			template * 32 +
 			(skins ? 1 : 0) +
 			(byIndex ? 2 : 0) +
 			(multisampled ? 4 : 0) +
-			(caster ? 8 : 0);
+			(caster ? 8 : 0) +
+			(parallax ? 16 : 0);
 		let layout = this.pipelineLayouts.get(key);
 		if (!layout) {
-			const own = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
+			const listed = multisampled ? (t.multisampledLayouts as readonly number[]) : t.layouts;
+			const own = parallax
+				? listed.map((id) => (id === LAYOUT_MATERIAL_MAPS ? LAYOUT_MATERIAL_MAPS_PARALLAX : id))
+				: listed;
 			const groups = [
 				...(caster ? [LAYOUT_DEPTH, ...own.slice(1)] : own),
 				...(skins ? [LAYOUT_JOINTS] : []),

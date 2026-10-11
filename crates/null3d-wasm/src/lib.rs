@@ -78,7 +78,7 @@ mod heap;
 
 use constants::{
     CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
-    debug_line_field, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
+    debug_line_field, map_slot, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
     scene_field, shading, texture_option, texture_stat,
 };
 
@@ -1137,8 +1137,16 @@ pub fn create_batch(
     material: u32,
 ) -> u32 {
     value_with_engine(|e| {
+        let margin = displacement_margin(e, material);
         add_batch(e, capacity, mesh, |batches, radius| {
-            batches.create(capacity, dynamic, row_values, mesh, material, radius)
+            batches.create(
+                capacity,
+                dynamic,
+                row_values,
+                mesh,
+                material,
+                radius + margin,
+            )
         })
     })
 }
@@ -1167,9 +1175,17 @@ pub fn create_batch_part(
         let mut matrix = null3d_core::math::IDENTITY;
         let n = part.len().min(matrix.len());
         matrix[..n].copy_from_slice(&part[..n]);
+        let margin = displacement_margin(e, material);
         add_batch(e, capacity, mesh, |batches, radius| {
             batches.create_part(
-                source, capacity, dynamic, row_values, mesh, material, radius, matrix,
+                source,
+                capacity,
+                dynamic,
+                row_values,
+                mesh,
+                material,
+                radius + margin,
+                matrix,
             )
         })
     })
@@ -1241,6 +1257,15 @@ pub fn set_line_width(batch: u32, width: f32) -> u32 {
         }
         Err(error) => core_failure(error),
     })
+}
+
+/// How far a material, by engine id, grows the bounds of a batch made with it now: its
+/// displacement margin.
+fn displacement_margin(e: &Engine, material: u32) -> f32 {
+    e.renderer
+        .settings()
+        .materials()
+        .bounds_margin(material.wrapping_sub(1))
 }
 
 /// Adds a batch of `capacity` rows of `mesh`, made by `make` with the mesh's radius, once the
@@ -1928,11 +1953,16 @@ pub fn create_material(
     };
     let bias = DepthBias::from_polygon_offset(bias_constant, bias_slope);
     value_with_engine(|e| {
-        let table = e.renderer.settings_mut().materials_mut();
+        let settings = e.renderer.settings_mut();
+        let table = settings.materials_mut();
         let id = table
             .create(shading, features, [r, g, b, a])
             .map_err(material_failure)?;
         table.set_depth_bias(id, bias).map_err(material_failure)?;
+        // A wireframe draws each part's edge list, which the meshes keep from the first one on.
+        if features & materials::feature::WIREFRAME != 0 {
+            settings.meshes_mut().keep_edges();
+        }
         Ok(id + 1)
     })
 }
@@ -2002,26 +2032,100 @@ pub fn set_material_values(
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
     // The engine's own calls name only the slots that exist.
-    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
+    let known = MapSlot::ALL.get(slot as usize).is_some()
+        || slot == map_slot::BUMP
+        || slot == map_slot::DISPLACEMENT;
+    if !known {
         return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
-    };
+    }
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let map = match texture_or_none(settings, texture) {
             Ok(map) => map,
             Err(failure) => return failure,
         };
-        match settings
-            .materials_mut()
-            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
-        {
+        let (id, second_uv) = (material.wrapping_sub(1), second_uv != 0);
+        let table = settings.materials_mut();
+        let set = match slot {
+            map_slot::BUMP => table.set_bump_map(id, map, second_uv),
+            map_slot::DISPLACEMENT => table.set_displacement_map(id, map, second_uv),
+            _ => table.set_map(id, MapSlot::ALL[slot as usize], map, second_uv),
+        };
+        match set {
             Ok(()) => {
+                if slot == map_slot::DISPLACEMENT {
+                    grow_bounds(e, material);
+                }
                 e.structure_changed = true;
                 0
             }
             Err(error) => material_failure(error),
         }
     })
+}
+
+/// Changes how far a standard material's displacement map moves vertices along their normals:
+/// `scale` for the map's white, plus `bias` for every vertex, in the mesh's units, as three.js's
+/// `displacementScale` and `displacementBias`. Objects and batches with the material grow their
+/// bounds when the farthest distance grows.
+#[wasm_bindgen(js_name = setMaterialDisplacement)]
+pub fn set_material_displacement(material: u32, scale: f32, bias: f32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let id = material.wrapping_sub(1);
+        match settings.materials_mut().set_displacement(id, scale, bias) {
+            Ok(grew) => {
+                // Kept shadows hold the vertices where the old values put them.
+                if !settings.materials().displacement_map(id).is_none() {
+                    settings.mark_casters_moved();
+                }
+                if grew {
+                    grow_bounds(e, material);
+                }
+                0
+            }
+            Err(error) => material_failure(error),
+        }
+    })
+}
+
+/// Grows the bounds of every object and batch with `material`, by engine id, to its mesh's radius
+/// plus the material's displacement margin. Objects with bounds of their own keep them, and
+/// skinned or morphed objects take the margin at their next pose.
+fn grow_bounds(e: &mut Engine, material: u32) {
+    let settings = e.renderer.settings();
+    let margin = settings.materials().bounds_margin(material.wrapping_sub(1));
+    let meshes = settings.meshes();
+    let high = e.scene.slots().high_water() as usize;
+    for slot in 0..high {
+        let posed = e.scene.skins()[slot] != 0 || e.scene.morphs()[slot] != 0;
+        let own = e.scene.flags()[slot] & flags::CUSTOM_BOUNDS != 0;
+        if e.scene.materials()[slot] != material || posed || own {
+            continue;
+        }
+        let Some(mesh) = e.scene.meshes()[slot]
+            .checked_sub(1)
+            .and_then(|m| meshes.mesh(m))
+        else {
+            continue;
+        };
+        e.scene
+            .set_local_sphere(slot as u32, [0.0; 3], mesh.radius + margin);
+    }
+    let ids: Vec<Handle> = e
+        .batches
+        .iter()
+        .filter(|(_, batch)| batch.material() == material)
+        .map(|(id, _)| id)
+        .collect();
+    for id in ids {
+        let Ok(batch) = e.batches.get_mut(id) else {
+            continue;
+        };
+        if let Some(mesh) = batch.mesh().checked_sub(1).and_then(|m| meshes.mesh(m)) {
+            batch.set_local_radius(mesh.radius + margin);
+        }
+    }
 }
 
 // --- Textures ---
@@ -2961,6 +3065,18 @@ pub fn set_bloom_chain(size: u32, halvings: u32) -> u32 {
     })
 }
 
+/// Lets materials with parallax draw it, or draws them with their displacement alone, from the
+/// next frame on, as the quality preset's `parallax` says.
+#[wasm_bindgen(js_name = setParallax)]
+pub fn set_parallax(on: bool) -> u32 {
+    with_engine(|e| {
+        if e.renderer.settings_mut().set_parallax(on) {
+            e.structure_changed = true;
+        }
+        0
+    })
+}
+
 /// Turns software occlusion culling on or off from the next frame on, where the frame builder
 /// culls on the CPU: objects with the occluder flag then hide what lies wholly behind them.
 #[wasm_bindgen(js_name = setSoftwareOcclusion)]
@@ -3574,8 +3690,14 @@ pub fn update_animations(step_us: u32) -> u32 {
         if let Some(animations) = e.animations.as_mut() {
             animations.update(jobs, step_us as f32 * 1e-6);
         }
-        let meshes = e.renderer.settings().meshes();
-        skinning::update_bounds(&mut e.scene, e.animations.as_ref(), &e.morphs, meshes);
+        let settings = e.renderer.settings();
+        skinning::update_bounds(
+            &mut e.scene,
+            e.animations.as_ref(),
+            &e.morphs,
+            settings.meshes(),
+            settings.materials(),
+        );
         0
     })
 }

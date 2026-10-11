@@ -115,6 +115,7 @@ export const LAYOUT_INSTANCES = 3;
 export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
 export const LAYOUT_MATERIAL_MAPS = 6;
+export const LAYOUT_MATERIAL_MAPS_PARALLAX = 34;
 export const LAYOUT_DEPTH = 7;
 export const LAYOUT_LIGHT_CLUSTERS = 8;
 export const LAYOUT_BLOOM = 9;
@@ -160,6 +161,8 @@ export const PERMUTATION_ALPHA_HASH = 4194304;
 export const PERMUTATION_TRANSMISSION = 8388608;
 export const PERMUTATION_ROW_VALUES = 16777216;
 export const PERMUTATION_CASTER = 33554432;
+export const PERMUTATION_DISPLACEMENT = 67108864;
+export const PERMUTATION_PARALLAX = 134217728;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

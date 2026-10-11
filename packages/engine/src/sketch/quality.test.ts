@@ -239,6 +239,7 @@ describe('SketchQuality.lower', () => {
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
 			softwareOcclusion: low.softwareOcclusion,
+			parallax: low.parallax,
 			governor: true,
 			maxAnisotropy: 16,
 			textureMemoryMiB: low.textureMemoryMiB,
@@ -255,8 +256,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size
-		// and software occlusion culling did.
+		// the reflections' size, software occlusion culling and parallax did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -266,6 +266,7 @@ describe('SketchQuality.lower', () => {
 			'dofSamples',
 			'reflectionScale',
 			'softwareOcclusion',
+			'parallax',
 		]);
 	});
 });

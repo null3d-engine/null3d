@@ -130,6 +130,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'relief',
+		group: 'Light, materials and effects',
+		sketch: new URL('./relief/sketch.ts', import.meta.url),
+		title: 'Relief maps',
+		scene: 'Hillside at sundown',
+		summary:
+			'Hills and boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. An old wall of flat quads gets the depth of its bricks from parallax, and a wireframe beacon casts a shadow of lines.',
+		controls: `${CAMERA} Move the mouse, or tap, to lead the beacon. Press P to turn parallax off and on.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),

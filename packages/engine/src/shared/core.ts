@@ -333,6 +333,11 @@ export interface CoreGlue extends CoreErrors {
 	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
 	 */
 	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
+	/**
+	 * Changes how far a standard material's displacement map moves vertices: `scale` for the
+	 * map's white, plus `bias` for every vertex, in the mesh's units.
+	 */
+	setMaterialDisplacement(material: number, scale: number, bias: number): number;
 	/** Destroys a material: objects that still use it draw nothing. */
 	destroyMaterial(material: number): number;
 	/**
@@ -541,6 +546,8 @@ export interface CoreGlue extends CoreErrors {
 	setDofTaps(taps: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
+	/** Lets materials with parallax draw it, or draws them with their displacement alone. */
+	setParallax(on: boolean): number;
 	/**
 	 * Sets the pixels that software occlusion culling's buffer holds about from the next frame
 	 * on, or 0 for the core's default, where the path culls on the CPU.
@@ -817,6 +824,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialValue',
 	'setMaterialValues',
 	'setMaterialMap',
+	'setMaterialDisplacement',
 	'destroyMaterial',
 	'createTexture',
 	'createVolumeTexture',
@@ -860,6 +868,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setDof',
 	'setDofTaps',
 	'setSoftwareOcclusion',
+	'setParallax',
 	'setOcclusionBuffer',
 	'setLut',
 	'setVignette',

@@ -32,6 +32,7 @@ import { MORPH_IMAGE } from '../../bench/scenes/morph.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { POINT_IMAGE } from '../../bench/scenes/points.ts';
+import { RELIEF_IMAGE } from '../../bench/scenes/relief.ts';
 import { ROOM_IMAGE } from '../../bench/scenes/room.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
@@ -1694,6 +1695,29 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
 		hold: 0,
 		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
+	},
+	// Bump maps, displacement maps with the normal or bump map of their heights, and wireframes of
+	// the standard and unlit materials. The parity test draws the same scene with three.js.
+	{
+		name: 'relief',
+		sketch: 'tests/pages/sketches/relief-sketch.ts',
+		hold: 0,
+		size: [RELIEF_IMAGE.width, RELIEF_IMAGE.height],
+	},
+	// Relief that null3D draws its own way (D-136): displaced terrain and rocks without normal maps,
+	// whose normals follow the map's slope, casting and taking the sun's shadows, a wireframe's line
+	// shadows, and parallax on a brick wall beside the same wall without it.
+	{
+		name: 'relief-heights',
+		sketch: 'tests/pages/sketches/relief-heights-sketch.ts',
+		hold: 0,
+	},
+	// The same scene with the quality setting that turns parallax off, as the Low preset does: the
+	// materials with parallax draw their displacement alone.
+	{
+		name: 'relief-heights-no-parallax',
+		sketch: 'tests/pages/sketches/relief-heights-sketch.ts?parallax=off',
+		hold: 0,
 	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares

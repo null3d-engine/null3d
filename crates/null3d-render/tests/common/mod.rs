@@ -323,12 +323,13 @@ impl<B: FrameBuilder> World<B> {
         if let Some(animations) = self.animations.as_mut() {
             animations.update(&self.jobs, self.animation_step);
         }
-        let meshes = self.renderer.settings().meshes();
+        let settings = self.renderer.settings();
         skinning::update_bounds(
             &mut self.scene,
             self.animations.as_ref(),
             &self.morphs,
-            meshes,
+            settings.meshes(),
+            settings.materials(),
         );
         self.scene.update_transforms(&self.jobs);
         self.batches

@@ -49,6 +49,15 @@ enable draw_index;
 // share a few units: maps whose texture arrays and samplers are the same share one, and each map's
 // layer in the row also names its unit.
 //
+// The normal map's slot may hold a height map instead, as the row's flags say. With BUMP, it is a
+// bump map, which bends the normal as three.js's bump mapping does: by the height's change from
+// one pixel to the next, against the screen's directions normalized. With HEIGHT_NORMALS, it is the
+// displacement map, which bends the normal by its slope in world units, so the light follows the
+// vertices that the DISPLACEMENT builds move. Those builds move each vertex along its normal by the
+// displacement map, after skinning and morph targets, in the mesh's own space, as three.js's
+// displacementMap does. The vertex stage reads the map from a binding of its own in the maps
+// group, and its layer, scale, bias and coordinate transform from the material's custom values.
+//
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
 // fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
@@ -121,6 +130,14 @@ enable draw_index;
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
 
+#ifdef MAPS
+/// The bit of a material's flags that says its normal map's slot holds a bump map.
+const BUMP: u32 = 32u;
+/// The bit of a material's flags that says its normal map's slot holds its displacement map, whose
+/// slope bends the normal.
+const HEIGHT_NORMALS: u32 = 64u;
+#endif
+
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
 
@@ -132,6 +149,18 @@ var<private> hash_place: vec3f;
 #ifdef CUSTOM_UNIFORMS
 /// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
+#endif
+
+#ifdef DISPLACEMENT
+/// The pixel's displacement per unit of the displacement map, in world units.
+var<private> height_scale: f32;
+#endif
+
+#ifdef PARALLAX
+/// How far the displacement moved the surface at the pixel, past the bias, in world units.
+var<private> surface_height: f32;
+/// The material that the pixel shows, whose custom values hold the displacement map's.
+var<private> pixel_material: u32;
 #endif
 
 #ifdef TRANSMISSION
@@ -174,6 +203,10 @@ var<private> specular_texel: vec4f;
 @group(3) @binding(11) var unit_3_sampler: sampler;
 @group(3) @binding(12) var unit_4_sampler: sampler;
 @group(3) @binding(13) var unit_5_sampler: sampler;
+#ifdef DISPLACEMENT
+@group(3) @binding(16) var height_map: texture_2d_array<f32>;
+@group(3) @binding(17) var height_sampler: sampler;
+#endif
 #else
 @group(1) @binding(0) var base_color_map: texture_2d_array<f32>;
 @group(1) @binding(1) var metal_rough_map: texture_2d_array<f32>;
@@ -191,6 +224,10 @@ var<private> specular_texel: vec4f;
 @group(1) @binding(13) var light_sampler: sampler;
 @group(1) @binding(14) var specular_intensity_sampler: sampler;
 @group(1) @binding(15) var specular_color_sampler: sampler;
+#ifdef DISPLACEMENT
+@group(1) @binding(16) var height_map: texture_2d_array<f32>;
+@group(1) @binding(17) var height_sampler: sampler;
+#endif
 #endif
 
 /// Pixel rows count upward on WebGL2 and downward on WebGPU, so derivatives along y take this
@@ -286,6 +323,116 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 #endif
 #endif
 
+#ifdef MAPS
+/// The change of a height map's red channel from the pixel to the next one across and to the next
+/// one up the row, as three.js's `dHdxy_fwd` samples it, read through the normal map's slot.
+fn height_change(layer: f32, at: MapUv) -> vec2f {
+    let here = normal_texel(layer, at).r;
+    let across = normal_texel(layer, MapUv(at.uv + at.dx, at.dx, at.dy)).r;
+    let up = normal_texel(layer, MapUv(at.uv + at.dy, at.dx, at.dy)).r;
+    return vec2f(across, up) - here;
+}
+
+/// The normal bent by a height's change across the pixel, `change`, along the position's change
+/// across it, `along_x`, and up the row, `along_y`: Mikkelsen's surface gradient, as three.js's
+/// `perturbNormalArb` makes it. Normalized directions give three.js's bump mapping, whose bend
+/// does not follow the surface's size on screen; the plain changes give the slope in world units.
+fn bent_by_height(normal: vec3f, along_x: vec3f, along_y: vec3f, change: vec2f, facing: f32) -> vec3f {
+    let r1 = cross(along_y, normal);
+    let r2 = cross(normal, along_x);
+    let det = dot(along_x, r1) * facing;
+    let gradient = sign(det) * (change.x * r1 + change.y * r2);
+    return normalize(abs(det) * normal - gradient);
+}
+#endif
+
+#ifdef DISPLACEMENT
+/// The displacement map's distance at texture coordinates `uv0` and `uv1` for material `id`, in
+/// the mesh's units: its red channel times the scale, plus the bias, as three.js's
+/// `displacementMap` reads it, at the map's top level. `values` are the map's layer, scale, bias
+/// and coordinate set, from the material's custom values. A map whose image is not on the GPU yet
+/// moves nothing.
+fn displacement(id: u32, values: vec4f, uv0: vec2f, uv1: vec2f) -> f32 {
+    if !map_ready(values.x) {
+        return 0.0;
+    }
+    let uv = select(uv0, uv1, values.w != 0.0);
+    let u = custom_value(id, 1u).xyz;
+    let v = custom_value(id, 2u).xyz;
+    let at = vec2f(dot(u, vec3f(uv, 1.0)), dot(v, vec3f(uv, 1.0)));
+    let texel = textureSampleLevel(height_map, height_sampler, at, map_layer(values.x), 0.0);
+    return texel.r * values.y + values.z;
+}
+#endif
+
+#ifdef PARALLAX
+/// The fewest and the most steps of parallax's march: few where the view meets the surface head
+/// on, where the relief shifts little, and more toward grazing views.
+const PARALLAX_STEPS: vec2f = vec2f(8.0, 32.0);
+
+/// The displacement map's red channel at `at`, as the fragment stage reads it for parallax.
+fn height_texel(layer: f32, at: MapUv) -> f32 {
+#ifdef WEBGL2
+    return map_texel(layer, at).r;
+#else
+    return textureSampleGrad(height_map, height_sampler, at.uv, map_layer(layer), at.dx, at.dy).r;
+#endif
+}
+
+/// How far parallax occlusion mapping shifts the coordinates of the displacement map at `at`,
+/// where the view ray first meets the map's relief. The relief stands along the surface's normal
+/// `normal`, `scale` world units per unit of the map, and the pixel shows the surface at
+/// `surface` world units up it, as the moved vertices put it. The ray starts where it enters the
+/// relief and steps down through it, then finds the crossing between its last two steps.
+/// `along_x` and `along_y` are the position's changes across the pixel, in the GPU's row order.
+fn parallax_shift(
+    layer: f32,
+    at: MapUv,
+    normal: vec3f,
+    to_view: vec3f,
+    along_x: vec3f,
+    along_y: vec3f,
+    scale: f32,
+    surface: f32,
+) -> vec2f {
+    // The gradients of u and of v along the surface (the surface gradient of Mikkelsen's paper).
+    let r1 = cross(along_y, normal);
+    let r2 = cross(normal, along_x);
+    let det = dot(along_x, r1);
+    if abs(det) < 1e-20 || scale == 0.0 {
+        return vec2f(0.0);
+    }
+    let grad_u = (r1 * at.dx.x + r2 * at.dy.x) / det;
+    let grad_v = (r1 * at.dx.y + r2 * at.dy.y) / det;
+    // Coordinates per world unit of height along the ray toward the camera.
+    let facing = max(dot(to_view, normal), 0.1);
+    let per_height = vec2f(dot(grad_u, to_view), dot(grad_v, to_view)) / facing;
+    let top = max(scale, 0.0);
+    let bottom = min(scale, 0.0);
+    let steps = mix(PARALLAX_STEPS.y, PARALLAX_STEPS.x, facing);
+    let stride = (top - bottom) / steps;
+    var height = top;
+    var above = top - height_texel(layer, MapUv(at.uv + per_height * (top - surface), at.dx, at.dy)) * scale;
+    var below = above;
+    for (var k = 0u; k < u32(steps); k += 1u) {
+        if above <= 0.0 {
+            break;
+        }
+        height -= stride;
+        let relief = height_texel(layer, MapUv(at.uv + per_height * (height - surface), at.dx, at.dy)) * scale;
+        below = height - relief;
+        if below <= 0.0 {
+            // Between the step above the relief and this one below it, the crossing.
+            let share = above / max(above - below, 1e-6);
+            height += stride * (1.0 - share);
+            break;
+        }
+        above = below;
+    }
+    return per_height * (height - surface);
+}
+#endif
+
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
@@ -345,6 +492,12 @@ struct VertexOut {
     /// The object's scale along each of its axes, which turns the volume's thickness into world
     /// units.
     @location(9) @interpolate(flat, either) scale: vec3f,
+#endif
+#ifdef DISPLACEMENT
+    /// How far a unit of the displacement map's red channel moves the surface, in world units: the
+    /// material's scale times the object's scale along the normal. Then how far the displacement
+    /// moved the surface here, past the bias, in world units, as the vertices give it.
+    @location(12) heights: vec2f,
 #endif
 #ifdef ROW_VALUES
     /// The color of the instance's row.
@@ -448,10 +601,33 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     var s = surface;
     // The coordinates' derivatives come first, where every pixel of the quad runs them; each map
     // then samples with them inside its branch.
-    let first = transformed_uv(input.uv, m.uv_u, m.uv_v);
-    let second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
+    var first = transformed_uv(input.uv, m.uv_u, m.uv_v);
+    var second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
+#ifdef PARALLAX
+    // Parallax shifts every map's coordinates of the set that the displacement map reads, where
+    // the view ray meets its relief.
+    let values = custom_value(pixel_material, 0u);
+    let pixel_layer = custom_value(pixel_material, 2u).w;
+    if map_ready(pixel_layer) {
+        let on_second = values.w != 0.0;
+        var at = first;
+        if on_second {
+            at = second;
+        }
+        let along_y = position_dy * ROWS_UP;
+        let shift = parallax_shift(
+            pixel_layer, at, input.normal, input.viewDirection, position_dx, along_y,
+            height_scale, surface_height,
+        );
+        if on_second {
+            second.uv += shift;
+        } else {
+            first.uv += shift;
+        }
+    }
+#endif
     if map_ready(m.maps.x) {
         let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, first, second)));
         s.baseColor *= texel.rgb;
@@ -481,7 +657,23 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
         specular_texel = vec4f(texel.rgb, specular_texel.a);
     }
-    if map_ready(m.maps.z) {
+    let heights = flags & (BUMP | HEIGHT_NORMALS);
+    if map_ready(m.maps.z) && heights != 0u {
+        let at = map_uv(flags, 2u, first, second);
+        let facing = select(-1.0, 1.0, input.frontFacing);
+        // The derivatives in the GPU's own row order: the bend comes out the same either way.
+        let along_y = position_dy * ROWS_UP;
+        if heights == BUMP {
+            let change = height_change(m.maps.z, at) * m.surface.z;
+            s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(along_y), change, facing);
+        }
+#ifdef DISPLACEMENT
+        if heights == HEIGHT_NORMALS {
+            let change = height_change(m.maps.z, at) * height_scale;
+            s.normal = bent_by_height(input.normal, position_dx, along_y, change, facing);
+        }
+#endif
+    } else if map_ready(m.maps.z) {
         let at = map_uv(flags, 2u, first, second);
         let texel = normal_texel(m.maps.z, at);
         let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);
@@ -588,6 +780,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef CUSTOM_VERTEX_OFFSET
     let offset = vertexOffset(VertexInput(position, normal, mesh_uv(v.uv0)));
     out.relative = relative_position(found, position + offset);
+#else ifdef DISPLACEMENT
+    let unit_normal = normalize(normal);
+    let values = custom_value(found.material, 0u);
+    let moved = displacement(found.material, values, mesh_uv(v.uv0), mesh_second_uv(v.uv1));
+    out.relative = relative_position(found, position + unit_normal * moved);
+    let stretch = length(world_direction(found, unit_normal));
+    out.heights = vec2f(values.y, moved - values.z) * stretch;
 #else
     out.relative = relative_position(found, position);
 #endif
@@ -838,6 +1037,13 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
+#endif
+#ifdef DISPLACEMENT
+    height_scale = in.heights.x;
+#endif
+#ifdef PARALLAX
+    surface_height = in.heights.y;
+    pixel_material = in.material;
 #endif
 #ifdef CUSTOM
     fill_builtins(in.origin);

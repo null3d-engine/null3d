@@ -735,6 +735,9 @@ impl GpuDrivenRenderer {
         );
         let tile_settings = self.settings.tile_settings();
         let filter = self.settings.shadow_quality().filter;
+        if self.settings.take_tiles_stale() {
+            self.tiles.forget_drawn();
+        }
         let settings = &self.settings;
         let sways = |material| settings.sways(material);
         self.tiles

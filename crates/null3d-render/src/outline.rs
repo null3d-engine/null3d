@@ -91,18 +91,19 @@ const VISIBLE_BIAS: DepthBias = DepthBias {
 /// camera so that its own surface passes. Both draw both faces and write no depth, so a part seen
 /// from behind still counts. The mask template places the vertices as the depth template does,
 /// and skins them in the vertex shader where `pipeline` does. Both read their instances by index
-/// where `pipeline` does.
+/// where `pipeline` does, and draw lines where it does.
 pub(crate) const fn mask_keys(pipeline: DrawKey) -> (DrawKey, DrawKey) {
+    let lines = pipeline.state & state_flags::LINE_LIST;
     let every = DrawKey {
         template: template::OUTLINE_MASK,
         permutation: pipeline.permutation & (permutation::SKIN | permutation::INSTANCE_INDEX),
         vertex_format: pipeline.vertex_format,
-        state: state_flags::CULL_NONE | state_flags::NO_DEPTH_TEST,
+        state: state_flags::CULL_NONE | state_flags::NO_DEPTH_TEST | lines,
         bias: DepthBias::NONE,
     };
     let visible = DrawKey {
         permutation: every.permutation | permutation::OUTLINE_VISIBLE,
-        state: state_flags::CULL_NONE | state_flags::NO_DEPTH_WRITE,
+        state: state_flags::CULL_NONE | state_flags::NO_DEPTH_WRITE | lines,
         bias: VISIBLE_BIAS,
         ..every
     };

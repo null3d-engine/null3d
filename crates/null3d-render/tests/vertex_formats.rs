@@ -230,7 +230,7 @@ fn every_attribute_type_packs_into_pages_of_its_own_format_in_both_packings() {
         for (mesh, id) in meshes.iter().zip(ids) {
             let slot = storage.mesh(id).unwrap();
             assert_eq!(slot.format, mesh.format);
-            let part = storage.parts(slot)[0];
+            let part = storage.parts(slot, false)[0];
             let page = &storage.pages()[part.page as usize];
             assert_eq!(page.format, mesh.format);
             assert_eq!(page.vertices.len() % mesh.stride(), 0);

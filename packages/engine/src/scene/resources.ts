@@ -5,6 +5,8 @@ import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
 	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_BUMP,
+	MAP_SLOT_DISPLACEMENT,
 	MAP_SLOT_EMISSIVE,
 	MAP_SLOT_LIGHT,
 	MAP_SLOT_METAL_ROUGH,
@@ -23,9 +25,11 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
@@ -800,6 +804,23 @@ export interface StandardValues extends MaterialOptions {
 	 * negative values flip a direction.
 	 */
 	normalScale?: readonly [number, number];
+	/**
+	 * How strongly the bump map bends normals, as three.js's `bumpScale`: the change of its red
+	 * channel from one pixel to the next times this. Negative values turn bumps into dents. The
+	 * default is 1.
+	 */
+	bumpScale?: number;
+	/**
+	 * How far the displacement map's white moves each vertex along its normal, in the mesh's units,
+	 * as three.js's `displacementScale`. The default is 1.
+	 */
+	displacementScale?: number;
+	/**
+	 * How far the displacement map moves every vertex along its normal, added to its texel's
+	 * share of `displacementScale`, in the mesh's units, as three.js's `displacementBias`. The
+	 * default is 0.
+	 */
+	displacementBias?: number;
 	/** How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. */
 	aoMapIntensity?: number;
 	/** The factor of the light map's light: 0 or more. The default is 1. */
@@ -897,6 +918,28 @@ export interface StandardMaps {
 	metalnessRoughnessMap?: Texture;
 	/** Normals in tangent space, in linear color, which `normalScale` scales. */
 	normalMap?: Texture;
+	/**
+	 * Heights in red, in linear color, which bend the normals as three.js's bump map does, by
+	 * `bumpScale`. A normal map wins over it, as in three.js, and so does a wireframe.
+	 */
+	bumpMap?: Texture;
+	/**
+	 * Heights in red, in linear color, which move each vertex along its normal by
+	 * `displacementScale` and `displacementBias`, as three.js's displacement map does. Shadows and
+	 * the depth prepass follow the moved vertices, and culling grows each object's bounds to hold
+	 * them. Without a normal or bump map, the map's slope also bends the normals, so the light
+	 * follows the new shape, which three.js does not do. The vertex shader reads the map at its
+	 * full size, so the mesh needs vertices about as dense as the detail it should show. Raycasts,
+	 * outlines and debug views see the mesh before it moves.
+	 */
+	displacementMap?: Texture;
+	/**
+	 * With a `displacementMap`, also shifts where each pixel reads the maps, by parallax occlusion
+	 * mapping: relief finer than the mesh's vertices hides and shows the surface behind it as the
+	 * view turns. It costs a dozen or more texture reads per pixel, so the quality presets may turn
+	 * it off. Only opaque and masked surfaces take it. The default is false.
+	 */
+	parallax?: boolean;
 	/** Ambient occlusion in red, in linear color, which darkens ambient light. */
 	aoMap?: Texture;
 	/** The emissive color map, in sRGB. Its color multiplies `emissive`. */
@@ -952,6 +995,12 @@ export interface MaterialFeatures {
 	depthTest?: boolean;
 	/** Moves the surface's depth, as three.js's polygon offset does. The default is no bias. */
 	depthBias?: DepthBias;
+	/**
+	 * Draws the edges of each triangle as lines one pixel wide, with the material's own shading,
+	 * as three.js's `wireframe` does. Edges that two triangles share draw twice. Its shadows draw
+	 * lines too. Flat shading and bump maps have no effect on it. The default is false.
+	 */
+	wireframe?: boolean;
 }
 
 /**
@@ -1021,8 +1070,11 @@ export interface CompiledWgsl {
  * @category api/materials
  */
 export type ShaderValues<Wgsl = string | CompiledWgsl> = [Wgsl] extends [unknown]
-	? Omit<StandardValues, 'uvTransform'> & UniformValues<Wgsl>
+	? Omit<StandardValues, MapValues> & UniformValues<Wgsl>
 	: never;
+
+/** The standard values that only the standard material's maps read. */
+type MapValues = 'uvTransform' | 'bumpScale' | 'displacementScale' | 'displacementBias';
 
 /**
  * Options of `materials.shader`: the material's WGSL, the first values of its uniforms, and the
@@ -1154,7 +1206,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 ];
 
 /** The core's slot of each map option. */
-const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
+const MAP_OPTIONS: readonly (readonly [Exclude<keyof StandardMaps, 'parallax'>, number])[] = [
 	['map', MAP_SLOT_BASE_COLOR],
 	['metalnessRoughnessMap', MAP_SLOT_METAL_ROUGH],
 	['normalMap', MAP_SLOT_NORMAL],
@@ -1167,17 +1219,20 @@ const MAP_OPTIONS: readonly (readonly [keyof StandardMaps, number])[] = [
 
 /** Throws E1108 for a pair or a transform with a number that is not finite. */
 function checkNumbers(values: AnyValues, call: string): void {
-	const { normalScale, uvTransform } = values;
+	const { normalScale, uvTransform, bumpScale, displacementScale, displacementBias } = values;
 	const numbers = [
 		...(normalScale ?? []),
 		...(uvTransform?.offset ?? []),
 		...(uvTransform?.repeat ?? []),
 		uvTransform?.rotation ?? 0,
+		bumpScale ?? 0,
+		displacementScale ?? 0,
+		displacementBias ?? 0,
 	];
 	if (!numbers.every(Number.isFinite))
 		throw new EngineError(
 			'E1108',
-			`${call}() got a normalScale or uvTransform that is not finite.`,
+			`${call}() got a normalScale, uvTransform, bumpScale, displacementScale or displacementBias that is not finite.`,
 		);
 }
 
@@ -1316,6 +1371,16 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
  */
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, blending, depthBias, transmission } = options;
+	if (options.parallax && !options.displacementMap)
+		throw new EngineError(
+			'E1217',
+			`${call}() got parallax without a displacementMap; parallax reads the displacement map's heights.`,
+		);
+	if (options.parallax && (alphaMode === 'blend' || transmission !== undefined))
+		throw new EngineError(
+			'E1217',
+			`${call}() got parallax with ${transmission !== undefined ? 'transmission' : "the alpha mode 'blend'"}; parallax takes an opaque or masked surface. Leave parallax out to keep the displacement alone.`,
+		);
 	if (transmission !== undefined && (alphaMode === 'mask' || alphaMode === 'hash'))
 		throw new EngineError(
 			'E1217',
@@ -1353,7 +1418,9 @@ function featureBits(options: StandardOptions): number {
 			? MATERIAL_FEATURE_ALPHA_TO_COVERAGE
 			: 0) |
 		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0) |
-		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0)
+		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0) |
+		(options.wireframe ? MATERIAL_FEATURE_WIREFRAME : 0) |
+		(options.parallax ? MATERIAL_FEATURE_PARALLAX : 0)
 	);
 }
 
@@ -1375,6 +1442,9 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'ior',
 	'attenuationColor',
 	'attenuationDistance',
+	'bumpScale',
+	'displacementScale',
+	'displacementBias',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1481,6 +1551,18 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** The engine core's id, or 0 once the material is destroyed. */
 	private liveId: number;
 
+	/**
+	 * @internal How far the material's displacement moves vertices at most, in the mesh's units,
+	 * which grows the bounds of objects with it: the farthest it has moved them, or 0.
+	 */
+	boundsMargin = 0;
+
+	/** True when the normal map's slot holds a bump map, whose strength `bumpScale` sets. */
+	private bump = false;
+
+	/** The displacement map's scale and bias, which `set` changes one at a time, where it has one. */
+	private displacement: [number, number] | undefined;
+
 	/** @internal */
 	constructor(
 		id: number,
@@ -1520,7 +1602,65 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const emissive = linearOrNone(values.emissive, call);
 		const specular = specularOrNone(values.specularColor, call);
 		const attenuation = linearOrNone(values.attenuationColor, call);
-		writeValues(core, id, call, values, color, emissive, specular, attenuation);
+		// A bump map's strength takes the normal scale's place.
+		const kept = this.bump && values.normalScale ? { ...values, normalScale: undefined } : values;
+		writeValues(core, id, call, kept, color, emissive, specular, attenuation);
+		this.writeHeights(values);
+	}
+
+	/**
+	 * @internal Sets up the height maps of a standard material that `options` creates: a bump map
+	 * in the normal map's slot, unless a normal map or a wireframe takes it, and a displacement map.
+	 * Then writes their values.
+	 */
+	heights(options: StandardOptions): void {
+		const { core, call } = this;
+		const id = this.id;
+		const maps: [Texture | undefined, number][] = [];
+		this.bump = !!options.bumpMap && !options.normalMap && !options.wireframe;
+		if (this.bump) maps.push([options.bumpMap, MAP_SLOT_BUMP]);
+		if (options.displacementMap) {
+			this.displacement = [1, 0];
+			this.boundsMargin = 1;
+			maps.push([options.displacementMap, MAP_SLOT_DISPLACEMENT]);
+		}
+		for (const [map, slot] of maps) {
+			if (!map) continue;
+			const second = map.uvSet === 1 ? 1 : 0;
+			core.checkGrowth(
+				core.glue.setMaterialMap(id, slot, map.handle, second),
+				call,
+				undefined,
+				true,
+			);
+		}
+		this.writeHeights(options);
+	}
+
+	/** Writes the bump map's strength and the displacement's scale and bias that `values` give. */
+	private writeHeights(values: AnyValues): void {
+		const { core, call } = this;
+		const { bumpScale, displacementScale, displacementBias } = values;
+		if (this.bump && bumpScale !== undefined) {
+			const status = core.glue.setMaterialValue(
+				this.id,
+				MATERIAL_PARAM_NORMAL_SCALE,
+				bumpScale,
+				bumpScale,
+				0,
+			);
+			core.check(status, call, undefined, true);
+		}
+		const held = this.displacement;
+		if (held && (displacementScale !== undefined || displacementBias !== undefined)) {
+			const scale = displacementScale ?? held[0];
+			const bias = displacementBias ?? held[1];
+			held[0] = scale;
+			held[1] = bias;
+			const status = core.glue.setMaterialDisplacement(this.id, scale, bias);
+			core.check(status, call, undefined, true);
+			this.boundsMargin = Math.max(this.boundsMargin, Math.abs(bias), Math.abs(scale + bias));
+		}
 	}
 
 	/**
@@ -1598,7 +1738,13 @@ export class Materials {
 		options: StandardOptions & UnlitOptions,
 		call: string,
 	): Material<Values> {
-		return new Material<Values>(this.createId(shading, options, call), this.core, `${call}.set`);
+		const material = new Material<Values>(
+			this.createId(shading, options, call),
+			this.core,
+			`${call}.set`,
+		);
+		if (options.bumpMap || options.displacementMap) material.heights(options);
+		return material;
 	}
 
 	/** Creates a material in the engine core, with its standard options, and returns its id. */
@@ -1616,6 +1762,7 @@ export class Materials {
 		// The shaders that let light through load on first use: the download starts with the
 		// material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		if (options.displacementMap) this.shaders.need('displacement');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(

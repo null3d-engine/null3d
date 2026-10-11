@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1, with typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, bump maps, displacement maps, parallax and wireframes in 0.2. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -53,6 +53,9 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `emissive` | An sRGB color | Black | Light that the surface gives off itself, whatever the lights |
 | `emissiveIntensity` | 0 or more | 1 | The factor of the emissive color |
 | `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
+| `bumpScale` | A number | 1 | How strongly the bump map bends normals. Negative values turn bumps into dents |
+| `displacementScale` | A number | 1 | How far the displacement map's white moves a vertex, in the mesh's units |
+| `displacementBias` | A number | 0 | How far the displacement map moves every vertex, added to its height's share |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
 | `lightMapIntensity` | 0 or more | 1 | The factor of the light map's light |
 | `ior` | 1 or more | 1.5 | The index of refraction of the non-metallic part. It sets how much light the surface reflects head on |
@@ -150,6 +153,8 @@ const brick = materials.standard({
 | `map` | Both | RGBA, sRGB | Multiplies `color`, and its alpha multiplies `opacity` |
 | `metalnessRoughnessMap` | Standard | G and B, linear | Green multiplies `roughness`, and blue multiplies `metalness`, as glTF packs them |
 | `normalMap` | Standard | RGB, linear | Bends normals in tangent space, scaled by `normalScale` |
+| `bumpMap` | Standard | R, linear | Bends normals by the change of its heights, scaled by `bumpScale`. See "Relief" |
+| `displacementMap` | Standard | R, linear | Moves each vertex along its normal, by `displacementScale` and `displacementBias`. See "Relief" |
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
 | `emissiveMap` | Standard | RGB, sRGB | Multiplies `emissive` times `emissiveIntensity` |
 | `lightMap` | Standard | RGB | Adds baked light to the ambient light, times `lightMapIntensity` |
@@ -163,6 +168,44 @@ A normal map takes its frame from the mesh's tangents when the mesh has them, as
 Until a map's image reaches the GPU, the material draws as without that map.
 
 On WebGL2, the maps of one material share at most six textures on the GPU. Maps with the same size, format and sampling count once, so a material rarely reaches the limit. [Texture arrays](textures.md#texture-arrays) says which maps a material drops past it.
+
+## Relief
+
+Three maps give a surface relief. Each reads heights from its red channel, in the `linear` color space. They follow three.js's options of the same names.
+
+```ts
+// sketch.ts
+const [color, normal, height] = await Promise.all([
+  assets.loadTexture('/rock-color.png'),
+  assets.loadTexture('/rock-normal.png', { colorSpace: 'linear' }),
+  assets.loadTexture('/rock-height.png', { colorSpace: 'linear' }),
+]);
+const rock = materials.standard({
+  map: color,
+  normalMap: normal,
+  displacementMap: height,
+  displacementScale: 0.4,
+  displacementBias: -0.2,
+});
+scene.createMesh({ mesh: geometry.sphere({ radius: 1, widthSegments: 128, heightSegments: 64 }), material: rock });
+```
+
+| Option | What it does | Cost |
+| --- | --- | --- |
+| `bumpMap` | Bends the normals by the change of its heights from one pixel to the next, times `bumpScale`, as three.js's bump map does. The shape stays flat | Three texture reads per pixel |
+| `displacementMap` | Moves each vertex along its normal by its height times `displacementScale`, plus `displacementBias`, in the mesh's units. The shape changes | One texture read per vertex in each pass that draws it, and three per pixel where it bends the normals |
+| `parallax: true` | With a displacement map, shifts where each pixel reads the maps, so relief finer than the vertices hides and shows the surface behind it as the view turns | 8 to 32 texture reads per pixel, more at grazing views |
+
+A bump map gives fine relief to a flat surface, such as the grain of stone. Its bend depends on the surface's size on the screen, as in three.js. A normal map wins over a bump map, so a material draws one or the other.
+
+A displacement map changes the shape itself, so its silhouette and its shadows move too. The vertex shader reads the map at its full size, so the mesh needs about as many vertices as the detail it should show. `geometry.plane` and `geometry.sphere` take segment counts for this. The map moves vertices after skinning and morph targets, as in three.js.
+
+- Without a normal map or a bump map, the displacement map's slope also bends the normals, so the light follows the moved surface. three.js keeps the mesh's normals there, so a port of such a material looks less flat in null3D.
+- With a normal map, the normal map bends the normals, as in three.js. A normal map made from the same heights already holds their slope.
+- Shadows and the depth prepass follow the moved vertices. Culling grows each object's bounds by the farthest that the material has moved a vertex, so no `setBounds` call is needed.
+- Raycasts, outlines and debug views see the mesh before it moves, as three.js's raycasts do.
+
+`parallax` adds the detail that the vertices cannot hold, such as the joints between bricks or cobbles. Silhouettes and shadows keep the vertices' shape. It takes only opaque and masked surfaces: the `blend` alpha mode and `transmission` with `parallax` throw E1217. The quality preset's `parallax` setting turns it off on Low, where such materials draw with their displacement alone.
 
 ## Texture coordinate transform
 
@@ -202,8 +245,14 @@ These options are fixed when you create the material. Most of them choose the ma
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
+| `wireframe` | Both | false | Draws the edges of each triangle as lines one pixel wide, with the material's own shading, as three.js's `wireframe` does. See "Wireframe" |
+| `parallax` | Standard | false | With a `displacementMap`, adds parallax occlusion mapping. See "Relief" |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
+
+### Wireframe
+
+A material with `wireframe: true` draws each triangle's three edges as lines, as three.js does. An edge that two triangles share draws twice. The engine keeps an edge list for each mesh from the first wireframe on, which takes twice the GPU memory of the mesh's triangle indices. Its shadows draw lines too. Flat shading and bump maps have no effect, as in three.js, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md).
 
 ## Alpha modes
 
@@ -374,7 +423,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale`, `uvTransform`, `bumpScale`, `displacementScale` and `displacementBias` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

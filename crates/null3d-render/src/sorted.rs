@@ -36,6 +36,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::occlusion::OcclusionBuffer;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::world::SphereArrays;
+use null3d_gpu::drawlist::state_flags;
 
 use crate::frame::{
     CellOffsets, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
@@ -65,6 +66,8 @@ pub(crate) struct SortedBucket {
     pub(crate) back: u32,
     /// The bind group of its material's map, or 0 for a pipeline that reads none.
     pub(crate) textures: u32,
+    /// True when its pipelines draw lines, from each part's edge list.
+    pub(crate) lines: bool,
     /// The engine mesh id, which gives the parts it draws.
     pub(crate) mesh: u32,
     /// The engine material id.
@@ -292,7 +295,7 @@ impl SortedLayout {
                 pipeline
             };
             let textures = settings.texture_group(material, pipeline);
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))
         };
         // A skinned object draws from a bucket of its own, with the pipeline that `skin` gives.
@@ -363,11 +366,13 @@ impl SortedLayout {
                 None => (0, pipeline),
             };
             let passes = if back == 0 { 1 } else { 2 };
-            most_parts = most_parts.max(meshes.parts(slot).len() as u32 * passes);
+            let lines = pipeline.state & state_flags::LINE_LIST != 0;
+            most_parts = most_parts.max(meshes.parts(slot, lines).len() as u32 * passes);
             self.buckets.push(SortedBucket {
                 pipeline: pipelines.id(front.in_pass(targets)),
                 back,
                 textures,
+                lines,
                 mesh,
                 material,
                 group,

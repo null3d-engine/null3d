@@ -21,7 +21,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
-use null3d_gpu::drawlist::{DrawList, sizes, template};
+use null3d_gpu::drawlist::{DrawList, sizes, state_flags, template};
 
 use super::data::{TextureRows, write_rows};
 use super::ids;
@@ -286,7 +286,7 @@ impl Layout {
                       object: u32,
                       skinned: Option<usize>| {
             let pipeline = pipeline?;
-            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?, false).first()?.page;
             match drawn {
                 Drawn::Casters => {
                     // A masked caster tests its material's alpha; the others draw with none.
@@ -415,6 +415,7 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let second = (drawn == Drawn::Outlined)
                 .then(|| pipelines.id(mask_keys(pipeline).1.in_pass(targets)));
+            let lines = pipeline.state & state_flags::LINE_LIST != 0;
             let pipeline = first;
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
@@ -423,7 +424,7 @@ impl Layout {
                     group,
                     shift,
                 });
-                for part in meshes.parts(slot) {
+                for part in meshes.parts(slot, lines) {
                     let draw = Draw {
                         pipeline,
                         prepass,

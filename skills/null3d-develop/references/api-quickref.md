@@ -301,6 +301,7 @@ const paint = materials.standard({
   blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
   depthWrite: true, depthTest: true,           // fixed at creation
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
+  wireframe: false,                            // (0.2) each triangle's edges as lines, any material
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
@@ -310,6 +311,10 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   metalnessRoughnessMap: orm,        // linear: roughness in G, metalness in B, as glTF packs them
   aoMap: orm, aoMapIntensity: 1,     // linear: occlusion in R darkens ambient light
   normalMap: normals, normalScale: [1, 1],   // linear, tangent space
+  // bumpMap: heights, bumpScale: 1,          // (0.2) linear; a normalMap wins over it
+  // displacementMap: heights,                // (0.2) linear; moves vertices along their normals,
+  // displacementScale: 1, displacementBias: 0, // shadows and bounds follow; parallax: true adds
+                                              // parallax occlusion mapping from the same map
   emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
   lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
   specularIntensityMap: spec, specularColorMap: tint,  // (0.2) linear alpha; sRGB color, as three.js's physical material

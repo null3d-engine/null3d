@@ -121,6 +121,10 @@ pub mod map_slot {
     pub const LIGHT: u32 = MapSlot::Light as u32;
     pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
+    /// A bump map, which takes the normal map's slot.
+    pub const BUMP: u32 = SPECULAR_COLOR + 1;
+    /// A displacement map, which has a binding of its own.
+    pub const DISPLACEMENT: u32 = BUMP + 1;
 }
 
 /// The flags of an effect that `setEffect` takes.
@@ -829,6 +833,8 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("WIREFRAME", feature::WIREFRAME),
+                ("PARALLAX", feature::PARALLAX),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -864,6 +870,8 @@ pub fn typescript() -> String {
                 ("LIGHT", map_slot::LIGHT),
                 ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
                 ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
+                ("BUMP", map_slot::BUMP),
+                ("DISPLACEMENT", map_slot::DISPLACEMENT),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.

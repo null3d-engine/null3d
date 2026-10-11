@@ -181,6 +181,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// Parallax occlusion mapping steps through a displacement map's relief at each pixel of the
+	// materials that ask for it, a dozen texture reads or more. Low runs on phones, where those
+	// materials draw with their displacement alone (D-136).
+	parallax: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The frame-budget governor (governor.ts), which lowers the live settings above when frames take
 	// too long and raises them again when they have time to spare.
 	governor: {
@@ -458,6 +466,12 @@ export interface QualitySettings {
 	 * saves drawing what they hide. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when materials with `parallax` draw it. Off, they draw with their displacement map
+	 * alone, which saves a dozen texture reads or more at each of their pixels. It changes during
+	 * play.
+	 */
+	parallax: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */
