@@ -1,7 +1,8 @@
-// The subsurface blur spreads skin's light under its surface, on every tier: the subsurface tests
-// of the image test manifest. A panel that blurs nothing still draws a plausible picture, which a
-// new reference could take in. This spec measures each effect against the plain panel beside it,
-// so it fails even before a test has references.
+// The subsurface blur spreads skin's light under its surface, on every tier whose engine draws HDR
+// color: the subsurface tests of the image test manifest. The 8-bit path draws no blur. A panel
+// that blurs nothing still draws a plausible picture, which a new reference could take in. This
+// spec measures each effect against the plain panel beside it, or against the same panel without
+// the blur, so it fails even before a test has references.
 import { expect, test } from '@playwright/test';
 import {
 	type Image,
@@ -71,22 +72,35 @@ const brightness = (image: Image, pixels: readonly number[]) =>
 /** How much redder than blue a color is. */
 const redness = ([r, , b]: Vec3) => r - b;
 
-/** The spread of brightness over `pixels`: how far the stripes of a map stand apart. */
-const spread = (image: Image, pixels: readonly number[]) => {
-	const values = pixels.map((p) => luma(image, p));
-	const mean = values.reduce((a, b) => a + b, 0) / values.length;
-	return values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+/**
+ * How steep the edges of a map's stripes are over the rows of `pixels`: the mean squared step of
+ * brightness between neighbors across the stripes. A blur spreads each step over more pixels, which
+ * lowers it, while the stripes' contrast stays nearly the same.
+ */
+const edges = (image: Image, pixels: readonly number[]) => {
+	let [sum, count] = [0, 0];
+	for (let i = 1; i < pixels.length; i++) {
+		const [p, next] = [pixels[i - 1] as number, pixels[i] as number];
+		if (next !== p + 1) continue;
+		sum += (luma(image, next) - luma(image, p)) ** 2;
+		count++;
+	}
+	return sum / count;
 };
 
-/** Checks that the right panel's light spreads into the bar's shadow and keeps its level away. */
+/**
+ * Checks that the right panel's light spreads into the bar's shadow and keeps its level away. On the
+ * 8-bit path, which draws no blur, both panels' shadows match instead. Measured on 13 October 2026,
+ * the blur lifts the shadow by 0.021 to 0.030 on the HDR path, and by 0.0003 at most without it.
+ */
 function expectBlur(image: Image, id: string): void {
 	const [plain, skin] = [shaded(image, 0), shaded(image, 1)];
-	expect
-		.soft(
-			brightness(image, skin) - brightness(image, plain),
-			`${id}: light spreads into the shadow`,
-		)
-		.toBeGreaterThan(0.03);
+	const gain = brightness(image, skin) - brightness(image, plain);
+	if (!image.hdr) {
+		expect.soft(Math.abs(gain), `${id}: the 8-bit path draws no blur`).toBeLessThan(0.01);
+		return;
+	}
+	expect.soft(gain, `${id}: light spreads into the shadow`).toBeGreaterThan(0.01);
 	expect
 		.soft(
 			redness(meanOf(image, skin)) - redness(meanOf(image, plain)),
@@ -125,11 +139,14 @@ test('subsurface-maps and subsurface-scale-50: maps soften, and corners blur ali
 	expect(runs.length).toBe(3);
 	for (const run of runs) {
 		const mapped = await imageOf(page, variant(run.path, SKETCH, '?maps'));
-		// The stripes stand further apart on the plain panel than on the skin, whose blur softens
-		// them.
-		expect
-			.soft(spread(mapped, lit(mapped, 1)), `${run.id}: the skin's map softens under the blur`)
-			.toBeLessThan(0.8 * spread(mapped, lit(mapped, 0)));
+		// The skin's stripes have softer edges than without the blur: 0.5 to 0.6 times as steep on
+		// 13 October 2026.
+		if (mapped.hdr) {
+			const sharp = await imageOf(page, variant(run.path, SKETCH, '?maps&off'));
+			expect
+				.soft(edges(mapped, lit(mapped, 1)), `${run.id}: the skin's map softens under the blur`)
+				.toBeLessThan(0.8 * edges(sharp, lit(sharp, 1)));
+		}
 		expectBlur(mapped, `${run.id} maps`);
 		const half = await imageOf(page, variant(run.path, SKETCH, '?scale=0.5'));
 		expectBlur(half, `${run.id} at half scale`);

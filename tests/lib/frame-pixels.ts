@@ -7,6 +7,7 @@ import { pageResult } from './page-result.ts';
 interface Frame {
 	error?: string;
 	width: number;
+	hdr: boolean;
 	pixels: string;
 }
 
@@ -14,6 +15,8 @@ interface Frame {
 export interface Image {
 	width: number;
 	height: number;
+	/** Whether the engine drew on the HDR path, not the 8-bit path. */
+	hdr: boolean;
 	/** Each pixel's red, green and blue, from 0 to 1. */
 	rgb: Float32Array;
 }
@@ -29,7 +32,7 @@ export async function imageOf(page: Page, path: string): Promise<Image> {
 	const rgb = new Float32Array((pixels.length / 4) * 3);
 	for (let i = 0, j = 0; i < pixels.length; i += 4, j += 3)
 		for (let c = 0; c < 3; c++) rgb[j + c] = (pixels[i + c] ?? 0) / 255;
-	return { width: frame.width, height: pixels.length / 4 / frame.width, rgb };
+	return { width: frame.width, height: pixels.length / 4 / frame.width, hdr: frame.hdr, rgb };
 }
 
 /** The page of a run with `query` added to its sketch's address. */
