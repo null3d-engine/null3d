@@ -456,7 +456,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 		);
-		this.render = new Render(this.core, scene, materials.shaders, textures.maxSize);
+		this.render = new Render(this.core, scene, materials.shaders, templates, textures.maxSize);
 		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
 		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
