@@ -66,7 +66,8 @@ async function answers(url: string): Promise<boolean> {
 const running = new Set<ChildProcess>();
 /** Work that a signal waits for before the process ends, such as ending remote sessions. */
 const cleanups = new Set<() => Promise<unknown>>();
-const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+/** The signals that stop a run: Ctrl-C, a plain `kill`, and a closed terminal. */
+export const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 /** How long a signal waits for the cleanups before the process ends anyway. */
 const CLEANUP_LIMIT_MS = 20_000;
 let stopping = false;
@@ -206,15 +207,18 @@ export async function startServerAt(root: string, port: number): Promise<DevServ
 /**
  * Serves the production build in `outDir` with `vite preview` at `port`, as a developer checks a
  * build before shipping it, and waits until it answers at `probe`, a path in the build. It never
- * reuses a server, which could serve another build.
+ * reuses a server, which could serve another build. The server runs in the copy of the repository
+ * at `root`, whose config and built tools serve the files that the build's pages make on request,
+ * such as the sample environment maps.
  */
 export async function startPreview(
 	outDir: string,
 	port: number,
 	probe: string,
+	root = REPO_ROOT,
 ): Promise<DevServer> {
 	const url = `http://localhost:${port}`;
 	await refuseTaken(url);
 	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];
-	return spawnServer(REPO_ROOT, args, {}, url, url, probe);
+	return spawnServer(root, args, {}, url, url, probe);
 }
