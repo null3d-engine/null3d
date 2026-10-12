@@ -125,6 +125,12 @@ impl FullscreenPasses {
         }
     }
 
+    /// The output's sizes that the last block of the pass at view place `place` gave its shader.
+    #[cfg(test)]
+    pub(crate) fn drawn(&self, place: usize) -> Option<[f32; 4]> {
+        self.uploaded[place].map(|block| block.drawn)
+    }
+
     /// Makes the buffer, the sampler and the blank texels when the GPU lacks them, uploads the
     /// block of the pass at view place `place` when it changed, and binds the pass to `inputs`
     /// when its group is new or the frame made the plan's textures again (`textures_made`).

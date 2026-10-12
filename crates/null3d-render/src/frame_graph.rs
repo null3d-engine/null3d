@@ -2307,7 +2307,7 @@ impl FrameGraph {
                 color: color.unwrap_or(0),
                 depth: depth.unwrap_or(0),
             };
-            let drawn = view_size(&view).extent(self.canvas);
+            let drawn = view_size(&view).made(self.canvas, self.scale);
             self.fullscreen.prepare(
                 list,
                 arena,
@@ -3130,6 +3130,11 @@ mod tests {
             Size::Scaled(1).viewport((64, 48), RenderScale::from_thousandths(500)),
             (16, 12)
         );
+        // The pass's shader fills the texture that the frame made, not a share of the canvas.
+        let mut arena = UploadArena::default();
+        arena.reset(4096);
+        frames.upload_fullscreen(&mut list, &mut arena).unwrap();
+        assert_eq!(frames.fullscreen.drawn(1), Some([16.0, 12.0, 12.0, 1.0]));
         assert!(
             frames.graph().find_pass("Culling1").is_none(),
             "a pass culls nothing"

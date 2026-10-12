@@ -111,6 +111,9 @@ export default defineSketch(async (context) => {
 	// The effects' colors, changed in place, so a frame's calls allocate no array.
 	const warm: [number, number, number] = [1, 0.95, 0.9];
 	const mist: [number, number, number] = [0.43, 0.55, 0.69];
+	// The glow's strength in each color, changed in place: a fraction passed on its own to a call
+	// that the browser does not inline becomes a number object of its own each frame.
+	const softness: [number, number, number] = [0.3, 0.3, 0.3];
 	// The environment's options, changed in place, as the grading's settings are.
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
@@ -189,7 +192,10 @@ export default defineSketch(async (context) => {
 			mist[0] = 0.43 + 0.05 * Math.cos(t);
 			context.post.setEffectUniform(haze, 'color', mist);
 		}
-		if (soft) context.render.setPassUniform(soft, 'amount', 0.3 + 0.1 * Math.sin(t));
+		if (soft) {
+			softness[0] = 0.3 + 0.1 * Math.sin(t);
+			context.render.setPassUniform(soft, 'glow', softness);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.size = 1 + 0.25 * Math.cos(t);
@@ -226,7 +232,8 @@ fn effect(input: EffectInput) -> vec4f {
 
 /**
  * A full-screen pass that reads the scene's color at half the render size and softens it, with
- * the glow's strength as a uniform, and a custom effect that adds its texture to the scene.
+ * the glow's strength in each color as a uniform, and a custom effect that adds its texture to the
+ * scene.
  */
 function createSoftGlow({ render, post, textures }: SketchContext) {
 	const pass = render.addPass({
@@ -235,15 +242,15 @@ function createSoftGlow({ render, post, textures }: SketchContext) {
 		writes: 'soft',
 		scale: 0.5,
 		input: 'sceneColor',
-		uniforms: { amount: 0.3 },
+		uniforms: { glow: [0.3, 0.3, 0.3] },
 	});
 	post.addEffect({ wgsl: ADD_SOFT, textures: { soft: textures.fromPass(pass) } });
 	return pass;
 }
 
-/** A full-screen pass that averages its input around each pixel, scaled by `amount`. */
+/** A full-screen pass that averages its input around each pixel, scaled by `glow`. */
 const SOFTEN = /* wgsl */ `
-struct Uniforms { amount: f32 }
+struct Uniforms { glow: vec3f }
 
 fn effect(input: EffectInput) -> vec4f {
     let step = 2.0 / effectInputSize();
@@ -253,7 +260,7 @@ fn effect(input: EffectInput) -> vec4f {
             sum += effectColor(input.uv + vec2f(f32(x), f32(y)) * step).rgb;
         }
     }
-    return vec4f(sum / 9.0 * uniforms.amount, 1.0);
+    return vec4f(sum / 9.0 * uniforms.glow, 1.0);
 }
 `;
 
