@@ -71,15 +71,19 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 	 */
 	stop(): void {
 		this.stoppedNow = true;
+		this.dropViews();
 		this.glue = stoppedGlue();
 		this.generation++;
-		this.dropViews();
 	}
 
-	/** @internal Forgets the views of the core's own words, which their next read makes again. */
+	/**
+	 * @internal Forgets the views of the core's own words and those of the glue, which their next
+	 * use makes again.
+	 */
 	dropViews(): void {
 		this.worldMatrixView = undefined;
 		this.movedView = undefined;
+		this.glue.dropMemoryViews?.();
 	}
 
 	/**

@@ -107,7 +107,7 @@ Code review enforces these rules.
 17. A change that makes a benchmark median more than 3% slower does not merge without a written reason, given in a `Bench-Expected:` trailer.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
-20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
+20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory. wasm-bindgen's generated glue caches views too, and the engine drops them at every growth. The browser test `tests/image/memory-views.spec.ts` and the static check in `bun run check` guard the rule ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
 
 ## Performance work
 

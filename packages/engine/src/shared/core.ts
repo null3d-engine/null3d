@@ -78,6 +78,13 @@ export interface CoreGlue extends CoreErrors {
 	 * the page keeps that instance for the next engine.
 	 */
 	releaseInstance?(): void;
+	/**
+	 * Forgets the views of the shared memory that the threaded build's glue keeps for passing
+	 * strings and arrays, which it makes again at its next use. Without it, a view made before the
+	 * memory grew keeps the old buffer object. The single-threaded build lacks it: its memory is
+	 * not shared, and a growth empties the old views.
+	 */
+	dropMemoryViews?(): void;
 	sceneCapacity(): number;
 	/**
 	 * The address of a 32-bit count that grows each time arrays that views read move without the
