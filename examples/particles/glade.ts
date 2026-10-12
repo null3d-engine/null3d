@@ -17,9 +17,44 @@ function grained(width: number, height: number, color: number, low: number): Uin
 	return data;
 }
 
+/**
+ * Arrays for one lump of a crown: a ball of bumps of two sizes, smooth-shaded, whose vertex colors
+ * darken the hollows and vary at random in brightness and hue, as clustered leaves do.
+ */
+function lump(rows = 18, columns = 28) {
+	const [positions, colors, indices] = [[] as number[], [] as number[], [] as number[]];
+	const [a, b, c] = [math.randFloat(0, 6), math.randFloat(0, 6), math.randFloat(0, 6)];
+	const ring = (j: number, i: number) => 1 + (j - 1) * columns + (i % columns);
+	for (let j = 0; j <= rows; j++)
+		for (let i = 0; i < (j === 0 || j === rows ? 1 : columns); i++) {
+			const [theta, phi] = [(j / rows) * Math.PI, (i / columns) * Math.PI * 2];
+			const [x, y, z] = [
+				Math.sin(theta) * Math.cos(phi),
+				Math.cos(theta),
+				Math.sin(theta) * Math.sin(phi),
+			];
+			const big = Math.sin(2.3 * x + a) + Math.sin(2.9 * y + b) + Math.sin(2.6 * z + c);
+			const small = Math.sin(9 * x + b) * Math.sin(8 * y + c) * Math.sin(10 * z + a);
+			const r = 1 + 0.07 * big + 0.06 * small;
+			positions.push(x * r, y * r, z * r);
+			const shade = (0.72 + 0.09 * big + 0.2 * small) * math.randFloat(0.75, 1.1);
+			colors.push(shade, shade * math.randFloat(0.8, 1.2), shade * 0.9);
+		}
+	const bottom = positions.length / 3 - 1;
+	for (let i = 0; i < columns; i++) {
+		indices.push(0, ring(1, i + 1), ring(1, i), bottom, ring(rows - 1, i), ring(rows - 1, i + 1));
+		for (let j = 1; j < rows - 1; j++) {
+			const [p, q, s, t] = [ring(j, i), ring(j, i + 1), ring(j + 1, i), ring(j + 1, i + 1)];
+			indices.push(p, q, s, q, t, s);
+		}
+	}
+	return { positions, colors, indices, computeNormals: true };
+}
+
 /** Makes the glade. `crown` is the top of the birch by the fire, as x, height and z. */
 export function glade(ctx: SketchContext, crown: readonly [number, number, number]): void {
 	const { scene, geometry, materials, textures } = ctx;
+	const lumps = [lump(), lump(), lump()].map((arrays) => geometry.fromArrays(arrays));
 	// Grass with grain, strewn with fallen leaves that have darker midribs.
 	math.seed(7);
 	const data = grained(SIZE, SIZE, 0x3e4a26, 0.7);
@@ -81,12 +116,9 @@ export function glade(ctx: SketchContext, crown: readonly [number, number, numbe
 		uvTransform: { repeat: [1, 2] },
 	});
 	const trunk = { mesh: stem, material: birch, ...solid };
-	const clump = geometry.sphere({ radius: 1, widthSegments: 12, heightSegments: 8 });
-	const crowns = ['#c0641c', '#c99a26', '#9c3d16', '#b8501a'].map((color) => ({
-		mesh: clump,
-		material: look(color, 0.8, true),
-		...solid,
-	}));
+	const crowns = ['#c0641c', '#c99a26', '#9c3d16', '#b8501a'].map((color) =>
+		materials.standard({ color, roughness: 0.85, vertexColors: true }),
+	);
 	const cone = geometry.cone({ radius: 1, height: 1, radialSegments: 12 });
 	const fir = { mesh: cone, material: look('#1e3a22', 0.9, true), ...solid };
 	const bole = { mesh: stem, material: wood.material, ...solid };
@@ -101,8 +133,10 @@ export function glade(ctx: SketchContext, crown: readonly [number, number, numbe
 		for (let k = 0; k < 5; k++) {
 			const [c, s, size] = [Math.cos(k * 1.9 + i), Math.sin(k * 1.9 + i), 1.1 - k * 0.12];
 			const position = [x + c * 0.8, h + Math.sin(k * 2.7) * 0.5, z + s * 0.8] as const;
-			const leafy = crowns[(i + k) % crowns.length] as (typeof crowns)[number];
-			scene.createMesh({ ...leafy, position, scale: [size, size * 0.8, size] });
+			const [mesh, material] = [lumps[(i + k) % 3], crowns[(i * 3 + k) % 4]] as const;
+			const rotation = [0, Math.sin(i + k), 0, Math.cos(i + k)] as const;
+			const shape = { mesh, material, position, rotation, ...solid } as const;
+			scene.createMesh({ ...shape, scale: [size, size * 0.8, size] });
 		}
 		const [b, far, tall] = [
 			math.randFloat(1.9, 6.1),

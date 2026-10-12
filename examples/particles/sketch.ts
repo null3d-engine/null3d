@@ -24,8 +24,10 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target, groundY: 0, bounds: [-6, 0, -6, 6, 0, 6] });
 	glade(ctx, CANOPY);
-	const firelight = { color: '#ff8a3a', intensity: 5, range: 9, position: [0, 0.7, 0] as const };
-	const glow = scene.createPointLight({ ...firelight, castShadows: true });
+	// The firelight fades slower than real light, so its warm glow reaches the stones, the ground
+	// round the fire and the nearest birches.
+	const firelight = { color: '#ff7428', intensity: 13, range: 16, decay: 1.2 };
+	const glow = scene.createPointLight({ ...firelight, position: [0, 0.9, 0], castShadows: true });
 	// Low flames fade at the ground, and embers wander up.
 	const fire = await createParticles(ctx, {
 		...maps.flame(textures),
@@ -107,11 +109,12 @@ export default defineSketch(async (ctx) => {
 	const systems = [fire, embers, smoke, leaves, fireflies];
 	return {
 		onUpdate(dt) {
-			// The firelight flickers in three waves that never fall in step. The pointer's side of the
-			// fire sets the wind on the smoke.
+			// The firelight flickers softly in three waves that never fall in step. The pointer's side
+			// of the fire sets the wind on the smoke.
 			const t = time.now;
-			const flicker = Math.sin(t * 11) * 0.7 + Math.sin(t * 23.7) * 0.5 + Math.sin(t * 5.3) * 0.8;
-			glow.setIntensity(firelight.intensity + flicker);
+			const flicker =
+				Math.sin(t * 9.1) * 0.08 + Math.sin(t * 17.3) * 0.05 + Math.sin(t * 4.3) * 0.07;
+			glow.setIntensity(firelight.intensity * (1 + flicker));
 			view.update(dt);
 			const blow = math.lerp(0.5, math.clamp(view.point[0] * 0.4, -1.2, 1.2), view.steering);
 			smoke.set({ wind: [blow, 0.45, 0] });

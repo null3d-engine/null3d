@@ -344,6 +344,13 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
 - The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
 
+## The campfire glade's scenery (12 October 2026)
+
+The particles demo's scenery lives in `examples/particles/glade.ts`, beside the sketch. Two points came from the look review:
+
+- Sphere crowns with flat shading read as faceted low-poly balls, not foliage. Each birch's crown is now five bumpy lumps, built from arrays. Each lump is a ball with bumps of two sizes and smooth normals. Its vertex colors darken the hollows and vary at random in brightness and hue, as clustered leaves do. Three such lumps, turned and tinted in four autumn colors, give every tree a different crown.
+- A firelight with the physical fall-off lit only the stones. The firelight now fades more slowly than real light (`decay` 1.2), reaches 16 m and is warmer, so the ground round the fire and the nearest birch trunks take its glow. Its flicker is soft: about a fifth up or down, from three slow waves that never fall in step.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
