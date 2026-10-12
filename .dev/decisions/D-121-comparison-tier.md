@@ -171,6 +171,14 @@ On WebGLRenderer, Night town's street looked dull and dark with shadows on, and 
 
 This fix keeps the comparison fair. Without it, three.js's WebGL frames would look worse because of a three.js bug, not because of a weaker technique. The fix changes no lighting math, and it adds no work to a frame. The fault is a three.js bug to report upstream. The report should name `examples/jsm/csm/CSMShader.js`, whose `lights_fragment_begin` lacks the `#ifdef STANDARD` block of the current chunk. The fix in `examples/lib/three-worker.ts` (`withCsmLightFix`) shows the missing lines. When three.js fixes the add-on, remove the fix and check the WebGL frames again.
 
+### Browser faults met while timing
+
+These faults came up in the timing runs of 12 and 13 October 2026, on the owner's MacBook Pro (Apple M5 Max). The timing scripts open the Mac's installed Chrome, as people run it ([Examples](../examples.md#the-ramp)).
+
+- **Chrome 155, three.js's WebGLRenderer, 60 lights.** Night town on three.js 0.186.1 drew no frame at 60 lights, its ramp's first count, and drew at 72. A page that held 60 lights from its start failed too, so the ramp's change of count is not the cause. Each try logged "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false" for a `MeshNormalMaterial`, with an empty program log. The error number was 1282 where the light-limit search ran first. Playwright's Chromium 153 drew 60 lights with no error. The ramp now steps past one count that draws no frame, when the next count draws, and the page names that count as a fault of the browser. The owner decides whether to report it upstream.
+- **Chromium 153, three.js's WebGPURenderer.** Its shader compiler failed to build `renderPipeline_RTT_57`, one of three.js's render-to-texture pipelines for Night town: "An error occurred while generating Tint IR. error: swizzle view instruction still has usages after lowering". Chrome 155 built it.
+- **Chromium 153, null3D on WebGL2.** Night town at 300 lights or more took about 90 s to its first frame. Chrome 155 took 1 to 2 s.
+
 ### Image tests
 
 three.js builds its shaders again for each count of lights, and takes a long time at large counts. Each figure is the time from opening the page to the held frame, on a quiet Mac:

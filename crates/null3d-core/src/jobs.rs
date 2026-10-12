@@ -78,6 +78,18 @@
 //! for each piece with [`JobSystem::call_done`], and calls the loop again. The calling thread runs
 //! every chunk that no job worker claims, so a frame never waits for a worker that is away.
 //!
+//! # Yielding to the host
+//!
+//! A job worker that blocks in the job system never runs its thread's other tasks. Some host work
+//! needs every thread to run a task of its own: the browser's measurement of the page's memory
+//! waits until each worker has run it, and a worker that never does stalls the measurement, and
+//! with it the whole page. While the yield word ([`JobSystem::yield_word`]) is not zero, an idle
+//! worker returns [`LoopExit::Yielded`] in place of spinning or blocking, whenever no frame chunk
+//! is left to claim. The host lets the thread run its tasks, waits a moment on the wake word
+//! without blocking, and calls the loop again, so the worker still helps with the frame jobs.
+//! The host that measures adds one to the word, bumps the wake word and wakes every sleeper, as
+//! for a stop, and takes the one off again when the measurement ends.
+//!
 //! # Busy time
 //!
 //! With a clock in its settings, the system adds up the time each job worker spends in frame
@@ -161,6 +173,8 @@ pub enum LoopExit {
     Stopped,
     /// The host called the worker with [`JobSystem::call_worker`].
     Called,
+    /// The yield word asks the worker to let its thread run the host's tasks, then come back.
+    Yielded,
 }
 
 /// Settings for [`JobSystem::with_config`].
@@ -233,6 +247,9 @@ pub struct JobSystem {
     time_handed: AtomicBool,
     sleepers: AtomicU32,
     shutdown: AtomicBool,
+    /// Not zero while the host asks idle workers to leave the loop for its tasks; see
+    /// [`JobSystem::yield_word`].
+    yielding: CachePadded<AtomicU32>,
     workers: u32,
     spin_rounds: u32,
     background: TaskQueue,
@@ -289,6 +306,7 @@ impl JobSystem {
             time_handed: AtomicBool::new(true),
             sleepers: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
+            yielding: CachePadded(AtomicU32::new(0)),
             workers,
             spin_rounds: config.spin_rounds,
             background: TaskQueue::new(config.background_capacity),
@@ -473,10 +491,10 @@ impl JobSystem {
     }
 
     /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame
-    /// chunks first. When no chunk is left, it leaves for the host's calls, then runs background
-    /// tasks, and blocks when idle. It returns [`LoopExit::Called`] for a call, and
-    /// [`LoopExit::Stopped`] after [`JobSystem::shutdown`] or at once for an index past the worker
-    /// count.
+    /// chunks first. When no chunk is left, it leaves for the host's calls and for the yield word,
+    /// then runs background tasks, and blocks when idle. It returns [`LoopExit::Called`] for a
+    /// call, [`LoopExit::Yielded`] while the yield word is not zero, and [`LoopExit::Stopped`]
+    /// after [`JobSystem::shutdown`] or at once for an index past the worker count.
     pub fn worker_loop(&self, worker_index: u32) -> LoopExit {
         let Some(calls) = self.calls.get(worker_index as usize) else {
             return LoopExit::Stopped;
@@ -495,6 +513,10 @@ impl JobSystem {
             let frame_work = self.frame_work_pending();
             if !frame_work && calls.0.load(Ordering::Acquire) > 0 {
                 exit = LoopExit::Called;
+                break;
+            }
+            if !frame_work && self.yielding.0.load(Ordering::Acquire) != 0 {
+                exit = LoopExit::Yielded;
                 break;
             }
             if !frame_work && let Some(task) = self.background.pop() {
@@ -573,6 +595,14 @@ impl JobSystem {
         self.panicked.store(true, Ordering::Relaxed);
         self.done.0.fetch_add(1, Ordering::Release);
         true
+    }
+
+    /// The yield word, for a host thread that needs every job worker to run a task of its own, as
+    /// the page does while the browser measures its memory. While it is not zero, an idle worker
+    /// returns [`LoopExit::Yielded`]. A host adds one to it, bumps the wake word and wakes every
+    /// sleeper, as with [`JobSystem::stop_words`], and takes the one off when it is done.
+    pub fn yield_word(&self) -> &AtomicU32 {
+        &self.yielding.0
     }
 
     /// True after [`JobSystem::shutdown`].
@@ -979,5 +1009,64 @@ mod tests {
             thread.join().expect("a job worker panicked");
         }
         assert!(jobs.is_shut_down());
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // The test runs job workers on native threads.
+    fn the_yield_word_returns_idle_workers_and_they_still_run_frame_jobs() {
+        let jobs = std::sync::Arc::new(JobSystem::with_config(JobConfig {
+            workers: 2,
+            spin_rounds: 0,
+            ..JobConfig::default()
+        }));
+        let threads: Vec<_> = (0..2)
+            .map(|i| {
+                let jobs = std::sync::Arc::clone(&jobs);
+                std::thread::spawn(move || jobs.worker_loop(i))
+            })
+            .collect();
+        while jobs.sleepers.load(Ordering::SeqCst) < 2 {
+            std::thread::yield_now();
+        }
+        // What the page does while the browser measures its memory.
+        let (wake, _) = jobs.stop_words();
+        jobs.yield_word().fetch_add(1, Ordering::SeqCst);
+        wake.fetch_add(1, Ordering::SeqCst);
+        crate::wait::wake_all(wake);
+        for thread in threads {
+            assert_eq!(
+                thread.join().expect("a job worker panicked"),
+                LoopExit::Yielded
+            );
+        }
+        // A worker that comes back while the word is set runs the open chunks, then leaves again.
+        let ran = std::sync::Arc::new(AtomicU32::new(0));
+        let worker = {
+            let jobs = std::sync::Arc::clone(&jobs);
+            std::thread::spawn(move || jobs.worker_loop(0))
+        };
+        let counted = std::sync::Arc::clone(&ran);
+        jobs.parallel_for(64, 1, &move |range, _| {
+            counted.fetch_add(range.len() as u32, Ordering::Relaxed);
+        });
+        assert_eq!(ran.load(Ordering::Relaxed), 64);
+        assert_eq!(
+            worker.join().expect("the job worker panicked"),
+            LoopExit::Yielded
+        );
+        // With the word back at zero, an idle worker sleeps again until a stop.
+        jobs.yield_word().fetch_sub(1, Ordering::SeqCst);
+        let worker = {
+            let jobs = std::sync::Arc::clone(&jobs);
+            std::thread::spawn(move || jobs.worker_loop(1))
+        };
+        while jobs.sleepers.load(Ordering::SeqCst) < 1 {
+            std::thread::yield_now();
+        }
+        jobs.shutdown();
+        assert_eq!(
+            worker.join().expect("the job worker panicked"),
+            LoopExit::Stopped
+        );
     }
 }

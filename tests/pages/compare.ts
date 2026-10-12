@@ -12,6 +12,7 @@
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
 // for 0.4 of each step and measures the rest.
+import { measurePageMemory } from '@null3d/engine/stats';
 import { dressStage } from '../../examples/compare/busy-page/page';
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
@@ -26,22 +27,8 @@ const SHORT_RAMP = { start: 100, factor: 2, max: 400 };
  * per kind of memory, as Chrome reports them. A memory that threads share shows in each of them.
  */
 async function memoryParts(): Promise<Record<string, number> | null> {
-	const measure = (
-		performance as {
-			measureUserAgentSpecificMemory?: () => Promise<{
-				breakdown: {
-					bytes: number;
-					types: string[];
-					attribution: { scope?: string; url?: string }[];
-				}[];
-			}>;
-		}
-	).measureUserAgentSpecificMemory;
-	if (!measure) return null;
 	// Chromium's headless shell throws in place of measuring, and the page then reports no parts.
-	const measured = await Promise.resolve()
-		.then(() => measure.call(performance))
-		.catch(() => null);
+	const measured = await measurePageMemory()?.catch(() => null);
 	if (!measured) return null;
 	const { breakdown } = measured;
 	const parts: Record<string, number> = {};
@@ -49,7 +36,7 @@ async function memoryParts(): Promise<Record<string, number> | null> {
 		const where =
 			attribution.map((a) => `${a.scope ?? '?'} ${a.url?.split('/').pop() ?? ''}`).join('+') ||
 			'unattributed';
-		const key = `${where} [${types.join(',')}]`;
+		const key = `${where} [${(types ?? []).join(',')}]`;
 		parts[key] = (parts[key] ?? 0) + bytes;
 	}
 	return parts;

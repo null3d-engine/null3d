@@ -108,6 +108,7 @@ Code review enforces these rules.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
 20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
+24. Every measurement of the page's memory (`performance.measureUserAgentSpecificMemory`) goes through `measureWithEveryThread`, or through `measurePageMemory` and `PageMemorySampler`, which use it. Chrome waits until every worker has run the measurement, and an idle job worker blocks in the job loop. A measurement that skips it takes about a minute with job workers, and the whole page can stop answering meanwhile. A unit test checks every call ([Measuring the page's memory](.dev/implementation-notes.md#measuring-the-pages-memory)).
 
 ## Performance work
 
