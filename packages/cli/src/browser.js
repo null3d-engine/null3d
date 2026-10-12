@@ -116,13 +116,26 @@ export function watchBrowser(browser, pid, options = {}) {
 	browser.on('disconnected', () => clearInterval(timer));
 }
 
+/**
+ * Whether a process runs, from its state as `ps` gives it: a process that ended but that its parent
+ * has not reaped yet still exists, in state Z. Bun can leave the browser so, when it misses its end.
+ *
+ * @param {string} state
+ */
+export function runningState(state) {
+	const code = state.trim();
+	return code !== '' && !code.startsWith('Z');
+}
+
 /** @param {number} pid */
 function processAlive(pid) {
 	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return /** @type {NodeJS.ErrnoException} */ (error).code === 'EPERM';
+		return runningState(
+			execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }),
+		);
+	} catch {
+		// ps fails when no process has the ID.
+		return false;
 	}
 }
 
