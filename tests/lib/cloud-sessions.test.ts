@@ -335,6 +335,36 @@ describe('CloudSessions', () => {
 		expect(lines.at(-1)).toBe('bspixel10-chrome: session ended');
 	});
 
+	it('counts a status read whose script timed out as unanswered, not as a lost session', async () => {
+		hub = fakeHub();
+		const lines: string[] = [];
+		let busy = false;
+		const sessions = sessionsOn(hub, lines, [], 60_000, (driver) => ({
+			...driver,
+			execute: (id, script) =>
+				busy
+					? Promise.reject(
+							new WebDriverError(
+								'script timeout',
+								'POST execute: script timeout: Timed out waiting for the script result.',
+							),
+						)
+					: driver.execute(id, script),
+		}));
+		await sessions.open('bspixel10-chrome', PAGE);
+		busy = true;
+		for (let i = 1; i < UNANSWERED_POLLS; i++) await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(false);
+		expect(lines.at(-1)).toContain(`no answer to the status read, ${UNANSWERED_POLLS - 1} of`);
+		busy = false;
+		await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(false);
+		busy = true;
+		for (let i = 0; i < UNANSWERED_POLLS; i++) await sessions.poll('bspixel10-chrome');
+		expect(sessions.lost('bspixel10-chrome')).toBe(true);
+		expect(lines.at(-1)).toContain('the cloud ended the session: POST execute: script timeout');
+	});
+
 	it('counts an answer whose body timed out as no answer, not as a lost session', async () => {
 		const timeout = () =>
 			Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
