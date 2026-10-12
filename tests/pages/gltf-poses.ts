@@ -238,7 +238,7 @@ run('gltf-poses', async () => {
 			const instance = created(
 				core,
 				'createAnimatedInstance',
-				core.createAnimatedInstance(skeleton),
+				core.createAnimatedInstance(skeleton, 0),
 			);
 			const tool = await parse(AFTER_TOOL[model.url] as string);
 			if (!tool.data.animation)
