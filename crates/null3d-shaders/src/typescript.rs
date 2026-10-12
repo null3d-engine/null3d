@@ -316,15 +316,23 @@ export function glslFirstUseFiles(): string[] {
 /**
  * Every shader variant, by shader name and variant name: those of this module and those of every
  * device module, the modules of features that load on first use among them, for the tests that
- * check them all.
+ * check them all. With `part` and `parts`, it gives only part `part` (from 1) of `parts`: every
+ * `parts`-th variant of this module and every `parts`-th device module, starting at that part's
+ * place, so that pages which share the check each download only their own modules.
  */
-export async function everyShader(): Promise<Record<string, ShaderVariants>> {
-	const every: Record<string, ShaderVariants> = { ...SHADERS };
+export async function everyShader(part = 1, parts = 1): Promise<Record<string, ShaderVariants>> {
+	const mine = <T>(items: readonly T[]) => items.filter((_, i) => i % parts === part - 1);
+	const every: Record<string, ShaderVariants> = {};
+	const variants = Object.entries(SHADERS).flatMap(([name, of]) =>
+		Object.entries(of).map(([variant, build]) => [name, variant, build] as const),
+	);
+	for (const [name, variant, build] of mine(variants)) {
+		every[name] = { ...every[name], [variant]: build };
+	}
 	const tables = [
 		WGSL_FIRST_USE,
 		GLSL_FIRST_USE,
-		await loadWgslCombined(),
-		await loadGlslCombined(),
+		...(await Promise.all([loadWgslCombined(), loadGlslCombined()])),
 	];
 	const loads = [
 		...Object.values(WGSL_MODULES),
@@ -334,8 +342,9 @@ export async function everyShader(): Promise<Record<string, ShaderVariants>> {
 		),
 		...FIRST_USE,
 	];
-	for (const load of loads) {
-		for (const [name, variants] of Object.entries((await load()).SHADERS)) {
+	// The modules download at once, and their builds join in the order of the list.
+	for (const module of await Promise.all(mine(loads).map((load) => load()))) {
+		for (const [name, variants] of Object.entries(module.SHADERS)) {
 			every[name] = { ...every[name], ...variants };
 		}
 	}
