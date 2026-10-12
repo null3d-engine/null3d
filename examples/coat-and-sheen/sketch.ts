@@ -1,24 +1,30 @@
-// Clear coat and sheen in a showroom on a rainy night. A candy red body turns on a varnished
+// Clear coat and sheen in a showroom on a rainy night. A candy red car turns on a varnished
 // plinth: metal flakes in its paint glitter under a smooth clear coat, which mirrors the room.
-// The cobbles outside are wet: puddles are a clear coat that a surface function sets where the
-// ground dips, darker beneath, with rain rings in the coat's normal. A velvet curtain and a velvet
-// seat glow at their edges with sheen. A blue lamp follows the pointer across the floor. The
-// surface functions of the cobbles and the drapes are in surfaces.ts.
+// Rain falls around the plinth onto wet cobbles: puddles are a clear coat that a surface function
+// sets where the ground dips, darker beneath, with rain rings in the coat's normal. A reflection
+// pass mirrors the room in the puddles. A velvet
+// curtain and a velvet seat glow at their edges with sheen, and so do the car's tyres, faintly. A
+// blue lamp follows the pointer across the floor. The surface functions of the cobbles and the
+// drapes are in surfaces.ts, the car is in car.ts and the rain in rain.ts.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { createCar } from './car';
+import { createRain } from './rain';
 import { cobbles, drapes } from './surfaces';
 
 /** Texels on each side of the flake map. */
 const FLAKES = 64;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, time } = ctx;
+	const { scene, assets, geometry, materials, textures, render, post, time, engine } = ctx;
 	scene.setBackground('#07080b');
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.7 });
 	post.set({ bloom: { intensity: 0.15, threshold: 1.2 }, ao: { radius: 0.4 }, vignette: {} });
+	// A portrait screen gets a wider lens from further back, so the whole car fits across it.
+	const portrait = engine.viewport.height > engine.viewport.width;
 	const camera = scene.createPerspectiveCamera({
-		fov: 40,
-		position: [3.6, 2.1, 7.4],
+		fov: portrait ? 50 : 40,
+		position: portrait ? [4.7, 2.5, 9.6] : [3.6, 2.1, 7.4],
 		target: [0, 0.8, 0],
 	});
 	scene.setActiveCamera(camera);
@@ -39,9 +45,20 @@ export default defineSketch(async (ctx) => {
 	});
 
 	// The floor, wet cobbles in the rain.
+	createRain(ctx);
+	const puddles = render.addPass({
+		kind: 'reflection',
+		writes: 'puddles',
+		plane: { point: [0, 0, 0] },
+	});
 	scene.createMesh({
 		mesh: geometry.plane({ width: 40, height: 40 }),
-		material: materials.shader({ wgsl: cobbles, color: '#77716a', roughness: 0.85 }),
+		material: materials.shader({
+			wgsl: cobbles,
+			color: '#77716a',
+			roughness: 0.85,
+			textures: { mirror: textures.fromPass(puddles) },
+		}),
 		rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
 		receiveShadows: true,
 	});
@@ -78,27 +95,32 @@ export default defineSketch(async (ctx) => {
 		clearcoatRoughness: 0.12,
 	});
 	const plinth = scene.createMesh({
-		mesh: geometry.cylinder({ radiusTop: 1.9, radiusBottom: 2, height: 0.3, radialSegments: 96 }),
+		mesh: geometry.cylinder({ radiusTop: 1.9, radiusBottom: 2, height: 0.26, radialSegments: 96 }),
 		material: varnish,
-		position: [0, 0.15, 0],
+		position: [0, 0.13, 0],
 		dynamic: true,
 		castShadows: true,
 		receiveShadows: true,
 	});
+	// A thin bevel round the plinth's top edge, which catches the light.
 	scene.createMesh({
-		mesh: geometry.capsule({ radius: 0.7, height: 1.8, capSegments: 24, radialSegments: 64 }),
-		material: paint,
+		mesh: geometry.cylinder({
+			radiusTop: 1.86,
+			radiusBottom: 1.9,
+			height: 0.04,
+			radialSegments: 96,
+		}),
+		material: varnish,
 		parent: plinth,
-		position: [0, 0.75, 0],
-		rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
-		scale: [0.72, 1, 1],
+		position: [0, 0.15, 0],
 		castShadows: true,
 		receiveShadows: true,
 	});
+	createCar(ctx, scene.createGroup({ parent: plinth, position: [0, 0.17, 0] }), paint);
 
 	// Velvet: a crimson curtain behind, and a teal seat beside the plinth.
 	scene.createMesh({
-		mesh: geometry.plane({ width: 16, height: 6, widthSegments: 400, heightSegments: 8 }),
+		mesh: geometry.plane({ width: 30, height: 9, widthSegments: 600, heightSegments: 12 }),
 		material: materials.shader({
 			wgsl: drapes,
 			color: '#3d0410',
@@ -107,7 +129,7 @@ export default defineSketch(async (ctx) => {
 			sheenRoughness: 0.35,
 			doubleSided: true,
 		}),
-		position: [0, 3, -3.2],
+		position: [-4, 4.5, -3.2],
 		castShadows: true,
 		receiveShadows: true,
 	});
