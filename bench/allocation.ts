@@ -293,14 +293,14 @@ const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
 
 /**
  * What the sun's contact shadows add to the WebGPU replay's budget, in scenes whose sun casts
- * shadows (S4, and S1 with `--batch-shadows`): the encoders of the render passes that they add,
- * the depth prepass's own pass, the depth copy and the contact step, at bloom's allowance for four
- * passes. The Mac draws these scenes at High, where contact shadows draw. On the Mac, S4's replay
- * allocated about 250 bytes more per frame with them than with every preset's steps at 0. With
- * `--ao` they add no pass: the denoise marches them, and the prepass and the depth copy draw for
- * ambient occlusion already.
+ * shadows (S4, and S1 with `--batch-shadows`): the encoders of the render passes that they add with
+ * ambient occlusion off, the depth prepass's own pass, the depth copy, the horizon step that
+ * marches them and the denoise that blurs them. The Mac draws these scenes at High, where contact
+ * shadows draw. On the Mac, S4's replay allocated 310 to 330 bytes more per frame than main's at
+ * the same load, so the allowance takes five passes at bloom's allowance per pass. With `--ao`
+ * they add no pass: ambient occlusion runs the same steps already.
  */
-const CONTACT_REPLAY_BUDGET = 4 * 64;
+const CONTACT_REPLAY_BUDGET = 5 * 64;
 
 /**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the

@@ -155,7 +155,11 @@ The figures compare this branch's build with main's (be8606696), on 12 October 2
 
 ## Allocation
 
-The engine's code allocates nothing per frame for contact shadows. On WebGPU, though, the browser makes an encoder object for each render pass. With ambient occlusion off, contact shadows add render passes: the depth prepass's own pass, the depth copy and the contact step. In `bun run bench:allocation --scene s4` on the Mac, at a load of 11, the WebGPU replay allocated 595 bytes per frame with contact shadows and 342 with every preset's steps at 0. So `bench/allocation.ts` allows 4 x 64 bytes more in scenes whose sun casts shadows, at bloom's allowance per pass. That covers the 253 bytes measured. With ambient occlusion on, contact shadows add no pass: S1 with `--batch-shadows --ao` allocated 652 bytes per frame in the replay with them and 671 without. WebGL2 makes no such objects, and S4 on WebGL2 passed.
+The engine's code allocates nothing per frame for contact shadows. On WebGPU, though, the browser makes an encoder object for each render pass. With ambient occlusion off, contact shadows add four render passes: the depth prepass's own pass, the depth copy, the horizon step and the denoise. `bench/allocation.ts` allows 5 x 64 bytes more in scenes whose sun casts shadows, at bloom's allowance per pass, from the figures below. With ambient occlusion on, contact shadows add no pass. WebGL2 makes no such objects.
+
+On 13 October 2026, `bun run bench:allocation --scene s4` ran on this branch and on main in turns, at loads of 22 to 27. The WebGPU replay allocated 656 to 674 bytes per frame on the branch, and 344 to 353 on main. So contact shadows add 310 to 330 bytes per frame. The first allowance, 4 x 64, came from a version without the blur, whose contact-only mode ran one pass less. Main itself is over its budget of 320 in that sample, and with `--ao` alone it allocates 508 to 509 bytes per frame against 320. The coordinator made main's replay excess a task of its own (M2-R32). S4 on WebGL2 and S1 with `--batch-shadows --ao` on both paths passed.
+
+The same check found that `post.set` boxed ambient occlusion's intensity on every call, on main as well. It read each group's numbers by keys from a list. It now reads each setting by its own name ([the implementation notes](../implementation-notes.md#hot-paths-without-allocation)).
 
 ## three.js
 
@@ -163,4 +167,7 @@ three.js draws no contact shadows. Ports get them on High and Ultra with no chan
 
 ## Tests
 
-To be filled: the contact checks of D-16 with contact shadows on, image tests on all three GPU paths in both reference sets, the frame graph's unit tests of the steps that run, and the governor's unit tests.
+- Image tests: `contact-shadows`, `-ao`, `-steps-4`, `-off` and the stone garden demo, on all three GPU paths, with references in both sets. On 12 October 2026, after the blur, the full runs gave 981 passes on the Mac's GPU and 991 on SwiftShader. The changed images were the garden demo, the creek demo's grass and the grass rows, where objects meet the ground. Each was checked by eye and accepted, and a rerun of those tests passed 40 of 40 in each set.
+- The frame graph's unit tests check that contact shadows alone run ambient occlusion's three steps.
+- The governor's unit tests check its step that lowers the steps.
+- `cargo test --workspace`: 1,195 pass, 0 fail. `bun run test`: all pass once the Mac's load allowed the timed tests to finish.
