@@ -21,7 +21,7 @@ import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces, PieceBuilds } from '../gpu/effect-join';
 import { fromHex } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import type { ShaderTemplates } from './shader-templates';
 import type { UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
@@ -235,7 +235,7 @@ function writeUniform(
 /**
  * The sketch's custom effects in run order, and the custom tone curve, as the core draws them.
  */
-export class EffectChain {
+export class EffectChain implements ViewHolder {
 	/** The effects that run, in order. */
 	private readonly chain: Effect[] = [];
 	/** How many effects were added, which orders effects of the same order value. */
@@ -255,7 +255,14 @@ export class EffectChain {
 		private readonly templates: ShaderTemplates,
 		/** False when each effect draws in a pass of its own, as ?join=off asks. */
 		private readonly join = true,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** @internal Forgets the view of the uniforms' block, which the next write makes again. */
+	dropViews(): void {
+		this.block = undefined;
+	}
 
 	/** True while at least one effect runs. */
 	get any(): boolean {

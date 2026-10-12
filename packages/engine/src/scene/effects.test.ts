@@ -77,6 +77,7 @@ function post(hdrEffects = true, join = true) {
 			},
 		},
 		check: (result: number) => result,
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	const templates = new ShaderTemplates((template, shader) => sent.push([template, shader]));
 	return {

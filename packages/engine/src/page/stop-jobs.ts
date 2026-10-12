@@ -7,6 +7,7 @@
 // their loops, because the browser stops them as soon as the page has gone.
 
 import { Slot } from '../shared/control';
+import { MemoryViews } from '../shared/memory-views';
 
 /**
  * How long stopping the engine waits for its job workers and the worker that draws to stop. A
@@ -35,14 +36,13 @@ export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): v
  */
 export function stopJobWorkersAt(memory: WebAssembly.Memory, wake: number, stop: number): void {
 	if (wake === 0 || stop === 0) return;
-	const buffer = memory.buffer;
-	const flags = new Uint8Array(buffer);
-	if (Atomics.load(flags, stop) !== 0) return;
-	Atomics.store(flags, stop, 1);
-	const words = new Int32Array(buffer);
-	const word = wake / Int32Array.BYTES_PER_ELEMENT;
-	Atomics.add(words, word, 1);
-	Atomics.notify(words, word);
+	const views = new MemoryViews(memory);
+	const flag = views.view(Uint8Array, stop, 1);
+	if (Atomics.load(flag, 0) !== 0) return;
+	Atomics.store(flag, 0, 1);
+	const word = views.view(Int32Array, wake, 1);
+	Atomics.add(word, 0, 1);
+	Atomics.notify(word, 0);
 }
 
 /**

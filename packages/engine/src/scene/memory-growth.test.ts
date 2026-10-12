@@ -176,3 +176,32 @@ describe('writes after the scene grows', () => {
 		expect(position(crate.slot)).toEqual([1, 1, 1]);
 	});
 });
+
+describe('views that objects keep', () => {
+	// Chrome counts each buffer of a shared memory in full, so a view made before a growth would
+	// count the memory again for each size it grew through.
+	test('go when the memory grows, and not when it stays', () => {
+		const memory = new WebAssembly.Memory({ initial: 1, maximum: 4 });
+		const core = new CoreMemory({} as CoreGlue, memory);
+		let dropped = 0;
+		core.holdViews({ dropViews: () => dropped++ });
+		expect(core.refresh()).toBe(false);
+		expect(dropped).toBe(0);
+		memory.grow(1);
+		expect(core.refresh()).toBe(true);
+		expect(dropped).toBe(1);
+	});
+
+	test('of a batch that the sketch left alone keep no old buffer, and come back at its next read', () => {
+		const { core, scene, floats } = growingCore();
+		const material = new Materials(core).unlit();
+		const flock = scene.createInstances(box(core), ROWS, { material });
+		flock.positions.set([1, 2, 3]);
+		const kept = () => (flock as unknown as { rows: { positions: Float32Array } }).rows.positions;
+		expect(kept().buffer).toBe(core.memory.buffer);
+		scene.createPointLight({ range: 5 });
+		expect(kept().length).toBe(0);
+		expect(flock.positions.buffer).toBe(core.memory.buffer);
+		expect(floats(AT.batch + C.BATCH_FIELD_POSITIONS * 64, 3)).toEqual([1, 2, 3]);
+	});
+});

@@ -16,7 +16,7 @@ import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
 import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
@@ -198,6 +198,10 @@ const blendRecords = new WeakMap<BlendOptions, ReadOptions>();
 const pointRecords = new WeakMap<Readonly<Record<string, number>>, ReadPoints>();
 /** The record of a play without options. */
 const NO_OPTIONS = new ReadOptions();
+
+/** Views of nothing, which the animation table keeps in place of the views that it dropped. */
+const NO_FLOATS: Float32Array<ArrayBufferLike> = new Float32Array(0);
+const NO_WORDS: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
 /** The records that plays fill again from objects that are not frozen. */
 const sharedOptions = new ReadOptions();
 const sharedPoints = new ReadPoints();
@@ -271,18 +275,16 @@ function listed(names: Iterable<string>): string {
  * The scene's animated objects: the animation table in the engine core, the arrays of it that
  * calls write, and the events of each frame step. The first rig creates it.
  */
-export class SceneAnimations {
+export class SceneAnimations implements ViewHolder {
 	private generation = -1;
-	private scales!: Float32Array;
-	private weights!: Float32Array;
-	private sources!: Uint32Array;
-	private clipWeights!: Float32Array;
-	private blends!: Float32Array;
-	private words!: Uint32Array;
-	private floats!: Float32Array;
-	private args!: Float32Array;
-	private records!: Uint32Array;
-	private totals!: Uint32Array;
+	private scales = NO_FLOATS;
+	private weights = NO_FLOATS;
+	private sources = NO_WORDS;
+	private clipWeights = NO_FLOATS;
+	private blends = NO_FLOATS;
+	private args = NO_FLOATS;
+	private records = NO_WORDS;
+	private totals = NO_WORDS;
 	/** The animator of each object, by its instance id in the core. */
 	readonly animators: (Animator | undefined)[] = [];
 	/** Each clip's name, by its id in the core. */
@@ -301,6 +303,14 @@ export class SceneAnimations {
 			undefined,
 			true,
 		);
+		core.holdViews(this);
+	}
+
+	/** @internal Forgets the arrays of the animation table, which the next read makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
+		this.sources = this.records = this.totals = NO_WORDS;
 	}
 
 	/** The id of event name `name`, which it gives a new name. */
@@ -338,8 +348,6 @@ export class SceneAnimations {
 		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
 		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
 		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
-		this.words = new Uint32Array(core.memory.buffer);
-		this.floats = new Float32Array(core.memory.buffer);
 		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
 			at(C.ANIMATION_FIELD_EVENTS),
@@ -385,14 +393,12 @@ export class SceneAnimations {
 
 	/** The whole engine memory as 32-bit words, for staging words without a view of their own. */
 	memoryWords(): Uint32Array {
-		this.views();
-		return this.words;
+		return this.core.heap(Uint32Array);
 	}
 
 	/** The whole engine memory as 32-bit floats. */
 	memoryFloats(): Float32Array {
-		this.views();
-		return this.floats;
+		return this.core.heap(Float32Array);
 	}
 
 	/** The blend value of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */

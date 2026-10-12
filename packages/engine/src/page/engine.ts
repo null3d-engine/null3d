@@ -40,6 +40,7 @@ import { URL_SWITCHES } from '../shared/dev';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
+import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -1278,7 +1279,7 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
-			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
+			wasmBytes: () => memoryBytes(wasmMemory) ?? 0,
 		},
 		sharedMemory: threaded,
 		maxTargetFps: maxTarget,
@@ -2011,7 +2012,7 @@ async function startEngine(
 				return {
 					seconds: (performance.now() - started) / 1000,
 					...summarizeFrames(reader.records, threadRoles(mode)),
-					memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+					memory: { wasmBytes: memoryBytes(wasmMemory) ?? null, ...heap.stop() },
 					load: {
 						engineStartMs,
 						probeMs,
