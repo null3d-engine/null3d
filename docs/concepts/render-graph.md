@@ -80,7 +80,7 @@ The motion pass runs after the transparent pass. It draws only the opaque object
 
 The target clears to 0 and holds each surface's own motion beyond what the camera's move explains. So a still surface needs no draw. A reader adds the camera's part from the depth and the last frame's camera. The motion view shows the sum.
 
-To find the motion, the engine keeps the last frame's world matrices, joints, morph weights and skinned vertices on the GPU. At the end of each frame it copies the changed parts there. All of these passes are optional. While no pass reads the motion vectors, none of them runs, the engine keeps no last frame's data, and the motion shaders never download. Compatibility mode with MSAA and some WebGL2 devices cannot draw the target. There no motion pass runs, and a reader gets the camera's part alone.
+To find the motion, the engine keeps the last frame's world matrices, joints, morph weights and skinned vertices on the GPU. At the end of each frame it copies the changed parts there. All of these passes are optional. While no pass reads the motion vectors, none of them runs, the engine keeps no last frame's data, and the motion shaders never download. Some WebGL2 devices cannot draw the target. There no motion pass runs, and a reader gets the camera's part alone.
 
 ## Why passes are declarations
 

@@ -100,7 +100,7 @@ The motion pass's pipelines bind their own frame group: the depth template's gro
 
 ### Devices
 
-The target must draw with the scene's samples. WebGPU draws `rg16float` with MSAA. Compatibility mode cannot multisample float targets, so there it draws motion only without MSAA, as with HDR color. WebGL2 tests at the start that it can draw `rg16f`, with and without MSAA, and that it can copy `rgba32f` textures, which hold the last frame's data. The page tells the renderer what the device can do, and where the target cannot draw, no motion pass runs and the readers bind a blank texture in its place. Readers then get the camera's part alone, which is what D-129's prototype had.
+The target must draw with the scene's samples. WebGPU draws `rg16float` with MSAA, and so does compatibility mode: it cannot multisample `rgba16float` or `r32float`, but `rg16float` keeps its MSAA and resolve there. WebGL2 tests at the start that it can draw `rg16f`, with and without MSAA, and that it can copy `rgba32f` textures, which hold the last frame's data. The page tells the renderer what the device can do, and where the target cannot draw, no motion pass runs and the readers bind a blank texture in its place. Readers then get the camera's part alone, which is what D-129's prototype had.
 
 ### Hold mode
 

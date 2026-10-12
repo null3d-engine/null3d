@@ -120,8 +120,8 @@ export interface CoreDevice {
 	occlusionTargets: boolean;
 	/**
 	 * Whether the device draws the motion target, two 16-bit floats per pixel, with one sample, and
-	 * with MSAA's samples: both on WebGPU, one sample only in compatibility mode, which cannot
-	 * multisample float targets, and on WebGL2 where `RG16F` passes the device check.
+	 * with MSAA's samples: both on WebGPU, compatibility mode included, which multisamples `rg16float`
+	 * though not `rgba16float`, and on WebGL2 where `RG16F` passes the device check.
 	 */
 	motionTargets: readonly [oneSample: boolean, multisampled: boolean];
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
@@ -315,8 +315,7 @@ export function motionTargets(
 	tier: Tier,
 	report: DeviceReport,
 ): readonly [oneSample: boolean, multisampled: boolean] {
-	if (tier === 'webgpu') return [true, true];
-	if (tier === 'webgpu-compat') return [true, false];
+	if (tier !== 'webgl2') return [true, true];
 	// The motion pass copies the last frame's matrices, which needs 32-bit float targets too.
 	const targets = report.webgl2.floatRenderTargets;
 	if (targets?.rgba32f?.complete !== true) return [false, false];
