@@ -2158,6 +2158,7 @@ impl SceneSettings {
             && format & vertex::TANGENT != 0;
         let displaced = shading == Shading::StandardMaps && self.displaces(id);
         let wireframe = has(feature::WIREFRAME);
+        let bumped = shading == Shading::StandardMaps && !wireframe && self.materials.bumps(id);
         let parallax = displaced && self.draws_parallax(id);
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         let key = ((format & needs) == needs).then_some(DrawKey {
@@ -2168,6 +2169,7 @@ impl SceneSettings {
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
                 | bit(rows, permutation::ROW_VALUES)
+                | bit(bumped, permutation::BUMP)
                 | bit(displaced, permutation::DISPLACEMENT)
                 | bit(parallax, permutation::PARALLAX),
             vertex_format: format,

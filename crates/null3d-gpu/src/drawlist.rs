@@ -758,8 +758,10 @@ pub mod permutation {
     pub const TONE_MAP: u32 = 2;
     /// The mesh's vertex colors multiply the material's base color.
     pub const VERTEX_COLOR: u32 = 4;
-    /// A normal map bends the surface's normals.
-    pub const NORMAL_MAP: u32 = 8;
+    /// The standard material's bump map bends the normal by the change of a height map's red
+    /// channel from one pixel to the next, as three.js's `bumpMap` does. The height map sits in the
+    /// normal map's slot.
+    pub const BUMP: u32 = 8;
     /// Fragments whose alpha is below the material's cutoff draw nothing.
     pub const ALPHA_MASK: u32 = 16;
     /// The surface reads the shadow maps, so shadows fall on it.
@@ -851,7 +853,7 @@ pub mod permutation {
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
-        ("NORMAL_MAP", NORMAL_MAP),
+        ("BUMP", BUMP),
         ("ALPHA_MASK", ALPHA_MASK),
         ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
         ("SKIN", SKIN),
@@ -905,10 +907,11 @@ pub mod permutation {
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once.
-    /// Displacement builds load on first use, so the test switch's builds do without them.
+    /// Displacement and bump builds load on first use, so the test switch's builds do without them.
+    /// A bump map takes the normal map's slot, so its builds never read the mesh's tangents.
     /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
     /// displaced level of detail switches at once, so the fading builds stay small.
-    pub const APART: [(u32, u32); 25] = [
+    pub const APART: [(u32, u32); 27] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -927,6 +930,8 @@ pub mod permutation {
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
         (DISPLACEMENT, INSTANCE_INDEX),
+        (BUMP, INSTANCE_INDEX),
+        (BUMP, VERTEX_TANGENT),
         (PARALLAX, TRANSMISSION),
         (LOD_FADE, SKIN),
         (LOD_FADE, MORPH),

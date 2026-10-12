@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-J4 on 11 October 2026. The owner approved the relief demo's look on 12 October 2026. Date: 2026-10-11. Task: M2-J4.
 
-Summary: The standard material takes three.js's `bumpMap`, `bumpScale`, `displacementMap`, `displacementScale` and `displacementBias`, and every material takes `wireframe`. A bump map shares the normal map's slot, so it adds no texture binding. A displacement map has a binding of its own that only the vertex stage reads. Its builds load on first use, and its shadows, depth prepass and culling follow the moved vertices. Where no normal or bump map bends the normals, the engine bends them by the displacement map's slope, which three.js does not do. `parallax: true` adds parallax occlusion mapping from the same map, on opaque and masked surfaces, which the Low preset turns off.
+Summary: The standard material takes three.js's `bumpMap`, `bumpScale`, `displacementMap`, `displacementScale` and `displacementBias`, and every material takes `wireframe`. A bump map shares the normal map's slot, so it adds no texture binding, and its builds load on first use. A displacement map has a binding of its own that only the vertex stage reads. Its builds load on first use, and its shadows, depth prepass and culling follow the moved vertices. Where no normal or bump map bends the normals, the engine bends them by the displacement map's slope, which three.js does not do. `parallax: true` adds parallax occlusion mapping from the same map, on opaque and masked surfaces, which the Low preset turns off.
 
 ## Question
 
@@ -44,9 +44,11 @@ How the data was produced: three.js 0.186.1's shader chunks and renderer, read o
 
 | Option | Verdict |
 | --- | --- |
-| A: the normal map's slot, with a row flag that says the slot holds a height map | Chosen. three.js never draws both, so the slot is free whenever a bump map draws. No binding, no bit and no row growth. `bumpScale` takes the normal scale's floats |
+| A: the normal map's slot, with a row flag that says the slot holds a height map | Chosen. three.js never draws both, so the slot is free whenever a bump map draws. No binding and no row growth. `bumpScale` takes the normal scale's floats |
 | B: a ninth slot | Rejected. It takes the last fragment texture on WebGPU, and the row has no room for its layer |
 | C: an offline conversion to a normal map | Rejected as the only way. It was the earlier plan, but a port then needs a build step |
+
+The bump map's code has a permutation bit of its own, `BUMP`, and its builds load on first use, as displacement's do. The first build bent the normal behind the row flag alone, in every build of the standard material with maps. That grew the shader files that every page loads by 2.1 to 2.7% after Brotli, about 0.5 KB each, for a feature that most pages never use. All 32 permutation bits were taken, so `BUMP` takes the bit of `NORMAL_MAP`, which nothing had used since normal maps became a row flag. Its builds never read the mesh's tangents, since the bump map takes the normal map's slot. A build without `BUMP` draws a bump-mapped material's normals unbent, which is what a wireframe material draws.
 
 ### Where the displacement map goes
 
@@ -103,17 +105,34 @@ Silhouettes and shadows keep the vertices' shape, as with every parallax method.
 
 ## Decision
 
-Option A for each part. A page pays nothing for a feature it does not use. A bump map costs three texture reads per pixel of the materials that have one. A displacement map costs one texture read per vertex in each pass that draws the material, and three per pixel where it bends the normals. The figures per preset follow in the measurements below.
+Option A for each part. A page pays nothing for a feature it does not use: no shader code, no download and no pass. A bump map costs three texture reads per pixel of the materials that have one. A displacement map costs one texture read per vertex in each pass that draws the material, and three per pixel where it bends the normals. The figures per preset follow in the measurements below.
 
 ## Measurements
 
-To follow: GPU and CPU time per frame with each feature on and off, per preset, on the Mac in a quiet window, from the relief-cost test page, and the size of the first-use shader files.
-
 The relief-cost page (`tests/pages/relief-cost.ts`) draws a hillside from the relief demo's height maps: displaced terrain, 40 displaced boulders, brick walls with parallax, bump-mapped cap stones and a wireframe frame, under the sun's shadows. It times one feature off and on in turns: displacement (the terrain and boulders draw their materials without the map), parallax (the quality setting), bump maps (the cap stones without the map) or wireframe (the frame's triangles instead of its edges). `NULL3D_RELIEF_COST=1 bun run test:browser -- relief-cost.spec.ts` runs it on each GPU path and preset.
+
+GPU time per frame that each feature adds, in ms: the median with the feature on less the median with it off, at 1600 x 900. MacBook Pro (Apple M5 Max), Chrome through Playwright on the Mac's GPU, 13 October 2026, one run of each pair with the Mac to itself, at loads of 2.8 to 7.3:
+
+| Feature | Path | Low | Medium | High | Ultra |
+| --- | --- | --- | --- | --- | --- |
+| Displacement | WebGPU | +0.72 | +0.92 | +0.91 | +1.05 |
+| Displacement | Compatibility mode | +0.72 | +0.99 | +0.99 | +0.92 |
+| Parallax | WebGPU | off | 0.00 | 0.00 | -0.26 |
+| Parallax | Compatibility mode | off | -0.07 | +0.07 | +0.07 |
+| Bump map | WebGPU | 0.00 | 0.00 | 0.00 | +0.26 |
+| Bump map | Compatibility mode | 0.00 | 0.00 | 0.00 | -0.07 |
+| Wireframe | WebGPU | +0.07 | +0.07 | +0.07 | +0.07 |
+| Wireframe | Compatibility mode | +0.07 | +0.07 | +0.13 | +0.20 |
+
+- Displacement's figure covers the whole hillside: the vertex reads in the main pass, the prepass and every shadow pass, and the four reads per pixel of the normals from its slope, over most of the screen.
+- The GPU timer's medians fall on steps of about 0.07 ms, so the parallax and bump figures say only that their cost on this view is below a step or two. The walls with parallax and the cap stones with bump maps fill a small part of the screen. Parallax is off on Low by its quality setting.
+- CPU time per frame did not change by more than 0.02 ms for any feature.
+- WebGL2's timer gave no usable figures: the same scene with the feature off measured from 2.45 to 6.02 ms between runs, and its differences ran from -1.09 to +1.35 ms with no pattern.
+- The page's frame interval read 16.67 ms throughout, because headless Chrome on the Mac reports a 60 Hz display. It is not a frame rate.
 
 ## Consequences
 
-- Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
+- Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; permutation bit `BUMP` (1 << 3, formerly the unused `NORMAL_MAP`) and its first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
 - Levels of detail (D-137): a level with a displaced material switches at once and never fades, as skinned levels do. Fading builds with displacement would double the standard maps template's fading builds, which every page with fading levels downloads.
 - TypeScript: the options on `materials.standard`, `wireframe` on every material, checks in development builds, the quality setting `parallax`, and bounds that grow with a displaced material.
 - First-use shader files: a build that mixes displacement with another feature that loads on first use, such as a displaced skinned mesh, goes into a file of its own, which a page loads only when it uses both. Filed under the other feature, those builds grew the skinning, morph, row-value, transmission, alpha-to-coverage and alpha-hash files by 20 to 30% for pages that never displace a vertex.

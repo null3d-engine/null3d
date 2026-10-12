@@ -207,6 +207,8 @@ A displacement map changes the shape itself, so its silhouette and its shadows m
 
 `parallax` adds the detail that the vertices cannot hold, such as the joints between bricks or cobbles. Silhouettes and shadows keep the vertices' shape. It takes only opaque and masked surfaces: the `blend` alpha mode and `transmission` with `parallax` throw E1217. The quality preset's `parallax` setting turns it off on Low, where such materials draw with their displacement alone.
 
+A page without relief pays nothing for it. The first material with a bump map loads the shader builds of bump maps, and the first with a displacement map those of displacement and parallax. To load them before the first frame instead, list `'bump'` and `'displacement'` in `createEngine`'s `preload` option.
+
 ## Texture coordinate transform
 
 `uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. They act as three.js's texture `offset`, `repeat` and `rotation` with the default `center`. A transform that leaves a value out takes its default. `set` changes the transform at any time.

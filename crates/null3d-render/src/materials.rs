@@ -868,7 +868,8 @@ impl MaterialTable {
     }
 
     /// Gives a standard material a bump map, a height map in the normal map's slot, or none with
-    /// `Handle::NONE`. A wireframe material keeps the map but draws without it, as three.js's does.
+    /// `Handle::NONE`. A wireframe material keeps the map but draws without it, as three.js's does:
+    /// its pipelines leave out the bump builds.
     pub fn set_bump_map(
         &mut self,
         id: u32,
@@ -876,9 +877,14 @@ impl MaterialTable {
         second_uv: bool,
     ) -> Result<(), MaterialError> {
         self.set_map(id, MapSlot::Normal, texture, second_uv)?;
-        let bumps = !texture.is_none() && !self.wireframe(id);
-        self.set_flags(id, flag::BUMP, if bumps { flag::BUMP } else { 0 });
+        let bits = if texture.is_none() { 0 } else { flag::BUMP };
+        self.set_flags(id, flag::BUMP, bits);
         Ok(())
+    }
+
+    /// True when a material's normal map's slot holds a bump map.
+    pub fn bumps(&self, id: u32) -> bool {
+        self.flags(id) & flag::BUMP != 0
     }
 
     /// Gives a standard material a displacement map, which moves each vertex along its normal, or
@@ -1484,9 +1490,11 @@ mod tests {
         table.set_map(id, MapSlot::Normal, normals, false).unwrap();
         assert_eq!(flags(&table, id), 0, "a normal map draws as one");
         assert!(table.normal_slot_holds_normals(id));
-        // A wireframe draws no bump map, as three.js's does.
+        // A wireframe keeps the bump map, so its slot never reads as a normal map, and its
+        // pipelines draw without it.
         table.set_bump_map(wire, bumps, false).unwrap();
-        assert_eq!(flags(&table, wire), 0);
+        assert_eq!(flags(&table, wire), flag::BUMP);
+        assert!(!table.normal_slot_holds_normals(wire));
     }
 
     #[test]

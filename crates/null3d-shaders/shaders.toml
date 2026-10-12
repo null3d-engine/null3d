@@ -152,9 +152,10 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
 # occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material. DISPLACEMENT moves each vertex
-# along its normal by the displacement map, and PARALLAX shifts where the fragment shader reads the
-# maps by the map's relief; their builds load on first use. The caster variants draw the shadows of
+# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material. BUMP bends the normal by a
+# height map in the normal map's slot. DISPLACEMENT moves each vertex along its normal by the
+# displacement map, and PARALLAX shifts where the fragment shader reads the maps by the map's
+# relief. The builds of all three load on first use. The caster variants draw the shadows of
 # displaced materials: each vertex moves as in the camera's view, then lands as the shadow depth
 # template places a caster's, with no fragment stage on WebGPU. Their PARALLAX builds differ only in
 # the maps group's layout, which parallax materials bind.
@@ -162,8 +163,8 @@ variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP",
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "DISPLACEMENT", "PARALLAX", "BUMP"], targets = ["glsl"] }
 variants.webgpu_caster = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["SKIN", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["wgsl"] }
 variants.webgl2_caster = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "SKIN", "MORPH", "CASTER_OFFSET", "CASTER", "DISPLACEMENT", "PARALLAX"], required = ["CASTER", "DISPLACEMENT"], targets = ["glsl"] }
 
@@ -637,6 +638,11 @@ bits = ["ROW_VALUES"]
 # with their parallax and caster builds, with its first displaced material.
 [first_use.displacement]
 bits = ["DISPLACEMENT", "PARALLAX"]
+
+# A page downloads the builds of the standard material with a bump map with its first bump-mapped
+# material.
+[first_use.bump]
+bits = ["BUMP"]
 
 # A page downloads the LOD_FADE builds of the mesh templates with its first mesh whose levels of
 # detail fade. Until they arrive, the fading levels draw nothing, for a frame or two. It takes the

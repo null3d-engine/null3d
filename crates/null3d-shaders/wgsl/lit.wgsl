@@ -54,9 +54,9 @@ enable draw_index;
 // share a few units: maps whose texture arrays and samplers are the same share one, and each map's
 // layer in the row also names its unit.
 //
-// The normal map's slot may hold a height map instead, as the row's flags say. With BUMP, it is a
-// bump map, which bends the normal as three.js's bump mapping does: by the height's change from
-// one pixel to the next, against the screen's directions normalized. With HEIGHT_NORMALS, it is the
+// The normal map's slot may hold a height map instead, as the row's flags say. With BUMP_MAP, it is
+// a bump map: the BUMP builds bend the normal as three.js's bump mapping does, by the height's
+// change from one pixel to the next, against the screen's directions normalized. With HEIGHT_NORMALS, it is the
 // displacement map, which bends the normal by its slope in world units, so the light follows the
 // vertices that the DISPLACEMENT builds move. Those builds move each vertex along its normal by the
 // displacement map, after skinning and morph targets, in the mesh's own space, as three.js's
@@ -150,7 +150,7 @@ const FLAT_SHADING: u32 = 1u;
 
 #ifdef MAPS
 /// The bit of a material's flags that says its normal map's slot holds a bump map.
-const BUMP: u32 = 32u;
+const BUMP_MAP: u32 = 32u;
 /// The bit of a material's flags that says its normal map's slot holds its displacement map, whose
 /// slope bends the normal.
 const HEIGHT_NORMALS: u32 = 64u;
@@ -362,6 +362,13 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 #endif
 
 #ifdef MAPS
+/// Where a height map in the normal map's slot reads. Rows count upward on both paths, so a bump
+/// map compares the pixel with the one above it, as three.js's renderers both do.
+fn height_uv(flags: u32, first: MapUv, second: MapUv) -> MapUv {
+    let picked = map_uv(flags, 2u, first, second);
+    return MapUv(picked.uv, picked.dx, picked.dy * ROWS_UP);
+}
+
 /// The change of a height map's red channel from the pixel to the next one across and to the next
 /// one up the row, as three.js's `dHdxy_fwd` samples it, read through the normal map's slot.
 fn height_change(layer: f32, at: MapUv) -> vec2f {
@@ -756,24 +763,24 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
         let texel = specular_color_texel(m.more_maps.w, map_uv(flags, 7u, first, second));
         specular_texel = vec4f(texel.rgb, specular_texel.a);
     }
-    let heights = flags & (BUMP | HEIGHT_NORMALS);
-    if map_ready(m.maps.z) && heights != 0u {
-        // Rows count upward on both paths, so a bump map compares the pixel with the one above it,
-        // as three.js's renderers both do.
-        let picked = map_uv(flags, 2u, first, second);
-        let at = MapUv(picked.uv, picked.dx, picked.dy * ROWS_UP);
+    // A height map in the normal map's slot bends the normal only in the builds that read it, so
+    // the others draw such a material's normals unbent.
+    let heights = flags & (BUMP_MAP | HEIGHT_NORMALS);
+#ifdef BUMP
+    if heights == BUMP_MAP && map_ready(m.maps.z) {
+        let change = height_change(m.maps.z, height_uv(flags, first, second)) * m.surface.z;
         let facing = select(-1.0, 1.0, input.frontFacing);
-        if heights == BUMP {
-            let change = height_change(m.maps.z, at) * m.surface.z;
-            s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(position_dy), change, facing);
-        }
-#ifdef DISPLACEMENT
-        if heights == HEIGHT_NORMALS {
-            let change = height_slope_change(m.maps.z, at) * height_scale;
-            s.normal = bent_by_height(input.normal, position_dx, position_dy, change, facing);
-        }
+        s.normal = bent_by_height(input.normal, normalize(position_dx), normalize(position_dy), change, facing);
+    }
 #endif
-    } else if map_ready(m.maps.z) {
+#ifdef DISPLACEMENT
+    if heights == HEIGHT_NORMALS && map_ready(m.maps.z) {
+        let change = height_slope_change(m.maps.z, height_uv(flags, first, second)) * height_scale;
+        let facing = select(-1.0, 1.0, input.frontFacing);
+        s.normal = bent_by_height(input.normal, position_dx, position_dy, change, facing);
+    }
+#endif
+    if heights == 0u && map_ready(m.maps.z) {
         let at = map_uv(flags, 2u, first, second);
         let texel = normal_texel(m.maps.z, at);
         let bent = vec3f((texel.xy * 2.0 - 1.0) * m.surface.zw, texel.z * 2.0 - 1.0);

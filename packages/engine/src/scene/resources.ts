@@ -1577,6 +1577,10 @@ function checkFeatures(options: StandardOptions, call: string): void {
 }
 
 /** The core's feature bits of `options`. */
+/** True when a standard material's bump map draws: no normal map or wireframe takes its place. */
+const bumps = (options: StandardOptions): boolean =>
+	!!options.bumpMap && !options.normalMap && !options.wireframe;
+
 function featureBits(options: StandardOptions): number {
 	return (
 		(options.doubleSided ? MATERIAL_FEATURE_DOUBLE_SIDED : 0) |
@@ -1790,7 +1794,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const { core, call } = this;
 		const id = this.id;
 		const maps: [Texture | undefined, number][] = [];
-		this.bump = !!options.bumpMap && !options.normalMap && !options.wireframe;
+		this.bump = bumps(options);
 		if (this.bump) maps.push([options.bumpMap, MAP_SLOT_BUMP]);
 		if (options.displacementMap) {
 			this.displacement = [1, 0];
@@ -1932,9 +1936,10 @@ export class Materials {
 		}
 		const opacity = options.opacity ?? 1;
 		const features = featureBits(options);
-		// The shaders that let light through load on first use: the download starts with the
-		// material, before any object draws with it.
+		// The shaders of surfaces that let light through, bump maps and displacement load on first
+		// use: the download starts with the material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		if (bumps(options)) this.shaders.need('bump');
 		if (options.displacementMap) this.shaders.need('displacement');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
