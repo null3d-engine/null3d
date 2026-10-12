@@ -15,7 +15,7 @@ use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{
-    Op, buffer_usage, format, layout, permutation, template, texture_usage, vertex,
+    Op, buffer_usage, format, layout, permutation, sizes, template, texture_usage, vertex,
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -409,34 +409,47 @@ fn with_vertex_skinning_the_skinned_builds_read_the_joints_and_no_pass_skins() {
 }
 
 #[test]
-fn by_default_the_vertex_shaders_skin_and_the_pass_takes_what_has_no_skin_build() {
-    // A lit column, which the vertex shaders skin, and one with a custom material, which has no
-    // SKIN build, so the skinning pass skins it.
+fn by_default_the_vertex_shaders_skin_custom_materials_too_and_the_pass_takes_the_rest() {
+    // A lit column and one with a custom material built from the standard template, which both
+    // have SKIN builds, so the vertex shaders skin both. A third column has a whole shader of the
+    // sketch's, which has none, so the skinning pass skins it.
     let mut world = World::new();
     world.pipelines_built = 0;
     world.add_skinned([-1.0, 0.0, 0.0]);
     let custom = world.add_skinned([1.0, 0.0, 0.0]);
-    let material = world
-        .renderer
-        .settings_mut()
-        .materials_mut()
-        .create(
-            Shading::Custom(CustomShading {
-                template: template::CUSTOM_FIRST,
-                attributes: 0,
-                base_color: true,
-                textures: 0,
-                transmission: false,
-                row_values: false,
-                caster: false,
-            }),
-            0,
-            [1.0; 4],
-        )
-        .unwrap();
+    let full = world.add_skinned([3.0, 0.0, 0.0]);
+    let mut material = |template: u32, row_values: bool| {
+        world
+            .renderer
+            .settings_mut()
+            .materials_mut()
+            .create(
+                Shading::Custom(CustomShading {
+                    template,
+                    attributes: 0,
+                    base_color: true,
+                    textures: 0,
+                    transmission: false,
+                    row_values,
+                    caster: false,
+                    object_ids: false,
+                }),
+                0,
+                [1.0; 4],
+            )
+            .unwrap()
+    };
+    let standard = material(template::CUSTOM_FIRST, true);
+    let whole = material(template::CUSTOM_FIRST + 1, false);
     world
         .scene
-        .apply_commands(&[Command::set_material(custom, material + 1)], world.frame)
+        .apply_commands(
+            &[
+                Command::set_material(custom, standard + 1),
+                Command::set_material(full, whole + 1),
+            ],
+            world.frame,
+        )
         .unwrap();
     let mut mock = MockBackend::default();
     let first = world.step(&mut mock, true);
@@ -449,20 +462,26 @@ fn by_default_the_vertex_shaders_skin_and_the_pass_takes_what_has_no_skin_build(
             .any(|p| p[1] == template::INSTANCED_LIT && p[2] & permutation::SKIN != 0),
         "the lit column's SKIN build"
     );
-    let custom_pipeline = pipelines
-        .iter()
-        .find(|p| p[1] == template::CUSTOM_FIRST)
-        .expect("the custom material's pipeline");
-    assert_eq!(custom_pipeline[2] & permutation::SKIN, 0);
-    assert_eq!(custom_pipeline[7], skinned_format(column().format, true));
+    let pipeline_of = |template: u32| {
+        pipelines
+            .iter()
+            .find(|p| p[1] == template)
+            .expect("the custom material's pipeline")
+    };
+    let custom_pipeline = pipeline_of(template::CUSTOM_FIRST);
+    assert_ne!(custom_pipeline[2] & permutation::SKIN, 0);
+    assert_eq!(custom_pipeline[7], column().format);
+    let full_pipeline = pipeline_of(template::CUSTOM_FIRST + 1);
+    assert_eq!(full_pipeline[2] & permutation::SKIN, 0);
+    assert_eq!(full_pipeline[7], skinned_format(column().format, true));
 
-    // A debug view has no SKIN build either, so the pass skins both columns.
+    // A debug view has no SKIN build either, so the pass skins every column.
     world
         .renderer
         .settings_mut()
         .set_debug_view(DebugView::Normals);
     world.step(&mut mock, true);
-    assert_eq!(world.renderer.skinned_vertices(), 2 * RINGS * AROUND);
+    assert_eq!(world.renderer.skinned_vertices(), 3 * RINGS * AROUND);
 }
 
 #[test]
@@ -803,12 +822,70 @@ fn crowd<B: FrameBuilder>(mut world: World<B>) -> Vec<(Op, Vec<u32>)> {
 
 #[test]
 fn a_crowd_of_skinned_objects_fits_the_draw_list_on_webgpu() {
-    // Each skinned object draws from a bucket of its own in the camera's bundle, so the list needs
-    // room in proportion to the buckets. The copies cast no shadow, and the cascades draw the first.
+    // The vertex shaders skin the crowd, so its copies share one bucket, which each view draws in
+    // one indirect draw. The copies cast no shadow, and the cascades draw the first.
     let renderer = GpuDrivenRenderer::new(RendererConfig::default());
     let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
     assert_eq!(count(&first, Op::BeginBundle), 3);
+    assert!(count(&first, Op::DrawIndexedIndirect) < 8);
+}
+
+#[test]
+fn a_crowd_of_skinned_objects_fits_the_draw_list_with_the_skinning_pass() {
+    // Each object that the pass skins draws its own vertices from a bucket of its own in the
+    // camera's bundle, so the list needs room in proportion to the buckets.
+    let config = RendererConfig {
+        skinning: SkinningMode::LEAN,
+        ..RendererConfig::default()
+    };
+    let renderer = GpuDrivenRenderer::new(config);
+    let first = crowd(World::build_sized(renderer, CROWD as u32 + 64));
+    assert_eq!(count(&first, Op::BeginBundle), 3);
     assert!(count(&first, Op::DrawIndexedIndirect) >= CROWD);
+}
+
+#[test]
+fn skinned_objects_of_one_mesh_share_an_instanced_draw_on_webgpu() {
+    let draws = |twins: usize| {
+        let mut world = World::new();
+        world.pipelines_built = 0;
+        let left = world.add_skinned([-2.0, 0.0, 0.0]);
+        let mut slots = vec![world.scene.resolve(left).unwrap()];
+        for k in 0..twins {
+            let twin = world.add_twin(left, [2.0 + k as f32, 0.0, 0.0]);
+            slots.push(world.scene.resolve(twin).unwrap());
+        }
+        let first = world.step(&mut MockBackend::default(), true);
+        (first, slots)
+    };
+    // The vertex shaders skin the columns, so they share their mesh and material's bucket: two
+    // columns take the camera's bundle no more draws than one.
+    let (alone, _) = draws(0);
+    let (first, slots) = draws(1);
+    assert_eq!(
+        count(&first, Op::DrawIndexedIndirect),
+        count(&alone, Op::DrawIndexedIndirect)
+    );
+
+    // The culling pass gives each copy its own first joint, from the texture of 32-bit indices
+    // that the culling groups bind after the cell offsets. It holds the scene's slots up to the
+    // last column's, in one write.
+    let group = operands(&first, Op::CreateBindGroup)
+        .into_iter()
+        .find(|g| g[1] == layout::CULL)
+        .expect("a culling group");
+    let firsts = bound(&group, 10);
+    let texture = operands(&first, Op::CreateTexture)
+        .into_iter()
+        .find(|t| t[0] == firsts)
+        .expect("the skin firsts texture");
+    assert_eq!(texture[1], sizes::INDICES_PER_TEXTURE_ROW);
+    assert_eq!(texture[4], format::R32_UINT);
+    let written = writes(&first, firsts);
+    assert_eq!(written.len(), 1);
+    let width = slots[1] + 1;
+    assert_eq!(written[0][2..6], [0, 0, 0, width]);
+    assert_eq!(written[0][9], width * 4);
 }
 
 #[test]
