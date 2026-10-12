@@ -2,7 +2,7 @@
 
 - Device: Galaxy Tab A9+ (SM-X216B), 800 x 1280 at 1.5x, 8 cores
 - OS: Android 14
-- Browser: Chrome 149.0.7827.160
+- Browser: Chrome 152.0.7977.54
 - GPU: Adreno (TM) 619; WebGPU adapter: qualcomm adreno-6xx
 - GPU paths: WebGPU, compatibility mode, WebGL2
 - Where: BrowserStack Automate
