@@ -50,7 +50,13 @@ import {
 	tabEndedResult,
 } from '../lib/tab-end';
 import { REFRESH_MEASURE, refreshRate } from './lib/refresh-rate';
-import { grantedSeconds, liveOutcome, loadingSeconds } from './lib/runner-rules';
+import {
+	grantedSeconds,
+	HEARTBEAT_NAME,
+	HEARTBEAT_SECONDS,
+	liveOutcome,
+	loadingSeconds,
+} from './lib/runner-rules';
 
 interface PlanItem {
 	id: string;
@@ -347,7 +353,11 @@ function frameLoadingSeconds(frame: HTMLIFrameElement): number {
  * its time limit plus the time that it spent loading files, or longer when its own measurements show
  * that it needs longer, up to a few times the limit.
  */
-async function openInFrame(path: string, timeoutSeconds: number): Promise<Result> {
+async function openInFrame(
+	path: string,
+	timeoutSeconds: number,
+	beat: () => void,
+): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
 	frame.src = path;
@@ -356,8 +366,13 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
 	let limit = timeoutSeconds;
 	let loading = 0;
 	let endsBy: number | undefined;
+	let beatAt = start;
 	try {
 		while (performance.now() < start + limit * 1000) {
+			if (performance.now() - beatAt >= HEARTBEAT_SECONDS * 1000) {
+				beatAt = performance.now();
+				beat();
+			}
 			const view = frame.contentWindow as {
 				__null3dResult?: Result;
 				__null3dEndsBy?: number;
@@ -392,7 +407,11 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 	const load = loadOf(path);
 	// The check above was a download of the load, which starts afresh after it.
 	if (load) await takeDownloads(load);
-	const result = await openInFrame(path, item.timeoutSeconds);
+	const beat = () =>
+		void post(run, HEARTBEAT_NAME, { item: item.id, at: new Date().toISOString() }).catch(
+			() => undefined,
+		);
+	const result = await openInFrame(path, item.timeoutSeconds, beat);
 	return load ? { ...result, downloads: await takeDownloads(load) } : result;
 }
 

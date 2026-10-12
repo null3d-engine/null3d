@@ -539,11 +539,23 @@ const water = render.addPass({
   scale: 0.5,                        // optional: the preset's reflectionScale by default
   every: 1,                          // optional: draw in one frame of every N
 });
+const half = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'half', scale: 0.5 }); // share of the render size
+const blur = render.addPass({
+  kind: 'fullscreen',                // an effect's WGSL (fn effect) over a texture of its own
+  wgsl: blurWgsl,
+  writes: 'blur',
+  scale: 0.5,                        // or size: [w, h]
+  input: 'outlineMask',              // optional: 'sceneColor' | 'outlineMask'
+  textures: { map: textures.fromPass(half) },  // optional: var map: texture_2d<f32> in the WGSL
+  uniforms: { radius: 3 },
+});
+render.setPassUniform(blur, 'radius', 4);   // allocates nothing
+post.addEffect({ wgsl: addBlur, textures: { blur: textures.fromPass(blur) } }); // effects take textures too
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light, fog, and the point and spot lights its view sees. A light that only the pass sees casts no shadow there. It draws no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
+- A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
-- Full-screen passes of your own WGSL are (0.2, not built yet): use `post.addEffect` for now.
+- A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 
