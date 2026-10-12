@@ -113,9 +113,16 @@ export function ensureBenchPages(root: string, outDir: string): boolean {
 	return true;
 }
 
-/** Serves a build of the benchmark pages that is already made, such as a prepared baseline's. */
-export async function serveBuiltPages(outDir: string, port: number): Promise<BenchPages> {
-	const server = await startPreview(outDir, port, '/bench/pages/index.html');
+/**
+ * Serves a build of the benchmark pages that is already made, such as a prepared baseline's, from
+ * the copy of the repository at `root`.
+ */
+export async function serveBuiltPages(
+	outDir: string,
+	port: number,
+	root = REPO_ROOT,
+): Promise<BenchPages> {
+	const server = await startPreview(outDir, port, '/bench/pages/index.html', root);
 	return { ...server, names: new BuildNames(outDir) };
 }
 
@@ -130,5 +137,5 @@ export async function serveBenchPages({
 	if (dev) return port === undefined ? startServer() : startServerAt(root, port);
 	if (reuse) ensureBenchPages(root, outDir);
 	else buildBenchPages(root, outDir);
-	return serveBuiltPages(outDir, port ?? PREVIEW_PORT);
+	return serveBuiltPages(outDir, port ?? PREVIEW_PORT, root);
 }
