@@ -53,7 +53,7 @@ The runs are 20261012-150623-bench and 20261012-152539-bench. The texture's figu
 
 ## Decision
 
-The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0. They read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the same uniform buffer range as before. A program may read a texture at a slot where a bind group left a buffer range. The WebGL2 backend then copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A copy that no draw read since that write takes a new range, so the textures stay as many as the ranges that draws read between two writes.
+The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0. They read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the same uniform buffer range as before. A program may read a texture at a slot where a bind group left a buffer range. The WebGL2 backend then copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A new range takes over a copy that no draw read since that write. So the textures stay as many as the ranges that draws read between two writes.
 
 A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index (hard rule 21). It found the shader build's own test shader doing so, which now reads a texture too.
 
