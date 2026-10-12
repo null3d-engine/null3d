@@ -40,7 +40,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 
 | Pass | Kind | Reads | Writes |
 | --- | --- | --- | --- |
-| Light clustering | Compute, on WebGPU only | The camera's point and spot lights | The list of lights of each cluster |
+| Light clustering | Compute, on WebGPU only | The point and spot lights of the camera's view and of each scene pass that sees one | The list of lights of each cluster of each view |
 | Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
 | Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |
@@ -91,7 +91,7 @@ For example, the resolve pass reads the scene color, so it runs after the opaque
 
 ## Targets and memory
 
-A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. A kept target holds its contents from one frame to the next, in a texture of its own. The engine's scene color and depth are temporary targets.
+A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. A reflection pass's target is the one exception: its texture takes the render size's share, and a new scale makes it again, so materials read it whole. A kept target holds its contents from one frame to the next, in a texture of its own. The engine's scene color and depth are temporary targets.
 
 Temporary targets share memory when their lifetimes do not overlap. Such targets must also need the same format, size, sample count and usage. For example, a blur can pass an image through three half-size targets in a row. The first one is done before the third one starts, so the two share one texture. The blur then needs two half-size textures instead of three.
 

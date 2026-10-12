@@ -10,7 +10,7 @@ import {
 	simplifyMeshes,
 	storeLevels,
 } from './levels.js';
-import { lodOf } from './lod-extension.js';
+import { lodOf, MSFT_LOD, MSFTLod } from './lod-extension.js';
 
 type Vec3 = [number, number, number];
 
@@ -410,6 +410,30 @@ describe('levels of detail', () => {
 			expect(level.getScale()).toEqual(node.getScale());
 		}
 		expect(lodOf(small)).toBeNull();
+	});
+
+	it("quantize a file's own levels in their base mesh's volume, and its errors in its steps", () => {
+		const doc = new Document();
+		const base = grid(doc, 8, 4);
+		const lower = grid(doc, 2, 3, [0.5, 0, 0.5]);
+		const node = doc.createNode('tree').setMesh(base).setTranslation([2, 0, 0]);
+		const level = doc.createNode('tree_lod1').setMesh(lower);
+		const lod = doc.createExtension(MSFTLod).createLod().addLevel(level).setErrors([0.1]);
+		node.setExtension(MSFT_LOD, lod);
+		doc.createScene().addChild(node);
+		const source = lower.listPrimitives()[0]!.getAttribute('POSITION')!;
+		const before = Array.from({ length: source.getCount() }, (_, i) => element(source, i) as Vec3);
+		quantizeMeshes(doc);
+		// The loader draws each level with its base node's place, so the level's vertices must land
+		// where they stood before through that place.
+		const placed = lower.listPrimitives()[0]!.getAttribute('POSITION')!;
+		const drawn = Array.from({ length: placed.getCount() }, (_, i) =>
+			transform(node.getMatrix(), element(placed, i)),
+		).map(([x, y, z]) => [x - 2, y, z] as Vec3);
+		expect(pointSet(drawn, 1e-2)).toEqual(pointSet(before, 1e-2));
+		const step = node.getScale()[0];
+		expect(step).toBeLessThan(1);
+		expect(lodOf(node)!.getErrors()[0]!).toBeCloseTo(0.1 / step, 3);
 	});
 
 	it('store each error in the units of the stored positions, as quantized or not', async () => {

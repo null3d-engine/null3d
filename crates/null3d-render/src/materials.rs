@@ -971,11 +971,27 @@ mod tests {
     }
 
     #[test]
+    fn templates_from_64_to_the_first_custom_one_belong_to_the_engine() {
+        let mut table = MaterialTable::with_capacity(1);
+        let first = template::CUSTOM_FIRST;
+        assert_eq!(first, 128);
+        let id = table
+            .create(CustomShading::standard(first), 0, [1.0; 4])
+            .unwrap();
+        // No material draws with the engine's ids, so no frame releases their pipelines.
+        assert!((64..first).all(|t| !table.custom_template_unused(t)));
+        assert!(!table.custom_template_unused(first));
+        assert!(table.custom_template_unused(first + 1));
+        table.destroy(id).unwrap();
+        assert!(table.custom_template_unused(first));
+    }
+
+    #[test]
     fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
         let mut table = MaterialTable::with_capacity(3);
         for _ in 0..3 {
             table
-                .create(CustomShading::standard(64), 0, [1.0; 4])
+                .create(CustomShading::standard(template::CUSTOM_FIRST), 0, [1.0; 4])
                 .unwrap();
         }
         assert_eq!(

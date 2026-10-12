@@ -26,7 +26,9 @@
 //! after a mesh is created pays for its tree. A removed mesh's tree goes with it
 //! ([`SceneQueries::forget_meshes`]), and the next mesh with its id gets a tree of its own. A mesh
 //! from a model file can bring the tree that the asset tool stored
-//! ([`SceneQueries::store_mesh_bvh`]), which the sync then uses instead of building one.
+//! ([`SceneQueries::store_mesh_bvh`]), which the sync then uses instead of building one. A mesh
+//! whose vertices change loses its tree too ([`SceneQueries::mesh_changed`]), and the next sync
+//! builds a new one.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -366,6 +368,15 @@ impl SceneQueries {
                 self.forgotten.push(id);
             }
         }
+    }
+
+    /// Drops the tree of the live mesh with id `id`, which counts from 1, after its vertices
+    /// changed. The next sync builds it again from the new vertices, and lists the scene's items
+    /// again, so the boxes of the objects that draw the mesh follow it. A frame without queries
+    /// pays for neither.
+    pub fn mesh_changed(&mut self, id: u32) {
+        self.forget_meshes(&[id]);
+        self.bvh.invalidate();
     }
 
     /// Builds the trees of the meshes that have none, on the job workers, and brings the
