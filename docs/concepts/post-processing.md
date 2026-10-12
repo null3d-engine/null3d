@@ -232,7 +232,7 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 
 - The vignette multiplies HDR color before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners then darken as dark corners do. three.js's `VignetteShader` blends display color toward a gray after the tone mapping, which turns bright corners gray.
 - The table works on display color, after the tone mapping. Grading tools make tables for display color, so they look as their authors made them.
-- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the vignette multiplies the linear value of the display color there.
+- Both draw on every GPU path. On the 8-bit path there is no HDR color, so the scene's shaders darken their light by the vignette before their own tone mapping, and a plain background color draws as a background so the vignette darkens it too.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - The table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
 - The engine's parity test compares a `.cube` table alone with three.js's composer. It matches in all but under 0.1% of the pixels on every GPU path. With the vignette too, mapped from `VignetteShader`'s settings for AgX, it matches as closely.
@@ -244,7 +244,7 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 - The noise has the shape of a triangle: values near 0 come most often. Its strength is then the same at every brightness. Noise of even spread still shows bands at some brightness levels, as Mikkel Gjoel showed in "Banding in Games" (2016). Filament and Unity's URP dither with triangle noise too.
 - The noise is the same in every frame, so a still picture does not shimmer.
 - The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
-- On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table or the vignette.
+- On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table.
 
 ## Effects on devices without HDR color
 

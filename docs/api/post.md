@@ -258,7 +258,7 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 - three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the vignette multiplies the linear value of each pixel's display color. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping, and a plain background color then draws as a background so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 

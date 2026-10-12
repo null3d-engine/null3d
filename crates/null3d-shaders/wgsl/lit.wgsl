@@ -120,7 +120,7 @@ enable draw_index;
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map}
+#import null3d::tonemap::{encode, tone_map, vignette}
 #endif
 #endif
 #ifdef RECEIVE_SHADOWS
@@ -906,11 +906,13 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
-    // The copy holds display color, so the light from behind joins after the tone mapping, as far
-    // as the fog lets it.
+    // The copy holds display color, darkened by the vignette already, so the light from behind
+    // joins after the tone mapping, as far as the fog lets it.
     let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
-    let toned = tone_map(fogged(outgoing, input.relativePosition, material_row), engine_frame.output);
+    let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
+    let shaded = fogged(outgoing, input.relativePosition, material_row) * shade;
+    let toned = tone_map(shaded, engine_frame.output);
     let display = toned + through * share * (1.0 - fog);
     let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
 #else
