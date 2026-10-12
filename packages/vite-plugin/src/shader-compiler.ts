@@ -167,6 +167,8 @@ export interface EffectBuild {
 	readonly depth: boolean;
 	/** True when the effect joins the effect before it. */
 	readonly joins: boolean;
+	/** The textures that an effect declares, where the engine writes each one's layer. */
+	readonly textures: readonly CompiledTexture[];
 	/** The template's variants with the WGSL, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/** The pieces that the engine joins into its hosts. */

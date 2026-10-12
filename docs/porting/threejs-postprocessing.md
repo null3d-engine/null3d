@@ -111,7 +111,8 @@ The WGSL must be a template literal right after a `/* wgsl */` comment, or a `.w
 | `uniforms: { amount: { value: 0.5 } }` | `amount: f32` in `struct Uniforms`, and `uniforms: { amount: 0.5 }` |
 | `pass.uniforms.amount.value = x` | `post.setEffectUniform(effect, 'amount', x)` |
 | `pass.enabled = false` | `post.removeEffect(effect)`, and `post.addEffect` to bring it back |
-| A `sampler2D` uniform, such as a noise texture | No textures. Use the noise of `null3d::noise`. |
+| A `sampler2D` uniform, such as a noise texture | `var noise: texture_2d<f32>;` and the effect's `textures` option, read with `textureSampleLevel(noise, noiseSampler, uv, 0.0)` |
+| A render target's `texture` from an earlier pass | A pass's texture from `textures.fromPass(pass)` in `textures`, read at `effectPassUv(uv)` |
 
 Uniforms are `f32`, `i32`, `u32`, `vec2f`, `vec3f` or `vec4f`, up to 32 floats in all. Each `vec3f` and `vec4f` starts a new group of four floats. A `vec3f` also takes a color string, which the engine converts from sRGB to linear. A uniform name that the WGSL does not declare fails the TypeScript check, and throws [E1216](../errors/E1216.md) when the sketch runs. [Porting shaders](threejs-shaders.md) maps the rest of GLSL to WGSL.
 
@@ -174,6 +175,17 @@ post.addEffect({
   uniforms: { color: '#b0c4d8', density: 0.04 },
 });
 ```
+
+## Port a chain with render targets of its own
+
+Some composers render into targets of their own: a blur at half size that a later pass adds back, or `OutlinePass`'s glow. Each `ShaderPass` that writes such a target becomes a full-screen pass, `render.addPass({ kind: 'fullscreen', wgsl, writes, scale })`. Its WGSL is an effect's. The pass that adds the result back becomes a custom effect that reads the pass's texture through `textures`.
+
+- `scale: 0.5` or `0.25` takes the share of the canvas that three.js's half and quarter targets take. `size: [w, h]` takes a fixed size.
+- `input: 'sceneColor'` makes the scene's color the pass's input image, as `tDiffuse` holds it. `input: 'outlineMask'` reads the outline's mask, which `OutlinePass` draws first.
+- `input.uv` belongs to the pass's own texture. `effectInputSize()` gives the input image's size, for steps of one input pixel.
+- A pass reads another pass's texture through `textures`, so passes chain: a horizontal blur, then a vertical one.
+
+[Custom passes](../guides/custom-passes.md#a-soft-outline-glow) ports `OutlinePass`'s soft glow this way.
 
 ## Port a tone mapping
 

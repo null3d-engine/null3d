@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import * as G from '../../generated/gpu';
-import { loadGlslShaders } from '../../generated/shaders';
+import { loadGlslShaders, type ShaderVariants } from '../../generated/shaders';
 import { WebGL2Backend } from './backend';
 
 /**
  * A WebGL2 context that lists the calls made on it. Its constants are numbers, it offers no
  * extension, each create call makes an empty object, every program links and every framebuffer is
- * complete.
+ * complete. With `uniforms`, every uniform that a program asks for exists.
  */
-function fakeContext() {
+function fakeContext(uniforms = false) {
 	const calls: string[] = [];
 	let constants = 0;
 	const values = new Map<string, number>();
@@ -29,6 +29,7 @@ function fakeContext() {
 					if (name === 'getProgramParameter') return true;
 					if (name === 'isContextLost') return false;
 					if (name.startsWith('create')) return {};
+					if (name === 'getUniformLocation') return uniforms ? {} : null;
 					return undefined;
 				};
 			},
@@ -143,6 +144,86 @@ describe('WebGL2Backend', () => {
 		push(G.OP_DESTROY_TEXTURE, [6]);
 		replay();
 		expect([...backend.gpuMemory.bytes]).toEqual([cube + color, 3000]);
+		backend.destroy();
+		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
+	});
+
+	it('reads a uniform buffer range that a shader takes as a texture from a copy, made again after each write', async () => {
+		const { gl, calls } = fakeContext(true);
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const stage = (
+			textures: { name: string; group: number; binding: number; sampler: null }[],
+		) => ({
+			source: '',
+			uniformBlocks: [],
+			textures,
+		});
+		// A shader that reads group 1's binding 0 as a texture, as the multi-draw builds read their records.
+		const shader: ShaderVariants = {
+			table: {
+				permutation: 0,
+				wgsl: null,
+				glsl: {
+					main: {
+						vertex: stage([{ name: 'records', group: 1, binding: 0, sampler: null }]),
+						fragment: stage([]),
+					},
+				},
+			},
+		};
+		backend.defineTemplate(G.TEMPLATE_CUSTOM_FIRST, { shader, pipeline: 'main' });
+		const words: number[] = [];
+		const push = (op: number, operands: number[]) =>
+			words.push(op | ((operands.length + 1) << 8), ...operands);
+		const uploads = () => calls.filter((name) => name === 'texSubImage2D').length;
+		const before = uploads();
+		const copies = () => uploads() - before;
+		const replay = () => {
+			const list = new Uint32Array(words.splice(0));
+			backend.replay(list, new Float32Array(list.buffer), 0, list.length, new ArrayBuffer(8192));
+		};
+		const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT;
+		push(G.OP_CREATE_TEXTURE, [1, 4, 4, 1, G.FORMAT_RGBA8_UNORM, target, 1, 1, G.VIEW_2D]);
+		push(G.OP_CREATE_BUFFER, [2, 8192, G.BUFFER_USAGE_UNIFORM | G.BUFFER_USAGE_COPY_DST]);
+		push(G.OP_CREATE_BIND_GROUP, [3, G.LAYOUT_DRAWS, 1, 0, G.RESOURCE_BUFFER, 2, 0, 4096]);
+		push(G.OP_CREATE_RENDER_PIPELINE, [
+			4,
+			G.TEMPLATE_CUSTOM_FIRST,
+			0,
+			G.FORMAT_RGBA8_UNORM,
+			G.FORMAT_NONE,
+			1,
+			G.STATE_CULL_NONE,
+			0,
+			0,
+			0,
+		]);
+		push(G.OP_BEGIN_RENDER_PASS, [1, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, 0]);
+		push(G.OP_SET_PIPELINE, [4]);
+		const draw = (offset: number) => {
+			push(G.OP_SET_BIND_GROUP, [1, 3, 1, offset]);
+			push(G.OP_DRAW, [3, 1, 0, 0]);
+		};
+		draw(0);
+		draw(0);
+		draw(4096);
+		draw(0);
+		replay();
+		// One copy of each range, which later draws of the range reuse.
+		expect(copies()).toBe(2);
+		push(G.OP_WRITE_BUFFER, [2, 0, 0, 16]);
+		draw(0);
+		draw(0);
+		replay();
+		expect(copies()).toBe(3);
+		// A new range takes the texture of the range that no draw read since the write.
+		draw(2048);
+		push(G.OP_END_RENDER_PASS, []);
+		replay();
+		expect(copies()).toBe(4);
+		// Each copy is one texel of four 32-bit words per 16 bytes.
+		expect([...backend.gpuMemory.bytes]).toEqual([4 * 4 * 4 + 2 * 4096, 8192]);
 		backend.destroy();
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
 	});
