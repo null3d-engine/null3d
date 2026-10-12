@@ -1180,11 +1180,28 @@ impl SceneSettings {
         self.outline = outline;
     }
 
-    /// True while the sketch sets a color grading table or the vignette, outside a debug view,
-    /// whose colors reach the canvas as its shader writes them. The final pass then runs on every
-    /// path.
+    /// True while the sketch sets a color grading table, or the vignette on the HDR path, outside
+    /// a debug view, whose colors reach the canvas as its shader writes them. The final pass then
+    /// runs on every path. On the 8-bit path the scene shaders apply the vignette.
     pub(crate) fn grades(&self) -> bool {
-        (self.lut.is_some() || self.vignette.is_some()) && !self.debug_view.is_debug()
+        (self.lut.is_some() || self.final_vignette().is_some()) && !self.debug_view.is_debug()
+    }
+
+    /// The vignette that the final pass applies: the sketch's on the HDR path, none on the 8-bit
+    /// path.
+    fn final_vignette(&self) -> Option<Vignette> {
+        self.vignette.filter(|_| self.canvas.scene_color.is_hdr())
+    }
+
+    /// The vignette's values that the scene shaders apply before their tone mapping: the sketch's
+    /// on the 8-bit path outside a debug view, else zeros, which apply none.
+    pub(crate) fn scene_vignette(&self) -> [f32; 4] {
+        match self.vignette {
+            Some(vignette) if !self.canvas.scene_color.is_hdr() && !self.debug_view.is_debug() => {
+                vignette.uniform()
+            }
+            _ => [0.0; 4],
+        }
     }
 
     /// What the final pass grades the frame with: the table once its texels are on the GPU, and
@@ -1200,7 +1217,7 @@ impl SceneSettings {
         });
         Grading {
             lut,
-            vignette: self.vignette,
+            vignette: self.final_vignette(),
         }
     }
 
@@ -1374,6 +1391,18 @@ impl SceneSettings {
     /// as in every debug view.
     pub fn background(&self) -> Option<Background> {
         self.background.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// The exposed background color that the camera's view draws as a background on the 8-bit
+    /// path while the vignette is on, or none. There the scene shaders darken their light by the
+    /// vignette before their tone mapping, and a clear alone would leave the color as it is. Without
+    /// a background color the clear is black, which the vignette leaves black.
+    pub(crate) fn vignetted_background_color(&self) -> Option<[f32; 3]> {
+        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
+            return None;
+        }
+        let color = self.lighting.background?;
+        Some(self.drawn_output().expose(color))
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
@@ -2146,6 +2175,11 @@ impl SceneSettings {
                     ao::frame_values(ao, canvas, scale, self.ao_scale)
                 }
                 _ => [0.0; 4],
+            },
+            vignette: if view_id == ViewId::CAMERA {
+                self.scene_vignette()
+            } else {
+                [0.0; 4]
             },
             ..FrameUniform::default()
         };

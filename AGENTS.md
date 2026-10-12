@@ -108,6 +108,7 @@ Code review enforces these rules.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
 20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
+21. A post effect that is meant to act on light acts before the tone curve on every path: on the HDR path and on the 8-bit path, and on surfaces that a clear makes as well as on drawn ones. Applied after the curve on one path and before it on another, the two drift apart whenever the curve or the effect's settings change. In October 2026 the vignette's refit for AgX made the 8-bit image differ from the HDR one in 33% of its pixels ([D-77](.dev/decisions/D-77-final-pass-order-and-formats.md)). The 8-bit copies of the image tests and `tests/image/vignette-paths.spec.ts` guard the vignette.
 
 ## Performance work
 
