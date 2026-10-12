@@ -1205,7 +1205,9 @@ export class Pipelines {
 		}
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) {
 			if (!this.motion) throw new Error('the motion pipelines have not loaded');
-			return this.motion.cull(permutation);
+			const shader = variantFor(this.shaders.cull_motion, permutation, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
+			return this.motion.cull(shader);
 		}
 		if (template === TEMPLATE_CULL) {
 			if (!this.cull) throw new Error("the device's shader module has no culling shader");

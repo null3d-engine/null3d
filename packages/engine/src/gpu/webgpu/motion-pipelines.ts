@@ -10,15 +10,15 @@ import {
 	TEMPLATE_MOTION,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
-import { variantFor } from '../variants';
+import type { WgslShader } from '../../generated/shaders';
 import { CULL_ENTRY_POINT, INSTANCE_BUFFERS, type Pipelines } from './pipelines';
 
 /** What the pipelines read from the motion pass's parts once they load. */
 export interface MotionParts {
 	/** The motion view's compacted instance, which a custom material's motion builds read too. */
 	readonly instances: GPUVertexBufferLayout[];
-	/** How to build the motion view's culling pipeline. */
-	cull(permutation: number): GPUComputePipelineDescriptor;
+	/** How to build the motion view's culling pipeline from its build of the culling shader. */
+	cull(shader: WgslShader): GPUComputePipelineDescriptor;
 }
 
 /**
@@ -74,9 +74,7 @@ export function addMotion(pipelines: Pipelines): void {
 	});
 	pipelines.motion = {
 		instances: INSTANCES,
-		cull(permutation) {
-			const shader = variantFor(pipelines.shaders.cull_motion, permutation, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
+		cull(shader) {
 			return {
 				label: 'cull motion',
 				layout: pipelines.cullLayout,
