@@ -2305,6 +2305,12 @@ export function judge(
 				context?.note?.(
 					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
 				);
+			// Shaders keep values in structs on every device, so such a device computes with half
+			// precision there. The engine keeps such values within half precision's range.
+			if (typeof result.structFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.structFault}. WebGL2 shaders here keep the values of a struct at half precision, so the engine keeps such values within half precision's range`,
+				);
 			return problems;
 		}
 		case 'engine':

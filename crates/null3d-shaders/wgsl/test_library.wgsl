@@ -12,6 +12,9 @@
 // capitals selects, and the page draws each variant over the rows of its module's cases. The
 // whole library in one shader is about four times the largest engine shader, and the PowerVR
 // driver of the Pixel 11 could not build a pipeline from it.
+#ifdef ATMOSPHERE
+#import null3d::atmosphere
+#endif
 #ifdef COLOR
 #import null3d::color
 #endif
@@ -310,6 +313,12 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 105u: {
             let n = null3d::vertex::affine_normal_matrix(f[0], f[1], f[2]);
             return floats(vec4f(n[0], 0.0), vec4f(n[1], 0.0), vec4f(n[2], 0.0), vec4f(0.0));
+        }
+#endif
+#ifdef ATMOSPHERE
+        case 106u: {
+            let w = null3d::atmosphere::sky_whole(f[0].xyz, f[1]);
+            return floats(vec4f(w.sun_direction, 0.0), vec4f(w.beta_r, 0.0), vec4f(w.beta_m, 0.0), vec4f(w.sun, 0.0));
         }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,

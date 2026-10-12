@@ -17,13 +17,15 @@ use crate::background::Sky;
 const GRID: usize = 8;
 
 const PI: f32 = std::f32::consts::PI;
-const TOTAL_RAYLEIGH: [f32; 3] = [5.804_543e-6, 1.356_291_1e-5, 3.026_590_2e-5];
-const MIE_CONST: [f32; 3] = [1.839_991_9e14, 2.779_802_4e14, 4.079_048e14];
+/// The scattering coefficients per million metres, and the optical lengths in millions of metres,
+/// as the shaders keep them.
+const TOTAL_RAYLEIGH: [f32; 3] = [5.804_543, 13.562_911, 30.265_902];
+const MIE_PER_TURBIDITY: [f32; 3] = [159.711_29, 241.286_85, 354.061_37];
 const CUTOFF_ANGLE: f32 = 1.610_731_6;
 const STEEPNESS: f32 = 1.5;
 const EE: f32 = 1000.0;
-const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e3;
-const MIE_ZENITH_LENGTH: f32 = 1.25e3;
+const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e-3;
+const MIE_ZENITH_LENGTH: f32 = 1.25e-3;
 const THREE_OVER_SIXTEEN_PI: f32 = 0.059_683_104;
 const ONE_OVER_FOUR_PI: f32 = 0.079_577_47;
 
@@ -70,11 +72,12 @@ fn whole(sky: &Sky) -> Whole {
     let low_sun = (1.0 - sun_direction[1]).powf(5.0).clamp(0.0, 1.0);
     let sun_fade = 1.0 - (1.0 - (p[1] / 450_000.0).exp()).clamp(0.0, 1.0);
     let rayleigh = sky.rayleigh - (1.0 - sun_fade);
-    let mie = 0.434 * (0.2 * sky.turbidity) * 10e-18;
     Whole {
         sun_direction,
         beta_r: map(TOTAL_RAYLEIGH, |c| c * rayleigh),
-        beta_m: map(MIE_CONST, |c| mie * c * sky.mie_coefficient),
+        beta_m: map(MIE_PER_TURBIDITY, |c| {
+            sky.turbidity * c * sky.mie_coefficient
+        }),
         sun_e,
         low_sun,
         day: smoothstep(-0.08, 0.3, sun_direction[1]),
@@ -300,6 +303,34 @@ mod tests {
         Sky {
             sun_position: [0.3, 0.8, -0.5],
             ..Sky::default()
+        }
+    }
+
+    /// The shaders keep the coefficients in a struct, whose floats some WebGL2 drivers keep at
+    /// half precision. Across three.js's ranges of the settings, from a tenth of each upper
+    /// limit, every coefficient stays within half precision's normal range.
+    #[test]
+    fn the_scattering_coefficients_stay_within_half_precision() {
+        const SMALLEST_NORMAL_HALF: f32 = 6.103_515_6e-5;
+        const LARGEST_HALF: f32 = 65_504.0;
+        for turbidity in [2.0, 10.0, 20.0] {
+            for rayleigh in [0.4, 2.0, 4.0] {
+                for mie_coefficient in [0.01, 0.05, 0.1] {
+                    let sky = Sky {
+                        turbidity,
+                        rayleigh,
+                        mie_coefficient,
+                        ..noon()
+                    };
+                    let w = whole(&sky);
+                    for c in w.beta_r.into_iter().chain(w.beta_m) {
+                        assert!(
+                            (SMALLEST_NORMAL_HALF..=LARGEST_HALF).contains(&c),
+                            "a coefficient of {c} for {sky:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 
