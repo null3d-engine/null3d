@@ -32,12 +32,20 @@ const params = new URL(import.meta.url).searchParams;
 const CASE = params.get('case');
 const FOLLOW = params.has('follow');
 
-/** A vertex offset that moves the mesh along x with the frame's time, from its rest at the held time. */
+/**
+ * A vertex offset that moves the mesh along x with the frame's time, from its rest at the held time.
+ * The Vite plugin compiles tagged WGSL at build time, so the WGSL holds the hold time and the speed
+ * as literals, and the check below keeps them equal to the figures that the spec reads.
+ */
 const SLIDING = /* wgsl */ `
 fn vertexOffset(input: VertexInput) -> vec3f {
-    return vec3f((frame.time - ${MOTION_HOLD.toFixed(2)}) * ${SWAY.toFixed(2)}, 0.0, 0.0);
+    return vec3f((frame.time - 0.5) * 6.0, 0.0, 0.0);
 }
 `;
+if (MOTION_HOLD !== 0.5 || SWAY !== 6)
+	throw new Error(
+		'the sliding vertex offset holds the hold time and the speed as literals: update it',
+	);
 
 /** Grass that sways out of step, from each row's own phase. */
 const SWAYING = /* wgsl */ `

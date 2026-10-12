@@ -162,6 +162,8 @@ export class WebGPUBackend {
 	private readonly parkedCompute: Uint32Array[] = [];
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
+	/** The load of the motion pass's pipeline parts, once a pipeline asks for them. */
+	private motionLoading: Promise<void> | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
 	private skipDraws = false;
 	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
@@ -677,6 +679,8 @@ export class WebGPUBackend {
 	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
+		const motion = template === G.TEMPLATE_MOTION || (permutation & G.PERMUTATION_MOTION) !== 0;
+		if (motion && !this.motionReady()) return false;
 		if (!this.pipelines.has(template)) {
 			const shader = this.images.shaders.get(template);
 			if (!shader || !joinedReady(shader, this.images.shaders, this.moreShaders, 'wgsl'))
@@ -718,10 +722,30 @@ export class WebGPUBackend {
 
 	/** True when a compute template's shader is loaded: one that loads on first use, once its file arrives. */
 	private computeReady(template: number, permutation: number): boolean {
+		const motion = template === G.TEMPLATE_CULL && (permutation & G.PERMUTATION_MOTION) !== 0;
+		if (motion && !this.motionReady()) return false;
 		const variants = this.pipelines.computeVariants(template, permutation);
 		return (
 			variants === undefined || (this.moreShaders?.ready(variants, permutation, 'wgsl') ?? true)
 		);
+	}
+
+	/**
+	 * True once the motion pass's pipeline parts have loaded. The first call starts to load them,
+	 * and the pipelines that wait for them build once they arrive.
+	 */
+	private motionReady(): boolean {
+		if (this.pipelines.motion) return true;
+		this.motionLoading ??= import('./motion-pipelines').then(
+			({ addMotion }) => {
+				addMotion(this.pipelines);
+				this.unpark();
+			},
+			(error: unknown) => {
+				this.buildFailure ??= messageOf(error);
+			},
+		);
+		return false;
 	}
 
 	/** Starts to build each parked pipeline whose shader has arrived. */
@@ -856,7 +880,7 @@ export class WebGPUBackend {
 
 	private failed(error: unknown): void {
 		this.builds--;
-		this.buildFailure ??= error instanceof Error ? error.message : String(error);
+		this.buildFailure ??= messageOf(error);
 	}
 
 	/**

@@ -42,7 +42,6 @@ import {
 	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
-	SIZE_MOTION_INSTANCE_STRIDE,
 	STATE_ALPHA_TO_COVERAGE,
 	STATE_BLEND,
 	STATE_BLEND_ADDITIVE,
@@ -128,6 +127,7 @@ import {
 	vertexAttribute,
 	vertexStride,
 } from '../vertex-format';
+import type { MotionParts } from './motion-pipelines';
 
 declare const __NULL3D_DEV__: boolean | undefined;
 
@@ -173,11 +173,10 @@ export interface RenderTemplate {
 	/** For a template that tests masks: the mesh locations that only its ALPHA_MASK builds read. */
 	readonly maskLocations?: readonly number[];
 	/**
-	 * True for the motion template, which reads each vertex's place in the last frame from vertex
-	 * buffer slot 2 at location 4: the last frame's copy of a skinned region, or the mesh's own
-	 * vertices.
+	 * For a template that reads more vertex buffers after the instances', as the motion template
+	 * reads each vertex's place in the last frame: those buffers, from the layout of the mesh's.
 	 */
-	readonly lastVertices?: boolean;
+	readonly afterInstances?: (mesh: GPUVertexBufferLayout) => GPUVertexBufferLayout[];
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 	/**
@@ -215,7 +214,7 @@ const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return v
 const MAP_SLOTS = Array.from({ length: SIZE_MAP_SLOTS }, (_, slot) => slot);
 
 /** The culling shader's compute entry point. */
-const CULL_ENTRY_POINT = 'main';
+export const CULL_ENTRY_POINT = 'main';
 
 /** The entry points of occlusion culling's two phases, in the culling shader's occlusion build. */
 const OCCLUSION_ENTRY_POINTS: Readonly<Record<number, string>> = {
@@ -242,7 +241,7 @@ const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
 };
 
 /** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
-const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
+export const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	{
 		arrayStride: SIZE_INSTANCE_STRIDE,
 		stepMode: 'instance',
@@ -254,26 +253,6 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 		],
 	},
 ];
-
-/**
- * The motion view's compacted instance: the matrix rows and the ids, then the rows of the last
- * frame's matrix at locations 13 to 15.
- */
-const MOTION_INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
-	{
-		arrayStride: SIZE_MOTION_INSTANCE_STRIDE,
-		stepMode: 'instance',
-		attributes: [
-			...(INSTANCE_BUFFERS[0] as GPUVertexBufferLayout).attributes,
-			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 4, offset: 64, format: 'float32x4' },
-			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 5, offset: 80, format: 'float32x4' },
-			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 6, offset: 96, format: 'float32x4' },
-		],
-	},
-];
-
-/** The location of the last frame's place of each vertex in the motion template. */
-const LAST_POSITION_LOCATION = 4;
 
 /**
  * The compacted index that a mesh draw's instances read in the builds that read their instances by
@@ -372,21 +351,21 @@ function meshLocations(t: RenderTemplate, permutation: number): number[] | undef
  * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
  * meshes, with each location it reads where the vertex format places it. The variants with vertex
  * colors read the mesh's colors too. The builds that read their instances by index take an index
- * per instance in place of the template's compacted instance.
+ * per instance in place of the template's compacted instance, and a custom material's motion builds
+ * take the motion view's, `motion`.
  */
 function vertexBuffers(
 	t: RenderTemplate,
 	vertexFormat: number,
 	permutation: number,
+	motion: GPUVertexBufferLayout[] | undefined,
 ): GPUVertexBufferLayout[] {
 	const locations = meshLocations(t, permutation);
 	if (!locations) return t.vertexBuffers;
 	const instances =
 		permutation & PERMUTATION_INSTANCE_INDEX
 			? INDEX_BUFFERS
-			: permutation & PERMUTATION_MOTION
-				? MOTION_INSTANCE_BUFFERS
-				: t.vertexBuffers;
+			: (permutation & PERMUTATION_MOTION && motion) || t.vertexBuffers;
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
@@ -398,15 +377,7 @@ function vertexBuffers(
 		stepMode: 'vertex',
 		attributes,
 	};
-	if (!t.lastVertices) return [mesh, ...instances];
-	const position = attributes.find((attribute) => attribute.shaderLocation === 0);
-	if (!position) throw new Error(`vertex format ${vertexFormat} has no position`);
-	const last: GPUVertexBufferLayout = {
-		arrayStride: mesh.arrayStride,
-		stepMode: 'vertex',
-		attributes: [{ ...position, shaderLocation: LAST_POSITION_LOCATION }],
-	};
-	return [mesh, ...instances, last];
+	return [mesh, ...instances, ...(t.afterInstances?.(mesh) ?? [])];
 }
 
 /**
@@ -449,15 +420,15 @@ export class Pipelines {
 	 * view's index group for the builds that read their instances by index.
 	 */
 	private readonly pipelineLayouts = new Map<number, GPUPipelineLayout>();
-	private readonly cullLayout: GPUPipelineLayout;
+	/** The motion pass's parts, which load with its first pipeline (see `motion-pipelines.ts`). */
+	motion: MotionParts | undefined;
+	readonly cullLayout: GPUPipelineLayout;
 	private readonly cull: WgslShader | undefined;
 	/**
 	 * The builds of occlusion culling's two phases and of its depth pyramid, which arrive with the
 	 * occlusion feature's shader file.
 	 */
 	private readonly occlusion: ShaderVariants;
-	/** The motion view's culling build, which arrives with the motion feature's shader file. */
-	private readonly cullMotion: ShaderVariants;
 	private readonly pyramid: ShaderVariants;
 	private readonly pyramidLayout: GPUPipelineLayout;
 	private readonly lightLayout: GPUPipelineLayout;
@@ -475,7 +446,7 @@ export class Pipelines {
 	/** `shaders` are the WGSL builds that the device loaded, with the bits that it fixes. */
 	constructor(
 		private readonly device: GPUDevice,
-		shaders: DeviceShaders,
+		readonly shaders: DeviceShaders,
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
 		// The frame's constants and the material table, which depth-only pipelines read too, then
@@ -551,23 +522,29 @@ export class Pipelines {
 		]);
 		// The motion pass's frame group: the depth group's entries, then the motion block and the last
 		// frame's joints, which vertex shaders read, and the table of object ranges for custom
-		// materials that read object ids.
-		this.defineLayout(LAYOUT_MOTION_FRAME, 'motion frame', [
-			...frameEntries,
-			{
-				binding: 2,
-				visibility: GPUShaderStage.VERTEX,
-				texture: { sampleType: 'unfilterable-float' },
-			},
-			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-			{
-				binding: 5,
-				visibility: GPUShaderStage.VERTEX,
-				texture: { sampleType: 'unfilterable-float' },
-			},
-			rowValues,
-			objectRanges,
-		]);
+		// materials that read object ids. Its bind groups come before its pipelines' parts load, so
+		// the start holds it, made at its first use.
+		this.defineLayout(
+			LAYOUT_MOTION_FRAME,
+			'motion frame',
+			[
+				...frameEntries,
+				{
+					binding: 2,
+					visibility: GPUShaderStage.VERTEX,
+					texture: { sampleType: 'unfilterable-float' },
+				},
+				{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+				{
+					binding: 5,
+					visibility: GPUShaderStage.VERTEX,
+					texture: { sampleType: 'unfilterable-float' },
+				},
+				rowValues,
+				objectRanges,
+			],
+			true,
+		);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
@@ -872,19 +849,6 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
-		// The motion of moving objects: the last frame's matrices after each instance's copy, and the
-		// last frame's place of each vertex in slot 2. Masked builds read the texture coordinates and
-		// the base color map, whose group, or a blank one's, every build binds.
-		this.defineTemplate(TEMPLATE_MOTION, {
-			label: 'mesh motion',
-			shader: shaders.motion,
-			pipeline: 'main',
-			layouts: [LAYOUT_MOTION_FRAME, LAYOUT_TEXTURES],
-			meshLocations: [0],
-			maskLocations: [2, 3],
-			vertexBuffers: MOTION_INSTANCE_BUFFERS,
-			lastVertices: true,
-		});
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_MOTION_VIEW, {
 				label: 'motion view',
@@ -913,7 +877,6 @@ export class Pipelines {
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
 		this.occlusion = shaders.cull_occlusion;
-		this.cullMotion = shaders.cull_motion;
 		this.pyramid = shaders.pyramid;
 		this.pyramidLayout = device.createPipelineLayout({
 			bindGroupLayouts: [this.layout(LAYOUT_DEPTH_PYRAMID)],
@@ -1035,9 +998,9 @@ export class Pipelines {
 		return made;
 	}
 
-	/** Creates the shader module of `shader` ahead of the pipelines that will share it. */
-	prepareModule(label: string, shader: WgslShader): void {
-		this.module(label, shader);
+	/** Creates the shader module of `shader`, once, ahead of the pipelines that will share it. */
+	prepareModule(label: string, shader: WgslShader): GPUShaderModule {
+		return this.module(label, shader);
 	}
 
 	private module(label: string, shader: WgslShader): GPUShaderModule {
@@ -1112,7 +1075,7 @@ export class Pipelines {
 			vertex: {
 				module,
 				entryPoint: entryPoints?.vertex,
-				buffers: vertexBuffers(t, vertexFormat, permutation),
+				buffers: vertexBuffers(t, vertexFormat, permutation, this.motion?.instances),
 				constants: scaleConstants(t, shader, vertexFormat, permutation),
 			},
 			fragment: colorFormat
@@ -1217,7 +1180,8 @@ export class Pipelines {
 	computeVariants(template: number, permutation = 0): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
-		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) return this.cullMotion;
+		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION)
+			return this.shaders.cull_motion;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
@@ -1240,13 +1204,8 @@ export class Pipelines {
 			};
 		}
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) {
-			const shader = variantFor(this.cullMotion, permutation, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
-			return {
-				label: 'cull motion',
-				layout: this.cullLayout,
-				compute: { module: this.module('cull motion', shader), entryPoint: CULL_ENTRY_POINT },
-			};
+			if (!this.motion) throw new Error('the motion pipelines have not loaded');
+			return this.motion.cull(permutation);
 		}
 		if (template === TEMPLATE_CULL) {
 			if (!this.cull) throw new Error("the device's shader module has no culling shader");
