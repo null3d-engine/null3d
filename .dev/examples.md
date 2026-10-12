@@ -391,6 +391,16 @@ Each feature gets a decision record of its own when it is built.
 
 Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
+## The stone garden's scenery (12 October 2026)
+
+The owner asked for a richer contact shadows demo (`contact-shadows`, Stone garden) on 12 October 2026. Its scenery now lives in `examples/contact-shadows/garden.ts`, beside the sketch, and all of it is made in code.
+
+- Sand raked in rings around each rock, and in straight furrows between them. A normal map from the same rake gives the low sun a light relief. A stronger relief drew dark stripes that hid the cast shadows.
+- Granite rocks: polyhedra from `@null3d/geometry` with bumps, flat underneath, each with its own shape and warmth. One granite texture made from value noise covers the rocks, the stepping stones, the curb and the lantern. Moss covers the rocks' tops through their vertex colors.
+- Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, a plaster wall with a tiled cap, and the forest demo's pines beyond it.
+- The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stood higher than the hour's, the sky was too bright for the low sun's light, and the long shadows hardly showed. The sky's environment lights the scene, so the demo has no ambient light.
+- The wall stands behind the garden, away from the sun's side. A wall on the sun's side would shade the whole bed under a sun this low.
+
 ## The demos of the geometry package (M2-P2)
 
 The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.

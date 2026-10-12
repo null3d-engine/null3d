@@ -28,7 +28,7 @@ export default defineSketch(async (ctx) => {
 		out[2] = Math.cos(heading) * reach;
 		return out;
 	};
-	const sky = { ...day.sky, sunPosition: toSun(HEADING, [0, 0, 0]), cloudCoverage: 0.4, time: 0 };
+	const sky = { ...day.sky, sunPosition: toSun(HEADING, [0, 0, 0]), cloudCoverage: 0.4 };
 	const [background, light] = [{ sky }, { intensity: day.skyIntensity }];
 	scene.setBackground(background, light);
 	scene.setEnvironment(await assets.skyEnvironment(), light);
@@ -64,12 +64,11 @@ export default defineSketch(async (ctx) => {
 				sun.setShadow(lit[half]);
 			}
 			// The sun swings around the garden, or turns toward the pointed point, low in the sky. The
-			// sky's sun goes with it, and its clouds drift.
+			// sky's sun goes with it. The sky's environment follows the sky, so the clouds stand still.
 			const swing = HEADING + 0.5 * Math.sin(time.now * 0.15);
 			const heading = math.lerp(swing, Math.atan2(view.point[0], view.point[2]), view.steering);
 			const to = toSun(heading, sky.sunPosition);
 			sun.setDirection(-to[0], -to[1], -to[2]);
-			sky.time = time.now;
 			scene.setBackground(background, light);
 		},
 	};
