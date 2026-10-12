@@ -767,7 +767,7 @@ function checkSettings(settings: PostSettings): void {
 	)
 		throw new EngineError(
 			'E1213',
-			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness.",
+			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness. Under AgX, keep intensity at 1 or less and set falloff to 3.",
 		);
 	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'intensity, size, falloff and roundness');
 	if (vignette) {
