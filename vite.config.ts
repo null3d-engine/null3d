@@ -11,6 +11,7 @@ import { sampleTexturesServer } from './tools/lib/sample-textures.ts';
 import { samplesServer } from './tools/lib/samples.ts';
 import { ensureShaderModules } from './tools/lib/shader-modules.ts';
 import { sourceResolve } from './tools/lib/source-condition.ts';
+import { watchIgnored } from './tools/lib/watch-ignored.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages, the
 // benchmark pages under bench/pages and the demos under examples, with the isolation headers.
@@ -86,13 +87,7 @@ const config: UserConfig = {
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
 		watch: {
-			ignored: [
-				'**/target/**',
-				'**/.claude/**',
-				'**/.dev/**',
-				'**/.internal/**',
-				'**/test-results/**',
-			],
+			ignored: watchIgnored(import.meta.dirname),
 		},
 	},
 	// The scan for dependencies to prebundle starts at the pages, and it does not follow a page into
