@@ -1,6 +1,6 @@
 # D-143: Physical sky and aerial perspective
 
-Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The figures of cost and size follow the build. Date: 2026-10-11. Task: M2-EX26.
+Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. The figures of cost and size are under Data. Date: 2026-10-11. Task: M2-EX26.
 
 Summary: `scene.setBackground({ atmosphere })` draws a physically based sky: Rayleigh and Mie scattering and ozone, from Hillaire's three lookup tables (2020), as Unreal Engine and Bevy draw theirs. The same air hazes distant objects by distance and by the sun's angle, inside each surface's shader, as fog does. The sky's environment, the moon, the stars and the clouds follow it. The Low preset draws three.js's analytic sky in its place, matched in brightness. Nothing runs or downloads while no scene uses it.
 
@@ -69,7 +69,27 @@ The coordinator asked that the Low preset keep the analytic sky. The quality set
 
 ## Data
 
-To follow the build: each table's GPU time on the Mac and on SwiftShader, on all three paths; the background per pixel against the analytic sky; the cost per preset with the sky on and off; the CPU time of the diffuse light; download sizes; and the allocation check.
+The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz) on 13 October 2026, at a load of 3.3 ([devices](../devices.md)). Its page draws a ground of boxes under a low sun and clouds, with the window at 1512 x 758 points and 2 pixels to a point. Each item times three.js's analytic sky (off) against the physical sky (on), with the haze on the boxes. The figures are each side's median GPU time per frame, from the page's GPU timer.
+
+| Item | Analytic sky (ms) | Physical sky (ms) | Difference (ms) |
+| --- | --- | --- | --- |
+| WebGPU, scale 1, sun still | 1.97 | 1.44 | -0.52 |
+| WebGPU, scale 1, sun moving | 1.97 | 2.16 | +0.20 |
+| WebGPU, scale 0.5, sun still | 1.77 | 1.77 | 0.00 |
+| WebGPU, scale 0.5, sun moving | 1.77 | 1.97 | +0.20 |
+| WebGL2, scale 1, sun still | 3.32 | 3.26 | -0.06 |
+| WebGL2, scale 1, sun moving | 3.25 | 3.29 | +0.04 |
+| WebGL2, scale 0.5, sun still | 2.79 | 2.78 | -0.00 |
+| WebGL2, scale 0.5, sun moving | 2.78 | 3.18 | +0.41 |
+
+- With the sun still, the physical sky costs what the analytic sky costs, within the timer's noise of about half a millisecond. The sky view table is not drawn again, and the background reads it once per pixel.
+- With the sun moving in every frame, the sky view table is drawn in every frame. That costs 0.04 to 0.41 ms per frame. The transmittance and multiple scattering tables are drawn only when the air's settings change, so a moving sun never draws them.
+- Every item held the display's 120 Hz, so no frame was late on either side.
+- The CPU time per frame of both workers stayed at 0.07 to 0.21 ms on both sides. The diffuse light from the CPU's copy of the model adds no time that the page can measure, even with the sun moving.
+- The page's timer measures whole frames, so the plan gives no GPU time for each table alone. SwiftShader's times say nothing about a real GPU, so the plan runs on the Mac's GPU only.
+- The Low preset draws the analytic sky, so its cost does not change. Medium, High and Ultra draw the physical sky at the costs above.
+- The allocation check (`bun run bench:allocation --atmosphere`, also with `--atmosphere-environment`, and on WebGL2) passed on 12 October 2026: no allocation per frame in the sketch worker or the render worker.
+- Download sizes are under Consequences.
 
 ## Decision
 
