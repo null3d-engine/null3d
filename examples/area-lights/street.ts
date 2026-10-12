@@ -17,10 +17,14 @@ const smoothstep = (a: number, b: number, x: number) => {
 	return t * t * (3 - 2 * t);
 };
 
-/** Builds the street. */
-export function street({ scene, geometry, materials, textures }: SketchContext): void {
+/** Builds the street, and returns the night's exposure. */
+export async function street(ctx: SketchContext): Promise<number> {
+	const { scene, assets, geometry, materials, textures } = ctx;
 	const night = timeOfDay('night', { heading: 2.6 });
-	scene.setBackground({ sky: night.sky }, { intensity: night.skyIntensity });
+	// The moonlit sky, a deep blue that the puddles mirror, brighter than the preset's dark navy.
+	const sky = { intensity: night.skyIntensity * 8 };
+	scene.setBackground({ sky: night.sky }, sky);
+	scene.setEnvironment(await assets.skyEnvironment(), sky);
 	scene.setFog({ color: night.fog.color, density: 0.035 });
 	scene.createAmbientLight({ color: night.ambient.color, intensity: night.ambient.intensity * 2 });
 	scene.createDirectionalLight({
@@ -40,8 +44,8 @@ export function street({ scene, geometry, materials, textures }: SketchContext):
 		const grit = noise.value2(u * 220, v * 220, 220) * 0.5 + noise.value2(u * 60, v * 60, 60) * 0.5;
 		const shade = (0.16 + 0.05 * grit) * (1 - 0.45 * wet);
 		Object.assign(out, { r: shade, g: shade, b: shade * 1.06, occlusion: 1 });
-		out.roughness = 0.42 + 0.12 * grit - 0.38 * wet;
-		out.height = grit * 1.5 * (1 - wet);
+		out.roughness = 0.42 + 0.12 * grit - 0.3 * wet;
+		out.height = grit * 0.25 * (1 - wet);
 	});
 	const road = materials.standard({ ...asphalt, uvTransform: { repeat: [1, 5] } });
 	scene.createMesh({
@@ -131,5 +135,9 @@ export function street({ scene, geometry, materials, textures }: SketchContext):
 				const lit = next() < 0.2 ? rooms[Math.floor(next() * rooms.length)] : glass;
 				block(trim, [side * 3.98, y, z], [0.06, 1.5, 1.2]);
 				block(lit as Material, [side * 3.94, y, z], [0.04, 1.3, 1]);
+				// Glazing bars split each window into four panes.
+				block(trim, [side * 3.92, y, z], [0.03, 1.3, 0.05]);
+				block(trim, [side * 3.92, y, z], [0.03, 0.05, 1]);
 			}
+	return night.exposure;
 }

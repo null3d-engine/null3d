@@ -113,6 +113,17 @@ afterEach(() => rmSync(join(dirs.references, '..'), { recursive: true, force: tr
 
 const facts = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as CandidateFacts;
 
+/** A demo's source: its sketch, or every module in its folder for a demo of several files. */
+const demoSources = (demo: (typeof DEMOS)[number]) => {
+	const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
+	if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
+	const folder = dirname(sketch);
+	return readdirSync(folder)
+		.filter((file) => file.endsWith('.ts'))
+		.map((file) => readFileSync(join(folder, file), 'utf8'))
+		.join('\n');
+};
+
 describe('the manifest', () => {
 	it('lists valid tests, whose pages and sketches exist', () => {
 		expect(manifestProblems(IMAGE_TESTS)).toEqual([]);
@@ -162,18 +173,21 @@ describe('the manifest', () => {
 
 	it('loads files only in the demos that say why', () => {
 		// A demo of several files loads a file when any of its modules does.
-		const sources = (demo: (typeof DEMOS)[number]) => {
-			const sketch = join(REPO_ROOT, 'examples', sketchPath(demo));
-			if (!demo.code?.endsWith('/')) return readFileSync(sketch, 'utf8');
-			const folder = dirname(sketch);
-			return readdirSync(folder)
-				.filter((file) => file.endsWith('.ts'))
-				.map((file) => readFileSync(join(folder, file), 'utf8'))
-				.join('\n');
-		};
 		const loads = (demo: (typeof DEMOS)[number]) =>
-			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(sources(demo));
+			/\bsampleUrl\(|\bassets\.(?:load\w*|preload)\(/.test(demoSources(demo));
 		expect(DEMOS.filter((demo) => loads(demo) !== (demo.assets !== undefined))).toEqual([]);
+	});
+
+	it('sets an exposure in each demo that uses timeOfDay', () => {
+		// A dusk or night scene at the default exposure shows several times too dark. A demo takes
+		// the time of day's exposure or sets its own. Creek is exempt: the owner approved its look,
+		// which is tuned at the default exposure, and a new exposure would change it.
+		const exempt = new Set(['creek']);
+		const skipped = DEMOS.filter((demo) => {
+			const code = demoSources(demo);
+			return !exempt.has(demo.name) && /\btimeOfDay\(/.test(code) && !/\bexposure\b/.test(code);
+		});
+		expect(skipped.map((demo) => demo.name)).toEqual([]);
 	});
 
 	it('loads files only in the comparisons that say why, in both engines alike', () => {

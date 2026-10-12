@@ -27,13 +27,16 @@ const NEON: readonly [Vec3, Vec3, string][] = [
 const UP: Vec3 = [0, 1, 0];
 /** Each tube's radius, and each light's brightness in nits. */
 const TUBE = 0.04;
-const WINDOW_NITS = 16;
-const NEON_NITS = 160;
+const WINDOW_NITS = 6;
+const NEON_NITS = 60;
+/** The sign's light: real neon is far brighter than a screen shows its tubes, and a picture of thin
+ * tubes gives out only their share of its area, so the light is brighter than their glow. */
+const SIGN_NITS = NEON_NITS * 4;
 
-export default defineSketch((ctx) => {
+export default defineSketch(async (ctx) => {
 	const { scene, geometry, materials, textures, post, time } = ctx;
-	street(ctx);
-	post.set({ bloom: { intensity: 0.35, threshold: 1 }, vignette: {} });
+	const exposure = await street(ctx);
+	post.set({ exposure, bloom: { intensity: 0.35, threshold: 1 }, vignette: {} });
 	const glow = (emissive: string, emissiveIntensity: number) =>
 		materials.standard({ color: '#000000', emissive, emissiveIntensity });
 
@@ -67,17 +70,15 @@ export default defineSketch((ctx) => {
 	}
 
 	// A cold strip light over the doorway at the far end, which faces down the street.
-	const strip = { width: 3, height: 0.25, range: 14, color: '#bcd8ff', intensity: 40 };
-	const panel = {
-		mesh: geometry.plane({ width: 3, height: 0.25 }),
-		material: glow(strip.color, 40),
-	};
-	scene.createMesh({ ...panel, position: [0, 3.2, -19.78] });
+	const strip = { width: 3, height: 0.25, range: 14, color: '#bcd8ff', intensity: 15 };
+	const panel = glow(strip.color, strip.intensity);
+	scene.createMesh({ mesh: geometry.plane(strip), material: panel, position: [0, 3.2, -19.78] });
 	scene.createRectAreaLight({ ...strip, position: [0, 3.2, -19.77], direction: [0, -0.2, 1] });
 
 	// The neon sign, on its board: a glowing capsule for each tube, and one rectangle light over the
-	// board that shows a picture of the tubes, so the sign costs one area light, not four.
-	const picture = new Uint8Array(32 * 32 * 4);
+	// board that shows a picture of the tubes and a faint pink glow around them, so the sign costs
+	// one area light, not four.
+	const picture = new Uint8Array(32 * 32 * 4).map((_, i) => [89, 22, 57, 255][i % 4] as number);
 	const tubes = NEON.map(([a, b, color]) => {
 		const rgb = [1, 3, 5].map((at) => Number.parseInt(color.slice(at, at + 2), 16));
 		for (let t = 0; t <= 1; t += 1 / 64) {
@@ -98,7 +99,7 @@ export default defineSketch((ctx) => {
 		width: 1.2,
 		height: 2,
 		range: 10,
-		intensity: NEON_NITS,
+		intensity: SIGN_NITS,
 		image: { width: 32, height: 32, data: picture },
 	});
 
@@ -130,7 +131,7 @@ export default defineSketch((ctx) => {
 			// The second neon tube stutters now and then, as old neon does, and the sign dims with it.
 			const stutter = Math.sin(time.now * 23) > 0.2 && Math.sin(time.now * 1.3) > 0.85;
 			tubes[1].setVisible(!stutter);
-			sign.setIntensity(stutter ? NEON_NITS * 0.75 : NEON_NITS);
+			sign.setIntensity(stutter ? SIGN_NITS * 0.75 : SIGN_NITS);
 			// The loose tube drifts down the street and back, turning slowly, or follows the pointer.
 			vec3.set(at, Math.sin(time.now * 0.4) * 1.5, 0.6, -4 + Math.sin(time.now * 0.25) * 5);
 			view.steer(at);
