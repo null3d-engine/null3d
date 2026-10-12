@@ -5,14 +5,15 @@
 #import null3d::refraction::{transmission_map}
 
 // Screen-space reflections in the camera's opaque pass. The steps before the pass (ssr.wgsl) march
-// each texel's mirror ray through a depth pyramid, and leave the ray's length to its hit, or 0 for
-// a miss, in z of the screen texture that ambient occlusion shares. Each pixel here casts its own
-// reflected ray, along its own normal, for the length of the hits around it, and takes the point
-// where the ray ends into last frame's view. It reads last frame's opaque color there, from the copy
-// with a whole chain of mip levels that transmission samples too, at the level that the cone of its
-// roughness covers. The reflection takes the place of the environment's by its share, which fades
-// out on misses, toward the screen's edges, for rays that turn toward the camera, near the most
-// distance and on rough surfaces, so the environment's light takes over with no hard edge.
+// each texel's mirror ray through a depth pyramid, and leave the ray's length to its hit or to the
+// screen's edge, or 0 for a miss, in z of the screen texture that ambient occlusion shares. Each
+// pixel here casts its own reflected ray, along its own normal, for the length of the hits around
+// it, and takes the point where the ray ends into last frame's view. It reads last frame's opaque
+// color there, from the copy with a whole chain of mip levels that transmission samples too, at the
+// level that the cone of its roughness covers. The reflection takes the place of the environment's
+// by its share, which fades out on misses, toward the screen's edges, for rays that turn toward the
+// camera, near the most distance and on rough surfaces, so the environment's light takes over with
+// no hard edge.
 //
 // The frame's `reflection` values: x the reflections' strength, 0 while the view draws none or has
 // no last frame to read; y the most roughness that reflects; z the most distance of a ray; w the

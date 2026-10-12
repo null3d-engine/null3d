@@ -9,8 +9,9 @@
 //   it: where a cell holds nothing nearer than the ray, the ray crosses the cell and climbs a
 //   level; where it does, the ray stops at the cell's nearest depth or its edge, and drops a level.
 //   It writes the length of the ray to its hit, in world units, or 0 for a miss, into z of the
-//   screen texture. x and y hold no occlusion and the texel's depth, and w no contact shadow, until
-//   the last of the screen texture's steps writes them.
+//   screen texture. A ray that leaves the screen first writes its length to the screen's edge.
+//   x and y hold no occlusion and the texel's depth, and w no contact shadow, until the last of
+//   the screen texture's steps writes them.
 //
 // Positions on the grid count texels of the first level from the corner's top left. WebGPU draws a
 // corner into a target's first rows and WebGL2, which counts rows from the bottom, into its last,
@@ -223,12 +224,14 @@ fn trace_rays(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let steps = i32(trace.ray.z);
     var step = 0;
     let grid = trace.corners.zw;
+    var left = false;
     loop {
         if step >= steps || mip < 0 || t > 1.0 {
             break;
         }
         let at = origin.xy + direction.xy * t;
         if any(at < vec2f(0.0)) || any(at >= grid) {
+            left = true;
             break;
         }
         let ray_depth = origin.z + direction.z * t;
@@ -257,6 +260,16 @@ fn trace_rays(@builtin(position) position: vec4f) -> @location(0) vec4f {
             mip -= 1;
         }
         step += 1;
+    }
+    if left {
+        // A ray that leaves the screen before it meets anything keeps its length to the screen's
+        // edge. The opaque pass fades each pixel's reflection out by where its own ray ends, so
+        // where the screen runs out the reflection fades smoothly, with no steps of the grid.
+        let leave = (ahead * grid - origin.xy) * inverse.xy;
+        let edge = min(min(leave.x, leave.y), 1.0);
+        let uv = (origin.xy + direction.xy * edge) / grid;
+        let ray_point = view_position(uv, origin.z + direction.z * edge, trace.inverse_projection);
+        return vec4f(1.0, depth, max(length(ray_point - center), 1e-4), 1.0);
     }
     if mip >= 0 || t > 1.0 {
         return vec4f(1.0, depth, 0.0, 1.0);
