@@ -1437,6 +1437,15 @@ impl SceneStorage {
         )
     }
 
+    /// The world transform that the next update gives the object of `handle`, relative to the
+    /// origin, from the local transforms of the object and its ancestors as they are now: what
+    /// work that runs before the update, such as a look-at, aims from. `None` when no live object
+    /// has the handle.
+    pub fn next_world_matrix64(&self, handle: Handle) -> Option<Affine64> {
+        let slot = self.slots.resolve(handle).ok()?;
+        Some(self.world_matrix64(slot))
+    }
+
     /// The world transform that the next update gives the object in `slot`, relative to the
     /// origin, from the local transforms of the object and its ancestors as they are now. The
     /// identity for [`NO_PARENT`].

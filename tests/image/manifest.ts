@@ -43,7 +43,7 @@ import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
-import { DEMOS } from '../../examples/demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
@@ -1288,6 +1288,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with joints turned on top of the clip: rotations set and added, and look-ats
+	// of chains at full and half weight, which the job workers apply before the skinning matrices.
+	{
+		name: 'skinning-joints',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?joints',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	// The characters with tangents and a normal map of grooves, which light alike only when every
 	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
 	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
@@ -2016,14 +2025,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			},
 		}),
 	),
-	// Each feature demo in examples/, held at the demo's time.
+	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
+	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
 	...DEMOS.map(
 		(demo): ImageTest => ({
 			name: `demo-${demo.name}`,
-			sketch: `examples/${demo.name}/sketch.ts`,
+			sketch: `examples/${sketchPath(demo)}`,
 			hold: demo.hold,
 			...(demo.largeWorld && { switches: ['largeWorld'] }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		}),
 	),
 	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
