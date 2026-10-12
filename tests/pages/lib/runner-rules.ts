@@ -6,6 +6,17 @@
 export const MOST_TIME_SHARE = 3;
 
 /**
+ * How often a runner page rewrites its heartbeat record while it waits on a page. The runner tool
+ * counts a runner page that writes nothing for a page's limit and a little more as stopped. A page
+ * may get longer than its limit, so the record shows the tool that the runner page still runs.
+ * The beat comes well within the shortest such quiet time.
+ */
+export const HEARTBEAT_SECONDS = 20;
+
+/** The name of a runner page's heartbeat record in a run. */
+export const HEARTBEAT_NAME = 'heartbeat';
+
+/**
  * How much longer than its measured pace a page expects the rest of its work to take, as a share.
  * It leaves room for a slower batch later on.
  */

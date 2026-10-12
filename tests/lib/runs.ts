@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MEMORY_REFUSED } from '../pages/lib/room.ts';
+import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import type { DeviceFacts } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -418,13 +419,19 @@ export async function inLanes<T>(
 	if (failed) throw failed.reason;
 }
 
-/** Time a batch may take: every page's timeout, plus time to open the browser and pause between pages. */
+/**
+ * Time a batch may take: the most time that each page may get, a few times its timeout where its
+ * loads or its own pace ask for it, plus time to open the browser and pause between pages.
+ */
 export function batchTimeoutMs(plan: Plan): number {
 	const PER_ITEM_SLACK_SECONDS = 5;
 	const START_SECONDS = 120;
 	return (
 		(START_SECONDS +
-			plan.items.reduce((sum, item) => sum + item.timeoutSeconds + PER_ITEM_SLACK_SECONDS, 0)) *
+			plan.items.reduce(
+				(sum, item) => sum + item.timeoutSeconds * MOST_TIME_SHARE + PER_ITEM_SLACK_SECONDS,
+				0,
+			)) *
 		1000
 	);
 }
