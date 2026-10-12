@@ -16,6 +16,17 @@ const JOINTS = 16;
 /** The time in seconds at which the pair starts its walk, between the walk's two footsteps. */
 const PAIR_START = 0.5;
 
+/** The point that the soldier aims at, and its chain: a limb of three joints from the root. */
+const TARGET = [1, 1.5, -2] as const;
+const AIM = Object.freeze({ joints: ['joint1', 'joint6', 'joint11'], limit: 1.2 });
+
+/** The angle between two directions, in radians. */
+function angle(a: readonly number[], b: readonly number[]): number {
+	const dot = a.reduce((sum, v, k) => sum + v * (b[k] as number), 0);
+	const length = Math.hypot(...a) * Math.hypot(...b);
+	return Math.acos(Math.min(1, Math.max(-1, dot / length)));
+}
+
 /** The code of the error that `call` throws, or 'none'. */
 function codeOf(call: () => unknown): string {
 	try {
@@ -54,6 +65,12 @@ export default defineSketch(({ scene, time, page }) => {
 	pair.animator.play('walk', { time: PAIR_START, weight: 0.5 });
 	pair.animator.play('run', { weight: 0.5 });
 	strider.animator.playBlend({ walk: 0, run: 1 }, { value: 0.5 });
+	// The soldier walks and turns every frame, and aims one of its chains at the target. Its twin
+	// walks beside it in the same place without aiming, to show how far the aim turned.
+	const soldier = actor('soldier');
+	const twin = actor('twin');
+	for (const { animator } of [soldier, twin]) animator.play('walk');
+	soldier.animator.lookAt(TARGET, AIM);
 	const plain = scene.createGroup({ name: 'plain' });
 	const errors: Record<string, string> = {
 		unknownClip: codeOf(() => hero.animator.play('swim')),
@@ -61,12 +78,61 @@ export default defineSketch(({ scene, time, page }) => {
 		noClips: codeOf(() => plain.animator()),
 		weightOfIdleClip: codeOf(() => guard.animator.setWeight('walk', 0.5)),
 		emptyBlend: codeOf(() => strider.animator.playBlend({})),
+		unknownJoint: codeOf(() => hero.animator.joint('tail')),
+		brokenChain: codeOf(() => hero.animator.lookAt(TARGET, { joints: ['joint6', 'joint1'] })),
+		lookWithoutChain: codeOf(() => guard.animator.lookAt(TARGET)),
+	};
+	// The soldier's place and heading in the frame whose step the next frame reads back.
+	let [x, z, heading] = [0, 0, 0];
+	let [aimError, aimFrames, aimTurn] = [0, 0, 0];
+	/** Checks the aim of the last frame step, from the soldier's place in that frame. */
+	const checkAim = () => {
+		const end = AIM.joints.length - 1;
+		const joint = Number(AIM.joints[end]?.slice(5));
+		const [aim, from] = aimOf(soldier.animator.matrices(), joint, x, z, heading);
+		const wanted = TARGET.map((v, k) => v - (from[k] as number));
+		aimError = Math.max(aimError, angle(aim, wanted));
+		aimTurn = angle(aim, aimOf(twin.animator.matrices(), joint, x, z, heading)[0]);
+		aimFrames++;
+	};
+	/** The forward direction of a joint and its place in the world, from its skinning matrix. */
+	const aimOf = (skin: Float32Array, j: number, x: number, z: number, heading: number) => {
+		const m = (r: number, c: number) => skin[j * 12 + r * 4 + c] as number;
+		// The joint's place at bind time, which its skinning matrix carries to its place in the pose.
+		const [bx, by, bz] = rig.bindPlaces.subarray(j * 3, j * 3 + 3);
+		const local = [0, 1, 2].map(
+			(r) =>
+				m(r, 0) * (bx as number) + m(r, 1) * (by as number) + m(r, 2) * (bz as number) + m(r, 3),
+		);
+		// The aim at bind time is +Z in the object's space, so the matrix's third column carries it.
+		const forward = [m(0, 2), m(1, 2), m(2, 2)];
+		const [s, c] = [Math.sin(heading), Math.cos(heading)];
+		const turn = (v: number[]) => [
+			c * (v[0] as number) + s * (v[2] as number),
+			v[1] as number,
+			-s * (v[0] as number) + c * (v[2] as number),
+		];
+		const place = turn(local);
+		return [
+			turn(forward),
+			[(place[0] as number) + x, place[1] as number, (place[2] as number) + z],
+		] as const;
 	};
 	let destroyedAt = -1;
 	let crossFaded = false;
 	let reported = false;
 	return {
 		onUpdate() {
+			if (time.now > 0.2) checkAim();
+			// The soldier walks a circle around the target and sways its heading about the way to
+			// it, so an aim from its place in the frame before would miss.
+			const t = time.now;
+			[x, z] = [TARGET[0] + 4 * Math.cos(t), TARGET[2] + 4 * Math.sin(t)];
+			heading = Math.atan2(TARGET[0] - x, TARGET[2] - z) + 0.5 * Math.sin(3 * t);
+			for (const { object } of [soldier, twin]) {
+				object.setPosition(x, 0, z);
+				object.setRotationEuler(0, heading, 0);
+			}
 			pair.animator.setWeight('run', 0.5 + 0.5 * Math.sin(time.now));
 			strider.animator.setBlend(0.5 + 0.5 * Math.sin(2 * time.now));
 			if (!crossFaded && time.now >= 1.2) {
@@ -80,7 +146,15 @@ export default defineSketch(({ scene, time, page }) => {
 			}
 			if (!reported && time.now >= 2.6) {
 				reported = true;
-				const report: AnimatorReport = { heard, destroyedAt, errors, clips: hero.animator.clips };
+				const report: AnimatorReport = {
+					heard,
+					destroyedAt,
+					errors,
+					clips: hero.animator.clips,
+					aimError,
+					aimFrames,
+					aimTurn,
+				};
 				page.post('report', report);
 			}
 		},
