@@ -1,10 +1,11 @@
 // The stone garden's scenery, all made in code. The sand is raked in rings around each rock and
 // in straight furrows between them, and its normal map catches the low sun. Granite rocks with moss
 // on their tops, stepping stones, pebbles, tufts of grass and a stone lantern stand on it, inside a
-// granite curb on a moss lawn. Each object casts and receives shadows, so contact shadows show
-// wherever things touch.
+// granite curb on a moss lawn, with a plaster wall and pines behind. Each object in the garden
+// casts and receives shadows, so contact shadows show wherever things touch.
 import { math, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
+import { pineWithLevels } from '../lib/pines';
 
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
@@ -20,8 +21,20 @@ const ROCKS = [
 	[2.7, 0.9, 0.35, 1.2, -0.1],
 	[-3, 1.7, 0.3, 0.8, 0.15],
 ] as const;
+/** The pines beyond the wall: place and height, in meters. */
+const PINES = [
+	[-16, -17, 5],
+	[-10, -19, 6.5],
+	[-5, -17.5, 4.5],
+	[0, -20, 6],
+	[5, -18, 5],
+	[10, -19.5, 6],
+	[-20, -10, 5.5],
+	[-21, -3, 6.5],
+	[-19, 4, 4.5],
+] as const;
 /** Where the lantern stands. */
-const LANTERN = [3.4, -3.2] as const;
+const LANTERN = [1.2, -3.8] as const;
 /** A bright, quiet rise and fall in 0..1 along a coordinate. */
 const wave = (d: number) => 0.5 + 0.5 * Math.cos((d / RAKE) * Math.PI * 2);
 
@@ -64,9 +77,9 @@ export function garden(ctx: SketchContext): void {
 			const [wx, wz] = [(x + 0.5) * step - BED / 2, BED / 2 - (y + 0.5) * step];
 			const h = rake(wx, wz);
 			const i = (y * SIZE + x) * 4;
-			color.fill((0.78 + 0.22 * h) * math.randFloat(0.9, 1) * 255, i, i + 3);
-			const dx = (rake(wx + step, wz) - h) * 1.6;
-			const dz = (rake(wx, wz + step) - h) * 1.6;
+			color.fill((0.86 + 0.14 * h) * math.randFloat(0.9, 1) * 255, i, i + 3);
+			const dx = (rake(wx + step, wz) - h) * 0.6;
+			const dz = (rake(wx, wz + step) - h) * 0.6;
 			const n = 1 / Math.hypot(dx, dz, 1);
 			normal.set(
 				[(0.5 - 0.5 * dx * n) * 255, (0.5 + 0.5 * dz * n) * 255, (0.5 + 0.5 * n) * 255],
@@ -88,7 +101,7 @@ export function garden(ctx: SketchContext): void {
 	// The moss lawn around the bed.
 	scene.createMesh({
 		mesh: geometry.plane({ width: 400, height: 400 }),
-		material: materials.standard({ color: '#3f4f24', roughness: 1 }),
+		material: materials.standard({ color: '#2c3a1a', roughness: 1 }),
 		position: [0, -0.02, 0],
 		rotation: flat,
 		receiveShadows: true,
@@ -103,15 +116,8 @@ export function garden(ctx: SketchContext): void {
 		const shade = math.clamp(0.45 + 0.25 * broad[i] + 0.2 * fine[i] + speck, 0, 1) * 255;
 		stone.set([shade, shade * 0.97, shade * 0.93], i * 4);
 	}
-	const granite = textures.fromData({
-		width: GRANITE,
-		height: GRANITE,
-		data: stone,
-		colorSpace: 'srgb',
-		wrap: 'repeat',
-		mipmaps: true,
-		anisotropy: 8,
-	});
+	const tile = { width: GRANITE, height: GRANITE, colorSpace: 'srgb', wrap: 'repeat' } as const;
+	const granite = textures.fromData({ ...tile, data: stone, mipmaps: true, anisotropy: 8 });
 	const paving = materials.standard({ map: granite, color: '#8a847d', roughness: 0.8 });
 	for (const [x, z, w, d] of [
 		[0, -5.1, 10.4, 0.2],
@@ -125,6 +131,42 @@ export function garden(ctx: SketchContext): void {
 			position: [x, 0.05, z],
 			...solid,
 		});
+
+	// A plaster wall behind the garden, with faint streaks of rain, under a cap of dark tiles,
+	// and pines beyond it.
+	const clay = new Uint8Array(GRANITE * GRANITE * 4).fill(255);
+	for (let y = 0; y < GRANITE; y++)
+		for (let x = 0; x < GRANITE; x++) {
+			const i = y * GRANITE + x;
+			const shade = 0.86 + 0.1 * broad[i] - 0.1 * fine[(y >> 4) * GRANITE + x] ** 3;
+			clay.set([shade * 255, shade * 0.92 * 255, shade * 0.8 * 255], i * 4);
+		}
+	scene.createMesh({
+		mesh: geometry.box({ width: 13, height: 1.2, depth: 0.3 }),
+		material: materials.standard({
+			map: textures.fromData({ ...tile, data: clay, mipmaps: true }),
+			color: '#e6d6bc',
+			roughness: 0.95,
+			uvTransform: { repeat: [6, 1] },
+		}),
+		position: [0, 0.6, -6.4],
+		...solid,
+	});
+	scene.createMesh({
+		mesh: geometry.box({ width: 13.4, height: 0.12, depth: 0.6 }),
+		material: materials.standard({ color: '#3a3b3e', roughness: 0.55 }),
+		position: [0, 1.26, -6.4],
+		...solid,
+	});
+	const pines = scene.createInstances(pineWithLevels(geometry), PINES.length, {
+		material: materials.standard({ color: '#ffffff', roughness: 0.85, vertexColors: true }),
+	});
+	PINES.forEach(([x, z, height], i) => {
+		pines.positions.set([x, 0, z], i * 3);
+		pines.scales.set([height, height, height], i * 3);
+		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
+	});
+	pines.markDirty();
 
 	// Rocks: rough polyhedra, flat underneath, each its own shape and shade, with moss on top.
 	const rockLook = materials.standard({
@@ -145,10 +187,10 @@ export function garden(ctx: SketchContext): void {
 				0.06 * Math.sin(py * 9 + px * 7 + k) +
 				0.03 * Math.sin(px * 17 + pz * 13);
 			positions.set([px * bump, Math.max(py * bump, -0.3), pz * bump], i);
-			const moss = math.smoothstep(py + 0.15 * Math.sin(px * 5 + pz * 4 + k), 0.35, 0.6);
-			const grey = [1 + warmth, 1, 1 - warmth];
+			const moss = math.smoothstep(py + 0.15 * Math.sin(px * 5 + pz * 4 + k), 0.45, 0.7);
+			const grey = [0.62 * (1 + warmth), 0.62, 0.62 * (1 - warmth)];
 			colors.set(
-				[0, 1, 2].map((c) => math.lerp(grey[c], [0.18, 0.4, 0.08][c], moss)),
+				[0, 1, 2].map((c) => math.lerp(grey[c], [0.08, 0.16, 0.03][c], moss)),
 				i,
 			);
 		}
@@ -191,7 +233,7 @@ export function garden(ctx: SketchContext): void {
 		const angle = math.randFloat(0, Math.PI * 2);
 		const out = radius * (clump ? math.randFloat(0.85, 1) : math.randFloat(1, 2.4));
 		const size = clump ? math.randFloat(0.06, 0.12) : math.randFloat(0.02, 0.065);
-		const squash = math.randFloat(0.35, 0.6);
+		const squash = math.randFloat(0.45, 0.7);
 		pebbles.positions.set(
 			[x + Math.cos(angle) * out, size * squash * 0.6, z + Math.sin(angle) * out],
 			i * 3,
