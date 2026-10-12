@@ -15,6 +15,43 @@ Smallest known case: any compute shader with one `atomicCompareExchangeWeak` cal
 
 Workaround in the engine: no engine shader calls it, and the engine's shader build fails on it. Users' shaders build with a warning ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
 
+## Adreno 619: the floats of a struct keep only half precision on WebGL2
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGL2. WebGPU and compatibility mode on the same tablet are right.
+- Seen in: null3D's sky (`crates/null3d-shaders/wgsl/sky.wgsl` and `null3d::atmosphere`) at commit 3ed5e6c61. On WebGL2, 62% of the background-sky image's pixels differed, and 90% of S6's.
+
+What happens: a fragment shader that keeps a float in a struct reads it back at half precision. Values below the smallest normal half-precision float read as zero. In a struct, 1234.567 read 1234, 0.123456 read 0.1234131, 1.0001 read 1, 70000 read 65504, and 1e-5 read 0. `highp` on the member changes nothing, nor does `highp` on every float declaration of the shader. These kinds of struct all lose precision:
+- a struct local;
+- a struct that a function returns or takes;
+- a struct of scalars, and a struct with a whole number or an array in it;
+- a stage's inputs gathered into a struct;
+- a uniform block's struct copied into a local.
+
+Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per metre, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
+
+Smallest known case, a fragment shader over an `RGBA32UI` target:
+
+```glsl
+#version 300 es
+precision highp float;
+precision highp int;
+struct Held { highp vec4 value; };
+uniform highp vec4 probe;
+uniform highp float one;
+layout(location = 0) out highp uvec4 color;
+Held hold(highp vec4 value) { Held held; held.value = value * one; return held; }
+void main() { color = floatBitsToUint(hold(probe).value); }
+```
+
+With `probe` (1234.567, 0.123456, 1e-5, 70000) and `one` 1, the bits read back as (1234, 0.1234131, 0, 65504).
+
+Workaround in the engine: the sky keeps its scattering coefficients per million metres, within half precision's range (`null3d::atmosphere`). The shader library check page runs the case above and reports the fault as `structFault` ([Browser faults](implementation-notes.md#browser-faults)). The GLSL build still keeps each fragment shader's inputs and most of its values in structs, so on this driver they hold only half precision.
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the shader above.
+
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 
 Status: not reported yet. Found 7 October 2026.

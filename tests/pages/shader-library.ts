@@ -84,6 +84,12 @@ interface Drawn {
 	 * `precision highp int;`. The GLSL build declares each one `highp`, which avoids this.
 	 */
 	precisionFault?: string;
+	/**
+	 * On WebGL2: how a shader changed floats that it held in a struct, each declared `highp`. Such
+	 * a driver keeps the floats of a struct at half precision, so the library's values that pass
+	 * through a struct allow half precision's rounding.
+	 */
+	structFault?: string;
 }
 
 function message(error: unknown): string {
@@ -346,6 +352,7 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	);
 
 	const { target, deviceFault, precisionFault } = integerTarget(gl, rows + 1);
+	const structFault = deviceFault === undefined ? structPrecisionFault(gl) : undefined;
 	gl.enable(gl.SCISSOR_TEST);
 	// GL counts rows from the bottom, in the fragment position, the scissor box and readPixels, so
 	// row k of the target and of the readback is case k, as on WebGPU.
@@ -390,6 +397,7 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 		...(deviceFault && { deviceFault }),
 		...(shaderFault && { shaderFault }),
 		...(precisionFault && { precisionFault }),
+		...(structFault && { structFault }),
 	};
 }
 
@@ -421,6 +429,58 @@ Probe echo(${precision}uvec4 value) {
 void main() {
 	color = echo(probe).value;
 }`;
+}
+
+/**
+ * Floats that the struct probe holds: an ordinary one, a fraction, one below the smallest normal
+ * half-precision float, and one above the largest. Each is exact in 32 bits, and none in 16.
+ */
+const STRUCT_PROBE: readonly number[] = [1234.567, 0.123456, 1e-5, 70000].map(Math.fround);
+
+/**
+ * The struct probe's fragment shader: it keeps the probe's floats in a struct that a function
+ * returns, as the GLSL build keeps a fragment shader's inputs and its library's results, and writes
+ * their bits. Each declaration states `highp`. The product with a uniform 1 keeps the compiler
+ * from folding the struct away.
+ */
+const STRUCT_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+struct Held {
+	highp vec4 value;
+};
+uniform highp vec4 probe;
+uniform highp float one;
+layout(location = 0) out highp uvec4 color;
+Held hold(highp vec4 value) {
+	Held held;
+	held.value = value * one;
+	return held;
+}
+void main() {
+	color = floatBitsToUint(hold(probe).value);
+}`;
+
+/**
+ * Whether the driver keeps the floats of a struct at full precision, read through the bound
+ * target, which keeps every bit. Some WebGL2 drivers keep them at half precision whatever the
+ * shader declares, so every shader that keeps values in a struct computes with half precision
+ * there. Undefined when every float came back whole.
+ */
+function structPrecisionFault(gl: WebGL2RenderingContext): string | undefined {
+	const program = linkProgram(gl, PROBE_VERTEX, STRUCT_FRAGMENT);
+	gl.uniform4fv(gl.getUniformLocation(program, 'probe'), STRUCT_PROBE);
+	gl.uniform1f(gl.getUniformLocation(program, 'one'), 1);
+	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
+	const read = Array.from(new Float32Array(texelAt(gl, 0).buffer));
+	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
+	if (read.every((value, k) => Object.is(value, STRUCT_PROBE[k]))) return undefined;
+	const list = (values: readonly number[]) =>
+		values.map((v) => String(Number(v.toPrecision(7)))).join(', ');
+	const fault = `a shader's floats held in a struct, each declared highp, came back changed: wrote ${list(STRUCT_PROBE)}, read ${list(read)}`;
+	progress(fault);
+	return fault;
 }
 
 /** The kinds of storage that the page tries for its target, in order. */
@@ -516,7 +576,7 @@ function integerTarget(
 run('shader-library', async () => {
 	const cases = allCases();
 	const input = inputTexels(cases);
-	const { bits, failures, target, deviceFault, shaderFault, precisionFault } =
+	const { bits, failures, target, deviceFault, shaderFault, precisionFault, structFault } =
 		tier === 'webgl2' ? runWebGL2(cases, input) : await runWebGPU(cases, input);
 	// The rows of a module that could not draw hold no results, so its failure alone reports it.
 	const drawn = cases.flatMap((c, row) => (failures.has(MODULES[c.function]!) ? [] : [row]));
@@ -533,6 +593,7 @@ run('shader-library', async () => {
 		...(deviceFault && { deviceFault }),
 		...(shaderFault && { shaderFault }),
 		...(precisionFault && { precisionFault }),
+		...(structFault && { structFault }),
 		mismatches:
 			deviceFault || shaderFault
 				? []

@@ -566,6 +566,7 @@ variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 [shaders.test_library]
 file = "test_library.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.atmosphere = { defs = ["ATMOSPHERE"], targets = ["wgsl", "glsl"] }
 variants.color = { defs = ["COLOR"], targets = ["wgsl", "glsl"] }
 variants.depth = { defs = ["DEPTH"], targets = ["wgsl", "glsl"] }
 variants.fog = { defs = ["FOG"], targets = ["wgsl", "glsl"] }
