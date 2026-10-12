@@ -216,7 +216,7 @@ export async function checkGlslPrograms(
 			release(gl, p);
 		}
 		progress(
-			`GLSL: ${first + pending.length} of ${compiled.length} programs checked, ${relinked.length} linked again`,
+			`GLSL: ${first + pending.length} of ${compiled.length} programs checked, ${failures.length} failed, ${relinked.length} linked again`,
 		);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
