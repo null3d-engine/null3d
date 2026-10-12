@@ -107,6 +107,7 @@ Code review enforces these rules.
 17. A change that makes a benchmark median more than 3% slower does not merge without a written reason, given in a `Bench-Expected:` trailer.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
+20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
 
 ## Performance work
 
@@ -119,7 +120,8 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 - The benchmark job in CI compares main's newest commit with the last commit on main that it measured, at most once an hour. Mac machines run its pages in shards, and a last job merges them into one verdict. With the `benchmark` label, it compares a pull request with its merge base. It fails when a page gets slower than its rule allows. [Benchmarks](.dev/benchmarks.md#the-benchmark-job-in-ci) says how to read it.
 - After a pull that changes the Vite plugin or the Vite config, run `bun run build` and restart the dev server before a browser run. The dev server keeps the plugin it started with, as [Device sessions](.dev/devices.md#the-runner) says.
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
-- Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
+- Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`. When it blames code that you did not change, run it again with `--no-inline` to find the real call site.
+- Check a memory figure from the browser before you report it. Chrome counts the shared memory once in each thread, and once more for each stale view of it. Its figure can then be many times the real memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
 
 ## Parity with three.js and add-on modules
 
