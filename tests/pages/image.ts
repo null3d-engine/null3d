@@ -22,6 +22,17 @@ function readSize(text: string | null): [number, number] {
 	return [width, height];
 }
 
+/**
+ * A sketch module's address from the server root. When it has a query, Vite's marker of the file's
+ * extension goes last. Vite takes the language from the last dot of an address, so a query that
+ * ends in a decimal, such as ?scale=0.5, would make the module JavaScript.
+ */
+function sketchUrl(path: string): URL {
+	const url = new URL(path, location.origin);
+	if (url.search) url.search += '&lang.ts';
+	return url;
+}
+
 run('image', async () => {
 	const sketch = params.get('sketch');
 	if (!sketch?.startsWith('/'))
@@ -34,7 +45,7 @@ run('image', async () => {
 	canvas.style.height = `${height}px`;
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL(sketch, location.origin),
+		sketch: sketchUrl(sketch),
 		maxPixelRatio: 1,
 		transparent: params.has('transparent'),
 		antialias: (params.get('antialias') ?? undefined) as EngineOptions['antialias'],
