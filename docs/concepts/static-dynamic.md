@@ -8,7 +8,7 @@ summary: "When to mark objects static; setters versus direct array writes; dirty
 
 # Static and dynamic objects
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Direct array writes to a single object are not built yet: move a single object with its setters.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Direct array writes to a single object are not built yet: move a single object with its setters.
 
 ```mermaid
 flowchart TB

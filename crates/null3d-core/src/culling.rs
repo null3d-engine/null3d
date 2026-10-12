@@ -13,6 +13,10 @@
 //! Bucketed culling also tests layer masks (see [`crate::layers`]). A set of rows that share one
 //! mask outside the view's layers is skipped whole. A set whose rows have masks of their own keeps
 //! only the visible rows on the view's layers.
+//!
+//! It also picks levels of detail (see [`crate::levels`]): a visible row whose bucket has coarser
+//! levels lands in the bucket of the level that its distance and scale pick, and inside a fading
+//! band in two fade buckets, whose entries come in pairs: the entry, then the fade value's bits.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -22,9 +26,10 @@ use crate::alloc::reserve_keeping;
 use crate::cells::CELL_SHIFT;
 use crate::jobs::JobSystem;
 use crate::layers::shares_layer;
+use crate::levels::{LevelLink, LevelRule, Picked, fade_values};
 use crate::occlusion::OcclusionBuffer;
 use crate::shared::SharedMut;
-use crate::world::SphereArrays;
+use crate::world::{SphereArrays, UNBOUNDED_RADIUS};
 
 /// Spheres per chunk when [`cull_parallel`] splits the work; a multiple of four.
 pub const CULL_CHUNK: u32 = 4096;
@@ -734,6 +739,101 @@ fn cull_run(
     }
 }
 
+/// The cells of the rows of a set, for the choice of levels: one cell for every row, or each
+/// row's own.
+#[derive(Clone, Copy, Debug)]
+pub enum RowCells<'a> {
+    /// Every row lies in this cell.
+    One(u32),
+    /// Row `i` lies in the cell at `i`.
+    Rows(&'a [u32]),
+}
+
+/// The local radii of the rows of a set, for the choice of levels: each row's radius before its
+/// world matrix scales it.
+#[derive(Clone, Copy, Debug)]
+pub enum RowRadii<'a> {
+    /// Every row has this local radius.
+    One(f32),
+    /// Row `i` has the local radius at `i`.
+    Rows(&'a [f32]),
+}
+
+/// A set's rows as the choice of levels reads them, by row: their world spheres, relative to
+/// their cells' centres, their cells and their local radii.
+#[derive(Clone, Copy, Debug)]
+pub struct LevelRows<'a> {
+    /// The world spheres, by row.
+    pub spheres: SphereArrays<'a>,
+    /// The rows' cells.
+    pub cells: RowCells<'a>,
+    /// The rows' local radii.
+    pub radii: RowRadii<'a>,
+}
+
+/// What [`cull_into_buckets`] reads to pick levels of detail: the view's rule, each bucket's link,
+/// and each set's rows by row.
+#[derive(Clone, Copy)]
+pub struct LevelChoice<'a> {
+    /// The view's rule.
+    pub rule: LevelRule,
+    /// Each bucket's link: the buckets of a mesh's coarser levels and its fade buckets.
+    pub links: &'a [LevelLink],
+    /// Each set's rows, by the set's number.
+    pub rows: &'a (dyn Fn(u32) -> LevelRows<'a> + Sync),
+}
+
+impl LevelChoice<'_> {
+    /// True when a row of base bucket `bucket` picks its level.
+    fn picks(&self, bucket: u32) -> bool {
+        bucket != NO_BUCKET
+            && self.rule.on()
+            && self
+                .links
+                .get(bucket as usize)
+                .is_some_and(LevelLink::has_next)
+    }
+
+    /// The buckets that `row` of `rows`, whose base bucket is `home`, draws in.
+    #[inline]
+    fn pick(&self, rows: &LevelRows<'_>, offsets: &[[f32; 4]], row: u32, home: u32) -> Picked {
+        let r = row as usize;
+        let radius = rows.spheres.radii[r];
+        let local = match rows.radii {
+            RowRadii::One(radius) => radius,
+            RowRadii::Rows(radii) => radii[r],
+        };
+        // A sphere that covers all of space has no scale to read: it keeps its base level.
+        if !(local > 0.0 && radius < UNBOUNDED_RADIUS) {
+            return Picked::One(home);
+        }
+        let cell = match rows.cells {
+            RowCells::One(cell) => cell,
+            RowCells::Rows(cells) => cells[r],
+        };
+        let offset = offsets[cell as usize];
+        let center = [
+            rows.spheres.xs[r] + offset[0],
+            rows.spheres.ys[r] + offset[1],
+            rows.spheres.zs[r] + offset[2],
+        ];
+        let distance = self.rule.distance(center);
+        self.rule.pick(self.links, home, radius / local, distance)
+    }
+}
+
+/// Counts a row's picked buckets in a run's histogram: one entry, or a pair in each fade bucket.
+#[inline]
+fn count_picked(histogram: &mut [u32], picked: Picked) {
+    match picked {
+        Picked::One(bucket) => histogram[bucket as usize] += 1,
+        Picked::Fade { new, old, .. } => {
+            histogram[new as usize] += 2;
+            histogram[old as usize] += 2;
+        }
+    }
+}
+
 /// The output and working space of [`cull_into_buckets`]: the list of visible entries grouped by
 /// bucket, and the scratch space behind it. Buffers grow only through [`BucketedCull::try_reserve`],
 /// so culling itself never allocates.
@@ -760,7 +860,9 @@ pub struct BucketedCull {
 
 impl BucketedCull {
     /// Makes room for `rows` rows in `runs` runs, `by_row_runs` of them looking up their rows'
-    /// buckets, and `buckets` buckets, or fails when memory cannot grow. Room only grows.
+    /// buckets, and `buckets` buckets, with as many words in the list as rows, or fails when memory
+    /// cannot grow. Room only grows. Rows that fade between levels of detail list up to four
+    /// words each, which the caller counts in `rows`.
     pub fn try_reserve(
         &mut self,
         rows: u32,
@@ -841,7 +943,9 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 /// the job workers, and lists the visible rows grouped by bucket. Each visible row's entry is its
 /// row plus its run's base, with the row's cell index in the bits from [`CELL_SHIFT`] up. A run
 /// either puts every visible row in one bucket, or looks each row up in `row_buckets`, where
-/// [`NO_BUCKET`] drops the row. Returns the number of entries.
+/// [`NO_BUCKET`] drops the row. With `levels`, a row whose bucket has coarser levels goes to the
+/// bucket of the level it picks instead, or inside a fading band to two fade buckets, as a pair
+/// of words in each: its entry, then its fade value's bits. Returns the number of words listed.
 ///
 /// A run whose rows share a cell is culled against the view's frustum moved into that cell; a run
 /// with [`ROW_CELLS`] moves each row's sphere by its cell's offset from the camera instead. A run
@@ -857,6 +961,7 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 /// # Panics
 /// When `out` has less room than the runs, their rows or the buckets need, or a run's bucket or
 /// cell is out of range.
+#[allow(clippy::too_many_arguments)]
 pub fn cull_into_buckets<'a>(
     jobs: &JobSystem,
     view: CullView<'_>,
@@ -864,11 +969,16 @@ pub fn cull_into_buckets<'a>(
     runs: &[CullRun],
     row_buckets: &[u32],
     buckets: u32,
+    levels: Option<&LevelChoice<'_>>,
     out: &mut BucketedCull,
 ) -> usize {
     let CullView {
         offsets, layers, ..
     } = view;
+    // A run looks its rows' buckets up when they each have their own, or when its bucket has
+    // coarser levels, so that each row picks its level.
+    let picks = |bucket: u32| levels.is_some_and(|choice| choice.picks(bucket));
+    let looks_up = |run: &CullRun| run.bucket == BY_ROW || picks(run.bucket);
     let bucket_count = buckets as usize;
     assert!(
         runs.len() <= out.run_offsets.len() && bucket_count < out.bucket_starts.len(),
@@ -897,7 +1007,7 @@ pub fn cull_into_buckets<'a>(
         );
         out.run_offsets[index] = rows as u32;
         rows += run.len();
-        if run.bucket == BY_ROW {
+        if looks_up(run) {
             out.run_positions[index] = histogram_at as u32;
             histogram_at += bucket_count;
         }
@@ -933,14 +1043,23 @@ pub fn cull_into_buckets<'a>(
         };
         // SAFETY: as above.
         unsafe { counts.write(index, visible as u32) };
-        if run.bucket == BY_ROW {
+        if looks_up(&run) {
             // SAFETY: as above.
             let histogram = unsafe { histograms.slice(positions[index] as usize, bucket_count) };
             histogram.fill(0);
+            let level_rows = levels.map(|choice| (choice, (choice.rows)(run.set)));
             for &row in &dst[..visible] {
-                let bucket = row_buckets[row as usize];
-                if bucket != NO_BUCKET {
-                    histogram[bucket as usize] += 1;
+                let bucket = if run.bucket == BY_ROW {
+                    row_buckets[row as usize]
+                } else {
+                    run.bucket
+                };
+                match &level_rows {
+                    Some((choice, rows)) if choice.picks(bucket) => {
+                        count_picked(histogram, choice.pick(rows, offsets, row, bucket));
+                    }
+                    _ if bucket != NO_BUCKET => histogram[bucket as usize] += 1,
+                    _ => {}
                 }
             }
         }
@@ -959,7 +1078,7 @@ pub fn cull_into_buckets<'a>(
     let totals = &mut out.cursors[..bucket_count];
     totals.fill(0);
     for (index, run) in runs.iter().enumerate() {
-        if run.bucket == BY_ROW {
+        if looks_up(run) {
             let at = out.run_positions[index] as usize;
             for (total, count) in totals
                 .iter_mut()
@@ -978,9 +1097,15 @@ pub fn cull_into_buckets<'a>(
         *cursor = *start;
     }
     out.bucket_starts[bucket_count] = total;
+    // Fading rows list two pairs of words, so the list can outgrow the rows.
+    assert!(
+        total as usize <= out.indices.len(),
+        "the output has room for {} words, fewer than the {total} listed",
+        out.indices.len()
+    );
     let cursors = &mut out.cursors[..bucket_count];
     for (index, run) in runs.iter().enumerate() {
-        if run.bucket == BY_ROW {
+        if looks_up(run) {
             let at = out.run_positions[index] as usize;
             for (count, cursor) in out.histograms[at..at + bucket_count]
                 .iter_mut()
@@ -1028,17 +1153,39 @@ pub fn cull_into_buckets<'a>(
                 base + row
             }
         };
-        if run.bucket == BY_ROW {
+        if looks_up(&run) {
             // SAFETY: the run's histogram holds its own write positions, and the prefix sum gave
             // each run and bucket its own range of the list, so no two runs write one place.
             let next = unsafe { histograms.slice(positions[index] as usize, bucket_count) };
+            let level_rows = levels.map(|choice| (choice, (choice.rows)(run.set)));
+            let mut put = |bucket: u32, word: u32| {
+                let at = &mut next[bucket as usize];
+                // SAFETY: as above.
+                unsafe { indices.write(*at as usize, word) };
+                *at += 1;
+            };
             for &row in visible {
-                let bucket = row_buckets[row as usize];
-                if bucket != NO_BUCKET {
-                    let at = &mut next[bucket as usize];
-                    // SAFETY: as above.
-                    unsafe { indices.write(*at as usize, entry(row)) };
-                    *at += 1;
+                let bucket = if run.bucket == BY_ROW {
+                    row_buckets[row as usize]
+                } else {
+                    run.bucket
+                };
+                let picked = match &level_rows {
+                    Some((choice, rows)) if choice.picks(bucket) => {
+                        choice.pick(rows, offsets, row, bucket)
+                    }
+                    _ if bucket != NO_BUCKET => Picked::One(bucket),
+                    _ => continue,
+                };
+                match picked {
+                    Picked::One(bucket) => put(bucket, entry(row)),
+                    Picked::Fade { new, old, t } => {
+                        let (fade_new, fade_old) = fade_values(t);
+                        put(new, entry(row));
+                        put(new, fade_new.to_bits());
+                        put(old, entry(row));
+                        put(old, fade_old.to_bits());
+                    }
                 }
             }
         } else {

@@ -45,7 +45,11 @@ describe('featureOf', () => {
 		const engine = join(import.meta.dirname, '../../engine');
 		for (const modules of Object.values(FEATURE_MODULES))
 			for (const module of modules) {
-				const path = module.endsWith('.wasm') ? module : `src/${module}.ts`;
+				const path = module.endsWith('.wasm')
+					? module
+					: module.startsWith('vendor/')
+						? `${module}.js`
+						: `src/${module}.ts`;
 				expect(`${module}: ${existsSync(join(engine, path))}`).toBe(`${module}: true`);
 			}
 	});

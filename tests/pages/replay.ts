@@ -82,10 +82,11 @@ run('replay', async () => {
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count, the view's layers, the run count and the view's row of the
-	// cell offsets texture, then the runs of the cell order, then room for the occlusion phases'
-	// values, which this view leaves unset. Every instance here lies in cell 0, whose zero offset in
-	// row 0 keeps the positions in world space, and no run is listed, so thread i culls instance i.
-	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
+	// cell offsets texture, the level choice's inputs, then the runs of the cell order, then room
+	// for the occlusion phases' values, which this view leaves unset. Every instance here lies in
+	// cell 0, whose zero offset in row 0 keeps the positions in world space, and no run is listed,
+	// so thread i culls instance i. A level factor of 0 draws each bucket as it is.
+	const cull = new Float32Array(32 + 4 * G.SIZE_MAX_CULL_RANGES + G.SIZE_CULL_OCCLUSION_BYTES / 4);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
@@ -140,6 +141,9 @@ run('replay', async () => {
 		// The depth pyramid of occlusion culling, which the culling group binds and this view,
 		// which culls in one phase, never reads.
 		[17, 16, U.STORAGE, -1],
+		// The table of object ranges, which the frame group binds and only shaders that read ids
+		// search.
+		[18, 16, U.UNIFORM | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -314,7 +318,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		17,
+		18,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -334,6 +338,7 @@ run('replay', async () => {
 		...[15, G.RESOURCE_TEXTURE, 8, 0, 0],
 		// The row values of instance batches, which only shaders built for them read.
 		...[16, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[17, G.RESOURCE_BUFFER, 18, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

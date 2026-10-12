@@ -264,6 +264,8 @@ export class SketchRunner {
 	private readonly governorLoop: GovernorLoop | undefined;
 	/** The governor's count of changes when the core last took the settings that its steps move. */
 	private stepChanges = 0;
+	/** The budgets' count of changes when the governor last took the steps that they allow. */
+	private budgetChanges = 0;
 	/** The sketch's post-processing settings, which say whether bloom is on. */
 	private readonly post: Post;
 	private readonly render: Render;
@@ -275,6 +277,10 @@ export class SketchRunner {
 	private followMovers = true;
 	/** The `shadowCascadeBlend` setting, which the governor's shadow steps keep. */
 	private cascadeBlend = 0;
+	/** The settings of the levels of detail, which the governor's detail steps keep. */
+	private lodThreshold = 1;
+	private lodShadowFactor = 1;
+	private lodFade = true;
 	/** True while the sketch has ambient occlusion on, as the governor knows it. */
 	private aoOn = false;
 	/** The scale of ambient occlusion's targets that the `aoScale` setting gives, in thousandths. */
@@ -381,6 +387,7 @@ export class SketchRunner {
 						metrics,
 						{
 							shadowCasters: () => glue.shadowCasters(),
+							hasLevels: () => glue.hasLevels() !== 0,
 							loading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 						},
 						sketch.maxTargetFps,
@@ -745,6 +752,9 @@ export class SketchRunner {
 		governor.setRange(low, high);
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
+		this.lodThreshold = settings.lodThreshold;
+		this.lodShadowFactor = settings.lodShadowFactor;
+		this.lodFade = settings.lodFade;
 		governor.setShadows(settings.shadowFilter, settings.farCascadeInterval, this.followMovers);
 		this.bloomSetting = settings.bloomSize;
 		governor.setBloom(this.bloomOn, this.bloomSetting);
@@ -763,9 +773,20 @@ export class SketchRunner {
 			glue.setFogSlices(settings.fogSlices) !== 0 ||
 			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
+			this.setLevelQuality() !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
+	}
+
+	/**
+	 * Gives the core how the levels of detail are picked: the threshold after the governor's detail
+	 * steps, the shadows' factor and the fading bands. Returns the core's result: 0 when it took
+	 * them.
+	 */
+	private setLevelQuality(): number {
+		const threshold = this.lodThreshold * this.governor.detailFactor;
+		return this.sketch.glue.setLevelQuality(threshold, this.lodShadowFactor, this.lodFade);
 	}
 
 	/**
@@ -792,6 +813,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		this.stepChanges = governor.stepChanges;
 		if (
+			this.setLevelQuality() !== 0 ||
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
@@ -799,6 +821,21 @@ export class SketchRunner {
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
+	}
+
+	/**
+	 * Gives the governor the steps that the sketch's budgets allow, and moves the budgets to the
+	 * governor's steps of their scale, which calls their `onScale` handlers.
+	 */
+	private followBudgets(): void {
+		const { governor } = this;
+		const { budgets } = this.quality;
+		if (budgets.changes !== this.budgetChanges) {
+			this.budgetChanges = budgets.changes;
+			governor.setBudgetSteps(budgets.steps);
+		}
+		if (governor.budgetLevel !== budgets.level)
+			budgets.follow(governor.budgetLevel, this.reportError);
 	}
 
 	/**
@@ -1006,6 +1043,7 @@ export class SketchRunner {
 				if (change === RESTART_CHANGE) restart = true;
 				this.notify(this.quality.handlers, this.quality);
 			}
+			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
@@ -1081,7 +1119,8 @@ export class SketchRunner {
 		const built = Atomics.load(slots, Slot.PipelinesBuilt);
 		const joinFailed = Atomics.exchange(slots, Slot.JoinFailed, 0);
 		if (joinFailed !== 0) this.post.dropJoin(joinFailed);
-		if (glue.cullFrame(frame, width, height, built) !== 0)
+		const scale = this.renderScale();
+		if (glue.cullFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
@@ -1092,7 +1131,6 @@ export class SketchRunner {
 				this.report(error);
 			}
 		}
-		const scale = this.renderScale();
 		if (glue.recordFrame(frame, width, height, scale, built) !== 0)
 			this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.RenderScale, scale);

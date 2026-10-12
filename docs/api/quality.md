@@ -3,12 +3,12 @@ id: api/quality
 title: Quality API
 status: experimental
 since: "0.1"
-summary: "quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events."
+summary: "quality.preset, quality.set, quality.setPreset, the preset check, the frame-budget governor, budgets for a sketch's own systems, quality events."
 ---
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy`, `textureMemoryMiB`, `uploadBytesPerFrame`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and `governor`. `quality.settings` also holds `antialias`, `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows` and `depthPrepass`, which stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Neither are frame budgets for a sketch's own systems (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `quality.setBudget`. The API is experimental, so it can still change between versions. `quality.set` takes every setting that the [settings table](#settings) says changes during play. The others stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 
@@ -45,7 +45,8 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `targetFps: 'display'` or a whole number | The frame rate that the preset check and the governor defend. Without it, the display's refresh rate, at most 60. `'display'` defends the display's full rate, and a number caps the target at that rate: [The target frame rate](../concepts/quality-presets.md#the-target-frame-rate). |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
 | `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
-| `shadowTiles`, `shadowTileSize`, `pointLightShadows`, `depthPrepass` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
+| `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `pointLightShadows`, `depthPrepass`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. |
+| `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
 | `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
 | `?target-fps=display` or `?target-fps=90` | Sets the target frame rate. It wins over the `targetFps` option. |
@@ -66,12 +67,24 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `farCascadeInterval` | A whole number from 1 to 8: each far shadow cascade draws once in this many frames. The nearest cascade draws in every frame. | During play. |
 | `followMovingCasters` | `true` or `false`: whether a far shadow cascade draws in every frame while a moving caster touches it. `false` keeps each far cascade to its turns, so a far moving shadow can trail its caster by a few frames. Every preset turns it on. | During play. |
 | `shadowCascadeBlend` | A number from 0 to 0.5: the share of each shadow cascade's length, at its far end, over which its shadows blend into the next cascade's. 0 hands over at once. | During play. |
-| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale and the shadow settings when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the shadow settings as set. |
+| `bloomSize` | 64, 128, 256 or 512: the texels on the short side of bloom's largest level. A smaller value costs less and keeps the glow's size, with a softer core. | During play. Bloom's targets are made again. |
+| `aoScale` | 0.5, 0.25 or 0: the size of ambient occlusion's targets as a share of the render size. 0 draws no ambient occlusion even when `post.set` turns it on. | During play. |
+| `dofSamples` | 16, 22, 43, 71 or 0: the taps of depth of field's gather. 0 draws no depth of field even when `post.set` turns it on. | During play. |
+| `reflectionScale` | 1, 0.5 or 0.25: the size of a reflection pass's texture as a share of the render size, for each reflection whose `scale` option names none. | During play. The reflections' textures are made again. |
+| `softwareOcclusion` | `true` or `false`: whether the job workers cull objects that marked occluders hide, on WebGL2. WebGPU ignores it. | During play. |
+| `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |
+| `lodShadowFactor` | A number from 1 to 16: what the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level than the camera sees. 1 draws the camera's level. | During play. |
+| `lodFade` | `true` or `false`: whether two levels of detail hand over in a short dithered band past each switch distance. `false` switches at once. | During play. |
+| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the levels of detail, the shadow settings, bloom's size and ambient occlusion's scale when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
 | `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
+| `shadowCascades` | A whole number from 1 to 4: the cascades of a directional light's shadows, for each light whose `shadow` options name none. | At the start only. The page's `shadowCascades` option sets it. |
+| `shadowMapSize` | 512, 1,024, 2,048 or 4,096: the texels on each side of each cascade's shadow map, for each light whose `shadow` options name no `mapSize`. | At the start only. The page's `shadowMapSize` option sets it. |
 | `shadowTiles` | A whole number from 0 to 24: the tiles of the shadow atlas that spot and point lights cast their shadows into. 0 turns their shadows off. | At the start only. The page's `shadowTiles` option sets it. |
 | `shadowTileSize` | 256, 512, 1,024 or 2,048: the texels on each side of a tile of the shadow atlas. | At the start only. The page's `shadowTileSize` option sets it. |
 | `pointLightShadows` | `true` or `false`: whether point lights cast shadows. Each one takes six tiles of the atlas. | At the start only. The page's `pointLightShadows` option sets it. |
 | `depthPrepass` | `true` or `false`: whether the engine draws the opaque objects' depth before it shades them. | At the start only. The page's `depthPrepass` option sets it. |
+| `gpuOcclusion` | `true` or `false`: whether GPU occlusion culling runs on WebGPU. It is always `false` on WebGL2 and with the depth prepass. | At the start only. The page's `gpuOcclusion` option sets it. |
+| `morphTargets` | A whole number from 1 to 256: the most morph target weights of each object that WebGL2 draws. WebGPU draws every weight. | At the start only. The page's `morphTargets` option sets it. |
 
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 
@@ -106,13 +119,15 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first, then the live shadow settings. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
+When frames take too long, the engine lowers the render scale first, then the levels of detail, then the live shadow settings, then bloom's size and ambient occlusion's scale. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
 
 | Member | What it holds |
 | --- | --- |
-| `steps` | The governor's steps past the render scale: 0 while the shadow settings apply as set. |
+| `steps` | The governor's steps past the render scale: 0 while the shadow settings, bloom's size and ambient occlusion's scale apply as set. |
 | `farCascadeInterval` | How often each far shadow cascade draws now: the setting's value, or up to twice as long for each step, at most every 8th frame. |
-| `shadowFilter` | The shadow filter now: the setting's value, or 3 after the last step. |
+| `shadowFilter` | The shadow filter now: the setting's value, or 3 after its step. |
+| `bloomSize` | Bloom's size now: the setting's value, or half of it after its step while bloom is on. |
+| `aoScale` | Ambient occlusion's scale now: the setting's value, or half of it after the last step while ambient occlusion draws. |
 
 The `quality.onChange` handlers run after each of these steps. So a sketch can lighten its own work with the engine's:
 
@@ -137,6 +152,54 @@ export default defineSketch(({ quality }) => {
 
 A step of the render scale does not call the handlers: read `quality.renderScale` for it. Turn the governor off where every frame must draw the same way, such as a benchmark or a recorded video: `quality.set({ governor: false })`.
 
+## Budgets for the sketch's own systems
+
+`quality.setBudget(options)` registers a budget for a system of the sketch's own, such as its AI, its particles or its crowd. The governor lowers the budget's scale with its own steps, and the sketch decides what a lower scale means for the system:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ quality }) => {
+  const searches: (() => void)[] = []; // path searches that the crowd asks for
+  let thinkers = 200; // the crowd members that think in each frame
+  const ai = quality.setBudget({
+    name: 'ai',
+    ms: 2,
+    min: 0.25,
+    onScale: (scale) => {
+      thinkers = Math.round(200 * scale);
+    },
+  });
+  return {
+    onUpdate() {
+      // Let `thinkers` crowd members think. Then search paths until the budget's time runs out,
+      // and go on in the next frame.
+      const end = performance.now() + ai.ms;
+      while (searches.length > 0 && performance.now() < end) searches.shift()?.();
+    },
+  };
+});
+```
+
+| Option | What it takes |
+| --- | --- |
+| `name` | The system's name. A budget with the name of another replaces it. |
+| `ms` | The time in ms that the system may take in each frame at full quality: a number above 0. The engine does not measure the system. It scales this time into the budget's `ms`. |
+| `min` | The lowest scale that the governor gives the system, from 0 to 1. The default is 0. |
+| `onScale` | A function that gets the budget's scale when the budget is set, and again at the start of each frame after the governor moves it. |
+
+The call returns the budget. Its `scale` runs from `min` to 1, where 1 is full quality. Its `ms` is the time that the system may take now: the option's `ms` times the scale. `remove()` removes the budget. The governor then stops lowering the system, and `onScale` is not called again. Options that the call does not take throw [E1213](../errors/E1213.md).
+
+The governor moves the budgets by these rules:
+
+- All budgets share one scale, which moves in steps of 0.25: 1, 0.75, 0.5, 0.25 and 0. Each budget takes that scale, but never less than its `min`. The governor takes the steps down to the lowest `min` of all the budgets.
+- When frames take too long, a step of the budgets comes before each step of the render scale, while both can go lower. So the sketch's systems scale down before the render scale reaches `minRenderScale`.
+- Once the render scale is at `minRenderScale`, the budgets take the steps they have left. Then the governor takes the shadow and effect steps.
+- When frames have time to spare again, the governor raises the settings in the reverse order. The budgets' first step down comes back last.
+- Each step follows the governor's rules for the render scale. A step down needs about a second over budget, and a step up 5 seconds with time to spare. With the governor off, and in hold mode, every budget's scale is 1.
+
+Each budget step adds a step before a step of the render scale. So with budgets, the render scale reaches `minRenderScale` some seconds later. When a lower budget does not make the frames faster, the governor's next step lowers the render scale. This happens, for example, when the GPU and not the system sets the frame rate.
+
 ## Texture memory
 
 The `quality.textureMemory` object reports the GPU memory of textures against their budget, the `textureMemoryMiB` setting. Its `bytes` are the GPU bytes that every texture takes, with the free layers of texture arrays. Its `budgetBytes` give the budget in bytes. Its `droppedLevels` count the mip levels that the engine dropped from every texture to stay under the budget. Its `droppedTextures` count the textures that hold fewer levels than their own. Each texture's `droppedLevels` gives its own count. [Quality presets](../concepts/quality-presets.md#texture-memory) explains which levels drop and how they come back.
@@ -152,7 +215,7 @@ Some textures never drop levels: those that the sketch made from images or data,
 
 ## Quality events
 
-`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
+`quality.onChange(handler)` calls the handler at the start of the first frame after the settings or the preset change. It also calls it after each shadow step of the frame-budget governor, and after the texture memory budget drops levels or asks for them again. A step of the budgets calls their `onScale` functions, not these handlers. It returns a function that removes the handler. Keep handlers cheap: they run when quality changes, not every frame. After a change of preset, the handler's frame waits for its pipelines too. So objects that a handler creates for the new preset appear with it.
 
 ## Related pages
 

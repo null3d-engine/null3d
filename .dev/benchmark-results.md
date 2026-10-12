@@ -256,6 +256,22 @@ The presets' chains: Low has a base of 128 rows; Medium, High and Ultra 512. The
 
 The Galaxy S25's and the Pixel 11's figures match the 128-row base of Low. The Pixel 9's figures vary by about 0.3 ms between runs of one size, so they do not show its chain. With WebGL2, every page held the screen's frame rate with bloom on and off.
 
+On 11 October 2026 the phones timed the built chain again, with the base on the canvas's shorter side, at commit f854dd72d of main. The old steps of `UnrealBloomPass` ran in the same sittings, as the `unreal` items of the `bloom-p2` plan on the prototype's branch, `proto/p2-bloom` at commit 0c5f5d0e. Every phone ran Chrome 152.0.7977.54. Two figures in a cell come from two rounds of the same page. The sources are these runs:
+
+- `bloom-sizes`: 20261011-064442 and 20261011-065957 (Pixel 11), 20261011-070545 (Galaxy S25 at 128, Pixel 9), 20261011-071143 (Galaxy S25 at 64).
+- `bloom-p2`: 20261011-065037 and 20261011-070326 (Pixel 11), 20261011-071313 (Galaxy S25, Pixel 9).
+
+| Device and browser | Render scale | `UnrealBloomPass`'s steps | Base 512 | Base 256 | Base 128 | Base 64 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Galaxy S25 (Adreno 830), Chrome 152 | 1 | 1.44 ms | | | 1.25 ms | 0.98 ms |
+| Galaxy S25 (Adreno 830), Chrome 152 | 0.5 | 1.11 ms | | | 1.25 ms | 1.05 ms |
+| Pixel 9 (Mali-G715), Chrome 152 | 1 | 1.64 ms | | | 0.79 ms | 0.72 ms |
+| Pixel 9 (Mali-G715), Chrome 152 | 0.5 | 0.98 ms | | | 1.05 ms | 0.85 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 152 | 1 | 2.88, 2.75 ms | 4.39 ms | 4.52 ms | 3.93, 4.00 ms | 3.28, 3.28 ms |
+| Pixel 11 (PowerVR C-Series), Chrome 152 | 0.5 | 2.75, 2.75 ms | 4.46 ms | 4.52 ms | 3.74, 3.74 ms | 3.47, 3.47 ms |
+
+On the Pixel 11 no base meets the rule that bloom costs no more than `UnrealBloomPass`'s steps did. [D-21](decisions/D-21-effect-chain.md#the-built-chain-on-the-phones) records it as a known exception, and gives the reasons.
+
 ### The room's prefilter
 
 The prototype of M2-E2's built-in room makes the room's environment map on the GPU, in steps across frames. The table gives the first map of the packed path (`rgb9e5ufloat` packed into RGBA8), with steps sized by the kind of draw. The limits that the prototype tests are under 8 ms for each step and under 200 ms in all. Commit 0a0a7d90, on the branch `proto/l1-room`, on 5 October 2026. Sources: runs 20261005-004323-prefilter (Galaxy S25), 20261005-004623-prefilter (Pixel 9), 20261005-005022-prefilter (Pixel 10) and 20261005-005528-prefilter (Pixel 11). With WebGL2 the times are wall times from the call to the finish, because there is no GPU timer.

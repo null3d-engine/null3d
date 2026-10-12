@@ -8,7 +8,7 @@ summary: "HDR scene color, ambient occlusion at half size, custom effects, depth
 
 # The post-processing chain
 
-> Ships in null3D 0.2. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The chain has HDR scene color, ambient occlusion, custom effects, depth of field, bloom and outlines. The final pass adds color grading, the vignette and custom tone curves.
 
 ```mermaid
 flowchart LR
@@ -75,7 +75,7 @@ Bloom spreads light from the bright parts of the scene into their surroundings, 
 
 ### The size of the base
 
-The quality setting `bloomSize` sets the base's texels on the canvas's shorter side. It is 512 on the Medium, High and Ultra presets, and 128 on Low, which phones run. A smaller base has fewer levels. Its finest levels fold into the base with their shares, so the glow keeps its size, with a softer core. The base never takes more than half the canvas's shorter side.
+The quality setting `bloomSize` sets the base's texels on the canvas's shorter side. It is 512 on the Medium, High and Ultra presets, and 64 on Low, which phones run. A smaller base has fewer levels. Its finest levels fold into the base with their shares, so the glow keeps its size, with a softer core. The base never takes more than half the canvas's shorter side.
 
 ```ts
 quality.set({ bloomSize: 256 });
@@ -88,7 +88,7 @@ A new `bloomSize` makes bloom's targets again. When frames take too long and blo
 With the default weights, bloom draws 15 small passes: 8 steps down and 7 steps up. The final pass reads one texture for it.
 
 - The chain's work does not follow the render scale. A lower scale changes only where the first step reads, and a new scale makes no new target.
-- At 1920 x 1080, with a base of 512, bloom reads about 7.6 texels for each pixel of the canvas, over all its passes. On a phone's canvas of 540 x 932 at Low's base of 128, it reads about 2.7.
+- At 1920 x 1080, with a base of 512, bloom reads about 7.6 texels for each pixel of the canvas, over all its passes. On a phone's canvas of 540 x 932 at a base of 128, it reads about 2.7.
 - Its levels hold 16-bit floats, whatever the scene color's format. In a smaller float format the rounding of the chain's many steps adds up, and the glow loses light. At 1920 x 1080 with a base of 512, the levels take about 5 MB.
 - The bloom scene of the engine's effect cost test ran on a MacBook Pro in Chrome, with WebGPU at 1920 x 1080. Bloom added 0.79 to 0.85 ms of GPU time per frame at a render scale of 1, and 0.79 ms at 0.5. A base of 128 added 0.52 to 0.66 ms.
 - Phone GPUs pay a fixed cost for each pass, so a smaller base, with fewer levels, saves the most there. Each halving of the base removes two passes.
