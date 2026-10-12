@@ -32,6 +32,7 @@ import {
 import { CLOUD_DEVICES, type CloudDevice, type CloudTier } from './lib/browserstack-devices.ts';
 import { deviceText } from './lib/cloud-sessions.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from './lib/runs.ts';
+import { STOP_SIGNALS } from './lib/server.ts';
 
 const USAGE =
 	'usage: bun run devices:cloud [--tier A|B|A,B] [--only <runners>] [--part <i>/<n>] [--parallel <n>] [--plan <name>] [--check] [-- <device runner options>]';
@@ -166,13 +167,26 @@ function planText(plan: AutomatePlan, parallel: number, runs: readonly CloudRun[
 }
 
 /**
- * Runs the device runner with these arguments, and returns its exit code. A Ctrl-C reaches the
- * device runner too, which ends its sessions before it exits; this process waits for that.
+ * Runs the device runner, and returns its exit code. Each stop signal that this process gets goes
+ * on to the device runner, which ends its sessions before it exits, and `onStop` hears it. So a
+ * stop sent to this process alone ends the sessions as Ctrl-C does, and this process waits for that.
  */
-function runRunner(args: readonly string[]): Promise<number> {
+export function runRunner(
+	args: readonly string[],
+	onStop: () => void,
+	command = 'bun',
+): Promise<number> {
 	return new Promise((resolve) => {
-		const child = spawn('bun', args, { stdio: 'inherit' });
-		child.once('exit', (code, signal) => resolve(code ?? (signal ? 130 : 1)));
+		const child = spawn(command, args, { stdio: 'inherit' });
+		const stop = (signal: NodeJS.Signals) => {
+			onStop();
+			child.kill(signal);
+		};
+		for (const signal of STOP_SIGNALS) process.on(signal, stop);
+		child.once('exit', (code, signal) => {
+			for (const name of STOP_SIGNALS) process.off(name, stop);
+			resolve(code ?? (signal ? 130 : 1));
+		});
 	});
 }
 
@@ -194,14 +208,13 @@ async function main(): Promise<void> {
 	const build = `null3D ${runName(options.plan)}`;
 	console.log(`Build on BrowserStack's dashboard: ${build}\n`);
 	let interrupted = false;
-	// The device runner gets the same Ctrl-C and ends its sessions; this process waits for it.
-	process.on('SIGINT', () => {
+	const stopped = () => {
 		interrupted = true;
-	});
+	};
 	let failed = 0;
 	for (const run of runs) {
 		if (interrupted) break;
-		const code = await runRunner(runnerArgs(run, options, parallel, build));
+		const code = await runRunner(runnerArgs(run, options, parallel, build), stopped);
 		if (code !== 0) failed++;
 	}
 	process.exit(interrupted ? 130 : failed > 0 ? 1 : 0);
