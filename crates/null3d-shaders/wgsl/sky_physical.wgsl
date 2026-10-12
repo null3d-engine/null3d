@@ -93,10 +93,10 @@ fn stars(d: vec3f, pixel: f32, time: f32) -> vec3f {
     star = normalize(star);
     let distance = length(d - star);
     let size = max(pixel, 0.0003);
-    // Few bright stars and many faint ones, from cool red to hot blue.
+    // Few bright stars and many faint ones, most of them white to blue and a few orange.
     let rank = h.x / 0.14;
     let flux = 2.5e-6 * pow(1.0 - rank, 6.0) + 1.5e-7;
-    let tint = mix(vec3f(1.0, 0.78, 0.6), vec3f(0.78, 0.86, 1.0), fract(h.y * 7.31 + h.z));
+    let tint = mix(vec3f(1.0, 0.8, 0.64), vec3f(0.8, 0.88, 1.0), sqrt(fract(h.y * 7.31 + h.z)));
     // Stars low in the sky twinkle more, through more air.
     let twinkle = 1.0 + 0.45 * (1.0 - clamp(d.y * 3.0, 0.0, 1.0)) * sin(time * (5.0 + 9.0 * h.z) + h.y * 60.0);
     return tint * (flux * twinkle * exp(-(distance * distance) / (size * size)) / (PI * size * size));
@@ -141,7 +141,10 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         let through = through_air(d.y);
         let moon = moon_disc(d, through);
         if values.discs.w > 0.0 {
-            color += stars(d, pixel, frame.clock.x) * (values.discs.w * (1.0 - moon.w)) * through;
+            // Starlight is too faint for the eye to see the air's tint in it, so the air only
+            // dims it.
+            let dimmed = dot(through, vec3f(0.2126, 0.7152, 0.0722));
+            color += stars(d, pixel, frame.clock.x) * (values.discs.w * (1.0 - moon.w) * dimmed);
         }
         color += moon.rgb * moon.w;
         if values.discs.z > 0.0 {
