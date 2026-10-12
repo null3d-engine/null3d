@@ -70,7 +70,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
 import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
@@ -312,15 +312,20 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 const PAGE_PROBLEMS = 8;
 
 /**
- * Opens one benchmark page in a fresh parked window and waits for its result. A page that fails
- * gives its first problems with its error.
+ * Opens one benchmark page in a fresh parked window and waits for its result. The window's display
+ * rate is measured first, and a result whose rate fell short of the display's says why. A page that
+ * fails gives its first problems with its error.
  */
 async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
 	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
 	const problems = watchPageProblems(page);
 	try {
+		const displayProblem = await displayRateCheck(page);
+		if (displayProblem)
+			console.warn(`${url}: ${displayProblem}, so its timing figures do not compare with others`);
 		await page.goto(url);
-		return await pageResult<BenchResult>(page, timeoutMs);
+		const result = await pageResult<BenchResult>(page, timeoutMs);
+		return displayProblem ? { ...result, displayProblem } : result;
 	} catch (e) {
 		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
 		return { ok: false, error } as BenchResult;
