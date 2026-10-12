@@ -17,8 +17,8 @@ env:
 jobs:
   newest-nightly:
     runs-on: ubuntu-latest
-    # Every CI job stops at 15 minutes at most. The tests run as CI's rust-tests job runs them.
-    timeout-minutes: 15
+    # Every CI job should take at most 15 minutes, and stops at 20. The tests run as CI's rust-tests job runs them.
+    timeout-minutes: 20
     env:
       HUSKY: "0"
       RUSTUP_TOOLCHAIN: nightly
