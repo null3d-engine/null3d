@@ -22,8 +22,18 @@ for (const mode of ENGINE_MODES)
 			noClips: 'E1218',
 			weightOfIdleClip: 'E1218',
 			emptyBlend: 'E1218',
+			unknownJoint: 'E1218',
+			brokenChain: 'E1218',
+			lookWithoutChain: 'E1218',
 			afterDestroy: 'E1101',
 		});
+
+		// The soldier walks and turns in every frame, and its look-at keeps the last joint of its
+		// chain on the target: the job workers aim from the soldier's place in the same frame. Its
+		// twin, which walks without aiming, faces elsewhere.
+		expect(result.aimFrames).toBeGreaterThan(20);
+		expect(result.aimError).toBeLessThan(0.005);
+		expect(result.aimTurn).toBeGreaterThan(0.1);
 		const of = (who: string) => result.heard.filter((e) => e.who === who);
 		const names = (events: HeardEvent[]) => events.map((e) => `${e.name} ${e.clip} ${e.layer}`);
 
