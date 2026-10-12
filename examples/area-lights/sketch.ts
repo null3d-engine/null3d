@@ -1,10 +1,9 @@
-// Area lights: a narrow street after rain, at night. Two shop windows on the left are rectangle
-// lights, and a neon sign on the right is made of tube lights. The wet street shows each light's
-// whole shape, stretched toward the camera, where a point light would leave a dot. Each light has
-// a glowing mesh of the same shape, size and color, since a light itself draws nothing. One neon
-// tube flickers, and a loose tube light floats down the street, or follows the pointer. Each
-// window light shows a picture of its shelves, which the puddles reflect. The shelves come from
-// code, and the street around them is in street.ts.
+// Area lights: a narrow street after rain, at night. Two shop windows on the left and a strip at
+// the far end are rectangle lights, the neon sign on the right is one rectangle light that shows a
+// picture of its tubes, and a loose tube light floats down the street, or follows the pointer. The
+// wet street shows each light's whole shape, where a point light would leave a dot. A light draws
+// nothing itself, so each has a glowing mesh of its shape. One neon tube flickers. The street's
+// scenery is in street.ts.
 import { defineSketch, math, quat, type Vec3, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { street } from './street';
@@ -13,15 +12,16 @@ import { street } from './street';
 const QUARTER_Y = [0, Math.SQRT1_2, 0, Math.SQRT1_2] as const;
 /** The shop windows on the left wall, which face +X: their middle's z, and their color. */
 const WINDOWS = [
-	[-3.5, '#ffc98a'],
-	[-11, '#ffe2b8'],
+	[-2, '#ffc98a'],
+	[-12, '#e2ecff'],
 ] as const;
-/** The neon sign's tubes on the right wall: two ends each, and the color. */
+/** The neon sign's tubes, on the face of its board that looks up the street: two ends each, and
+ * the color. */
 const NEON: readonly [Vec3, Vec3, string][] = [
-	[[3.9, 3.1, -2.2], [3.9, 3.1, 0.2], '#ff3fa4'],
-	[[3.9, 2.3, -2.2], [3.9, 2.3, 0.2], '#ff3fa4'],
-	[[3.9, 2.0, 1.0], [3.9, 3.4, 1.0], '#3fe0ff'],
-	[[3.9, 2.0, 1.6], [3.9, 3.4, 2.5], '#3fe0ff'],
+	[[2.55, 2.5, -7.86], [2.55, 4.3, -7.86], '#ff3fa4'],
+	[[3.55, 2.5, -7.86], [3.55, 4.3, -7.86], '#ff3fa4'],
+	[[2.7, 3.0, -7.86], [3.4, 3.0, -7.86], '#3fe0ff'],
+	[[2.7, 3.8, -7.86], [3.4, 3.8, -7.86], '#3fe0ff'],
 ];
 /** A capsule's axis before it turns. */
 const UP: Vec3 = [0, 1, 0];
@@ -68,28 +68,38 @@ export default defineSketch((ctx) => {
 
 	// A cold strip light over the doorway at the far end, which faces down the street.
 	const strip = { width: 3, height: 0.25, range: 14, color: '#bcd8ff', intensity: 40 };
-	const panel = materials.standard({
-		color: '#000000',
-		emissive: strip.color,
-		emissiveIntensity: 40,
-	});
-	scene.createMesh({
+	const panel = {
 		mesh: geometry.plane({ width: 3, height: 0.25 }),
-		material: panel,
-		position: [0, 3.2, -19.78],
-	});
+		material: glow(strip.color, 40),
+	};
+	scene.createMesh({ ...panel, position: [0, 3.2, -19.78] });
 	scene.createRectAreaLight({ ...strip, position: [0, 3.2, -19.77], direction: [0, -0.2, 1] });
 
-	// The neon sign: a glowing capsule and a tube light for each tube.
+	// The neon sign, on its board: a glowing capsule for each tube, and one rectangle light over the
+	// board that shows a picture of the tubes, so the sign costs one area light, not four.
+	const picture = new Uint8Array(32 * 32 * 4);
 	const tubes = NEON.map(([a, b, color]) => {
+		const rgb = [1, 3, 5].map((at) => Number.parseInt(color.slice(at, at + 2), 16));
+		for (let t = 0; t <= 1; t += 1 / 64) {
+			const x = Math.floor(((a[0] + (b[0] - a[0]) * t - 3.05) / 1.2) * 32 + 15.5);
+			const y = Math.floor(((3.4 - a[1] - (b[1] - a[1]) * t) / 2) * 32 + 15.5);
+			for (const i of [0, 1, 32, 33]) picture.set([...rgb, 255], ((y * 32 + x + i) % 1024) * 4);
+		}
 		const middle: Vec3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
 		const along: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
 		const length = Math.hypot(...along);
 		const rotation = quat.rotationTo(quat.create(), UP, vec3.normalize(vec3.create(), along));
 		const capsule = { mesh: geometry.capsule({ radius: TUBE, height: length }), rotation };
-		scene.createMesh({ ...capsule, material: glow(color, NEON_NITS), position: middle });
-		const light = { position: middle, direction: along, length, radius: TUBE, range: 8, color };
-		return scene.createTubeLight({ ...light, intensity: NEON_NITS });
+		return scene.createMesh({ ...capsule, material: glow(color, NEON_NITS), position: middle });
+	});
+	const sign = scene.createRectAreaLight({
+		position: [3.05, 3.4, -7.84],
+		direction: [0, 0, 1],
+		width: 1.2,
+		height: 2,
+		range: 10,
+		intensity: NEON_NITS,
+		image: { width: 32, height: 32, data: picture },
 	});
 
 	// A loose tube that floats down the street, or follows the pointer.
@@ -103,11 +113,7 @@ export default defineSketch((ctx) => {
 	});
 
 	const look: Vec3 = [0, 1.4, -3];
-	const camera = scene.createPerspectiveCamera({
-		fov: 55,
-		position: [0.6, 1.7, 6.5],
-		target: look,
-	});
+	const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 1.7, 7], target: look });
 	scene.setActiveCamera(camera);
 	const limits = { maxPolarAngle: Math.PI * 0.49, minDistance: 2, maxDistance: 14 };
 	const view = interact(ctx, camera, {
@@ -121,9 +127,10 @@ export default defineSketch((ctx) => {
 	return {
 		onUpdate(dt) {
 			view.update(dt);
-			// The second neon tube stutters now and then, as old neon does.
+			// The second neon tube stutters now and then, as old neon does, and the sign dims with it.
 			const stutter = Math.sin(time.now * 23) > 0.2 && Math.sin(time.now * 1.3) > 0.85;
-			tubes[1].setIntensity(stutter ? NEON_NITS * 0.15 : NEON_NITS);
+			tubes[1].setVisible(!stutter);
+			sign.setIntensity(stutter ? NEON_NITS * 0.75 : NEON_NITS);
 			// The loose tube drifts down the street and back, turning slowly, or follows the pointer.
 			vec3.set(at, Math.sin(time.now * 0.4) * 1.5, 0.6, -4 + Math.sin(time.now * 0.25) * 5);
 			view.steer(at);
