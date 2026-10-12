@@ -165,7 +165,7 @@ Nothing of it runs, and none of its shaders download, until the first material w
 
 ## Light under the surface
 
-Light that enters skin, wax or marble leaves it a little way from where it entered, redder the further it went. A material with `subsurfaceRadius` draws that: the subsurface blur spreads the surface's diffuse light over the radius, so the edges of its shadows, the light at the side of a nose and the detail of its maps go soft. Its highlights stay sharp, since only the diffuse light spreads.
+Light that enters skin, wax or marble leaves it a little way from where it entered, redder the further it went. A material with `subsurfaceRadius` draws that: the subsurface blur spreads the surface's diffuse light over the radius. The edges of its shadows, the light at the side of a nose and the detail of its maps then go soft. Its highlights stay sharp, since only the diffuse light spreads.
 
 | Value | Meaning |
 | --- | --- |
@@ -184,9 +184,9 @@ const wax = materials.standard({
 });
 ```
 
-Give `subsurfaceRadius` when you create the material, even as 0, to change it later with `set`. A material created without it draws no blur. With `diffuseTransmission` too, light from behind glows through the surface's thin parts, as through an ear or a candle's rim, and the blur spreads that light as well.
+Give `subsurfaceRadius` when you create the material, even as 0, to change it later with `set`. A material created without it draws no blur. With `diffuseTransmission` too, light from behind glows through the surface's thin parts, as through an ear or a candle's rim. The blur spreads that light as well.
 
-- The blur draws on the High and Ultra quality presets, where the quality setting `subsurfaceSamples` gives it 17 or 25 taps. Low and Medium give it 0, and so do WebGL2 and WebGPU's compatibility mode, which run Medium at most: there the material draws as without a radius. `quality.set({ subsurfaceSamples: 11 })` turns it on anywhere.
+- The blur draws on the High and Ultra quality presets, where the quality setting `subsurfaceSamples` gives it 17 or 25 taps. Low and Medium give it 0. So do WebGL2 and WebGPU's compatibility mode, which run Medium at most. There the material draws as without a radius. `quality.set({ subsurfaceSamples: 11 })` turns it on anywhere.
 - It draws on the HDR path only. The 8-bit path draws no blur.
 - Materials that blend or let light through by `transmission`, custom materials and instance batches take no blur. Development builds throw E1217 for `subsurfaceRadius` on `materials.shader`.
 - A blur narrower than a pixel draws nothing, so distant objects cost nothing more.
@@ -194,7 +194,7 @@ Give `subsurfaceRadius` when you create the material, even as 0, to change it la
 
 ### Cost of light under the surface
 
-Nothing of it runs, and none of its shaders download, while no material has `subsurfaceRadius` or the quality setting gives it no taps. Its shaders then load on first use; list `'subsurface'` in `createEngine`'s `preload` option to load them before the first frame. While it draws, the objects with a radius draw a second time, in a skin pass that shades their diffuse light into a target of their own. Two full-screen steps then blur it across and down. Each reads its taps only at skin pixels whose blur covers a pixel or more, and every other pixel reads one texel. The targets take 36 bytes per pixel of the render size.
+Nothing of it runs, and none of its shaders download, while no material has `subsurfaceRadius` or the quality setting gives it no taps. Its shaders then load on first use. To load them before the first frame, list `'subsurface'` in `createEngine`'s `preload` option. While it draws, the objects with a radius draw a second time, in a skin pass that shades their diffuse light into a target of their own. Two full-screen steps then blur it across and down. Each reads its taps only at skin pixels whose blur covers a pixel or more, and every other pixel reads one texel. The targets take 36 bytes per pixel of the render size.
 
 ## Texture maps
 
