@@ -23,7 +23,9 @@ import {
 	checksPlan,
 	depthPlan,
 	depthSummary,
+	expectedSeconds,
 	itemsNeeded,
+	itemsTogether,
 	judge,
 	MEMORY_MAXIMUMS_MIB,
 	memoryPlan,
@@ -405,8 +407,12 @@ describe('shardItems', () => {
 		check: needs,
 	});
 	const needsOf = (planItem: { check: string[] }) => planItem.check;
-	const shardIds = (plan: ReturnType<typeof item>[], index: number, count: number) =>
-		shardItems(plan, { index, count }, needsOf).map(({ id }) => id);
+	const shardIds = (
+		plan: ReturnType<typeof item>[],
+		index: number,
+		count: number,
+		seconds: (planItem: { id: string }) => number = () => 1,
+	) => shardItems(plan, { index, count }, needsOf, seconds).map(({ id }) => id);
 
 	it('reads a shard written as <i>/<n>', () => {
 		expect(readShard('2/3')).toEqual({ index: 2, count: 3 });
@@ -438,6 +444,19 @@ describe('shardItems', () => {
 		const joined = [item('a'), item('b'), item('c'), item('d', ['a', 'b'])];
 		expect(shardIds(joined, 1, 2)).toEqual(['a', 'b', 'd']);
 		expect(shardIds(joined, 2, 2)).toEqual(['c']);
+	});
+
+	it('gives the longest groups out first, each to the shard with the fewest seconds so far', () => {
+		// a and e are slow; by count, both would fall in the first shard.
+		const slow = new Set(['a', 'e']);
+		const seconds = ({ id }: { id: string }) => (slow.has(id) ? 10 : 1);
+		const plan = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => item(id));
+		expect(shardIds(plan, 1, 2, seconds)).toEqual(['a', 'b', 'd']);
+		expect(shardIds(plan, 2, 2, seconds)).toEqual(['c', 'e', 'f']);
+		// A group counts with the seconds of all its items.
+		const grouped = [item('a'), item('b'), item('c', ['b']), item('d', ['c'])];
+		expect(shardIds(grouped, 1, 2, () => 1)).toEqual(['b', 'c', 'd']);
+		expect(shardIds(grouped, 2, 2, () => 1)).toEqual(['a']);
 	});
 });
 
@@ -697,6 +716,9 @@ describe('the checks plan', () => {
 			},
 		};
 		expect(judge(check, good, NONE_MISSING)).toEqual([]);
+		// A screen with a fractional pixel ratio snaps the overlay's edges to its device pixels.
+		const snapped = { ...good, overlay: { ...good.overlay, offset: [0.43, -0.38] } };
+		expect(judge(check, snapped, NONE_MISSING)).toEqual([]);
 		const { sketch: _sketch, jobs: _jobs, gpu: _gpu, ...fewer } = good.overlay.figures;
 		const bad = {
 			...good,
@@ -785,31 +807,57 @@ describe('the checks plan', () => {
 		]);
 	});
 
+	/** The checks plan's shards in Safari, as `--shard <i>/<count>` gives each. */
+	const shardsOf = (count: number) =>
+		Array.from(
+			{ length: count },
+			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
+		);
+	const secondsOf = (shard: { id: string }[]) =>
+		shard.reduce((sum, item) => sum + expectedSeconds(item), 0);
+
 	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
-		for (const count of [2, 3, 4]) {
-			const shards = Array.from(
-				{ length: count },
-				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
-			);
+		const shaderParts = items.filter((item) => item.check.kind === 'shaders');
+		expect(shaderParts.length).toBe(SHADER_PARTS);
+		for (const count of [2, 3, 4, 5]) {
+			const shards = shardsOf(count);
 			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
 			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
 			expect(ids(once.flat())).toEqual(ids(items));
-			// The largest group is an image test in every thread mode; each later shard adds the
-			// capabilities page.
-			const sizes = shards.map((shard) => shard.length);
-			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length + 1);
+			// The longest group is the shaders page's parts; each later shard adds the capabilities
+			// page.
+			const seconds = shards.map(secondsOf);
+			expect(Math.max(...seconds) - Math.min(...seconds)).toBeLessThanOrEqual(
+				secondsOf(shaderParts) + expectedSeconds({ id: 'capabilities' }),
+			);
 			for (const shard of shards) {
 				const inShard = new Set(shard.map(({ id }) => id));
-				for (const { check } of shard)
-					for (const id of itemsNeeded(check)) expect(inShard).toContain(id);
+				for (const item of shard)
+					for (const id of itemsTogether(item)) expect(inShard).toContain(id);
 				// Each shard keeps the plan's order.
 				expect(shard).toEqual(items.filter(({ id }) => inShard.has(id)));
 			}
 		}
-		const first = planItems(parseArgs(['--shard', '1/2', 'Safari'])) ?? [];
-		expect(first[0]?.id).toBe('capabilities');
-		expect(first.at(-1)?.id).toBe('capabilities-reload');
+		// The shard with the capabilities page's second load ends with it.
+		const reloads = shardsOf(2).filter((shard) =>
+			shard.some(({ id }) => id === 'capabilities-reload'),
+		);
+		expect(reloads.map((shard) => shard.at(-1)?.id)).toEqual(['capabilities-reload']);
+	});
+
+	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
+	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
+	// judging. .dev/devices.md says what to do when the pages need more.
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+		const workflow = readFileSync(
+			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
+			'utf8',
+		);
+		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
+		expect(count).toBeGreaterThan(0);
+		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
+		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {

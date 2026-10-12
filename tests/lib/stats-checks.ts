@@ -35,6 +35,12 @@ export interface StatsInstances {
 const INSTANCE_ROW_BYTES = 64;
 /** The fewest bytes that a texel of a shadow map takes: 16-bit depth. */
 const SHADOW_TEXEL_BYTES = 2;
+/**
+ * How far, in CSS pixels, the overlay's edges may sit from the canvas's corner. On a screen with a
+ * fractional pixel ratio the browser snaps each edge to a device pixel, so the two edges can sit a
+ * part of a pixel apart.
+ */
+const CORNER_SLACK_PX = 1;
 
 /**
  * The GPU memory that the stats page's instance rows and shadow map take at least: their buffer
@@ -143,7 +149,7 @@ export function statsProblems(result: StatsResult): string[] {
 	if (!overlay) return ['the page shows no stats overlay'];
 	if (!figures) return ['the sketch posted no figures'];
 	const problems: string[] = [];
-	if (overlay.offset[0] !== 0 || overlay.offset[1] !== 0)
+	if (overlay.offset.some((offset) => Math.abs(offset) >= CORNER_SLACK_PX))
 		problems.push(
 			`the overlay sits ${overlay.offset.join(', ')} px from the canvas's top-right corner`,
 		);

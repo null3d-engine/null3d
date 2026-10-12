@@ -29,6 +29,8 @@ const AT = {
 	slotWeights: 294_912,
 	blendValues: 327_680,
 	playArgs: 344_064,
+	jointOverrides: 393_216,
+	lookTargets: 729_088,
 };
 /** Object slots of the fake scene. */
 const CAPACITY = 7;
@@ -38,7 +40,7 @@ const CAPACITY = 7;
  * count up from 1, as the core's ids plus one do.
  */
 function fakeCore() {
-	const memory = new WebAssembly.Memory({ initial: 8 });
+	const memory = new WebAssembly.Memory({ initial: 16 });
 	const calls: [string, ...number[]][] = [];
 	const staged: number[][] = [];
 	let stagedWords = 0;
@@ -71,6 +73,8 @@ function fakeCore() {
 		[C.ANIMATION_FIELD_SLOT_WEIGHTS]: AT.slotWeights,
 		[C.ANIMATION_FIELD_BLEND_VALUES]: AT.blendValues,
 		[C.ANIMATION_FIELD_PLAY_ARGS]: AT.playArgs,
+		[C.ANIMATION_FIELD_JOINT_OVERRIDES]: AT.jointOverrides,
+		[C.ANIMATION_FIELD_LOOK_TARGETS]: AT.lookTargets,
 	};
 	/** The play numbers at the `ANIMATION_ARG_*` places `at`. */
 	const args = (at: number[]) => {
@@ -97,6 +101,7 @@ function fakeCore() {
 			return 0;
 		},
 		createAnimatedInstance: created('createAnimatedInstance'),
+		enableJointOverrides: record('enableJointOverrides'),
 		removeAnimatedInstance: record('removeAnimatedInstance'),
 		animatorPlay: (...given: number[]) => {
 			calls.push(['animatorPlay', ...given, ...args(PLAY)]);
@@ -135,6 +140,7 @@ function fakeCore() {
 			new Uint32Array(memory.buffer, AT.totals, 2).set([records.length, dropped]);
 		},
 		f32: (at: number, length: number) => [...new Float32Array(memory.buffer, at, length)],
+		f64: (at: number, length: number) => [...new Float64Array(memory.buffer, at, length)],
 		/** Puts clip ids, as the core's ids, into the sample slots of instance `instance`. */
 		slots(instance: number, clips: number[]) {
 			const at = AT.slotSources + instance * C.ANIMATION_MAX_BLEND * 4;
@@ -566,6 +572,88 @@ describe('the animator', () => {
 		events([[3, LOOP, 0, 1, 0]]);
 		scene.animations?.dispatch(() => {});
 		expect(heard).toEqual([]);
+	});
+
+	/** The joint override block of the animator's instance, the core's instance 3. */
+	const block = (f32: (at: number, length: number) => number[]) =>
+		f32(AT.jointOverrides + 3 * C.JOINT_OVERRIDE_BLOCK * 4, C.JOINT_OVERRIDE_BLOCK);
+	const slot = (floats: number[], k: number) =>
+		floats.slice(k * C.JOINT_OVERRIDE_FLOATS, k * C.JOINT_OVERRIDE_FLOATS + 7);
+
+	test('sets, adds and clears joint rotations in engine memory, with a table made on first use', () => {
+		const { animator, calls, f32 } = animated();
+		const head = animator.joint('Head');
+		expect(head).toBe(2);
+		expect(calls).toEqual([]);
+		animator.setJointRotation('Head', [0, 0, 0.5, 0.75], 0.5);
+		animator.addJointRotation(head, [0, 1, 0, 0]);
+		animator.setJointRotation(1, [1, 0, 0, 0]);
+		expect(calls).toEqual([['enableJointOverrides']]);
+		let floats = block(f32);
+		const { JOINT_OVERRIDE_SET: SET, JOINT_OVERRIDE_ADD: ADD } = C;
+		// Each slot: the joint plus one, the mode, the weight and the rotation.
+		expect(slot(floats, 0)).toEqual([3, SET, 0.5, 0, 0, 0.5, 0.75]);
+		expect(slot(floats, 1)).toEqual([3, ADD, 1, 0, 1, 0, 0]);
+		expect(slot(floats, 2)).toEqual([2, SET, 1, 1, 0, 0, 0]);
+		// A second rotation of a joint and mode replaces the first in its slot.
+		animator.setJointRotation('Head', [0, 0, 0, 1], 0.25);
+		floats = block(f32);
+		expect(slot(floats, 0)).toEqual([3, SET, 0.25, 0, 0, 0, 1]);
+		animator.clearJoint(head);
+		floats = block(f32);
+		expect([0, 1, 2].map((k) => floats[k * C.JOINT_OVERRIDE_FLOATS])).toEqual([0, 0, 2]);
+		// The freed slot takes the next joint.
+		animator.addJointRotation('Leg', [0, 0, 0, 1]);
+		expect(slot(block(f32), 0)[0]).toBe(5);
+		expect(calls).toEqual([['enableJointOverrides']]);
+	});
+
+	test('refuses joints it cannot find, weights past 1 and a rotation past the slots', () => {
+		const { animator } = animated();
+		const missing = thrown(() => animator.joint('Tail'));
+		expect(missing.code).toBe('E1218');
+		expect(missing.message).toContain('Hips, Spine, Head, Arm and Leg');
+		expect(thrown(() => animator.setJointRotation(5, [0, 0, 0, 1])).message).toContain(
+			'an index from 0 to 4',
+		);
+		expect(thrown(() => animator.addJointRotation('Tail', [0, 0, 0, 1])).code).toBe('E1218');
+		expect(thrown(() => animator.setJointRotation(0, [0, 0, 0, 1], 2)).message).toContain(
+			'it takes 0 to 1',
+		);
+		for (let joint = 0; joint < 4; joint++) {
+			animator.setJointRotation(joint, [0, 0, 0, 1]);
+			animator.addJointRotation(joint, [0, 0, 0, 1]);
+		}
+		expect(thrown(() => animator.setJointRotation(4, [0, 0, 0, 1])).message).toContain(
+			'clearJoint',
+		);
+	});
+
+	test('aims a chain at a point, and keeps the chain that frozen options gave', () => {
+		const { animator, f32, f64, scene, rig } = animated();
+		const AIM = Object.freeze({ joints: ['Spine', 'Head'], limit: [0.5, 1] });
+		animator.lookAt([1, 2, 3], AIM, 0.75);
+		const look = () => block(f32).slice(C.JOINT_OVERRIDE_LOOK_WEIGHT);
+		const targets = () => f64(AT.lookTargets + 9 * 8, 3);
+		// The weight, the joint count, no forward of its own, then each joint, share and limit.
+		expect(look()).toEqual([0.75, 2, 0, 0, 0, 1, 1, 0.5, 2, 1, 1, 0, 0, 0, 0, 0, 0]);
+		expect(targets()).toEqual([1, 2, 3]);
+		animator.lookAt([4, 5, 6.5]);
+		expect(look()[0]).toBe(1);
+		expect(targets()).toEqual([4, 5, 6.5]);
+		animator.lookAt([0, 0, 0], { joints: 'Head', forward: [1, 0, 0], shares: [2] });
+		expect(look().slice(0, 8)).toEqual([1, 1, 1, 0, 0, 2, 2, Math.fround(Math.PI / 3)]);
+		animator.lookAt(null);
+		expect(look()[0]).toBe(0);
+		const backwards = thrown(() => animator.lookAt([0, 0, 0], { joints: ['Head', 'Spine'] }));
+		expect(backwards.message).toContain('List the joints parents first');
+		const branch = thrown(() => animator.lookAt([0, 0, 0], { joints: ['Arm', 'Head'] }));
+		expect(branch.message).toContain('is not below it');
+		const other = animateObject(new Group(scene, 5, 'Guard'), rig);
+		expect(thrown(() => other.lookAt([0, 0, 0])).message).toContain('looks at nothing yet');
+		expect(
+			thrown(() => animator.lookAt([0, 0, 0], { joints: ['Spine', 'Head'], limit: [1] })).message,
+		).toContain('1 limits for 2 joints');
 	});
 
 	test('leaves the core when its object is destroyed', () => {
