@@ -375,7 +375,10 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The step takes 1 to 3 minutes. Its limit ends a stuck browser well before the job's, with
+      # the step named as the one that ran out of time.
       - name: The packed packages in a fresh project
+        timeout-minutes: 8
         run: bun run test:packages
 
   browser:
@@ -627,8 +630,10 @@ jobs:
     # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
     # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
-    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard: add it to
-    # the shard list and raise the count beside it.
+    # a missing adapter is reported as a skip. The shards split the plan by each page's expected
+    # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
+    # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
+    # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: [build, city, changes]
