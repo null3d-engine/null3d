@@ -352,7 +352,7 @@ function runWebGL2(cases: readonly Case[], input: Uint32Array): Drawn {
 	);
 
 	const { target, deviceFault, precisionFault } = integerTarget(gl, rows + 1);
-	const structFault = deviceFault === undefined ? structPrecisionFault(gl) : undefined;
+	const structFault = structPrecisionFault(gl);
 	gl.enable(gl.SCISSOR_TEST);
 	// GL counts rows from the bottom, in the fragment position, the scissor box and readPixels, so
 	// row k of the target and of the readback is case k, as on WebGPU.
@@ -438,47 +438,70 @@ void main() {
 const STRUCT_PROBE: readonly number[] = [1234.567, 0.123456, 1e-5, 70000].map(Math.fround);
 
 /**
- * The struct probe's fragment shader: it keeps the probe's floats in a struct that a function
- * returns, as the GLSL build keeps a fragment shader's inputs and its library's results, and writes
- * their bits. Each declaration states `highp`. The product with a uniform 1 keeps the compiler
- * from folding the struct away.
+ * A struct probe's fragment shader: it keeps a `highp` value of `type` in a struct that a
+ * function returns, as the GLSL build keeps a fragment shader's inputs and its library's results,
+ * and writes its bits through `bits`. Each declaration states `highp`. The product with a uniform
+ * 1 keeps the compiler from folding the struct away.
  */
-const STRUCT_FRAGMENT = `#version 300 es
+function structFragment(type: 'vec4' | 'uvec4', bits: string): string {
+	const one = type === 'vec4' ? 'float' : 'uint';
+	return `#version 300 es
 precision highp float;
 precision highp int;
 struct Held {
-	highp vec4 value;
+	highp ${type} value;
 };
-uniform highp vec4 probe;
-uniform highp float one;
+uniform highp ${type} probe;
+uniform highp ${one} one;
 layout(location = 0) out highp uvec4 color;
-Held hold(highp vec4 value) {
+Held hold(highp ${type} value) {
 	Held held;
 	held.value = value * one;
 	return held;
 }
 void main() {
-	color = floatBitsToUint(hold(probe).value);
+	color = ${bits}(hold(probe).value);
 }`;
+}
 
-/**
- * Whether the driver keeps the floats of a struct at full precision, read through the bound
- * target, which keeps every bit. Some WebGL2 drivers keep them at half precision whatever the
- * shader declares, so every shader that keeps values in a struct computes with half precision
- * there. Undefined when every float came back whole.
- */
-function structPrecisionFault(gl: WebGL2RenderingContext): string | undefined {
-	const program = linkProgram(gl, PROBE_VERTEX, STRUCT_FRAGMENT);
-	gl.uniform4fv(gl.getUniformLocation(program, 'probe'), STRUCT_PROBE);
-	gl.uniform1f(gl.getUniformLocation(program, 'one'), 1);
+/** Writes the bound target's first texel through a probe's program, and reads it back. */
+function drawnTexel(gl: WebGL2RenderingContext, program: WebGLProgram): Uint32Array {
+	gl.useProgram(program);
 	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
 	gl.drawArrays(gl.TRIANGLES, 0, 3);
-	const read = Array.from(new Float32Array(texelAt(gl, 0).buffer));
+	const texel = texelAt(gl, 0);
 	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
-	if (read.every((value, k) => Object.is(value, STRUCT_PROBE[k]))) return undefined;
+	return texel;
+}
+
+/**
+ * Whether the driver keeps the values of a struct whole: floats, and whole numbers that use both
+ * halves of each value. Some WebGL2 drivers keep them at half precision, or keep 16 bits of a whole
+ * number, whatever the shader declares, so every shader that keeps values in a struct loses them
+ * there. The probe runs when a clear of the bound target keeps every bit, even where the page's
+ * other probes found that a shader's write did not, since those probes pass their numbers through
+ * a struct too. Undefined when every value came back whole, or when the target cannot tell.
+ */
+function structPrecisionFault(gl: WebGL2RenderingContext): string | undefined {
+	gl.clearBufferuiv(gl.COLOR, 0, new Uint32Array(TARGET_PROBE));
+	if (probeFault('a clear', texelAt(gl, 0)) !== undefined) return undefined;
+	const floats = linkProgram(gl, PROBE_VERTEX, structFragment('vec4', 'floatBitsToUint'));
+	gl.uniform4fv(gl.getUniformLocation(floats, 'probe'), STRUCT_PROBE);
+	gl.uniform1f(gl.getUniformLocation(floats, 'one'), 1);
+	const wholes = linkProgram(gl, PROBE_VERTEX, structFragment('uvec4', 'uvec4'));
+	gl.uniform4uiv(gl.getUniformLocation(wholes, 'probe'), new Uint32Array(TARGET_PROBE));
+	gl.uniform1ui(gl.getUniformLocation(wholes, 'one'), 1);
+	const read = Array.from(new Float32Array(drawnTexel(gl, floats).buffer));
 	const list = (values: readonly number[]) =>
 		values.map((v) => String(Number(v.toPrecision(7)))).join(', ');
-	const fault = `a shader's floats held in a struct, each declared highp, came back changed: wrote ${list(STRUCT_PROBE)}, read ${list(read)}`;
+	const faults = [
+		read.every((value, k) => Object.is(value, STRUCT_PROBE[k]))
+			? undefined
+			: `a shader's floats held in a struct, each declared highp, came back changed: wrote ${list(STRUCT_PROBE)}, read ${list(read)}`,
+		drawnFault(gl, wholes, "a shader's whole numbers held in a struct, each declared highp,"),
+	].filter((fault) => fault !== undefined);
+	if (faults.length === 0) return undefined;
+	const fault = faults.join('; ');
 	progress(fault);
 	return fault;
 }
@@ -507,10 +530,7 @@ function drawnFault(
 	program: WebGLProgram,
 	what: string,
 ): string | undefined {
-	gl.useProgram(program);
-	gl.clearBufferuiv(gl.COLOR, 0, [0, 0, 0, 0]);
-	gl.drawArrays(gl.TRIANGLES, 0, 3);
-	return probeFault(what, texelAt(gl, 0));
+	return probeFault(what, drawnTexel(gl, program));
 }
 
 /** Binds a framebuffer with an rgba32uint target of this kind, or throws when it is incomplete. */
