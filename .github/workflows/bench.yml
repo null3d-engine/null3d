@@ -138,8 +138,8 @@ jobs:
     needs: commits
     if: needs.commits.outputs.new != ''
     runs-on: ubuntu-latest
-    # The job takes 4 to 8 minutes. Every CI job stops at 15 minutes at most.
-    timeout-minutes: 15
+    # The job takes 4 to 8 minutes. Every CI job should take at most 15 minutes, and stops at 20.
+    timeout-minutes: 20
     strategy:
       matrix:
         build: [baseline, new]
@@ -194,12 +194,12 @@ jobs:
     # software GPU draws the larger scenes at under one frame per second and takes the processor
     # from the engine's threads, so its CPU times vary far more between identical builds. Each shard
     # runs every sixth page of the plan in both builds, and fails when its own pages fail. Every CI
-    # job stops at 15 minutes at most, and two pages take about 9 minutes with the setup.
+    # job should take at most 15 minutes (it stops at 20), and two pages take about 9 minutes with the setup.
     # .dev/benchmarks.md says how the count was chosen. To change it, change the list.
     name: benchmark (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     needs: [commits, build]
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

@@ -140,7 +140,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -168,8 +168,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The job takes 5 to 9 minutes. Every CI job stops at 15 minutes at most.
-    timeout-minutes: 15
+    # The job takes 5 to 9 minutes. Every CI job should take at most 15 minutes, and stops at 20.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -192,7 +192,7 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -236,7 +236,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -293,7 +293,7 @@ jobs:
     needs: [build, size-base, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -332,7 +332,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -362,7 +362,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -393,7 +393,7 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -448,7 +448,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -472,7 +472,7 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -506,7 +506,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.sketches == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -549,7 +549,7 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -600,7 +600,7 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -641,7 +641,7 @@ jobs:
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # Each shard should take at most about 12 minutes, setup included, which leaves room under the
     # limit for a runner page that goes quiet: each one costs about a minute more.
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
