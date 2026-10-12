@@ -52,9 +52,14 @@ async function imageOf(page: Page, path: string): Promise<RgbaImage> {
 	return { width, height, data: Buffer.from(pixels, 'base64') };
 }
 
+// Each scene's tests share the images of its three.js twins, so they run in order in one worker,
+// while the scenes spread over every worker and either shard.
+test.describe.configure({ mode: 'parallel' });
+
 for (const scene of FEATURE_SCENES) {
 	const { test: name, limit, webglOnly } = scene;
 	test.describe(`${name} against three.js`, () => {
+		test.describe.configure({ mode: 'default' });
 		const twinImages = new Map<PageKind, RgbaImage>();
 		/** How much three.js's two renderers differ on the scene, as a share of its pixels. */
 		let baseline: number | null = null;
