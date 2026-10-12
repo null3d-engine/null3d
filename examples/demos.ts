@@ -236,6 +236,7 @@ export const DEMOS: readonly Demo[] = [
 		name: 'light-shafts',
 		group: 'Light, materials and effects',
 		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		code: 'light-shafts/',
 		title: 'Light shafts and lit fog',
 		scene: 'Pine wood at sunset',
 		summary:
