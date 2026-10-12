@@ -155,6 +155,31 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES"], targets = ["glsl"] }
 
+# Decals, from the same file with DECAL: a standard material projected onto the surfaces inside
+# each object's box, in a pass of their own after the camera's opaque pass. Each pixel reads the
+# scene's depth to find the surface under the box, then shades it as the standard material does,
+# with the material's maps at the box's coordinates in the maps builds. The box's axes give the
+# normal map's frame, so every build has VERTEX_TANGENT's surface code. DEPTH_MULTISAMPLED reads
+# sample 0 of a multisampled depth on WebGPU, and WebGL2 reads the backend's copy of one sample.
+# RECEIVE_SHADOWS and ROW_VALUES act as for the standard material. A page downloads them with its
+# first decal.
+[shaders.decal]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["DECAL", "VERTEX_TANGENT"], permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "HALF", "DEPTH_MULTISAMPLED", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DECAL", "VERTEX_TANGENT"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "HALF", "ROW_VALUES"], targets = ["glsl"] }
+
+[shaders.decal_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["DECAL", "VERTEX_TANGENT", "MAPS"], permutations = ["TONE_MAP", "RECEIVE_SHADOWS", "HALF", "DEPTH_MULTISAMPLED", "ROW_VALUES"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "DECAL", "VERTEX_TANGENT", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "RECEIVE_SHADOWS", "HALF", "ROW_VALUES"], targets = ["glsl"] }
+
+[first_use.decals]
+shaders = ["decal", "decal_maps"]
+
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit]

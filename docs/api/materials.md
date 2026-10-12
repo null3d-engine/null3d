@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission and decals. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -38,6 +38,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 | `materials.shader(options)` | A standard material whose WGSL changes its look before the engine lights it, or moves its vertices |
+| `materials.decal(options)` | A standard material that a box projects onto the surfaces inside it, like three.js's `DecalGeometry` ([Decals](#decals)) |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -124,6 +125,64 @@ After the camera's view draws its opaque objects, the engine copies their colors
 ### Cost of transmission
 
 Nothing of it runs, and none of its code or shaders download, until the first surface that lets light through draws. Then each frame copies the camera's opaque colors once and makes the blurred copies. The camera's opaque and see-through objects then draw in two render passes instead of one. The shaders of such surfaces load on their first use. To load them before the first frame instead, list `'transmission'` in `createEngine`'s `preload` option.
+
+## Decals
+
+A decal material projects a standard material onto every opaque surface inside a box, as three.js's `DecalGeometry` places a decal. Use decals for scorch marks, mud, puddles, road paint, moss, cracks and posters. Give the material to a mesh of `geometry.box()`: the object's position, rotation and scale place the box.
+
+```ts
+// sketch.ts: a scorch mark on the ground, and cracks on a wall. The maps come from textures.
+const box = geometry.box();
+const scorch = materials.decal({ map: scorchColors, normalMap: scorchBumps, roughness: 0.95 });
+// Turned so that the box's z axis points up, out of the ground: the decal looks down onto it.
+const down: Quat = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+scene.createMesh({ mesh: box, material: scorch, position: [2, 0, 1], rotation: down, scale: [3, 3, 1] });
+// A wall that faces +z takes a box that is not turned.
+const cracks = materials.decal({ map: crackColors, normalMap: crackBumps });
+scene.createMesh({ mesh: box, material: cracks, position: [0, 1.5, -2], scale: [2, 2, 0.5] });
+```
+
+The box's z axis is the decal's direction: it points out of the surfaces that the decal marks. The maps lie across the box's x and y sides, with u along x and v along y, as `DecalGeometry` lays them. The box's z size sets how far into and out of a surface the decal reaches, so a deep box marks a bumpy or curved surface all over.
+
+A decal takes the standard material's values and maps. They light it as they light any surface, at the place where the decal lies:
+
+| Values | What they do |
+| --- | --- |
+| `map`, `color`, `opacity` | The decal's color. The map's alpha times the opacity sets how much of the decal covers the surface |
+| `metalnessRoughnessMap`, `metalness`, `roughness` | How the decal reflects light. A puddle is smooth, and scorch is rough |
+| `normalMap`, `normalScale` | Bumps of the decal, such as the edges of a crack or the grain of moss |
+| `aoMap`, `aoMapIntensity`, `emissive`, `emissiveMap`, `emissiveIntensity` | Occlusion and light of the decal's own, such as glowing paint |
+| `angleFade` | The angles from the decal's direction at which it starts to fade and past which it shows nothing, in radians. The default, 60 and 80 degrees, keeps a decal on the ground from smearing up a wall |
+| `edgeFade` | The share of the box's depth, from 0 to 1, over which the decal fades toward each end along z. The default is 0.2 |
+
+A batch of boxes with one decal material draws in one draw. With `colors: true`, each row's color tints its decal, and the row's alpha fades it, as for bullet holes that fade with time.
+
+### Objects that show no decals
+
+`scene.setDecalLayers(mask)` sets the layers whose objects decals mark. An object that is also on a layer outside the mask shows no decals, so a character on a layer of its own walks through mud and puddles clean.
+
+```ts
+const PEOPLE = 1 << 1;
+scene.setDecalLayers(~PEOPLE);  // decals mark every layer but the people's
+const walker = scene.createMesh({ mesh: body, material: coat, layers: 1 | PEOPLE });
+```
+
+Such objects draw a second time after the decals, over their own pixels. That costs one more draw of them in each frame that shows decals, so keep the layers that decals skip to the objects that need it. The mask is the same for every decal.
+
+### How decals draw
+
+After the camera's view draws its opaque objects, the decals draw in a pass of their own. For each pixel of its box, a decal reads the scene's depth there and finds the surface that the pixel shows. It lights its own material at that surface, with the scene's lights, shadows, ambient occlusion, environment and fog. Then it covers the surface as far as its alpha says.
+
+- Decals mark opaque surfaces only. Blended surfaces and surfaces that let light through draw after the decals.
+- A decal covers the surface below it with its own color. It cannot only darken or smooth the surface and keep the surface's own map. So give a puddle a dark color and a low roughness of its own.
+- Under a decal, the surface's normal comes from the scene's depth. A curved mesh of few triangles shows its flat faces there.
+- Decals of one render order draw in the order you made them. `setRenderOrder` puts one decal over another.
+- Only the camera's view shows decals. [Scene passes](render.md#scene-passes) and [reflection passes](render.md#reflection-passes) show none.
+- A decal casts no shadow. Raycasts and pointer events hit its box, as they hit any mesh. Put decals on a layer of their own, and leave that layer out of the raycast's `layers`.
+
+### Cost of decals
+
+Nothing of it runs, and none of its shaders download, until the first decal material. Then each frame culls the decals on the engine's workers and draws them in one render pass, with one draw for each run of decals that share their maps. Each pixel that a decal covers reads five depths and lights the surface once more. A decal's shaders load on first use. To load them before the first frame instead, list `'decals'` in `createEngine`'s `preload` option.
 
 ## Texture maps
 
@@ -374,7 +433,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission` and `edgeFade` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The two angles of `angleFade` go from 0 to π, the first no larger than the second. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

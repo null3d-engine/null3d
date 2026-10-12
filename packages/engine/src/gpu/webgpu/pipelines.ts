@@ -11,6 +11,8 @@ import {
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
+	LAYOUT_DECAL_DEPTH,
+	LAYOUT_DECAL_DEPTH_MS,
 	LAYOUT_DEPTH,
 	LAYOUT_DEPTH_PYRAMID,
 	LAYOUT_DOF_COMPOSITE,
@@ -63,6 +65,8 @@ import {
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_DEBUG_VIEW,
+	TEMPLATE_DECAL,
+	TEMPLATE_DECAL_MAPS,
 	TEMPLATE_DEPTH_PYRAMID,
 	TEMPLATE_DOF_BLUR,
 	TEMPLATE_DOF_COMPOSITE,
@@ -154,8 +158,8 @@ export interface RenderTemplate {
 	/** The bind group layout of each group, by layout id, from group 0 on. */
 	readonly layouts: readonly number[];
 	/**
-	 * For a custom effect's template: the layouts of its builds that read a multisampled depth, the
-	 * pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
+	 * For a custom effect's template or a decal template: the layouts of its builds that read a
+	 * multisampled depth, the pipelines whose permutation has the DEPTH_MULTISAMPLED bit.
 	 */
 	readonly multisampledLayouts?: readonly number[];
 	/**
@@ -725,6 +729,25 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 				ownPrepass: id === TEMPLATE_SPRITE || id === TEMPLATE_SPRITE_MAP,
 				depthFragment: id === TEMPLATE_SHADOW_CUTOUT || id === TEMPLATE_SHADOW_CUTOUT_MAP,
+			});
+		}
+		// Decals: the frame's group, the maps' where the build samples them, then the scene's depth,
+		// which the builds that read a multisampled depth bind through a layout of their own. They
+		// read the position of the box's corners alone.
+		this.defineLayout(LAYOUT_DECAL_DEPTH, 'decal depth', [unfiltered(0)]);
+		this.defineLayout(LAYOUT_DECAL_DEPTH_MS, 'decal depth ms', [unfiltered(0, true)]);
+		for (const [id, label, shader, maps] of [
+			[TEMPLATE_DECAL, 'decal', shaders.decal, []],
+			[TEMPLATE_DECAL_MAPS, 'decal maps', shaders.decal_maps, [LAYOUT_MATERIAL_MAPS]],
+		] as const) {
+			this.defineTemplate(id, {
+				label: `mesh ${label}`,
+				shader,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH],
+				multisampledLayouts: [LAYOUT_FRAME, ...maps, LAYOUT_DECAL_DEPTH_MS],
+				meshLocations: [0],
+				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {

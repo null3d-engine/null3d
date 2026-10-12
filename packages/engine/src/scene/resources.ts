@@ -17,6 +17,7 @@ import {
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
@@ -30,6 +31,9 @@ import {
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
 	MATERIAL_PARAM_COLOR,
+	MATERIAL_PARAM_DECAL_EDGE_FADE,
+	MATERIAL_PARAM_DECAL_FADE_END,
+	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -986,6 +990,46 @@ export interface UnlitValues extends MaterialOptions {
 }
 
 /**
+ * The values of a decal material, which `set` changes at any time: the standard material's values
+ * that a decal shows, and how the decal fades.
+ *
+ * @category api/materials
+ */
+export interface DecalValues
+	extends Omit<
+		StandardValues,
+		| 'alphaCutoff'
+		| 'lightMapIntensity'
+		| 'transmission'
+		| 'thickness'
+		| 'attenuationColor'
+		| 'attenuationDistance'
+	> {
+	/**
+	 * The angles in radians, from the decal's direction, at which the decal starts to fade and
+	 * past which it shows nothing. The direction is the +z axis of the decal's box, which points
+	 * out of the surfaces that it marks. A surface at an angle past the second shows none of the
+	 * decal, so the decal does not smear along walls and edges. Each angle runs from 0 to π, and
+	 * the first is at most the second. The default is `[π / 3, 4π / 9]`: 60 and 80 degrees.
+	 */
+	angleFade?: readonly [number, number];
+	/**
+	 * The share of the box's depth, from 0 to 1, over which the decal fades out toward each end
+	 * of its z axis, so a decal that reaches past a surface's edge fades rather than stops. The
+	 * default is 0.2.
+	 */
+	edgeFade?: number;
+}
+
+/**
+ * Options of `materials.decal`: its values and the standard material's maps, which the decal
+ * projects along its box. The light map is left out.
+ *
+ * @category api/materials
+ */
+export interface DecalOptions extends DecalValues, Omit<StandardMaps, 'lightMap'> {}
+
+/**
  * Options of `materials.unlit`.
  *
  * @category api/materials
@@ -1115,7 +1159,7 @@ function lets(compiled: CompiledMaterial): boolean {
 }
 
 /** Every value of either material, which `set` writes. */
-type AnyValues = StandardValues & UnlitValues;
+type AnyValues = StandardValues & UnlitValues & Pick<DecalValues, 'angleFade' | 'edgeFade'>;
 
 /** The options of the values that are numbers, with the range each takes. */
 type Ranged =
@@ -1129,7 +1173,8 @@ type Ranged =
 	| 'specularIntensity'
 	| 'envIntensity'
 	| 'transmission'
-	| 'thickness';
+	| 'thickness'
+	| 'edgeFade';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -1154,6 +1199,7 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
 	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
 	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
+	['edgeFade', MATERIAL_PARAM_DECAL_EDGE_FADE, 1, 'edgeFade'],
 ];
 
 /** The core's slot of each map option. */
@@ -1187,7 +1233,20 @@ function checkNumbers(values: AnyValues, call: string): void {
 /** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
 function checkValues(values: AnyValues, call: string): void {
 	checkNumbers(values, call);
-	const { ior, attenuationDistance: distance } = values;
+	const { ior, attenuationDistance: distance, angleFade } = values;
+	if (
+		angleFade !== undefined &&
+		!(
+			angleFade.length === 2 &&
+			angleFade[0] >= 0 &&
+			angleFade[0] <= angleFade[1] &&
+			angleFade[1] <= Math.PI
+		)
+	)
+		throw new EngineError(
+			'E1108',
+			`${call}() got the angleFade ${JSON.stringify(angleFade)}; it takes two angles from 0 to π, the first no larger than the second.`,
+		);
 	if (ior !== undefined && !(ior >= 1 && ior < Number.POSITIVE_INFINITY))
 		throw new EngineError('E1108', `${call}() got the ior ${ior}; it takes a finite 1 or more.`);
 	if (distance !== undefined && !(distance > 0))
@@ -1252,7 +1311,11 @@ function writeValues(
 		const value = values[key];
 		if (value !== undefined) write(param, value, 0, 0);
 	}
-	const { normalScale, uvTransform, ior, attenuationDistance: distance } = values;
+	const { normalScale, uvTransform, ior, attenuationDistance: distance, angleFade } = values;
+	if (angleFade) {
+		write(MATERIAL_PARAM_DECAL_FADE_START, Math.cos(angleFade[0]), 0, 0);
+		write(MATERIAL_PARAM_DECAL_FADE_END, Math.cos(angleFade[1]), 0, 0);
+	}
 	if (ior !== undefined) {
 		write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
 		write(MATERIAL_PARAM_IOR, ior, 0, 0);
@@ -1600,12 +1663,17 @@ export class Materials {
 		shading: number,
 		options: StandardOptions & UnlitOptions,
 		call: string,
+		features = 0,
 	): Material<Values> {
-		return new Material<Values>(this.createId(shading, options, call), this.core, `${call}.set`);
+		const id = this.createId(shading, options, call, features);
+		return new Material<Values>(id, this.core, `${call}.set`);
 	}
 
-	/** Creates a material in the engine core, with its standard options, and returns its id. */
-	private createId(shading: number, options: StandardOptions, call: string): number {
+	/**
+	 * Creates a material in the engine core, with its standard options and the feature bits
+	 * `extra`, and returns its id.
+	 */
+	private createId(shading: number, options: StandardOptions, call: string, extra = 0): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const emissive = linearOrNone(options.emissive, call);
 		const specular = specularOrNone(options.specularColor, call);
@@ -1615,10 +1683,11 @@ export class Materials {
 			checkFeatures(options, call);
 		}
 		const opacity = options.opacity ?? 1;
-		const features = featureBits(options);
-		// The shaders that let light through load on first use: the download starts with the
-		// material, before any object draws with it.
+		const features = featureBits(options) | extra;
+		// The shaders that let light through, and decals' shaders, load on first use: the
+		// download starts with the material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		if (features & MATERIAL_FEATURE_DECAL) this.shaders.need('decals');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
 		const id = core.checkGrowth(
@@ -1647,6 +1716,24 @@ export class Materials {
 	 */
 	standard(options: StandardOptions = {}): Material<StandardValues> {
 		return this.create<StandardValues>(SHADING_LIT, options, 'materials.standard');
+	}
+
+	/**
+	 * A decal's material: the standard material, projected onto every opaque surface inside the
+	 * box of each object that it draws, as three.js's `DecalGeometry` places a decal. Give it to a
+	 * mesh of `geometry.box()`: the object's position, rotation and scale place the box, and the
+	 * material's maps stretch over the box's x and y sides, seen along its z axis. The surfaces
+	 * inside take its color, roughness, metalness, normal map and emissive light, lit by the
+	 * scene's lights, and blend with them as far as its alpha says. A decal draws after the opaque
+	 * objects, and marks no blended surface. It casts no shadow.
+	 */
+	decal(options: DecalOptions = {}): Material<DecalValues> {
+		return this.create<DecalValues>(
+			SHADING_LIT,
+			options,
+			'materials.decal',
+			MATERIAL_FEATURE_DECAL,
+		);
 	}
 
 	/**

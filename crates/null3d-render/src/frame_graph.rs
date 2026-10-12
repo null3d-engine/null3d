@@ -54,6 +54,14 @@
 //! multisampled scene color resolves at the end of each. Nothing of it runs while no object lets
 //! light through.
 //!
+//! While some object is a decal, the decal pass comes right after the camera's opaque pass (see
+//! [`crate::sorted`]). It reads the scene depth as the opaque pass leaves it, so it draws in a
+//! render pass of its own, with the scene color as its only target, before the debug lines, the
+//! transmission copy and the transparent pass. Each decal shades the opaque surfaces inside its
+//! box and blends over them. While some layers take no decals, the decal redraw pass then draws the
+//! camera's opaque objects on those layers again, over their own pixels. Nothing of it runs while
+//! no object is a decal.
+//!
 //! Two passes can take the scene color to the canvas, and the scene color's format and the
 //! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
 //! scene color, which holds exposed color, and draws the canvas: it applies the tone mapping, and
@@ -125,7 +133,9 @@
 
 use std::borrow::Cow;
 
-use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
+use null3d_gpu::drawlist::{
+    DrawList, NO_TARGET, Op, format, pass_flags, permutation, texture_usage, view,
+};
 
 use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
@@ -273,6 +283,10 @@ const AO_TARGETS: [&str; ao::STEPS] = ["aoDepth", "aoHorizon", "aoResult"];
 /// a mip chain that it creates, which the camera's transparent pass reads.
 const TRANSMISSION_PASS: &str = "Transmission";
 const TRANSMISSION_COLOR: &str = "transmissionColor";
+/// The pass that draws decals over the camera's opaque objects, from the scene's depth so far.
+const DECALS_PASS: &str = "Decals";
+/// The pass that draws the objects that decals skip again, after the decal pass.
+const DECAL_REDRAW_PASS: &str = "DecalRedraw";
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
 /// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
 /// pipelines draw into, so each render pass ends without storing it, and it can share a texture
@@ -341,6 +355,10 @@ pub(crate) enum Role {
     DebugLines,
     /// Draws a view's blended objects, back to front, over its opaque ones.
     Transparent(ViewId),
+    /// Draws the decals over the camera's opaque objects, from the scene's depth.
+    Decals,
+    /// Draws the camera's opaque objects on the layers that decals skip again, over the decals.
+    DecalRedraw,
     /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
     /// attachment of its render pass resolves.
     Resolve,
@@ -556,6 +574,12 @@ pub(crate) struct FrameGraph {
     /// The textures that the copy reads and draws into, found once for each compile of the graph,
     /// which the count says.
     transmission_target: Option<(u32, u32, u32)>,
+    /// True while some object is a decal.
+    decals_wanted: bool,
+    /// True while objects on the layers that decals skip draw again after them.
+    redraws_wanted: bool,
+    /// True when the declared passes hold the decal pass.
+    decals_declared: bool,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -677,6 +701,9 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             transmission_target: None,
+            decals_wanted: false,
+            redraws_wanted: false,
+            decals_declared: false,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -887,6 +914,48 @@ impl FrameGraph {
             samples: self.samples,
             permutation: self.scene_color.permutation(),
         }
+    }
+
+    /// What the decal pass's pipelines draw into: the scene color alone, as the scene's pipelines
+    /// draw it, and on WebGPU the bit that reads sample 0 of a multisampled depth. WebGL2 reads a
+    /// copy of one sample.
+    pub(crate) fn decal_targets(&self) -> PassTargets {
+        let scene = self.scene_targets();
+        let multisampled = if self.decal_depth_multisampled() {
+            permutation::DEPTH_MULTISAMPLED
+        } else {
+            0
+        };
+        PassTargets {
+            depth_format: format::NONE,
+            permutation: scene.permutation | multisampled,
+            ..scene
+        }
+    }
+
+    /// True when the decal pass reads a multisampled depth texture: on WebGPU with MSAA.
+    pub(crate) fn decal_depth_multisampled(&self) -> bool {
+        self.gpu_culling && self.samples > 1
+    }
+
+    /// Turns the decal pass on while some object is a decal, and off otherwise, for the next
+    /// frames, with its redraw of the objects on the layers that decals skip while `redraws`. The
+    /// passes are declared again only when either changes.
+    pub(crate) fn set_decals(&mut self, on: bool, redraws: bool) {
+        let redraws = on && redraws;
+        if on != self.decals_wanted || redraws != self.redraws_wanted {
+            self.decals_wanted = on;
+            self.redraws_wanted = redraws;
+            self.declared = false;
+        }
+    }
+
+    /// The draw list's id of the scene depth that the decal pass reads, or `None` while it does
+    /// not run. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn decal_depth(&self) -> Option<u32> {
+        self.decals_declared
+            .then(|| self.sampled_id(SCENE_DEPTH))
+            .flatten()
     }
 
     /// Bytes that one frame may copy into its arena for the graph's own passes. The final pass can
@@ -1465,6 +1534,25 @@ impl FrameGraph {
             let pass = self.add(pass, Role::Opaque(id));
             self.opaque.push(pass);
             self.view_passes.push((index as u16, pass));
+        }
+        self.decals_declared = self.decals_wanted && !views.is_empty();
+        if self.decals_declared {
+            // Decals read the depth that the camera's opaque pass leaves, and draw over its color
+            // before the debug lines and the passes that copy or blend over it.
+            let decals = Pass::new(DECALS_PASS, PassKind::Scene)
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads_so_far(SCENE_DEPTH)
+                .writes(SCENE_COLOR);
+            self.add(decals, Role::Decals);
+            if self.redraws_wanted {
+                // The objects that decals skip draw again over their own pixels, with the depth
+                // test, in the render pass of the debug lines and the transparent pass.
+                let redraw = Pass::new(DECAL_REDRAW_PASS, PassKind::Scene)
+                    .size(view_size(&views[ViewId::CAMERA.index()]))
+                    .writes(SCENE_COLOR)
+                    .writes(SCENE_DEPTH);
+                self.add(redraw, Role::DecalRedraw);
+            }
         }
         let lines = Pass::new("DebugLines", PassKind::Scene)
             .writes(SCENE_COLOR)
@@ -4052,6 +4140,76 @@ mod tests {
             assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
             assert!(frames.graph().find_pass("AoDepth").is_none());
             assert_eq!(frames.ao_texture(), None);
+        }
+    }
+
+    #[test]
+    fn decals_draw_after_the_camera_opaque_pass_only_while_some_object_is_one() {
+        for gpu_culling in [true, false] {
+            let canvas = (320, 180);
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, gpu_culling, false);
+            frames.sync(&[View::default()]);
+            frames.set_transparent(true);
+            let mut list = DrawList::with_capacity(8192);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let without = steps(&frames);
+            assert!(frames.decal_depth().is_none());
+
+            frames.set_decals(true, false);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let with = steps(&frames);
+            let decals = with
+                .iter()
+                .position(|step| step == &[DECALS_PASS])
+                .expect("the decals draw in a render pass of their own");
+            assert_eq!(
+                with[decals - 1][0],
+                "Opaque",
+                "after the camera's opaque pass"
+            );
+            assert!(
+                with[decals + 1].contains(&"Transparent".to_owned()),
+                "before the transparent pass"
+            );
+            assert!(
+                frames.decal_depth().is_some(),
+                "the pass reads the scene depth"
+            );
+            let targets = frames.decal_targets();
+            assert_eq!(targets.depth_format, format::NONE);
+            assert_eq!(
+                targets.permutation & permutation::DEPTH_MULTISAMPLED != 0,
+                gpu_culling,
+                "WebGPU reads sample 0 of the multisampled depth, WebGL2 a copy of one sample"
+            );
+
+            // The redraw of the objects that decals skip joins the render pass after the decals.
+            frames.set_decals(true, true);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            let redrawn = steps(&frames);
+            assert!(redrawn[decals + 1].contains(&DECAL_REDRAW_PASS.to_owned()));
+            assert_eq!(
+                redrawn.len(),
+                with.len(),
+                "the redraw takes no render pass of its own"
+            );
+
+            // Without decals, the frame declares nothing of them again.
+            frames.set_decals(false, true);
+            frames.sync(&[View::default()]);
+            frames
+                .prepare(&mut list, canvas, RenderScale::FULL)
+                .unwrap();
+            assert_eq!(steps(&frames), without);
+            assert!(frames.decal_depth().is_none());
         }
     }
 

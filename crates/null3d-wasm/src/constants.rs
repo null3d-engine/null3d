@@ -833,6 +833,7 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("DECAL", feature::DECAL),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -895,6 +896,9 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
+                ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
+                ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which

@@ -34,6 +34,9 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
+// frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
+// the decals reach the lowest boxes of the swarm too.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -76,6 +79,7 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const turnDecals = switches.has('decals') ? createDecals(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -144,6 +148,7 @@ export default defineSketch(async (context) => {
 		animate(t);
 		morph(t);
 		moveCasters?.(t);
+		turnDecals?.(t);
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
@@ -319,6 +324,68 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** Decals on each side of the `decals` switch's square of them, and the texels of their image. */
+const DECAL_ROWS = 16;
+const DECAL_TEXELS = 64;
+
+/**
+ * Adds the `decals` switch's ground under the swarm, and a dynamic batch of decals on it: soft round
+ * marks with a dark ring, in a square across the swarm's extent. Returns the step that turns each
+ * one about the vertical, which writes the batch's rotations in place.
+ */
+function createDecals({ scene, geometry, materials, textures }: SketchContext) {
+	const ground = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#6b6560', roughness: 0.9 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	ground.setRotationEuler(-Math.PI / 2, 0, 0);
+	const data = new Uint8Array(DECAL_TEXELS * DECAL_TEXELS * 4);
+	for (let y = 0; y < DECAL_TEXELS; y++)
+		for (let x = 0; x < DECAL_TEXELS; x++) {
+			const r =
+				Math.hypot(x + 0.5 - DECAL_TEXELS / 2, y + 0.5 - DECAL_TEXELS / 2) / (DECAL_TEXELS / 2);
+			const ring = Math.max(0, 1 - Math.abs(r - 0.8) * 8);
+			const shade = 40 + 120 * (1 - ring);
+			data.set(
+				[shade, shade * 0.8, shade * 0.6, 255 * Math.max(0, Math.min(1, (1 - r) * 4))],
+				(y * DECAL_TEXELS + x) * 4,
+			);
+		}
+	const map = textures.fromData({
+		width: DECAL_TEXELS,
+		height: DECAL_TEXELS,
+		data,
+		colorSpace: 'srgb',
+		mipmaps: true,
+	});
+	const count = DECAL_ROWS * DECAL_ROWS;
+	const decals = scene.createInstances(geometry.box(), count, {
+		material: materials.decal({ map, roughness: 0.4 }),
+		dynamic: true,
+	});
+	const spacing = (2 * S1_EXTENT) / DECAL_ROWS;
+	for (let k = 0; k < count; k++) {
+		const [column, row] = [k % DECAL_ROWS, Math.floor(k / DECAL_ROWS)];
+		const x = -S1_EXTENT + (column + 0.5) * spacing;
+		const z = -S1_EXTENT + (row + 0.5) * spacing;
+		decals.positions.set([x, WATER_HEIGHT, z], k * 3);
+		decals.scales.set([spacing * 0.9, spacing * 0.9, 30], k * 3);
+	}
+	const rotations = decals.rotations;
+	return (t: number) => {
+		for (let k = 0; k < count; k++) {
+			// A box turned to project down, then about the vertical by its own angle.
+			const half = 0.5 * (t + k);
+			const [c, s] = [Math.SQRT1_2 * Math.cos(half), Math.SQRT1_2 * Math.sin(half)];
+			rotations[k * 4] = -c;
+			rotations[k * 4 + 1] = s;
+			rotations[k * 4 + 2] = s;
+			rotations[k * 4 + 3] = c;
+		}
+	};
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */

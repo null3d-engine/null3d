@@ -12,6 +12,7 @@ import {
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_ALPHA_TO_COVERAGE,
 	MATERIAL_FEATURE_BLEND,
+	MATERIAL_FEATURE_DECAL,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_MULTIPLY,
@@ -22,6 +23,9 @@ import {
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
+	MATERIAL_PARAM_DECAL_EDGE_FADE,
+	MATERIAL_PARAM_DECAL_FADE_END,
+	MATERIAL_PARAM_DECAL_FADE_START,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
 	MATERIAL_PARAM_ENV_INTENSITY,
@@ -51,6 +55,7 @@ import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
+import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture, type Textures } from './textures';
 
@@ -77,6 +82,9 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_REFLECTANCE, 1],
 	[MATERIAL_PARAM_SPECULAR_COLOR, 3],
 	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	[MATERIAL_PARAM_DECAL_FADE_START, 1],
+	[MATERIAL_PARAM_DECAL_FADE_END, 1],
+	[MATERIAL_PARAM_DECAL_EDGE_FADE, 1],
 ]);
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
@@ -155,6 +163,7 @@ function fakeCore() {
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	return {
+		core,
 		table,
 		features,
 		shadings,
@@ -494,6 +503,70 @@ describe('Material.set', () => {
 		expect(error.message).toStartWith(
 			'E1103: materials.unlit.set() got a material that is not from this engine.',
 		);
+	});
+});
+
+describe('materials.decal', () => {
+	test('makes a standard material with the decal feature, its maps and its fades', () => {
+		const { table, features, shadings, maps, materials } = fakeCore();
+		const scorch = materials.decal({
+			map: texture(3),
+			normalMap: texture(4),
+			roughness: 0.9,
+			angleFade: [0, Math.PI / 2],
+			edgeFade: 0.5,
+		});
+		expect(shadings).toEqual([SHADING_LIT]);
+		expect(features).toEqual([MATERIAL_FEATURE_DECAL]);
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_ROUGHNESS]).toBe(0.9);
+		// The fades go in as the cosines of their angles.
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_START]).toBe(1);
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_END]).toBeCloseTo(0, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0.5);
+		expect(maps).toEqual([
+			[1, MAP_SLOT_BASE_COLOR, 3, 0],
+			[1, MAP_SLOT_NORMAL, 4, 0],
+		]);
+		scorch.set({ angleFade: [Math.PI / 3, Math.PI / 3], edgeFade: 0 });
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_START]).toBeCloseTo(0.5, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_FADE_END]).toBeCloseTo(0.5, 12);
+		expect(row()[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0);
+	});
+
+	test('leaves the fades to the engine core when they are not given', () => {
+		const { table, materials } = fakeCore();
+		materials.decal();
+		expect(table[0]?.[MATERIAL_PARAM_DECAL_FADE_START]).toBe(0);
+		expect(table[0]?.[MATERIAL_PARAM_DECAL_EDGE_FADE]).toBe(0);
+	});
+
+	test('refuses fades out of range, and changes nothing', () => {
+		const { table, materials } = fakeCore();
+		const mud = materials.decal();
+		const before = [...(table[0] as number[])];
+		for (const values of [
+			{ angleFade: [-0.1, 1] as const },
+			{ angleFade: [1, 0.5] as const },
+			{ angleFade: [0, 4] as const },
+			{ edgeFade: 1.5 },
+			{ edgeFade: -1 },
+		])
+			expect(thrown(() => mud.set(values)).code).toBe('E1108');
+		expect(table[0]).toEqual(before);
+		expect(thrown(() => materials.decal({ angleFade: [2, 1] })).code).toBe('E1108');
+	});
+
+	test("asks for the decals' shader file with the first decal material, once", () => {
+		const asked: string[][] = [];
+		const preloads = new ShaderPreloads((features) => asked.push([...features]));
+		const { core } = fakeCore();
+		const materials = new Materials(core, new ShaderTemplates(), preloads);
+		materials.standard();
+		expect(asked).toEqual([]);
+		materials.decal();
+		materials.decal();
+		expect(asked).toEqual([['decals']]);
 	});
 });
 

@@ -657,6 +657,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `DEBUG_VIEW_LIT`, from the next frame on.
 	 */
 	setDebugView(view: number): number;
+	/**
+	 * The layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+	 * layer draws again after the decals.
+	 */
+	setDecalLayers(mask: number): number;
 	// The animation table. Ids that its create calls return, and that its other calls take, are the
 	// table's ids plus one; a create call returns 0 on failure.
 	/** Creates the animation table for `instances` animated objects with `joints` joints in all. */
@@ -880,6 +885,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBackgroundSource',
 	'setFog',
 	'setDebugView',
+	'setDecalLayers',
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',
