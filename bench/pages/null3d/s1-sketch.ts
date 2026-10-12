@@ -36,7 +36,8 @@
 // shading.
 // The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
 // frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
-// the decals reach the lowest boxes of the swarm too.
+// the decals reach the lowest boxes of the swarm too. `decals=off` puts the ground alone, the
+// other side of the decals' cost.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -82,7 +83,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
-	const turnDecals = switches.has('decals') ? createDecals(context) : undefined;
+	const decals = switches.get('decals');
+	const turnDecals = decals === null ? undefined : createDecals(context, decals !== 'off');
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -334,17 +336,18 @@ const DECAL_ROWS = 16;
 const DECAL_TEXELS = 64;
 
 /**
- * Adds the `decals` switch's ground under the swarm, and a dynamic batch of decals on it: soft round
- * marks with a dark ring, in a square across the swarm's extent. Returns the step that turns each
- * one about the vertical, which writes the batch's rotations in place.
+ * Adds the `decals` switch's ground under the swarm, and with `marked` a dynamic batch of decals on
+ * it: soft round marks with a dark ring, in a square across the swarm's extent. Returns the step
+ * that turns each one about the vertical, which writes the batch's rotations in place.
  */
-function createDecals({ scene, geometry, materials, textures }: SketchContext) {
+function createDecals({ scene, geometry, materials, textures }: SketchContext, marked: boolean) {
 	const ground = scene.createMesh({
 		mesh: geometry.plane({ width: 1200, height: 1200 }),
 		material: materials.standard({ color: '#6b6560', roughness: 0.9 }),
 		position: [0, WATER_HEIGHT, 0],
 	});
 	ground.setRotationEuler(-Math.PI / 2, 0, 0);
+	if (!marked) return undefined;
 	const data = new Uint8Array(DECAL_TEXELS * DECAL_TEXELS * 4);
 	for (let y = 0; y < DECAL_TEXELS; y++)
 		for (let x = 0; x < DECAL_TEXELS; x++) {
