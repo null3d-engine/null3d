@@ -72,7 +72,7 @@ run('animation', async () => {
 			);
 		});
 		for (let i = 0; i < characters; i++)
-			created(core, 'createAnimatedInstance', core.createAnimatedInstance(skeleton));
+			created(core, 'createAnimatedInstance', core.createAnimatedInstance(skeleton, 0));
 
 		// The tables are complete, so the memory no longer grows and the views stay valid.
 		const slots = characters * C.ANIMATION_MAX_BLEND;
