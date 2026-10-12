@@ -53,6 +53,16 @@ struct Frame {
     hemisphere_x: vec4f,
     hemisphere_y: vec4f,
     hemisphere_z: vec4f,
+    /// This view's camera relative to the main camera, and 0. The shadow maps' matrices take
+    /// positions relative to the main camera, so shadow lookups add this to a position relative to
+    /// this view's camera. It is 0 in the main camera's view.
+    shadow_origin: vec4f,
+    /// The view matrix for positions relative to the camera: the camera's rotation alone, as the
+    /// camera sits at the origin. `projection * view` is `view_proj`. Zero in the views of lights.
+    view: mat4x4f,
+    /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
+    /// plane and 0 at the far plane. Zero in the views of lights.
+    projection: mat4x4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

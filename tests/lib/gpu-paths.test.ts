@@ -108,7 +108,7 @@ describe("the plan's GPU paths", () => {
 	it('lets the runner page skip by the report of the capabilities page', () => {
 		const { items, flags } = withGpuPaths(checksPlan(), ALLOW_NO_WEBGPU);
 		expect(flags).toEqual({ skipMissing: { report: 'capabilities', allowed: ALLOW_NO_WEBGPU } });
-		expect(items.find((item) => item.id === 'shaders')?.gpu).toBe('webgl2');
+		expect(items.find((item) => item.id === 'shaders-1')?.gpu).toBe('webgl2');
 		expect(items.find((item) => item.id === 'capabilities')?.gpu).toBeUndefined();
 	});
 

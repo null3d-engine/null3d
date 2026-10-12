@@ -14,6 +14,12 @@ export interface Swarm {
 const BLENDED_OPACITY = 0.6;
 
 /**
+ * The errors of the boxes' lower levels of detail, as shares of a box's size: small enough that
+ * rows across the swarm's depth draw every level, and cross the fading bands as the camera orbits.
+ */
+const LEVEL_ERRORS = [0.01, 0.03, 0.1];
+
+/**
  * The material of S1's boxes with row values: each box sways by its row's first value, its phase,
  * and its second value tints it, on top of its row's color.
  */
@@ -47,7 +53,9 @@ function layerOptions(layers: SwarmCoatSheen | undefined) {
  * With `blend`, the boxes see through, so each frame sorts every visible row back to front. With
  * `shadows`, every row casts and receives shadows. With `rowValues`, every row has a color and
  * values of its own, which the pose writes in every frame, and a custom material sways and tints
- * each box by its values. With `coatSheen`, the boxes take a clear coat, a sheen or both.
+ * each box by its values. With `levels`, the box has lower levels of detail, so each row picks a
+ * level, and fades between two, as its distance to the camera changes.
+ * With `coatSheen`, the boxes take a clear coat, a sheen or both.
  */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
@@ -58,8 +66,9 @@ export function createSwarm(
 	{
 		shadows = false,
 		rowValues = false,
+		levels = false,
 		layers,
-	}: { shadows?: boolean; rowValues?: boolean; layers?: SwarmCoatSheen } = {},
+	}: { shadows?: boolean; rowValues?: boolean; levels?: boolean; layers?: SwarmCoatSheen } = {},
 ): Swarm {
 	const data = createS1(count);
 	const material = rowValues
@@ -67,18 +76,18 @@ export function createSwarm(
 		: blend
 			? materials.standard({ color: S1_COLOR, opacity: BLENDED_OPACITY, alphaMode: 'blend' })
 			: materials.standard({ color: S1_COLOR, ...layerOptions(layers) });
-	const batch = scene.createInstances(
-		geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE }),
-		count,
-		{
-			material,
-			dynamic,
-			castShadows: shadows,
-			receiveShadows: shadows,
-			colors: rowValues,
-			values: rowValues,
-		},
-	);
+	const box = () => geometry.box({ width: S1_BOX_SIZE, height: S1_BOX_SIZE, depth: S1_BOX_SIZE });
+	const mesh = box();
+	if (levels)
+		mesh.setLevels(LEVEL_ERRORS.map((share) => ({ mesh: box(), error: share * S1_BOX_SIZE })));
+	const batch = scene.createInstances(mesh, count, {
+		material,
+		dynamic,
+		castShadows: shadows,
+		receiveShadows: shadows,
+		colors: rowValues,
+		values: rowValues,
+	});
 	const position = new Float64Array(3);
 	const rotation = new Float64Array(4);
 	const pose = (t: number): void => {

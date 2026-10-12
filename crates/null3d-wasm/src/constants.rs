@@ -107,6 +107,9 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
     /// shadow caster that moves by it.
     pub const CUSTOM_CASTER: u32 = 1 << 30;
+    /// The bit of a custom shading whose WGSL reads an instance's index or an object's id, which
+    /// the frame builders then keep in the table of object ranges.
+    pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps of
@@ -379,8 +382,34 @@ pub mod arrays_problem {
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
     pub const MORPH_NOT_FINITE: u32 = 10;
+    /// A vertex update named a mesh with joints or morph targets, which take no updates.
+    pub const POSED: u32 = 11;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
+}
+
+/// The second detail of a failure to give a mesh levels of detail: what is wrong with the levels.
+pub mod level_problem {
+    use null3d_render::levels::LevelError;
+
+    /// More levels than a mesh holds, its base mesh included.
+    pub const TOO_MANY: u32 = 1;
+    /// An error that is not finite, not above 0, or not above the error of the level before.
+    pub const ERRORS: u32 = 2;
+    /// A level that names no live mesh, or the base mesh itself.
+    pub const MESH: u32 = 3;
+    /// A level whose vertices have other attributes than the base mesh's.
+    pub const FORMAT: u32 = 4;
+
+    /// The problem of a refused set of levels.
+    pub fn of(error: LevelError) -> u32 {
+        match error {
+            LevelError::TooMany => TOO_MANY,
+            LevelError::Errors => ERRORS,
+            LevelError::Mesh => MESH,
+            LevelError::Format => FORMAT,
+        }
+    }
 }
 
 /// The arrays of the animation table that `animationArrays` returns.
@@ -828,6 +857,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
                 ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
                 ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
+                ("CUSTOM_OBJECT_IDS", shading::CUSTOM_OBJECT_IDS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -1240,7 +1270,17 @@ pub fn typescript() -> String {
                 ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
+                ("POSED", arrays_problem::POSED),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
+            ],
+        ),
+        (
+            "LEVEL_PROBLEM",
+            &[
+                ("TOO_MANY", level_problem::TOO_MANY),
+                ("ERRORS", level_problem::ERRORS),
+                ("MESH", level_problem::MESH),
+                ("FORMAT", level_problem::FORMAT),
             ],
         ),
     ];

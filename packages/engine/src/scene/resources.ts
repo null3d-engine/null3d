@@ -61,6 +61,7 @@ import {
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_CASTER,
+	SHADING_CUSTOM_OBJECT_IDS,
 	SHADING_CUSTOM_ROW_VALUES,
 	SHADING_CUSTOM_TEXTURE_SHIFT,
 	SHADING_CUSTOM_TRANSMISSION,
@@ -88,7 +89,13 @@ import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
-import { arraysProblem, meshFromArrays, morphTargetCount } from './mesh-arrays';
+import {
+	arraysProblem,
+	meshFromArrays,
+	morphTargetCount,
+	updateVertices,
+	type VertexLayout,
+} from './mesh-arrays';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
@@ -108,6 +115,58 @@ export interface ResourceUsers {
 }
 
 /**
+ * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place where the
+ * level's error covers less than the `lodThreshold` quality setting's pixels on the screen. Give
+ * the level's `error`, or the `distance` at which it switches in, as three.js's `LOD.addLevel`
+ * takes it.
+ *
+ * @category api/geometry
+ */
+export interface MeshLevel {
+	/** The simpler mesh. It has the base mesh's vertex attributes, and draws with its material. */
+	mesh: MeshGeometry;
+	/**
+	 * The level's error: the largest distance between its surface and the base mesh's, in the
+	 * units of the base mesh's positions. An object's scale multiplies it. The asset tool stores it
+	 * for each level that `--lod` makes.
+	 */
+	error?: number;
+	/**
+	 * The distance from the camera at which the level switches in, for an object of scale 1, on a
+	 * screen 1,080 pixels high, at the field of view of `fov` in the options. The engine turns it
+	 * into an error, so on a taller screen, or at a higher render scale, the level switches in
+	 * farther away.
+	 */
+	distance?: number;
+}
+
+/**
+ * Options for `mesh.setLevels`.
+ *
+ * @category api/geometry
+ */
+export interface MeshLevelOptions {
+	/**
+	 * True to hand over between two levels in a short band past each switch distance, where a
+	 * dither pattern shares the pixels between them, so a switch does not pop. False to switch at
+	 * once. The default is true. The `lodFade` quality setting turns the bands off on Low.
+	 */
+	fade?: boolean;
+	/**
+	 * The vertical field of view, in degrees, at which a level given by `distance` switches in at
+	 * that distance. The default is 50, three.js's default for a perspective camera.
+	 */
+	fov?: number;
+}
+
+/** The screen height in pixels at which a level given by its distance switches in there. */
+const LEVEL_REFERENCE_HEIGHT = 1080;
+/** The field of view in degrees at which a level given by its distance switches in there. */
+const LEVEL_REFERENCE_FOV = 50;
+/** The most lower levels a mesh takes. */
+const MAX_LOWER_LEVELS = 7;
+
+/**
  * A mesh the engine can draw: its id in the engine core, its bounding radius, and its morph
  * targets.
  *
@@ -116,6 +175,10 @@ export interface ResourceUsers {
 export class MeshGeometry {
 	/** The engine core's id, or 0 once the mesh is destroyed. */
 	private liveId: number;
+	/** The mesh's lower levels of detail, with their errors. */
+	private lowerLevels: readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] = [];
+	/** The vertex count and format, read from the engine core at the first update. */
+	private layout: VertexLayout | undefined;
 
 	/** @internal */
 	constructor(
@@ -166,9 +229,110 @@ export class MeshGeometry {
 		destroyMeshes(this.core, [this], call);
 	}
 
+	/**
+	 * Writes new values into one attribute of the mesh's vertices, like setting three.js's
+	 * `attribute.needsUpdate` after a change. `values` holds the attribute's values of every
+	 * vertex, in the array type the mesh was made with, as `geometry.fromArrays` takes them. Only
+	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
+	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
+	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
+	 * vertices outside it bounds with `setBounds`. Joints, weights, and a mesh with joints or morph
+	 * targets take no updates. Throws E1206 for values that do not fit the mesh, and E1101 for a
+	 * destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
+	 */
+	updateVertices(
+		name: UpdatableAttribute,
+		values: Float32Array | IntegerArray | readonly number[],
+		start = 0,
+		count?: number,
+	): void {
+		const call = 'mesh.updateVertices';
+		const id = this.id;
+		let layout = this.layout;
+		if (layout === undefined) {
+			const { glue } = this.core;
+			layout = { count: glue.meshVertexCount(id), format: glue.meshFormat(id) };
+			this.layout = layout;
+		}
+		const vertices = count ?? layout.count - start;
+		updateVertices(this.core, id, layout, name, values, start, vertices, call);
+	}
+
 	/** @internal Marks the mesh destroyed, once the engine core freed it. */
 	ended(): void {
 		this.liveId = 0;
+		this.lowerLevels = [];
+	}
+
+	/**
+	 * The mesh's lower levels of detail, from the most detailed down, each with its error. A
+	 * destroyed level takes every level away, as the engine does.
+	 */
+	get levels(): readonly Required<Pick<MeshLevel, 'mesh' | 'error'>>[] {
+		if (!this.lowerLevels.every((level) => level.mesh.live)) this.lowerLevels = [];
+		return this.lowerLevels;
+	}
+
+	/**
+	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
+	 * `LOD.addLevel`. Every object and instance batch that draws the mesh then picks one level per
+	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
+	 * `lodThreshold` quality setting. The shadow maps pick a coarser level still. An empty list takes the levels
+	 * away. Skinned and morphed objects, and materials that blend or let light through, draw the
+	 * base mesh. Destroying a level's mesh takes every level away. Throws E1221 for levels the mesh
+	 * cannot take, and E1101 for a destroyed mesh.
+	 */
+	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
+		const call = 'mesh.setLevels';
+		const id = this.id;
+		const fov = options.fov ?? LEVEL_REFERENCE_FOV;
+		if (levels.length > MAX_LOWER_LEVELS)
+			throw new EngineError(
+				'E1221',
+				`${call}() got ${levels.length} levels. A mesh takes at most ${MAX_LOWER_LEVELS}.`,
+			);
+		if (!(fov > 0 && fov < 180))
+			throw new EngineError('E1221', `${call}() got a fov of ${fov}, not between 0 and 180.`);
+		// A distance becomes the error that covers one pixel at that distance, at the reference.
+		const perDistance = (2 * Math.tan((fov * Math.PI) / 360)) / LEVEL_REFERENCE_HEIGHT;
+		const errors = levels.map((level, k) => {
+			const { error, distance } = level;
+			if ((error === undefined) === (distance === undefined))
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with ${error === undefined ? 'neither an error nor' : 'both an error and'} a distance. Give one of them.`,
+				);
+			const value = error ?? (distance as number) * perDistance;
+			if (!(Number.isFinite(value) && value > 0))
+				throw new EngineError(
+					'E1221',
+					`${call}() got ${error === undefined ? `a distance of ${distance}` : `an error of ${error}`} for level ${k + 1}, not a number above 0.`,
+				);
+			if (level.mesh.core !== this.core || level.mesh === this)
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with ${level.mesh === this ? 'the base mesh itself' : 'a mesh from another engine'}.`,
+				);
+			return value;
+		});
+		for (let k = 1; k < errors.length; k++)
+			if ((errors[k] as number) <= (errors[k - 1] as number))
+				throw new EngineError(
+					'E1221',
+					`${call}() got level ${k + 1} with an error of ${errors[k]}, not above the ${errors[k - 1]} of level ${k}. Errors grow from level to level.`,
+				);
+		const count = levels.length;
+		const ids = levels.map((level) => level.mesh.id);
+		const at = this.core.checkGrowth(this.core.glue.meshArrays(2 * count), call);
+		this.core.u32(at, count).set(ids);
+		this.core.f32(at + 4 * count, count).set(errors);
+		this.core.check(
+			this.core.glue.setMeshLevels(id, count, options.fade ?? true),
+			call,
+			'a mesh',
+			true,
+		);
+		this.lowerLevels = levels.map((level, k) => ({ mesh: level.mesh, error: errors[k] as number }));
 	}
 }
 
@@ -450,6 +614,13 @@ const RING: Required<RingOptions> = {
 	thetaStart: 0,
 	thetaLength: TAU,
 };
+
+/**
+ * The vertex attributes that `mesh.updateVertices` writes, by their names in `MeshArrays`.
+ *
+ * @category api/geometry
+ */
+export type UpdatableAttribute = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
 
 /**
  * The integer typed arrays that vertex attributes take: 8-bit and 16-bit, signed and unsigned.
@@ -1141,6 +1312,8 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/** True when the WGSL reads an instance's index or an object's id. */
+	readonly objectIds?: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 	/** The textures that the WGSL declares, in the order of their map slots. */
 	readonly textures: readonly { readonly name: string }[];
@@ -1873,7 +2046,8 @@ export class Materials {
 			(declared.length << SHADING_CUSTOM_TEXTURE_SHIFT) |
 			(lets(compiled) ? SHADING_CUSTOM_TRANSMISSION : 0) |
 			(builds(compiled, PERMUTATION_ROW_VALUES) ? SHADING_CUSTOM_ROW_VALUES : 0) |
-			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0);
+			(builds(compiled, PERMUTATION_CASTER) ? SHADING_CUSTOM_CASTER : 0) |
+			(compiled.objectIds ? SHADING_CUSTOM_OBJECT_IDS : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call, layered);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);

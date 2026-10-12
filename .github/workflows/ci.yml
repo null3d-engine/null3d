@@ -425,7 +425,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "90:213:427:181:160:121:115:174:120:244"
+          PWTEST_SHARD_WEIGHTS: "103:202:367:254:189:75:176:180:124:254"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -530,11 +530,18 @@ jobs:
     # The benchmark pages' tests on SwiftShader, in two shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
-    # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
-    # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
+    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, and
+    # shard 2 every other test, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
+    # The parity file runs its selected tests in order in one worker, so its time decides
+    # shard 2's. Shard 1 takes the glTF scenes' parity tests, which start after S4's group ends,
+    # beside S5's last minute. In main's run 38136100450 (11 October 2026), shard 1's tests took
+    # 7.9 minutes and were done with S4 at 7.1. Shard 2's took 13.7: 1.1 for page tests, then
+    # 12.5 for the parity tests in one worker, while the other worker ended at 6.5. Shard 2's
+    # jobs took 14.2 to 14.9 of their 15 minutes that day. The glTF groups took 3.3 minutes, so
+    # each shard's tests should take about 10.4. .dev/benchmarks.md holds the figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so both shards need the city's files.
     needs: [build, city, changes]
@@ -551,7 +558,7 @@ jobs:
             select: --grep-invert
     env:
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b|parity\.spec\.ts.*\bgltf-'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2

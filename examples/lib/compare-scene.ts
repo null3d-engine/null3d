@@ -263,6 +263,11 @@ export interface MeshData {
 	uv: Float32Array;
 	/** Three vertex indices per triangle, counter-clockwise when seen from the front. */
 	index: Uint16Array;
+	/**
+	 * Three floats per vertex, or four with alpha: a linear color that multiplies the material's
+	 * color, or values that a custom material reads, if any.
+	 */
+	color?: Float32Array;
 }
 
 export function triangleCount(mesh: MeshData): number {
@@ -411,16 +416,19 @@ export interface SurfaceMaps {
 	normal: TextureData;
 }
 
-/** Value noise that tiles over `period` lattice cells, from 0 to 1. */
-function tiledNoise(x: number, y: number, period: number, seed: number): number {
+/**
+ * Value noise that tiles over `period` lattice cells along x, and `periodY` along y, from 0 to 1.
+ * Different periods stretch the noise into streaks that still tile.
+ */
+function tiledNoise(x: number, y: number, period: number, seed: number, periodY = period): number {
 	const x0 = Math.floor(x);
 	const y0 = Math.floor(y);
 	const fx = x - x0;
 	const fy = y - y0;
 	const sx = fx * fx * (3 - 2 * fx);
 	const sy = fy * fy * (3 - 2 * fy);
-	const wrap = (n: number) => ((n % period) + period) % period;
-	const at = (i: number, j: number) => hash01(seed, wrap(i), wrap(j));
+	const wrap = (n: number, p: number) => ((n % p) + p) % p;
+	const at = (i: number, j: number) => hash01(seed, wrap(i, period), wrap(j, periodY));
 	const top = lerp(at(x0, y0), at(x0 + 1, y0), sx);
 	const bottom = lerp(at(x0, y0 + 1), at(x0 + 1, y0 + 1), sx);
 	return lerp(top, bottom, sy);
@@ -448,7 +456,8 @@ function fbm(
 }
 
 /**
- * A surface's recipe at a texel: its sRGB color, roughness, metalness and height, from 0 to 1 each.
+ * A surface's recipe at a texel: its sRGB color, roughness, metalness and height, from 0 to 1 each,
+ * and for a card whose texture cuts its outline, its coverage.
  */
 type Texel = (
 	u: number,
@@ -460,10 +469,29 @@ type Texel = (
 	roughness: number;
 	metalness: number;
 	height: number;
+	alpha?: number;
 };
 
-/** The surfaces that the comparisons draw. Each tiles over one meter. */
-export type SurfaceKind = 'paint' | 'brushed' | 'concrete' | 'rubber' | 'crate';
+/**
+ * The surfaces that the comparisons draw. Each tiles over one meter, but the cards of foliage
+ * ('needles' and 'leaves'), which span their texture once.
+ */
+export type SurfaceKind =
+	| 'paint'
+	| 'brushed'
+	| 'concrete'
+	| 'rubber'
+	| 'crate'
+	| 'ground'
+	| 'grass'
+	| 'rock'
+	| 'masonry'
+	| 'camo'
+	| 'fabric'
+	| 'panels'
+	| 'bark'
+	| 'needles'
+	| 'leaves';
 
 const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 	// Painted steel, white so a material's color tints it, with scuffs where bare metal shows.
@@ -541,6 +569,260 @@ const SURFACES: Readonly<Record<SurfaceKind, (seed: number) => Texel>> = {
 			height: 0.6 + 0.2 * grain - 0.5 * gap,
 		};
 	},
+	// Trampled earth: soil of mixed tones, pebbles and small clods, light so vertex colors tint it.
+	ground: (seed) => (u, v) => {
+		const soil = fbm(u, v, 4, 5, seed);
+		const grit = tiledNoise(u * 96, v * 96, 96, seed + 5);
+		const pebble = smoothstep((tiledNoise(u * 24, v * 24, 24, seed + 9) - 0.72) * 9);
+		const shade = 0.62 + 0.22 * soil + 0.1 * grit + 0.12 * pebble;
+		return {
+			r: shade,
+			g: shade * 0.93,
+			b: shade * 0.84,
+			roughness: 0.92 - 0.25 * pebble,
+			metalness: 0,
+			height: 0.35 + 0.25 * soil + 0.15 * grit + 0.45 * pebble,
+		};
+	},
+	// Meadow seen from above: short blades lying every way over dark soil, each blade a stroke of
+	// its own green or straw, thinner where a slow noise thins the sward. Light, so a material
+	// tints it.
+	grass: (seed) => {
+		const cells = 28;
+		return (u, v) => {
+			const cover = smoothstep((fbm(u, v, 4, 4, seed) - 0.25) * 2.5);
+			let best = 0;
+			let tone = 0;
+			const cu = Math.floor(u * cells);
+			const cv = Math.floor(v * cells);
+			for (let j = cv - 1; j <= cv + 1; j++)
+				for (let i = cu - 1; i <= cu + 1; i++)
+					for (let k = 0; k < 6; k++) {
+						const wi = ((i % cells) + cells) % cells;
+						const wj = ((j % cells) + cells) % cells;
+						const h = (salt: number) => hash01(seed + salt, wi * 6 + k, wj);
+						if (h(5) > 0.35 + 0.65 * cover) continue;
+						// The blade runs from its root to its tip; the texel's place along it and its
+						// distance from it, in texture units.
+						const angle = h(3) * TAU;
+						const length = 0.025 + 0.03 * h(4);
+						const rx = (i + h(1)) / cells;
+						const ry = (j + h(2)) / cells;
+						const dx = u - rx;
+						const dy = v - ry;
+						const t = clamp((dx * Math.cos(angle) + dy * Math.sin(angle)) / length, 0, 1);
+						const ex = dx - Math.cos(angle) * t * length;
+						const ey = dy - Math.sin(angle) * t * length;
+						const width = 0.004 * (1 - 0.7 * t);
+						const on = 1 - Math.hypot(ex, ey) / width;
+						if (on > best) {
+							best = on;
+							tone = h(6);
+						}
+					}
+			const blade = smoothstep(best * 3);
+			const soil = 0.22 + 0.06 * fbm(u, v, 16, 2, seed + 9);
+			const straw = tone > 0.7;
+			return {
+				r: lerp(soil, straw ? 0.72 : lerp(0.38, 0.55, tone), blade),
+				g: lerp(soil * 0.85, straw ? 0.64 : lerp(0.55, 0.62, tone), blade),
+				b: lerp(soil * 0.62, straw ? 0.36 : lerp(0.22, 0.28, tone), blade),
+				roughness: 0.8 + 0.12 * (1 - blade),
+				metalness: 0,
+				height: 0.15 + 0.75 * blade,
+			};
+		};
+	},
+	// Weathered rock with cracks and lichen-dark patches.
+	rock: (seed) => (u, v) => {
+		const mass = fbm(u, v, 3, 6, seed);
+		const crack = smoothstep((0.06 - Math.abs(fbm(u, v, 6, 3, seed + 31) - 0.5)) * 18);
+		const grain = tiledNoise(u * 128, v * 128, 128, seed + 2);
+		const shade = (0.5 + 0.3 * mass + 0.08 * grain) * (1 - 0.55 * crack);
+		return {
+			r: shade,
+			g: shade * 0.97,
+			b: shade * 0.92,
+			roughness: 0.82 + 0.12 * grain,
+			metalness: 0,
+			height: 0.5 + 0.3 * mass + 0.1 * grain - 0.5 * crack,
+		};
+	},
+	// Rough stone blocks in courses half a meter high, with sunken mortar joints.
+	masonry: (seed) => (u, v) => {
+		const course = Math.floor(v * 2);
+		const along = u * 2.5 + (course % 2) * 0.5;
+		const block = Math.floor(along);
+		const joint =
+			Math.min(Math.abs(((v * 2) % 1) - 0.5), Math.abs((along % 1) - 0.5)) > 0.46 ? 1 : 0;
+		const tone = 0.62 + 0.18 * hash01(seed, block, course) + 0.12 * fbm(u, v, 8, 4, seed + 3);
+		const shade = joint ? 0.42 : tone;
+		return {
+			r: shade,
+			g: shade * 0.95,
+			b: shade * 0.88,
+			roughness: joint ? 0.95 : 0.8 + 0.1 * hash01(seed, block, course + 99),
+			metalness: 0,
+			height: joint ? 0.1 : 0.6 + 0.2 * fbm(u, v, 8, 3, seed + 7),
+		};
+	},
+	// Uniform cloth: a twill weave of 64 threads to the tile, each thread rounded, with slubs in
+	// the yarn and worn patches. Light, so a material tints it.
+	fabric: (seed) => (u, v) => {
+		const threads = 64;
+		const x = u * threads;
+		const y = v * threads;
+		const warpOnTop = (Math.floor(x) + Math.floor(y)) % 4 < 2;
+		const across = warpOnTop ? (x % 1) - 0.5 : (y % 1) - 0.5;
+		const round = 1 - (2 * across) ** 2;
+		const slub = tiledNoise(warpOnTop ? x : x * 0.125, warpOnTop ? y * 0.125 : y, 1024, seed);
+		const worn = fbm(u, v, 4, 4, seed + 5);
+		const shade = (0.62 + 0.25 * round + 0.1 * slub) * (warpOnTop ? 1 : 0.92);
+		return {
+			r: shade,
+			g: shade,
+			b: shade * 0.97,
+			roughness: 0.88 + 0.08 * (1 - round),
+			metalness: 0,
+			height: 0.25 + 0.55 * round + 0.15 * worn,
+		};
+	},
+	// Armor plates in rows of four to the tile, each row's joints offset, with sunken seams,
+	// rivets along each plate's edges and a tone of its own for each plate.
+	panels: (seed) => (u, v) => {
+		const rows = 4;
+		const row = Math.floor(v * rows);
+		const across = u * 3 + (row % 2) * 0.5;
+		const plate = Math.floor(across);
+		const fx = across % 1;
+		const fy = (v * rows) % 1;
+		const edge = Math.min(fx, 1 - fx, (fy * 3) / 4, ((1 - fy) * 3) / 4);
+		const seam = edge < 0.02;
+		const rivetX = Math.abs(((((fx * 8) % 1) + 1) % 1) - 0.5);
+		const rivet = edge > 0.035 && edge < 0.075 && rivetX < 0.18 && (fy < 0.15 || fy > 0.85);
+		const tone = 0.68 + 0.14 * hash01(seed, plate, row) + 0.08 * fbm(u, v, 8, 3, seed + 3);
+		const bevel = smoothstep((edge - 0.02) / 0.03);
+		return {
+			r: seam ? 0.3 : tone,
+			g: seam ? 0.3 : tone,
+			b: seam ? 0.3 : tone * 0.98,
+			roughness: seam ? 0.9 : 0.55 + 0.2 * hash01(seed + 1, plate, row),
+			metalness: 0,
+			height: seam ? 0.05 : rivet ? 1 : 0.35 + 0.4 * bevel,
+		};
+	},
+	// Bark in long plates, split by a network of deep furrows that run up the trunk.
+	bark: (seed) => (u, v) => {
+		const n =
+			0.65 * tiledNoise(u * 16, v * 2, 16, seed, 2) +
+			0.35 * tiledNoise(u * 32, v * 3, 32, seed + 1, 3);
+		const fine = tiledNoise(u * 48, v * 16, 48, seed + 3, 16);
+		const furrow = smoothstep(1 - Math.abs(n - 0.5) * 7);
+		const shade = (0.42 + 0.2 * fine) * (1 - 0.7 * furrow);
+		return {
+			r: shade,
+			g: shade * 0.88,
+			b: shade * 0.76,
+			roughness: 0.86 + 0.12 * furrow,
+			metalness: 0,
+			height: 0.75 - 0.6 * furrow + 0.15 * fine,
+		};
+	},
+	// A spray of pine needles, across u, from the trunk at v = 0 to the tip at v = 1: a twig up the
+	// middle, side twigs that slant toward the tip, and needles that crowd each side twig in a
+	// fringe, shorter toward its end. The fringes cover most of the spray, so the card's smaller mip
+	// levels keep their alpha over the mask's cutoff and far trees keep their shape.
+	needles: (seed) => (u, v) => {
+		const x = Math.abs(u - 0.5) * 2;
+		const reach = Math.sin(Math.PI * Math.min(1, 0.06 + v * 0.94)) ** 0.5 * (1 - 0.15 * v);
+		const twigs = 8;
+		const slanted = (v - x * 0.5) * twigs;
+		const nearest = Math.round(slanted);
+		const off = (slanted - nearest) / twigs;
+		const along = x / Math.max(reach, 0.05);
+		const fringe = 0.075 * (1 - 0.55 * along) * (0.8 + 0.4 * hash01(seed, nearest, 7));
+		// Each needle leaves the side twig at a slant toward its end. The texel's needle is the one
+		// whose root lies back along that slant, and the texel is on it when close to its line. The
+		// needles crowd the twig into a solid core, and their tips fray the fringe's edge.
+		const spacing = 0.012;
+		const reachOut = Math.abs(off);
+		const root = Math.round((x - reachOut * 0.55) / spacing);
+		const across = Math.abs(x - reachOut * 0.55 - root * spacing) * 0.88;
+		const length = fringe * (0.75 + 0.5 * hash01(seed + 2, root, nearest * 2 + (off > 0 ? 1 : 0)));
+		const inFringe =
+			along < 1 && (reachOut < fringe * 0.6 || (reachOut < length && across < 0.0045));
+		const twig = (x < 0.025 && v < 0.96) || (Math.abs(off) < 0.006 && along < 0.9);
+		const tone = tiledNoise(u * 6, v * 6, 1024, seed + 3);
+		const shade = 0.65 + 0.35 * along;
+		return {
+			r: twig ? 0.36 : lerp(0.14, 0.32, tone) * shade,
+			g: twig ? 0.26 : lerp(0.25, 0.44, tone) * shade,
+			b: twig ? 0.17 : lerp(0.1, 0.17, tone) * shade,
+			roughness: 0.75,
+			metalness: 0,
+			height: twig ? 0.8 : inFringe ? 0.7 - 0.4 * (reachOut / fringe) : 0,
+			alpha: twig || inFringe ? 1 : 0,
+		};
+	},
+	// A cluster of broad leaves, two to each cell of a grid, in a ragged round outline: greens with
+	// a few turning yellow, lighter toward each leaf's middle. The leaves overlap, so the card's
+	// smaller mip levels keep their alpha over the mask's cutoff.
+	leaves: (seed) => (u, v) => {
+		const cells = 7;
+		const ragged = tiledNoise(u * 10, v * 10, 1024, seed + 1);
+		const outline = 0.46 + (ragged - 0.5) * 0.12;
+		let hit = 2;
+		let tone = 0;
+		const cu = Math.floor(u * cells);
+		const cv = Math.floor(v * cells);
+		for (let j = cv - 1; j <= cv + 1; j++)
+			for (let i = cu - 1; i <= cu + 1; i++)
+				for (let k = 0; k < 2; k++) {
+					const cx = (i + hash01(seed, i * 2 + k, j)) / cells;
+					const cy = (j + hash01(seed + 1, i * 2 + k, j)) / cells;
+					if (Math.hypot(cx - 0.5, cy - 0.5) > outline) continue;
+					const angle = hash01(seed + 2, i * 2 + k, j) * TAU;
+					const dx = u - cx;
+					const dy = v - cy;
+					const along = (dx * Math.cos(angle) + dy * Math.sin(angle)) / 0.1;
+					const across = (-dx * Math.sin(angle) + dy * Math.cos(angle)) / 0.055;
+					const d = along * along + across * across;
+					if (d < hit) {
+						hit = d;
+						tone = hash01(seed + 3, i * 2 + k, j);
+					}
+				}
+		const leaf = hit < 1;
+		const shade = 1 - 0.35 * hit;
+		const turned = tone > 0.96;
+		return {
+			r: (turned ? 0.48 : lerp(0.2, 0.36, tone)) * shade,
+			g: (turned ? 0.4 : lerp(0.32, 0.44, tone)) * shade,
+			b: (turned ? 0.14 : lerp(0.1, 0.16, tone)) * shade,
+			roughness: 0.6,
+			metalness: 0,
+			height: leaf ? 1 - hit : 0,
+			alpha: leaf ? 1 : 0,
+		};
+	},
+	// A tank's paint: white so the army's color tints it, with dark camouflage patches, mud toward
+	// the bottom of each tile and chipped edges where steel shows.
+	camo: (seed) => (u, v) => {
+		const blot = fbm(u, v, 2, 4, seed);
+		const patch = smoothstep((blot - 0.55) * 10);
+		const chip = smoothstep((fbm(u, v, 8, 4, seed + 41) - 0.74) * 12);
+		const mud = smoothstep((fbm(u, v, 4, 4, seed + 77) - 0.6) * 6);
+		const paint = lerp(0.9, 0.48, patch);
+		const shade = lerp(lerp(paint, 0.42, mud * 0.8), 0.5, chip);
+		return {
+			r: shade * lerp(1, 0.9, mud),
+			g: shade * lerp(1, 0.8, mud),
+			b: shade * lerp(1, 0.62, mud),
+			roughness: lerp(lerp(0.62, 0.95, mud), 0.35, chip),
+			metalness: lerp(0.15, 0.9, chip),
+			height: 0.55 + 0.1 * blot - 0.3 * chip + 0.2 * mud,
+		};
+	},
 };
 
 /** The byte of a value from 0 to 1. */
@@ -548,7 +830,8 @@ const byte = (value: number) => Math.round(clamp(value, 0, 1) * 255);
 
 /**
  * The color, packed and normal maps of a surface, `size` texels a side, from a seed. The color map
- * holds sRGB bytes; the others hold linear values. Setup code: a 256 texel surface takes a few
+ * holds sRGB bytes, with the surface's height in alpha, or a card's coverage, which cuts its
+ * outline; the others hold linear values. Setup code: a 256 texel surface takes a few
  * milliseconds.
  */
 export function surfaceMaps(kind: SurfaceKind, size: number, seed: number): SurfaceMaps {
@@ -561,7 +844,7 @@ export function surfaceMaps(kind: SurfaceKind, size: number, seed: number): Surf
 		for (let x = 0; x < size; x++) {
 			const i = y * size + x;
 			const t = texel(x / size, y / size);
-			color.set([byte(t.r), byte(t.g), byte(t.b), 255], i * 4);
+			color.set([byte(t.r), byte(t.g), byte(t.b), byte(t.alpha ?? t.height)], i * 4);
 			orm.set([255, byte(t.roughness), byte(t.metalness), 255], i * 4);
 			height[i] = t.height;
 		}

@@ -168,7 +168,7 @@ flowchart LR
 | Version | Adds |
 | --- | --- |
 | 0.1 | Physically based standard materials, custom materials in WGSL, clustered forward lighting, cascaded shadows and spot and point shadows, fog, ACES, AgX and neutral tone mapping, MSAA and FXAA, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
-| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
+| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, more geometry generators in `@null3d/geometry` and vertices that change each frame, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
 | 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
 </details>

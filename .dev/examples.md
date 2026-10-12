@@ -13,6 +13,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
 | `examples/<name>/<scenery>.ts` | A demo's scenery, when the look bar needs more code than the sketch's 150 lines leave. The sketch imports it from the same folder, such as the particles demo's `glade.ts` ([D-142](decisions/D-142-more-techniques-before-1-0.md#the-days-other-rulings)) |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
+| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -62,8 +63,8 @@ The examples page is the clone's own layout of the demos. The website has a layo
 
 `sourceUrl(demo, ref)` gives the GitHub address of a demo's code at a branch or a tag, and `ref` is `main` when a page names none. The clone's page names none. The website names the release tag that it builds from, so its link shows the code that it runs.
 
-- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Every feature demo is one sketch, so the reader lands on the code at once.
-- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
+- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Most feature demos are one sketch, so the reader lands on the code at once.
+- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A feature demo with its scenery in a file of its own does the same, such as `shader-inputs/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
 
 The address comes from the demo's entry, not from its `sketch` field. A build gives each sketch a hashed address of its own. `REPOSITORY_URL` in the same module holds the repository's address. A unit test checks it against the `repository` field of the root `package.json`.
 
@@ -122,11 +123,14 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| extra-shapes | The shapes, as in the generators demo |
+| vertex-updates | The glowing float, which leaves its rings where it goes |
 | time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
 | camera-lens | The focus, on the point of a piece or the board that a raycast finds |
 | morph-flowers | The tulips near the pointed point, which open |
 | input | Nothing: the keys, a gamepad and the camera gestures drive it. The right stick turns the camera before and after the hand-over |
 | walk-and-fly | Nothing: the keys, the drag and the locked mouse drive first-person and fly controls |
+| shader-inputs | Nothing: the camera only. A hover or a tap on a stone lights it, through the stone's `shaderId` in a uniform |
 | The others | Nothing: the camera only. Picking keeps its hover and its click, and the engine gives no click after a drag of more than 2 CSS pixels |
 
 Three demos need more than the shared rules:
@@ -200,7 +204,7 @@ The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
-- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Scene passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task)). So the crystal's glow comes from bloom, not from a lamp.
+- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
 - The hold mode demo draws 400 meshes, not one instance batch, because batches cast no shadows yet. Its physics moved into `onFixedUpdate`, at 120 steps a second. At the default 60, a 120 Hz display would show the balls stand still in every other frame. Hold mode runs the same steps on every run, so the held frame stays the same.
 - The objects demo turned the table and the crates by adding up the frame steps. Now each turn comes from the sketch time. A crate on the stage spins at its own speed plus the table's, so its spin goes on with no jump when it steps off.
@@ -226,7 +230,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory is the first ([D-121](decisions/D-121-comparison-tier.md)). Battle, Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -269,6 +273,19 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 A comparison must look very beautiful, as every demo and showcase scene must ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md), owner, 11 October 2026). It uses shaders, effects, particles and complex geometry. A good figure does not excuse a plain scene. The bar is the generators demo and Creek.
 
 Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
+
+Every comparison scene meets the same look bar as the feature demos and showcases (owner, 11 October 2026): good figures don't excuse a plain scene. The bar is the reworked Geometry Generators demo and the Creek showcase. They have varied materials, small textures made in code and reflections of an environment. They have a sky, fog, sun shadows, finished ground, a tuned grade and bloom on what glows.
+
+### Battle
+
+Battle is the comparison of ready-made assets ([D-121](decisions/D-121-comparison-tier.md#battle)). Two armies of animated soldiers and mechs meet on a cratered field at dusk, with tanks behind each line.
+
+- Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
+- The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
+- The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
+- In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
 ### The stats panel of three.js
 
@@ -317,6 +334,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The crystal spiral's scenery (11 October 2026)
+
+The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
+
+- A dusk sky with the sun low behind the stones. The sky's own environment gives the light, so the reflections on the crystals match the sky.
+- A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
+- A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
+- The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
+- The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
@@ -364,14 +391,27 @@ Each feature gets a decision record of its own when it is built.
 
 Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 
+## The demos of the geometry package (M2-P2)
+
+The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| extra-shapes: Mirror floor at dusk | A shape from each function of `@null3d/geometry`, in three rows over a polished stone floor at dusk. A reflection pass mirrors them in the floor. The shapes run from gold, chrome and copper to blue-tinted glass and glazed clay. The flat heart glows enough to bloom |
+| vertex-updates: Pool at golden hour | A raised stone pool on a deck. A glowing float with a light of its own drifts over the water, and leaves a ring every 0.35 s on a slow swell. Each frame rewrites the water's heights and normals, and `updateVertices` uploads them |
+
+- The water's normals come from the heights of each vertex's neighbors, not from closed-form slopes. Twelve rings and a swell, each with its own slopes, took more lines than the 150-line limit left.
+- The rings start at fixed ticks of sketch time, from the float's path at each tick. So the hold-mode image is the same however many frames lead to it. While the pointer leads the float, each ring starts at the float's place instead.
+- The water's update writes into arrays that the sketch keeps, so it allocates nothing in a frame, as the demo's summary says.
+
 ## Groups and titles (owner, 9 October 2026)
 
 The owner approved new groups for the demos. In the sidebar's order, they are Showcase, Compare with three.js, Building scenes, Light, materials and effects, Motion and interaction, Scale, and Testing and tools. A group shows only when it has demos. Compare with three.js lists the comparisons of `examples/compare/comparisons.ts`, Factory first, and Showcase waits for its scenes.
 
 | Group | Demos |
 | --- | --- |
-| Building scenes | generators, mesh-arrays, objects, layers |
-| Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
+| Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
+| Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
@@ -413,7 +453,7 @@ The owner's bar for every feature demo is the reworked generators demo. Eight mo
 
 The rules that these demos follow, and why:
 
-- Scene passes and reflection passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
+- Until 11 October 2026 scene passes and reflection passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass, made before then, use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
 - A glowing material, a sprite and a line all draw in a reflection pass. The pool in the sprites demo reflects the sparks, the helix and the dashes.
 - The `'night'` preset of `timeOfDay` gives a black sky: three.js's sky model goes dark once its sun is 2 degrees under the horizon. So the two night scenes take `'blueHour'`, which gives a deep blue sky and the moon as the main light. They keep their exposure low, 2 and 1.4, below the preset's 2.9. At the preset's exposure, the neon of the sprites demo turned white and lost its colors.
 - Fog that thins with height measures its height from the world's origin. The large world's road is 6,378 km above it, so fog with a height falloff would be clear there. The large world uses plain fog, which thickens with distance alone.
