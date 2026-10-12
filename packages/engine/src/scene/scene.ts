@@ -1965,10 +1965,11 @@ export class RectAreaLight extends Light {
 
 	/**
 	 * Shows a picture over the light's area, such as a shop window or a screen, or `null` to go back
-	 * to one color. The color and intensity tint it. The picture's top row lies along the light's
-	 * +Y axis, and it reads the right way round from the lit side. The engine resamples it to 128 x
-	 * 128 texels, so shiny surfaces show it sharp and rough ones blurred. Up to 32 lights show
-	 * pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
+	 * to one color. The color and intensity tint it. The light gives out its intensity times the
+	 * picture's average color, so a mostly dark picture lights little around it. The picture's top
+	 * row lies along the light's +Y axis, and it reads the right way round from the lit side. The
+	 * engine resamples it to 128 x 128 texels, so shiny surfaces show it sharp and rough ones
+	 * blurred. Up to 32 lights show pictures at once. A new picture allocates and takes a few milliseconds, so set it at setup or
 	 * now and then, not in every frame.
 	 */
 	setImage(image: LightImagePixels | null): void {

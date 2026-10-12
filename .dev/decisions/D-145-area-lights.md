@@ -91,7 +91,7 @@ How a light crosses the cap:
 | B: keep a kept light until another beats it by a margin | Rejected. It makes a swap rarer, but each swap still pops |
 | C: fade each light's color over 8 frames, in when it joins the kept lights and out when it leaves them | Chosen. A light that leaves keeps shading while it fades, so for those frames more lights than the cap shade. A light that comes into view, and every light of the first frame, starts at its end weight, so held frames show no fade |
 
-The fade counts frames, not seconds, so a held frame and its test images do not depend on the frame rate. At 60 frames a second it lasts 133 ms. Each view's light grid keeps its own fades, by the lights' rows, in a list that grows only when the scene makes more lights. The coordinator asked for this change in the same pull request on 12 October 2026, so that no scene with more area lights than the cap pops.
+The fade counts frames, not seconds, so a held frame and its test images do not depend on the frame rate. At 60 frames a second it lasts 133 ms. Each view's light grid keeps its own fades, by the lights' rows, in a list that grows only when the scene makes more lights. The coordinator asked for this change in the same pull request on 12 October 2026. Then no scene with more area lights than the cap pops.
 
 ## Data
 
@@ -112,7 +112,7 @@ COST
 
 ## Decision
 
-Proposed: option A for shading, the facing rectangle for tubes, and the gzip file of the tables. Option B for the tables' binding, with the images as layers of the same array. The records of point and spot lights, and a cap per preset that keeps the lights with the most light at the camera, with a fade of 8 frames across it.
+Proposed: option A for shading, the facing rectangle for tubes, and the gzip file of the tables. Option B for the tables' binding, with the images as layers of the same array. The records of point and spot lights, and a cap per preset. The cap keeps the lights with the most light at the camera, with a fade of 8 frames across it.
 
 ## Consequences
 
