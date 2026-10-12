@@ -8,7 +8,7 @@ summary: "createParticles: emitters, bursts and sub-emitters; closed-form GPU mo
 
 # Particles (@null3d/particles)
 
-> Particles ship in null3D 0.2. The API is experimental, so it can still change between versions. Particles do not cast shadows, lights do not light them, and a system does not sort its own particles back to front. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Particles do not cast shadows, lights do not light them, and a system does not sort its own particles back to front. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
