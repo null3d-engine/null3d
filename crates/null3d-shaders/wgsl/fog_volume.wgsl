@@ -17,7 +17,7 @@
 // sampler), and the apply step as depth of field's composite, with the summed grid at binding 4.
 // The MULTISAMPLED builds read sample 0 of a multisampled depth, on WebGPU.
 #import null3d::fog::{fog_height_ratio}
-#import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
+#import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_cell_uv, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
 
 @group(0) @binding(0) var<uniform> settings: FogStep;
 @group(0) @binding(1) var source: texture_2d<f32>;
@@ -92,6 +92,40 @@ fn passing(span: f32, rise: f32) -> f32 {
     return exp(-medium.x * span * fog_height_ratio(medium.y * span * rise));
 }
 
+/// The summed grid's value at `cell` across the view in slice `slice`, through a cubic B-spline over
+/// the four by four nearest cells, from four filtered reads placed between them. A single filtered
+/// read blends the four nearest cells along straight lines, so where the light changes, each cell's
+/// edge shows as a step in its slope, which a coarse grid makes plain. The spline's slope changes
+/// smoothly, so no cell shows, at any slice count.
+fn summed_smooth(cell: vec2f, slice: u32) -> vec4f {
+    let grid = settings.grid;
+    let at = cell - 0.5;
+    let first = floor(at);
+    let f = at - first;
+    let f2 = f * f;
+    let f3 = f2 * f;
+    // The weights of the cells before, at, after and two after the place.
+    let w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    let w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    let w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    let w3 = f3 / 6.0;
+    // Each pair of cells takes one filtered read, between their centers by their weights.
+    let low = w0 + w1;
+    let high = w2 + w3;
+    let low_at = first - 0.5 + w1 / low;
+    let high_at = first + 1.5 + w3 / high;
+    let top = low.x * summed_at(vec2f(low_at.x, low_at.y), slice)
+        + high.x * summed_at(vec2f(high_at.x, low_at.y), slice);
+    let bottom = low.x * summed_at(vec2f(low_at.x, high_at.y), slice)
+        + high.x * summed_at(vec2f(high_at.x, high_at.y), slice);
+    return low.y * top + high.y * bottom;
+}
+
+/// The summed grid's filtered value at `cell` in slice `slice`.
+fn summed_at(cell: vec2f, slice: u32) -> vec4f {
+    return textureSampleLevel(summed, source_sampler, fog_cell_uv(settings.grid, cell, slice), 0.0);
+}
+
 @fragment
 fn apply(@builtin(position) position: vec4f) -> @location(0) vec4f {
     // The scene's color and depth have the target's size and drawn corner, so a pixel reads its
@@ -103,8 +137,8 @@ fn apply(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let along = select(-(d.x * depth + d.y) / (d.z * depth + d.w), BACKGROUND, depth <= 0.0);
     let screen = fog_screen_place(position.xy, settings.corner);
     let place = fog_volume_place(settings.grid, screen, along);
-    let near = textureSampleLevel(summed, source_sampler, place.near, 0.0);
-    let far = textureSampleLevel(summed, source_sampler, place.far, 0.0);
+    let near = summed_smooth(place.cell, place.slices.x);
+    let far = summed_smooth(place.cell, place.slices.y);
     var scattered = fog_volume_blend(near, far, place).rgb;
     // The background takes no fog (null3d::fog): its sky holds its own haze around the sun. So
     // it takes the grid's light in front of it, and no light from past the grid's reach.

@@ -128,12 +128,16 @@ fn fog_cell_uv(grid: FogGrid, cell: vec2f, slice: u32) -> vec2f {
 /// far the value lies from the first toward the second, and how much of it counts, from 0 at the
 /// camera to 1 from the first slice's far edge on. A shader reads its grid texture at both places
 /// with a linear sampler and blends them with `fog_volume_blend`. WGSL builds take no texture as a
-/// function's argument in every browser, so the shader reads the texture itself.
+/// function's argument in every browser, so the shader reads the texture itself. The place also
+/// holds the cell across the view and the two slices' numbers, for a shader that reads more cells
+/// around the place than the sampler's four, as the apply step does.
 struct FogVolumePlace {
     near: vec2f,
     far: vec2f,
     blend: f32,
     fade: f32,
+    cell: vec2f,
+    slices: vec2u,
 }
 
 /// The place of `cell` across the view and at slice coordinate `cell.z`, with a cell's center at
@@ -144,9 +148,10 @@ fn fog_grid_place(grid: FogGrid, cell: vec3f) -> FogVolumePlace {
     let at = clamp(cell.z - 0.5, 0.0, last);
     let near = floor(at);
     let far = min(near + 1.0, last);
-    let near_uv = fog_cell_uv(grid, cell.xy, u32(near));
-    let far_uv = fog_cell_uv(grid, cell.xy, u32(far));
-    return FogVolumePlace(near_uv, far_uv, at - near, 1.0);
+    let slices = vec2u(u32(near), u32(far));
+    let near_uv = fog_cell_uv(grid, cell.xy, slices.x);
+    let far_uv = fog_cell_uv(grid, cell.xy, slices.y);
+    return FogVolumePlace(near_uv, far_uv, at - near, 1.0, cell.xy, slices);
 }
 
 /// The place in the summed grid of a point at `screen`, its place across the view from 0 to 1 each

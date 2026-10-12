@@ -172,9 +172,9 @@ The engine lights a grid of cells that follow the camera's view, a technique cal
 
 1. The light step lights each cell once. It finds how dense the fog is there, from the fog's `density` and `heightFalloff`. It adds the sun's light where the sun's shadow map sees the cell, and the light of each point and spot light of the cell's cluster, through its shadow. A phase function sets how much of each light the fog sends toward the camera. It sends most when the camera looks into the light, as `anisotropy` sets.
 2. The sum step adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them.
-3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects.
+3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects. It reads the grid through a smooth cubic filter over the 16 nearest cells, so the cells' edges never show, even on Medium's coarse grid.
 
-Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that hides the grid's steps, so rays show smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.
+Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that settles the light in each cell, so rays show steady, smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.
 
 The fog of the section above stays as it is: it dims each surface and mixes in the fog's color. The grid only adds the light that the sun and the lamps scatter toward the camera, and while it draws it replaces the sun glow. Past the grid's `distance`, the fog scatters the sun's light without shadows, in a closed formula, so no edge shows where the grid ends.
 
