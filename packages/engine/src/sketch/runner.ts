@@ -137,10 +137,12 @@ const JOB_WINDOW = 30;
  */
 const JOB_GROW_US = 200;
 /**
- * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
- * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ * Seconds of sketch time that the sketch thread leaves its parallel loops untimed after a window
+ * with too little work, before it times them again. Each timing reads the browser's clock, which
+ * allocates a number. It is a time, so a slow frame rate holds the job workers back no longer than
+ * a fast one does.
  */
-const JOB_PAUSE = 270;
+const JOB_PAUSE_SECONDS = 4.5;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -239,8 +241,8 @@ export class SketchRunner {
 	 */
 	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
-	/** The frames left before the sketch thread times its parallel loops again. */
-	private jobPause = 0;
+	/** The sketch time at which the sketch thread times its parallel loops again, while they pause. */
+	private jobPauseUntil = -1;
 	/** Whether the core times the parallel loops that the sketch thread hands out. */
 	private timingHanded = true;
 	private readonly core: CoreMemory;
@@ -698,8 +700,10 @@ export class SketchRunner {
 			this.timeHandedLoops(glue, false);
 			return;
 		}
-		if (this.jobPause > 0) {
-			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+		if (this.jobPauseUntil >= 0) {
+			if (this.clock.now < this.jobPauseUntil) return;
+			this.jobPauseUntil = -1;
+			this.timeHandedLoops(glue, true);
 			return;
 		}
 		this.jobWindowUs += glue.takeHandedUs();
@@ -710,7 +714,7 @@ export class SketchRunner {
 		if (enough) {
 			this.sketch.wantJobs(Math.max(2, asked * 2));
 		} else {
-			this.jobPause = JOB_PAUSE;
+			this.jobPauseUntil = this.clock.now + JOB_PAUSE_SECONDS;
 			this.timeHandedLoops(glue, false);
 		}
 	}
