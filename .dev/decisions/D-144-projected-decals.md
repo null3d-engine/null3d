@@ -1,6 +1,6 @@
 # D-144: Projected decals
 
-Status: proposed by the helper of M2-EX27 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-EX27.
+Status: decided by the helper of M2-EX27 on 11 October 2026. The owner approved the decals demo's look on 12 October 2026, from shots of the reworked street. Date: 2026-10-11. Task: M2-EX27.
 
 Summary: A decal is a box mesh with a decal material: `materials.decal` takes the standard material's values and maps, and the box projects them onto every opaque surface inside it. Decals draw in a pass of their own, right after the camera's opaque pass, with a build of the standard material's own shader that finds the surface under each pixel from the scene's depth. The main pass gains no texture binding, and a page without decals pays nothing.
 
