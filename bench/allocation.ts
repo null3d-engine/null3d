@@ -318,12 +318,14 @@ const TRANSMISSION_REPLAY_BUDGET = 64;
 const TRANSMISSION_MIPS_BUDGET = 11 * 32;
 
 /**
- * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--ssr`, at
- * bloom's allowance per pass: the encoders of the render passes that screen-space reflections add.
- * They are the depth prepass, which draws apart from the opaque pass, the depth copy, the six
- * levels of the depth pyramid, the trace and the copy of the opaque colors.
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--ssr`: the
+ * encoders of the ten render passes that screen-space reflections add. They are the depth prepass,
+ * which draws apart from the opaque pass, the depth copy, the six levels of the depth pyramid, the
+ * trace and the copy of the opaque colors. On the Mac the replay allocated about 640 bytes more per
+ * frame with the reflections, 64 per pass, so the budget keeps one pass's room above that, as
+ * bloom's does.
  */
-const SSR_REPLAY_BUDGET = 10 * 64;
+const SSR_REPLAY_BUDGET = 11 * 64;
 
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
