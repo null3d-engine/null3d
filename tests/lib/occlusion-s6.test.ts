@@ -9,7 +9,6 @@ import {
 	hiddenAtRest,
 	JUMP_SHARE,
 	lateFrames,
-	MOTION_TOLERANCE,
 	median,
 	medianFigures,
 	type OcclusionFigures,
@@ -20,6 +19,7 @@ import {
 	roundSides,
 	roundStart,
 	stopShares,
+	visiblyDifferingPixels,
 } from '../pages/lib/occlusion.ts';
 import { NONE_MISSING } from './gpu-paths.ts';
 import { parseLoadPath } from './load-routes.ts';
@@ -93,24 +93,29 @@ describe('the occlusion turns', () => {
 		expect(differingPixels(a, a)).toBe(0);
 	});
 
-	it('count in motion only the pixels whose color moves by more than the tolerance', () => {
-		const a = new Uint8Array([10, 10, 10, 255, 10, 10, 10, 255, 10, 10, 10, 255]);
-		const b = new Uint8Array([
-			18,
-			10,
-			10,
-			255,
-			10,
-			10,
-			10 + MOTION_TOLERANCE + 1,
-			255,
-			200,
-			90,
-			40,
-			255,
+	it("count the pixels that differ by the image tests' rule, past a step or two of shading", () => {
+		const frame = (colors: number[][]) => new Uint8Array(colors.flatMap((c) => [...c, 255]));
+		const off = frame([
+			[100, 100, 100],
+			[100, 100, 100],
+			[100, 100, 100],
+			[100, 100, 100],
 		]);
-		expect(differingPixels(a, b)).toBe(3);
-		expect(differingPixels(a, b, MOTION_TOLERANCE)).toBe(2);
+		const shaded = frame([
+			[101, 100, 100],
+			[100, 98, 100],
+			[100, 100, 100],
+			[100, 100, 100],
+		]);
+		const hidden = frame([
+			[100, 100, 100],
+			[200, 40, 40],
+			[100, 100, 100],
+			[100, 100, 100],
+		]);
+		expect(differingPixels(off, shaded)).toBe(2);
+		expect(visiblyDifferingPixels(off, shaded, 2, 2)).toBe(0);
+		expect(visiblyDifferingPixels(off, hidden, 2, 2)).toBe(1);
 	});
 
 	it('change which side runs first each round, and spread the rounds over the route', () => {

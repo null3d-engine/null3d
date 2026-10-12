@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind, joints,
 };
 use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, MAX_SLOTS, SLOT_BITS};
@@ -107,6 +107,9 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
     /// shadow caster that moves by it.
     pub const CUSTOM_CASTER: u32 = 1 << 30;
+    /// The bit of a custom shading whose WGSL reads an instance's index or an object's id, which
+    /// the frame builders then keep in the table of object ranges.
+    pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -360,8 +363,34 @@ pub mod arrays_problem {
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
     pub const MORPH_NOT_FINITE: u32 = 10;
+    /// A vertex update named a mesh with joints or morph targets, which take no updates.
+    pub const POSED: u32 = 11;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
+}
+
+/// The second detail of a failure to give a mesh levels of detail: what is wrong with the levels.
+pub mod level_problem {
+    use null3d_render::levels::LevelError;
+
+    /// More levels than a mesh holds, its base mesh included.
+    pub const TOO_MANY: u32 = 1;
+    /// An error that is not finite, not above 0, or not above the error of the level before.
+    pub const ERRORS: u32 = 2;
+    /// A level that names no live mesh, or the base mesh itself.
+    pub const MESH: u32 = 3;
+    /// A level whose vertices have other attributes than the base mesh's.
+    pub const FORMAT: u32 = 4;
+
+    /// The problem of a refused set of levels.
+    pub fn of(error: LevelError) -> u32 {
+        match error {
+            LevelError::TooMany => TOO_MANY,
+            LevelError::Errors => ERRORS,
+            LevelError::Mesh => MESH,
+            LevelError::Format => FORMAT,
+        }
+    }
 }
 
 /// The arrays of the animation table that `animationArrays` returns.
@@ -392,6 +421,12 @@ pub mod animation_field {
     /// The numbers of the next `animatorPlay` or `animatorPlayBlend` call, `play_arg::COUNT`
     /// floats, which TypeScript writes before the call.
     pub const PLAY_ARGS: u32 = 10;
+    /// The joint overrides of every instance, `OVERRIDE_BLOCK` floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const JOINT_OVERRIDES: u32 = 11;
+    /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const LOOK_TARGETS: u32 = 12;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -809,6 +844,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
                 ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
                 ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
+                ("CUSTOM_OBJECT_IDS", shading::CUSTOM_OBJECT_IDS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -1134,6 +1170,8 @@ pub fn typescript() -> String {
                 ("SLOT_SOURCES", animation_field::SLOT_SOURCES),
                 ("BLEND_VALUES", animation_field::BLEND_VALUES),
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
+                ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
+                ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -1174,6 +1212,27 @@ pub fn typescript() -> String {
                 ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
             ],
         ),
+        // The layout of each instance's block of joint overrides (`animation::joints`).
+        (
+            "JOINT_OVERRIDE",
+            &[
+                ("BLOCK", joints::BLOCK_FLOATS as u32),
+                ("SLOTS", joints::MAX_OVERRIDES as u32),
+                ("FLOATS", joints::OVERRIDE_FLOATS as u32),
+                ("JOINT", joints::place::JOINT as u32),
+                ("MODE", joints::place::MODE as u32),
+                ("WEIGHT", joints::place::WEIGHT as u32),
+                ("ROTATION", joints::place::ROTATION as u32),
+                ("SET", joints::mode::SET),
+                ("ADD", joints::mode::ADD),
+                ("LOOK_WEIGHT", joints::place::LOOK_WEIGHT as u32),
+                ("LOOK_COUNT", joints::place::LOOK_COUNT as u32),
+                ("LOOK_FORWARD", joints::place::LOOK_FORWARD as u32),
+                ("LOOK_JOINTS", joints::place::LOOK_JOINTS as u32),
+                ("LOOK_JOINT_FLOATS", joints::place::LOOK_JOINT_FLOATS as u32),
+                ("MAX_LOOK_JOINTS", joints::MAX_LOOK_JOINTS as u32),
+            ],
+        ),
         (
             "ANIMATION_PROBLEM",
             &[
@@ -1207,7 +1266,17 @@ pub fn typescript() -> String {
                 ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
+                ("POSED", arrays_problem::POSED),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
+            ],
+        ),
+        (
+            "LEVEL_PROBLEM",
+            &[
+                ("TOO_MANY", level_problem::TOO_MANY),
+                ("ERRORS", level_problem::ERRORS),
+                ("MESH", level_problem::MESH),
+                ("FORMAT", level_problem::FORMAT),
             ],
         ),
     ];

@@ -122,11 +122,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	cellsRefused(): number;
 	/**
-	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
-	 * is the newest frame that the thread that draws drew with every pipeline built, as for
-	 * `recordFrame`.
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `scale`
+	 * is the frame's render scale in thousandths, which picks levels of detail, and `built` the
+	 * newest frame that the thread that draws drew with every pipeline built, as for `recordFrame`.
 	 */
-	cullFrame(frame: number, width: number, height: number, built: number): number;
+	cullFrame(frame: number, width: number, height: number, scale: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -288,11 +288,33 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setMeshBlocker(mesh: number, vertices: number, indices: number): number;
 	meshRadius(mesh: number): number;
+	/** A mesh's vertex count, or 0 for an unknown mesh. */
+	meshVertexCount(mesh: number): number;
+	/** A mesh's vertex format: its attribute bits and type fields, or 0 for an unknown mesh. */
+	meshFormat(mesh: number): number;
+	/**
+	 * Writes new values of the attribute at vertex shader `location` into vertices `start` to
+	 * `start + count` of a mesh, from `meshArrays`'s words: `components` values per vertex in the
+	 * attribute's own type. The next frame uploads the bytes that changed. Returns the status.
+	 */
+	updateVertices(
+		mesh: number,
+		location: number,
+		components: number,
+		start: number,
+		count: number,
+	): number;
 	/**
 	 * Destroys `count` meshes whose ids `meshArrays`'s words hold: their data goes at once, and the
 	 * next frame gives their ids to later meshes once no object or batch names them.
 	 */
 	destroyMeshes(count: number): number;
+	/**
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
+	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
+	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 */
+	setMeshLevels(base: number, count: number, fades: boolean): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -618,11 +640,19 @@ export interface CoreGlue extends CoreErrors {
 		cascadeBlend: number,
 	): number;
 	/**
+	 * How objects and batches pick their meshes' levels of detail, from the next frame on: the
+	 * error in pixels under which a coarser level draws, 0 for none, what the shadow maps' views
+	 * multiply it by, and whether two levels hand over in a fading band.
+	 */
+	setLevelQuality(threshold: number, shadowFactor: number, fades: boolean): number;
+	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
 	 * cast shadows.
 	 */
 	shadowCasters(): number;
+	/** 1 while some mesh has levels of detail, which the governor's detail steps need, else 0. */
+	hasLevels(): number;
 	/**
 	 * The address of the block of the background's values (`BACKGROUND_VALUE_*`), 32-bit floats
 	 * that TypeScript writes before it calls `setBackgroundSource`.
@@ -695,8 +725,16 @@ export interface CoreGlue extends CoreErrors {
 	 * their frames already, as the asset tool writes them, and were copied.
 	 */
 	resampledClips(): number;
-	/** Adds an animated instance of a skeleton. */
-	createAnimatedInstance(skeleton: number): number;
+	/**
+	 * Adds an animated instance of a skeleton, which moves the object of handle `object`: a
+	 * look-at aims from that object's place. The handle 0 names no object.
+	 */
+	createAnimatedInstance(skeleton: number, object: number): number;
+	/**
+	 * Makes the table of joint overrides and look-at targets (`ANIMATION_FIELD_JOINT_OVERRIDES`
+	 * and `ANIMATION_FIELD_LOOK_TARGETS`), once. Until then, the frame step does no override work.
+	 */
+	enableJointOverrides(): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
 	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
@@ -811,7 +849,11 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMeshBvh',
 	'setMeshBlocker',
 	'meshRadius',
+	'meshVertexCount',
+	'meshFormat',
+	'updateVertices',
 	'destroyMeshes',
+	'setMeshLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
@@ -875,7 +917,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setRenderScaling',
 	'setPixelRatio',
 	'setShadowQuality',
+	'setLevelQuality',
 	'shadowCasters',
+	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
 	'setFog',
@@ -891,6 +935,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'enableJointOverrides',
 	'createMorphWeights',
 	'destroyMorphWeights',
 	'linkMorphWeights',

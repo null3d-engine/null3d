@@ -18,4 +18,13 @@ export interface AnimatorReport {
 	/** The codes of the calls that must fail. */
 	errors: Record<string, string>;
 	clips: readonly string[];
+	/**
+	 * The soldier's aim: the largest angle, in radians, between its chain's last joint's forward
+	 * direction and the direction from that joint to the target, over the frames it checked.
+	 */
+	aimError: number;
+	/** The frames whose aim the soldier checked. */
+	aimFrames: number;
+	/** How far the soldier's last joint turned from its walk, in radians, at the last check. */
+	aimTurn: number;
 }

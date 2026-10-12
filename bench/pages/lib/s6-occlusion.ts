@@ -20,17 +20,15 @@
 // in every frame, so each frame shows the view one jump from the frame before, and the page
 // captures a few such frames. A culling that used an earlier frame's camera would hide what came
 // into view, so a capture that differs from the nearer end's reference by more than the noise shows
-// an object late. In motion a pixel counts as different only when its color moves by more than the
-// shading's own small changes. The figure counts those captures.
+// an object late. Both checks count a pixel as different by the image tests' rule, so the shading's
+// own small changes do not count. The figure counts those captures.
 import type { Engine, FrameSummary } from '@null3d/engine';
 import {
-	differingPixels,
 	flightShares,
 	hiddenAtRest,
 	hidesWhatShows,
 	JUMP_SHARE,
 	lateFrames,
-	MOTION_TOLERANCE,
 	medianFigures,
 	type OcclusionFigures,
 	type OcclusionFlight,
@@ -39,6 +37,7 @@ import {
 	roundSides,
 	roundStart,
 	stopShares,
+	visiblyDifferingPixels,
 } from '../../../tests/pages/lib/occlusion';
 import { occlusionFigures } from '../../../tests/pages/lib/occlusion-figures';
 import { toBase64 } from '../../../tests/pages/lib/result';
@@ -112,8 +111,8 @@ export async function occlusionTurns(
 		const on = await engine.captureFrame();
 		const stop = {
 			share,
-			noise: differingPixels(off.pixels, again.pixels),
-			differing: differingPixels(off.pixels, on.pixels),
+			noise: visiblyDiffering(off, again),
+			differing: visiblyDiffering(off, on),
 		};
 		stops.push(stop);
 		if (hiddenAtRest(stop) && Object.keys(images).length < 2 * HIDDEN_IMAGES) {
@@ -133,7 +132,7 @@ export async function occlusionTurns(
 			await drive(end, true);
 			const first = await engine.captureFrame();
 			const again = await engine.captureFrame();
-			noise = Math.max(noise, differingPixels(first.pixels, again.pixels, MOTION_TOLERANCE));
+			noise = Math.max(noise, visiblyDiffering(first, again));
 			ends.push(first);
 		}
 		await cull(true);
@@ -146,11 +145,7 @@ export async function occlusionTurns(
 			differing.push(pixels);
 			if (hidesWhatShows(noise, pixels)) shown ??= { off, on };
 		}
-		const jump = differingPixels(
-			(ends[0] as Capture).pixels,
-			(ends[1] as Capture).pixels,
-			MOTION_TOLERANCE,
-		);
+		const jump = visiblyDiffering(ends[0] as Capture, ends[1] as Capture);
 		flights.push({ share, toward, noise, jump, differing });
 		if (shown && shownFlights++ < HIDDEN_IMAGES) {
 			images[`flight-${k}-off`] = await png(shown.off);
@@ -181,11 +176,15 @@ export async function occlusionTurns(
 /** A frame that `engine.captureFrame` read back. */
 type Capture = Awaited<ReturnType<Engine['captureFrame']>>;
 
+/** The pixels where two captures of the same size differ by the image tests' rule. */
+const visiblyDiffering = (a: Capture, b: Capture): number =>
+	visiblyDifferingPixels(a.pixels, b.pixels, a.width, a.height);
+
 /** The reference nearest a frame, and the pixels where the two differ by more than shading does. */
 function nearest(references: readonly Capture[], frame: Capture): [Capture, number] {
 	let best: [Capture, number] = [frame, Number.POSITIVE_INFINITY];
 	for (const reference of references) {
-		const pixels = differingPixels(reference.pixels, frame.pixels, MOTION_TOLERANCE);
+		const pixels = visiblyDiffering(reference, frame);
 		if (pixels < best[1]) best = [reference, pixels];
 	}
 	return best;

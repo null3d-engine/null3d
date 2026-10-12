@@ -10,8 +10,12 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/run.ts` | `startDemo`, which starts a demo on a canvas that the page gives it, shows its labels in a layer that the page gives it, and shows the stats overlay |
 | `examples/lib/source.ts` | `sourceUrl`, the GitHub address of a demo's code, for a "View code" link ([below](#the-link-to-a-demos-code)) |
 | `examples/index.html`, `examples/index.ts` | The examples page of a clone: a sidebar of the demos by group, and a panel that runs the demo that `?demo=<name>` names ([below](#the-examples-page-of-a-clone)) |
-| `examples/<name>/sketch.ts` | One demo, under 150 lines |
+| `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
+| `examples/<name>/<scenery>.ts` | A demo's scenery, when the look bar needs more code than the sketch's 150 lines leave. The sketch imports it from the same folder, such as the particles demo's `glade.ts` ([D-142](decisions/D-142-more-techniques-before-1-0.md#the-days-other-rulings)) |
+| `examples/showcase/<name>/` | One showcase scene: its `sketch.ts` and the modules that it imports, with no line limit ([Showcase scenes](#showcase-scenes)) |
+| `examples/lib/stage.ts`, `examples/lib/procedural.ts` | The showcase scenes' moods, and their generators of detail: seeded noise, texture sets from numbers, terrain and rocks |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
+| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -21,7 +25,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/lib/three-worker.ts`, `stats-three.ts` | The three.js half's worker, and its stats meter in the engine's panel |
 | `examples/compare-page.ts` | The comparison panel of the clone's examples page |
 
-The image tests, the device plans and the page tests read `examples/demos.ts` and the `examples/<name>/sketch.ts` paths ([Image tests](image-tests.md)). A folder under `examples/` that holds a `sketch.ts` must be a demo in the list.
+The image tests, the device plans and the page tests read `examples/demos.ts`, and find each demo's sketch with `sketchPath` from it ([Image tests](image-tests.md)). A folder under `examples/` or `examples/showcase/` that holds a `sketch.ts` must be a demo in the list.
 
 ## Two builds from one folder
 
@@ -61,8 +65,8 @@ The examples page is the clone's own layout of the demos. The website has a layo
 
 `sourceUrl(demo, ref)` gives the GitHub address of a demo's code at a branch or a tag, and `ref` is `main` when a page names none. The clone's page names none. The website names the release tag that it builds from, so its link shows the code that it runs.
 
-- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Every feature demo is one sketch, so the reader lands on the code at once.
-- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
+- A demo of one file links to that file: `blob/<ref>/examples/<name>/sketch.ts`. Most feature demos are one sketch, so the reader lands on the code at once.
+- A demo of several files links to its folder: `tree/<ref>/examples/<path>/`. One file would show only part of the demo, and the folder lists every part. Such a demo sets its `code` field to its folder, with a slash at the end, such as `showcase/city/`. A feature demo with its scenery in a file of its own does the same, such as `shader-inputs/`. A demo of one file outside `<name>/sketch.ts` sets `code` to that file.
 
 The address comes from the demo's entry, not from its `sketch` field. A build gives each sketch a hashed address of its own. `REPOSITORY_URL` in the same module holds the repository's address. A unit test checks it against the `repository` field of the root `package.json`.
 
@@ -121,11 +125,14 @@ What the pointer steers in each demo:
 | hold-mode | A paddle that shows only while the pointer steers it, and kicks the balls on it up |
 | security-camera | The security camera, which aims at the pointed point of the yard |
 | generators | The shapes, which turn toward the point on a plane in front of them |
+| extra-shapes | The shapes, as in the generators demo |
+| vertex-updates | The glowing float, which leaves its rings where it goes |
 | time-of-day | The hour: the pointer's place across an upright plane through the lighthouse, from 4:00 at the left to 20:00 at the right |
 | camera-lens | The focus, on the point of a piece or the board that a raycast finds |
 | morph-flowers | The tulips near the pointed point, which open |
 | input | Nothing: the keys, a gamepad and the camera gestures drive it. The right stick turns the camera before and after the hand-over |
 | walk-and-fly | Nothing: the keys, the drag and the locked mouse drive first-person and fly controls |
+| shader-inputs | Nothing: the camera only. A hover or a tap on a stone lights it, through the stone's `shaderId` in a uniform |
 | The others | Nothing: the camera only. Picking keeps its hover and its click, and the engine gives no click after a drag of more than 2 CSS pixels |
 
 Three demos need more than the shared rules:
@@ -199,7 +206,7 @@ The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
-- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Scene passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task)). So the crystal's glow comes from bloom, not from a lamp.
+- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
 - The hold mode demo draws 400 meshes, not one instance batch, because batches cast no shadows yet. Its physics moved into `onFixedUpdate`, at 120 steps a second. At the default 60, a 120 Hz display would show the balls stand still in every other frame. Hold mode runs the same steps on every run, so the held frame stays the same.
 - The objects demo turned the table and the crates by adding up the frame steps. Now each turn comes from the sketch time. A crate on the stage spins at its own speed plus the table's, so its spin goes on with no jump when it steps off.
@@ -225,7 +232,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory is the first ([D-121](decisions/D-121-comparison-tier.md)). Battle, Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -268,6 +275,19 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 A comparison must look very beautiful, as every demo and showcase scene must ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md), owner, 11 October 2026). It uses shaders, effects, particles and complex geometry. A good figure does not excuse a plain scene. The bar is the generators demo and Creek.
 
 Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
+
+Every comparison scene meets the same look bar as the feature demos and showcases (owner, 11 October 2026): good figures don't excuse a plain scene. The bar is the reworked Geometry Generators demo and the Creek showcase. They have varied materials, small textures made in code and reflections of an environment. They have a sky, fog, sun shadows, finished ground, a tuned grade and bloom on what glows.
+
+### Battle
+
+Battle is the comparison of ready-made assets ([D-121](decisions/D-121-comparison-tier.md#battle)). Two armies of animated soldiers and mechs meet on a cratered field at dusk, with tanks behind each line.
+
+- Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
+- The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
+- The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
+- In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
 ### The stats panel of three.js
 
@@ -316,16 +336,28 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The crystal spiral's scenery (11 October 2026)
+
+The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
+
+- A dusk sky with the sun low behind the stones. The sky's own environment gives the light, so the reflections on the crystals match the sky.
+- A floor of polished dark slate, made in code: soft clouding, thin pale veins, and thin water in its hollows. A reflection pass draws the scene mirrored across the floor. The water shows that picture sharp; the dry stone draws it out into short streaks down the screen, as on a wet street. Rings run out across the water in step with the crystals' wave.
+- A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
+- The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
+- The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
-- **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain, rocks, grass).
+- **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
-- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md) and [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md). The table below lists them.
+- **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
+- **Choices:** a showcase scene's entry can list `choices`, such as a time of day. The page's `startDemo` shows a row of buttons for each, in an element that the page gives it. Each pick goes to the sketch as a message. A held frame has no buttons. So a sketch also reads its first choices from its own address: `?mood=Night&dslr`.
+- **Image tests:** a showcase scene's image test draws its full look on the Mac's GPU. On SwiftShader it draws the Low preset, through the test's SwiftShader switch `preset=low`, which takes the place of the references' preset. The full look took the software GPU too long for CI.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
 
 ### Engine features for the showcase
@@ -339,7 +371,7 @@ Each feature gets a decision record of its own when it is built.
 | Planar reflections | Water that reflects its banks | M2-EX15 ([D-120](decisions/D-120-planar-reflections.md)) | D-117 |
 | Transmission | Water that shows its bed | M2-EX16 ([D-122](decisions/D-122-transmission.md)) | D-117 |
 | Depth of field | A focus on the subject | M2-EX17 ([D-119](decisions/D-119-depth-of-field.md)) | D-117 |
-| Temporal anti-aliasing, a prototype first | Dense grass without shimmer in motion | M2-EX18 | D-117 |
+| Temporal anti-aliasing, a prototype first | Dense grass without shimmer in motion | M2-EX18, not for 1.0 ([D-129](decisions/D-129-temporal-anti-aliasing.md)) | D-117 |
 | Batch shadows | Grass and plants that cast and receive shadows | M2-R6 ([D-115](decisions/D-115-batch-shadows.md)) | D-117 |
 | The particles add-on | Spray, leaves and fireflies; sparks, smoke and debris; rain and steam | M2-EX20 | D-132 |
 | Light shafts and lit fog | Sun through trees, and a glow around lamps and headlights | M2-EX21 | D-132 |
@@ -347,8 +379,133 @@ Each feature gets a decision record of its own when it is built.
 | Contact shadows | No light gap where an object meets the ground | M2-F12 | D-132 |
 | Bump and displacement maps | Detail on stones, bark and ground | M2-J4 | D-132 |
 | LOD groups | Dense, complex geometry far from the camera | M2-I4 | D-132 |
+| Joint overrides, with a look-at helper | Soldiers that aim and heads that turn, on top of their animation | M2-EX24 | D-142 |
+| Per-object motion vectors | The base for a later temporal anti-aliasing, motion blur and better screen-space reflections | M2-EX25 | D-142 |
+| Physical sky and atmosphere | Skies of every scene, with distant objects tinted by the sun's angle | M2-EX26 | D-142 |
+| Projected decals | Craters and scorch marks, street paint and puddles, moss on rocks | M2-EX27 | D-142 |
+| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142 |
+| Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
+| Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
+| Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
+| Box-projected reflection probes | Reflections of streets and rooms | M2-EX32 | D-142 |
+| Weighted blended transparency | Smoke and fire, and glass | M2-EX33 | D-142 |
+| Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
+| Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
+| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 
 Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+### Creek
+
+Creek is a small stream in a grassy valley (M2-EX8). The first phase, on 10 October 2026, built everything that code makes, with stand-ins for the organic models. The second phase, on 11 October 2026, put in the trees, the plants and the cave mouth, built by script in Blender. The third phase, the same day, is a beauty pass, after the owner asked for a very beautiful scene. It adds more and denser trees, wildflowers, a deeper cave, wet stones, foam, caustics, things that drift in the air, mist and shafts of light. The owner reviews its look before its pull request opens.
+
+| Part | How it is made |
+| --- | --- |
+| Land (`land.ts`) | A grid of 160 m whose quads pack toward the middle, where the camera looks. A height function cuts the stream's bed, the low banks and the valley's sides. Each vertex takes a color from its height and slope: wet bed, mud, soil, dry patches, meadow and bare rock. A tiled texture set from `textures.fromData` adds clods and grit |
+| Water (`water.ts`) | A grid at the water's height. Its vertex offset moves it with long waves that the current carries downstream. Its surface function adds finer ripples, which catch the sun as glints. A reflection pass mirrors the banks and the sky, and transmission shows the bed through the water. Caustics play over the bed. The water is clear where it is shallow, and foams at the banks and around the stones, with a trail downstream of each stone |
+| Grass (`grass.ts`) | Tufts of 13 curved blades, in three shapes, as instance batches. A vertex offset bends each blade in gusts that roll across the banks. Each row's values give its tuft a phase in the wind, a tint and a turn. The tufts near the water cast shadows and show in the reflection; the others only receive shadows |
+| Stones (`stones.ts`) | Rocks of noise-shaped spheres with moss where they face up, and pebbles on the bed, as instance batches with shadows. Rocks in and at the edge of the stream are wet: darker and glossy. The cave mouth is a model |
+| Trees, plants and leaves (`flora.ts`) | Seventeen trees of three kinds and sizes, hostas at the water's edge, ferns over the banks and among the cave's boulders, wildflowers in patches, and shrubs at the trees' feet. Each plant kind is one instance batch. Fallen leaves float down the current, and fireflies glow at blue hour and at night |
+| Models (`models.ts`) | Loads the three model files of the trees, the plants and the cave mouth, and places their parts. [Sample content](sample-content.md#models-built-in-blender) says how a script builds them |
+| Air (`air.ts`) | Leaves that fall from the crowns and spin on the breeze, motes of dust that glow in the low sun, and mist over the water. Each is a sprite batch that the sketch moves from the time alone |
+| Shafts (`shafts.ts`) | Rays of light through the trees at golden hour: a custom effect that marches from each pixel toward the sun on the screen |
+| Moods (`examples/lib/stage.ts`) | Afternoon, golden hour, blue hour and night from `timeOfDay`, lit by the sky's environment, and a studio lit by the built-in room. A mood can thicken the fog into a haze: golden hour and blue hour do |
+
+The choices, and why:
+
+- **Each tuft's traits are its row's values.** The sketch writes four numbers into each row. They are the tuft's phase in the wind, its tint, and the cosine and sine of its turn about y. The material reads them as `object.values` ([D-127](decisions/D-127-row-values.md)). A vertex offset moves a vertex in the mesh's own space, so a turned tuft would bend another way. So the vertex offset turns the wind back by the tuft's turn, and the wind blows one way over every tuft. Before the row values, the phase and the tint came from the row's place, and the tufts did not turn.
+- **The shadows sway with the grass.** A custom material with a vertex offset now casts with its offset ([D-127](decisions/D-127-row-values.md)). The shadow passes read the same values and clock, so the grass's shadows move with it.
+- **The organic models load from files.** A script builds them in Blender, and the asset tool optimizes them. They load with `sampleUrl`, as the other demos' files do, so a website's build copies them. The website's build has no server for the sample files, so an import with `?optimized` would not resolve there. So the models go into the sample-assets repository already optimized, each with its KTX2 textures in its own file.
+- **The models are light.** The scene draws the cave, 17 trees and about 200 plants: about 290,000 triangles in all, beside 3.4 million of grass. Each tree is a wood part and a part of leaf cards. Each card holds a cluster of leaves, and its alpha cuts their outline.
+- **Far trees draw lower levels of detail.** Each tree part in the model file has two lower levels, which the glTF loader reads ([D-137](decisions/D-137-lod-groups.md)). The engine picks a level by its error on the screen, and the shadow passes take coarser levels. So the scene needs no code for them.
+- **The cave mouth turns toward the camera's usual view.** The model opens toward +z. Turned 0.9 radians to the left, its opening faces down the valley, so the drifting camera sees into it. Ferns flank the opening.
+- **Each tree has its own size, from half to full.** At full size, the crowns of the trees near the camera rose out of the frame, and the view showed bare trunks. Groves of full-size trees stand on the far bank behind the cave, with young trees among them.
+- **The things in the air are sprite batches for now.** The particles add-on (M2-EX20) will take them over. Until then, the sketch places each row from the time alone, so a held frame shows what the live scene shows at that time. Sprites are not lit, so each mood tints them. The motes' glow goes into each row's color, because a material's color stops at white and bloom needs it above white.
+- **The foam around the stones comes from a map.** Each stone that the water's plane cuts marks a texture of the water. The texture holds how near each point lies to a stone, stretched downstream into a trail. Moving noise in the surface function breaks it into flecks that the current carries.
+- **The caustics are light on the bed, in the water's emissive.** The surface function draws a net of bright ridges that drift with the current, bent by the ripples. They are fainter where the water is deep or foams. Each mood sets their color, and blue hour and night have none.
+- **The shafts of light are a custom effect at golden hour alone.** The effect counts the sky that it passes on the way to the sun on the screen, so leaves and trunks break the light into rays. Nothing draws depth in the sky, so the depth tells sky from the rest. The sun sits low ahead of the camera then, so the rays show. They draw at High and above only. Each pixel takes 3 to 12 steps, fewer near the sun, and pixels where the rays are too faint to see take none. The first version took 28 steps in every pixel and doubled the GPU time at golden hour. The engine's own shafts, with the lit fog of M2-EX21, will replace it.
+- **Later engine work will change the scene.** Lit fog (M2-EX21) gives the haze and the mist light from the sun, and contact shadows (M2-F12) ground the stones and plants. The scene keeps each part separate, so each can take its change alone.
+- **Only the grass near the water is in the reflection and casts shadows.** At first every tuft drew in the camera's view, the reflection and each shadow cascade. The Mac's GPU then drew about 5.1 million triangles a frame on WebGPU, and 7.5 million on WebGL2. Grass far from the water shows in no reflection, and its shadows fall in grass. So those tufts sit on a layer that the reflection pass leaves out, and cast no shadows.
+- **The reflection leaves out what lies on or under the water.** The pebbles and the floating leaves sit on the same layer as the far grass. The water's plane would cut them away in the reflection, so drawing them there only cost triangles.
+- **Low and Medium draw the reflection every other frame.** The reflection was the costliest pass on WebGL2: without it, the frame drew 6.5 million triangles in place of 9 million. A pass that is switched off keeps its last image, and the camera drifts slowly, so a reflection one frame old looks the same. High and Ultra draw it in every frame.
+- **Each preset draws an even spread of the tufts, grouped by place.** The rows come in a random order, so any count spreads over the banks. Then each preset's added rows sort by 4 m squares. WebGL2 culls a static batch in groups of 64 nearby rows, and a random order puts the whole field in every group.
+- **The water's depth is a WGSL copy of the land's shape.** The water needs its depth for its thickness, its tint and its foam. No depth texture reaches a surface function, so the shader repeats the bends and widths of the stream from `land.ts`. A change to the stream's shape changes both.
+- **The DSLR switch sets a 50 mm lens at f/1.8.** At the scene's view of 45 degrees, a 29 mm lens, the blur of the near grass was a few pixels. The lens focuses on the point that the camera orbits, so the focus follows the user's camera.
+- **The night is darker than the preset's exposure.** At the `night` preset's exposure, the grass showed as green as by day under the moon. The night takes 0.55 of it.
+- **Blue hour and night have fireflies,** a sprite batch whose colors are above white, so bloom gives them halos.
+
+#### Frame rates of the Creek on the Mac
+
+The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
+
+With the trees' levels of detail (M2-I4), WebGL2 at Medium alone, later on 12 October 2026, at a load of 6.3 to 7.7, except where the table gives another. The page ran in a Chrome window of 1,280 by 800 pixels at two device pixels to each, parked past the edge of the display. The window of the earlier runs is not recorded, so compare their triangles, not their frame rates:
+
+| Mood | Default target | `?target-fps=display` |
+| --- | --- | --- |
+| Afternoon | 105 to 118 fps, GPU 13 to 14.9 ms, scale 1, at a load of 8.5 to 9.7 | 79 to 107 fps, GPU 10.4 to 11.5 ms, scale 0.7 to 0.85 |
+| Golden hour | 80 to 100 fps, GPU 13.2 to 13.8 ms, scale 1 | 80 to 109 fps, GPU 11.1 to 13.7 ms, scale 0.7 to 0.85 |
+| Blue hour | 80 to 87 fps, GPU 13.1 to 14.4 ms, scale 1 | 80 to 81 fps, GPU 11 to 13.7 ms, scale 0.75 to 0.85, at a load of 9.1 |
+| Night | 82 to 100 fps, GPU 14.2 to 16.6 ms, scale 1 | 89 to 119 fps, GPU 11 to 12 ms, scale 0.8 to 0.9 |
+| Studio | 80 to 85 fps, GPU 14 to 17.4 ms, scale 1 | 81 to 116 fps, GPU 11 to 11.5 ms, scale 0.7 to 0.85 |
+
+WebGL2 drew 7.1 to 7.35 million triangles a frame, against 7.3 to 7.6 million before the levels. That saving of about 0.25 million, 3%, is what the levels can give here: of the 17 trees, the 10 near the camera keep their full level, and the reflection and the shadow cascades draw the trees too. At the display's rate, the governor was still lowering the render scale when the readings ended. A second run of the two pages at a load of 8 or more, at a load of 5, read slower: 68 to 72 fps with a GPU time of 19 to 25 ms at Afternoon, and 61 to 64 fps at blue hour, where the overlay read the display's rate as 60 Hz in four of five readings. So these figures drift as much as the earlier ones.
+
+With the beauty pass and the reflection trims, on 12 October 2026, at a load of 6.6 to 8.3. The first table keeps the engine's default target of 60 fps. The second sets `?target-fps=display`, so the governor defends 120 fps and lowers the render scale to reach it:
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 5.7 to 5.8 ms | 61 to 64 fps, GPU 15.2 to 17.1 ms, scale 0.7 |
+| Golden hour | 78 to 80 fps, GPU 15.2 to 19.4 ms | 60 to 61 fps, GPU 15.1 to 16 ms, scale 0.7 |
+| Blue hour | 91 to 92 fps, GPU 14 to 15.7 ms | 48 to 60 fps, GPU 17.4 to 21.6 ms, scale 0.6 to 0.7 |
+| Night | 92 to 96 fps, GPU 12.2 to 14.8 ms | 61 to 64 fps, GPU 14.9 to 16.1 ms, scale 0.6 |
+| Studio | 111 to 114 fps, GPU 10.3 to 11.7 ms | 60 to 64 fps, GPU 14.3 to 16 ms, scale 0.6 |
+
+| Mood, at the display's rate | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 118 to 120 fps, scale 0.8 to 0.85 | 59 to 79 fps, scale 0.6 |
+| Golden hour | 118 to 120 fps, scale 0.75 | 62 to 70 fps, scale 0.6 |
+| Blue hour | 120 fps, scale 0.8 | 61 to 78 fps, scale 0.6 |
+| Night | 120 fps, scale 0.85 | 59 to 62 fps, scale 0.6 |
+| Studio | 114 to 120 fps, scale 0.85 to 0.9 | 62 to 76 fps, scale 0.6 |
+
+WebGPU drew 4.4 to 4.9 million triangles a frame, and WebGL2 7.3 to 7.6 million. These readings drift: in one run, the same untouched build fell from 120 fps to 80 fps on WebGPU at golden hour, as the Mac warmed and other work ran beside it. So compare readings only within one run. WebGPU at High holds 120 fps in every mood with the render scale at 0.75 or more. WebGL2 at Medium does not reach 120 fps. At a scale of 0.6 its GPU time is still 13.5 to 17 ms, so the pixels are not what costs: the triangles and the passes are. Before the trims, without the reflection, WebGL2 drew 6.5 million triangles in place of 9 million.
+
+With the models and the grass's row values, on 11 October 2026:
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 6.3 to 7.4 ms | 102 to 106 fps, GPU 10.4 to 12.3 ms |
+| Golden hour | 120 fps, GPU 6.4 to 6.6 ms | 100 to 102 fps, GPU 11.1 to 12.6 ms |
+| Blue hour | 120 fps, GPU 6.4 to 6.6 ms | 94 to 96 fps, GPU 11.3 to 13.7 ms |
+| Night | 120 fps, GPU 6.4 to 7.2 ms | 92 to 96 fps, GPU 13.3 to 14.6 ms |
+| Studio | 119 to 120 fps, GPU 5.9 to 7.2 ms | 95 to 96 fps, GPU 12.5 to 13.6 ms |
+
+WebGPU drew 3.7 to 4.1 million triangles a frame, and WebGL2 6.4 million. The load was 6 when the WebGPU readings began. Another run then started, and the load reached 18 during the WebGL2 readings, so those are rough.
+
+With the stand-ins, on 10 October 2026, at a load of 3 to 7:
+
+| Mood | WebGPU, High | WebGL2, Medium |
+| --- | --- | --- |
+| Afternoon | 120 fps, GPU 5.5 to 5.8 ms | 111 to 120 fps, GPU 7.1 to 13.4 ms |
+| Golden hour | 120 fps, GPU 4.8 to 5.4 ms | 120 fps, GPU 6.7 to 7.1 ms |
+| Blue hour | 120 fps, GPU 4.8 to 5.9 ms | 96 to 120 fps, GPU 7.7 to 15.2 ms |
+| Night | 119 to 120 fps, GPU 6.9 to 7.1 ms | 102 to 116 fps, GPU 9.4 to 13.4 ms |
+| Studio | 120 fps, GPU 5.7 to 6.9 ms | 120 fps, GPU 7.0 to 7.8 ms |
+
+Then WebGPU drew 3.4 to 3.8 million triangles a frame, and WebGL2 5.7 million. At first, every tuft drew in the reflection and the shadows. WebGPU at High then drew 5.1 million triangles, and fell to 103 to 108 fps in several readings. Its GPU time reached 13 ms. Those readings ran at a load near 15, so they are rough. WebGL2 at Medium still draws more triangles than WebGPU at High, with fewer tufts. No phone or tablet has run the scene yet. The governor lowers the render scale where a frame takes too long, and phones start on Low, with a fifth of the tufts.
+
+## The demos of the geometry package (M2-P2)
+
+The geometry package and `mesh.updateVertices` brought two demos, and each takes the look of the generators demo.
+
+| Demo and scene | What it shows |
+| --- | --- |
+| extra-shapes: Mirror floor at dusk | A shape from each function of `@null3d/geometry`, in three rows over a polished stone floor at dusk. A reflection pass mirrors them in the floor. The shapes run from gold, chrome and copper to blue-tinted glass and glazed clay. The flat heart glows enough to bloom |
+| vertex-updates: Pool at golden hour | A raised stone pool on a deck. A glowing float with a light of its own drifts over the water, and leaves a ring every 0.35 s on a slow swell. Each frame rewrites the water's heights and normals, and `updateVertices` uploads them |
+
+- The water's normals come from the heights of each vertex's neighbors, not from closed-form slopes. Twelve rings and a swell, each with its own slopes, took more lines than the 150-line limit left.
+- The rings start at fixed ticks of sketch time, from the float's path at each tick. So the hold-mode image is the same however many frames lead to it. While the pointer leads the float, each ring starts at the float's place instead.
+- The water's update writes into arrays that the sketch keeps, so it allocates nothing in a frame, as the demo's summary says.
 
 ## Groups and titles (owner, 9 October 2026)
 
@@ -356,8 +513,9 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 
 | Group | Demos |
 | --- | --- |
-| Building scenes | generators, mesh-arrays, objects, layers |
-| Light, materials and effects | environment, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
+| Showcase | creek |
+| Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
+| Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
 | Scale | galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
@@ -399,7 +557,7 @@ The owner's bar for every feature demo is the reworked generators demo. Eight mo
 
 The rules that these demos follow, and why:
 
-- Scene passes and reflection passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
+- Until 11 October 2026 scene passes and reflection passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass, made before then, use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
 - A glowing material, a sprite and a line all draw in a reflection pass. The pool in the sprites demo reflects the sparks, the helix and the dashes.
 - The `'night'` preset of `timeOfDay` gives a black sky: three.js's sky model goes dark once its sun is 2 degrees under the horizon. So the two night scenes take `'blueHour'`, which gives a deep blue sky and the moon as the main light. They keep their exposure low, 2 and 1.4, below the preset's 2.9. At the preset's exposure, the neon of the sprites demo turned white and lost its colors.
 - Fog that thins with height measures its height from the world's origin. The large world's road is 6,378 km above it, so fog with a height falloff would be clear there. The large world uses plain fog, which thickens with distance alone.

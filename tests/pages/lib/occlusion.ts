@@ -1,10 +1,12 @@
 // What the occlusion pages share: the figures of a measurement with occlusion culling off or on,
-// the medians of their rounds, the count of pixels where two frames differ, and S6's occlusion
+// the medians of their rounds, the counts of pixels where two frames differ, and S6's occlusion
 // turns (T-36): the order of each round's two sides, and the two popping figures. Wrongly hidden
 // at rest compares frames with culling off and on at stops along the route, with the camera still.
 // Late in motion counts the frames in which culling hid what shows while the camera jumped along
 // the route in every frame. The device runner judges and tables the turns' results with the same
 // rules (tests/lib/occlusion-s6.ts). Nothing here needs the engine or a browser.
+import { compareImages, TOLERANCE } from '../../../packages/cli/src/compare.js';
+
 /** The middle of some numbers, nulls left out, or null without any. */
 export function median(values: readonly (number | null)[]): number | null {
 	const sorted = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
@@ -15,20 +17,31 @@ export function median(values: readonly (number | null)[]): number | null {
 		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
-/**
- * Pixels whose color differs between two RGBA frames of the same size: in a channel by more than
- * `tolerance` levels, or by any level without one.
- */
-export function differingPixels(a: Uint8Array, b: Uint8Array, tolerance = 0): number {
+/** Pixels whose color differs between two RGBA frames of the same size. */
+export function differingPixels(a: Uint8Array, b: Uint8Array): number {
 	let count = 0;
 	for (let i = 0; i < a.length; i += 4)
-		if (
-			Math.abs((a[i] as number) - (b[i] as number)) > tolerance ||
-			Math.abs((a[i + 1] as number) - (b[i + 1] as number)) > tolerance ||
-			Math.abs((a[i + 2] as number) - (b[i + 2] as number)) > tolerance
-		)
-			count++;
+		if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) count++;
 	return count;
+}
+
+/**
+ * Pixels that differ between two RGBA frames of the same size by the image tests' rule: the color
+ * moves past their threshold, off anti-aliased edges. Some GPUs shade a few pixels a step or two
+ * differently when culling changes the draws, with nothing hidden; a hidden object moves far more.
+ */
+export function visiblyDifferingPixels(
+	a: Uint8Array,
+	b: Uint8Array,
+	width: number,
+	height: number,
+): number {
+	const { share } = compareImages(
+		{ width, height, data: a },
+		{ width, height, data: b },
+		TOLERANCE.threshold,
+	);
+	return Math.round(share * width * height);
 }
 
 /**
@@ -119,14 +132,6 @@ export const LATE_IN_MOTION_LIMIT = 0;
  * a building's worth of what came into view, where one frame of the drive would show only a sliver.
  */
 export const JUMP_SHARE = 0.001;
-
-/**
- * The levels of 255 by which a pixel's color may differ in motion and still count as the same. The
- * frames in motion and the still references differ a little in their shading, by up to 8 levels in
- * a few dozen pixels at the route's start on the Mac, with culling on or off. A building that
- * culling hid would change its pixels by far more.
- */
-export const MOTION_TOLERANCE = 24;
 
 /**
  * The shares of the route where the check in motion jumps, evenly spread from the route's start:

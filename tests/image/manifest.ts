@@ -42,7 +42,7 @@ import { BACKGROUND_IMAGE } from '../../bench/scenes/texture-background.ts';
 import { TRANSMISSION_IMAGE } from '../../bench/scenes/transmission.ts';
 import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
-import { DEMOS } from '../../examples/demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
@@ -494,7 +494,9 @@ export const MINIMAP_SKETCH = 'tests/pages/sketches/minimap-sketch.ts';
  * screen in the scene shows it, on every tier. Four boxes at the map's corners show that the map
  * stands upright and unmirrored on both GPU paths: WebGPU turns the image over in a copy, and
  * WebGL2 draws it in that order. The map camera sees the screen, which the pass leaves out. With
- * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes.
+ * ?clear the map clears to a color of its own, and with ?layers it draws only the boxes. With
+ * ?lamps a point light and a spot light light the map as they light the main view, and the map
+ * draws the sun's and the spot light's shadows where the main view draws them.
  * Compatibility mode draws the 8-bit path with MSAA, where the copy turns the pass's display color
  * back to linear. The scene pass spec checks the boxes' colors in the screen's corners.
  */
@@ -504,7 +506,12 @@ function minimapTests(): ImageTest[] {
 		sketch: `${MINIMAP_SKETCH}${query}`,
 		hold: 0,
 	});
-	return [test('minimap', ''), test('minimap-clear', '?clear'), test('minimap-layers', '?layers')];
+	return [
+		test('minimap', ''),
+		test('minimap-clear', '?clear'),
+		test('minimap-layers', '?layers'),
+		test('minimap-lamps', '?lamps'),
+	];
 }
 
 /** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
@@ -517,8 +524,12 @@ export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
  * draws it. A magenta box lies wholly below the floor, and a yellow post stands half below it; the
  * pass clips both at the plane, so no magenta shows. The water test ripples the plane with sine
  * waves, which bend where it reads the texture, and gives it water's dark color and reflectance.
- * The quarter test draws the reflection at a quarter of the render size. The reflection spec
- * checks where the boxes' reflections land, and that no magenta shows.
+ * The quarter test draws the reflection at a quarter of the render size. The lamps test lights the
+ * boxes with a point light and a spot light, which their reflections show too. The scale-50 test
+ * draws the frame at a render scale of 0.5, where the reflection's texture takes the smaller size
+ * and the pass fills it whole. The batches test builds each box from an instance batch, the red one
+ * with a custom material, so the pass draws both kinds of batch. The reflection spec checks where
+ * the boxes' reflections land, and that no magenta shows.
  */
 function reflectionTests(): ImageTest[] {
 	const test = (name: string, query: string): ImageTest => ({
@@ -530,6 +541,9 @@ function reflectionTests(): ImageTest[] {
 		test('reflection-mirror', ''),
 		test('reflection-water', '?water'),
 		test('reflection-quarter', '?quarter'),
+		test('reflection-lamps', '?lamps'),
+		test('reflection-scale-50', '?half'),
+		test('reflection-batches', '?batches'),
 	];
 }
 
@@ -821,6 +835,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		reference: 'asset-scene',
 		tolerance: OPTIMIZED_TOLERANCE,
 		deviceTolerance: OPTIMIZED_TOLERANCE,
+	},
+	// The outputs of assets convert: a skinned, morphed column from FBX halfway through its clip,
+	// the same column from OBJ, a pyramid from STL with face colors and a cube from PLY with corner
+	// colors. Each must load and draw alike on every tier.
+	{
+		name: 'converted-models',
+		sketch: 'tests/pages/sketches/converted-models-sketch.ts',
+		size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
+		hold: 0.5,
 	},
 	// Copies of a glTF model made in code: scene.instantiate, scene.clone, a model with 16-bit
 	// positions, and an instance batch from scene.createInstances whose rows move every part of the
@@ -1264,6 +1287,15 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 		sameOnEveryTier: true,
 	},
+	// The characters with joints turned on top of the clip: rotations set and added, and look-ats
+	// of chains at full and half weight, which the job workers apply before the skinning matrices.
+	{
+		name: 'skinning-joints',
+		sketch: 'tests/pages/sketches/skinning-sketch.ts?joints',
+		hold: SKINNING_HOLD,
+		size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
+		sameOnEveryTier: true,
+	},
 	// The characters with tangents and a normal map of grooves, which light alike only when every
 	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
 	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
@@ -1649,6 +1681,48 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold,
 		size: [480, 270] as const,
 	})),
+	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
+	// each of three switch distances. Every GPU path must draw the first path's image, so each
+	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
+	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
+	// to coverage, and one copy casts a coarser level's shadow onto a wall.
+	{
+		name: 'lod',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-fade',
+		sketch: 'tests/pages/sketches/lod-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The fading bands of a mask smoothed by alpha to coverage, whose alpha passes every pixel, must
+	// draw the opaque bands' image.
+	{
+		name: 'lod-fade-coverage',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?mask',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-fade',
+	},
+	{
+		name: 'lod-shadows',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?shadows',
+		hold: 0,
+		size: [480, 270],
+	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
@@ -1666,6 +1740,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		size: [480, 270],
 		modes: ALL_MODES,
+	},
+	// The inputs that three.js's ShaderMaterial gives its shaders: the instance's row and the
+	// object's id in static and dynamic batches and on meshes, the camera's and the object's
+	// matrices, which green patches check, the second texture coordinates with and without a second
+	// set, and the pixel's position and depth.
+	{
+		name: 'custom-inputs',
+		sketch: 'tests/pages/sketches/custom-inputs-sketch.ts',
+		hold: 1,
+		size: [480, 270],
 	},
 	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
 	// stages of its progress.
@@ -1912,22 +1996,27 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			},
 		}),
 	),
-	// Each feature demo in examples/, held at the demo's time.
+	// Each demo in examples/, held at the demo's time. A showcase scene draws its Low preset on
+	// SwiftShader, which keeps the software GPU's run short, and its full look everywhere else.
 	...DEMOS.map(
 		(demo): ImageTest => ({
 			name: `demo-${demo.name}`,
-			sketch: `examples/${demo.name}/sketch.ts`,
+			sketch: `examples/${sketchPath(demo)}`,
 			hold: demo.hold,
 			...(demo.largeWorld && { switches: ['largeWorld'] }),
 			...(demo.timeoutSeconds !== undefined && { timeoutSeconds: demo.timeoutSeconds }),
+			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 		}),
 	),
 	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
 	// draws its own references: the owner reviews the two frames side by side, as each draws each
 	// effect with its own technique for the same look. The instanced mode builds the same scene with
-	// batches of copies, so it borrows the scene graph's references.
+	// batches of copies, so it borrows the scene graph's references, unless three.js draws that mode
+	// with another renderer, whose effects differ: then it keeps references of its own.
 	...COMPARISONS.flatMap((comparison) =>
 		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
+			const ownRenderer =
+				engine === 'threejs' && comparison.threeRenderers?.instanced !== undefined;
 			const name = `compare-${comparison.name}-${engine}`;
 			const test: ImageTest = {
 				name,
@@ -1936,7 +2025,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				size: [640, 360],
 				hold: comparison.hold.seconds,
 				tiers: ['webgpu', 'webgl2'],
-				timeoutSeconds: 90,
+				timeoutSeconds: comparison.holdTimeoutSeconds ?? 90,
+				...(comparison.swiftShaderHoldCount !== undefined && {
+					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
+				}),
 			};
 			return [
 				test,
@@ -1944,7 +2036,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 					...test,
 					name: `${name}-instanced`,
 					switches: [...(test.switches ?? []), 'mode=instanced'],
-					reference: name,
+					...(!ownRenderer && { reference: name }),
 				},
 			];
 		}),

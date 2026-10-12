@@ -1,6 +1,6 @@
 # null3D recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A version in parentheses marks a recipe whose APIs arrive after 0.1. Check the docs status before using them.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Check the docs status before using a part.
 
 ## Contents
 
@@ -22,7 +22,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
-19. Water and mirror floors with a reflection (0.2)
+19. Water and mirror floors with a reflection
 
 ## 1. Start a new project
 
@@ -40,7 +40,7 @@ import null3d from '@null3d/vite-plugin';
 export default defineConfig({ plugins: [null3d()] });
 ```
 
-Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. Templates from `bunx @null3d/cli create` come in 0.3. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
@@ -86,7 +86,7 @@ return {
 };
 ```
 
-For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`.
+For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips, as setting `bone.quaternion` after `mixer.update` does in three.js. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
 
 The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
@@ -545,7 +545,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 `onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
 
-## 19. Water and mirror floors with a reflection (0.2)
+## 19. Water and mirror floors with a reflection
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -589,4 +589,4 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky and the sun's light and shadows, but no point or spot lights yet. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.

@@ -1,11 +1,13 @@
 name: CI
 
-# Every run tests every job, except on a draft pull request, as D-99 (.dev/decisions) decides, and
-# .dev/pull-requests.md lists them. A pull request that is ready for review runs every job on
+# Every run tests every job, except on a draft or a docs-only pull request, as D-99 (.dev/decisions)
+# decides, and .dev/pull-requests.md lists them. A pull request that is ready for review runs every job on
 # GitHub's merge of it into main, so it merges once its run passes. A draft runs only the quick
 # checks, so that unfinished work holds no browser or macOS machines. Each push to main runs every
 # job again on the code that the merge made, which no pull request's run tested as a whole. A run
 # started by hand runs every job too: gh workflow run ci.yml --ref main
+# A docs-only pull request runs only the build, the docs, style, skills and unit checks, and draws
+# the skill sketches when it changes them. The changes job decides what each run tests.
 on:
   push:
     branches: [main]
@@ -36,6 +38,52 @@ env:
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
+  changes:
+    # What a run tests, from the files that a pull request changes. Every other event tests
+    # everything. The merge commit's first parent is main, so the diff holds the pull request's
+    # changes alone, and a rename counts as both its old and its new path.
+    # - code: false when every file is a docs file: a Markdown file, or a file in .dev/, docs/ or
+    #   skills/. Only the docs-and-tools job reads those, apart from the sketches below. The other
+    #   quick checks and every browser, benchmark and macOS job then skip.
+    # - full: the browser, city, benchmark page and real-browser jobs run. A draft skips them too.
+    # - allocation: the allocation job runs, in a full run that changes the code whose per-frame
+    #   allocation it checks, or the check itself.
+    # - sketches: a docs-only pull request that is no draft changes the skills' or the cookbook's
+    #   Markdown, whose complete sketches the browser tests draw. The skill-sketches job draws them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      full: ${{ steps.paths.outputs.full }}
+      allocation: ${{ steps.paths.outputs.allocation }}
+      sketches: ${{ steps.paths.outputs.sketches }}
+    steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+      - name: Find what the pull request changes
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          DOCS: ^(\.dev/|docs/|skills/)|\.md$
+          SKETCHES: ^(skills|docs/cookbook)/.*\.md$
+          ALLOCATION: ^(packages/engine/src/(render|gpu|sketch)/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/(harness|s1-sketch|sketch-common)\.ts$|\.github/workflows/ci\.yml$)
+        run: |
+          code=true full=true allocation=true sketches=false
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+            echo "$files"
+            if [ -n "$files" ] && ! grep -qvE "$DOCS" <<< "$files"; then code=false; fi
+            if [ "$code" = false ] || [ "$DRAFT" = true ]; then full=false; fi
+            if [ "$full" = false ] || ! grep -qE "$ALLOCATION" <<< "$files"; then allocation=false; fi
+            if [ "$code" = false ] && [ "$DRAFT" != true ] && grep -qE "$SKETCHES" <<< "$files"; then
+              sketches=true
+            fi
+          fi
+          printf 'code=%s\nfull=%s\nallocation=%s\nsketches=%s\n' "$code" "$full" "$allocation" "$sketches" | tee -a "$GITHUB_OUTPUT"
+
   docs-and-tools:
     # The type check and the unit tests read the shader modules, which the build job makes.
     needs: build
@@ -89,6 +137,8 @@ jobs:
   rust-lint:
     # Formatting and Clippy. Clippy only checks the code and the tests compile it in full, so the
     # two share almost no build output and run as jobs of their own.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -115,6 +165,8 @@ jobs:
   rust-tests:
     # The Rust tests through cargo-nextest, which runs the tests of every test file at once.
     # cargo test runs the files one after another, and a few slow files then set the job's time.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
     timeout-minutes: 25
@@ -181,6 +233,8 @@ jobs:
     # run on main keeps its own commit's sizes (wasm-checks below). So the sizes stay in the Actions
     # cache by commit, and a run that finds them builds nothing. Otherwise this job builds the base
     # beside the build job, and the size check waits for both.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -236,7 +290,8 @@ jobs:
     # base's sizes from the size-base job. The build job builds the same files with the same flags,
     # so the check builds no WebAssembly. A run on main then keeps its commit's sizes, as the base of
     # the runs that build on it.
-    needs: [build, size-base]
+    needs: [build, size-base, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -274,7 +329,8 @@ jobs:
   shader-compiler:
     # The shader crate's build tests again through the build job's shader compiler, which must give
     # the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests.
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -303,7 +359,8 @@ jobs:
     # the command-line tool's test command type checks the project and draws its sketch on every
     # GPU tier, and Vite builds it for production. Then the project builds a page of its own layout
     # around a copy of examples/, as the website does, and two demos must start from that build.
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -329,25 +386,26 @@ jobs:
     # time in a job of their own (tests/lib/alone.ts). `bun run test:browser-weights` works out the
     # weights, and .dev/image-tests.md says when to retune them and when to add a shard.
     name: browser (${{ matrix.part }})
-    needs: build
-    # Every run but a draft pull request's, as the bench and real-browsers jobs (D-99).
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: [build, changes]
+    # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 10, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/10 }
-          - { part: shard 2 of 10, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/10 }
-          - { part: shard 3 of 10, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/10 }
-          - { part: shard 4 of 10, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/10 }
-          - { part: shard 5 of 10, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/10 }
-          - { part: shard 6 of 10, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/10 }
-          - { part: shard 7 of 10, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/10 }
-          - { part: shard 8 of 10, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/10 }
-          - { part: shard 9 of 10, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/10 }
-          - { part: shard 10 of 10, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/10 }
+          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
+          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
+          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
+          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
+          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
+          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
+          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
+          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
+          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
+          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
+          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -368,7 +426,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "90:213:427:181:160:121:115:174:120:244"
+          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -384,8 +442,8 @@ jobs:
     # without the cache takes about 6 minutes here, which every shard of a job could not spare
     # (D-106). With the cache, which a pull request reads from main, it takes seconds.
     name: city files
-    needs: build
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: [build, changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -408,8 +466,8 @@ jobs:
     # S6's image tests, the browser tests that load the city's files, which the browser job's shards
     # leave out, so that only this job waits for the city job.
     name: browser (the city)
-    needs: [build, city]
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: [build, city, changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -437,19 +495,56 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  skill-sketches:
+    # The complete sketches in the skills' and the cookbook's Markdown, drawn on every GPU tier, for
+    # a docs-only pull request that changes that Markdown. Every full run draws them in the browser
+    # job's shards instead.
+    name: browser (skill sketches)
+    needs: [build, changes]
+    if: needs.changes.outputs.sketches == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+      - uses: ./.github/actions/playwright-chromium
+      # The cookbook's recipes load sample files.
+      - uses: ./.github/actions/samples
+      - name: The skill sketches on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser skill-sketches.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-skill-sketches
+          path: test-results/
+          if-no-files-found: ignore
+
   bench:
     # The benchmark pages' tests on SwiftShader, in two shards of about equal measured time.
     # Playwright's own --shard splits the test list into equal counts in file order, and these
     # tests differ too much in length for that: it gave one shard 221 tests and over 13 minutes,
-    # and the other 4 tests and 3 minutes. Shard 1 runs the page tests of the scenes that
-    # BENCH_SHARD_1 names, and shard 2 every other test, so each test runs in exactly one shard.
+    # and the other 4 tests and 3 minutes. Shard 1 runs the tests that BENCH_SHARD_1 names, and
+    # shard 2 every other test, so each test runs in exactly one shard.
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
+    # Shard 2 takes every parity test. Each scene's tests run in order in one worker, and the
+    # scenes spread over both workers. In main's run 38176334909 (11 October 2026), the parity
+    # tests took 13.2 minutes one after another, and shard 2's other tests 3.1 minutes, so shard
+    # 2's tests should take about 8.2 minutes on two workers. Shard 1's page tests ended at 7.2.
+    # .dev/benchmarks.md holds the figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so both shards need the city's files.
-    needs: [build, city]
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: [build, city, changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -489,31 +584,6 @@ jobs:
             target/playwright-bench/
           if-no-files-found: ignore
 
-  allocation-paths:
-    # Whether the allocation job runs: on a pull request only when it changes the code whose
-    # per-frame allocation that job checks, or the check itself; on every other event always. The
-    # merge commit's first parent is main, so the diff holds the pull request's changes alone.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      run: ${{ steps.paths.outputs.run }}
-    steps:
-      - uses: actions/checkout@v5
-        if: github.event_name == 'pull_request'
-        with:
-          fetch-depth: 2
-      - name: Find whether the pull request changes what the allocation check covers
-        id: paths
-        env:
-          EVENT: ${{ github.event_name }}
-          PATHS: ^(packages/engine/src/(render|gpu|sketch)/|bench/allocation\.ts$|bench/lib/(allocation|devtools|serve|source-names)\.ts$|bench/pages/null3d/(harness|s1-sketch|sketch-common)\.ts$|\.github/workflows/ci\.yml$)
-        run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE "$PATHS"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-
   allocation:
     # The per-frame allocation check, `bun run bench:allocation`, on S1 with each GPU path, by the
     # owner's ruling of 9 October 2026. Each GPU path takes a machine of its own, and the check is
@@ -524,8 +594,8 @@ jobs:
     # browser optimizes after fewer calls, so the warm-up is 1,200 frames and the job takes about 4
     # minutes.
     name: allocation (${{ matrix.gpu }})
-    needs: [build, city, allocation-paths]
-    if: needs.allocation-paths.outputs.run == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    needs: [build, city, changes]
+    if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -561,8 +631,8 @@ jobs:
     # add it to the list, and raise the count in the name and the command.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
-    needs: [build, city]
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: [build, city, changes]
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
     # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
     # each time the runner replaces it. The restart pages wait for Safari to give back the memory
@@ -635,12 +705,14 @@ jobs:
   ci-passed:
     # The one check of this workflow that main's rules require, so that the jobs above can split into
     # shards and change their names with no change to the rules. It runs after every other job, also
-    # after a failure or a cancel, and fails unless each job passed. On a draft pull request the
-    # browser, city, benchmark page, allocation and real-browser jobs are skipped by their own
-    # condition. The allocation job also skips a pull request that changes nothing it checks. In
-    # every other run, every job must pass.
+    # after a failure or a cancel, and fails unless each job passed. A job may skip only when the
+    # changes job passed and its answer that gates the job is false: a docs-only pull request skips
+    # every job but the build and docs-and-tools, a draft skips the full run's jobs, the allocation
+    # job skips a pull request that changes nothing it checks, and the skill sketches job skips
+    # every run but a docs-only one that changes them.
     if: always()
     needs:
+      - changes
       - docs-and-tools
       - rust-lint
       - rust-tests
@@ -652,21 +724,24 @@ jobs:
       - city
       - browser
       - browser-city
+      - skill-sketches
       - bench
-      - allocation-paths
       - allocation
       - real-browsers
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Each job that may skip, and the changes job's answer that gates it, as in the job's condition.
       - name: Every job passed
         env:
           NEEDS: ${{ toJSON(needs) }}
-          FULL_RUN: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-          ALLOCATION_RUN: ${{ needs.allocation-paths.outputs.run == 'true' }}
         run: |
-          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
-          jq -e --argjson full "$FULL_RUN" --argjson allocation "$ALLOCATION_RUN" \
-            'length > 0 and all(to_entries[]; .value.result == "success" or (.value.result == "skipped"
-              and (($full | not) or (.key == "allocation" and ($allocation | not)))))' \
+          jq -r '"changes: \(.changes.outputs)", (to_entries[] | "\(.key): \(.value.result)")' <<< "$NEEDS"
+          jq -e '.changes.outputs as $run | {
+              "rust-lint": "code", "rust-tests": "code", "size-base": "code", "wasm-checks": "code",
+              "shader-compiler": "code", "packages": "code", "city": "full", "browser": "full",
+              "browser-city": "full", "bench": "full", "real-browsers": "full",
+              "allocation": "allocation", "skill-sketches": "sketches"
+            } as $gate | length > 0 and all(to_entries[]; .value.result == "success"
+              or (.value.result == "skipped" and $run[$gate[.key] // ""] == "false"))' \
             <<< "$NEEDS" > /dev/null

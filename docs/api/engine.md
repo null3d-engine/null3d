@@ -85,6 +85,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
+| `shadowCascades`, `shadowMapSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
 | `depthPrepass` | `true` on WebGL2 and `false` on WebGPU, on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
@@ -99,6 +100,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md). The `?hold=` switch wins over it. |
+| `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
 | `stats` | false | `true` shows the stats overlay from the first frame, and `{ collapsed: true }` shows it with its card closed: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
 ## A transparent canvas
@@ -132,7 +134,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 ## What the engine reports
 
 - `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum too. `renderFallback` says why the page draws where a worker was meant to, or is null.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine

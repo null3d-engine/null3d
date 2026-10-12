@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-EX15 on 9 October 2026, for the owner's review. Date: 2026-10-09. Task: M2-EX15.
 
-Summary: `render.addPass({ kind: 'reflection', writes, plane })` draws the camera's view mirrored across a plane into a texture. The plane is the projection's oblique near plane, so nothing below it shows and no shader pays for the clip. The reflection draws the scene's background, and no point or spot lights yet. A custom material reads the texture with `null3d::reflection::reflection_uv`. It sets the surface's new `reflection`, which the engine lights in place of the environment's reflection. The presets draw it at a quarter, half, half and the whole render size, from Low to Ultra. In S1 on the Mac's GPU, it added 0.63 ms per frame at half size and 0.73 ms at full size on WebGPU, and 0.35 and 0.24 ms on WebGL2.
+Summary: `render.addPass({ kind: 'reflection', writes, plane })` draws the camera's view mirrored across a plane into a texture. The plane is the projection's oblique near plane, so nothing below it shows and no shader pays for the clip. The reflection draws the scene's background, and, since 11 October 2026, the point and spot lights that it sees. A custom material reads the texture with `null3d::reflection::reflection_uv`. It sets the surface's new `reflection`, which the engine lights in place of the environment's reflection. The presets draw it at a quarter, half, half and the whole render size, from Low to Ultra. In S1 on the Mac's GPU, it added 0.63 ms per frame at half size and 0.73 ms at full size on WebGPU, and 0.35 and 0.24 ms on WebGL2.
 
 ## Question
 
@@ -72,11 +72,21 @@ The surface's `reflection` holds the light from the mirror direction in `rgb`, a
 
 Point and spot lights stay out, as in scene passes. The light grid lists each cluster's lights for the camera's view, and a shader finds a point's cluster from the view's own matrix. The reflection's matrix finds the wrong cluster. Using the camera's grid would need the camera's matrix in every view's values and a change to every lit shader. It would still miss the lamps by the banks that only the mirror sees. A grid of its own for each view is D-104's follow-up task, about two days on both GPU paths. So the limit is documented, and development builds warn once. A lamp's own glowing material still shows in the reflection.
 
+Update, 11 October 2026: D-104's follow-up task gave each camera view its own grid, the reflection's included. The reflection's grid takes its planes from the reflection's own matrix, so a shader finds the right cluster. The reflection now draws the lamps that it sees, and the warning is gone ([D-104](D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)).
+
 The 8-bit path serves compatibility mode with MSAA and WebGL2 without float targets. There the reflection's texture holds tone mapped color, as a scene pass's does ([D-104](D-104-scene-passes.md#display-color-on-the-8-bit-path-owner-8-october-2026)). The material applies the tone curve again, so the reflected sky looks grayer there. The image tests show it in compatibility mode.
 
 ### Size and pace
 
 A reflection draws the scene a second time, so its cost follows its pixels and what it sees. The option `scale` takes 1, 0.5 or 0.25 of the render size each way. Without it, the preset's `reflectionScale` sets it, and a change during play makes the texture again on the next frame. The option `every` draws the pass in one frame of N, the first included, through the view's own turns in the core: no sketch code runs per frame. The texture keeps its image between, so the reflection lags a moving camera by up to N - 1 frames. A view with its own size culls once, without occlusion culling, so the reflection does too.
+
+Update, 11 October 2026: below a render scale of 1, the reflection drew into the top-left corner of its texture, as the scene's own targets do, while `reflection_uv` reads the whole texture. The image test `reflection-scale-50` showed the floor black at a render scale of 0.5 on all three tiers. Three fixes were weighed:
+
+- A texture of a share of the canvas's size, which the pass fills at any render scale. The reflection would then cost the same when the governor lowers the render scale, which it does exactly when the GPU is late.
+- Reading the corner in `reflection_uv`. Every material would need the render scale, and a ripple's offset would read past the corner's edge into texels that the pass did not draw.
+- A texture of the render size's share, made again when the render scale changes (`Size::Scaled` in the render graph).
+
+The third was chosen. Each pixel of the texture maps to one of the pass, a material reads it from 0 to 1 across as before, and the reflection gets cheaper with the render scale. Governor steps come seconds apart, so making the texture again costs little: one new texture and new bind groups in that frame. A reflection that draws in one frame of N draws at once into a texture of a new size, which holds no image yet.
 
 ## Data
 
