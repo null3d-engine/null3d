@@ -240,13 +240,38 @@ fn item_name(item: &str) -> Option<&str> {
     ident(before).map(|start| &before[start..])
 }
 
+/// The name of the function that an item defines, or `None` for an item that defines none: a
+/// function's head, after its attribute lines, opens its body.
+fn function_name(item: &str) -> Option<&str> {
+    let head = item
+        .lines()
+        .find(|line| !line.trim_start().starts_with('@'))?;
+    if head.trim_end().ends_with('{') {
+        item_name(item)
+    } else {
+        None
+    }
+}
+
 /// The items of `piece` that `host` lacks, without the hooks, in the order of `piece`.
+///
+/// A function that the host defines is the host's own, even where its text differs: naga makes
+/// some names unique across the whole module, such as the flag that each GLSL loop keeps, so the
+/// effect's items before a host function can change that function's text in the piece's build.
+/// Each host function stays once, where the host's build puts it. A piece that held one again
+/// would define it twice, and the joined GLSL would call the functions after the chain before it
+/// defines them.
 fn added_items(host: &str, piece: &str) -> Vec<String> {
-    let own: HashSet<String> = top_level_items(host).into_iter().collect();
+    let own_items = top_level_items(host);
+    let own: HashSet<&str> = own_items.iter().map(String::as_str).collect();
+    let own_functions: HashSet<&str> = own_items.iter().filter_map(|i| function_name(i)).collect();
     top_level_items(piece)
         .into_iter()
-        .filter(|item| !own.contains(item))
-        .filter(|item| !item_name(item).is_some_and(|name| HOOKS.contains(&name)))
+        .filter(|item| !own.contains(item.as_str()))
+        .filter(|item| {
+            !function_name(item)
+                .is_some_and(|name| HOOKS.contains(&name) || own_functions.contains(name))
+        })
         .collect()
 }
 

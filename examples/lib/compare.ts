@@ -234,9 +234,12 @@ export async function startComparison(options: ComparisonOptions): Promise<Compa
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
 	const mode = options.mode ?? 'scene-graph';
 	const common = { comparison, mode, count, effects, plan, pixelRatio, cls, gpu };
-	return options.engine === 'null3d'
-		? startNull3d(canvas, options, common)
-		: startThree(canvas, options, common, threeRendererFor(comparison, gpu, options.threeRenderer));
+	if (options.engine === 'null3d') return startNull3d(canvas, options, common);
+	// A mode that only WebGPURenderer can draw takes it on both GPU paths: in its WebGL2 mode on
+	// the WebGL2 path.
+	const needed = comparison.threeRenderers?.[mode];
+	const renderer = needed ?? threeRendererFor(comparison, gpu, options.threeRenderer);
+	return startThree(canvas, options, common, renderer, needed !== undefined && gpu === 'webgl2');
 }
 
 interface Common {
@@ -397,6 +400,7 @@ async function startThree(
 	options: ComparisonOptions,
 	{ comparison, mode, count, effects, plan, pixelRatio, cls, gpu }: Common,
 	renderer: ThreeRenderer,
+	forceWebGL: boolean,
 ): Promise<ComparisonRun> {
 	const worker = await threeThread(comparison);
 	const send = (message: ToThree, transfer: Transferable[] = []) =>
@@ -420,6 +424,7 @@ async function startThree(
 		mode,
 		effects,
 		renderer,
+		forceWebGL,
 		width,
 		height,
 		pixelRatio: held ? 1 : pixelRatio,

@@ -1804,18 +1804,21 @@ impl FrameGraph {
 
     /// Compiles the graph if its passes changed, then sets the canvas size and makes the plan's
     /// textures where the canvas or the plan changed, so the frame's targets match the canvas. The
-    /// frame draws at render scale `scale`, which makes no texture.
+    /// frame draws at render scale `scale`. A new render scale makes again only the textures whose
+    /// size follows it ([`Size::Scaled`]).
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         canvas: (u32, u32),
         scale: RenderScale,
     ) -> Result<(), RecordError> {
+        let previous = self.scale;
         self.scale = if self.final_runs() {
             scale
         } else {
             RenderScale::FULL
         };
+        let rescaled = self.scale != previous;
         let compiled = self.graph.compile().map_err(RecordError::Graph)?
             | std::mem::take(&mut self.compiled_early);
         let canvas = (canvas.0.max(1), canvas.1.max(1));
@@ -1824,7 +1827,7 @@ impl FrameGraph {
             list.push(Op::ResizeCanvas, &[canvas.0, canvas.1])?;
             self.canvas = canvas;
         }
-        self.textures_made = (compiled || resized) && self.make_textures(list)?;
+        self.textures_made = (compiled || resized || rescaled) && self.make_textures(list)?;
         Ok(())
     }
 
@@ -1927,9 +1930,11 @@ impl FrameGraph {
         }
     }
 
-    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects, once
-    /// the folded effects draw alone, as a group waits (see [`EffectPass::request_pipelines`]), and
-    /// plans the effects' passes with each group and the fold whose pipeline is built.
+    /// Asks for the pipeline of the final pass's fold build while the sketch folds effects and the
+    /// fold may draw, once the folded effects draw alone, as a group waits (see
+    /// [`EffectPass::request_pipelines`]). A fold that may not draw, beside bloom for one, builds
+    /// nothing until it may. It then plans the effects' passes with each group and the fold whose
+    /// pipeline is built.
     fn request_effect_joins(&mut self, pipelines: &mut PipelineCache, pipelines_built: u32) {
         let count = self.effect_count;
         let alone = |first: usize, pipelines: &PipelineCache| {
@@ -1938,12 +1943,12 @@ impl FrameGraph {
                 .is_some_and(|pass| pass.alone_built(first..count, pipelines, pipelines_built))
         };
         let fold = match self.effect_joins.fold_of(count) {
-            Some((first, template)) if alone(first, pipelines) => {
+            Some((first, template)) if self.may_fold() && alone(first, pipelines) => {
                 let multisampled = self.gpu_culling && self.samples > 1 && self.folded_depth(first);
                 let id = self
                     .final_pass
                     .request_fold(pipelines, template, multisampled);
-                (self.may_fold() && pipelines.built(id, pipelines_built)).then_some(first)
+                pipelines.built(id, pipelines_built).then_some(first)
             }
             _ => None,
         };
@@ -2249,7 +2254,7 @@ impl FrameGraph {
             let target = texture.target;
             let made = (
                 *texture,
-                texture.size.extent(self.canvas),
+                texture.size.made(self.canvas, self.scale),
                 into_canvas && target.samples > 1,
             );
             let by_layer =
@@ -2460,7 +2465,7 @@ impl FrameGraph {
     /// into all of them records nothing.
     fn set_render_area(&self, list: &mut DrawList, size: Size) -> Result<(), RecordError> {
         let (width, height) = size.viewport(self.canvas, self.scale);
-        if (width, height) == size.extent(self.canvas) {
+        if (width, height) == size.made(self.canvas, self.scale) {
             return Ok(());
         }
         list.push(
@@ -2759,10 +2764,11 @@ mod tests {
             self.sync_views(views, &names);
         }
     }
+    use null3d_gpu::drawlist::template::CUSTOM_FIRST as CUSTOM;
     use null3d_gpu::drawlist::{layout as bind_layout, permutation};
 
     #[test]
-    fn a_mirror_view_draws_at_its_share_of_the_render_size_and_culls_once() {
+    fn a_mirror_view_fills_its_texture_at_a_share_of_the_render_size_and_culls_once() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.set_occlusion(true);
         let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
@@ -2773,7 +2779,7 @@ mod tests {
         reflection.follow_camera(1, 1);
         frames.sync(&[View::default(), reflection, shown()]);
         let size = |view: usize| frames.graph().pass_size(frames.opaque[view]);
-        assert_eq!(size(1), Size::HALF);
+        assert_eq!(size(1), Size::Scaled(1));
         assert_eq!(size(2), Size::Full);
         assert!(frames.occludes(ViewId::CAMERA));
         assert!(
@@ -2784,7 +2790,40 @@ mod tests {
         // A new share of the render size declares the passes again.
         reflection.follow_camera(2, 1);
         frames.sync(&[View::default(), reflection, shown()]);
-        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::QUARTER);
+        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::Scaled(2));
+    }
+
+    #[test]
+    fn a_mirror_views_texture_is_made_again_at_each_new_render_scale() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.set_scaling(true);
+        let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
+        let mut reflection = View::mirror(mirror, None, None).with_target(ViewTarget {
+            shown: true,
+            ..ViewTarget::default()
+        });
+        reflection.follow_camera(1, 1);
+        frames.sync(&[View::default(), reflection]);
+        let mut list = DrawList::with_capacity(256);
+        let half = RenderScale::from_thousandths(500);
+        let made = |frames: &FrameGraph| frames.made.iter().map(|made| made.1).collect::<Vec<_>>();
+        frames.prepare(&mut list, (64, 48), half).unwrap();
+        assert!(frames.textures_made());
+        assert!(
+            made(&frames).contains(&(16, 12)),
+            "half of the render size of 32 x 24: {:?}",
+            made(&frames)
+        );
+        frames.prepare(&mut list, (64, 48), half).unwrap();
+        assert!(!frames.textures_made(), "the same scale makes nothing");
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        assert!(frames.textures_made());
+        assert!(made(&frames).contains(&(32, 24)));
+        assert!(!made(&frames).contains(&(16, 12)));
+        // The camera's own targets keep the canvas's size at any render scale.
+        assert!(made(&frames).contains(&(64, 48)));
     }
 
     #[test]
@@ -3466,7 +3505,11 @@ mod tests {
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        let chain = [effect(64, false), effect(65, true), effect(66, false)];
+        let chain = [
+            effect(CUSTOM, false),
+            effect(CUSTOM + 1, true),
+            effect(CUSTOM + 2, false),
+        ];
         frames.set_effects(&chain, &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         frames.sync(&[View::default()]);
@@ -3491,12 +3534,16 @@ mod tests {
         let keys = pipelines.keys();
         let templates: Vec<(u32, u32)> = keys
             .iter()
-            .filter(|key| key.template >= 64)
+            .filter(|key| key.template >= CUSTOM)
             .map(|key| (key.template, key.permutation))
             .collect();
         assert_eq!(
             templates,
-            [(64, 0), (65, permutation::DEPTH_MULTISAMPLED), (66, 0)]
+            [
+                (CUSTOM, 0),
+                (CUSTOM + 1, permutation::DEPTH_MULTISAMPLED),
+                (CUSTOM + 2, 0)
+            ]
         );
         let mut arena = UploadArena::default();
         arena.reset(frames.upload_bound());
@@ -3570,7 +3617,7 @@ mod tests {
         assert_eq!(frames.upload_bound(), bound);
 
         let effect = Effect {
-            template: 64,
+            template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };
@@ -3678,9 +3725,13 @@ mod tests {
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
         };
-        let chain = [effect(64, false), effect(65, false), effect(66, true)];
+        let chain = [
+            effect(CUSTOM, false),
+            effect(CUSTOM + 1, false),
+            effect(CUSTOM + 2, true),
+        ];
         let mut joins = EffectJoins::default();
-        joins.groups[1] = (2, 90);
+        joins.groups[1] = (2, CUSTOM + 10);
         let mut pipelines = PipelineCache::default();
         // Frames after the first: a pipeline draws once a frame drew with it built.
         let frame = |frames: &mut FrameGraph,
@@ -3705,7 +3756,12 @@ mod tests {
         // them, and then as one.
         let names = frame(&mut frames, &mut pipelines, &joins, 5, &mut list);
         assert_eq!(effect_passes(&names), 3);
-        assert!(pipelines.keys().iter().all(|key| key.template != 90));
+        assert!(
+            pipelines
+                .keys()
+                .iter()
+                .all(|key| key.template != CUSTOM + 10)
+        );
         let names = frame(&mut frames, &mut pipelines, &joins, 6, &mut list);
         assert_eq!(effect_passes(&names), 3);
         let names = frame(&mut frames, &mut pipelines, &joins, 7, &mut list);
@@ -3713,7 +3769,7 @@ mod tests {
         let group = pipelines
             .keys()
             .iter()
-            .find(|key| key.template == 90)
+            .find(|key| key.template == CUSTOM + 10)
             .expect("the group asked for its pipeline");
         assert_eq!(group.permutation, permutation::DEPTH_MULTISAMPLED);
         let mut arena = UploadArena::default();
@@ -3731,7 +3787,7 @@ mod tests {
 
         // Folded, the group's effects leave their passes, and the final pass reads the first
         // effect's target with its fold build, once that build's pipeline is built.
-        joins.fold = Some((1, 91));
+        joins.fold = Some((1, CUSTOM + 11));
         let names = frame(&mut frames, &mut pipelines, &joins, 8, &mut list);
         assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
         let names = frame(&mut frames, &mut pipelines, &joins, 9, &mut list);
@@ -3739,7 +3795,7 @@ mod tests {
         let fold = pipelines
             .keys()
             .iter()
-            .position(|key| key.template == 91)
+            .position(|key| key.template == CUSTOM + 11)
             .expect("the final pass asked for its fold build") as u32
             + 1;
         let mut arena = UploadArena::default();
@@ -3763,17 +3819,34 @@ mod tests {
                 .any(|set| set[0] == fold)
         );
 
-        // Bloom reads the effects' image, so nothing folds while it is on.
+        // Bloom reads the effects' image, so nothing folds while it is on, and a new fold builds
+        // nothing until bloom is off.
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         let names = frame(&mut frames, &mut pipelines, &joins, 10, &mut list);
         assert_eq!(effect_passes(&names), 2);
+        joins.fold = Some((1, CUSTOM + 12));
+        let names = frame(&mut frames, &mut pipelines, &joins, 11, &mut list);
+        assert_eq!(effect_passes(&names), 2);
+        let asked = |pipelines: &PipelineCache| {
+            pipelines
+                .keys()
+                .iter()
+                .any(|key| key.template == CUSTOM + 12)
+        };
+        assert!(!asked(&pipelines), "a fold beside bloom builds nothing");
+        frames.set_bloom(None, ChainFrame::default());
+        let names = frame(&mut frames, &mut pipelines, &joins, 12, &mut list);
+        assert_eq!(effect_passes(&names), 2, "the fold waits for its pipeline");
+        assert!(asked(&pipelines));
+        let names = frame(&mut frames, &mut pipelines, &joins, 13, &mut list);
+        assert_eq!(effect_passes(&names), 1);
     }
 
     #[test]
     fn the_8_bit_path_runs_no_effects() {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         let effect = Effect {
-            template: 64,
+            template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
         };

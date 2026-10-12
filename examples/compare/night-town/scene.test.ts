@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { timeOfDay } from '@null3d/engine';
 import { mergeMeshes, placed, triangleCount } from '../../lib/compare-scene';
-import { glowTexture, type ParticleRows, puffTexture, rainTexture } from '../../lib/particles';
+import { createSpriteRows, glowAtlas, puffAtlas, rainAtlas } from '../../lib/particles';
 import {
 	BLOCK_PITCH,
 	BLOCK_SIZE,
@@ -50,15 +50,6 @@ import {
 	writeRain,
 	writeSteam,
 } from './scene';
-
-/** Rows for `count` particles. */
-function rows(count: number): ParticleRows {
-	return {
-		positions: new Float32Array(count * 3),
-		sizes: new Float32Array(count * 2),
-		colors: new Float32Array(count * 4),
-	};
-}
 
 describe('Night town', () => {
 	test('the count is lights, and the town grows by whole blocks of them', () => {
@@ -285,16 +276,16 @@ describe('Night town', () => {
 		expect(share).toBeLessThan(0.6);
 		const street = streetMaps();
 		expect(street.puddles.data.length).toBe(street.puddles.size ** 2 * 4);
-		for (const t of [rainTexture(), puffTexture(), glowTexture()])
-			expect(t.data.length).toBe(t.size ** 2 * 4);
+		for (const { texture } of [rainAtlas(), puffAtlas(), glowAtlas()])
+			expect(texture.data.length).toBe(texture.size ** 2 * 4);
 	});
 
 	test('the particle writers fill their rows from the time alone', () => {
 		const town = createNightTown(9);
-		const steam = rows(9 * STEAM_PER_BLOCK);
-		const exhaust = rows(9 * CARS_PER_BLOCK * EXHAUST_PER_CAR);
-		const glows = rows(9 * GLOWS_PER_BLOCK);
-		const rain = rows(RAIN_DROPS);
+		const steam = createSpriteRows(9 * STEAM_PER_BLOCK);
+		const exhaust = createSpriteRows(9 * CARS_PER_BLOCK * EXHAUST_PER_CAR);
+		const glows = createSpriteRows(9 * GLOWS_PER_BLOCK);
+		const rain = createSpriteRows(RAIN_DROPS);
 		expect(writeSteam(town, 4, steam)).toBe(9 * STEAM_PER_BLOCK);
 		expect(writeExhaust(town, 4, exhaust)).toBe(9 * CARS_PER_BLOCK * EXHAUST_PER_CAR);
 		expect(writeGlows(town, 4, glows)).toBe(9 * GLOWS_PER_BLOCK);
@@ -309,7 +300,7 @@ describe('Night town', () => {
 			);
 		}
 		// The same time writes the same rows.
-		const again = rows(9 * STEAM_PER_BLOCK);
+		const again = createSpriteRows(9 * STEAM_PER_BLOCK);
 		writeSteam(town, 4, again);
 		expect(again.positions).toEqual(steam.positions);
 		for (let i = 3; i < steam.colors.length; i += 4)

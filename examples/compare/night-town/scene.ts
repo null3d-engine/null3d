@@ -33,7 +33,15 @@ import {
 	translated,
 	triangleCount,
 } from '../../lib/compare-scene';
-import type { ParticleRows } from '../../lib/particles';
+import {
+	addSprite,
+	createSpriteRows,
+	glowAtlas,
+	puffAtlas,
+	rainAtlas,
+	type SpriteLayer,
+	type SpriteRows,
+} from '../../lib/particles';
 import type { DeviceClass, RampPlan } from '../../lib/ramp';
 
 export const NIGHT_SEED = 7;
@@ -989,7 +997,8 @@ export function carToWorld(
 
 // Particles: steam from a manhole in each block's street and from each roof vent, exhaust behind
 // each moving car, a glow around every lamp, sign and headlight, and rain around the camera. Every
-// writer works out its rows from the simulation time and returns the particles it wrote.
+// writer works out its rows from the simulation time, from the first row, and returns the count of
+// rows it wrote.
 
 export const STEAM_PER_VENT = 9;
 /** Vents per block: the manhole and the four roofs. */
@@ -1008,10 +1017,9 @@ const pose = new Float64Array(3);
 const spot = new Float64Array(3);
 const lotScratch = new Int32Array(2);
 
-/** Writes one particle. */
-function emit(
-	rows: ParticleRows,
-	i: number,
+/** Adds one round sprite with no turn, from the first frame of its layer's atlas. */
+function sprite(
+	rows: SpriteRows,
 	x: number,
 	y: number,
 	z: number,
@@ -1021,21 +1029,13 @@ function emit(
 	b: number,
 	a: number,
 ): void {
-	rows.positions[i * 3] = x;
-	rows.positions[i * 3 + 1] = y;
-	rows.positions[i * 3 + 2] = z;
-	rows.sizes[i * 2] = size;
-	rows.sizes[i * 2 + 1] = size;
-	rows.colors[i * 4] = r;
-	rows.colors[i * 4 + 1] = g;
-	rows.colors[i * 4 + 2] = b;
-	rows.colors[i * 4 + 3] = a;
+	addSprite(rows, x, y, z, size, 0, r, g, b, a, 0);
 }
 
 /** Writes the steam of the shown blocks' vents. */
-export function writeSteam(town: NightTown, seconds: number, rows: ParticleRows): number {
+export function writeSteam(town: NightTown, seconds: number, rows: SpriteRows): number {
 	const { steam } = NIGHT_LOOK;
-	let n = 0;
+	rows.count = 0;
 	for (let b = 0; b < town.activeBlocks; b++) {
 		for (let v = 0; v < VENTS_PER_BLOCK; v++) {
 			let x: number;
@@ -1069,9 +1069,8 @@ export function writeSteam(town: NightTown, seconds: number, rows: ParticleRows)
 				const rise = age * 3.2 * scale;
 				const spread = age * 0.9 * scale;
 				const fade = smoothstep(age * 6) * (1 - age) ** 1.5;
-				emit(
+				sprite(
 					rows,
-					n++,
 					x + Math.cos(drift) * spread + age * 0.8,
 					y + rise,
 					z + Math.sin(drift) * spread,
@@ -1084,13 +1083,13 @@ export function writeSteam(town: NightTown, seconds: number, rows: ParticleRows)
 			}
 		}
 	}
-	return n;
+	return rows.count;
 }
 
 /** Writes the exhaust behind the shown blocks' moving cars. */
-export function writeExhaust(town: NightTown, seconds: number, rows: ParticleRows): number {
+export function writeExhaust(town: NightTown, seconds: number, rows: SpriteRows): number {
 	const { exhaust } = NIGHT_LOOK;
-	let n = 0;
+	rows.count = 0;
 	for (let b = 0; b < town.activeBlocks; b++)
 		for (let c = 0; c < CARS_PER_BLOCK; c++) {
 			const i = b * CARS_PER_BLOCK + c;
@@ -1101,9 +1100,8 @@ export function writeExhaust(town: NightTown, seconds: number, rows: ParticleRow
 				carToWorld(pose, TAILPIPE[0], TAILPIPE[1], TAILPIPE[2], spot);
 				const fade = smoothstep(age * 8) * (1 - age);
 				const wobble = hash01(NIGHT_SEED, i * EXHAUST_PER_CAR + k, 7) - 0.5;
-				emit(
+				sprite(
 					rows,
-					n++,
 					(spot[0] as number) + wobble * age,
 					(spot[1] as number) + age * 0.6,
 					(spot[2] as number) - wobble * age,
@@ -1115,23 +1113,22 @@ export function writeExhaust(town: NightTown, seconds: number, rows: ParticleRow
 				);
 			}
 		}
-	return n;
+	return rows.count;
 }
 
 /**
  * Writes the glows of the shown blocks: a soft halo in the haze around every lamp, sign, headlamp
  * and tail lamp, in its light's color. A sign's glow flickers with its tubes.
  */
-export function writeGlows(town: NightTown, seconds: number, rows: ParticleRows): number {
+export function writeGlows(town: NightTown, seconds: number, rows: SpriteRows): number {
 	const { glow } = NIGHT_LOOK;
-	let n = 0;
+	rows.count = 0;
 	for (let b = 0; b < town.activeBlocks; b++) {
 		for (let k = 0; k < LAMPS_PER_BLOCK; k++) {
 			lampLight(town, b, k, spot);
 			const [r, g, bl] = LAMP_LIGHT.linear;
-			emit(
+			sprite(
 				rows,
-				n++,
 				spot[0] as number,
 				(spot[1] as number) + 0.12,
 				spot[2] as number,
@@ -1149,9 +1146,8 @@ export function writeGlows(town: NightTown, seconds: number, rows: ParticleRows)
 				NEON_COLORS[town.signColor[b * SIGNS_PER_BLOCK + s] as number] as NeonColor
 			).linear;
 			const k = glow.sign * flicker;
-			emit(
+			sprite(
 				rows,
-				n++,
 				spot[0] as number,
 				spot[1] as number,
 				spot[2] as number,
@@ -1166,9 +1162,8 @@ export function writeGlows(town: NightTown, seconds: number, rows: ParticleRows)
 			carPose(town, b, c, seconds, pose);
 			for (const [x, y, z] of HEADLAMPS) {
 				carToWorld(pose, x, y, z + 0.1, spot);
-				emit(
+				sprite(
 					rows,
-					n++,
 					spot[0] as number,
 					spot[1] as number,
 					spot[2] as number,
@@ -1180,9 +1175,8 @@ export function writeGlows(town: NightTown, seconds: number, rows: ParticleRows)
 				);
 			}
 			carToWorld(pose, TAIL_LIGHT[0], TAIL_LIGHT[1], TAIL_LIGHT[2] + 0.2, spot);
-			emit(
+			sprite(
 				rows,
-				n++,
 				spot[0] as number,
 				spot[1] as number,
 				spot[2] as number,
@@ -1194,20 +1188,21 @@ export function writeGlows(town: NightTown, seconds: number, rows: ParticleRows)
 			);
 		}
 	}
-	return n;
+	return rows.count;
 }
 
 /**
  * Writes the rain: drops that fall through a box around the camera and wrap at its sides, so the
  * camera always stands in rain. Each drop's place in the box is fixed by its number.
  */
-export function writeRain(seconds: number, camera: OutArray, rows: ParticleRows): number {
+export function writeRain(seconds: number, camera: OutArray, rows: SpriteRows): number {
 	const { half, height, speed, size } = RAIN_BOX;
 	const { rain } = NIGHT_LOOK;
 	const side = 2 * half;
 	const cx = camera[0] as number;
 	const cy = camera[1] as number;
 	const cz = camera[2] as number;
+	rows.count = 0;
 	for (let i = 0; i < RAIN_DROPS; i++) {
 		const wrap = (base: number, at: number) =>
 			at + ((((base - at) % side) + side * 1.5) % side) - half;
@@ -1217,9 +1212,73 @@ export function writeRain(seconds: number, camera: OutArray, rows: ParticleRows)
 		const y = cy + height / 2 - fall;
 		// Drops fade out as they near the camera, where a streak would fill the view.
 		const near = smoothstep((Math.hypot(x - cx, y - cy, z - cz) - 1.5) / 4);
-		emit(rows, i, x, y, z, size, rain.color[0], rain.color[1], rain.color[2], rain.alpha * near);
+		sprite(rows, x, y, z, size, rain.color[0], rain.color[1], rain.color[2], rain.alpha * near);
 	}
-	return RAIN_DROPS;
+	return rows.count;
+}
+
+/** The town's layers of sprites. */
+export const NIGHT_SPRITES = ['steam', 'exhaust', 'glows', 'rain'] as const;
+export type NightSprite = (typeof NIGHT_SPRITES)[number];
+
+/** How each layer of sprites draws, with room for `capacity` blocks. Setup code. */
+export function nightSpriteLayers(capacity: number): Record<NightSprite, SpriteLayer> {
+	return {
+		steam: {
+			capacity: capacity * STEAM_PER_BLOCK,
+			blending: 'normal',
+			atlas: puffAtlas(),
+			fog: true,
+		},
+		exhaust: {
+			capacity: capacity * CARS_PER_BLOCK * EXHAUST_PER_CAR,
+			blending: 'normal',
+			atlas: puffAtlas(64, 9),
+			fog: true,
+		},
+		glows: {
+			capacity: capacity * GLOWS_PER_BLOCK,
+			blending: 'additive',
+			atlas: glowAtlas(),
+			fog: false,
+		},
+		rain: { capacity: RAIN_DROPS, blending: 'normal', atlas: rainAtlas(), fog: true },
+	};
+}
+
+/** Each layer's rows, and the engine's drawn layer for it. */
+export interface NightSprites<Drawn> {
+	rows: Record<NightSprite, SpriteRows>;
+	drawn: Record<NightSprite, Drawn>;
+}
+
+/** Makes each layer's rows, and an engine's drawn layer with `make`. Setup code. */
+export async function makeNightSprites<Drawn extends { draw(rows: SpriteRows): void }>(
+	capacity: number,
+	make: (layer: SpriteLayer) => Promise<Drawn>,
+): Promise<NightSprites<Drawn>> {
+	const layers = nightSpriteLayers(capacity);
+	const rows = {} as Record<NightSprite, SpriteRows>;
+	const drawn = {} as Record<NightSprite, Drawn>;
+	for (const name of NIGHT_SPRITES) {
+		rows[name] = createSpriteRows(layers[name].capacity);
+		drawn[name] = await make(layers[name]);
+	}
+	return { rows, drawn };
+}
+
+/** Writes every layer's rows for simulation time `seconds`, and draws them. Allocates nothing. */
+export function drawNightSprites<Drawn extends { draw(rows: SpriteRows): void }>(
+	town: NightTown,
+	seconds: number,
+	camera: OutArray,
+	{ rows, drawn }: NightSprites<Drawn>,
+): void {
+	writeSteam(town, seconds, rows.steam);
+	writeExhaust(town, seconds, rows.exhaust);
+	writeGlows(town, seconds, rows.glows);
+	writeRain(seconds, camera, rows.rain);
+	for (const name of NIGHT_SPRITES) drawn[name].draw(rows[name]);
 }
 
 // Textures made in code: the facades, the street and the sidewalk.

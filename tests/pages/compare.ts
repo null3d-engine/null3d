@@ -1,7 +1,8 @@
 // Runs a comparison with three.js through the shared shell, with one engine: `?compare=` names the
 // comparison, `?engine=` the engine, `?mode=` the mode, the scene graph by default, and `?effects=`
 // the effects, every one by default. With `?hold=<seconds>`, the engine draws the comparison's
-// held frame at its hold count and the page publishes the frame, as the image tests read it. Without
+// held frame at its hold count, or at `?count=`, and the page publishes the frame, as the image
+// tests read it. Without
 // it, the engine runs live, and the page runs a short ramp and publishes its steps; `?ramp=full`
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
 // WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`

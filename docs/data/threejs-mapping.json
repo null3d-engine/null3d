@@ -165,7 +165,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'scene', camera, writes: 'myTexture', size: [width, height] }); materials.unlit({ map: textures.fromPass(pass) })",
-      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw no point or spot lights, no ambient occlusion and no sky in this version.",
+      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw point and spot lights, but no ambient occlusion and no sky in this version, and a light that only a pass sees casts no shadow there.",
       "docs": "guides/custom-passes",
       "detect": "\\b(WebGL)?RenderTarget\\b|\\.setRenderTarget\\s*\\("
     },
@@ -692,8 +692,8 @@
       "three": "TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry",
       "status": "direct",
       "since": "0.2",
-      "target": "The same generators from @null3d/geometry",
-      "notes": "Not built yet. Until then, build the vertices with three.js's generator and pass the arrays to geometry.fromArrays. Same parameters as three.js; Shape and Path objects are ported too.",
+      "target": "geometry.fromArrays(torusKnot({ radius, tube, tubularSegments, radialSegments, p, q })), and icosahedron, octahedron, tetrahedron, dodecahedron, polyhedron, lathe, shape, extrude and tube, from @null3d/geometry",
+      "notes": "Install @null3d/geometry. Each function takes the constructor's arguments as named options with three.js's defaults, and returns arrays with three.js's vertices, normals and texture coordinates for geometry.fromArrays. Shape, Path, the curves and ShapeUtils come with the same names and methods, but points are [x, y] or [x, y, z] arrays, not Vector2 or Vector3. ExtrudeGeometry's caps and sides form one mesh, which takes one material.",
       "docs": "api/geometry",
       "detect": "\\b(TorusKnot|Icosahedron|Octahedron|Tetrahedron|Dodecahedron|Polyhedron|Lathe|Extrude|Shape|Tube)Geometry\\b|\\bnew\\s+(THREE\\.)?Shape\\s*\\("
     },
@@ -714,8 +714,8 @@
       "three": "attribute.needsUpdate / setUsage(DynamicDrawUsage) (vertices changing every frame)",
       "status": "changed",
       "since": "0.2",
-      "target": "meshAsset.updateVertices(name, data, start, count)",
-      "notes": "Not built yet. Until then, move vertices with a vertex-offset function, or make a new mesh with geometry.fromArrays and mesh.setMesh. For many moving objects, use instances instead of rewriting vertices.",
+      "target": "mesh.updateVertices(name, values, start, count)",
+      "notes": "Pass the attribute's values of every vertex, in the array type the mesh was made with; start and count pick the vertices that change, as addUpdateRange does, but in vertices. The mesh keeps the bounding sphere it was made with, so give objects bounds with setBounds when vertices move outside it. Meshes with joints or morph targets take no updates. For many moving objects, use instances instead of rewriting vertices.",
       "docs": "api/geometry",
       "detect": "\\.attributes\\.\\w+\\.needsUpdate|\\.setUsage\\s*\\(|DynamicDrawUsage"
     },
@@ -1011,8 +1011,8 @@
       "three": "material.bumpMap / bumpScale",
       "status": "changed",
       "since": "0.2",
-      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump`",
-      "notes": "Not built yet. Until then, make the normal map from the bump map in an image tool. Normal maps are cheaper at run time and look the same or better.",
+      "target": "A normal map converted offline: `bunx @null3d/cli assets normal-from-bump bump.png normal.ktx2 --scale <bumpScale>`",
+      "notes": "The scale matches three.js where one texel covers one screen pixel; three.js bumps look stronger farther away. Normal maps are cheaper at run time and look the same or better.",
       "docs": "guides/assets-pipeline",
       "detect": "\\bbump(Map|Scale)\\b"
     },
@@ -1275,8 +1275,8 @@
       "three": "FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader",
       "status": "changed",
       "since": "0.2",
-      "target": "Convert to glTF before release, with Blender or another converter",
-      "notes": "Not built yet. `bunx @null3d/cli assets convert` (0.2) will convert them. The engine loads glTF only.",
+      "target": "Convert to glTF before release: `bunx @null3d/cli assets convert model.fbx model.glb` for FBX, OBJ with MTL, STL and PLY; Blender for Collada, 3DM and USDZ",
+      "notes": "The engine loads glTF only. The command keeps FBX skins, blend shapes and clips, turns materials into metal-rough ones, and puts units in meters with Y up. Bump maps become normal maps.",
       "docs": "guides/assets-pipeline",
       "detect": "\\b(FBX|OBJ|MTL|Collada|STL|PLY|3DM|USDZ|TDS|VRML|VTK|Rhino3dm)Loader\\b"
     },
@@ -1352,8 +1352,8 @@
       "three": "LOD (addLevel)",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `bunx @null3d/cli assets optimize --lod`",
-      "notes": "Not built yet. `bunx @null3d/cli assets optimize --lod` writes the levels into the file, but the engine draws the full mesh. Until then, swap meshes by distance with mesh.setMesh. The engine will pick levels on job workers or on the GPU, per instance.",
+      "target": "baseMesh.setLevels([{ mesh, distance }]) on the base mesh, then draw the base mesh; or levels from `bunx @null3d/cli assets optimize --lod`, which assets.loadGltf reads",
+      "notes": "Levels belong to the mesh, and every object and instance row picks its own level each frame, on the GPU or on job workers, by the level's error on the screen. A distance converts to an error at a 50 degree field of view on a screen 1,080 pixels high. Dithered bands replace hysteresis. Shadows draw a coarser level. getCurrentLevel and autoUpdate have no match.",
       "docs": "concepts/lod",
       "detect": "new\\s+(THREE\\.)?LOD\\s*\\(|\\.addLevel\\s*\\("
     },
@@ -1639,7 +1639,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point, normal } }); materials.shader({ wgsl, textures: { mirror: textures.fromPass(pass) } }), whose surface function sets s.reflection from reflection_uv",
-      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background and the sun's light and shadows, but no point or spot lights yet. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
+      "notes": "A reflection pass draws the camera's view mirrored across the plane, with an oblique near plane that clips everything below it, as Reflector's clip plane does. The mesh no longer carries the reflection: a custom material reads the texture by screen position with null3d::reflection::reflection_uv and puts it in the surface's reflection, which the engine lights with the material's Fresnel. Reflector's textureWidth and textureHeight become scale, a share of the render size; its color becomes the material's color with metalness 1 and roughness 0. Water's distortionScale becomes the factor on the normal's tilt in reflection_uv's offset, waterColor the material's color and sunColor the scene's sun. Water's normal map becomes ripples in the surface function. The reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. Refractor and Water2's refraction become transmission: give the water's custom material transmission and thickness, and its surface function sets s.transmission and its rippled normal.",
       "docs": "api/render",
       "detect": "new\\s+(Reflector|Refractor|Water2?)\\s*\\("
     },

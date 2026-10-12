@@ -240,7 +240,9 @@ return {
 
 ### What a scene pass draws
 
-A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. In this version it draws no point or spot lights, no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. In this version it draws no ambient occlusion and no sky background. Its texture clears to `clearColor`, or to the scene's background color.
+
+A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows only to the lights that the camera sees. So a light that only the pass sees lights the pass without a shadow. Reflection passes draw these lights the same way. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does. The list takes under 1 MB of memory. A pass that sees none keeps no list.
 
 The texture holds linear color after the exposure, so a material that shows it gives the camera the light that the pass saw. On devices that draw 8-bit color, each material tone maps its own color. In compatibility mode with MSAA, the texture holds that color turned back to linear, so the tone curve applies twice and the image looks a little lighter in the middle tones. On WebGL2 devices without float targets, the texture holds display color, which looks brighter and flatter.
 
@@ -256,7 +258,7 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 - The pass follows the active camera. The quality preset sets its size: half the render size each way on Medium and High.
 - The surface function puts the pass's color in the surface's `reflection`. The engine's lighting then weighs it with the material's Fresnel, so water reflects little straight down and much at a low angle.
 - `scale: 1` gives a sharp mirror. `every: 2` draws the reflection in every other frame, for a camera that moves slowly.
-- A reflection draws the scene's background and the sun's light and shadows. It draws no point or spot lights and no ambient occlusion yet.
+- A reflection draws the scene's background, the sun's light and shadows, and the point and spot lights that it sees. It draws no ambient occlusion yet.
 
 ### A water recipe
 

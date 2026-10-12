@@ -17,8 +17,8 @@
 // shades every light in every pixel, in one shader per material, and a GPU holds only so many
 // lights in one shader: the build finds the most blocks whose lights it can build here, and the
 // page shows that limit. The moon casts shadows through three.js's cascaded shadows (CSM, or
-// CSMShadowNode), a Reflector (or the reflector node) mirrors the town in the puddles, and points
-// draw the particles. The worker (examples/lib/three-worker.ts) draws the sky, the fog and the post
+// CSMShadowNode), a Reflector (or the reflector node) mirrors the town in the puddles, and an
+// instanced quad that faces the camera draws each layer of particles. The worker (examples/lib/three-worker.ts) draws the sky, the fog and the post
 // effects.
 
 import type * as ThreeModule from 'three';
@@ -28,9 +28,13 @@ import {
 	sampleCameraLoop,
 	type TextureData,
 } from '../../lib/compare-scene';
-import { glowTexture, type Particles, puffTexture, rainTexture } from '../../lib/particles';
-import { threeParticles } from '../../lib/particles-three';
-import type { Three, ThreeBuildContext, ThreeSceneBuild } from '../../lib/three-worker';
+import { threeSprites } from '../../lib/particles-three';
+import {
+	type Three,
+	type ThreeBuildContext,
+	type ThreeSceneBuild,
+	withCsmLightFix,
+} from '../../lib/three-worker';
 import {
 	awningPlace,
 	CAR_PAINTS,
@@ -38,11 +42,10 @@ import {
 	carPose,
 	carToWorld,
 	createNightTown,
-	EXHAUST_PER_CAR,
+	drawNightSprites,
 	FACADE_KINDS,
 	FACADE_LIT_SHARE,
 	facadeMaps,
-	GLOWS_PER_BLOCK,
 	groundSide,
 	HEADLAMPS,
 	HEADLIGHT_AIM,
@@ -54,6 +57,7 @@ import {
 	lampPlace,
 	lightsOf,
 	lotPlace,
+	makeNightSprites,
 	NEON_COLORS,
 	NIGHT_CAMERA,
 	NIGHT_LOOK,
@@ -62,12 +66,10 @@ import {
 	nightMeshes,
 	PARKED_PER_BLOCK,
 	parkedPose,
-	RAIN_DROPS,
 	SIDEWALK_TILE,
 	SIGN,
 	SIGNS_PER_BLOCK,
 	SLAB_HEIGHT,
-	STEAM_PER_BLOCK,
 	setActiveBlocks,
 	sidewalkMaps,
 	signFlicker,
@@ -75,10 +77,6 @@ import {
 	signPlace,
 	streetMaps,
 	TAIL_LIGHT,
-	writeExhaust,
-	writeGlows,
-	writeRain,
-	writeSteam,
 } from './scene';
 import {
 	awningMaterial,
@@ -184,24 +182,6 @@ function webglBlockLimit(three: Three, renderer: ThreeModule.WebGLRenderer, most
 	return fit;
 }
 
-/** three.js's own chunk that starts the lighting, before CSM puts its copy in its place. */
-let standardLightsBegin: string | undefined;
-const LIGHTS_FROM = 'IncidentLight directLight;';
-
-/**
- * CSM's copy of the chunk that starts the lighting, with the lines before its lights taken from
- * three.js's own chunk. In three.js 0.186.1 the copy lacks the standard material's energy terms,
- * which every direct light's specular and the environment's reflection multiply by. Without them,
- * a material that CSM sets up shows no highlights and no reflections on WebGLRenderer.
- */
-function withCurrentLightSetup(csmChunk: string, standard: string): string {
-	const csmAt = csmChunk.indexOf(LIGHTS_FROM);
-	const standardAt = standard.indexOf(LIGHTS_FROM);
-	if (csmAt < 0 || standardAt < 0 || standard.slice(0, standardAt) === csmChunk.slice(0, csmAt))
-		return csmChunk;
-	return standard.slice(0, standardAt) + csmChunk.slice(csmAt);
-}
-
 /** Builds Night town's three.js half. */
 export async function buildNightTown({
 	three,
@@ -247,26 +227,25 @@ export async function buildNightTown({
 	if (effects.shadows) {
 		if (kind === 'webgl') {
 			const { CSM } = await import('three/addons/csm/CSM.js');
-			standardLightsBegin ??= three.ShaderChunk.lights_fragment_begin;
-			const csm = new CSM({
-				camera,
-				parent: scene,
-				cascades: CASCADES,
-				maxFar: look.moon.shadowDistance,
-				mode: 'practical',
-				shadowMapSize: SHADOW_MAP,
-				lightDirection: new three.Vector3(dx, dy, dz).normalize(),
-				lightIntensity: look.moon.intensity,
-			});
+			const csm = withCsmLightFix(
+				three,
+				() =>
+					new CSM({
+						camera,
+						parent: scene,
+						cascades: CASCADES,
+						maxFar: look.moon.shadowDistance,
+						mode: 'practical',
+						shadowMapSize: SHADOW_MAP,
+						lightDirection: new three.Vector3(dx, dy, dz).normalize(),
+						lightIntensity: look.moon.intensity,
+					}),
+			);
 			for (const light of csm.lights) {
 				light.color.copy(moon.color);
 				light.shadow.normalBias = NORMAL_BIAS;
 			}
 			scene.remove(moon);
-			three.ShaderChunk.lights_fragment_begin = withCurrentLightSetup(
-				three.ShaderChunk.lights_fragment_begin,
-				standardLightsBegin,
-			);
 			setup = (material) => csm.setupMaterial(material);
 			updateShadows = () => {
 				camera.updateMatrixWorld();
@@ -895,46 +874,14 @@ export async function buildNightTown({
 
 	const blocks = options.mode === 'instanced' ? instanced() : sceneGraph();
 
-	// Particles: points behind the shared particle interface.
-	let particles: {
-		steam: Particles;
-		exhaust: Particles;
-		glows: Particles;
-		rain: Particles;
-	} | null = null;
-	if (effects.particles) {
-		const make = threeParticles(three, kind, scene, camera);
-		particles = {
-			steam: await make({
-				name: 'steam',
-				capacity: capacity * STEAM_PER_BLOCK,
-				texture: puffTexture(),
-				blending: 'normal',
-				fog: true,
-			}),
-			exhaust: await make({
-				name: 'exhaust',
-				capacity: capacity * CARS_PER_BLOCK * EXHAUST_PER_CAR,
-				texture: puffTexture(64, 9),
-				blending: 'normal',
-				fog: true,
-			}),
-			glows: await make({
-				name: 'glows',
-				capacity: capacity * GLOWS_PER_BLOCK,
-				texture: glowTexture(),
-				blending: 'additive',
-				fog: false,
-			}),
-			rain: await make({
-				name: 'rain',
-				capacity: RAIN_DROPS,
-				texture: rainTexture(),
-				blending: 'normal',
-				fog: true,
-			}),
-		};
-	}
+	// Particles: an instanced quad for each layer of the town's sprite rows.
+	const sprites = effects.particles
+		? await makeNightSprites(capacity, async (layer) => {
+				const made = await threeSprites(three, kind, layer);
+				scene.add(made.object);
+				return made;
+			})
+		: null;
 
 	const cameraPosition = new Float64Array(3);
 	const cameraTarget = new Float64Array(3);
@@ -946,7 +893,7 @@ export async function buildNightTown({
 		look: {
 			exposure: look.exposure,
 			environmentIntensity: look.skyIntensity,
-			sky: { settings: { ...look.sky, time: 0 }, intensity: look.skyIntensity },
+			sky: { ...look.sky, shown: look.skyIntensity },
 			fog: {
 				color: look.fog.color,
 				density: look.fog.density,
@@ -996,13 +943,7 @@ export async function buildNightTown({
 				lookAt.set(cameraTarget[0] as number, cameraTarget[1] as number, cameraTarget[2] as number),
 			);
 			dome.position.copy(camera.position);
-			if (particles) {
-				const { steam, exhaust, glows, rain } = particles;
-				steam.commit(writeSteam(town, seconds, steam.rows()));
-				exhaust.commit(writeExhaust(town, seconds, exhaust.rows()));
-				glows.commit(writeGlows(town, seconds, glows.rows()));
-				rain.commit(writeRain(seconds, cameraPosition, rain.rows()));
-			}
+			if (sprites) drawNightSprites(town, seconds, cameraPosition, sprites);
 			updateShadows();
 			updateReflection(street);
 		},

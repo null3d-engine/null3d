@@ -36,8 +36,7 @@ import {
 	sampleCameraLoop,
 	type TextureData,
 } from '../../lib/compare-scene';
-import { glowTexture, puffTexture, rainTexture } from '../../lib/particles';
-import { null3dParticles } from '../../lib/particles-null3d';
+import { null3dSprites } from '../../lib/particles-null3d';
 import {
 	awningPlace,
 	CAR_PAINTS,
@@ -45,11 +44,10 @@ import {
 	carPose,
 	carToWorld,
 	createNightTown,
-	EXHAUST_PER_CAR,
+	drawNightSprites,
 	FACADE_KINDS,
 	FACADE_LIT_SHARE,
 	facadeMaps,
-	GLOWS_PER_BLOCK,
 	HEADLAMPS,
 	HEADLIGHT_AIM,
 	LAMP_LIGHT,
@@ -58,6 +56,7 @@ import {
 	lampLight,
 	lampPlace,
 	lotPlace,
+	makeNightSprites,
 	NEON_COLORS,
 	NIGHT_CAMERA,
 	NIGHT_HOLD,
@@ -67,12 +66,10 @@ import {
 	nightMeshes,
 	PARKED_PER_BLOCK,
 	parkedPose,
-	RAIN_DROPS,
 	SIDEWALK_TILE,
 	SIGN,
 	SIGNS_PER_BLOCK,
 	SLAB_HEIGHT,
-	STEAM_PER_BLOCK,
 	setActiveBlocks,
 	sidewalkMaps,
 	signFlicker,
@@ -80,10 +77,6 @@ import {
 	signPlace,
 	streetMaps,
 	TAIL_LIGHT,
-	writeExhaust,
-	writeGlows,
-	writeRain,
-	writeSteam,
 } from './scene';
 import { AWNING_WGSL, FACADE_WGSL, NEON_WGSL, SKY_WGSL, STREET_WGSL } from './shaders';
 
@@ -768,39 +761,9 @@ export default defineSketch(
 
 		const blocks = mode === 'instanced' ? instanced() : sceneGraph();
 
-		// Particles: sprite batches behind the shared particle interface.
-		const makeParticles = null3dParticles(scene, textures);
-		const particles = effects.particles
-			? {
-					steam: await makeParticles({
-						name: 'steam',
-						capacity: capacity * STEAM_PER_BLOCK,
-						texture: puffTexture(),
-						blending: 'normal',
-						fog: true,
-					}),
-					exhaust: await makeParticles({
-						name: 'exhaust',
-						capacity: capacity * CARS_PER_BLOCK * EXHAUST_PER_CAR,
-						texture: puffTexture(64, 9),
-						blending: 'normal',
-						fog: true,
-					}),
-					glows: await makeParticles({
-						name: 'glows',
-						capacity: capacity * GLOWS_PER_BLOCK,
-						texture: glowTexture(),
-						blending: 'additive',
-						fog: false,
-					}),
-					rain: await makeParticles({
-						name: 'rain',
-						capacity: RAIN_DROPS,
-						texture: rainTexture(),
-						blending: 'normal',
-						fog: true,
-					}),
-				}
+		// Particles: a sprite batch for each layer of the town's sprite rows.
+		const sprites = effects.particles
+			? await makeNightSprites(capacity, (layer) => null3dSprites({ scene, textures }, layer))
 			: null;
 
 		const camera = scene.createPerspectiveCamera(look.camera);
@@ -828,13 +791,7 @@ export default defineSketch(
 				for (const sign of signLights[b] ?? [])
 					sign.light.setIntensity(look.sign.intensity * signFlicker(seconds, sign.lotX, sign.lotZ));
 			sampleCameraLoop(NIGHT_CAMERA, seconds, cameraPosition, cameraTarget);
-			if (particles) {
-				const { steam, exhaust, glows, rain } = particles;
-				steam.commit(writeSteam(town, seconds, steam.rows()));
-				exhaust.commit(writeExhaust(town, seconds, exhaust.rows()));
-				glows.commit(writeGlows(town, seconds, glows.rows()));
-				rain.commit(writeRain(seconds, cameraPosition, rain.rows()));
-			}
+			if (sprites) drawNightSprites(town, seconds, cameraPosition, sprites);
 			quat.lookAt(cameraRotation, cameraTarget, cameraPosition);
 			dome.setPosition(
 				cameraPosition[0] as number,

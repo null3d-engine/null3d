@@ -7,6 +7,7 @@
 import type { DemoGroup } from '../demos';
 import type { CompareMode, EffectName } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
+import { BATTLE_HOLD, BATTLE_RAMPS, battleObjects } from './battle/scene';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
 import { NIGHT_HOLD, NIGHT_RAMPS, nightObjects } from './night-town/scene';
 
@@ -36,17 +37,18 @@ export interface Comparison {
 	threeOnPage?: boolean;
 	/** The ramp of each device class. Its maximum is also the most the slider and a run reach. */
 	ramps: Readonly<Record<DeviceClass, RampPlan>>;
+	/** The frame that the image tests hold: its simulation time in seconds and its count. */
+	hold: { readonly seconds: number; readonly count: number };
 	/**
-	 * The frame that the image tests hold: its simulation time in seconds and its count. A scene
-	 * whose three.js half starts slowly gives the test more time, and a smaller count to draw on the
-	 * software GPU, which both engines' tests then hold there.
+	 * The count that the image tests hold on SwiftShader, CI's software GPU, where the hold count's
+	 * every frame up to the held one would take minutes: hold mode draws each of them on the CPU.
 	 */
-	hold: {
-		readonly seconds: number;
-		readonly count: number;
-		readonly timeoutSeconds?: number;
-		readonly softwareCount?: number;
-	};
+	swiftShaderHoldCount?: number;
+	/**
+	 * The image tests' time limit in seconds, for a scene whose held frame takes CI's slower machines
+	 * longer than the default limit to build and draw on SwiftShader.
+	 */
+	holdTimeoutSeconds?: number;
 	/** Objects in the null3D scene at a count in a mode, which the engine makes room for at its start. */
 	objectsAt(count: number, mode: CompareMode): number;
 	/** Spot and point light shadow tiles that the scene needs in null3D. */
@@ -72,6 +74,10 @@ export interface Comparison {
 	 * WebGLRenderer unless the scene needs WebGPURenderer's own features.
 	 */
 	fasterThree: 'webgl' | 'webgpu';
+	/** Why the comparison loads files, when it does: the same files in both engines. */
+	assets?: string;
+	/** three.js's renderer in a mode that only it can draw, on both GPU paths. */
+	threeRenderers?: Partial<Record<CompareMode, 'webgl' | 'webgpu'>>;
 }
 
 /** The effects of a scene with no reflections and no particles. */
@@ -80,6 +86,43 @@ const PLAIN_EFFECTS: readonly EffectName[] = ['shadows', 'fog', 'bloom', 'ao', '
 const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'reflections', 'particles'];
 
 export const COMPARISONS: readonly Comparison[] = [
+	{
+		name: 'battle',
+		code: 'compare/battle/',
+		title: 'Battle',
+		summary:
+			'Two armies of animated soldiers and mechs, rifles in hand, with tanks behind each line, meet on a cratered field at dusk under tracers, shell fire and smoke.',
+		countUnit: 'soldiers and mechs',
+		sketch: new URL('./battle/sketch.ts', import.meta.url),
+		startThree: () =>
+			new Worker(new URL('./battle/three.ts', import.meta.url), {
+				type: 'module',
+				name: 'three.js',
+			}),
+		ramps: BATTLE_RAMPS,
+		hold: BATTLE_HOLD,
+		swiftShaderHoldCount: 120,
+		holdTimeoutSeconds: 240,
+		objectsAt: battleObjects,
+		shadowTiles: 0,
+		modes: {
+			'scene-graph':
+				"Scene graph measures characters built the usual way: each soldier and mech is its own copy of the model, with its own skeleton and animation, as each engine's examples load characters. null3D animates the copies on its job workers and draws those of one model together. three.js gives each copy its own AnimationMixer, poses its bones on the worker's thread and draws each copy on its own. Each tank is a tree of three parts.",
+			instanced:
+				'Instanced measures the most tuned build. three.js takes the route of its crowd example: one AnimationMixer per model poses each unit in turn, and one draw per model skins every unit from a table of bone matrices. That route needs WebGPURenderer, which runs in its WebGL2 mode on the WebGL2 path. null3D has one way to draw animated characters, the copies of the scene graph mode, which it already draws in batches. Each tank part is one batch of copies in both engines.',
+		},
+		notes: [
+			"Both engines load the same soldier and mech files. The rifle is a mesh of its own on the soldier's right hand, and follows its joint in both engines.",
+			"Each engine draws each effect its own way: null3D's generated sky and its environment light, cascaded sun shadows, height fog, bloom chain, ambient occlusion and grading table; three.js's Sky with its light through PMREMGenerator, the CSM add-on or the CSM shadow node, the same fog formula in a shader, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, and LUTPass or the 3D LUT node.",
+			'Smoke, fire, sparks and muzzle flashes are sprites: a sprite batch in null3D, which sorts the smoke from back to front, and an instanced quad that faces the camera in three.js, which does not sort it.',
+			"Grass and flags sway, and the wrecks' embers glow, through custom materials: WGSL surface and vertex functions in null3D, GLSL added to MeshStandardMaterial on WebGLRenderer, and node materials on WebGPURenderer.",
+		],
+		assets:
+			'Shows both engines loading and animating the same ready-made character files: a soldier with a rifle on his hand, and a mech.',
+		threeRenderers: { instanced: 'webgpu' },
+		effects: PLAIN_EFFECTS,
+		fasterThree: 'webgl',
+	},
 	{
 		name: 'factory',
 		code: 'compare/factory/',
@@ -126,6 +169,8 @@ export const COMPARISONS: readonly Comparison[] = [
 			}),
 		ramps: NIGHT_RAMPS,
 		hold: NIGHT_HOLD,
+		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
+		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
 		objectsAt: nightObjects,
 		shadowTiles: 0,
 		modes: {
@@ -136,8 +181,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		},
 		notes: [
 			"null3D lists the point and spot lights near each part of the view in clusters, on WebGPU and WebGL2. three.js's WebGPURenderer does the same for point lights with its ClusteredLighting add-on, and shades every spot light in every pixel. three.js's WebGLRenderer shades every light in every pixel, in one shader, which holds only so many lights.",
-			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and points.",
-			"null3D's reflection pass draws the lamps' and signs' glowing surfaces and the sky, but not the light that the lamps cast. three.js's Reflector draws the scene with every light.",
+			"Each engine draws each effect its own way: null3D's shadow cascades, height fog, reflection pass, bloom chain, ambient occlusion, grading table and sprite batches, and three.js's CSM, the same fog formula in a shader, a Reflector, UnrealBloomPass or the bloom node, GTAOPass or the GTAO node, LUTPass or the 3D LUT node, and an instanced quad that faces the camera.",
+			"Both mirrors draw the town with its lights. null3D's reflection pass lists the lights that it sees in clusters of its own, and three.js's Reflector draws the scene again with every light.",
 		],
 		effects: NIGHT_EFFECTS,
 		fasterThree: 'webgpu',
@@ -160,6 +205,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		sameSceneAs: 'night-town',
 		ramps: NIGHT_RAMPS,
 		hold: NIGHT_HOLD,
+		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
+		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
 		objectsAt: nightObjects,
 		shadowTiles: 0,
 		modes: {

@@ -72,7 +72,10 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `dofSamples` | 16, 22, 43, 71 or 0: the taps of depth of field's gather. 0 draws no depth of field even when `post.set` turns it on. | During play. |
 | `reflectionScale` | 1, 0.5 or 0.25: the size of a reflection pass's texture as a share of the render size, for each reflection whose `scale` option names none. | During play. The reflections' textures are made again. |
 | `softwareOcclusion` | `true` or `false`: whether the job workers cull objects that marked occluders hide, on WebGL2. WebGPU ignores it. | During play. |
-| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the shadow settings, bloom's size and ambient occlusion's scale when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
+| `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |
+| `lodShadowFactor` | A number from 1 to 16: what the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level than the camera sees. 1 draws the camera's level. | During play. |
+| `lodFade` | `true` or `false`: whether two levels of detail hand over in a short dithered band past each switch distance. `false` switches at once. | During play. |
+| `governor` | `true` or `false`: whether the frame-budget governor lowers the render scale, the levels of detail, the shadow settings, bloom's size and ambient occlusion's scale when frames take too long. | During play. Off, the scene draws at `maxRenderScale` with the other settings as set. |
 | `antialias` | `'msaa'`: 4 samples per pixel. `'fxaa'`: the final pass smooths edges. `'none'`: no smoothing. | At the start only. The scene's targets and pipelines depend on it, so the page's `antialias` option sets it. |
 | `shadowCascades` | A whole number from 1 to 4: the cascades of a directional light's shadows, for each light whose `shadow` options name none. | At the start only. The page's `shadowCascades` option sets it. |
 | `shadowMapSize` | 512, 1,024, 2,048 or 4,096: the texels on each side of each cascade's shadow map, for each light whose `shadow` options name no `mapSize`. | At the start only. The page's `shadowMapSize` option sets it. |
@@ -116,7 +119,7 @@ console.log(quality.renderScale); // 0.75
 
 ## The frame-budget governor
 
-When frames take too long, the engine lowers the render scale first, then the live shadow settings, then bloom's size and ambient occlusion's scale. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
+When frames take too long, the engine lowers the render scale first, then the levels of detail, then the live shadow settings, then bloom's size and ambient occlusion's scale. It raises them again once frames have time to spare. [Quality presets](../concepts/quality-presets.md#the-frame-budget-governor) gives the order and the rules. `quality.settings` keeps the values that the preset and the sketch gave. `quality.governor` reports what the engine draws with now:
 
 | Member | What it holds |
 | --- | --- |
