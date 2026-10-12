@@ -2,18 +2,15 @@
 // plinth: metal flakes in its paint glitter under a smooth clear coat, which mirrors the room.
 // Rain falls around the plinth onto wet cobbles: puddles are a clear coat that a surface function
 // sets where the ground dips, darker beneath, with rain rings in the coat's normal. A reflection
-// pass mirrors the room in the puddles. A velvet
-// curtain and a velvet seat glow at their edges with sheen, and so do the car's tyres, faintly. A
-// blue lamp follows the pointer across the floor. The surface functions of the cobbles and the
-// drapes are in surfaces.ts, the car is in car.ts and the rain in rain.ts.
+// pass mirrors the room in the puddles. A velvet curtain and a velvet seat glow at their edges
+// with sheen, and so do the car's tyres, faintly. A blue lamp follows the pointer across the floor.
+// The surface functions of the cobbles and the drapes are in surfaces.ts, the car and its paint
+// are in car.ts and the rain in rain.ts.
 import { defineSketch, math } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { createCar } from './car';
 import { createRain } from './rain';
 import { cobbles, drapes } from './surfaces';
-
-/** Texels on each side of the flake map. */
-const FLAKES = 64;
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time, engine } = ctx;
@@ -63,31 +60,6 @@ export default defineSketch(async (ctx) => {
 		receiveShadows: true,
 	});
 
-	// Metal flakes: a normal map of small random tilts, which the smooth coat covers.
-	math.seed(7);
-	const data = new Uint8Array(FLAKES * FLAKES * 4);
-	for (let k = 0; k < FLAKES * FLAKES; k++) {
-		const [x, y] = [math.randFloat(-0.35, 0.35), math.randFloat(-0.35, 0.35)];
-		data.set([(x * 0.5 + 0.5) * 255, (y * 0.5 + 0.5) * 255, 255, 255], k * 4);
-	}
-	const flakes = textures.fromData({
-		width: FLAKES,
-		height: FLAKES,
-		data,
-		colorSpace: 'linear',
-		wrap: 'repeat',
-		mipmaps: true,
-	});
-	const paint = materials.standard({
-		color: '#9e0b16',
-		metalness: 0.7,
-		roughness: 0.38,
-		normalMap: flakes,
-		normalScale: [0.6, 0.6],
-		uvTransform: { repeat: [24, 12] },
-		clearcoat: 1,
-		clearcoatRoughness: 0.02,
-	});
 	const varnish = materials.standard({
 		color: '#2b160c',
 		roughness: 0.6,
@@ -116,7 +88,7 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		receiveShadows: true,
 	});
-	createCar(ctx, scene.createGroup({ parent: plinth, position: [0, 0.17, 0] }), paint);
+	createCar(ctx, scene.createGroup({ parent: plinth, position: [0, 0.17, 0] }));
 
 	// Velvet: a crimson curtain behind, and a teal seat beside the plinth.
 	scene.createMesh({
