@@ -181,10 +181,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'contact-shadows',
 		group: 'Light, materials and effects',
 		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
+		code: 'contact-shadows/',
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden at golden hour, with 600 pebbles in one batch. Contact shadows give each pebble and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden at golden hour, made in code: raked sand, mossy rocks, 640 pebbles and moss clumps in one batch, tufts of grass and a stone lantern. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
 		hold: 1,
 		timeoutSeconds: 60,
@@ -345,18 +346,6 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the center of the wave.`,
-		hold: 2,
-		timeoutSeconds: 60,
-	},
-	{
-		name: 'forest',
-		group: 'Scale',
-		sketch: new URL('./forest/sketch.ts', import.meta.url),
-		title: 'Levels of detail',
-		scene: 'Pine forest',
-		summary:
-			'40,000 pines over rolling hills at golden hour, and 8,000 on phones, in one instance batch. Each pine has four levels of detail, from 6,400 triangles down to 40, and every tree picks its own in each frame by its size on the screen. Near a switch the two levels share the pixels, so no tree pops.',
-		controls: `${CAMERA} Press L to draw every tree at its full detail, and again to bring the levels back.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},
