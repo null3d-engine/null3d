@@ -558,9 +558,9 @@ struct VertexOut {
 #ifdef DISPLACEMENT
     /// How far a unit of the displacement map's red channel moves the surface, in world units: the
     /// material's scale times the object's scale along the normal. Then how far the displacement
-    /// moved the surface here, past the bias, in world units, as the vertices give it. Its own slot,
-    /// as displaced levels of detail fade too.
-    @location(13) heights: vec2f,
+    /// moved the surface here, past the bias, in world units, as the vertices give it. Displaced
+    /// levels of detail never fade, so it shares its slot with the fade value.
+    @location(12) heights: vec2f,
 #endif
 #ifdef ROW_VALUES
     /// The color of the instance's row.

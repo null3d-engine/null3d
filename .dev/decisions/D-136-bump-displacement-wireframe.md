@@ -112,5 +112,6 @@ To follow: GPU and CPU time per frame with each feature on and off, per preset, 
 ## Consequences
 
 - Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
+- Levels of detail (D-137): a level with a displaced material switches at once and never fades, as skinned levels do. Fading builds with displacement would double the standard maps template's fading builds, which every page with fading levels downloads.
 - TypeScript: the options on `materials.standard`, `wireframe` on every material, checks in development builds, the quality setting `parallax`, and bounds that grow with a displaced material.
 - Docs: `api/materials`, the three.js mapping entries for bump maps, displacement maps, wireframe and edges, both skills, and a feature demo.

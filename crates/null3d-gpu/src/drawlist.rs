@@ -906,8 +906,9 @@ pub mod permutation {
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once.
     /// Displacement builds load on first use, so the test switch's builds do without them.
-    /// Parallax draws only opaque and masked surfaces, never one that lets light through.
-    pub const APART: [(u32, u32); 24] = [
+    /// Parallax draws only opaque and masked surfaces, never one that lets light through. A
+    /// displaced level of detail switches at once, so the fading builds stay small.
+    pub const APART: [(u32, u32); 25] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -932,6 +933,7 @@ pub mod permutation {
         (LOD_FADE, INSTANCE_INDEX),
         (LOD_FADE, TRANSMISSION),
         (LOD_FADE, ALPHA_HASH),
+        (LOD_FADE, DISPLACEMENT),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
