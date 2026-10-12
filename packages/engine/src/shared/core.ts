@@ -730,8 +730,16 @@ export interface CoreGlue extends CoreErrors {
 	 * their frames already, as the asset tool writes them, and were copied.
 	 */
 	resampledClips(): number;
-	/** Adds an animated instance of a skeleton. */
-	createAnimatedInstance(skeleton: number): number;
+	/**
+	 * Adds an animated instance of a skeleton, which moves the object of handle `object`: a
+	 * look-at aims from that object's place. The handle 0 names no object.
+	 */
+	createAnimatedInstance(skeleton: number, object: number): number;
+	/**
+	 * Makes the table of joint overrides and look-at targets (`ANIMATION_FIELD_JOINT_OVERRIDES`
+	 * and `ANIMATION_FIELD_LOOK_TARGETS`), once. Until then, the frame step does no override work.
+	 */
+	enableJointOverrides(): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
 	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
@@ -933,6 +941,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'enableJointOverrides',
 	'createMorphWeights',
 	'destroyMorphWeights',
 	'linkMorphWeights',
