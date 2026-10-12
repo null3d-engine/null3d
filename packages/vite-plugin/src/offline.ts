@@ -2,7 +2,8 @@
 // files that a page needs to start, and the files of each feature that the game uses, so the game
 // runs with no network after its first visit. Each feature's files download only on its first use,
 // so a game that leaves a feature out of its cache leaves out its files, such as the twelve device
-// variants of each shader feature or the KTX2 transcoder.
+// variants of each shader feature or the KTX2 transcoder. A file of the shader builds that need
+// several features is listed under each of them.
 //
 // The plugin knows what each file holds from the bundler: the modules of each chunk and the source
 // of each copied file. Vite builds each worker in a bundle of its own, and hands the main bundle
@@ -58,7 +59,8 @@ export const FEATURE_MODULES: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * A shader module of the engine: the main module, a device module of the start, such as
- * `shaders-glsl-draw-index`, or the module of a feature, such as `shaders-skinning-wgsl-half`.
+ * `shaders-glsl-draw-index`, or the module of features, such as `shaders-skinning-wgsl-half` or
+ * `shaders-hash-and-skinning-wgsl`.
  */
 const SHADER_MODULE =
 	/^generated\/shaders-(?:([a-z][a-z0-9-]*?)-)?(?:wgsl|glsl)(?:-(?:draw-index|tone-map|half))*$/;
@@ -70,12 +72,16 @@ const FEATURE_OF_MODULE = new Map(
 );
 
 /**
- * The feature whose files hold the engine module `module`, or undefined for a module of the start.
- * A shader feature takes the name that `createEngine`'s `preload` gives it, such as
- * `instance_index` for `shaders-instance-index-wgsl`.
+ * The features whose files hold the engine module `module`, none for a module of the start. A
+ * shader feature takes the name that `createEngine`'s `preload` gives it, such as `instance_index`
+ * for `shaders-instance-index-wgsl`. The module of the shader builds that need several features
+ * belongs to each of them.
  */
-export function featureOf(module: string): string | undefined {
-	return FEATURE_OF_MODULE.get(module) ?? SHADER_MODULE.exec(module)?.[1]?.replaceAll('-', '_');
+export function featuresOf(module: string): string[] {
+	const feature = FEATURE_OF_MODULE.get(module);
+	if (feature) return [feature];
+	const shaders = SHADER_MODULE.exec(module)?.[1];
+	return shaders ? shaders.split('-and-').map((name) => name.replaceAll('-', '_')) : [];
 }
 
 /**
@@ -125,11 +131,8 @@ export function offlineFiles(files: readonly ListedFile[]): OfflineFiles {
 	const listed = files.filter((file) => !UNLISTED.test(file.fileName));
 	const byName = new Map(listed.map((file) => [file.fileName, file]));
 	const named = namedFiles(listed);
-	const featuresOf = new Map(
-		listed.map((file) => [
-			file.fileName,
-			new Set(file.modules.flatMap((module) => featureOf(module) ?? [])),
-		]),
+	const fileFeatures = new Map(
+		listed.map((file) => [file.fileName, new Set(file.modules.flatMap(featuresOf))]),
 	);
 	/**
 	 * Every file that `from` reaches: each file that a reached file imports, and each that it names
@@ -142,7 +145,7 @@ export function offlineFiles(files: readonly ListedFile[]): OfflineFiles {
 			if (!file) continue;
 			for (const next of file.imports) if (byName.has(next)) seen.add(next);
 			for (const next of named.get(name) ?? [])
-				if (!seen.has(next) && enters(featuresOf.get(next) ?? new Set())) seen.add(next);
+				if (!seen.has(next) && enters(fileFeatures.get(next) ?? new Set())) seen.add(next);
 		}
 		return seen;
 	};
@@ -152,9 +155,9 @@ export function offlineFiles(files: readonly ListedFile[]): OfflineFiles {
 	);
 	const features: Record<string, string[]> = {};
 	const grouped = new Set(start);
-	const allFeatures = [...new Set([...featuresOf.values()].flatMap((set) => [...set]))].sort();
+	const allFeatures = [...new Set([...fileFeatures.values()].flatMap((set) => [...set]))].sort();
 	for (const feature of allFeatures) {
-		const roots = listed.filter((file) => featuresOf.get(file.fileName)?.has(feature));
+		const roots = listed.filter((file) => fileFeatures.get(file.fileName)?.has(feature));
 		const own = reach(
 			roots.map((file) => file.fileName),
 			(others) => others.size === 0 || others.has(feature),

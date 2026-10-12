@@ -150,7 +150,7 @@ bits = ["SKIN"]
 
 - `shaders` lists templates whose every build belongs to the feature.
 - `bits` lists permutation bits that a device does not fix. Every build of any template with one of them belongs to the feature. Examples are the final pass's BLOOM builds and every template's SKIN builds.
-- A build belongs to its template's feature, or else to the feature of its lowest bit that a table names. Every other build stays in the start files.
+- A build belongs to its template's feature, or else to the feature of its lowest bit that a table names. Every other build stays in the start files. The [addendum of 12 October 2026](#addendum-2026-10-12-builds-that-need-several-features) gives a build that needs several features files of its own.
 
 Each feature gets a file, such as `generated/shaders-skinning-wgsl.js`, for each value of the device's fixed bits that its builds vary in. Then `DeviceShaderSet` loads one the first time a pipeline asks for one of its builds. It adds the file's builds to the variants that the backends hold. Meanwhile the pipeline waits, as a custom material's pipeline waits for its shader. Before the first frame, the frame waits with it. After it, frames go on, and the pipeline's draws draw nothing until it is built. On WebGPU, a compute pipeline whose file has not arrived waits in the same way.
 
@@ -211,3 +211,24 @@ The owner decided on 4 October 2026 that a game can have every shader it needs b
   - Morph targets (M2-C5) add a bit, as SKIN does. Where the GPU blends them, they add a pass whose output the drawing passes read. Their table names the bit. Their objects keep out of the layouts until their pipelines are built, as `SkinnedGate` keeps skinned objects out.
   - GPU occlusion culling (M2-I1) adds compute templates, which wait for their file as the skinning pass's does. Its culling must keep the previous frame's results, or none, until its pipelines are built.
 - The record is in the table in README.md.
+
+## Addendum, 2026-10-12: builds that need several features
+
+Status: decided, 2026-10-12, by the coordinator for the owner (ruling C).
+
+**Question.** A build can need two features that load on first use, such as a SKIN build with ALPHA_HASH. By the rule above, it went into the file of the feature with the lower bit. Later, a table could claim such builds (`claims_shared_builds`, [D-82](D-82-transparency-parity.md)), which then went into the claiming feature's file. Either way, one feature's files held builds that only pages with another feature draw. Displacement (M2-J4) has bit 26, above most features' bits. Its builds with skinning, morph targets, per-instance colors, transmission, alpha to coverage and the alpha hash went into those features' files. That grew 96 files of six features by 20% to 30%, about 5 to 6 KB each after Brotli, for every page that uses one of those features, with displacement or without.
+
+**Rule.** A build needs the feature of its template and the feature of each of its bits that a table names.
+
+- A build that needs no feature stays in the start files.
+- A build that needs one feature goes into that feature's files.
+- A build that needs several features goes into files of their own for that set of features, such as `shaders-hash-and-skinning-wgsl-half.js`. The file names list the features in alphabetical order, joined by `-and-`. No feature name may hold the word `and`, and the manifest check refuses one.
+- A set of features without builds has no files. A set has one file for each value of the device's fixed bits that its builds vary in, as a single feature's files have.
+- The `claims_shared_builds` setting is gone. No table needs it now.
+
+**How the engine loads them.** The main shader module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: its features' names, sorted and joined by `+`, such as `hash+skinning`. A pipeline whose build is missing loads the file of that key, once, and nothing else. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
+
+**Figures.** Measured on 12 October 2026, on the merge of main at 3f8825965, before displacement merges.
+
+- The new rule makes 157 new files for 24 sets of features. The largest is the WebGL2 morph and skinning file with the draw index, tone mapping and half precision: 21.1 KB after Brotli, 45.1 KB after gzip and 406 KB uncompressed. That is 66%, 14% and 26% of the limits of a file that loads on first use. The smallest, skinning with the test template, is 2.7 KB after Brotli.
+- The sets with the most files are skinning, alpha to coverage, the alpha hash, level fades, transmission and morph targets in pairs and triples, 8 or 12 files each. The cutout shader's sets have 2 or 3 files each.

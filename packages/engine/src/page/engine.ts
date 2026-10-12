@@ -327,7 +327,8 @@ export interface EngineOptions {
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
-	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
+	 * need together, such as a skinned mesh's with the alpha hash, download with them. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
 	 */

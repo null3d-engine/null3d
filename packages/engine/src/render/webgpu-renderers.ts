@@ -198,7 +198,7 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
-		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
+		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);

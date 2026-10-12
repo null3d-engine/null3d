@@ -724,14 +724,14 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
-	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
-	 * background where the browser can, and the first frame waits for them. Skinning's and morph
-	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
-	 * `scene.warmUp()` builds those, as for any material.
+	 * Starts to compile the programs of the builds of `module`, a module that the page or the sketch
+	 * preloaded, whose builds need `features`, so that the features' first objects draw at once.
+	 * They compile in the background where the browser can, and the first frame waits for them.
+	 * Skinning's and morph targets' builds vary in every material bit, and a scene's materials draw
+	 * with a few of them, so `scene.warmUp()` builds those, as for any material.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		if (WARM_UP_FEATURES.has(feature)) return;
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		if (features.some((feature) => WARM_UP_FEATURES.has(feature))) return;
 		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
 		for (const [name, builds] of Object.entries(module)) {
 			const variants = held?.[name];
