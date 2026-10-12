@@ -98,9 +98,11 @@
 //                       occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
-//                       machines: the plan's items split evenly, and an item stays with the items
-//                       whose results its check compares with. Each shard loads the capabilities
-//                       page first, to skip the pages of the GPU paths that the device lacks
+//                       machines: the plan's items split by their expected time in CI's Safari,
+//                       and an item stays with the items whose results its check compares with,
+//                       as the shaders page's parts stay together. Each shard loads the
+//                       capabilities page first, to skip the pages of the GPU paths that the
+//                       device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
@@ -200,9 +202,11 @@ import {
 	benchSummary,
 	type Check,
 	depthSummary,
+	expectedSeconds,
 	governorSummary,
 	gpuPathOf,
 	itemsNeeded,
+	itemsTogether,
 	jitterSummary,
 	judge,
 	MEMORY_LIMIT_CHECKS,
@@ -1289,7 +1293,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
 		);
 	if (!shard) return repeatItems(items, rounds);
-	const part = shardItems(items, shard, needs);
+	const part = shardItems(items, shard, itemsTogether, expectedSeconds);
 	if (part.length === 0)
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
