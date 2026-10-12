@@ -173,9 +173,10 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
-	// The most area lights that one frame shades: the ones nearest the camera when more are in
-	// view. An area light costs a surface several times what a point light costs, so phones shade
-	// fewer. A change makes no GPU object (D-145).
+	// The most area lights that one frame shades: the ones that give the camera the most light when
+	// more are in view, and a light that crosses the cap fades over a few frames. An area light costs
+	// a surface several times what a point light costs, so phones shade fewer. A change makes no GPU
+	// object (D-145).
 	areaLights: {
 		presets: [4, 8, 16, 32],
 		changes: 'live',
@@ -412,8 +413,10 @@ export interface QualitySettings {
 	reflectionScale: 0.25 | 0.5 | 1;
 	/**
 	 * The most rectangle and tube lights that one frame shades, a whole number from 0 to 64. When
-	 * more are in view, the ones nearest the camera shade. An area light costs each surface it
-	 * reaches several times what a point light costs. It changes during play.
+	 * more are in view, the ones that give the camera the most light shade: the brightest and
+	 * largest, for their distance. A light that joins or leaves them fades over a few frames. An area
+	 * light costs each surface it reaches several times what a point light costs. It changes during
+	 * play.
 	 */
 	areaLights: number;
 	/**

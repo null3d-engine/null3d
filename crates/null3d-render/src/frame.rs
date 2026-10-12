@@ -846,8 +846,8 @@ impl SceneSettings {
         &mut self.light_tables
     }
 
-    /// The most area lights that one frame shades: the ones nearest the camera when more are
-    /// visible.
+    /// The most area lights that one frame shades: the ones that give the camera the most light
+    /// when more are visible, as the light grid ranks them.
     pub fn area_light_cap(&self) -> u32 {
         self.area_light_cap
     }

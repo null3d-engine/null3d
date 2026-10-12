@@ -39,9 +39,12 @@
 //!
 //! # Limits
 //!
-//! [`LightLimits`] caps the lights of one frame, the lights of one cluster and the entries of the
-//! index list. Past the frame's cap, the grid keeps the lights whose spheres come nearest the
-//! camera. Past a cluster's cap, or the index list's, a cluster keeps the lights that come first
+//! [`LightLimits`] caps the lights of one frame, the area lights of one frame, the lights of one
+//! cluster and the entries of the index list. Past the area lights' cap, the grid keeps the area
+//! lights that give the camera the most light, as [`area_light_at_camera`] estimates it. A light
+//! that crosses that cap fades in or out over [`FADE_FRAMES`] frames, so none switches on or off at
+//! once while the camera moves. Past the frame's cap, the grid keeps the lights whose spheres come
+//! nearest the camera. Past a cluster's cap, or the index list's, a cluster keeps the lights that come first
 //! in the list, and clusters further along the view lose lights first.
 //!
 //! # What the shaders read
@@ -91,9 +94,61 @@ const AWAKE_PARALLEL_WORK: u32 = 512;
 /// every light that reaches the fragment.
 const MARGIN: f32 = 1e-4;
 
+/// The frames over which an area light fades in when it joins the frame's kept area lights, or
+/// fades out when it leaves them.
+pub const FADE_FRAMES: u32 = 8;
+/// What an area light's estimate keeps past its range: a small share, so lights out of range still
+/// rank among themselves by their light, below every light in range.
+const PAST_RANGE: f32 = 1e-4;
+/// The closest that the estimate lets the camera come to a light, in meters, so a camera at or in
+/// a light gives a finite number.
+const NEAREST: f32 = 0.1;
+
 /// True for a rectangle or tube light's record.
 fn is_area(light: &VisibleLight) -> bool {
     light.kind == kind::RECT || light.kind == kind::TUBE
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// The distance from the camera to the nearest point of the area between `p - a` and `p + a`,
+/// and `a`'s length: `p` relative to the camera, and `a` a half side.
+fn along_side(p: [f32; 3], a: [f32; 3]) -> ([f32; 3], f32) {
+    let half = dot(a, a).sqrt();
+    if half == 0.0 {
+        return (p, 0.0);
+    }
+    let t = (-dot(p, a) / (half * half)).clamp(-1.0, 1.0);
+    (std::array::from_fn(|k| p[k] + t * a[k]), half)
+}
+
+/// An estimate of the light that an area light's record gives the camera: its luminance (color
+/// times intensity) times its area, over the squared distance from the camera to its nearest
+/// point. The light's own window ends it at its range, past which only [`PAST_RANGE`] of it stays.
+/// A rectangle's area is its width times its height, and a tube's its length times its diameter.
+pub fn area_light_at_camera(light: &VisibleLight) -> f32 {
+    let [r, g, b] = light.color;
+    let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    let (q, half_a) = along_side(light.position, light.direction);
+    let (area, distance) = if light.kind == kind::RECT {
+        let (q, half_b) = along_side(q, [light.decay, light.cone_cos, light.penumbra_cos]);
+        (4.0 * half_a * half_b, dot(q, q).sqrt())
+    } else {
+        (4.0 * half_a * light.decay, dot(q, q).sqrt() - light.decay)
+    };
+    let distance = distance.max(NEAREST);
+    let reach = (distance / light.range.max(f32::MIN_POSITIVE)).powi(4);
+    let window = ((1.0 - reach).max(0.0).powi(2)).max(PAST_RANGE);
+    luminance * area / (distance * distance) * window
+}
+
+/// An area light's fade: its weight from 0 to 1, and the frame that last listed it.
+#[derive(Clone, Copy, Debug, Default)]
+struct Fade {
+    weight: f32,
+    seen: u32,
 }
 
 /// How the grid cuts a view into clusters.
@@ -143,7 +198,8 @@ pub struct LightLimits {
     /// more are visible.
     pub lights: u32,
     /// The most area lights of one frame, which cost a surface several times what a point light
-    /// costs: the ones nearest the camera when more are visible. They count toward `lights` too.
+    /// costs: the ones that give the camera the most light when more are visible, with the ones
+    /// that still fade out. They count toward `lights` too.
     pub area_lights: u32,
     /// The most lights of one cluster, at most [`MAX_PER_CLUSTER`].
     pub per_cluster: u32,
@@ -312,6 +368,16 @@ pub struct LightGrid {
     bounds: Vec<[f32; 2]>,
     /// The visible lights in order of nearness, when more than the frame's cap are visible.
     nearest: Vec<u32>,
+    /// Each visible area light's estimate of its light at the camera, by its place in the visible
+    /// list, when more than the area lights' cap are visible.
+    estimates: Vec<f32>,
+    /// Each visible light's weight in the frame, by its place in the visible list: 1 for every
+    /// light but an area light that fades, and 0 for one the frame leaves out.
+    weights: Vec<f32>,
+    /// Each area light's fade, by its row in the light table.
+    fades: Vec<Fade>,
+    /// The frames that chose lights so far, which marks the fades that the last frame listed.
+    frame: u32,
     /// Each slice's tile rectangle of each light, [`NO_TILES`] for none: one row of lights per
     /// slice.
     rects: Vec<u32>,
@@ -352,6 +418,10 @@ impl LightGrid {
             spans: vec![Span::default(); lights],
             bounds: vec![[0.0; 2]; shape.slices as usize],
             nearest: Vec::new(),
+            estimates: Vec::new(),
+            weights: Vec::new(),
+            fades: Vec::new(),
+            frame: 1,
             rects: vec![NO_TILES; shape.slices as usize * lights],
             counts: vec![0; clusters],
             words: vec![0; clusters + limits.indices as usize],
@@ -583,24 +653,36 @@ impl LightGrid {
         Some(work)
     }
 
-    /// Copies the lights the frame lists: all of `visible`, or past the frame's cap or its cap of
-    /// area lights, the ones whose spheres come nearest the camera, in the order of `visible`.
+    /// Copies the lights the frame lists: all of `visible`, or past the area lights' cap the area
+    /// lights that [`area_light_at_camera`] ranks first, with the lights that still fade out, and
+    /// past the frame's cap the ones whose spheres come nearest the camera, in the order of
+    /// `visible`. Each area light's color is multiplied by its fade. It allocates only when the
+    /// light table or the visible list grew past what an earlier frame met.
     fn choose(&mut self, visible: &[VisibleLight]) {
         let cap = self.limits.lights as usize;
-        let area_cap = self.limits.area_lights as usize;
         self.lights.clear();
+        self.frame = self.frame.wrapping_add(1);
         let areas = visible.iter().filter(|light| is_area(light)).count();
-        if visible.len() <= cap && areas <= area_cap {
+        if areas == 0 && visible.len() <= cap {
             self.lights.extend_from_slice(visible);
             return;
         }
         if cap == 0 {
             return;
         }
-        let nearest = &mut self.nearest;
-        nearest.clear();
-        if nearest.try_reserve(visible.len()).is_err() {
+        let rows = visible.iter().map(|light| light.light as usize + 1).max();
+        self.nearest.clear();
+        self.estimates.clear();
+        self.weights.clear();
+        let room = self.nearest.try_reserve(visible.len()).is_ok()
+            && self.estimates.try_reserve(visible.len()).is_ok()
+            && self.weights.try_reserve(visible.len()).is_ok()
+            && rows.is_none_or(|rows| {
+                rows <= self.fades.len() || self.fades.try_reserve(rows - self.fades.len()).is_ok()
+            });
+        if !room {
             // Without room to rank them, the first lights stay, with the first area lights.
+            let area_cap = self.limits.area_lights as usize;
             let mut kept_areas = 0;
             let first = visible.iter().filter(|light| {
                 let area = is_area(light);
@@ -610,39 +692,104 @@ impl LightGrid {
             self.lights.extend(first.take(cap).copied());
             return;
         }
-        nearest.extend(0..visible.len() as u32);
-        let near_edge = |i: &u32| {
-            let light = &visible[*i as usize];
-            let [x, y, z] = light.position;
-            (x * x + y * y + z * z).sqrt() - light.range
-        };
-        let kept = if areas <= area_cap {
+        if let Some(rows) = rows.filter(|&rows| rows > self.fades.len()) {
+            self.fades.resize(rows, Fade::default());
+        }
+        self.fade_area_lights(visible, areas);
+
+        // The frame's cap among the lights that the area lights' cap and the fades leave.
+        let weights = &self.weights;
+        let nearest = &mut self.nearest;
+        nearest.clear();
+        nearest.extend((0..visible.len() as u32).filter(|&i| weights[i as usize] > 0.0));
+        if nearest.len() > cap {
+            let near_edge = |i: &u32| {
+                let light = &visible[*i as usize];
+                let [x, y, z] = light.position;
+                (x * x + y * y + z * z).sqrt() - light.range
+            };
             nearest.select_nth_unstable_by(cap - 1, |a, b| near_edge(a).total_cmp(&near_edge(b)));
-            cap
-        } else {
-            // Rank them all, then keep the nearest lights in order while the caps allow, moving
-            // each kept index to the front of the same list.
-            nearest.sort_unstable_by(|a, b| near_edge(a).total_cmp(&near_edge(b)));
-            let (mut kept, mut kept_areas) = (0, 0);
-            for at in 0..nearest.len() {
-                if kept == cap {
-                    break;
+            nearest.truncate(cap);
+            nearest.sort_unstable();
+        }
+        self.lights.extend(nearest.iter().map(|&i| {
+            let weight = weights[i as usize];
+            let mut light = visible[i as usize];
+            light.color = light.color.map(|c| c * weight);
+            light
+        }));
+    }
+
+    /// Gives each of the `areas` area lights of `visible` its weight for the frame, and every other
+    /// light a weight of 1. The cap keeps the area lights that give the camera the most light, and
+    /// the nearest of equal ones. A kept light's weight rises toward 1, and any other's falls toward
+    /// 0, by a step of one in [`FADE_FRAMES`] each frame. A light that the last frame did not list
+    /// starts at its end weight, so lights that come into view, and a scene's first frame, show no
+    /// fade.
+    fn fade_area_lights(&mut self, visible: &[VisibleLight], areas: usize) {
+        let area_cap = self.limits.area_lights as usize;
+        let Self {
+            nearest,
+            estimates,
+            weights,
+            fades,
+            frame,
+            ..
+        } = self;
+        weights.clear();
+        weights.extend(
+            visible
+                .iter()
+                .map(|light| if is_area(light) { 0.0 } else { 1.0 }),
+        );
+        // The kept area lights get a weight of 1 here, the rest stay at 0, before the fades.
+        nearest.clear();
+        nearest.extend((0..visible.len() as u32).filter(|&i| is_area(&visible[i as usize])));
+        if areas > area_cap {
+            estimates.clear();
+            estimates.extend(visible.iter().map(|light| {
+                if is_area(light) {
+                    area_light_at_camera(light)
+                } else {
+                    0.0
                 }
-                let index = nearest[at];
-                if is_area(&visible[index as usize]) {
-                    if kept_areas == area_cap {
-                        continue;
-                    }
-                    kept_areas += 1;
-                }
-                nearest[kept] = index;
-                kept += 1;
+            }));
+            let near_edge = |i: u32| {
+                let light = &visible[i as usize];
+                dot(light.position, light.position).sqrt() - light.range
+            };
+            let rank = |a: &u32, b: &u32| {
+                let (ea, eb) = (estimates[*a as usize], estimates[*b as usize]);
+                eb.total_cmp(&ea)
+                    .then_with(|| near_edge(*a).total_cmp(&near_edge(*b)))
+            };
+            if area_cap > 0 {
+                nearest.select_nth_unstable_by(area_cap - 1, rank);
             }
-            kept
-        };
-        nearest[..kept].sort_unstable();
-        self.lights
-            .extend(nearest[..kept].iter().map(|&i| visible[i as usize]));
+            nearest.truncate(area_cap);
+        }
+        for &i in nearest.iter() {
+            weights[i as usize] = 1.0;
+        }
+        let step = 1.0 / FADE_FRAMES as f32;
+        for (light, weight) in visible.iter().zip(weights.iter_mut()) {
+            if !is_area(light) {
+                continue;
+            }
+            let fade = &mut fades[light.light as usize];
+            let target = *weight;
+            fade.weight = if fade.seen.wrapping_add(1) == *frame {
+                if target > fade.weight {
+                    (fade.weight + step).min(1.0)
+                } else {
+                    (fade.weight - step).max(0.0)
+                }
+            } else {
+                target
+            };
+            fade.seen = *frame;
+            *weight = fade.weight;
+        }
     }
 
     /// Sets the slices for the frame's lights, and each light's span of slices. Returns the slices

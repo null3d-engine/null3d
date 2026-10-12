@@ -91,7 +91,7 @@ In this version:
 - Surfaces show one directional light: the first one you created that is visible and shares a layer with the camera.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
 - Point and spot lights light the surfaces that their ranges reach. Each frame the engine finds the ones whose ranges reach into the camera's view. It lists each one in the clusters of the view that it reaches. The camera lists up to 1,024 of them, the nearest, and up to 128 in each cluster. [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains clusters.
-- Rectangle and tube lights light the surfaces that their ranges reach, in the same clusters. The quality preset's `areaLights` caps how many one frame shades: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Past it, the nearest ones shade. [Area lights](#area-lights) says more.
+- Rectangle and tube lights light the surfaces that their ranges reach, in the same clusters. The quality preset's `areaLights` caps how many one frame shades: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Past it, the ones that give the camera the most light shade: the brightest and largest for their distance. A light that joins or leaves them fades over a few frames, so none switches on or off at once. [Area lights](#area-lights) says more.
 - Every hemisphere light that is visible and shares a layer with the camera adds its light. [Hemisphere lights](#hemisphere-lights) says how.
 - Without lights, standard materials draw black.
 

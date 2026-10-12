@@ -71,7 +71,27 @@ A rectangle light needs a range, as point and spot lights do. three.js's `RectAr
 
 ### Cost limits
 
-Each preset's `areaLights` caps the area lights that one frame shades. Past the cap, the frame keeps the area lights nearest the camera, as the light grid already does for all lights.
+Each preset's `areaLights` caps the area lights that one frame shades: 4 on Low, 8 on Medium, 16 on High and 32 on Ultra. Demos keep the presets' caps, so a scene must read well with the lights that the cap keeps.
+
+Which lights the cap keeps:
+
+| Option | Verdict |
+| --- | --- |
+| A: the lights whose range spheres come nearest the camera (distance less range), as the frame's cap of all lights does | Rejected. Brightness and size count for nothing, so a big dim light with a long range pushes out a small bright one beside it. A light also switched on or off at once when it crossed the cap, so lights popped while the camera orbited |
+| B: an estimate of each light's light at the camera: its luminance (color times intensity) times its area, over the squared distance to its nearest point, with the light's own window as a cut-off at its range | Chosen. It takes a few dozen operations per area light, on the CPU, and only in frames with more area lights than the cap |
+| C: each light's light over the visible surfaces, per cluster or per screen tile | Rejected. It costs work per cluster and light, and the clusters are listed after the choice |
+
+A light past its range keeps a ten-thousandth of its estimate, so lights out of range still rank among themselves. Equal estimates fall back to option A's order.
+
+How a light crosses the cap:
+
+| Option | Verdict |
+| --- | --- |
+| A: on or off at once | Rejected. The pop shows on wet streets and shiny floors |
+| B: keep a kept light until another beats it by a margin | Rejected. It makes a swap rarer, but each swap still pops |
+| C: fade each light's color over 8 frames, in when it joins the kept lights and out when it leaves them | Chosen. A light that leaves keeps shading while it fades, so for those frames more lights than the cap shade. A light that comes into view, and every light of the first frame, starts at its end weight, so held frames show no fade |
+
+The fade counts frames, not seconds, so a held frame and its test images do not depend on the frame rate. At 60 frames a second it lasts 133 ms. Each view's light grid keeps its own fades, by the lights' rows, in a list that grows only when the scene makes more lights. The coordinator asked for this change in the same pull request on 12 October 2026, so that no scene with more area lights than the cap pops.
 
 ## Data
 
@@ -92,7 +112,7 @@ COST
 
 ## Decision
 
-Proposed: option A for shading, the facing rectangle for tubes, and the gzip file of the tables. Option B for the tables' binding, with the images as layers of the same array. The records of point and spot lights, and a cap per preset.
+Proposed: option A for shading, the facing rectangle for tubes, and the gzip file of the tables. Option B for the tables' binding, with the images as layers of the same array. The records of point and spot lights, and a cap per preset that keeps the lights with the most light at the camera, with a fade of 8 frames across it.
 
 ## Consequences
 
