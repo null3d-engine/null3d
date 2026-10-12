@@ -293,6 +293,7 @@ async function startNull3d(
 					threads,
 					cpuMsAllThreads: metrics.cpuMsAllThreads.mean,
 					gpuMs: metrics.gpuMs?.mean ?? null,
+					gpuPassMs: metrics.gpuPassMs?.map(({ name, ms }) => ({ name, ms: ms.mean })) ?? null,
 					drawCalls: metrics.drawCalls.mean,
 					uploadBytes: metrics.uploadBytes.mean,
 					wasmBytes: metrics.memory.wasmBytes,
