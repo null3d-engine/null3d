@@ -68,11 +68,13 @@ export interface Null3dPageOptions {
  * lets light through under it, `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them
  * with `coatSheen=coat` or `coatSheen=sheen`, `batchShadows` makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
- * a custom material reads, `sides` draws S2's boxes
- * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
- * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
- * share of S5's knights stand still in one pose, as waiting characters do, and `frames` makes S1
- * count the frames it steps, which the page publishes for the allocation check.
+ * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
+ * hemisphere lights to S1, `sides` draws S2's boxes see-through and double-sided: `two` draws each
+ * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
+ * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
+ * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
+ * publishes for the allocation check. A switch missing here never reaches the sketch, which then
+ * runs without it, so a unit test checks that every switch a sketch reads is listed.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -101,6 +103,8 @@ const SKETCH_SWITCHES = [
 	'still',
 	'batchShadows',
 	'rowValues',
+	'levels',
+	'hemisphere',
 	'frames',
 ] as const;
 
