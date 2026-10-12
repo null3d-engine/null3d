@@ -227,20 +227,55 @@ export function firstUseFile(shader: string, permutation: number): string | unde
 	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
 }
 
-function loadFirstUse(
-	files: Readonly<Record<string, FirstUseFiles>>,
-	combined: () => Promise<Readonly<Record<string, FirstUseFiles>>>,
-	target: string,
-	file: string,
-	bits: number,
-) {
-	const table = file.includes(FEATURE_JOIN) ? combined() : Promise.resolve(files);
+/** A target's device modules of features that load on first use, and the keys that pages asked for. */
+interface FirstUseTarget {
+	readonly name: string;
+	/** The modules of each feature, by its name. */
+	readonly files: Readonly<Record<string, FirstUseFiles>>;
+	/** The keys of the modules of builds that need several features. */
+	readonly combined: readonly string[];
+	/** Loads the table of the modules of builds that need several features. */
+	readonly loadCombined: () => Promise<Readonly<Record<string, FirstUseFiles>>>;
+	/** The features whose own modules a page asked for. */
+	readonly asked: Set<string>;
+}
+
+const WGSL_TARGET: FirstUseTarget = {
+	name: 'WGSL',
+	files: WGSL_FIRST_USE,
+	combined: WGSL_COMBINED,
+	loadCombined: loadWgslCombined,
+	asked: new Set(),
+};
+
+const GLSL_TARGET: FirstUseTarget = {
+	name: 'GLSL',
+	files: GLSL_FIRST_USE,
+	combined: GLSL_COMBINED,
+	loadCombined: loadGlslCombined,
+	asked: new Set(),
+};
+
+/**
+ * Loads the builds of `file`, a key that `firstUseFile` gives, for a device whose fixed bits are
+ * `bits`. A key of several features loads the table of their modules first. Once a page has asked
+ * for the module of each feature of such a key, that table starts to load beside it, so a build of
+ * several features then waits for its own module alone.
+ */
+function loadFirstUse(target: FirstUseTarget, file: string, bits: number) {
+	const combined = file.includes(FEATURE_JOIN);
+	if (!combined && !target.asked.has(file)) {
+		target.asked.add(file);
+		const needs = (key: string) => key.split(FEATURE_JOIN).every((one) => target.asked.has(one));
+		if (target.combined.some(needs)) target.loadCombined().catch(() => undefined);
+	}
+	const table = combined ? target.loadCombined() : Promise.resolve(target.files);
 	return table.then((loaded) => {
 		const of = loaded[file];
 		const load = of?.modules[bits & of.bits];
 		if (!load)
 			throw new Error(
-				`no shader module holds the ${target} builds of ${file} with permutation bits ${bits}`,
+				`no shader module holds the ${target.name} builds of ${file} with permutation bits ${bits}`,
 			);
 		return load().then((module) => module.SHADERS);
 	});
@@ -248,20 +283,18 @@ function loadFirstUse(
 
 /**
  * Loads the WGSL builds that need the features of `file`, a key that `firstUseFile` gives, for a
- * device whose fixed permutation bits are `bits`. Its module holds only those builds. The table of
- * the modules of several features loads first, the first time a key of several asks for it.
+ * device whose fixed permutation bits are `bits`. Its module holds only those builds.
  */
 export function loadWgslFeature(file: string, bits: number): Promise<FirstUseShaders> {
-	return loadFirstUse(WGSL_FIRST_USE, loadWgslCombined, 'WGSL', file, bits);
+	return loadFirstUse(WGSL_TARGET, file, bits);
 }
 
 /**
  * Loads the GLSL builds that need the features of `file`, a key that `firstUseFile` gives, for a
- * device whose fixed permutation bits are `bits`. Its module holds only those builds. The table of
- * the modules of several features loads first, the first time a key of several asks for it.
+ * device whose fixed permutation bits are `bits`. Its module holds only those builds.
  */
 export function loadGlslFeature(file: string, bits: number): Promise<FirstUseShaders> {
-	return loadFirstUse(GLSL_FIRST_USE, loadGlslCombined, 'GLSL', file, bits);
+	return loadFirstUse(GLSL_TARGET, file, bits);
 }
 
 /**
