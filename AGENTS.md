@@ -108,6 +108,7 @@ Code review enforces these rules.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
 20. No code keeps a typed-array view of the engine's shared memory after the memory grows. Get views from the one place that makes them, and drop every view when the memory grows. Chrome's page memory figure counts each stale view's buffer as a full copy of the memory ([Views of the shared memory](.dev/implementation-notes.md#views-of-the-shared-memory)).
+27. A value of the permutation word names one feature in each shader template. Two features share a value only when no template lists both, and no code makes one's keys from the other's ([D-156](.dev/decisions/D-156-template-scoped-permutation-bits.md)). The shader build refuses a template that lists two names of one value.
 
 ## Performance work
 

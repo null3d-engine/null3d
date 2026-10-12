@@ -28,6 +28,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::ao::{self, Ao};
+use crate::area_shading::AreaShading;
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
 use crate::camera::{Lens, Mat4};
@@ -739,6 +740,10 @@ pub struct SceneSettings {
     light_tables: LightTables,
     /// The most area lights that one frame shades, which the quality settings set.
     area_light_cap: u32,
+    /// Whether the lit templates draw with their builds that shade area lights.
+    area_shading: AreaShading,
+    /// True when the last gather found an area light whose tables have arrived.
+    area_wanted: bool,
     /// The meshes with levels of detail.
     levels: Levels,
     /// How the levels of detail are picked, which the quality settings set.
@@ -829,6 +834,8 @@ impl SceneSettings {
             mirror_halvings: 1,
             light_tables: LightTables::default(),
             area_light_cap: DEFAULT_AREA_LIGHT_CAP,
+            area_shading: AreaShading::default(),
+            area_wanted: false,
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
@@ -1810,7 +1817,10 @@ impl SceneSettings {
                 frustum: frame.frustum,
                 layers: frame.layers,
             });
-        lights.set_area_ready(self.light_tables.ready());
+        // Area lights join the visible list only while the lit templates draw with their builds
+        // that shade them, so no build meets a light whose code it lacks.
+        self.area_wanted = self.light_tables.ready() && lights.has_area_lights();
+        lights.set_area_ready(self.light_tables.ready() && self.area_shading.on());
         let lit = lights.gather(scene, parity, view.as_ref(), self.drawn_output().exposure);
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
@@ -1848,6 +1858,26 @@ impl SceneSettings {
     /// shadows. A builder calls it when it makes its GPU objects again.
     pub fn forget_shadow_maps(&mut self) {
         self.shadow_schedule.reset();
+        self.area_shading.forget_gpu();
+    }
+
+    /// Turns area shading on or off for the frame (see [`AreaShading::update`]): on once the last
+    /// gather found an area light whose tables have arrived and the lit pipelines in use have their
+    /// builds that shade area lights. Returns true when it changes, so the layouts take their keys
+    /// again.
+    pub(crate) fn update_area_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        self.area_shading
+            .update(self.area_wanted, pipelines, pipelines_built)
+    }
+
+    /// The key that a pair draws with in the scene's passes, from its shading key: with the bit
+    /// that shades area lights while area shading is on (see [`AreaShading::key`]).
+    pub fn area_key(&self, pipeline: DrawKey) -> DrawKey {
+        self.area_shading.key(pipeline)
     }
 
     /// The main directional light's shadows in the next frame, whose targets have the canvas's

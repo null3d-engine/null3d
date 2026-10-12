@@ -350,6 +350,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
             Some((
                 skin(pipeline, skinned),

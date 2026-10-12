@@ -291,6 +291,7 @@ impl SortedLayout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))

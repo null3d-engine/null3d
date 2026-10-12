@@ -381,9 +381,16 @@ impl LightTable {
     }
 
     /// Lets area lights into the visible list from the next [`LightTable::gather`], once the
-    /// shaders have their tables, or keeps them out.
+    /// shaders have their tables and their builds that shade area lights, or keeps them out.
     pub fn set_area_ready(&mut self, ready: bool) {
         self.area_ready = ready;
+    }
+
+    /// True when the table holds a rectangle or tube light.
+    pub fn has_area_lights(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|row| matches!(row.kind, kind::RECT | kind::TUBE))
     }
 
     /// Sets the number, by [`value`], that each light created from now on starts with, such as the

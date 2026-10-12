@@ -806,8 +806,13 @@ impl GpuDrivenRenderer {
         let skinned_appear =
             self.skinning
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        // The lit templates switch to or from their builds that shade area lights.
+        let area_switched = self
+            .settings
+            .update_area_shading(&mut self.pipelines, input.pipelines_built);
         let upload_everything = input.structure_changed
             || !self.layout.built
+            || area_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
