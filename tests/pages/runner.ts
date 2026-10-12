@@ -49,6 +49,8 @@ import {
 	REST_AFTER_TAB_END_SECONDS,
 	tabEndedResult,
 } from '../lib/tab-end';
+import { REFRESH_MEASURE, refreshRate } from './lib/refresh-rate';
+import { grantedSeconds, liveOutcome } from './lib/runner-rules';
 
 interface PlanItem {
 	id: string;
@@ -75,23 +77,6 @@ const tabs = params.has('tabs');
 const LISTEN_POLL_MS = 2000;
 const RESULT_POLL_MS = 200;
 const PAUSE_BETWEEN_PAGES_MS = 1000;
-const REFRESH_SAMPLES = 61;
-/**
- * How long the page changes the screen before it times frames for the refresh rate. A phone lowers
- * its display's rate while the screen barely changes, and the Galaxy S24+ took about 330 ms to
- * raise it again once every frame changed the screen.
- */
-const REFRESH_WARM_UP_MS = 500;
-/**
- * A shade of the report's background one step lighter, which the report takes on every other frame
- * while the page measures the refresh rate, so each frame changes the whole screen unseen.
- */
-const REFRESH_SHADE = '#101419';
-/**
- * How long the page waits for the animation frames that measure the refresh rate. A visible page
- * gets them within about a second; a page that the browser hides gets none until it shows it.
- */
-const REFRESH_LIMIT_MS = 20_000;
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 const statusLine = byId('status');
@@ -211,14 +196,16 @@ class RunReport {
 			this.log.prepend(line(`skipped  ${page}`));
 			return;
 		}
-		if (result.ok) this.passed++;
+		const { passed, error } = liveOutcome(result);
+		const shown = `${this.ids[index]}${error ? `: ${error}` : ''}`;
+		if (passed) this.passed++;
 		else {
 			this.failed++;
-			this.errors[index] = result.error;
-			this.failures.append(line(page));
+			this.errors[index] = error;
+			this.failures.append(line(shown));
 		}
-		this.mark(index, result.ok ? 'passed' : 'failed');
-		this.log.prepend(line(`${result.ok ? 'done' : 'failed'}  ${page}`));
+		this.mark(index, passed ? 'passed' : 'failed');
+		this.log.prepend(line(`${passed ? 'done' : 'failed'}  ${shown}`));
 	}
 
 	counts(): string {
@@ -252,46 +239,8 @@ async function claim(run: string): Promise<void> {
 	if (!response.ok) throw new Error(`the dev server refused the claim: ${response.status}`);
 }
 
-/**
- * The display's refresh rate, from the median interval between animation frames, or null when the
- * browser gives the page too few frames within the time limit. Frame callbacks follow the display's
- * rate, and a phone lowers that rate while the screen barely changes, as when only the report's
- * lines change between pages: the Galaxy S24+ then runs at 24 Hz. So each frame of the measurement
- * changes the report's background by one shade, and the timing starts once the display has had
- * time to rise to its full rate.
- */
-async function refreshRate(): Promise<number | null> {
-	const panel = byId('report');
-	const times: number[] = [];
-	let frames = 0;
-	let warmUpEnd = Number.POSITIVE_INFINITY;
-	let late = false;
-	const measured = await new Promise<boolean>((resolve) => {
-		const limit = setTimeout(() => {
-			late = true;
-			resolve(false);
-		}, REFRESH_LIMIT_MS);
-		const tick = (time: number) => {
-			if (late) return;
-			panel.style.backgroundColor = frames++ % 2 === 0 ? REFRESH_SHADE : '';
-			if (frames === 1) warmUpEnd = time + REFRESH_WARM_UP_MS;
-			if (time >= warmUpEnd) times.push(time);
-			if (times.length < REFRESH_SAMPLES) requestAnimationFrame(tick);
-			else {
-				clearTimeout(limit);
-				resolve(true);
-			}
-		};
-		requestAnimationFrame(tick);
-	});
-	panel.style.backgroundColor = '';
-	if (!measured) return null;
-	const intervals = times
-		.slice(1)
-		.map((time, i) => time - (times[i] as number))
-		.sort((a, b) => a - b);
-	return Math.round(1000 / (intervals[Math.floor(intervals.length / 2)] as number));
-}
+/** The display's refresh rate, measured while the report's background changes shade on every frame. */
+const displayRate = () => refreshRate({ ...REFRESH_MEASURE, element: 'report' });
 
 /**
  * The GPU as the browser names it: WebGPU's adapter details, whether WebGPU's compatibility mode
@@ -354,7 +303,7 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 		maxTouchPoints: navigator.maxTouchPoints,
 		screen: { width: screen.width, height: screen.height },
 		devicePixelRatio,
-		refreshRateHz: await refreshRate(),
+		refreshRateHz: await displayRate(),
 		visibility: document.visibilityState,
 		crossOriginIsolated,
 		origin: location.origin,
@@ -376,23 +325,33 @@ function frameLoadStep(frame: HTMLIFrameElement): string {
 	return `runner: the page's document is ${frame.contentDocument?.readyState ?? 'out of reach'}, and it loaded ${loaded.length} files${lastText}`;
 }
 
-/** Opens a page in a frame and waits for the result it publishes, or records a timeout. */
+/**
+ * Opens a page in a frame and waits for the result it publishes, or records a timeout. A page whose
+ * own measurements show that it needs longer than its time limit gets that long, up to a few times
+ * the limit.
+ */
 async function openInFrame(path: string, timeoutSeconds: number): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
 	frame.src = path;
 	stage.append(frame);
-	const deadline = performance.now() + timeoutSeconds * 1000;
+	const start = performance.now();
+	let limit = timeoutSeconds;
 	try {
-		while (performance.now() < deadline) {
-			const published = (frame.contentWindow as { __null3dResult?: Result } | null)?.__null3dResult;
+		while (performance.now() < start + limit * 1000) {
+			const view = frame.contentWindow as {
+				__null3dResult?: Result;
+				__null3dEndsBy?: number;
+			} | null;
+			const published = view?.__null3dResult;
 			if (published) return published;
+			limit = grantedSeconds(timeoutSeconds, view?.__null3dEndsBy);
 			await sleep(RESULT_POLL_MS);
 		}
 		const trail = (frame.contentWindow as { __null3dProgress?: string[] } | null)?.__null3dProgress;
 		return {
 			ok: false,
-			error: `no result within ${timeoutSeconds} s`,
+			error: `no result within ${limit} s`,
 			trail: [...(trail ?? []), frameLoadStep(frame)],
 		};
 	} finally {
@@ -525,7 +484,7 @@ async function runPlan(run: string, from?: number): Promise<void> {
 			);
 			await sleep(item.restSeconds * 1000);
 		}
-		const runnerRefreshHz = plan.measureRefresh ? await refreshRate() : undefined;
+		const runnerRefreshHz = plan.measureRefresh ? await displayRate() : undefined;
 		if (runnerRefreshHz === null) await stopWithoutFrames(run, item.id);
 		const result = await runItem(item, run);
 		ran.pages++;

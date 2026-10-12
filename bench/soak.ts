@@ -1,4 +1,4 @@
-// The soak test: runs S1, or S4 with `--scene s4`, in Chrome for ten minutes and samples, every 30
+// The soak test: runs S1, or the scene that `--scene` names, in Chrome for ten minutes and samples, every 30
 // seconds, the JavaScript heap of the page and of each engine worker and the size of the engine's
 // WebAssembly memory, through Chrome's debugging protocol. A leak in the engine's frame code shows
 // as steady growth. Before each heap sample, the page and the workers that return to their event
@@ -8,10 +8,13 @@
 // small allowance, when the WebAssembly memory grows after it, when the page reports an error, or
 // when the engine no longer draws at the end. It runs the production build of the benchmark pages,
 // as a developer ships the engine; `--dev` runs the dev server's pages, with the engine's
-// development checks. From the repository root:
+// development checks. Each scene runs at its own object count unless `--n` names one, and a scene
+// that streams in, as S6 does, is whole before the first sample. From the repository root:
 //   bun run bench:soak
 //   bun run bench:soak --gpu webgl2 --minutes 20 --n 30000
 //   bun run bench:soak --scene s4
+//   bun run bench:soak --scene s5 --gpu webgl2
+//   bun run bench:soak --scene s6
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
@@ -27,6 +30,7 @@ import {
 import { pagePath } from './lib/parity';
 import { pagesText, serveBenchPages } from './lib/serve';
 import { judgeSoak, kb, mb, type SoakSample, soakTable } from './lib/soak';
+import { SCENE_COUNTS } from './lib/visual';
 
 /** Seconds between samples. */
 const SAMPLE_SECONDS = 30;
@@ -48,8 +52,11 @@ const ANSWER_TIMEOUT_MS = 10_000;
 /** How long the page may take to start the engine and build the scene. */
 const START_TIMEOUT_MS = 120_000;
 
+/** How long a scene that streams in may take to be whole. */
+const WHOLE_TIMEOUT_MS = 300_000;
+
 /** The scenes that the soak runs. S4 has a fixed count of objects and ignores `--n`. */
-const SOAK_SCENES = ['s1', 's4'] as const;
+const SOAK_SCENES = ['s1', 's4', 's5', 's6'] as const;
 
 interface Options {
 	scene: (typeof SOAK_SCENES)[number];
@@ -66,25 +73,25 @@ function readOptions(args: string[]): Options {
 			scene: { type: 'string', default: 's1' },
 			gpu: { type: 'string', default: 'webgpu' },
 			minutes: { type: 'string', default: '10' },
-			n: { type: 'string', default: '100000' },
+			n: { type: 'string' },
 			dev: { type: 'boolean', default: false },
 		},
 	});
 	const { gpu } = values;
 	const scene = SOAK_SCENES.find((name) => name === values.scene);
-	if (!scene) throw new Error(`--scene takes ${SOAK_SCENES.join(' or ')}, not ${values.scene}`);
+	if (!scene) throw new Error(`--scene takes ${SOAK_SCENES.join(', ')}, not ${values.scene}`);
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
 	const minutes = Number(values.minutes);
 	if (!(minutes > 0)) throw new Error(`--minutes takes a number above 0, not ${values.minutes}`);
-	const n = Number(values.n);
+	const n = values.n === undefined ? SCENE_COUNTS[scene] : Number(values.n);
 	if (!Number.isSafeInteger(n) || n < 1)
 		throw new Error(`--n takes a whole number above 0, not ${values.n}`);
 	return { scene, gpu, minutes, n, dev: values.dev };
 }
 
-/** What the page publishes once the engine runs the scene in demo mode. */
-interface DemoResult {
+/** What the page publishes once the engine runs the scene with `?keep`. */
+interface KeptResult {
 	ok: boolean;
 	error?: string;
 	tier: string;
@@ -199,10 +206,15 @@ async function main(): Promise<void> {
 		page.on('console', (message) => {
 			if (message.type() === 'error') pageErrors.push(message.text());
 		});
-		const url = `${server.url}${pagePath(options.scene, `null3d-${options.gpu}`, `demo&n=${options.n}`)}`;
+		const url = `${server.url}${pagePath(options.scene, `null3d-${options.gpu}`, `keep&n=${options.n}`)}`;
 		await page.goto(url);
-		const started = await pageResult<DemoResult>(page, START_TIMEOUT_MS);
+		const started = await pageResult<KeptResult>(page, START_TIMEOUT_MS);
 		if (!started.ok) throw new Error(`the page did not start the engine: ${started.error}`);
+		await page.waitForFunction(
+			() => (globalThis as { __null3dWhole?: boolean }).__null3dWhole === true,
+			undefined,
+			{ timeout: WHOLE_TIMEOUT_MS, polling: 1000 },
+		);
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		try {
 			const [target] = await pagesAt(devtools, url);
@@ -210,7 +222,7 @@ async function main(): Promise<void> {
 			const { jobWorkers, latency } = started.mode;
 			const attached = await attachEveryWorker(devtools, target.targetId, 2 + jobWorkers);
 			console.log(
-				`Soak: ${options.scene === 's1' ? `S1 with ${options.n.toLocaleString('en-US')} instances` : 'S4'} on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
+				`Soak: ${options.scene.toUpperCase()}${options.scene === 's4' ? '' : ` with ${options.n.toLocaleString('en-US')} objects`} on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
 			);
 			const samples = await sampleRun(devtools, attached, options.minutes);
 			const end = await measureEnd(page);
