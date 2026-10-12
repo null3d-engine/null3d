@@ -427,6 +427,14 @@ class ThreeRuntime {
 			antialias: true,
 			powerPreference: 'high-performance',
 		}) as AnyRenderer;
+		// A program that fails to link draws nothing. The page hears why, and the console still does.
+		renderer.debug.onShaderError = (gl, program) => {
+			const message = `three.js could not link a shader program (WebGL error ${gl.getError()}): ${
+				gl.getProgramInfoLog(program)?.trim() || 'the driver gave no log'
+			}`;
+			console.error(message);
+			this.post({ type: 'failure', message });
+		};
 		return { three, renderer, name: 'WebGLRenderer' };
 	}
 

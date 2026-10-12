@@ -69,6 +69,8 @@ export type FromThree =
 	| { type: 'failed'; message: string }
 	/** The first frame that drew anything, after three.js has built the shaders that it needs. */
 	| { type: 'drawn' }
+	/** Why three.js draws nothing, such as a shader program that failed to link. */
+	| { type: 'failure'; message: string }
 	| {
 			type: 'measured';
 			id: number;

@@ -142,6 +142,8 @@ export interface ComparisonRun {
 	 * shader. The ramp and `setCount` stop there.
 	 */
 	limit?: { count: number; reason: string };
+	/** The last reason the engine gave for drawing nothing, such as a shader that failed to link. */
+	readonly failure: string | null;
 	/** The held frame, RGBA8 rows from the top, for a run started with `hold`. */
 	held?: { width: number; height: number; pixels: Uint8Array };
 	/** Stops the engine and frees its memory. */
@@ -291,6 +293,7 @@ async function startNull3d(
 		deviceClass: cls,
 		plan,
 		pixelRatio,
+		failure: null,
 		get count() {
 			return shown;
 		},
@@ -448,12 +451,16 @@ async function startThree(
 		failed = reject;
 	});
 	let label = '';
+	let failure: string | null = null;
 	worker.onmessage = ({ data }) => {
 		switch (data.type) {
 			case 'started':
 				label = `${data.version}, ${data.renderer}`;
 				limit = data.limit && data.limit.count < plan.max ? data.limit : undefined;
 				meter?.started(data.renderer, data.version, data.gpuTimer);
+				return;
+			case 'failure':
+				failure = data.message;
 				return;
 			case 'drawn':
 				// A live run starts at its first frame that draws, as null3D's starts at its first frame.
@@ -508,6 +515,9 @@ async function startThree(
 		limit,
 		pixelRatio,
 		held: result.held,
+		get failure() {
+			return failure;
+		},
 		get count() {
 			return shown;
 		},
@@ -555,5 +565,8 @@ export async function rampComparison(
 	const pageHz = await measureDisplayHz();
 	const start = await run.measure(1);
 	const displayHz = displayRate(pageHz, start.fps);
-	return runRamp(run, plan, { ...options, displayHz });
+	const result = await runRamp(run, plan, { ...options, displayHz });
+	if (result.stopReason === 'no-frame')
+		result.failure = run.failure ?? 'it drew no frame within the step';
+	return result;
 }

@@ -29,6 +29,7 @@ import {
 } from './lib/compare-scene';
 import {
 	countToSlider,
+	noFrameText,
 	type RampResult,
 	SLIDER_STEPS,
 	sliderToCount,
@@ -84,7 +85,12 @@ function rampLine(comparison: Comparison, ramps: KeptRamp[]): string {
 		})
 		.filter(Boolean);
 	const hz = ramps[0]?.result.displayHz;
-	return `${parts.join(', ')} ${comparison.countUnit} at ${hz} fps on this device.`;
+	const failures = ramps.map((ramp) =>
+		noFrameText(ENGINE_TITLES[ramp.engine], ramp.result, comparison.countUnit),
+	);
+	return [`${parts.join(', ')} ${comparison.countUnit} at ${hz} fps on this device.`, ...failures]
+		.filter(Boolean)
+		.join(' ');
 }
 
 /** Runs a comparison in the page's panel, with its controls in a caption at the top left. */

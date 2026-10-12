@@ -83,8 +83,11 @@ export function rampSteps(plan: RampPlan): number {
 	return Math.ceil(Math.log(plan.max / plan.start) / Math.log(plan.factor) - 1e-9) + 1;
 }
 
-/** Why a ramp stopped: the engine missed the display rate, or the count reached the plan's maximum. */
-export type StopReason = 'below-display-rate' | 'maximum';
+/**
+ * Why a ramp stopped: the engine missed the display rate, it drew no frame at two counts in a row,
+ * or the count reached the plan's maximum.
+ */
+export type StopReason = 'below-display-rate' | 'no-frame' | 'maximum';
 
 /** One measured step of the ramp. */
 export interface RampStep {
@@ -94,6 +97,8 @@ export interface RampStep {
 	fps: number;
 	/** CPU time per frame of the engine's busiest thread, in milliseconds, where known. */
 	cpuMs: number | null;
+	/** True when no frame drew anything in the step. */
+	noFrame?: boolean;
 }
 
 /** What one engine's ramp found. */
@@ -104,7 +109,16 @@ export interface RampResult {
 	held: number;
 	/** The largest count measured at or above HOLD_SHARE of half the display rate. */
 	heldAtHalfRate: number;
+	/** The largest count at which the engine drew a frame, at any rate. */
+	drew: number;
+	/**
+	 * Counts at which the engine drew no frame, though it drew at the next count: a fault of the
+	 * browser at that one count, which the ramp stepped past.
+	 */
+	skipped: number[];
 	stopReason: StopReason;
+	/** Why the engine last drew no frame, where it drew none at some count and said why. */
+	failure?: string;
 	steps: RampStep[];
 }
 
@@ -113,7 +127,11 @@ export class RampTracker {
 	readonly steps: RampStep[] = [];
 	held = 0;
 	heldAtHalfRate = 0;
+	drew = 0;
+	readonly skipped: number[] = [];
 	stopReason: StopReason | null = null;
+	/** A count that drew no frame, until the next step shows whether the engine draws past it. */
+	private blank: number | null = null;
 	private missed = 0;
 
 	constructor(
@@ -125,6 +143,16 @@ export class RampTracker {
 	add(result: RampStep): StopReason | null {
 		if (this.stopReason) return this.stopReason;
 		this.steps.push(result);
+		// A count that draws nothing is skipped when the next count draws: a browser can fail at one
+		// count alone. Two such counts in a row, or one at the maximum, stop the ramp.
+		if (result.noFrame) {
+			if (this.blank !== null || result.count >= this.plan.max) this.stopReason = 'no-frame';
+			else this.blank = result.count;
+			return this.stopReason;
+		}
+		if (this.blank !== null) this.skipped.push(this.blank);
+		this.blank = null;
+		this.drew = Math.max(this.drew, result.count);
 		const holds = result.fps >= HOLD_SHARE * this.displayHz;
 		if (holds) this.held = Math.max(this.held, result.count);
 		if (result.fps >= HOLD_SHARE * (this.displayHz / 2))
@@ -140,17 +168,40 @@ export class RampTracker {
 			displayHz: this.displayHz,
 			held: this.held,
 			heldAtHalfRate: this.heldAtHalfRate,
+			drew: this.drew,
+			skipped: this.skipped,
 			stopReason: this.stopReason ?? 'maximum',
 			steps: this.steps,
 		};
 	}
 }
 
+/**
+ * The sentences that say where an engine drew no frame: a count that it could not draw, with the
+ * most it drew, and the counts that the ramp stepped past as a fault of the browser. Each gives
+ * the engine's reason where it gave one. Empty when it drew at every count.
+ */
+export function noFrameText(title: string, result: RampResult, unit: string): string {
+	const count = (n: number) => n.toLocaleString('en-US');
+	const why = result.failure ? ` (${result.failure})` : '';
+	const sentences: string[] = [];
+	if (result.skipped.length > 0)
+		sentences.push(
+			`${title} drew no frame at ${result.skipped.map(count).join(', ')} ${unit}, but did at the next count, so the ramp stepped past: a fault of this browser${why}.`,
+		);
+	if (result.stopReason === 'no-frame') {
+		const failed = count(result.steps.at(-1)?.count ?? 0);
+		const drew = result.drew > 0 ? `; it drew ${count(result.drew)} at most` : '';
+		sentences.push(`${title} could not draw ${failed} ${unit}${drew}${why}.`);
+	}
+	return sentences.join(' ');
+}
+
 /** What the ramp drives: a running comparison of either engine. */
 export interface RampTarget {
 	setCount(count: number): void;
 	/** Measures the next `seconds` of frames. */
-	measure(seconds: number): Promise<{ fps: number; cpuMs: number | null }>;
+	measure(seconds: number): Promise<{ fps: number; cpuMs: number | null; noFrame?: boolean }>;
 }
 
 /** How a ramp runs. */
@@ -194,8 +245,8 @@ export async function runRamp(
 		const count = rampCount(plan, step);
 		target.setCount(count);
 		await wait(settleSeconds);
-		const { fps, cpuMs } = await target.measure(stepSeconds - settleSeconds);
-		const result = { step, count, fps, cpuMs };
+		const { fps, cpuMs, noFrame } = await target.measure(stepSeconds - settleSeconds);
+		const result: RampStep = { step, count, fps, cpuMs, ...(noFrame && { noFrame }) };
 		const stop = tracker.add(result);
 		onStep?.(result);
 		if (stop) break;
