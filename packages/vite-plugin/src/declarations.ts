@@ -39,17 +39,14 @@ function shaderType(shader: CompiledWgsl): string {
 		const key = PLAIN_NAME.test(name) ? name : JSON.stringify(name);
 		return `\t\treadonly ${key}: '${type}';\n`;
 	});
-	if (shader.kind === 'effect') {
-		if (fields.length === 0) return 'CompiledEffect<Record<never, never>>';
-		return `CompiledEffect<{\n${fields.map((field) => field.slice(1)).join('')}}>`;
-	}
+	const type = KIND_TYPES[shader.kind];
 	// WGSL names hold no quotes, and the layout is the one that Biome and Prettier give, so a
 	// project's formatter leaves the file alone.
 	const names = shader.textures.map(({ name }) => `'${name}'`).join(' | ') || 'never';
-	const short = `CompiledMaterial<Record<never, never>, ${names}>`;
+	const short = `${type}<Record<never, never>, ${names}>`;
 	if (fields.length === 0 && `declare const shader: ${short};`.length <= LINE_WIDTH) return short;
 	const record = fields.length > 0 ? `{\n${fields.join('')}\t}` : 'Record<never, never>';
-	return `CompiledMaterial<\n\t${record},\n\t${names}\n>`;
+	return `${type}<\n\t${record},\n\t${names}\n>`;
 }
 
 /** The declaration of a compiled `.wgsl` file, which TypeScript reads for imports of the file. */

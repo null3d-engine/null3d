@@ -15,6 +15,32 @@ Smallest known case: any compute shader with one `atomicCompareExchangeWeak` cal
 
 Workaround in the engine: no engine shader calls it, and the engine's shader build fails on it. Users' shaders build with a warning ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
 
+## Adreno 619: a program whose vertex shader reads a uniform array at the draw index fails to link
+
+Status: not reported yet. Found 12 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGL2 on ANGLE over OpenGL ES 3.2. `WEBGL_multi_draw` is offered, `KHR_parallel_shader_compile` is not.
+- Seen in: null3D's multi-draw mesh shaders (the `webgl2_draw_index` builds), at commit 3f8825965. Each read its draw's record from a uniform block of 256 `uvec4`s at `gl_DrawID`.
+
+What happens: both shaders compile, and the link fails with an empty log. `getError` gives no error and the context is not lost. The page had made only 5 programs. In the shader check, 444 of the 557 multi-draw programs of its first three parts failed. No other program failed. Whether a program links also depends on its fragment shader. One vertex shader linked with a fragment shader that tone maps. It failed with the same fragment shader without tone mapping. The two fragment shaders read the same inputs. With a fragment shader that writes nothing, every vertex shader linked.
+
+Many changes to the failing vertex shaders still failed:
+- the index clamped or masked;
+- the extension left out, with the index in a uniform of its own;
+- a table of 64 or 16 records;
+- a loop that picks the record;
+- the index mixed with `gl_VertexID` or `gl_InstanceID`, so that it looks per vertex;
+- no `invariant`, or the material set to a constant.
+
+The plain builds read their one record at index 0 and link, but fail when they read it at a uniform. Changes that linked: the record read at a constant index, and the table read from an `RGBA32UI` texture with `texelFetch`. With the texture, all 557 programs linked. Small programs that read such a table at `gl_DrawID` linked. So a test program at start-up would not find the fault.
+
+Smallest known case: the engine's `unlit` build `webgl2_draw_index`, with its own fragment shader.
+
+Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range. The WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index. The texture costs no measurable time on a Pixel 9 or on the Mac ([D-154](decisions/D-154-webgl2-draw-records-texture.md)).
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the failing program's two shaders.
+
 ## Adreno 619: the floats of a struct keep only half precision on WebGL2
 
 Status: not reported yet. Found 13 October 2026.
@@ -29,6 +55,8 @@ What happens: a fragment shader that keeps a float in a struct reads it back at 
 - a struct of scalars, and a struct with a whole number or an array in it;
 - a stage's inputs gathered into a struct;
 - a uniform block's struct copied into a local.
+
+Whole numbers in a struct keep only their low 16 bits, also as `highp uvec4` members. The shader library page's write probe passes its whole numbers through a struct, so it read 0x0000cdef for 0x89abcdef. A clear of the same target kept every bit.
 
 Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per metre, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
 

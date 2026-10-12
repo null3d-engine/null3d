@@ -222,7 +222,7 @@ export async function checkGlslPrograms(
 		}
 		const checked = first + pending.length;
 		progress(
-			`GLSL: ${checked} of ${compiled.length} programs checked, ${relinked.length} linked again`,
+			`GLSL: ${checked} of ${compiled.length} programs checked, ${failures.length} failed, ${relinked.length} linked again`,
 		);
 		expectEnd(
 			expectedEndSeconds(performance.now(), start, checked, compiled.length, AFTER_GLSL_SECONDS),
