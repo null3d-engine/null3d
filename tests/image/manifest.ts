@@ -176,8 +176,10 @@ const FOG_VOLUME_SIZE = [480, 270] as const;
 /**
  * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
  * the shadow of the box under the middle lamp, each beside the same fog with its sun glow alone, on
- * every tier. Turned on during play, it draws the image of turning it on in the setup. At half the
- * render scale the apply step draws into the corner of its target. With no slices, as on Low, and
+ * every tier. With Medium's coarse grid, which WebGL2 and compatibility mode draw at most, every
+ * tier must draw the first tier's image, with no cell's edge showing. Turned on during play, it
+ * draws the image of turning it on in the setup. At half the render scale the apply step draws into
+ * the corner of its target. With no slices, as on Low, and
  * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
  * keeps its glow and draws the image without the volumetric fog.
  */
@@ -194,6 +196,11 @@ function fogVolumeTests(): ImageTest[] {
 		test('fog-volume-night-off', '?night'),
 		test('fog-volume-night', '?night&fog=on'),
 		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
+		{
+			...test('fog-volume-medium', '?fog=on&slices=32'),
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		},
 		test('fog-volume-scale-50', '?scale=0.5&fog=on'),
 		{ ...test('fog-volume-no-slices', '?fog=on&slices=0'), reference: 'fog-volume-off' },
 		{

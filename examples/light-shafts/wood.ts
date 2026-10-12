@@ -3,8 +3,8 @@
 // between the trunks. The forest floor, the bark and the rocks wear maps made in code from seeded
 // noise, and the floor's vertex colors lay the needles, the moss and the path's bare earth.
 import { type MeshGeometry, math, type SketchContext } from '@null3d/engine';
-import { pineWithLevels } from '../lib/pines';
 import { Noise, rock, type TexelSample, terrain, textureSet } from '../lib/procedural';
+import { crownWithLevels } from './crowns';
 
 const [TREES, ROCKS] = [150, 24];
 /** Linear colors of the forest floor: fallen needles, moss and the path's bare earth. */
@@ -72,7 +72,7 @@ export function createWood({ scene, geometry, materials, textures }: SketchConte
 		material: materials.standard({ color: '#8c7666', roughness: 1, ...bark }),
 		...solid,
 	});
-	const crowns = scene.createInstances(pineWithLevels(geometry), TREES, {
+	const crowns = scene.createInstances(crownWithLevels(geometry), TREES, {
 		material: materials.standard({ color: '#ffffff', roughness: 0.85, vertexColors: true }),
 		...solid,
 	});
