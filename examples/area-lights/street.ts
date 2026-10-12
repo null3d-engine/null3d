@@ -17,21 +17,25 @@ export function street({ scene, geometry, materials, textures }: SketchContext):
 	const block = (material: Material, position: Vec3, scale: Vec3) =>
 		scene.createMesh({ mesh: box, material, position, scale });
 
-	// Wet asphalt: puddles where crossed waves add up, smooth and darker, the rest rough and gray.
+	// Wet asphalt: puddles where a few crossed waves add up, with soft edges, smooth and dark; the
+	// rest rough, with a little grain.
 	math.seed(7);
-	const [albedo, finish] = [new Uint8Array(64 * 64 * 4), new Uint8Array(64 * 64 * 4)];
-	for (let i = 0; i < 64 * 64; i++) {
-		const [u, v] = [((i % 64) / 32) * Math.PI, ((i >> 6) / 32) * Math.PI];
-		const wet = Math.sin(u * 2) + Math.sin(v * 3 + u) + Math.sin((u - v) * 2) > 0.3;
-		const grain = math.randFloat(0.7, 1) * (wet ? 0.6 : 1);
-		albedo.set([105 * grain, 108 * grain, 114 * grain, 255], i * 4);
-		finish.set([255, wet ? 12 : 140, 0, 255], i * 4);
+	const SIDE = 128;
+	const [albedo, finish] = [new Uint8Array(SIDE * SIDE * 4), new Uint8Array(SIDE * SIDE * 4)];
+	for (let i = 0; i < SIDE * SIDE; i++) {
+		const [u, v] = [((i % SIDE) / SIDE) * 2 * Math.PI, (Math.floor(i / SIDE) / SIDE) * 2 * Math.PI];
+		const waves =
+			Math.sin(u * 2 + 1) + Math.sin(v * 3 + u) + Math.sin((u - v) * 2) + Math.sin(v - 2 * u);
+		const wet = Math.min(1, Math.max(0, (waves - 0.9) * 1.5));
+		const grain = math.randFloat(0.75, 1) * (1 - 0.5 * wet);
+		albedo.set([78 * grain, 80 * grain, 86 * grain, 255], i * 4);
+		finish.set([255, 190 - 180 * wet, 0, 255], i * 4);
 	}
-	const tiled = { width: 64, height: 64, wrap: 'repeat', mipmaps: true } as const;
+	const tiled = { width: SIDE, height: SIDE, wrap: 'repeat', mipmaps: true } as const;
 	const asphalt = materials.standard({
 		map: textures.fromData({ ...tiled, data: albedo, colorSpace: 'srgb', anisotropy: 8 }),
 		metalnessRoughnessMap: textures.fromData({ ...tiled, data: finish }),
-		uvTransform: { repeat: [6, 24] },
+		uvTransform: { repeat: [2, 10] },
 	});
 	const ground = geometry.plane({ width: 8, height: 40 });
 	scene.createMesh({ mesh: ground, material: asphalt, position: [0, 0, -4], rotation: QUARTER_X });

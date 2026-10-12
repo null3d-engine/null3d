@@ -14,7 +14,7 @@ const QUARTER_Y = [0, Math.SQRT1_2, 0, Math.SQRT1_2] as const;
 /** The shop windows on the left wall, which face +X: their middle's z, and their color. */
 const WINDOWS = [
 	[-3.5, '#ffc98a'],
-	[3, '#ffe2b8'],
+	[-11, '#ffe2b8'],
 ] as const;
 /** The neon sign's tubes on the right wall: two ends each, and the color. */
 const NEON: readonly [Vec3, Vec3, string][] = [
