@@ -588,6 +588,34 @@ describe('materials, textures and lights', () => {
 		expect(data.materials[3]?.diffuseTransmission).toBeUndefined();
 	});
 
+	test('KHR_materials_volume_scatter gives each channel the attenuation distance times its color', () => {
+		const b = specularBuilder().uses('KHR_materials_volume_scatter').uses('KHR_materials_volume');
+		const [skin, endless, black] = b.json.materials as [GltfJson, GltfJson, GltfJson];
+		skin.extensions = {
+			KHR_materials_volume_scatter: { multiscatterColor: [0.8, 0.4, 0.2], scatterAnisotropy: 0.3 },
+			KHR_materials_volume: { attenuationDistance: 0.02 },
+		};
+		endless.extensions = { KHR_materials_volume_scatter: { multiscatterColor: [1, 1, 1] } };
+		black.extensions = {
+			KHR_materials_volume_scatter: {},
+			KHR_materials_volume: { attenuationDistance: 0.02 },
+		};
+		const data = parse(b.glb());
+		const [first, second, third] = data.materials;
+		expect(first?.scatter?.radius).toBeCloseTo(0.016, 6);
+		expect(first?.scatter?.color).toEqual([1, 0.5, 0.25]);
+		// A volume that absorbs nothing, or a black multiscatter color, spreads no light.
+		expect(second?.scatter).toBeUndefined();
+		expect(third?.scatter).toBeUndefined();
+		expect(data.materials[3]?.scatter).toBeUndefined();
+		expect(data.notes).toEqual(
+			expect.arrayContaining([
+				"material 0's scatterAnisotropy, which the engine does not draw",
+				"material 1's volume scatter without an attenuation distance, which spreads no light",
+			]),
+		);
+	});
+
 	test('specular and ior values outside their ranges give E1416', () => {
 		const withExtensions = (extensions: GltfJson) => {
 			const b = shipBuilder().uses('KHR_materials_specular').uses('KHR_materials_ior');

@@ -70,6 +70,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `bloomSize` | 64, 128, 256 or 512: the texels on the short side of bloom's largest level. A smaller value costs less and keeps the glow's size, with a softer core. | During play. Bloom's targets are made again. |
 | `aoScale` | 0.5, 0.25 or 0: the size of ambient occlusion's targets as a share of the render size. 0 draws no ambient occlusion even when `post.set` turns it on. | During play. |
 | `dofSamples` | 16, 22, 43, 71 or 0: the taps of depth of field's gather. 0 draws no depth of field even when `post.set` turns it on. | During play. |
+| `subsurfaceSamples` | 11, 17, 25 or 0: the taps of each step of the subsurface blur, across and down. 0 draws no blur even where materials have a `subsurfaceRadius`. | During play. |
 | `reflectionScale` | 1, 0.5 or 0.25: the size of a reflection pass's texture as a share of the render size, for each reflection whose `scale` option names none. | During play. The reflections' textures are made again. |
 | `softwareOcclusion` | `true` or `false`: whether the job workers cull objects that marked occluders hide, on WebGL2. WebGPU ignores it. | During play. |
 | `lodThreshold` | A number from 0 to 16: the error in pixels under which a mesh's coarser [level of detail](../concepts/lod.md) draws. A larger number draws coarser levels nearer the camera, which costs less. 0 draws every mesh's base level. | During play. |

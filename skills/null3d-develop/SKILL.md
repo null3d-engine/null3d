@@ -164,6 +164,7 @@ Effects:
 | Water, mirrors and polished floors that reflect the scene | `render.addPass({ kind: 'reflection', writes, plane: { point } })`, and a custom material that sets `s.reflection` (0.2) | `api/render`, `shaders/surface-functions`, `guides/custom-passes` |
 | Glass, gems and clear water that show what lies behind them, bent and blurred | `materials.standard({ transmission: 1, thickness, ior, roughness })`, or a custom material that sets `s.transmission` (0.2) | `api/materials`, `shaders/surface-functions` |
 | Leaves, petals, grass, paper or ears that glow when the sun or a lamp is behind them | `materials.standard({ diffuseTransmission, diffuseTransmissionColor, doubleSided: true })`, or a custom material that sets `s.diffuseTransmission` (0.2) | `api/materials`, `shaders/surface-functions` |
+| Skin, wax, jade or marble whose light spreads softly under the surface | `materials.standard({ subsurfaceRadius: 0.012, subsurfaceColor: [1, 0.4, 0.25] })`, given at creation (0.2); draws on High and Ultra, where `subsurfaceSamples` gives the blur taps; add `diffuseTransmission` for ears and thin rims that glow against the light | `api/materials`, `api/quality` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 | Light from the sky, or a time of day | `scene.setEnvironment(await assets.skyEnvironment())` (0.2); `timeOfDay(hours)` values for the sky, the sun, the fog and the exposure (0.2) | `concepts/lighting` |
 

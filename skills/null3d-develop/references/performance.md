@@ -133,7 +133,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 | Textures | `maxAnisotropy`, `uploadBytesPerFrame`, `textureMemoryMiB` (0.2) | During play |
 | Directional light shadows | `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` | During play |
 | Directional light shadow maps | `shadowCascades`, `shadowMapSize` | At the start |
-| Effects and reflections | `bloomSize`, `aoScale`, `dofSamples`, `reflectionScale` (0.2) | During play |
+| Effects and reflections | `bloomSize`, `aoScale`, `dofSamples`, `subsurfaceSamples`, `reflectionScale` (0.2) | During play |
 | WebGL2 occlusion culling | `softwareOcclusion` (0.2), off on Low | During play |
 | Frame budget | `governor` | During play |
 | Anti-aliasing | `antialias`: FXAA on Low, MSAA above | At the start |
@@ -146,7 +146,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 The table marks its other rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, subsurfaceSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor

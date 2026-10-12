@@ -385,6 +385,18 @@ fn material_translucency(id: u32) -> vec4f {
 }
 #endif
 
+#ifdef SUBSURFACE
+/// The scatter distances of material `id`: each channel's share of the scatter radius, then the
+/// radius. Only the skin pass's builds read them.
+fn material_subsurface(id: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(12u, id), 0);
+#else
+    return materials[id].subsurface;
+#endif
+}
+#endif
+
 /// The values of material `id` that let light through, and its volume's: only the builds that let
 /// light through, or through a thin surface, call it, and the build drops it from the others.
 fn material_transmission(id: u32) -> MaterialTransmission {

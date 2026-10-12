@@ -164,6 +164,26 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "TRANSLUCENCY", "LOD_FADE"], targets = ["glsl"] }
 
+# The skin pass's builds of the standard material, with and without maps, from the same file: the
+# SUBSURFACE def writes the diffuse light that scatters, with the material's scatter distances and
+# the view distance, into the skin pass's target, for the subsurface blur (subsurface.wgsl). They
+# keep the bits that place, color and mask a pair's surface, its shadows and the light through it.
+# The skin pass has one sample, so alpha to coverage and the alpha hash test a plain mask, and it
+# runs on the HDR path alone, so no build tone maps. They load on first use with the blur.
+[shaders.subsurface]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["SUBSURFACE"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "HALF", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "SUBSURFACE"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "HALF", "SKIN", "MORPH", "TRANSLUCENCY"], targets = ["glsl"] }
+
+[shaders.subsurface_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS", "SUBSURFACE"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "SKIN", "VERTEX_TANGENT", "HALF", "TRANSLUCENCY"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS", "SUBSURFACE"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "TRANSLUCENCY"], targets = ["glsl"] }
+
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit]
@@ -368,6 +388,32 @@ variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
 [first_use.dof]
 shaders = ["dof", "dof_ms"]
 
+# The subsurface blur's steps (see subsurface.wgsl): `across` blurs the skin pass's light along the
+# rows, and `down` blurs that along the columns and adds the change to a copy of the scene color,
+# where the skin is the surface in front. The WebGL2 variant reads a copy of one depth sample that
+# its backend keeps.
+[shaders.subsurface_blur]
+file = "subsurface.wgsl"
+by_device = true
+pipelines.across = { vertex = "vs", fragment = "across" }
+pipelines.down = { vertex = "vs", fragment = "down" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The down step from a multisampled depth target: it reads sample 0. Only WebGPU reads multisampled
+# textures.
+[shaders.subsurface_blur_ms]
+file = "subsurface.wgsl"
+by_device = true
+pipelines.down = { vertex = "vs", fragment = "down" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the skin pass's builds and the blur's steps with its first material that has a
+# scatter radius, while the quality setting gives the blur taps. The frames draw without the blur
+# until the steps' pipelines are built.
+[first_use.subsurface]
+shaders = ["subsurface", "subsurface_maps", "subsurface_blur", "subsurface_blur_ms"]
+
 # The copy of a view's image into the target that materials sample, with its rows turned around,
 # so the target holds the image's bottom row first, as on WebGL2. Only WebGPU copies: WebGL2 draws
 # the view into its target directly.
@@ -404,10 +450,12 @@ claims_shared_builds = true
 
 # A page downloads the builds that let light through a thin surface with its first material that
 # does. It takes the builds that it shares with skinning, morph targets, alpha to coverage, the
-# alpha hash and row values, so their files do not grow.
+# alpha hash and row values, so their files do not grow. Its claim priority puts it before those
+# of alpha to coverage and the alpha hash, and after fading levels of detail.
 [first_use.translucency]
 bits = ["TRANSLUCENCY"]
 claims_shared_builds = true
+claim_priority = 1
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
@@ -639,11 +687,12 @@ bits = ["ROW_VALUES"]
 
 # A page downloads the LOD_FADE builds of the mesh templates with its first mesh whose levels of
 # detail fade. Until they arrive, the fading levels draw nothing, for a frame or two. It takes the
-# builds that it shares with alpha to coverage, so the coverage files do not grow on pages without
-# levels.
+# builds that it shares with alpha to coverage and with diffuse transmission, so the coverage and
+# translucency files do not grow on pages without levels. Its claim priority is the highest.
 [first_use.lod_fade]
 bits = ["LOD_FADE"]
 claims_shared_builds = true
+claim_priority = 2
 
 # The depth pyramid of two-phase occlusion culling, a batch of levels per dispatch; its compute
 # entry point is `main`. WebGPU only.

@@ -1,5 +1,6 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
+// ?effect=dof, ?effect=subsurface or ?effect=effects names it. Subsurface draws the subsurface
+// test's two panels, one of skin, and its ?taps= sets the quality setting subsurfaceSamples. The last adds ?count= custom effects, 4 by default, to
 // bloom's scene. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
 // otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
@@ -34,6 +35,7 @@ const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
+	subsurface: './sketches/subsurface-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 } as const;
 
@@ -134,7 +136,8 @@ run('effect-cost', async () => {
 		hdr: engine.capabilities.hdr,
 		scale,
 		bloomSize: size === null ? null : Number(size),
-		dofSamples: taps === null ? null : Number(taps),
+		dofSamples: effect === 'dof' && taps !== null ? Number(taps) : null,
+		subsurfaceSamples: effect === 'subsurface' && taps !== null ? Number(taps) : null,
 		effects: effect === 'effects' ? Number(count ?? '4') : null,
 		joined: effect === 'effects' ? params.get('join') !== 'off' : null,
 		heavy,

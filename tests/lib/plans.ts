@@ -1066,10 +1066,10 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 }
 
 /**
- * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
- * custom effects.
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
+ * subsurface blur of skin, or 4 custom effects.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'subsurface' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1083,13 +1083,14 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
- * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing.
- * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
- * D-119 those of the dof plan.
+ * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
+ * subsurface plan times the skin blur at 17 and 25 taps, High's and Ultra's.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
+ * D-119 those of the dof plan, and D-153 those of the subsurface plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const prepass = effect === 'ao' ? [false, true] : [false];
-	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
+	const tapCounts = effect === 'dof' ? [16, 22] : effect === 'subsurface' ? [17, 25] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1702,6 +1703,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	dof: () => effectPlan('dof'),
+	subsurface: () => effectPlan('subsurface'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,

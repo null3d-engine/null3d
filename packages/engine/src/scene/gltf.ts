@@ -776,6 +776,10 @@ class FileMaterials {
 			options.diffuseTransmission = m.diffuseTransmission.factor;
 			options.diffuseTransmissionColor = m.diffuseTransmission.color;
 		}
+		if (m.scatter) {
+			options.subsurfaceRadius = m.scatter.radius;
+			options.subsurfaceColor = m.scatter.color;
+		}
 		return materials.standard(options);
 	}
 }

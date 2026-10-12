@@ -57,6 +57,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_transmission',
 	'KHR_materials_volume',
 	'KHR_materials_diffuse_transmission',
+	'KHR_materials_volume_scatter',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
 	'MSFT_lod',
@@ -309,6 +310,34 @@ function diffuseTransmissionOf(
 }
 
 /**
+ * How far light spreads under a surface, from its draft KHR_materials_volume_scatter extension and
+ * its KHR_materials_volume extension's attenuation distance, or none where it spreads nowhere: the
+ * extension is missing, its multiscatter color is black, or the volume absorbs nothing, which
+ * would spread the light without end. `notes` says what the engine leaves out.
+ */
+function scatterOf(extensions: Entry, what: string, notes: string[]): ScatterData | undefined {
+	const scatter = extensions.KHR_materials_volume_scatter as Entry | undefined;
+	if (scatter === undefined) return undefined;
+	const color = numbers(scatter.multiscatterColor, 3, [0, 0, 0], `${what}'s multiscatterColor`);
+	if (color.some((c) => c < 0 || c > 1))
+		broken(`${what}'s multiscatterColor has a component outside 0 to 1`);
+	if ((scatter.scatterAnisotropy ?? 0) !== 0)
+		notes.push(`${what}'s scatterAnisotropy, which the engine does not draw`);
+	const { attenuationDistance } = volumeOf((extensions.KHR_materials_volume ?? {}) as Entry, what);
+	const widest = Math.max(...color);
+	if (widest === 0) return undefined;
+	if (!Number.isFinite(attenuationDistance)) {
+		notes.push(`${what}'s volume scatter without an attenuation distance, which spreads no light`);
+		return undefined;
+	}
+	const share = (c: number | undefined) => (c as number) / widest;
+	return {
+		radius: attenuationDistance * widest,
+		color: [share(color[0]), share(color[1]), share(color[2])],
+	};
+}
+
+/**
  * Each component type's bytes and the typed array that holds it. Callers look it up by a number,
  * which never names a property that every object has.
  */
@@ -450,6 +479,18 @@ export interface DiffuseTransmissionData extends VolumeData {
 	color: [number, number, number];
 }
 
+/**
+ * How far light spreads under a material's surface, from the draft KHR_materials_volume_scatter
+ * and KHR_materials_volume: each channel's scatter distance is the attenuation distance times the
+ * multiscatter color, as the Khronos sample renderer finds it.
+ */
+export interface ScatterData {
+	/** The largest channel's scatter distance, in world units. */
+	radius: number;
+	/** Each channel's scatter distance as a share of the radius: linear RGB. */
+	color: [number, number, number];
+}
+
 /** Where a material's maps sit on the texture coordinates, as KHR_texture_transform gives it. */
 export interface UvTransformData {
 	offset: [number, number];
@@ -490,6 +531,8 @@ export interface MaterialData {
 	 * that has the extension and does not let light through by transmission.
 	 */
 	diffuseTransmission?: DiffuseTransmissionData;
+	/** KHR_materials_volume_scatter's spread of light under the surface, where it gives one. */
+	scatter?: ScatterData;
 	maps: {
 		map?: number;
 		metalnessRoughnessMap?: number;
@@ -1137,6 +1180,8 @@ export function parseGltf(
 		};
 		if (transmission) data.transmission = transmission;
 		if (diffuseTransmission) data.diffuseTransmission = diffuseTransmission;
+		const scatter = scatterOf(extensions, what, notes);
+		if (scatter) data.scatter = scatter;
 		if (transform) {
 			const offset = numbers(transform.offset, 2, [0, 0], `${what}'s texture transform offset`);
 			const scale = numbers(transform.scale, 2, [1, 1], `${what}'s texture transform scale`);

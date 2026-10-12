@@ -738,6 +738,16 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 0 of the subsurface blur's across step: its block at binding 0 and the skin pass's
+    /// target at binding 1, which it reads with `textureLoad` as plain floats.
+    pub const SUBSURFACE_BLUR: u32 = 43;
+    /// Group 0 of the subsurface blur's down step: [`SUBSURFACE_BLUR`]'s bindings, then the across
+    /// step's target, the scene color and the scene's depth at bindings 2 to 4, each read with
+    /// `textureLoad` as plain floats.
+    pub const SUBSURFACE_COMPOSITE: u32 = 44;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 45;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1420,9 +1430,9 @@ pub mod sizes {
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
-    /// Bytes of one material's row in the material table: twelve `vec4f`s. On WebGL2 each row is a
-    /// row of twelve `RGBA32_FLOAT` texels of a data texture.
-    pub const MATERIAL_BYTES: u32 = 192;
+    /// Bytes of one material's row in the material table: thirteen `vec4f`s. On WebGL2 each row is
+    /// a row of thirteen `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 208;
     /// The map slots of a material: the textures of the [`super::layout::MATERIAL_MAPS`] layout,
     /// at bindings from 0, with each one's sampler at the bindings after every texture.
     pub const MAP_SLOTS: u32 = 8;
@@ -1589,6 +1599,22 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// The skin pass's build of the standard material, from the lit template's file: it writes the
+    /// diffuse light that scatters under the surface, with the view distance and the material's
+    /// scatter distances, for the subsurface blur. It binds as [`INSTANCED_LIT`] does.
+    pub const SUBSURFACE: u32 = 51;
+    /// [`SUBSURFACE`] with the standard material's maps. It binds as [`INSTANCED_STANDARD_MAPS`]
+    /// does.
+    pub const SUBSURFACE_MAPS: u32 = 52;
+    /// The subsurface blur's across step: one triangle over its target, which blurs the skin pass's
+    /// light along the rows.
+    pub const SUBSURFACE_BLUR: u32 = 66;
+    /// The subsurface blur's down step: one triangle over its target, which blurs the across
+    /// step's light along the columns and adds the change to a copy of the scene color.
+    pub const SUBSURFACE_COMPOSITE: u32 = 67;
+    /// [`SUBSURFACE_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads.
+    /// Only WebGPU has it.
+    pub const SUBSURFACE_COMPOSITE_MS: u32 = 68;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1878,6 +1904,9 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("SUBSURFACE_BLUR", layout::SUBSURFACE_BLUR),
+                ("SUBSURFACE_COMPOSITE", layout::SUBSURFACE_COMPOSITE),
+                ("SUBSURFACE_COMPOSITE_MS", layout::SUBSURFACE_COMPOSITE_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1971,6 +2000,11 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("SUBSURFACE", template::SUBSURFACE),
+                ("SUBSURFACE_MAPS", template::SUBSURFACE_MAPS),
+                ("SUBSURFACE_BLUR", template::SUBSURFACE_BLUR),
+                ("SUBSURFACE_COMPOSITE", template::SUBSURFACE_COMPOSITE),
+                ("SUBSURFACE_COMPOSITE_MS", template::SUBSURFACE_COMPOSITE_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

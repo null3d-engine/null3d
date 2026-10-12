@@ -561,6 +561,8 @@ export interface CoreGlue extends CoreErrors {
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** The taps of each step of the subsurface blur, from the next frame on: 0 draws none. */
+	setSubsurfaceTaps(taps: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -893,6 +895,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setAoScale',
 	'setDof',
 	'setDofTaps',
+	'setSubsurfaceTaps',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',

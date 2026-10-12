@@ -130,6 +130,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'subsurfaceSamples',
 			'reflectionScale',
 			'lodThreshold',
 			'lodShadowFactor',
@@ -172,6 +173,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'subsurfaceSamples',
 			'reflectionScale',
 			'lodThreshold',
 			'lodShadowFactor',
@@ -202,6 +204,7 @@ describe('the preset table', () => {
 			'bloomSize',
 			'aoScale',
 			'dofSamples',
+			'subsurfaceSamples',
 			'reflectionScale',
 			'lodThreshold',
 			'lodShadowFactor',
@@ -254,6 +257,7 @@ describe('presetSettings', () => {
 			bloomSize: 64,
 			aoScale: 0,
 			dofSamples: 0,
+			subsurfaceSamples: 0,
 			reflectionScale: 0.25,
 			lodThreshold: 2,
 			lodShadowFactor: 4,
@@ -282,6 +286,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0,
 			dofSamples: 22,
+			subsurfaceSamples: 0,
 			reflectionScale: 0.5,
 			lodThreshold: 1,
 			lodShadowFactor: 2,
@@ -310,6 +315,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 43,
+			subsurfaceSamples: 17,
 			reflectionScale: 0.5,
 			lodThreshold: 1,
 			lodShadowFactor: 2,
@@ -338,6 +344,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 71,
+			subsurfaceSamples: 25,
 			reflectionScale: 1,
 			lodThreshold: 1,
 			lodShadowFactor: 2,
@@ -436,7 +443,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, lodThreshold, lodShadowFactor, lodFade, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, subsurfaceSamples, reflectionScale, lodThreshold, lodShadowFactor, lodFade, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

@@ -55,6 +55,7 @@ use crate::shadows::{
     fit_cascades,
 };
 use crate::sky_maps::SkyMaps;
+use crate::subsurface::{self, SubsurfaceFrame};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -700,6 +701,8 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// The taps of each step of the subsurface blur, which the quality settings set: 0 draws none.
+    subsurface_taps: u32,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -806,6 +809,7 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            subsurface_taps: subsurface::TAP_COUNTS[1],
             lut: None,
             vignette: None,
             environment: None,
@@ -1105,6 +1109,52 @@ impl SceneSettings {
             inverse_projection,
             taps: self.dof_taps,
         })
+    }
+
+    /// Sets the taps of each step of the subsurface blur, one of [`subsurface::TAP_COUNTS`] or 0,
+    /// which draws no blur and no skin pass, from the next recorded frame on. A count above 0
+    /// changes only the steps' blocks, so it makes no GPU object.
+    pub fn set_subsurface_taps(&mut self, taps: u32) {
+        self.subsurface_taps = taps;
+    }
+
+    /// The taps of each step of the subsurface blur while it may draw: 0 while the quality
+    /// settings give it none, or a debug view draws.
+    pub fn subsurface_taps(&self) -> u32 {
+        if self.debug_view.is_debug() {
+            0
+        } else {
+            self.subsurface_taps
+        }
+    }
+
+    /// What the subsurface blur draws with for the camera's view of a canvas of `canvas` pixels,
+    /// or `None` while it has no taps or without a camera.
+    pub(crate) fn subsurface_frame(&self, canvas: (u32, u32)) -> Option<SubsurfaceFrame> {
+        let taps = self.subsurface_taps();
+        if taps == 0 {
+            return None;
+        }
+        let (projection, inverse_projection) = self.camera_projection(canvas)?;
+        Some(SubsurfaceFrame {
+            taps,
+            projection,
+            inverse_projection,
+        })
+    }
+
+    /// True when the material, by engine id, has a scatter radius whose light the subsurface blur
+    /// spreads: the standard material's, with or without maps.
+    pub fn scatters(&self, material: u32) -> bool {
+        material
+            .checked_sub(1)
+            .is_some_and(|id| self.materials.scatters(id))
+    }
+
+    /// True while the frame builders hold the subsurface blur's layout: the blur has taps, and
+    /// some live material has a scatter radius.
+    pub fn holds_scattering(&self) -> bool {
+        self.subsurface_taps() > 0 && self.materials.any_scatters()
     }
 
     /// The camera's projection for a canvas of `canvas` pixels, and its inverse, or `None` without

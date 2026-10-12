@@ -167,6 +167,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'subsurface',
+		group: 'Light, materials and effects',
+		sketch: new URL('./subsurface/sketch.ts', import.meta.url),
+		code: 'subsurface/',
+		title: 'Light under the surface',
+		scene: 'Wax, jade and soap by candlelight',
+		summary:
+			'Light spreads under the surface of wax candles, a jade knot and a soap egg, redder the further it goes, so their shadows and edges glow soft while their highlights stay sharp, on the High and Ultra presets.',
+		controls: `${CAMERA} Move the mouse, or tap, and the tea light follows.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),

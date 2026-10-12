@@ -35,6 +35,9 @@
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading. The `translucency` switch makes the swarm's boxes let half their diffuse light through
 // to their other side, for the allocation sample and the cost of the builds that light their backs.
+// The `subsurface` switch adds 64 spheres whose material spreads its light under the surface, and
+// gives the subsurface blur taps, for the allocation sample and the cost of the skin pass and the
+// blur's steps.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -126,6 +129,7 @@ export default defineSketch(async (context) => {
 	if (skyMode === 'texture') context.scene.setBackground(createGradient(context));
 	if (switches.has('backgroundFirst')) addSmallBox(context, false);
 	if (switches.has('extraBox')) addSmallBox(context, true);
+	if (switches.has('subsurface')) addSkinSpheres(context);
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
 	const skyBackground = { sky: skySettings };
@@ -417,6 +421,31 @@ function addSmallBox({ scene, geometry, materials }: SketchContext, depthWrite: 
 		mesh: geometry.box({ width: 0.5, height: 0.5, depth: 0.5 }),
 		material: materials.unlit({ color: '#ffffff', depthWrite }),
 	});
+}
+
+/**
+ * 64 spheres through the swarm whose material spreads its light under the surface, and taps for
+ * the subsurface blur, which draws them a second time in its skin pass.
+ */
+function addSkinSpheres({ scene, geometry, materials, quality }: SketchContext): void {
+	quality.set({ subsurfaceSamples: 17 });
+	const mesh = geometry.sphere({ radius: 1.5, widthSegments: 24, heightSegments: 16 });
+	const material = materials.standard({
+		color: '#e0b49c',
+		roughness: 0.45,
+		subsurfaceRadius: 0.4,
+		subsurfaceColor: [1, 0.4, 0.25],
+	});
+	for (let k = 0; k < 64; k++) {
+		const angle = k * 2.399963;
+		const reach = S1_EXTENT * 0.5 * Math.sqrt((k + 0.5) / 64);
+		const position: [number, number, number] = [
+			Math.cos(angle) * reach,
+			S1_BOB_HEIGHT * Math.sin(k),
+			Math.sin(angle) * reach,
+		];
+		scene.createMesh({ mesh, material, position });
+	}
 }
 
 /** A texture of a smooth gradient, made from data, about as large as the view it fills. */

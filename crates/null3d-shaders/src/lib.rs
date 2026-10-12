@@ -192,7 +192,10 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         {
             output.first_use.bits.insert(bit, feature.clone());
             if first_use.claims_shared_builds {
-                output.first_use.claiming.insert(bit);
+                output
+                    .first_use
+                    .claiming
+                    .insert(bit, first_use.claim_priority);
             }
         }
     }

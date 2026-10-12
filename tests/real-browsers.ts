@@ -1041,6 +1041,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'dof',
+	'subsurface',
 	'effects',
 	'effects-joined',
 	'occlusion',

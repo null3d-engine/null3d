@@ -387,7 +387,7 @@ Each feature gets a decision record of its own when it is built.
 | Weighted blended transparency | Smoke and fire, and glass | M2-EX33 | D-142 |
 | Impostors and merged far geometry | Forests, skylines and hills far from the camera | M2-EX34 | D-142 |
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
-| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' ears and hands against the light: `diffuseTransmission` on standard and custom materials. A screen-space blur of skin is not built | M2-EX36 ([D-153](decisions/D-153-subsurface-and-translucency.md)) | D-142 |
+| Subsurface and foliage translucency | Sunlit leaves and petals, and characters' ears and hands against the light: `diffuseTransmission` on standard and custom materials. Skin, wax and marble: `subsurfaceRadius` and `subsurfaceColor` on standard materials, a screen-space blur on High and Ultra | M2-EX36 ([D-153](decisions/D-153-subsurface-and-translucency.md)) | D-142 |
 
 Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 

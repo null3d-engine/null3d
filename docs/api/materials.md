@@ -65,6 +65,8 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `attenuationDistance` | Above 0 | `Infinity` | The distance in world units over which light inside the volume takes `attenuationColor` |
 | `diffuseTransmission` | 0 to 1 | 0 | How much of the surface's diffuse light passes through to its other side, for leaves, petals and ears. See "Light through thin surfaces" |
 | `diffuseTransmissionColor` | A [color](#color) | White | Tints the light that passes through to the other side |
+| `subsurfaceRadius` | 0 or more, in metres | 0 | How far light spreads under the surface, for skin, wax, jade and marble. See "Light under the surface" |
+| `subsurfaceColor` | A [color](#color) | White | Each color channel's share of `subsurfaceRadius` |
 | `uvTransform` | An offset, a repeat and a rotation | None | Where the maps sit on the texture coordinates |
 
 The values have the meaning and the defaults of three.js's `MeshStandardMaterial`. `ior`, `specularIntensity`, `specularColor` and the four transmission values have those of three.js's `MeshPhysicalMaterial`, as the next sections explain. three.js has no diffuse transmission, so its two values take the names and defaults of glTF's `KHR_materials_diffuse_transmission`. A metal takes its color from what it reflects. Without an environment, a smooth metal shows little more than its highlights, so give the scene one with [`scene.setEnvironment`](scene.md#the-environment). three.js uses `scene.environmentIntensity` in place of `envMapIntensity` under a scene environment. The engine multiplies the two.
@@ -161,6 +163,39 @@ Give `diffuseTransmission` when you create the material, even as 0, to change it
 
 Nothing of it runs, and none of its shaders download, until the first material with `diffuseTransmission` exists. Its shaders then load on first use. To load them before the first frame instead, list `'translucency'` in `createEngine`'s `preload` option. Each pixel of such a surface adds one product per light, and one more reading of the ambient light and the environment, from behind. The sun's shadow lookup runs on both faces of such a surface, where other surfaces skip it on the side away from the sun.
 
+## Light under the surface
+
+Light that enters skin, wax or marble leaves it a little way from where it entered, redder the further it went. A material with `subsurfaceRadius` draws that: the subsurface blur spreads the surface's diffuse light over the radius, so the edges of its shadows, the light at the side of a nose and the detail of its maps go soft. Its highlights stay sharp, since only the diffuse light spreads.
+
+| Value | Meaning |
+| --- | --- |
+| `subsurfaceRadius` | How far light spreads under the surface, in world units taken as metres. Skin takes about 0.01, wax about 0.02, and marble a few millimetres |
+| `subsurfaceColor` | How far each channel spreads, as a share of the radius: its linear red, green and blue. Skin's red spreads furthest, about `[1, 0.4, 0.25]`. White spreads every channel as far |
+
+```ts
+const skin = materials.standard({
+  color: '#e0b49c', roughness: 0.45,
+  subsurfaceRadius: 0.012, subsurfaceColor: [1, 0.4, 0.25],
+});
+const wax = materials.standard({
+  color: '#f3e3c8', roughness: 0.4,
+  subsurfaceRadius: 0.025, subsurfaceColor: [1, 0.55, 0.32],
+  diffuseTransmission: 0.35, diffuseTransmissionColor: '#ffb070',
+});
+```
+
+Give `subsurfaceRadius` when you create the material, even as 0, to change it later with `set`. A material created without it draws no blur. With `diffuseTransmission` too, light from behind glows through the surface's thin parts, as through an ear or a candle's rim, and the blur spreads that light as well.
+
+- The blur draws on the High and Ultra quality presets, where the quality setting `subsurfaceSamples` gives it 17 or 25 taps. Low and Medium give it 0, and so do WebGL2 and WebGPU's compatibility mode, which run Medium at most: there the material draws as without a radius. `quality.set({ subsurfaceSamples: 11 })` turns it on anywhere.
+- It draws on the HDR path only. The 8-bit path draws no blur.
+- Materials that blend or let light through by `transmission`, custom materials and instance batches take no blur. Development builds throw E1217 for `subsurfaceRadius` on `materials.shader`.
+- A blur narrower than a pixel draws nothing, so distant objects cost nothing more.
+- The glTF loader reads the draft `KHR_materials_volume_scatter`: each channel spreads `attenuationDistance` times its `multiscatterColor`. See [Assets](assets.md).
+
+### Cost of light under the surface
+
+Nothing of it runs, and none of its shaders download, while no material has `subsurfaceRadius` or the quality setting gives it no taps. Its shaders then load on first use; list `'subsurface'` in `createEngine`'s `preload` option to load them before the first frame. While it draws, the objects with a radius draw a second time, in a skin pass that shades their diffuse light into a target of their own. Two full-screen steps then blur it across and down. Each reads its taps only at skin pixels whose blur covers a pixel or more, and every other pixel reads one texel. The targets take 36 bytes per pixel of the render size.
+
 ## Texture maps
 
 Maps are textures that vary a material across a surface. `assets.loadTexture` and the `textures` calls make them, as [Textures](textures.md) explains. Give color maps the `srgb` color space and data maps the `linear` one.
@@ -242,6 +277,7 @@ These options are fixed when you create the material. Most of them choose the ma
 | `forceSinglePass` | Both | false | With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, as three.js's `forceSinglePass` does. See "Double-sided blended surfaces" |
 | `transmission` | Standard | None | Given at all, even as 0, lets light through the surface, and `set` can then change its value. See "Transmission" |
 | `diffuseTransmission` | Standard | None | Given at all, even as 0, lets light through to the surface's other side, and `set` can then change its value. See "Light through thin surfaces" |
+| `subsurfaceRadius` | Standard | None | Given at all, even as 0, spreads the surface's light under it, and `set` can then change its value. See "Light under the surface" |
 | `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
@@ -415,7 +451,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission` and `diffuseTransmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity`, `transmission` and `diffuseTransmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity`, `thickness` and `subsurfaceRadius` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 

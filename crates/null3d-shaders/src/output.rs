@@ -67,8 +67,9 @@ pub struct FirstUseFeatures {
     pub shaders: BTreeMap<String, String>,
     /// Features by permutation bit, in bit order.
     pub bits: BTreeMap<u32, String>,
-    /// The bits whose features take the builds that they share with other features' bits.
-    pub claiming: BTreeSet<u32>,
+    /// The bits whose features take the builds that they share with other features' bits, with
+    /// their features' claim priorities.
+    pub claiming: BTreeMap<u32, u8>,
 }
 
 impl FirstUseFeatures {
@@ -87,21 +88,24 @@ impl FirstUseFeatures {
     }
 
     /// The bits that features name, in the order in which they take builds: the bits of features
-    /// that claim shared builds, highest first, then the others, lowest first. A build with the
-    /// bits of two claiming features, such as a surface that lets light through a thin surface
-    /// with alpha to coverage, goes with the higher bit, the rarer feature, so the common
-    /// feature's file does not grow for it.
+    /// that claim shared builds, of the highest claim priority first and then lowest first, then
+    /// the others, lowest first. So a build with the bits of two claiming features, such as a
+    /// surface that lets light through a thin surface with alpha to coverage, goes with the rarer
+    /// feature when its priority says so, and the common feature's file does not grow for it.
     pub fn bit_order(&self) -> impl Iterator<Item = (u32, &String)> {
-        let claiming = self
+        let mut claiming: Vec<(u32, &String)> = self
             .bits
             .iter()
-            .rev()
-            .filter(|(bit, _)| self.claiming.contains(bit));
+            .filter(|(bit, _)| self.claiming.contains_key(bit))
+            .map(|(&bit, feature)| (bit, feature))
+            .collect();
+        claiming.sort_by_key(|&(bit, _)| (std::cmp::Reverse(self.claiming[&bit]), bit));
         let others = self
             .bits
             .iter()
-            .filter(|(bit, _)| !self.claiming.contains(bit));
-        claiming.chain(others).map(|(&bit, feature)| (bit, feature))
+            .filter(|(bit, _)| !self.claiming.contains_key(bit))
+            .map(|(&bit, feature)| (bit, feature));
+        claiming.into_iter().chain(others)
     }
 }
 
@@ -180,7 +184,9 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH, TRANSLUCENCY};
+    use null3d_gpu::drawlist::permutation::{
+        ALPHA_HASH, BLOOM, FXAA, LOD_FADE, MORPH, TRANSLUCENCY,
+    };
 
     use super::*;
 
@@ -202,20 +208,32 @@ mod tests {
             first_use.feature_of("lit", MORPH | ALPHA_HASH),
             Some("morph")
         );
-        first_use.claiming.insert(ALPHA_HASH);
+        first_use.claiming.insert(ALPHA_HASH, 0);
         assert_eq!(
             first_use.feature_of("lit", MORPH | ALPHA_HASH),
             Some("alpha_hash")
         );
         assert_eq!(first_use.feature_of("lit", MORPH), Some("morph"));
-        // Of two features that claim shared builds, the higher bit takes the build.
+        // Of two features that claim shared builds, the lower bit takes the build at equal
+        // priority, and the higher priority before that.
         first_use
             .bits
             .insert(TRANSLUCENCY, "translucency".to_owned());
-        first_use.claiming.insert(TRANSLUCENCY);
+        first_use.claiming.insert(TRANSLUCENCY, 0);
+        assert_eq!(
+            first_use.feature_of("lit", MORPH | ALPHA_HASH | TRANSLUCENCY),
+            Some("alpha_hash")
+        );
+        first_use.claiming.insert(TRANSLUCENCY, 1);
         assert_eq!(
             first_use.feature_of("lit", MORPH | ALPHA_HASH | TRANSLUCENCY),
             Some("translucency")
+        );
+        first_use.bits.insert(LOD_FADE, "lod_fade".to_owned());
+        first_use.claiming.insert(LOD_FADE, 2);
+        assert_eq!(
+            first_use.feature_of("lit", LOD_FADE | ALPHA_HASH | TRANSLUCENCY),
+            Some("lod_fade")
         );
         assert_eq!(
             first_use.feature_of("lit", MORPH | ALPHA_HASH),

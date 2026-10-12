@@ -42,6 +42,10 @@ import {
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
+	TEMPLATE_SUBSURFACE,
+	TEMPLATE_SUBSURFACE_BLUR,
+	TEMPLATE_SUBSURFACE_COMPOSITE,
+	TEMPLATE_SUBSURFACE_MAPS,
 	TEMPLATE_TRANSMISSION_COPY,
 } from '../../generated/gpu';
 import {
@@ -221,6 +225,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
 	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = mesh(shaders.standard_maps);
+	templates[TEMPLATE_SUBSURFACE] = mesh(shaders.subsurface);
+	templates[TEMPLATE_SUBSURFACE_MAPS] = mesh(shaders.subsurface_maps);
 	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_FINAL_BLOOM] = { shader: shaders.final, pipeline: 'main' };
 	templates[TEMPLATE_BLOOM] = { shader: shaders.bloom, pipeline: 'main' };
@@ -248,6 +254,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// The subsurface blur's down step reads the same one-sample copy of the depth.
+	templates[TEMPLATE_SUBSURFACE_BLUR] = { shader: shaders.subsurface_blur, pipeline: 'across' };
+	templates[TEMPLATE_SUBSURFACE_COMPOSITE] = { shader: shaders.subsurface_blur, pipeline: 'down' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

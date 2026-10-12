@@ -26,6 +26,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
@@ -48,6 +49,8 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
+	MATERIAL_PARAM_SUBSURFACE_COLOR,
+	MATERIAL_PARAM_SUBSURFACE_RADIUS,
 	MATERIAL_PARAM_THICKNESS,
 	MATERIAL_PARAM_TRANSMISSION,
 	MATERIAL_PARAM_UV_U,
@@ -1055,6 +1058,23 @@ export interface StandardValues extends MaterialOptions {
 	 * here. The default is white.
 	 */
 	diffuseTransmissionColor?: ColorInput;
+	/**
+	 * How far light spreads under the surface before it leaves it, in world units taken as
+	 * metres, 0 or more, as in skin, wax or marble. The subsurface blur spreads the surface's
+	 * diffuse light over this distance, so the edges of its shadows and the detail of its maps
+	 * soften, and its highlights stay sharp. Skin takes about 0.01. Give it when you create the
+	 * material, even as 0, to change it later. A material created without it draws no blur. The
+	 * blur draws on the High and Ultra quality presets, where the quality setting
+	 * `subsurfaceSamples` gives it taps, on the HDR path. Materials that blend or let light
+	 * through take none. The default is 0.
+	 */
+	subsurfaceRadius?: number;
+	/**
+	 * How far each color channel's light spreads, as a share of `subsurfaceRadius`, in the forms
+	 * that `color` takes: each linear channel is its share. Skin's red light spreads furthest, so
+	 * it takes about `[1, 0.4, 0.25]`. The default is white, which spreads every channel as far.
+	 */
+	subsurfaceColor?: ColorInput;
 }
 
 /**
@@ -1335,7 +1355,8 @@ type Ranged =
 	| 'envIntensity'
 	| 'transmission'
 	| 'thickness'
-	| 'diffuseTransmission';
+	| 'diffuseTransmission'
+	| 'subsurfaceRadius';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
 const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
@@ -1361,6 +1382,12 @@ const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
 	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
 	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
 	['diffuseTransmission', MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1, 'diffuseTransmission'],
+	[
+		'subsurfaceRadius',
+		MATERIAL_PARAM_SUBSURFACE_RADIUS,
+		Number.POSITIVE_INFINITY,
+		'subsurfaceRadius',
+	],
 ];
 
 /** The core's slot of each map option. */
@@ -1453,6 +1480,7 @@ function writeValues(
 	specular: readonly number[] | undefined,
 	attenuation: readonly number[] | undefined,
 	through: readonly number[] | undefined,
+	scatter: readonly number[] | undefined,
 ): void {
 	const write = (param: number, x: number, y: number, z: number) =>
 		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
@@ -1485,6 +1513,13 @@ function writeValues(
 			through[0] as number,
 			through[1] as number,
 			through[2] as number,
+		);
+	if (scatter)
+		write(
+			MATERIAL_PARAM_SUBSURFACE_COLOR,
+			scatter[0] as number,
+			scatter[1] as number,
+			scatter[2] as number,
 		);
 	for (const [key, param] of RANGED) {
 		const value = values[key];
@@ -1604,7 +1639,8 @@ function featureBits(options: StandardOptions): number {
 			: 0) |
 		(options.forceSinglePass ? MATERIAL_FEATURE_SINGLE_PASS : 0) |
 		(options.transmission !== undefined ? MATERIAL_FEATURE_TRANSMISSION : 0) |
-		(options.diffuseTransmission !== undefined ? MATERIAL_FEATURE_TRANSLUCENCY : 0)
+		(options.diffuseTransmission !== undefined ? MATERIAL_FEATURE_TRANSLUCENCY : 0) |
+		(options.subsurfaceRadius !== undefined ? MATERIAL_FEATURE_SUBSURFACE : 0)
 	);
 }
 
@@ -1627,6 +1663,7 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 	'attenuationColor',
 	'attenuationDistance',
 	'diffuseTransmissionColor',
+	'subsurfaceColor',
 	...RANGED.map(([key]) => key),
 ]);
 
@@ -1773,7 +1810,9 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		const specular = specularOrNone(values.specularColor, call);
 		const attenuation = linearOrNone(values.attenuationColor, call);
 		const through = linearOrNone(values.diffuseTransmissionColor, call);
-		writeValues(core, id, call, values, color, emissive, specular, attenuation, through);
+		const scatter = linearOrNone(values.subsurfaceColor, call);
+		const colors = [color, emissive, specular, attenuation, through, scatter] as const;
+		writeValues(core, id, call, values, ...colors);
 	}
 
 	/**
@@ -1861,6 +1900,7 @@ export class Materials {
 		const specular = specularOrNone(options.specularColor, call);
 		const attenuation = linearOrNone(options.attenuationColor, call);
 		const through = linearOrNone(options.diffuseTransmissionColor, call);
+		const scatter = linearOrNone(options.subsurfaceColor, call);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
@@ -1878,7 +1918,8 @@ export class Materials {
 			call,
 		);
 		const values = { ...options, color: undefined, opacity: undefined };
-		writeValues(core, id, call, values, undefined, emissive, specular, attenuation, through);
+		const colors = [undefined, emissive, specular, attenuation, through, scatter] as const;
+		writeValues(core, id, call, values, ...colors);
 		for (const [key, slot] of MAP_OPTIONS) {
 			const map = options[key];
 			// A production build leaves out a map that would take another map's slot.
@@ -1945,6 +1986,11 @@ export class Materials {
 				'E1217',
 				`${call}() got transmission, but its WGSL never sets the surface's transmission, so it has no builds that let light through. Set it in fn surface, such as s.transmission = 1.0.`,
 			);
+		if (DEV && options.subsurfaceRadius !== undefined)
+			throw new EngineError(
+				'E1217',
+				`${call}() got subsurfaceRadius; custom materials draw no subsurface blur. Give it to materials.standard.`,
+			);
 		const translucent = builds(compiled, PERMUTATION_TRANSLUCENCY);
 		if (DEV && options.diffuseTransmission !== undefined && !translucent)
 			throw new EngineError(
@@ -1975,7 +2021,7 @@ export class Materials {
 		const diffuseTransmission = translucent ? options.diffuseTransmission : undefined;
 		const id = this.createId(
 			shading,
-			{ ...options, alphaToCoverage: false, diffuseTransmission },
+			{ ...options, alphaToCoverage: false, diffuseTransmission, subsurfaceRadius: undefined },
 			call,
 		);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);

@@ -35,6 +35,12 @@ enable draw_index;
 // channels. Custom materials' surfaces have the diffuse transmission and its color in every build,
 // and the builds that let light through a thin surface only where their WGSL names them.
 //
+// The SUBSURFACE builds, of the templates of the skin pass, light the surface as the others do and
+// write only the diffuse light that scatters under it, after the fog, as the camera's opaque pass
+// added it to the scene color, with the material's scatter distances and the view distance
+// (null3d::subsurface). The subsurface blur then spreads that light over the skin around each
+// pixel. Emitted light and the specular layer stay sharp.
+//
 // The ROW_VALUES builds draw the rows of instance batches with row values (null3d::mesh): the row's
 // color multiplies the vertex color, so it tints the base color and the alpha as three.js's
 // instance colors do, and custom materials read the row's own values as `object.values` in both
@@ -139,6 +145,11 @@ enable draw_index;
 #import null3d::mesh::{material_translucency, material_transmission}
 #import null3d::translucency::{gather_back_light, lit_side, transmitted_diffuse}
 #endif
+#ifdef SUBSURFACE
+#import null3d::fog::{fog_factor}
+#import null3d::mesh::{NO_FOG, material_subsurface}
+#import null3d::subsurface::{skin_texel}
+#endif
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
 #endif
@@ -183,6 +194,14 @@ var<private> diffuse_light: vec3f;
 
 /// The object's scale along each of its axes.
 var<private> object_scale: vec3f;
+#else ifdef SUBSURFACE
+/// The diffuse light that `light_surface` gathers, which the skin pass writes.
+var<private> diffuse_light: vec3f;
+#endif
+
+#ifdef SUBSURFACE
+/// The material's scatter distances, which the fragment shader reads once.
+var<private> subsurface_row: vec4f;
 #endif
 
 #ifdef TRANSLUCENCY
@@ -866,6 +885,8 @@ fn light_surface(
     var indirect = ambient * occlusion;
 #ifdef TRANSMISSION
     diffuse_light = sun.diffuse + clustered.diffuse + indirect;
+#else ifdef SUBSURFACE
+    diffuse_light = sun.diffuse + clustered.diffuse + indirect;
 #endif
     let env = engine_frame.environment;
 #ifdef CUSTOM
@@ -889,6 +910,8 @@ fn light_surface(
         let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
         indirect += image.diffuse * occlusion + specular;
 #ifdef TRANSMISSION
+        diffuse_light += image.diffuse * occlusion;
+#else ifdef SUBSURFACE
         diffuse_light += image.diffuse * occlusion;
 #endif
     }
@@ -1004,6 +1027,23 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef SUBSURFACE
+    // The scene color holds this light as the fog left it, and the blur takes its share of it.
+#ifdef TRANSLUCENCY
+    let under = diffuse_light + through;
+#else
+    let under = diffuse_light;
+#endif
+    let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
+    let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
+    // The distance along the view: the clip's w for a perspective camera, and from the depth of
+    // reversed depth's orthographic range for an orthographic one.
+    let clip = engine_frame.view_proj * vec4f(input.relativePosition, 1.0);
+    let range = engine_frame.camera_range;
+    let orthographic = range.y - clip.z * (range.y - range.x);
+    let along = select(orthographic, clip.w, engine_frame.camera_position.w > 0.0);
+    return skin_texel(under * (1.0 - fog), subsurface_row.rgb * subsurface_row.w, along);
+#else
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
     // The copy holds display color, so the light from behind joins after the tone mapping, as far
@@ -1024,6 +1064,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     return fragment_color(material_row, finished.rgb, s.alpha);
 #endif
+#endif
 }
 
 @fragment
@@ -1043,6 +1084,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     translucency_row = material_translucency(in.material);
     volume_row = material_transmission(in.material);
     object_scale = in.scale;
+#endif
+#ifdef SUBSURFACE
+    subsurface_row = material_subsurface(in.material);
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;

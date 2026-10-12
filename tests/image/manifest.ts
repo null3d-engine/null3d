@@ -553,6 +553,7 @@ const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
 /** Panels and leaf cards that let the light behind them through to the camera's side. */
 const TRANSLUCENCY_SKETCH = 'tests/pages/sketches/translucency-sketch.ts';
+const SUBSURFACE_SKETCH = 'tests/pages/sketches/subsurface-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1993,6 +1994,36 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{
 		name: 'translucency-leaves',
 		sketch: `${TRANSLUCENCY_SKETCH}?leaves`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// The subsurface blur of skin: two panels of one skin tone in a low sun, plain on the left and
+	// with a scatter radius on the right, crossed by a bar's shadow. The right panel's light spreads
+	// into the shadow, redder, and a box in front of it takes no blur. The sketch gives the blur 17
+	// taps on every tier. The subsurface spec measures each effect.
+	{ name: 'subsurface', sketch: SUBSURFACE_SKETCH, hold: 0, size: [640, 360], timeoutSeconds: 60 },
+	// The same scene without taps: neither panel blurs.
+	{
+		name: 'subsurface-off',
+		sketch: `${SUBSURFACE_SKETCH}?off`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Both panels with a base color map of fine stripes, which the skin's blur softens: the skin
+	// pass's builds with maps.
+	{
+		name: 'subsurface-maps',
+		sketch: `${SUBSURFACE_SKETCH}?maps`,
+		hold: 0,
+		size: [640, 360],
+		timeoutSeconds: 60,
+	},
+	// Half the render size, which the skin pass and the blur draw into the corner of their targets.
+	{
+		name: 'subsurface-scale-50',
+		sketch: `${SUBSURFACE_SKETCH}?scale=0.5`,
 		hold: 0,
 		size: [640, 360],
 		timeoutSeconds: 60,

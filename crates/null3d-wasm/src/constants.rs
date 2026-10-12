@@ -864,6 +864,7 @@ pub fn typescript() -> String {
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
                 ("TRANSLUCENCY", feature::TRANSLUCENCY),
+                ("SUBSURFACE", feature::SUBSURFACE),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -936,6 +937,8 @@ pub fn typescript() -> String {
                     param::DIFFUSE_TRANSMISSION_COLOR as u32,
                 ),
                 ("DIFFUSE_TRANSMISSION", param::DIFFUSE_TRANSMISSION as u32),
+                ("SUBSURFACE_COLOR", param::SUBSURFACE_COLOR as u32),
+                ("SUBSURFACE_RADIUS", param::SUBSURFACE_RADIUS as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which

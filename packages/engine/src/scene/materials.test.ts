@@ -21,6 +21,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_SINGLE_PASS,
+	MATERIAL_FEATURE_SUBSURFACE,
 	MATERIAL_FEATURE_TRANSLUCENCY,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
@@ -39,6 +40,8 @@ import {
 	MATERIAL_PARAM_ROUGHNESS,
 	MATERIAL_PARAM_SPECULAR_COLOR,
 	MATERIAL_PARAM_SPECULAR_INTENSITY,
+	MATERIAL_PARAM_SUBSURFACE_COLOR,
+	MATERIAL_PARAM_SUBSURFACE_RADIUS,
 	MATERIAL_PARAM_UV_U,
 	MATERIAL_PARAM_UV_V,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
@@ -90,6 +93,8 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
 	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION_COLOR, 3],
 	[MATERIAL_PARAM_DIFFUSE_TRANSMISSION, 1],
+	[MATERIAL_PARAM_SUBSURFACE_COLOR, 3],
+	[MATERIAL_PARAM_SUBSURFACE_RADIUS, 1],
 ]);
 
 /** A texture as materials see it: its handle, and the coordinates its maps read. */
@@ -442,6 +447,28 @@ describe('Material.set', () => {
 		expect(thrown(() => leaf.set({ diffuseTransmission: 1.5 })).code).toBe('E1108');
 	});
 
+	test('spreads light under the surface when created with subsurfaceRadius', () => {
+		const { table, features, materials } = fakeCore();
+		const skin = materials.standard({ subsurfaceRadius: 0.012, subsurfaceColor: [1, 0.4, 0.25] });
+		materials.standard({ subsurfaceRadius: 0 });
+		materials.standard();
+		const row = () => table[0] as number[];
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.012);
+		const color = () =>
+			row().slice(MATERIAL_PARAM_SUBSURFACE_COLOR, MATERIAL_PARAM_SUBSURFACE_COLOR + 3);
+		expect(color()).toEqual([1, 0.4, 0.25]);
+		// Given at all, even as 0, it fixes the feature, so set changes it later.
+		expect(features.map((bits) => bits & MATERIAL_FEATURE_SUBSURFACE)).toEqual([
+			MATERIAL_FEATURE_SUBSURFACE,
+			MATERIAL_FEATURE_SUBSURFACE,
+			0,
+		]);
+		skin.set({ subsurfaceRadius: 0.03, subsurfaceColor: '#ffffff' });
+		expect(row()[MATERIAL_PARAM_SUBSURFACE_RADIUS]).toBe(0.03);
+		expect(color()).toEqual([1, 1, 1]);
+		expect(thrown(() => skin.set({ subsurfaceRadius: -1 })).code).toBe('E1108');
+	});
+
 	test('refuses maps that would share a slot with the diffuse transmission maps', () => {
 		const { table, materials } = fakeCore();
 		const shiny = thrown(() =>
@@ -678,6 +705,17 @@ describe('materials.shader', () => {
 		};
 		materials.shader({ wgsl: leaf, diffuseTransmission: 0.5 });
 		expect(features).toEqual([MATERIAL_FEATURE_TRANSLUCENCY]);
+	});
+
+	test('refuses a scatter radius, which custom materials do not blur', () => {
+		const { features, materials } = fakeCore();
+		const skin = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), subsurfaceRadius: 0.01 }),
+		);
+		expect(skin.message).toStartWith(
+			'E1217: materials.shader() got subsurfaceRadius; custom materials draw no subsurface blur.',
+		);
+		expect(features).toEqual([]);
 	});
 
 	test('passes a full shader the vertex attributes it reads, without vertex colors', () => {

@@ -63,6 +63,15 @@
 //! buckets twice into the outline mask. Outlining an object, or turning outlines on or off,
 //! rebuilds the layouts, as casting shadows does.
 //!
+//! # Subsurface blur
+//!
+//! While the quality setting gives the subsurface blur taps and some material has a scatter radius,
+//! a fourth layout holds the scene objects with such a material, with the skin pass's programs (see
+//! [`crate::subsurface`]). The job workers cull it for the subsurface view with the camera's
+//! frustum and layers, into an index list of its own, and the skin pass draws it with the camera's
+//! lights and shadows: the view's frame groups bind the camera view's light textures. Turning the
+//! blur's taps on or off, or creating the first such material, rebuilds the layouts.
+//!
 //! # Depth prepass
 //!
 //! With the depth prepass, each camera view first draws its opaque draws' depth, from the same
@@ -122,6 +131,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
 use crate::sorted::SortedLayout;
+use crate::subsurface::SubsurfaceIds;
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
@@ -141,6 +151,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::subsurface::STEPS as SUBSURFACE_STEPS;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -174,8 +185,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = DOF + 1;
+    /// The uniform buffer of the subsurface blur's steps.
+    pub const SUBSURFACE: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = SUBSURFACE + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -279,8 +292,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each step of the subsurface blur, after the copy's.
+    pub const SUBSURFACE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the subsurface blur's.
+    pub const TEXTURE_GROUPS: u32 = SUBSURFACE_GROUPS + SUBSURFACE_STEPS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -358,6 +373,11 @@ pub struct CpuCulledRenderer {
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
     layouts_outlined: bool,
+    /// The layout of the objects whose material has a scatter radius, which the subsurface view
+    /// draws.
+    scattering: Layout,
+    /// True when the layouts were built while the subsurface blur has taps.
+    layouts_scattered: bool,
     /// True when the scene's layout was built with the depth prepass's pipelines.
     layout_prepass: bool,
     clusters: Clusters,
@@ -380,6 +400,9 @@ pub struct CpuCulledRenderer {
     /// The outline view's culling output and draws.
     outline_culling: Culling,
     outline_draws: Opaque,
+    /// The subsurface view's culling output and draws.
+    skin_culling: Culling,
+    skin_draws: Opaque,
     /// True when the cascades' uniform block holds cascades, which receivers then read.
     cascades_held: bool,
     lines: LinesPass,
@@ -478,6 +501,10 @@ impl CpuCulledRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        subsurface: SubsurfaceIds {
+                            buffer: ids::SUBSURFACE,
+                            first_group: ids::SUBSURFACE_GROUPS,
+                        },
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -489,6 +516,8 @@ impl CpuCulledRenderer {
             outlined: Layout::new(Drawn::Outlined),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
+            scattering: Layout::new(Drawn::Subsurface),
+            layouts_scattered: false,
             layout_prepass: false,
             clusters: Clusters::default(),
             cells: CellCulling::new(config.cell_culling, true),
@@ -503,6 +532,8 @@ impl CpuCulledRenderer {
             tile_draws: Opaque::new(ViewId::tile(0), config.multi_draw),
             outline_culling: Culling::new(ViewId::OUTLINE),
             outline_draws: Opaque::new(ViewId::OUTLINE, config.multi_draw),
+            skin_culling: Culling::new(ViewId::SUBSURFACE),
+            skin_draws: Opaque::new(ViewId::SUBSURFACE, config.multi_draw),
             cascades_held: false,
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
@@ -575,12 +606,13 @@ impl CpuCulledRenderer {
     }
 
     /// The culling of the views of `view`'s kind: the cameras', the shadow cascades', the shadow
-    /// tiles' or the outline view's.
+    /// tiles', the outline view's or the subsurface view's.
     fn culling_of(&self, view: ViewId) -> &Culling {
         match (view.cascade_index(), view.tile_index()) {
             (Some(_), _) => &self.cascade_culling,
             (_, Some(_)) => &self.tile_culling,
             _ if view == ViewId::OUTLINE => &self.outline_culling,
+            _ if view == ViewId::SUBSURFACE => &self.skin_culling,
             _ => &self.culling,
         }
     }
@@ -588,6 +620,12 @@ impl CpuCulledRenderer {
     /// The outline views that the frame culls: one while outlines are on.
     fn outline_views(&self) -> usize {
         usize::from(self.layouts_outlined)
+    }
+
+    /// The subsurface views that the frame culls: one while the subsurface blur has taps and some
+    /// object's material has a scatter radius.
+    fn skin_views(&self) -> usize {
+        usize::from(self.layouts_scattered && !self.scattering.buckets.is_empty())
     }
 
     /// What a pass that draws into `targets` draws with, in the shader variant that reads the
@@ -617,12 +655,14 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas. While
     /// `shadows` has a pass on, the casters' layout holds the casters, and the receivers read the
-    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects.
+    /// shadow maps. With `outlines`, the outlined layout holds the outlined objects, and with
+    /// `scatters` the subsurface layout holds the objects whose material has a scatter radius.
     fn rebuild_layout(
         &mut self,
         input: &FrameInput<'_>,
         shadows: CasterPasses,
         outlines: bool,
+        scatters: bool,
     ) -> Result<(), RecordError> {
         self.settings
             .prepare_rebuild(input.scene, input.batches, &mut self.pipelines);
@@ -683,6 +723,24 @@ impl CpuCulledRenderer {
             self.outlined.clear();
         }
         self.layouts_outlined = outlines;
+        if scatters {
+            let targets = self.with_draw_index(self.graph.skin_targets());
+            let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
+            self.scattering.rebuild(
+                settings,
+                pipelines,
+                skins,
+                targets,
+                input,
+                limit,
+                multi_draw,
+                shadows,
+                Prepass::Off,
+            )?;
+        } else {
+            self.scattering.clear();
+        }
+        self.layouts_scattered = scatters;
         let room = self.layout.room;
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
@@ -718,6 +776,7 @@ impl CpuCulledRenderer {
         // in its own layout.
         let (scene_buckets, casters) = (&self.layout.scene_buckets, &self.casters.scene_buckets);
         let outlined = &self.outlined.scene_buckets;
+        let scattering = &self.scattering.scene_buckets;
         let in_layout = |buckets: &[u32], slot: usize| {
             buckets.get(slot).is_some_and(|&bucket| bucket != NO_BUCKET)
         };
@@ -725,6 +784,7 @@ impl CpuCulledRenderer {
             scene_buckets[slot] != NO_BUCKET
                 || in_layout(casters, slot)
                 || in_layout(outlined, slot)
+                || in_layout(scattering, slot)
         };
         self.cells
             .classify(input.scene, &culled)
@@ -748,6 +808,9 @@ impl CpuCulledRenderer {
         self.outline_culling
             .reserve(self.outlined.room, self.outline_views())
             .map_err(out_of_memory)?;
+        self.skin_culling
+            .reserve(self.scattering.room, self.skin_views())
+            .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -767,11 +830,13 @@ impl CpuCulledRenderer {
         let cascades = self.cascades();
         let tiles = self.tile_count();
         let outlines = self.outline_views();
+        let skins = self.skin_views();
         for (culling, layout, count) in [
             (&mut self.culling, &self.layout, views),
             (&mut self.cascade_culling, &self.casters, cascades),
             (&mut self.tile_culling, &self.casters, tiles),
             (&mut self.outline_culling, &self.outlined, outlines),
+            (&mut self.skin_culling, &self.scattering, skins),
         ] {
             if culling.views() < count {
                 let room = layout.room;
@@ -820,7 +885,7 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         let tiles = (self.settings.tile_settings().tiles as usize).min(MAX_TILES);
         let cascades = (MAX_CASCADES + tiles) * per_view(&self.casters);
-        let outline = per_view(&self.outlined);
+        let outline = per_view(&self.outlined) + per_view(&self.scattering);
         let shadows = (sizes::SHADOW_UNIFORM_BYTES + sizes::SHADOW_TILES_UNIFORM_BYTES) as usize;
         meshes
             + materials
@@ -882,7 +947,7 @@ impl CpuCulledRenderer {
         &mut self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
-        first_new: [usize; 4],
+        first_new: [usize; 5],
         rebuilt: bool,
     ) -> Result<bool, RecordError> {
         let limit = self.config.max_texture_size;
@@ -899,11 +964,13 @@ impl CpuCulledRenderer {
         let cascades = self.cascades();
         let tiles = self.tile_count();
         let outlines = self.outline_views();
+        let skin_views = self.skin_views();
         let [
             first_new,
             first_new_cascade,
             first_new_tile,
             first_new_outline,
+            first_new_skin,
         ] = first_new;
         for (culling, draws, layout, count, first_new) in [
             (
@@ -933,6 +1000,13 @@ impl CpuCulledRenderer {
                 &self.outlined,
                 outlines,
                 first_new_outline,
+            ),
+            (
+                &mut self.skin_culling,
+                &mut self.skin_draws,
+                &self.scattering,
+                skin_views,
+                first_new_skin,
             ),
         ] {
             let first = if rebuilt { 0 } else { first_new };
@@ -1106,6 +1180,10 @@ impl CpuCulledRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_subsurface(
+            self.settings.subsurface_frame(input.canvas),
+            !self.scattering.buckets.is_empty(),
+        );
         self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
@@ -1193,6 +1271,15 @@ impl CpuCulledRenderer {
         if first_new_outline < outlines {
             Opaque::bind_frame(list, ViewId::OUTLINE, None)?;
         }
+        // The subsurface view lights its objects as the camera's view does, so its frame groups
+        // bind the camera's textures, again whenever the camera's do.
+        let skin_views = self.skin_views();
+        let first_new_skin = self.skin_draws.views();
+        self.skin_draws.add_views(list, skin_views)?;
+        let camera_rebound = textures_made || lights_remade & 1 != 0;
+        if skin_views > 0 && (first_new_skin < skin_views || camera_rebound) {
+            Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(lit_for(lit, ViewId::CAMERA)))?;
+        }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
@@ -1213,14 +1300,23 @@ impl CpuCulledRenderer {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
+            if skin_views > 0 {
+                let camera = lit_for(lit, ViewId::CAMERA);
+                Opaque::bind_frame(list, ViewId::SUBSURFACE, Some(camera))?;
+            }
         }
         for index in 0..views {
             if let Some(frame) = self.culling.frame_mut(ViewId::from_index(index)) {
                 frame.uniform.environment = uniform;
             }
         }
+        let copied = f32::from(u8::from(self.graph.transmission_copied()));
         if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
-            frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
+            frame.uniform.camera_world[3] = copied;
+        }
+        if let Some(frame) = self.skin_culling.frame_mut(ViewId::SUBSURFACE) {
+            frame.uniform.environment = uniform;
+            frame.uniform.camera_world[3] = copied;
         }
         self.graph.upload(
             list,
@@ -1232,13 +1328,15 @@ impl CpuCulledRenderer {
         let new_views = first_new < views
             || first_new_cascade < cascades
             || first_new_tile < tiles
-            || first_new_outline < outlines;
+            || first_new_outline < outlines
+            || first_new_skin < skin_views;
         let new_texture = if rebuilt || new_views {
             let first_new = [
                 first_new,
                 first_new_cascade,
                 first_new_tile,
                 first_new_outline,
+                first_new_skin,
             ];
             self.size_resources(list, input, first_new, rebuilt)?
         } else {
@@ -1308,6 +1406,19 @@ impl CpuCulledRenderer {
                 frame,
                 streamed,
             )?;
+            upload_views(
+                list,
+                arena,
+                (
+                    &mut self.skin_culling,
+                    &mut self.skin_draws,
+                    &self.scattering,
+                ),
+                None,
+                skin_views,
+                frame,
+                streamed,
+            )?;
             if let Some(shadow) = &self.shadow {
                 shadows::upload(list, arena, ids::SHADOWS, shadow)?;
                 upload_views(
@@ -1337,8 +1448,9 @@ impl CpuCulledRenderer {
         let (cascade_culling, cascade_draws) = (&self.cascade_culling, &self.cascade_draws);
         let (tile_culling, tile_draws) = (&self.tile_culling, &self.tile_draws);
         let (outline_culling, outline_draws) = (&self.outline_culling, &self.outline_draws);
+        let (skin_culling, skin_draws) = (&self.skin_culling, &self.skin_draws);
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
-        let outlined = &self.outlined;
+        let (outlined, scattering) = (&self.outlined, &self.scattering);
         let (transparent, background) = (&self.transparent, &self.background);
         let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
@@ -1410,6 +1522,17 @@ impl CpuCulledRenderer {
                         meshes,
                         Shading::Depth,
                         &never,
+                    )
+                }
+                Role::SkinLight if skin_culling.frame(ViewId::SUBSURFACE).is_some() => {
+                    let view = ViewId::SUBSURFACE;
+                    let starts = skin_culling.culled(frame, view).bucket_starts();
+                    let shading = Shading::Lit {
+                        light_slot: light_textures.slot(ViewId::CAMERA),
+                    };
+                    let hidden = hidden_in(ViewId::CAMERA);
+                    skin_draws.record(
+                        list, arena, view, starts, scattering, meshes, shading, &hidden,
                     )
                 }
                 Role::Transparent(view) if culling.frame(view).is_some() => {
@@ -1496,7 +1619,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.culling.reserve_sources(sources)?;
         self.cascade_culling.reserve_sources(sources)?;
         self.tile_culling.reserve_sources(sources)?;
-        self.outline_culling.reserve_sources(sources)
+        self.outline_culling.reserve_sources(sources)?;
+        self.skin_culling.reserve_sources(sources)
     }
 
     fn cull(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
@@ -1534,6 +1658,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
         };
         let outlines = self.settings.outline().is_some();
+        let scatters = self.settings.holds_scattering();
         // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
         // the prepass, whose pipelines the layout holds.
         let ao = self
@@ -1553,10 +1678,11 @@ impl FrameBuilder for CpuCulledRenderer {
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
+            || scatters != self.layouts_scattered
             || prepass_changed
             || skinned_appear
         {
-            self.rebuild_layout(input, shadows, outlines)?;
+            self.rebuild_layout(input, shadows, outlines, scatters)?;
         }
         self.add_culled_views()?;
         self.cells.update(input);
@@ -1652,7 +1778,22 @@ impl FrameBuilder for CpuCulledRenderer {
                 None,
                 None,
             )
-            .map_err(|_| out_of_memory(&self.outlined))
+            .map_err(|_| out_of_memory(&self.outlined))?;
+        // The subsurface view sees what the camera's view sees, while some object's material has a
+        // scatter radius.
+        let scatters = !self.scattering.buckets.is_empty();
+        self.skin_culling
+            .cull(
+                input,
+                &self.scattering,
+                &mut self.clusters,
+                cells,
+                &|_| camera.filter(|_| scatters),
+                &|_| camera_rule,
+                None,
+                None,
+            )
+            .map_err(|_| out_of_memory(&self.scattering))
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
@@ -1727,6 +1868,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.tile_draws.forget_gpu();
         self.outline_culling.forget_gpu();
         self.outline_draws.forget_gpu();
+        self.skin_culling.forget_gpu();
+        self.skin_draws.forget_gpu();
         self.tiles.forget_gpu();
         self.cascades_held = false;
         self.lines.forget_gpu();

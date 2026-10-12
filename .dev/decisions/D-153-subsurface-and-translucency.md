@@ -1,8 +1,8 @@
 # D-153: Light through thin surfaces, and subsurface light for skin
 
-Status: decided by the helper of M2-EX36 on 12 October 2026, for the owner's review of the look. The timings follow. The screen-space blur of skin is not built, and waits for the coordinator's decision. Date: 2026-10-12. Task: M2-EX36.
+Status: decided by the helper of M2-EX36 on 12 October 2026, for the owner's review of the look. The timings of both parts follow. Date: 2026-10-12. Task: M2-EX36.
 
-Summary: The standard material takes glTF's diffuse transmission: light that reaches a thin surface from behind, such as the sun through a leaf, a petal or an ear, shows on its front through a color of its own. The glTF loader reads `KHR_materials_diffuse_transmission` into it, and `KHR_materials_volume` dims it over the surface's thickness. One permutation bit, `TRANSLUCENCY`, gives it shader builds that load on first use. Its two maps take the slots of the specular maps, which read the same channels, so no GPU path binds a texture more.
+Summary: The standard material takes glTF's diffuse transmission: light that reaches a thin surface from behind, such as the sun through a leaf, a petal or an ear, shows on its front through a color of its own. The glTF loader reads `KHR_materials_diffuse_transmission` into it, and `KHR_materials_volume` dims it over the surface's thickness. One permutation bit, `TRANSLUCENCY`, gives it shader builds that load on first use. Its two maps take the slots of the specular maps, which read the same channels, so no GPU path binds a texture more. For skin, wax and marble, a material's `subsurfaceRadius` and `subsurfaceColor` spread its diffuse light under its surface: a skin pass draws those objects' diffuse light again, and two separable steps blur it with Burley's diffusion profile into a copy of the scene color, on the High and Ultra presets (`subsurfaceSamples`). The glTF loader reads the draft `KHR_materials_volume_scatter` into the two values.
 
 ## Question
 
@@ -54,16 +54,33 @@ A leaf card with alpha to coverage has two bits whose features claim shared buil
 
 The material row grows by one `vec4f`: the color and the transmission. Only the `TRANSLUCENCY` builds read it, with the transmission's row for the volume.
 
-### Skin
+### Skin: the screen-space blur
 
-Diffuse transmission gives ears and fingers their glow against the light. It does not soften the light across a face, which a screen-space subsurface blur does. That blur is not part of this record's build. The findings that its design starts from:
+Diffuse transmission gives ears and fingers their glow against the light. It does not soften the light across a face: a shadow's edge, the light at the side of a nose and the pores of a skin map stay as sharp as on plaster. Light that enters skin leaves it a few millimetres away, redder the further it went. A screen-space blur of the skin's diffuse light draws that. The owner asked for it in the same pull request as the light through thin surfaces (12 October 2026).
 
-- A blur must know which pixels are skin, and with what radius. The scene color has no spare channel for that. Many WebGPU devices draw it as `rg11b10ufloat`, which has no alpha, and elsewhere its alpha is the canvas's alpha. No GPU path has a stencil buffer.
-- So the skin needs a pass that draws it again: either into a mask, which a blur of the image reads, or as its diffuse light alone into a target, which each skin pixel blurs around itself. The Khronos sample renderer does the second, which keeps the highlights sharp. A blur of the whole image smears them.
-- The outline's mask is the engine's model of such a pass. It has a view of its own, a culling pass of its own on WebGPU, and a layout of the outlined objects in both frame builders. A skin pass needs the same parts, plus its blur passes, a texture binding in the skin's builds and a quality setting for High and Ultra.
-- Battle's soldiers fill few pixels each, so the blur would change little there. Diffuse transmission already gives their ears and hands the glow against the light.
+What the design starts from:
 
-The coordinator decides whether the blur becomes a task of its own.
+- The blur must know which pixels are skin, with what reach. The scene color has no spare channel. Many WebGPU devices draw it as `rg11b10ufloat`, which has no alpha, and elsewhere its alpha is the canvas's alpha. No GPU path has a stencil buffer.
+- A blur of the finished color smears the highlights, which must stay sharp. So the blur reads the skin's diffuse light alone.
+- The scene's render pass cannot write a second color target for the skin builds alone: every pipeline of a render pass declares the same targets, so every pipeline of the camera's opaque pass would change.
+
+| Option | Who does it | Verdict |
+| --- | --- | --- |
+| A: a skin pass draws the skin objects again, their scattered diffuse light alone, into a target of their own; a two-step separable blur then adds the blurred light less the sharp light to a copy of the scene color | Jimenez et al. 2015 (separable subsurface scattering), Unity HDRP and Unreal Engine (diffuse light apart, then a screen-space blur) | Chosen |
+| B: the skin pass first, then each skin pixel of the camera's opaque pass blurs that target over a disk of taps around itself | The Khronos sample renderer for the draft `KHR_materials_volume_scatter`: 55 taps | Rejected. The skin builds of the opaque pass need one more texture binding, and WebGPU's maps build reads 15 of its 16 already. The skin pass needs a depth target of its own anyway |
+| C: a mask pass of the skin objects, then a blur of the finished image within the mask | Older games | Rejected. It smears the highlights and the specular light of the eyes and lips |
+| D: a blur of the skin's lighting in texture space | Offline renderers, early real-time faces | Rejected. A pass per skinned object and its unwrapped texture, at a cost that grows with the objects, not the pixels |
+
+How option A runs:
+
+1. **The skin view.** The objects whose material has a subsurface radius form a layout of their own, as outlined objects do ([D-36](D-36-outlines.md)). A view of its own, the subsurface view, culls it with the camera's frustum and layers: on WebGPU in a culling pass of its own, on WebGL2 on the job workers. Instance batches take no blur, as they take no outline.
+2. **The skin pass.** It draws that layout with the standard material's skin builds (templates `SUBSURFACE` and `SUBSURFACE_MAPS`, from `lit.wgsl` with the `SUBSURFACE` def), with the camera's frame bindings: its lights, shadows, ambient occlusion and environment. It writes into a target of the render size with one sample, `rgba32float`, with a depth target of its own. Red, green and blue hold the diffuse light that scatters, after the fog, as the opaque pass added it to the scene color. Alpha holds the view depth. The low 8 bits of each color channel's float hold the material's scatter distance of that channel, on a log scale from 0.06 mm to 64 m, so the steps need no material table. The skin pass runs after the transparent passes, beside the outline's mask.
+3. **The steps.** Two full-screen passes at the render size. The first blurs the skin target across, into an `rgba16float` target. The second blurs that down, and writes the scene color plus the blurred light less the sharp light, into a copy that the custom effects, depth of field, bloom and the final pass then read, as they read an effect's target. Each tap's weight is Burley's diffusion profile of each channel's distance, at the distance in the world between the tap's surface and the pixel's, from the view depths. So light never crosses from a nose to the cheek behind it. Taps without skin take no weight. The taps reach the largest channel's distance, spread more densely near the pixel. Where that distance covers less than a pixel, the pixel keeps its color at once. The second step changes only pixels whose skin is in front: it compares the skin's depth with the scene's.
+4. **The quality setting.** `subsurfaceSamples` gives each step 0, 11, 17 or 25 taps: 0 on Low and Medium, 17 on High and 25 on Ultra. WebGL2 and compatibility mode run Medium at most, so they draw no blur unless the page sets the setting. 0 draws no skin pass or steps even where materials ask for the blur. The 8-bit path draws none either.
+
+The material API: `subsurfaceRadius`, how far light spreads under the surface in world units (metres), and `subsurfaceColor`, each channel's share of that radius, white by default; skin takes about `[1, 0.4, 0.25]`. Giving `subsurfaceRadius` at creation, even as 0, gives the material the feature, as `diffuseTransmission` does, and `set` changes both values. The glTF loader reads the draft `KHR_materials_volume_scatter`: each channel's distance is `attenuationDistance × multiscatterColor`, as the Khronos sample renderer finds it. Where the sample renderer scatters only the diffuse transmission's share, null3D blurs all of the diffuse light: the record lists the difference in the mapping. Blended materials and custom materials take no blur.
+
+Cost: nothing while no material has a radius or the setting is 0: no pass, target, binding or shader download. While it draws: the skin objects draw once more, and their pixels are shaded once more; the two steps read their taps only at skin pixels whose blur covers a pixel or more, and every other pixel reads one texel and copies the scene color. Targets per pixel of the render size: 16 bytes of skin light, 4 of its depth, 8 of the blurred light and 8 of the copy.
 
 ## Data
 
@@ -79,11 +96,13 @@ The coordinator decides whether the blur becomes a task of its own.
 
 ## Decision
 
-Options A throughout, for light through thin surfaces: glTF's diffuse transmission as the Khronos sample renderer draws it, with glTF's names, its maps in the specular maps' slots, and one permutation bit whose builds load on first use. The screen-space blur of skin waits for the coordinator's decision ("Skin" above).
+Options A throughout, for light through thin surfaces: glTF's diffuse transmission as the Khronos sample renderer draws it, with glTF's names, its maps in the specular maps' slots, and one permutation bit whose builds load on first use. For skin, option A of "Skin: the screen-space blur": a skin pass of the subsurface view, two separable steps with Burley's profile, and the quality setting `subsurfaceSamples`, on High and Ultra.
 
 ## Consequences
 
-- Code: `materials.rs` (the feature, the row and the slots), `frame.rs` (the variant), the shaders `lib/translucency.wgsl`, `lit.wgsl` and `lib/lights.wgsl`, the shader manifest's `translucency` set, the shader compiler's custom material check, `resources.ts` and the glTF reader.
-- Docs: `api/materials`, `shaders/surface-functions`, `concepts/materials`, `api/assets` and `concepts/assets`, and a mapping entry for three.js's subsurface material.
-- Skills: the develop skill's task table, quick reference and shaders reference, and the port skill's materials notes.
-- Tests: Rust and unit tests, the image tests `translucency` and `translucency-custom`, the first-use download test, and `--translucency` in `bench:allocation`.
+- Code: `materials.rs` (the features, the row and the slots), `frame.rs` (the variant and the blur's settings), the shaders `lib/translucency.wgsl`, `lit.wgsl` and `lib/lights.wgsl`, the shader manifest's `translucency` and `subsurface` sets, the shader compiler's custom material check, `resources.ts` and the glTF reader.
+- The skin blur's code: `subsurface.rs` (the skin pass's keys and the steps), the subsurface view (`ViewId::SUBSURFACE`), the subsurface layouts of both frame builders, the frame graph's skin pass and steps, whose copy the custom effects, depth of field, bloom and the final pass read, `subsurface.wgsl`, `lib/subsurface.wgsl` and the `SUBSURFACE` builds of `lit.wgsl`, the core call `setSubsurfaceTaps` and the quality setting `subsurfaceSamples`.
+- Docs: `api/materials`, `api/quality`, `shaders/surface-functions`, `concepts/materials`, `api/assets` and `concepts/assets`, and a mapping entry for three.js's subsurface material.
+- Skills: the develop skill's task table, quick reference, shaders reference and performance notes, and the port skill's materials notes.
+- Tests: Rust and unit tests, the image tests `translucency`, `translucency-custom` and the four `subsurface` tests with their spec, the first-use download tests, and `--translucency` and `--subsurface` in `bench:allocation`.
+- Demos: `examples/translucency` (light through leaves) and `examples/subsurface` (wax, jade and soap by candlelight).

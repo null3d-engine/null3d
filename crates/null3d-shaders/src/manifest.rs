@@ -41,8 +41,8 @@ pub struct Manifest {
 
 /// A feature whose shader builds go into files of their own, which a page loads the first time a
 /// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
-/// the feature of its highest permutation bit that a feature with `claims_shared_builds` names, or
-/// else to that of its lowest bit that any feature names.
+/// the feature with `claims_shared_builds` of its highest `claim_priority` and then lowest
+/// permutation bit, or else to that of its lowest bit that any feature names.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstUse {
@@ -58,6 +58,11 @@ pub struct FirstUse {
     /// files.
     #[serde(default)]
     pub claims_shared_builds: bool,
+    /// Of features that claim shared builds, the one of higher priority takes a build that they
+    /// share, such as a rare feature's builds with a common one's. Features of equal priority
+    /// leave it to the lower bit.
+    #[serde(default)]
+    pub claim_priority: u8,
 }
 
 /// One entry shader.
