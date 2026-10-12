@@ -79,6 +79,7 @@ export type {
 	AnimationEventHandler,
 	Animator,
 	BlendOptions,
+	LookAtOptions,
 	PlayOptions,
 	StopOptions,
 } from './scene/animation';
@@ -169,6 +170,8 @@ export type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MeshLevel,
+	MeshLevelOptions,
 	MorphTargets,
 	PlaneOptions,
 	RingOptions,

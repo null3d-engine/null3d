@@ -146,7 +146,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::{GraphError, RenderGraph};
-use crate::light_grid::{CameraLights, LightGrid, LightLimits};
+use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::light_tables;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
@@ -198,6 +198,16 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 /// dispatch covers. A device that offers more gains nothing from a larger binding.
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
     MAX_WORKGROUPS_PER_DIMENSION * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
+
+/// The camera view whose light buffers `view`'s frame group binds: its own once they exist, in
+/// `made`, a mask of camera views, or the camera's, which a view without a grid never reads.
+fn light_owner(made: u32, view: ViewId) -> ViewId {
+    if made & (1 << view.index()) != 0 {
+        view
+    } else {
+        ViewId::CAMERA
+    }
+}
 
 /// The error of a table that memory could not grow for.
 fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
@@ -255,14 +265,22 @@ mod ids {
         SORTED + view.index() as u32
     }
 
-    /// The light grid of the camera's view: a word per cluster, then the light index list.
-    pub const LIGHT_GRID: u32 = SORTED + MAX_VIEWS as u32;
-    /// The records of the lights that the light grid lists.
-    pub const LIGHTS: u32 = LIGHT_GRID + 1;
-    /// The parameters of the light clustering pass, which fills the light grid.
-    pub const LIGHT_PARAMS: u32 = LIGHTS + 1;
+    /// Each camera view's light buffers, three ids from `LIGHT_BUFFERS + 3 * view`: its light grid,
+    /// a word per cluster then the light index list, the records of the lights that the grid lists,
+    /// and the parameters of the light clustering dispatches that fill the grid.
+    const LIGHT_BUFFERS: u32 = SORTED + MAX_VIEWS as u32;
+
+    pub const fn light_grid(view: ViewId) -> u32 {
+        LIGHT_BUFFERS + 3 * view.index() as u32
+    }
+    pub const fn lights(view: ViewId) -> u32 {
+        light_grid(view) + 1
+    }
+    pub const fn light_params(view: ViewId) -> u32 {
+        light_grid(view) + 2
+    }
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = LIGHT_PARAMS + 1;
+    pub const BLOOM: u32 = LIGHT_BUFFERS + 3 * MAX_VIEWS as u32;
     /// The skinned vertex buffers that the skinning pass writes and the passes that draw skinned
     /// meshes read, one id each from here.
     const SKINNED: u32 = BLOOM + 1;
@@ -384,14 +402,16 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
-    /// The light clustering pass's group.
-    pub const LIGHT_GROUP: u32 = FINAL_GROUP + 1;
-    /// Each camera view's group of its depth prepass, after the light clustering pass's group.
+    /// Each camera view's group of its light clustering dispatches, after the final pass's group.
+    pub const fn light_group(view: ViewId) -> u32 {
+        FINAL_GROUP + 1 + view.index() as u32
+    }
+    /// Each camera view's group of its depth prepass, after the light clustering groups.
     pub const fn prepass_group(view: ViewId) -> u32 {
-        LIGHT_GROUP + 1 + view.index() as u32
+        FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = LIGHT_GROUP + 1 + MAX_VIEWS as u32;
+    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -518,9 +538,11 @@ pub struct GpuDrivenRenderer {
     sorted: SortedLayout,
     transparent: Transparent,
     background: BackgroundPass,
-    /// The point and spot lights of the camera's view.
-    lights: CameraLights,
-    /// The pass that lists the lights of each cluster of the camera's light grid.
+    /// The point and spot lights of each camera view.
+    lights: LightGrids,
+    /// The camera views whose light buffers exist, as a mask of view places.
+    lights_made: u32,
+    /// The pass that lists the lights of each cluster of each camera view's light grid.
     light_clusters: LightClusters,
     /// The pass that skins the skinned meshes that some view draws.
     skinning: Skinning,
@@ -648,7 +670,8 @@ impl GpuDrivenRenderer {
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
             }),
-            lights: CameraLights::on_gpu(config.light_limits),
+            lights: LightGrids::new(config.light_limits, true),
+            lights_made: 0,
             light_clusters: LightClusters::default(),
             skinning: Skinning::new(config.skinning),
             frames: Vec::new(),
@@ -686,7 +709,13 @@ impl GpuDrivenRenderer {
     /// The light grid of the camera's view in the frame recorded last, with the records that the
     /// shaders read.
     pub fn light_grid(&self) -> &LightGrid {
-        self.lights.grid()
+        self.lights.camera().grid()
+    }
+
+    /// The light grid of camera view `view` in the frame recorded last, or `None` while the view
+    /// has seen no point or spot light.
+    pub fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid> {
+        Some(self.lights.get(view)?.grid())
     }
 
     /// The tiles of the point and spot lights' shadow atlas in the last recorded frame.
@@ -979,6 +1008,7 @@ impl GpuDrivenRenderer {
                 opaque::bind_frame(
                     list,
                     view,
+                    light_owner(self.lights_made, view),
                     shadow_map,
                     atlas,
                     ao_texture,
@@ -1042,8 +1072,11 @@ impl GpuDrivenRenderer {
         }
 
         self.cells.update(input);
-        // Each view's values first: the camera's light grid sets how much its upload takes.
+        // Each view's values first: the light grids set how much their uploads take.
         self.frames.clear();
+        let exposure = self.settings.drawn_output().exposure;
+        self.lights
+            .set_area_light_cap(self.settings.area_light_cap());
         for index in 0..views {
             let view = ViewId::from_index(index);
             // A view that the graph culls needs no values.
@@ -1060,13 +1093,37 @@ impl GpuDrivenRenderer {
                     )
                 })
                 .flatten();
-            if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
+            if let Some(frame) = &mut frame {
+                if let Some(Some(camera)) = self.frames.first() {
+                    frame.set_shadow_origin(&camera.camera);
+                }
                 self.lights
-                    .set_area_light_cap(self.settings.area_light_cap());
-                self.lights.assign(input.jobs, frame, input.lights);
-                self.lights.mark_shadows(&self.tiles, input.shadow_lights);
+                    .assign(view, frame, input, exposure, &self.tiles);
             }
             self.frames.push(frame);
+        }
+        // A view whose grid has no light buffers yet gets them, and its frame group binds them.
+        for index in 0..views {
+            let view = ViewId::from_index(index);
+            let bit = 1 << index;
+            if self.lights_made & bit != 0 {
+                continue;
+            }
+            let Some(lights) = self.lights.get(view) else {
+                continue;
+            };
+            lights::create(list, view, lights)?;
+            self.lights_made |= bit;
+            opaque::bind_frame(
+                list,
+                view,
+                view,
+                shadow_map,
+                atlas,
+                ao_texture,
+                self.bound_environment,
+                transmission(view),
+            )?;
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
@@ -1102,9 +1159,11 @@ impl GpuDrivenRenderer {
             self.bound_environment = environment;
             for index in 0..views {
                 let view = ViewId::from_index(index);
+                let lights = light_owner(self.lights_made, view);
                 opaque::bind_frame(
                     list,
                     view,
+                    lights,
                     shadow_map,
                     atlas,
                     ao_texture,
@@ -1256,7 +1315,18 @@ impl GpuDrivenRenderer {
         self.skinning.begin_frame();
         self.layout
             .update_order(list, arena, &self.cells, input, &self.casters)?;
-        self.light_clusters.upload(list, arena, &mut self.lights)?;
+        let drawn_views = self
+            .frames
+            .iter()
+            .enumerate()
+            .filter(|(_, frame)| frame.is_some())
+            .fold(0u32, |mask, (index, _)| mask | 1 << index);
+        self.light_clusters.upload(
+            list,
+            arena,
+            &mut self.lights,
+            self.lights_made & drawn_views,
+        )?;
         self.transparent.size(list, &self.sorted, views)?;
 
         let render_size = self.graph.render_size();
@@ -1270,6 +1340,7 @@ impl GpuDrivenRenderer {
                     None
                 };
                 let (layout, cells) = (&self.layout, &self.cells);
+                let detail = self.settings.level_view(view, input.canvas);
                 self.culling.upload(
                     list,
                     arena,
@@ -1280,6 +1351,7 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                     levels.as_ref(),
+                    &detail,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1290,6 +1362,7 @@ impl GpuDrivenRenderer {
             let view = ViewId::OUTLINE;
             opaque::upload(list, arena, view, &frame)?;
             let (layout, outlined, cells) = (&self.layout, &self.outlined, &self.cells);
+            let detail = self.settings.level_view(view, input.canvas);
             self.culling.upload(
                 list,
                 arena,
@@ -1300,6 +1373,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
                 None,
+                &detail,
             )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
@@ -1310,6 +1384,7 @@ impl GpuDrivenRenderer {
         }
         self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
         self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+        let shadow_detail = self.settings.shadow_level_view(input.canvas);
         for tile in 0..tiles {
             let view = ViewId::tile(tile);
             let Some(frame) = self.tiles.frame(tile).copied() else {
@@ -1327,6 +1402,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
                 None,
+                &shadow_detail,
             )?;
             let offsets = self.culling.offsets();
             self.skinning
@@ -1349,6 +1425,7 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                     None,
+                    &shadow_detail,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1525,7 +1602,8 @@ impl GpuDrivenRenderer {
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
-        lights::create(list, &self.lights)?;
+        lights::create(list, ViewId::CAMERA, self.lights.camera())?;
+        self.lights_made = 1 << ViewId::CAMERA.index();
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -1645,6 +1723,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.tiles.forget_gpu();
         self.lines.forget_gpu();
         self.lights.forget_gpu();
+        self.lights_made = 0;
         self.skinning.forget_gpu();
         self.transparent.forget_gpu();
         self.meshes.forget();

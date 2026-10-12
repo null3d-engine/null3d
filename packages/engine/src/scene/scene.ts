@@ -2491,10 +2491,6 @@ export class Scene {
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
-	/** @internal True once development builds saw a point or spot light. */
-	rangedLights = false;
-	/** @internal Called in development builds when the scene gets its first point or spot light. */
-	onRangedLight: (() => void) | undefined;
 	/** @internal The area lights' tables, which load with the first rectangle or tube light. */
 	readonly areaTables: AreaLightTables;
 	/**
@@ -3650,10 +3646,6 @@ export class Scene {
 		const area = isAreaLight(type);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT || area;
 		if (area) this.areaTables.load();
-		if (DEV && ranged && !this.rangedLights) {
-			this.rangedLights = true;
-			this.onRangedLight?.();
-		}
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {

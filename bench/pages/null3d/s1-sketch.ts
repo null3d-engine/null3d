@@ -43,7 +43,9 @@
 // switch makes the swarm's rows cast and receive them, for the cost of a large batch in the shadow
 // passes and for the allocation sample of its rows as moving casters. The `rowValues` switch gives
 // every row a color and values that change every frame, read by a custom material that sways and
-// tints each box, for the allocation sample of the row values' uploads.
+// tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
+// the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
+// fading bands between levels.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
@@ -68,6 +70,7 @@ export default defineSketch(async (context) => {
 			: createSwarm(context, count, true, undefined, switches.has('blend'), {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
+					levels: switches.has('levels'),
 				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));

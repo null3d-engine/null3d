@@ -1,7 +1,8 @@
 // The point, spot, hemisphere, rectangle and tube light scenes (bench/scenes/lights.ts). ?lights=N
 // lights the floor with N point lights in a square grid, ?scene=spot with three spot lights
-// instead, ?scene=hemisphere with a hemisphere light, ?scene=rect with three rectangle lights and
-// ?scene=tube with three tube lights. ?areaLights=N caps the area lights of each frame.
+// instead, ?scene=hemisphere with a hemisphere light, ?scene=rect with three rectangle lights,
+// ?scene=rect-image with the same lights showing an image of colored bands, and ?scene=tube with
+// three tube lights. ?areaLights=N caps the area lights of each frame.
 // ?scene=hemisphere-split gives the same light as two lights that the frame sums. ?camera=ortho
 // draws through an orthographic camera.
 // ?tone=none turns off the engine's default of ACES, as the parity test asks: the three.js twin
@@ -61,9 +62,15 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 			scene.createSpotLight({ ...light, position: [...position], target: [...target] });
 		return;
 	}
-	if (lights === 'rect') {
+	if (lights === 'rect' || lights === 'rect-image') {
+		const image = lights === 'rect-image' ? bands() : undefined;
 		for (const { position, target, ...light } of RECT_LIGHTS)
-			scene.createRectAreaLight({ ...light, position: [...position], target: [...target] });
+			scene.createRectAreaLight({
+				...light,
+				position: [...position],
+				target: [...target],
+				image,
+			});
 		return;
 	}
 	if (lights === 'tube') {
@@ -111,3 +118,18 @@ export default defineSketch(({ scene, materials, geometry, post, quality }) => {
 	for (const { position, ...light } of pointLightGrid(count))
 		scene.createPointLight({ ...light, position: [...position] });
 });
+
+/**
+ * An image of 16 x 16 pixels: red, white and blue bands from left to right, under a dark bar
+ * across the top quarter. Shiny shapes show the bands sharp, and the rough floor shows them blurred.
+ */
+function bands() {
+	const data = new Uint8Array(16 * 16 * 4);
+	for (let i = 0; i < 16 * 16; i++) {
+		const [x, y] = [i % 16, i >> 4];
+		const [r, g, b] = x < 5 ? [255, 60, 40] : x < 11 ? [255, 255, 255] : [40, 90, 255];
+		const shade = y < 4 ? 0.1 : 1;
+		data.set([r * shade, g * shade, b * shade, 255], i * 4);
+	}
+	return { width: 16, height: 16, data };
+}

@@ -51,7 +51,9 @@ use null3d_render::dof::{self, Dof};
 use null3d_render::effects::{EFFECT_FLOATS, Effect};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
-use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError, SceneSettings};
+use null3d_render::frame::{
+    CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
+};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
@@ -160,7 +162,10 @@ mod render_detail {
     /// The second detail is the most views a frame builder draws, the camera's included.
     pub const TOO_MANY_VIEWS: u32 = 14;
     /// The second detail is the most rectangle lights with images at once.
-    pub const LIGHT_IMAGES_FULL: u32 = 15;
+    pub const LIGHT_IMAGES_FULL: u32 = 16;
+    /// Levels of detail that a mesh cannot take; the second detail says why
+    /// (`constants::level_problem`).
+    pub const BAD_LEVELS: u32 = 15;
 }
 
 struct Engine {
@@ -289,6 +294,7 @@ impl Engine {
             lines: self.lines.lines(),
             lights: self.lights.visible(),
             shadow_lights: self.lights.shadows(),
+            light_table: Some(&self.lights),
             pipelines_built,
             animations: self.animations.as_ref(),
             morphs: &self.morphs,
@@ -980,14 +986,18 @@ pub fn update_batches(frame: u32) -> u32 {
 }
 
 /// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
-/// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `built`:
-/// the newest frame that the thread that draws drew with every pipeline built.
+/// for a canvas of this size in device pixels. Call it before `recordFrame`, with the same `scale`
+/// and `built`: the render scale in thousandths, which the choice of levels of detail reads, and
+/// the newest frame that the thread that draws drew with every pipeline built. The views cull at
+/// the canvas's full size.
 #[wasm_bindgen(js_name = cullFrame)]
-pub fn cull_frame(frame: u32, width: u32, height: u32, built: u32) -> u32 {
+pub fn cull_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32) -> u32 {
     let Some(jobs) = JOBS.get() else {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
+        let scale = RenderScale::from_thousandths(scale);
+        e.renderer.settings_mut().set_level_scale(scale);
         let (renderer, input) = e.frame(frame, (width, height), RenderScale::FULL, jobs, built);
         match renderer.cull(&input) {
             Ok(()) => 0,
@@ -1009,6 +1019,7 @@ pub fn record_frame(frame: u32, width: u32, height: u32, scale: u32, built: u32)
     };
     with_engine(|e| {
         let scale = RenderScale::from_thousandths(scale);
+        e.renderer.settings_mut().set_level_scale(scale);
         let (renderer, input) = e.frame(frame, (width, height), scale, jobs, built);
         let recorded = renderer.record(&input);
         e.lines.clear();
@@ -2866,6 +2877,74 @@ pub fn shadow_casters() -> u32 {
     })
 }
 
+/// 1 while some mesh has levels of detail, which the quality governor's detail steps need, else 0.
+#[wasm_bindgen(js_name = hasLevels)]
+pub fn has_levels() -> u32 {
+    value_with_engine(|e| Ok(u32::from(e.renderer.settings().levels().any())))
+}
+
+/// Gives mesh `base`, by its id that counts from 1, the `count` lower levels of detail whose mesh
+/// ids, then whose errors as the bits of 32-bit floats, the staging words hold, from the most
+/// detailed down. With `count` 0 the mesh loses its levels. `fades` lets two levels hand over in a
+/// fading band. The next frame rebuilds the draw tables. Fails with the problem for levels that the
+/// mesh cannot take.
+#[wasm_bindgen(js_name = setMeshLevels)]
+pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
+    with_engine(|e| {
+        let count = count as usize;
+        if e.staging.len() < 2 * count {
+            return render_failure(
+                render_detail::BAD_LEVELS,
+                constants::level_problem::TOO_MANY,
+            );
+        }
+        let (meshes, errors) = e.staging[..2 * count].split_at(count);
+        let mut floats = [0.0f32; null3d_render::levels::MAX_LEVELS];
+        let Some(floats) = floats.get_mut(..count) else {
+            return render_failure(
+                render_detail::BAD_LEVELS,
+                constants::level_problem::TOO_MANY,
+            );
+        };
+        for (float, &bits) in floats.iter_mut().zip(errors) {
+            *float = f32::from_bits(bits);
+        }
+        let set = e
+            .renderer
+            .settings_mut()
+            .set_mesh_levels(base, meshes, floats, fades);
+        match set {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => render_failure(
+                render_detail::BAD_LEVELS,
+                constants::level_problem::of(error),
+            ),
+        }
+    })
+}
+
+/// How objects and batches pick their meshes' levels of detail, from the next frame on: the error
+/// in pixels under which a coarser level draws, 0 for none, what shadow views multiply it by, and
+/// whether two levels hand over in a fading band. Turning the bands on or off rebuilds the draw
+/// tables.
+#[wasm_bindgen(js_name = setLevelQuality)]
+pub fn set_level_quality(threshold: f32, shadow_factor: f32, fades: bool) -> u32 {
+    with_engine(|e| {
+        let quality = LevelQuality {
+            threshold,
+            shadow_factor,
+            fades,
+        };
+        if e.renderer.settings_mut().set_level_quality(quality) {
+            e.structure_changed = true;
+        }
+        0
+    })
+}
+
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
 /// draws in every frame while a moving caster touches it, and the share of each cascade's length
@@ -3535,14 +3614,29 @@ pub fn destroy_skeleton(skeleton: u32) -> u32 {
     })
 }
 
-/// Adds an animated instance of `skeleton`; returns its id plus one.
+/// Adds an animated instance of `skeleton` that moves the object of handle `object`; returns its
+/// id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
-pub fn create_animated_instance(skeleton: u32) -> u32 {
+pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
     with_animations(|animations, _| {
         let instance = animations
             .add_instance(skeleton.wrapping_sub(1))
             .map_err(animation_failure)?;
+        animations
+            .set_object(instance, object)
+            .map_err(animation_failure)?;
         Ok(instance + 1)
+    })
+}
+
+/// Makes the table of joint overrides and look-at targets, once; returns 0.
+#[wasm_bindgen(js_name = enableJointOverrides)]
+pub fn enable_joint_overrides() -> u32 {
+    with_animations(|animations, _| {
+        animations
+            .enable_joint_overrides()
+            .map_err(animation_failure)?;
+        Ok(0)
     })
 }
 
@@ -3594,6 +3688,8 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
             animation_field::SLOT_SOURCES => address(&animations.slots().source),
             animation_field::BLEND_VALUES => address(animations.blend_values()),
+            animation_field::JOINT_OVERRIDES => address(animations.joint_overrides()),
+            animation_field::LOOK_TARGETS => address(animations.look_targets()),
             _ => address(animations.matrices()),
         })
     })
@@ -3720,6 +3816,9 @@ pub fn update_animations(step_us: u32) -> u32 {
     };
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
+            let scene = &e.scene;
+            animations
+                .resolve_look_targets(|object| scene.next_world_matrix64(Handle::from_raw(object)));
             animations.update(jobs, step_us as f32 * 1e-6);
         }
         let meshes = e.renderer.settings().meshes();

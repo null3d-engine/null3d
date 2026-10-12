@@ -97,8 +97,9 @@ Proposed: option A for shading, the facing rectangle for tubes, and the gzip fil
 ## Consequences
 
 - The core's light table gains the kinds `RECT` and `TUBE`, and the numbers `WIDTH`, `HEIGHT`, `RADIUS` and `IMAGE`. The engine sets the last. A rectangle's light leaves along its -Z axis, as a spot light's does, and a tube runs along it.
-- `scene.createRectAreaLight` and `scene.createTubeLight` make them, and `RectAreaLight.setImage` gives a rectangle light its picture. The first area light starts the tables' download, and a held frame waits for it. Until the tables arrive, the frame shades no area light. A failed download reports E1430.
+- `scene.createRectAreaLight` and `scene.createTubeLight` make them, and `RectAreaLight.setImage` gives a rectangle light its picture. The first area light starts the tables' download, and a held frame waits for it. Until the tables arrive, the frame shades no area light. A failed download reports E1431.
 - The lights page, the lighting concept page, the performance guide, the quality presets and the develop and porting skills describe the feature. The three.js mapping's `RectAreaLight` moves from post-1.0 to a changed mapping, which needs a range.
+- Scene passes and reflection passes list the area lights that their cameras see, in their own light grids ([D-104](D-104-scene-passes.md)). Each grid applies the cap on its own. So a wet street in a reflection shows the shop windows too.
 - The WebGL2 test of texture units keeps three spare units, not four.
 - The engine's third-party notices gain the LTC fit's licence.
 - `bench:allocation --area-lights` samples area lights in S1, and the effect cost page measures them (`?effect=area`).

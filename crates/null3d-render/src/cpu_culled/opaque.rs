@@ -57,13 +57,15 @@ const TEXTURES_GROUP: u32 = 3;
 
 /// The textures that a camera view's frame groups bind for the surfaces they light: the shadow
 /// map of the main directional light, the shadow atlas of point and spot lights, the texture of
-/// ambient occlusion, and the environment's cube texture, or the blank one.
+/// ambient occlusion, the environment's cube texture, or the blank one, and the first light data
+/// texture of the ring that the groups bind, one per ring slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LitTextures {
     pub(super) shadow_map: u32,
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    pub(super) lights: u32,
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
     pub(super) transmission: u32,
@@ -189,11 +191,13 @@ fn for_each_call(
 }
 
 /// The visible instances of each draw, by its place in `draws`: the entries of its bucket's slice
-/// of the index list, where the slice of bucket `b` starts at `starts[b]`.
+/// of the index list, where the slice of bucket `b` starts at `starts[b]`, two words each in a
+/// fade bucket.
 fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32 + 'a {
     move |d| {
         let b = draws[d].bucket as usize;
-        starts[b + 1] - starts[b]
+        let words = starts[b + 1] - starts[b];
+        if draws[d].pairs { words / 2 } else { words }
     }
 }
 
@@ -260,11 +264,12 @@ impl Opaque {
     /// offsets and the material table's texture, which also holds three.js's table of the
     /// split-sum terms of specular light. A camera's view has one group for each slot of the light
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
-    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, the environment's
-    /// cube texture of `lit` with its sampler, and the copy of the opaque color of `lit`, which
-    /// the environment's sampler reads too. A shadow cascade's or a shadow tile's
-    /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
+    /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
+    /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
+    /// occlusion, the environment's cube texture of `lit` with its sampler, and the copy of the
+    /// opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or a
+    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
+    /// it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -301,6 +306,7 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            lights,
             transmission: copy,
         }) = lit
         else {
@@ -341,13 +347,7 @@ impl Opaque {
         ]);
         for slot in 0..RING {
             words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 15]);
-            words[48..53].copy_from_slice(&[
-                7,
-                resource_kind::TEXTURE,
-                ids::LIGHT_DATA + slot,
-                0,
-                0,
-            ]);
+            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
             words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
             words[58..63].copy_from_slice(&[
                 transmission::BINDING,
@@ -686,6 +686,7 @@ mod tests {
             bucket: 0,
             index_count: 36,
             first_index: 0,
+            pairs: false,
         }
     }
 

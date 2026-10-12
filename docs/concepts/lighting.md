@@ -34,6 +34,8 @@ Setters change the engine's memory at once, and they allocate nothing except tho
 3. It tests the sphere of each point, spot and area light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
+A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 again for its own camera and layers, with a light grid of its own. It lists the point, spot and area lights that its camera sees. Its point and spot lights cast shadows where the camera's view gives them shadows.
+
 ## Kinds of light and their units
 
 Units follow three.js since r155, which dropped its legacy light mode. A scene tuned for three.js's current units needs the same intensities in null3D.
@@ -358,7 +360,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach. It draws no point or spot lights and no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
 
 ## Related pages
 

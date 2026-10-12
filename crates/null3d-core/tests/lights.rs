@@ -659,3 +659,96 @@ fn a_rectangle_light_s_record_holds_its_image_layer_where_a_spot_light_holds_its
     // Tubes take no image.
     assert_eq!(shadows, [4.0, 0.0]);
 }
+
+#[test]
+fn another_view_gathers_the_lights_it_sees_and_leaves_the_camera_s_lists_alone() {
+    let mut world = World::new();
+    let ahead = world.ranged(kind::POINT, [0.0, 0.0, -10.0], 1.0);
+    let behind = world.ranged(kind::POINT, [0.0, 0.0, 10.0], 1.0);
+    let (layered, layered_row) = world.light(kind::POINT, [1.0, 0.0, 15.0], NO_TURN);
+    world
+        .lights
+        .set_value(layered_row, value::RANGE, 1.0)
+        .unwrap();
+    world.commands.push(Command::set_layers(layered, 1 << 3));
+    let (_, spot_row) = world.light(
+        kind::SPOT,
+        [0.0, 0.0, 5.0],
+        turn([1.0, 0.0, 0.0], -FRAC_PI_2),
+    );
+    world.lights.set_value(spot_row, value::RANGE, 2.0).unwrap();
+    world
+        .lights
+        .set_value(spot_row, value::ANGLE, FRAC_PI_4)
+        .unwrap();
+    world
+        .lights
+        .set_value(spot_row, value::INTENSITY, 3.0)
+        .unwrap();
+    world.exposure = 0.5;
+    world.frame(Some(&origin_view()));
+    assert_eq!(world.visible_rows(), [ahead]);
+
+    // A second camera 20 m behind the first sees every light in front of it on its layers, at
+    // positions relative to itself, as the camera's own gather would list them.
+    let (cell, local) = cells::split([0.0, 0.0, 20.0]);
+    let second = view_from(CellPosition { cell, local });
+    let mut seen = Vec::with_capacity(world.lights.rows() as usize);
+    let scene = &world.scene;
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &second, world.exposure, &mut seen);
+    let rows: Vec<u32> = seen.iter().map(|l| l.light).collect();
+    assert_eq!(rows, [ahead, behind, spot_row]);
+    assert_close(seen[0].position, [0.0, 0.0, -30.0]);
+    assert_close(seen[1].position, [0.0, 0.0, -10.0]);
+    assert_close(seen[2].direction, [0.0, -1.0, 0.0]);
+    assert_eq!(seen[2].color, [1.5; 3]);
+    assert!((seen[2].cone_cos - FRAC_PI_4.cos()).abs() < 1e-6);
+    assert!(seen.iter().all(|l| l.shadow == 0.0));
+    // The camera's lists stay as its gather left them.
+    assert_eq!(world.visible_rows(), [ahead]);
+
+    // On layer 3, the second camera sees only the layered light.
+    let layered_view = LightView {
+        layers: 1 << 3,
+        ..second
+    };
+    seen.clear();
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &layered_view, 1.0, &mut seen);
+    let rows: Vec<u32> = seen.iter().map(|l| l.light).collect();
+    assert_eq!(rows, [layered_row]);
+}
+
+#[test]
+fn another_view_gathers_area_lights_once_their_tables_arrive() {
+    let mut world = World::new();
+    let rect = world.ranged(kind::RECT, [0.0, 2.0, 10.0], 4.0);
+    let tube = world.ranged(kind::TUBE, [1.0, 0.0, 12.0], 4.0);
+    world.lights.set_value(rect, value::IMAGE, 3.0).unwrap();
+    world.frame(Some(&origin_view()));
+    // A second camera 20 m behind the first, which sees both lights in front of it.
+    let (cell, local) = cells::split([0.0, 0.0, 20.0]);
+    let second = view_from(CellPosition { cell, local });
+    let mut seen = Vec::with_capacity(world.lights.rows() as usize);
+    let scene = &world.scene;
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &second, 1.0, &mut seen);
+    assert!(seen.is_empty());
+
+    world.lights.set_area_ready(true);
+    let scene = &world.scene;
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &second, 1.0, &mut seen);
+    let rows: Vec<u32> = seen.iter().map(|l| l.light).collect();
+    assert_eq!(rows, [rect, tube]);
+    assert_eq!((seen[0].kind, seen[1].kind), (kind::RECT, kind::TUBE));
+    assert_close(seen[0].position, [0.0, 2.0, -10.0]);
+    // The rectangle keeps its image's layer, and the tube its radius in the decay's place.
+    assert_eq!((seen[0].shadow, seen[1].shadow), (3.0, 0.0));
+    assert_eq!(seen[1].decay, 0.025);
+}

@@ -68,7 +68,7 @@ export class AreaLightTables {
 	load(): void {
 		this.loading ??= this.download().catch((error: unknown) => {
 			this.failure = new EngineError(
-				'E1430',
+				'E1431',
 				`the area lights' tables did not load from ${TABLES_URL.href}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		});

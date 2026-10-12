@@ -238,6 +238,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         lines: DebugLines::NONE,
         lights: &[],
         shadow_lights: &[],
+        light_table: None,
         pipelines_built: u32::MAX,
         animations: None,
         morphs: &world.morphs,

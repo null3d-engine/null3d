@@ -1,7 +1,14 @@
 // Turns a failure the engine core reported into an EngineError. The core reports a numeric code
 // from the engine's error table and two detail numbers; this names the call and the object.
 
-import { ANIMATION_MAX_CLIP_KEYS, ANIMATION_PROBLEM_KEYS } from '../generated/core';
+import {
+	ANIMATION_MAX_CLIP_KEYS,
+	ANIMATION_PROBLEM_KEYS,
+	LEVEL_PROBLEM_ERRORS,
+	LEVEL_PROBLEM_FORMAT,
+	LEVEL_PROBLEM_MESH,
+	LEVEL_PROBLEM_TOO_MANY,
+} from '../generated/core';
 import { EngineError, isErrorCode } from './engine-error';
 import type { ErrorCode } from './fixes';
 
@@ -47,7 +54,7 @@ const RENDER_LIMITS: Record<number, string | ((value: string) => string)> = {
 		`the skinned meshes fill more than ${pages} mesh pages, the most that GPU skinning reads`,
 	14: (views) =>
 		`the frame draws ${views} views, the camera's included, which is the most it draws`,
-	15: (lights) => `${lights} rectangle lights already show images, the most that can at once`,
+	16: (lights) => `${lights} rectangle lights already show images, the most that can at once`,
 };
 
 /** What the renderer ran out of, for the details `limit` and `value` of E1501. */
@@ -59,6 +66,16 @@ const TOO_MANY_SOURCES = 3;
 const TEXTURE_TOO_LARGE = 9;
 const UNKNOWN_MATERIAL = 5;
 const UNKNOWN_MESH = 6;
+const BAD_LEVELS = 15;
+
+/** What is wrong with levels of detail that a mesh refused, by the core's problem. */
+const LEVEL_PROBLEMS: Record<number, string> = {
+	[LEVEL_PROBLEM_TOO_MANY]: 'a mesh takes at most 7 lower levels',
+	[LEVEL_PROBLEM_ERRORS]: 'each error must be finite, above 0 and above the error before it',
+	[LEVEL_PROBLEM_MESH]: 'a level is not a live mesh of this engine, or is the base mesh itself',
+	[LEVEL_PROBLEM_FORMAT]:
+		"a level's vertices have other attributes than the base mesh's, such as texture coordinates or tangents that the base mesh has and the level lacks",
+};
 
 /**
  * The error for the core's last failure. `call` names the API call, such as 'createMesh', or in
@@ -129,6 +146,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				return error(
 					'E1501',
 					`${call}() failed: the texture is larger than the ${b} pixels a side that this device's texture arrays hold.`,
+				);
+			if (a === BAD_LEVELS)
+				return error(
+					'E1221',
+					`${name} failed: ${LEVEL_PROBLEMS[b] ?? 'the mesh cannot take these levels'}.`,
 				);
 			if (a === UNKNOWN_MATERIAL || a === UNKNOWN_MESH)
 				return error(

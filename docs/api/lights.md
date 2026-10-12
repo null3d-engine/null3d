@@ -123,8 +123,9 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - `setSize`, `setRange`, `setDirection` and `setIntensity` take effect in the next frame and allocate nothing.
 - Area lights cast no shadows. Use a spot light beside one for a shadow.
 - An area light costs each surface it reaches several times what a point light costs. The quality preset's `areaLights` caps how many one frame shades.
-- The engine downloads the area lights' tables, a file of 19 KB, with the first area light. Area lights give light from the frame after the file arrives. A failed download reports [E1430](../errors/E1430.md).
+- The engine downloads the area lights' tables, a file of 19 KB, with the first area light. Area lights give light from the frame after the file arrives. A failed download reports [E1431](../errors/E1431.md).
 - Area lights light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2.
+- Scene passes and reflection passes draw area lights too, with their pictures. The `areaLights` cap applies to each pass on its own.
 
 ## Hemisphere lights
 

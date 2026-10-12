@@ -584,16 +584,7 @@ impl LightTable {
             if world.radii()[s] == HIDDEN_RADIUS || !shares_layer(scene.layers()[s], layers) {
                 continue;
             }
-            let [
-                intensity,
-                range,
-                decay,
-                angle,
-                penumbra,
-                bias,
-                normal_bias,
-                ..,
-            ] = row.values;
+            let [intensity, range, _, angle, _, bias, normal_bias, ..] = row.values;
             let lit = row.colors[color::MAIN as usize].map(|c| c * intensity * exposure);
             match row.kind {
                 kind::AMBIENT => {
@@ -627,55 +618,30 @@ impl LightTable {
                     let Some(view) = view else {
                         continue;
                     };
-                    let position = scene.cell_position(slot, parity);
-                    let offset = view.camera.offset_to(position.cell);
-                    let at: [f32; 3] = std::array::from_fn(|k| offset[k] + position.local[k]);
-                    let seen = view.frustum.contains_sphere(at[0], at[1], at[2], range);
-                    let spot = row.kind == kind::SPOT;
-                    let direction = if spot {
-                        forward(world.matrix(s))
-                    } else {
-                        [0.0; 3]
-                    };
+                    let placed = Placed::of(row, scene, slot, parity, view);
                     // The table reserved room for every row in both lists when it grew.
                     if scene.flags()[s] & flags::CAST_SHADOWS != 0 {
                         self.shadows.push(LightShadow {
                             light: index as u32,
                             kind: row.kind,
-                            visible: if seen {
+                            visible: if placed.seen {
                                 self.visible.len() as u32
                             } else {
                                 NOT_VISIBLE
                             },
-                            at: position,
-                            direction,
-                            angle: if spot { angle } else { 0.0 },
+                            at: placed.at,
+                            direction: placed.direction,
+                            angle: if row.kind == kind::SPOT { angle } else { 0.0 },
                             range,
                             bias,
                             normal_bias,
                             layers: scene.layers()[s],
                         });
                     }
-                    if !seen {
-                        continue;
+                    if placed.seen {
+                        self.visible
+                            .push(placed.record(row, index as u32, exposure));
                     }
-                    let (cone_cos, penumbra_cos) = if spot {
-                        (cosine(angle), cosine(angle * (1.0 - penumbra)))
-                    } else {
-                        (POINT_CONE[0], POINT_CONE[1])
-                    };
-                    self.visible.push(VisibleLight {
-                        position: at,
-                        range,
-                        color: lit,
-                        decay,
-                        direction,
-                        cone_cos,
-                        penumbra_cos,
-                        kind: row.kind,
-                        light: index as u32,
-                        shadow: 0.0,
-                    });
                 }
                 kind::RECT | kind::TUBE => {
                     let Some(view) = view else {
@@ -684,42 +650,152 @@ impl LightTable {
                     if !self.area_ready {
                         continue;
                     }
-                    let position = scene.cell_position(slot, parity);
-                    let offset = view.camera.offset_to(position.cell);
-                    let at: [f32; 3] = std::array::from_fn(|k| offset[k] + position.local[k]);
-                    if !view.frustum.contains_sphere(at[0], at[1], at[2], range) {
-                        continue;
+                    let placed = Placed::of(row, scene, slot, parity, view);
+                    if placed.seen {
+                        // The table reserved room for every row in the visible list when it grew.
+                        self.visible.push(placed.area_record(
+                            row,
+                            index as u32,
+                            world.matrix(s),
+                            exposure,
+                        ));
                     }
-                    let [width, height, radius] = [value::WIDTH, value::HEIGHT, value::RADIUS]
-                        .map(|v| row.values[v as usize]);
-                    let (along, across, image) = if row.kind == kind::RECT {
-                        let (x, y) = sides(world.matrix(s));
-                        let image = row.values[value::IMAGE as usize];
-                        (
-                            x.map(|v| v * 0.5 * width),
-                            y.map(|v| v * 0.5 * height),
-                            image,
-                        )
-                    } else {
-                        let axis = forward(world.matrix(s));
-                        (axis.map(|v| v * 0.5 * width), [radius, 0.0, 0.0], 0.0)
-                    };
-                    // The table reserved room for every row in the visible list when it grew.
-                    self.visible.push(VisibleLight::area(
-                        row.kind,
-                        index as u32,
-                        at,
-                        range,
-                        lit,
-                        along,
-                        across,
-                        image,
-                    ));
                 }
                 _ => {}
             }
         }
         frame
+    }
+
+    /// Appends to `out` the point, spot and area lights that `view` sees, in row order, as
+    /// [`LightTable::gather`] lists the camera's: positions relative to `view`'s camera, colors
+    /// times `exposure`, and no shadow tile. A view other than the camera's gathers its lights
+    /// with this, so the table's own lists stay the camera's. It allocates nothing while `out` has
+    /// room for a record per row of the table.
+    pub fn gather_view(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        view: &LightView,
+        exposure: f32,
+        out: &mut Vec<VisibleLight>,
+    ) {
+        let world = scene.world(parity);
+        for (index, row) in self.rows.iter().enumerate().skip(1) {
+            let area = matches!(row.kind, kind::RECT | kind::TUBE);
+            if !(matches!(row.kind, kind::POINT | kind::SPOT) || area && self.area_ready) {
+                continue;
+            }
+            let Some(slot) = lit_slot(scene, row.object) else {
+                continue;
+            };
+            let s = slot as usize;
+            if world.radii()[s] == HIDDEN_RADIUS || !shares_layer(scene.layers()[s], view.layers) {
+                continue;
+            }
+            let placed = Placed::of(row, scene, slot, parity, view);
+            if !placed.seen {
+                continue;
+            }
+            out.push(if area {
+                placed.area_record(row, index as u32, world.matrix(s), exposure)
+            } else {
+                placed.record(row, index as u32, exposure)
+            });
+        }
+    }
+}
+
+/// Where a point, spot or area light stands for a view: its cell position, its position relative to the
+/// view's camera, the direction it points, and whether its range sphere meets the view's frustum.
+struct Placed {
+    at: CellPosition,
+    relative: [f32; 3],
+    direction: [f32; 3],
+    seen: bool,
+}
+
+impl Placed {
+    /// Places the light of `row`, whose object has scene slot `slot`, for `view`. The offset from
+    /// the camera to the light's grid cell is computed in 64-bit floats.
+    fn of(row: &Row, scene: &SceneStorage, slot: u32, parity: usize, view: &LightView) -> Self {
+        let at = scene.cell_position(slot, parity);
+        let offset = view.camera.offset_to(at.cell);
+        let relative: [f32; 3] = std::array::from_fn(|k| offset[k] + at.local[k]);
+        let range = row.values[value::RANGE as usize];
+        let seen = view
+            .frustum
+            .contains_sphere(relative[0], relative[1], relative[2], range);
+        let direction = if row.kind == kind::SPOT {
+            forward(scene.world(parity).matrix(slot as usize))
+        } else {
+            [0.0; 3]
+        };
+        Self {
+            at,
+            relative,
+            direction,
+            seen,
+        }
+    }
+
+    /// The light's record in a visible list, with colors times `exposure` and no shadow tile.
+    fn record(&self, row: &Row, light: u32, exposure: f32) -> VisibleLight {
+        let [intensity, range, decay, angle, penumbra, ..] = row.values;
+        let (cone_cos, penumbra_cos) = if row.kind == kind::SPOT {
+            (cosine(angle), cosine(angle * (1.0 - penumbra)))
+        } else {
+            (POINT_CONE[0], POINT_CONE[1])
+        };
+        VisibleLight {
+            position: self.relative,
+            range,
+            color: row.colors[color::MAIN as usize].map(|c| c * intensity * exposure),
+            decay,
+            direction: self.direction,
+            cone_cos,
+            penumbra_cos,
+            kind: row.kind,
+            light,
+            shadow: 0.0,
+        }
+    }
+
+    /// The record of the area light of `row`, whose object's world matrix is `matrix`, with its
+    /// color times `exposure` and its image's layer in the shadow tile's place. A rectangle's half
+    /// sides lie along the matrix's X and Y axes, and a tube's half axis along its -Z axis.
+    fn area_record(
+        &self,
+        row: &Row,
+        light: u32,
+        matrix: &[f32; 12],
+        exposure: f32,
+    ) -> VisibleLight {
+        let [intensity, range, ..] = row.values;
+        let [width, height, radius, image] =
+            [value::WIDTH, value::HEIGHT, value::RADIUS, value::IMAGE]
+                .map(|v| row.values[v as usize]);
+        let (along, across, image) = if row.kind == kind::RECT {
+            let (x, y) = sides(matrix);
+            (
+                x.map(|v| v * 0.5 * width),
+                y.map(|v| v * 0.5 * height),
+                image,
+            )
+        } else {
+            let axis = forward(matrix);
+            (axis.map(|v| v * 0.5 * width), [radius, 0.0, 0.0], 0.0)
+        };
+        VisibleLight::area(
+            row.kind,
+            light,
+            self.relative,
+            range,
+            row.colors[color::MAIN as usize].map(|c| c * intensity * exposure),
+            along,
+            across,
+            image,
+        )
     }
 }
 

@@ -54,6 +54,8 @@ export const ERROR_FIXES = {
 		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option.",
 	E1220:
 		"Give render.addPass the options of its kind, such as { kind: 'scene', camera, writes: 'minimap', size: [256, 256] }. Give each pass a name and a texture name of its own. Remove passes that no longer draw before you add more.",
+	E1221:
+		'List the levels from the most detailed down, each with a larger error or distance than the one before, at most 7 of them. Make each level from the same kind of arrays as the base mesh, with the same attributes, such as the same texture coordinates and tangents.',
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:
@@ -114,7 +116,7 @@ export const ERROR_FIXES = {
 		"Have the server of the engine's files send Access-Control-Allow-Origin with the page's origin or *, on every file: the scripts, the workers and the .wasm files. If it does, check that the file exists at the address that the message names.",
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
-	E1430:
+	E1431:
 		"Serve the engine's area-light-tables.bin file at the address that the message names. A build with the null3D Vite plugin copies it beside the engine's code: deploy it with the rest of the build. When the engine's files come from another origin, that server must send Access-Control-Allow-Origin, and the page's connect-src must allow the origin.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
