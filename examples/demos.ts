@@ -204,8 +204,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Relief maps',
 		scene: 'Hillside at sundown',
 		summary:
-			'Hills and boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. An old wall of flat quads gets the depth of its bricks from parallax, and a wireframe beacon casts a shadow of lines.',
-		controls: `${CAMERA} Move the mouse, or tap, to lead the beacon. Press P to turn parallax off and on.`,
+			'Hills and cut boulders whose vertices move by displacement maps made in code, so their outlines and shadows follow the relief, and their light follows its slopes. A brick wall steps down the slope: parallax gives its flat faces the depth of their bricks, and bump maps give its cap stones their grain. A geodesic frame drawn as a wireframe casts a shadow of lines.',
+		controls: `${CAMERA} Turn parallax off and on with the button or the P key.`,
+		choices: [{ name: 'parallax', label: 'Parallax', options: ['On', 'Off'] }],
 		hold: 1,
 		timeoutSeconds: 60,
 	},

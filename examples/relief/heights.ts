@@ -1,24 +1,26 @@
-// The relief demo's height maps, made in code: rolling hills, rock on a sphere and a wall of bricks,
-// each as linear gray texels for a displacement map, with colors to go with them.
+// The relief demo's height maps, made in code: rolling hills, cut rock on a sphere, a wall of bricks
+// and the grain of stone, each as linear gray texels for a displacement or bump map, with colors to
+// go with them.
 import { math } from '@null3d/engine';
 
-/** Texels along each side of the height maps. */
+/** Texels along each side of the height maps, unless a map asks for more. */
 export const SIZE = 256;
 /**
  * A height map from `height` at u and v, as linear gray texels, with the colors that `paint` gives
- * for each height and place.
+ * for each height and place: `size` texels along each side.
  */
 export function maps(
 	height: (u: number, v: number) => number,
 	paint = (_h: number, _u: number, _v: number): number[] => [],
+	size = SIZE,
 ) {
-	const gray = new Uint8Array(SIZE * SIZE * 4).fill(255);
-	const color = new Uint8Array(SIZE * SIZE * 4).fill(255);
-	for (let y = 0; y < SIZE; y++)
-		for (let x = 0; x < SIZE; x++) {
-			const [u, v] = [(x + 0.5) / SIZE, (y + 0.5) / SIZE];
+	const gray = new Uint8Array(size * size * 4).fill(255);
+	const color = new Uint8Array(size * size * 4).fill(255);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const [u, v] = [(x + 0.5) / size, (y + 0.5) / size];
 			const h = height(u, v);
-			const at = (y * SIZE + x) * 4;
+			const at = (y * size + x) * 4;
 			gray.fill(h * 255, at, at + 3);
 			color.set(paint(h, u, v), at);
 		}
@@ -53,26 +55,72 @@ export function layers(x: number, y: number, z: number, n: number) {
 	return sum / weight;
 }
 
-/** A low, gentle valley in the middle, with rougher hills that rise around it. */
+/**
+ * A low, gentle valley in the middle that falls from left to right, with rougher hills that rise
+ * around it.
+ */
 export const hills = (u: number, v: number) => {
 	const rim = math.smoothstep(Math.hypot(u - 0.5, v - 0.5) * 2, 0.3, 0.9);
-	return math.clamp(0.3 + rim * 0.45 + (layers(u * 4, v * 4, 0, 6) - 0.5) * (0.5 + rim), 0, 1);
+	const fall = Math.tanh((0.5 - u) * 6) * 0.15;
+	const rough = (layers(u * 4, v * 4, 0, 6) - 0.5) * (0.5 + rim);
+	return math.clamp(0.3 + rim * 0.45 + fall + rough, 0, 1);
 };
 
-/** Rock on a sphere, from noise through the point at u and v: no seam, and no pinch at the poles. */
-export const rock = (u: number, v: number) => {
+/** The point on a sphere of radius 1 at u around it and v from its top. */
+export const onSphere = (u: number, v: number) => {
 	const [a, b] = [u * Math.PI * 2, v * Math.PI];
-	const [x, y, z] = [Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b)];
-	// Ridges where the noise crosses its middle, over broad bulges.
-	const ridges = 1 - Math.abs(layers(x * 2.5, y * 2.5, z * 2.5, 5) * 2 - 1);
-	return math.clamp(layers(x * 1.2, y * 1.2, z * 1.2 + 9, 3) * 0.6 + ridges * 0.5 - 0.05, 0, 1);
+	return [Math.cos(a) * Math.sin(b), Math.cos(b), Math.sin(a) * Math.sin(b)] as const;
+};
+
+/** Sixteen flat faces of a cut stone, each as its outward direction and its distance from the middle. */
+function faces(seed: number) {
+	return Array.from({ length: 16 }, (_, i) => {
+		// A spiral spreads the directions over the sphere, and a jitter breaks its order.
+		const y = math.clamp(1 - ((i + 0.5) / 16) * 2 + (hash(i, seed, 1) - 0.5) * 0.3, -1, 1);
+		const [a, r] = [i * 2.4 + hash(i, seed, 2), Math.sqrt(1 - y * y)];
+		return [Math.cos(a) * r, y, Math.sin(a) * r, 0.78 + hash(i, seed, 3) * 0.2] as const;
+	});
+}
+
+/**
+ * A boulder of flat faces and sharp edges, with grain and thin cracks, on a sphere of radius 1: from
+ * 0 at a radius of 0.7 to 1 at a radius of 1.4.
+ */
+export const rock = (seed: number) => {
+	const cuts = faces(seed);
+	return (u: number, v: number) => {
+		const [x, y, z] = onSphere(u, v);
+		let reach = 1.4;
+		for (const [a, b, c, d] of cuts) {
+			const facing = x * a + y * b + z * c;
+			if (facing > 0.05) reach = Math.min(reach, d / facing);
+		}
+		const grain = layers(x * 7, y * 7, z * 7 + seed * 5, 4) - 0.5;
+		const crack = 1 - Math.abs(layers(x * 3, y * 3, z * 3 + seed * 7 + 31, 3) * 2 - 1);
+		reach += grain * 0.05 - math.smoothstep(crack, 0.93, 1) * 0.04;
+		return math.clamp((reach - 0.7) / 0.7, 0, 1);
+	};
+};
+
+/** The brick at u and v, as its place along its course in bricks, and its course. */
+const brickAt = (u: number, v: number) => {
+	const row = Math.floor(v * 8);
+	return [u * 4 + (row % 2) * 0.5, row] as const;
 };
 
 /** Bricks of 4 by 8 to the map, in running bond: rounded tops near 1, each its own, and sunken mortar at 0. */
 export const bricks = (u: number, v: number) => {
-	const row = Math.floor(v * 8);
-	const along = u * 4 + (row % 2) * 0.5;
+	const [along, row] = brickAt(u, v);
 	const [x, y] = [along % 1, v * 8 - row];
 	const edge = math.smoothstep(Math.min(x * 4, (1 - x) * 4, y * 2, (1 - y) * 2), 0.05, 0.4);
 	return edge * (0.8 + 0.2 * hash(Math.floor(along), row, 0));
 };
+
+/** A steady number from 0 to 1 for the brick at u and v, which picks its color. */
+export const brickTone = (u: number, v: number) => {
+	const [along, row] = brickAt(u, v);
+	return hash(Math.floor(along), row, 1);
+};
+
+/** Fine grain for a bump map on stone, from 0 to 1. */
+export const grain = (u: number, v: number) => layers(u * 10, v * 10, 11, 5);
