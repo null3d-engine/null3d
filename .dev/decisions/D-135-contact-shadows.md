@@ -125,23 +125,26 @@ The governor's last step lowers the steps to 4. It comes after ambient occlusion
 
 ## Cost
 
-The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost page's contact scene with contact shadows off and on, in turns, three times each. It ran on the Mac (Apple M5 Max, Chrome) in a quiet window on 12 October 2026, at 1920 x 1080 with a pixel ratio of 1, at loads of 5 to 8. The figures are the medians of the GPU time per frame, in ms. The scene is small, so the prepass costs almost nothing in it.
+The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost page's contact scene with contact shadows off and on, in turns, three times each. It ran on the Mac (Apple M5 Max, Chrome) in a quiet window on 13 October 2026, with the blur, at 1920 x 1080 with a pixel ratio of 1, at loads of 3.4 to 6.1. The figures are the medians of the GPU time per frame, in ms. The scene is small, so the prepass costs almost nothing in it.
 
 | GPU path | Steps | Off, scale 1 | On, scale 1 | Off, scale 0.5 | On, scale 0.5 |
 | --- | --- | --- | --- | --- | --- |
-| WebGPU | 4 | 1.245 | 1.769 (+0.52) | 1.049 | 1.376 (+0.33) |
-| WebGPU | 8 (High) | 1.245 | 1.769 (+0.52) | 1.049 | 1.376 (+0.33) |
-| WebGPU | 16 (Ultra) | 1.245 | 1.966 (+0.72) | 1.049 | 1.442 (+0.39) |
-| Compatibility mode | 4 | 1.114 | 1.638 (+0.52) | 0.786 | 1.114 (+0.33) |
-| WebGL2 | 4 (Medium) | 2.703 | 3.190 (+0.49) | 1.750 | 2.120 (+0.37) |
-| WebGL2 | 8 (High) | 2.684 | 3.266 (+0.58) | 1.748 | 2.142 (+0.39) |
-| WebGL2 | 16 (Ultra) | 2.696 | 3.450 (+0.75) | 1.749 | 2.203 (+0.45) |
+| WebGPU | 4 | 1.245 | 2.163 (+0.92) | 1.049 | 1.573 (+0.52) |
+| WebGPU | 8 (High) | 1.245 | 2.228 (+0.98) | 1.049 | 1.638 (+0.59) |
+| WebGPU | 16 (Ultra) | 1.245 | 2.425 (+1.18) | 1.049 | 1.638 (+0.59) |
+| Compatibility mode | 4 | 1.114 | 2.097 (+0.98) | 0.786 | 1.311 (+0.53) |
+| WebGL2 | 4 (Medium) | 2.691 | 3.640 (+0.95) | 1.750 | 2.286 (+0.54) |
+| WebGL2 | 8 (High) | 2.688 | 3.709 (+1.02) | 1.751 | 2.328 (+0.58) |
+| WebGL2 | 16 (Ultra) | 2.724 | 3.867 (+1.14) | 1.751 | 2.403 (+0.65) |
 
-- Most of the cost is fixed: the depth copy and the contact step, each a pass over half the render size. On WebGPU, 4 and 8 steps cost the same. 16 steps add 0.2 ms at scale 1.
-- With the prepass kept on for both sides (`?prepass=on`), WebGPU gave the same figures, except 16 steps at scale 0.5: +0.46 ms. So in this scene the prepass costs nothing that the timer sees. In a scene of many vertices, it costs a second pass over them ([quality presets](../../docs/concepts/quality-presets.md#the-depth-prepass)).
+- Most of the cost is fixed: the depth copy, the horizon step and the denoise, each a pass over half the render size. 16 steps add 0.2 ms to 8 at scale 1.
+- The blur costs about 0.4 ms at scale 1 and 0.2 ms at scale 0.5. The same spec without the blur, on 12 October 2026 at loads of 5 to 8, gave +0.52 ms for 4 and 8 steps on WebGPU at scale 1 and +0.33 ms at scale 0.5. That version ran one pass less without ambient occlusion, and its denoise did not blur.
+- With ambient occlusion on, contact shadows add no pass: the horizon step marches and the denoise blurs within the passes that ambient occlusion runs anyway.
+- With the prepass kept on for both sides (`?prepass=on`), WebGPU gave the same figures, except 8 steps at scale 1: +1.05 ms. So in this scene the prepass costs nothing that the timer sees. In a scene of many vertices, it costs a second pass over them ([quality presets](../../docs/concepts/quality-presets.md#the-depth-prepass)).
 - The CPU time did not change: under 0.03 ms either way.
-- Prototype S3's inline march cost 0.41 to 0.48 ms on the same Mac at 3,024 x 1,520. On the Mac, the half-size step costs about as much at less than half those pixels: its two passes cost more than the march saves there. On the S25 the inline march cost 2.2 ms at scale 1, so the march is dear there. Only the S25's figure can show whether the half-size step saves that time.
-- Medium on WebGPU stays at 0 steps (the coordinator's request of 11 October). Even 4 steps cost 0.52 ms on the Mac at 1080p, which is over the 0.5 ms that S3's rule allows on the S25, before the prepass of a heavy scene.
+- `bun run bench:gpu-check` passed on the same day: S4 at High went from 3.97 to 4.79 ms of GPU time (+21%), under the check's limit of 25%. S4 at Medium and S6 at both presets did not change.
+- Prototype S3's inline march cost 0.41 to 0.48 ms on the same Mac at 3,024 x 1,520, without a blur. On the S25 the inline march cost 2.2 ms at scale 1, so the march is dear there. Only the S25's figure can show what the half-size steps cost there.
+- Medium on WebGPU stays at 0 steps (the coordinator's request of 11 October). Even 4 steps cost 0.92 ms on the Mac at 1080p, which is over the 0.5 ms that S3's rule allows on the S25, before the prepass of a heavy scene.
 - The S25 figure at High follows the next cloud sitting.
 
 ## Budgets
