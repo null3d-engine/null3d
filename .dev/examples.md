@@ -13,6 +13,7 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
 | `examples/<name>/<scenery>.ts` | A demo's scenery, when the look bar needs more code than the sketch's 150 lines leave. The sketch imports it from the same folder, such as the particles demo's `glade.ts` ([D-142](decisions/D-142-more-techniques-before-1-0.md#the-days-other-rulings)) |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
+| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
@@ -203,7 +204,7 @@ The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
-- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Scene passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task)). So the crystal's glow comes from bloom, not from a lamp.
+- The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
 - The hold mode demo draws 400 meshes, not one instance batch, because batches cast no shadows yet. Its physics moved into `onFixedUpdate`, at 120 steps a second. At the default 60, a 120 Hz display would show the balls stand still in every other frame. Hold mode runs the same steps on every run, so the held frame stays the same.
 - The objects demo turned the table and the crates by adding up the frame steps. Now each turn comes from the sketch time. A crate on the stage spins at its own speed plus the table's, so its spin goes on with no jump when it steps off.
@@ -229,7 +230,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory is the first ([D-121](decisions/D-121-comparison-tier.md)). Battle, Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -272,6 +273,19 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 A comparison must look very beautiful, as every demo and showcase scene must ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md), owner, 11 October 2026). It uses shaders, effects, particles and complex geometry. A good figure does not excuse a plain scene. The bar is the generators demo and Creek.
 
 Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)), and each effect is a switch. The owner reviews both engines' held frames before a comparison goes on the page. The image tests `compare-<name>-null3d` and `compare-<name>-threejs` hold both, each against references of its own.
+
+Every comparison scene meets the same look bar as the feature demos and showcases (owner, 11 October 2026): good figures don't excuse a plain scene. The bar is the reworked Geometry Generators demo and the Creek showcase. They have varied materials, small textures made in code and reflections of an environment. They have a sky, fog, sun shadows, finished ground, a tuned grade and bloom on what glows.
+
+### Battle
+
+Battle is the comparison of ready-made assets ([D-121](decisions/D-121-comparison-tier.md#battle)). Two armies of animated soldiers and mechs meet on a cratered field at dusk, with tanks behind each line.
+
+- Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
+- The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
+- The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
+- In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
 ### The stats panel of three.js
 
@@ -439,7 +453,7 @@ The owner's bar for every feature demo is the reworked generators demo. Eight mo
 
 The rules that these demos follow, and why:
 
-- Scene passes and reflection passes draw no point or spot lights yet ([D-104](decisions/D-104-scene-passes.md#m2-limits-and-the-follow-up-task), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
+- Until 11 October 2026 scene passes and reflection passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026), [D-120](decisions/D-120-planar-reflections.md#what-the-reflection-draws)). So the four demos with a pass, made before then, use only the directional light, the ambient light and the environment. The security camera's floodlight is the directional light, and a glowing lamp on the pole shows where it comes from. The post effects demo moves a point light with the pointer, so its wet ground has no reflection pass. Smooth puddles from a roughness texture shine with the lamps instead.
 - A glowing material, a sprite and a line all draw in a reflection pass. The pool in the sprites demo reflects the sparks, the helix and the dashes.
 - The `'night'` preset of `timeOfDay` gives a black sky: three.js's sky model goes dark once its sun is 2 degrees under the horizon. So the two night scenes take `'blueHour'`, which gives a deep blue sky and the moon as the main light. They keep their exposure low, 2 and 1.4, below the preset's 2.9. At the preset's exposure, the neon of the sprites demo turned white and lost its colors.
 - Fog that thins with height measures its height from the world's origin. The large world's road is 6,378 km above it, so fog with a height falloff would be clear there. The large world uses plain fog, which thickens with distance alone.

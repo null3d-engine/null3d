@@ -296,8 +296,9 @@ fn sun_biases(cascade: u32) -> vec2f {
 }
 
 /// How much of the main directional light reaches a point: 1 in full light, 0 in full shadow.
-/// `relative` is the point's position relative to the camera, `normal` its unit normal, which
-/// moves the point off its own surface before the lookup, and `to_light` the unit direction toward
+/// `relative` is the point's position relative to the main camera: in another view, its position
+/// relative to that view's camera plus the frame's `shadow_origin`. `normal` is its unit normal,
+/// which moves the point off its own surface before the lookup, and `to_light` the unit direction toward
 /// the light.
 fn sun_shadow(relative: vec3f, normal: vec3f, to_light: vec3f) -> f32 {
     let count = u32(cascades.forward.w);
@@ -449,8 +450,8 @@ fn cube_face(direction: vec3f) -> u32 {
 }
 
 /// How much of a point or spot light reaches a point: 1 in full light, 0 in full shadow. `first`
-/// is the light's first tile. `relative` is the point's position relative to the camera, `normal`
-/// its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
+/// is the light's first tile. `relative` is the point's position relative to the main camera, as
+/// `sun_shadow` takes it, `normal` its unit normal, `to_light` the unit direction toward the light, and `gap` the distance to it.
 /// The light's biases are in meters, up to one texel of the tile at the point's distance from the
 /// light (`bias_offset`). A point outside its tile's view is lit.
 fn light_shadow(first: u32, relative: vec3f, normal: vec3f, to_light: vec3f, gap: f32) -> f32 {
