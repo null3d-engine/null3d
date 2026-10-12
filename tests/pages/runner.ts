@@ -50,7 +50,7 @@ import {
 	tabEndedResult,
 } from '../lib/tab-end';
 import { REFRESH_MEASURE, refreshRate } from './lib/refresh-rate';
-import { grantedSeconds, liveOutcome } from './lib/runner-rules';
+import { grantedSeconds, liveOutcome, loadingSeconds } from './lib/runner-rules';
 
 interface PlanItem {
 	id: string;
@@ -326,9 +326,26 @@ function frameLoadStep(frame: HTMLIFrameElement): string {
 }
 
 /**
- * Opens a page in a frame and waits for the result it publishes, or records a timeout. A page whose
- * own measurements show that it needs longer than its time limit gets that long, up to a few times
- * the limit.
+ * The seconds that the page in `frame` has spent loading its document and files so far, as its own
+ * timeline gives them. Files that a page's workers or inner frames load are not in it.
+ */
+function frameLoadingSeconds(frame: HTMLIFrameElement): number {
+	const timeline = frame.contentWindow?.performance;
+	if (!timeline) return 0;
+	const loads = [
+		...timeline.getEntriesByType('navigation'),
+		...timeline.getEntriesByType('resource'),
+	].map((entry) => {
+		const end = (entry as PerformanceResourceTiming).responseEnd;
+		return [entry.startTime, end > 0 ? end : timeline.now()] as const;
+	});
+	return loadingSeconds(loads);
+}
+
+/**
+ * Opens a page in a frame and waits for the result it publishes, or records a timeout. A page gets
+ * its time limit plus the time that it spent loading files, or longer when its own measurements show
+ * that it needs longer, up to a few times the limit.
  */
 async function openInFrame(path: string, timeoutSeconds: number): Promise<Result> {
 	const frame = document.createElement('iframe');
@@ -337,6 +354,8 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
 	stage.append(frame);
 	const start = performance.now();
 	let limit = timeoutSeconds;
+	let loading = 0;
+	let endsBy: number | undefined;
 	try {
 		while (performance.now() < start + limit * 1000) {
 			const view = frame.contentWindow as {
@@ -345,13 +364,16 @@ async function openInFrame(path: string, timeoutSeconds: number): Promise<Result
 			} | null;
 			const published = view?.__null3dResult;
 			if (published) return published;
-			limit = grantedSeconds(timeoutSeconds, view?.__null3dEndsBy);
+			loading = frameLoadingSeconds(frame);
+			endsBy = view?.__null3dEndsBy;
+			limit = grantedSeconds(timeoutSeconds, endsBy, loading);
 			await sleep(RESULT_POLL_MS);
 		}
 		const trail = (frame.contentWindow as { __null3dProgress?: string[] } | null)?.__null3dProgress;
+		const expected = endsBy === undefined ? '' : `, and expected to end at ${Math.round(endsBy)} s`;
 		return {
 			ok: false,
-			error: `no result within ${limit} s`,
+			error: `no result within ${limit} s (its limit is ${timeoutSeconds} s; it spent ${Math.round(loading)} s loading files${expected})`,
 			trail: [...(trail ?? []), frameLoadStep(frame)],
 		};
 	} finally {
