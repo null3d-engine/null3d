@@ -7,8 +7,9 @@
 // black.
 //
 // The step draws into the corner of the scene color that the frame draws at the render scale, and
-// reads the same corner of the motion target and the depth. WebGL2 counts rows from the bottom,
-// so its builds turn the rows around. The DEPTH_MULTISAMPLED builds read sample 0 of a
+// reads the same corner of the motion target and the depth, at the texel under the fragment on
+// both GPU paths. WebGL2 counts rows from the bottom, so its builds turn the rows around for the
+// place on the image, which counts from the top. The DEPTH_MULTISAMPLED builds read sample 0 of a
 // multisampled depth, on WebGPU. On the 8-bit path (the TONE_MAP builds) the scene color holds
 // display color, so the step writes the color as it is; elsewhere it writes the linear color that
 // the final pass, which draws debug views without a tone curve, encodes back.
@@ -54,11 +55,10 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let render = view.size.xy;
 #ifdef WEBGL2
     let from_top = vec2f(position.x, view.size.w - position.y);
-    let texel = vec2i(i32(position.x), i32(view.size.w) - 1 - i32(position.y));
 #else
     let from_top = position.xy;
-    let texel = vec2i(position.xy);
 #endif
+    let texel = vec2i(position.xy);
     let uv = from_top / render;
     let depth = textureLoad(depth_texture, texel, 0).x;
     let last = view.reproject * vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
