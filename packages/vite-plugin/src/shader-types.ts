@@ -134,6 +134,18 @@ export interface CompiledMaterial<
 	readonly textures: readonly CompiledTexture<Textures>[];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * The WebGPU builds that skin in the vertex shader, by name, as the compiler gives them. A
+	 * module carries them apart from the other builds, through `skinBuilds`.
+	 */
+	readonly skinVariants?: Readonly<Record<string, ShaderVariant>>;
+	/**
+	 * Imports the WebGPU builds that skin in the vertex shader, which load on first use: when the
+	 * material first draws a skinned mesh on WebGPU. A page without such a mesh never loads them.
+	 */
+	readonly skinBuilds?: () => Promise<{
+		readonly variants: Readonly<Record<string, ShaderVariant>>;
+	}>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */

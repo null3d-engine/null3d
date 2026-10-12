@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { TEMPLATE_CUSTOM_FIRST } from '../generated/gpu';
+import {
+	PERMUTATION_RECEIVE_SHADOWS,
+	PERMUTATION_SKIN,
+	TEMPLATE_CUSTOM_FIRST,
+} from '../generated/gpu';
 import { controlViews, createControlBuffer, Slot } from './control';
 import {
 	type CustomShader,
@@ -264,6 +268,76 @@ describe("custom materials' shaders on their way to the thread that draws", () =
 		expect(table.replaced).toEqual([TEMPLATE_CUSTOM_FIRST + 2]);
 		table.clear();
 		expect(table.replaced).toEqual([]);
+	});
+});
+
+describe("custom materials' builds that load on first use", () => {
+	/** A build of a custom material for WebGPU with the permutation bits of `permutation`. */
+	const build = (permutation: number) => ({
+		permutation,
+		wgsl: { source: `// ${permutation}`, pipelines: { main: { vertex: 'vs', fragment: 'fs' } } },
+		glsl: null,
+	});
+	const skinned = PERMUTATION_SKIN | PERMUTATION_RECEIVE_SHADOWS;
+	const template = TEMPLATE_CUSTOM_FIRST;
+
+	test('are asked for once, by the first pipeline that skins, and let it build once they arrive', () => {
+		const table = new ImageTable();
+		const asks: number[] = [];
+		table.askBuilds = (asked) => asks.push(asked);
+		table.setShader(template, {
+			variants: { webgpu: build(0) },
+			locations: [0, 1, 2],
+			textures: 0,
+			skinBuilds: true,
+		});
+		// A pipeline that does not skin builds at once.
+		expect(table.buildsReady(template, 0)).toBe(true);
+		expect(table.buildsReady(template, skinned)).toBe(false);
+		expect(table.buildsReady(template, skinned)).toBe(false);
+		expect(asks).toEqual([template]);
+		table.addBuilds(template, { webgpu_receive_shadows_skin: build(skinned) });
+		expect(table.buildsReady(template, skinned)).toBe(true);
+		expect(table.shaders.get(template)?.variants).toHaveProperty('webgpu_receive_shadows_skin');
+		expect(table.shaders.get(template)?.skinBuilds).toBe(false);
+	});
+
+	test('give way to a newer shader that a hot update brought with its builds', () => {
+		const table = new ImageTable();
+		table.setShader(template, { variants: {}, locations: [], textures: 0, skinBuilds: true });
+		expect(table.buildsReady(template, skinned)).toBe(false);
+		const newer = { webgpu_receive_shadows_skin: build(skinned) };
+		table.setShader(template, { variants: newer, locations: [], textures: 0 });
+		table.addBuilds(template, { webgpu_receive_shadows_skin: build(PERMUTATION_SKIN) });
+		expect(table.shaders.get(template)?.variants).toBe(newer);
+		expect(newer.webgpu_receive_shadows_skin.permutation).toBe(skinned);
+	});
+
+	test('fail the pipelines that need them when they did not load', () => {
+		const table = new ImageTable();
+		table.setShader(template, { variants: {}, locations: [], textures: 0, skinBuilds: true });
+		expect(table.buildsReady(template, skinned)).toBe(false);
+		table.addBuilds(template, 'the network failed');
+		expect(() => table.buildsReady(template, skinned)).toThrow('the network failed');
+	});
+
+	test('cross the port of the images both ways', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const [sketchEnd, drawingEnd] = [fakePort(), fakePort()];
+		const senders = sendThrough(sketchEnd);
+		const answered: number[] = [];
+		senders.onAskBuilds((asked) => answered.push(asked));
+		receiveImages(drawingEnd, table, slots);
+		table.askBuilds(template);
+		expect(drawingEnd.posted).toEqual([[{ askBuilds: template }, []]]);
+		deliver(sketchEnd, drawingEnd.posted[0]?.[0]);
+		expect(answered).toEqual([template]);
+		deliver(sketchEnd, RECEIVING);
+		table.setShader(template, { variants: {}, locations: [], textures: 0, skinBuilds: true });
+		senders.sendBuilds(template, { webgpu_skin: build(PERMUTATION_SKIN) });
+		deliver(drawingEnd, sketchEnd.posted.at(-1)?.[0]);
+		expect(table.buildsReady(template, PERMUTATION_SKIN)).toBe(true);
 	});
 });
 

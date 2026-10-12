@@ -677,7 +677,7 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
+	 * defines at its first use, with its builds that skin once they have arrived too. A group's or a fold's shader is joined then too, once its host's
 	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
@@ -687,6 +687,7 @@ export class WebGPUBackend {
 				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
+		if (!this.images.buildsReady(template, permutation)) return false;
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
