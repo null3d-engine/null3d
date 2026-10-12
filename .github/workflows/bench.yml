@@ -138,7 +138,8 @@ jobs:
     needs: commits
     if: needs.commits.outputs.new != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The job takes 4 to 8 minutes. Every CI job stops at 15 minutes at most.
+    timeout-minutes: 15
     strategy:
       matrix:
         build: [baseline, new]

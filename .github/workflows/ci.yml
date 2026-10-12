@@ -168,8 +168,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
-    timeout-minutes: 25
+    # The job takes 5 to 9 minutes. Every CI job stops at 15 minutes at most.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
