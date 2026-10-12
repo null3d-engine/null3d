@@ -29,7 +29,7 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/main'
     env:
       # Git hooks are for local commits; the release commit carries its own trailers.
