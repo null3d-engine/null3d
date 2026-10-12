@@ -24,7 +24,7 @@ const PARTS: readonly Part[] = [
 		(radius, k): Part => [0.12 + k * 0.2, radius, 0.5 - k * 0.07, [0.05, 0.17, 0.08]],
 	),
 ];
-const TURN = Math.PI * 2;
+export const TURN = Math.PI * 2;
 
 /** The hills' height at a point. */
 export const ground = (x: number, z: number) =>
@@ -33,9 +33,14 @@ export const ground = (x: number, z: number) =>
 const edge = (radius: number, h: number, a: number) =>
 	radius * (1 - h) ** 1.5 * (1 + 0.1 * Math.sin(a * 3));
 
-type Arrays = { positions: number[]; colors: number[]; indices: number[] };
+export type Arrays = { positions: number[]; colors: number[]; indices: number[] };
 /** Adds `columns` by `rows` quads to `out`, with each vertex's position and color from `at`. */
-function grid(out: Arrays, columns: number, rows: number, at: (u: number, v: number) => number[]) {
+export function grid(
+	out: Arrays,
+	columns: number,
+	rows: number,
+	at: (u: number, v: number) => number[],
+) {
 	const start = out.positions.length / 3;
 	for (let r = 0; r <= rows; r++)
 		for (let c = 0; c <= columns; c++) {
