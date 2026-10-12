@@ -12,10 +12,10 @@ import { execFileSync } from 'node:child_process';
 import {
 	type Browser,
 	type BrowserContextOptions,
-	chromium,
 	type LaunchOptions,
 	type Page,
 } from '@playwright/test';
+import { launchChromium } from '../../packages/cli/src/browser.js';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 
 /** How the runner tool opens a browser app's window on a Mac. */
@@ -240,7 +240,7 @@ function mainDisplaySwitch(): string[] {
  */
 export function launchInWindow(options: LaunchOptions = {}): Promise<Browser> {
 	return keepingFocus(() =>
-		chromium.launch({
+		launchChromium({
 			...options,
 			headless: false,
 			args: [...(options.args ?? []), ...KEEP_DRAWING_ARGS, ...mainDisplaySwitch()],

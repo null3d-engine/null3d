@@ -90,8 +90,12 @@
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium, type Page } from '@playwright/test';
-import { defaultEnvironment, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
+import type { Page } from '@playwright/test';
+import {
+	defaultEnvironment,
+	launchChromium,
+	SWIFTSHADER_ARGS,
+} from '../packages/cli/src/browser.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
@@ -422,7 +426,7 @@ async function main(): Promise<void> {
 		...(jsFlags.length > 0 ? [`--js-flags=${jsFlags.join(' ')}`] : []),
 	];
 	const browser = swiftShader
-		? await chromium.launch({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
+		? await launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
 		: await launchInWindow({ channel: 'chrome', args: browserArgs });
 	try {
 		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
