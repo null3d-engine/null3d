@@ -37,7 +37,7 @@ The plain builds read their one record at index 0 and link, but fail when they r
 
 Smallest known case: the engine's `unlit` build `webgl2_draw_index`, with its own fragment shader.
 
-Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range. The WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index.
+Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range. The WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index. The texture costs no measurable time on a Pixel 9 or on the Mac ([D-154](decisions/D-154-webgl2-draw-records-texture.md)).
 
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the failing program's two shaders.
 

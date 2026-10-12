@@ -42,7 +42,20 @@ Cost, on a Google Pixel 9 in BrowserStack's cloud (Chrome 152, WebGL2, which lin
 | S4 (the town, 111 draws) | Uniform block | 0.81, 0.85, 0.88 | 2.20, 1.97, 2.63 | 16.67 |
 | S4 | Texture | 0.84, 0.92, 0.90 | 2.00, 2.76, 2.63 | 16.62 |
 
-The runs are 20261012-150623-bench and 20261012-152539-bench. The texture's figures lie within the spread of the uniform block's, so it costs no time that these runs can find.
+The runs are 20261012-150623-bench and 20261012-152539-bench.
+
+Cost on the owner's Mac (M5 Max, Chrome 155, WebGL2 with a GPU timer), from `bun run bench:run -- --compare` of main at 3ed5e6c61 against the texture at 78b705b4a. Each page ran 3 times per build, with 10 s of warm-up and 10 s measured, at the Medium preset. Each figure is the median, with the lowest and highest run. The change is the median of each round's change, as the tool gives it:
+
+| Scene | Measure | Uniform block (ms) | Texture (ms) | Change |
+| --- | --- | --- | --- | --- |
+| S1 | Busiest thread | 7.245 (6.630 to 8.690) | 8.135 (6.750 to 8.735) | +0.5%, noise 7.9% |
+| S1 | GPU time | 5.678 (5.588 to 5.738) | 5.682 (5.512 to 5.692) | -0.8%, noise 0.6% |
+| S4 | Busiest thread | 0.610 (0.600 to 0.635) | 0.585 (0.525 to 0.652) | -4.1%, noise 7.4% |
+| S4 | GPU time | 7.188 (7.061 to 7.273) | 7.137 (7.126 to 7.246) | -0.4%, noise 0.5% |
+
+The tool judged every page the same. The pages' window got only 5 animation frames a second in that run, so the frame rates do not count, but the times per frame do. The run is `target/bench/20261012-201959-compare`.
+
+On both devices, the texture's figures lie within the spread of the uniform block's. It costs no time that these runs can find.
 
 ## Options weighed
 
