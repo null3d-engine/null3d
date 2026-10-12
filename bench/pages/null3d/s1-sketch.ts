@@ -385,7 +385,8 @@ function createDecals({ scene, geometry, materials, textures }: SketchContext, m
 		for (let k = 0; k < count; k++) {
 			// A box turned to project down, then about the vertical by its own angle.
 			const half = 0.5 * (t + k);
-			const [c, s] = [Math.SQRT1_2 * Math.cos(half), Math.SQRT1_2 * Math.sin(half)];
+			const c = Math.SQRT1_2 * Math.cos(half);
+			const s = Math.SQRT1_2 * Math.sin(half);
 			rotations[k * 4] = -c;
 			rotations[k * 4 + 1] = s;
 			rotations[k * 4 + 2] = s;
