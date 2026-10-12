@@ -351,8 +351,11 @@ mod ids {
     /// The row values of instance batches, two texels per source, which the vertex shaders of rows
     /// with row values read.
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
+    /// culling pass copies into the instances of buckets that such objects share.
+    pub const SKIN_FIRSTS: u32 = ROW_VALUES + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = ROW_VALUES + 1;
+    pub const TARGETS: u32 = SKIN_FIRSTS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.

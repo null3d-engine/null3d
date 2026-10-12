@@ -47,11 +47,16 @@
 //!
 //! With [`SkinningMode::vertex_shader`], the default, the builder skins in the vertex shader of
 //! each pass instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN
-//! builds, which read the joint texture through a bind group of their own. Each skinned object's
-//! bucket names the first joint of its skin, which the culling pass copies into each instance it
-//! draws. The skinning pass still skins and morphs the objects that the vertex shaders cannot:
-//! morphed objects, skinned or not, as WebGPU has no MORPH builds, and objects whose material
-//! has no SKIN build, such as custom materials and the debug views. Decision record D-20 holds
+//! builds, which read the joint texture through a bind group of their own. Such objects need no
+//! vertices of their own, so the objects of one mesh and material share a bucket, and a crowd of
+//! one model draws in one instanced draw per part, as on WebGL2. The culling pass copies the first
+//! joint of each instance's own skin into the instance, from a texture of first joints by source.
+//! The skinning pass still skins and morphs the objects that the vertex shaders cannot: morphed
+//! objects, skinned or not, as WebGPU has no MORPH builds, and objects whose template has no SKIN
+//! build: the debug views, the test templates and a sketch's whole shaders. A custom material
+//! built from the standard material's template has SKIN builds, as the engine's templates have,
+//! which load on first use: the thread that draws waits for them as for any shader file, and the
+//! objects draw once their pipelines are built. Decision record D-20 holds
 //! the measurements that chose the vertex shader. The other modes skin every object in the pass,
 //! with its two savings, or with one of them turned off, for the same measurement.
 
@@ -68,6 +73,7 @@ use super::ids;
 use crate::frame::{
     CellOffsets, MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, words_as_bytes,
 };
+use crate::materials::Shading;
 use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
 use crate::pipelines::{DrawKey, PipelineCache, built_by};
@@ -78,7 +84,8 @@ use crate::skinning::{
 use crate::sorted::SkinnedPipeline;
 use crate::view::ViewFrame;
 
-/// The templates with SKIN builds, which skin in the vertex shader.
+/// The engine's templates with SKIN builds, which skin in the vertex shader. Custom materials'
+/// templates have them too, apart from whole shaders (see `has_skin_builds`).
 const SKIN_TEMPLATES: [u32; 8] = [
     template::INSTANCED_LIT,
     template::INSTANCED_STANDARD_MAPS,
@@ -89,6 +96,13 @@ const SKIN_TEMPLATES: [u32; 8] = [
     template::SHADOW_CUTOUT_MAP,
     template::OUTLINE_MASK,
 ];
+/// True for a template with SKIN builds: one of the engine's in `SKIN_TEMPLATES`, or a custom
+/// material's, unless it is a whole shader, which the caller checks by its shading. The debug
+/// views and the test templates have none.
+fn has_skin_builds(template: u32) -> bool {
+    SKIN_TEMPLATES.contains(&template) || template >= template::CUSTOM_FIRST
+}
+
 /// The most mesh pages that hold skinned meshes. Each page holds meshes of one vertex format up
 /// to a storage binding, so it takes skinned meshes of more than this many vertex formats, or more
 /// skinned meshes than this many bindings hold, to pass it.
@@ -454,7 +468,7 @@ impl Skinning {
                 ..key
             };
         }
-        if SKIN_TEMPLATES.contains(&key.template) {
+        if has_skin_builds(key.template) {
             skinned_in_vertex_shader(key)
         } else {
             key
@@ -471,6 +485,13 @@ impl Skinning {
             }
             Some(object) => SkinnedPipeline::Waiting(self.skinned_key(&object, key)),
         }
+    }
+
+    /// The scene slot and the first joint of each skinned object that the vertex shaders skin, in
+    /// slot order.
+    pub(super) fn vertex_skinned(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        let objects = self.objects.iter().filter(|object| !object.computed);
+        objects.map(|object| (object.slot, object.joint_base))
     }
 
     /// The skinned or morphed object at scene slot `slot`, or `None` for an object that is
@@ -563,9 +584,12 @@ impl Skinning {
                 continue;
             };
             let vertex_skins = || {
-                settings
-                    .pipeline_of(scene.meshes()[slot], scene.materials()[slot])
-                    .is_none_or(|key| SKIN_TEMPLATES.contains(&key.template))
+                let material = scene.materials()[slot];
+                let shading = settings.materials().shading(material.wrapping_sub(1));
+                !shading.is_ok_and(Shading::is_full_shader)
+                    && settings
+                        .pipeline_of(scene.meshes()[slot], material)
+                        .is_none_or(|key| has_skin_builds(key.template))
             };
             let computed = morphed || !self.mode.vertex_shader || !vertex_skins();
             self.computed += u32::from(computed);

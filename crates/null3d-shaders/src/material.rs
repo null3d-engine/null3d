@@ -32,6 +32,8 @@ use crate::{
 const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
 /// The shader def that makes the template load the layers of a custom material's textures.
 const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
+/// The shader def that puts the joint texture's group after the maps' group on WebGPU.
+const JOINTS_AFTER_MAPS_DEF: &str = "JOINTS_AFTER_MAPS";
 
 /// A function that a custom material's WGSL may declare for the template to call.
 struct Hook {
@@ -510,14 +512,17 @@ impl Compiler {
                 defs.extend(inputs.iter().map(|&def| def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 if !texture_fields.is_empty() {
+                    // On WebGPU the textures take the maps' group after the frame's, so the SKIN
+                    // builds read the joint texture from the group after them.
                     defs.push(TEXTURES_DEF.to_owned());
+                    defs.push(JOINTS_AFTER_MAPS_DEF.to_owned());
                 }
                 defs.sort();
-                // Custom materials draw at full precision, so their builds stay half as many. On
-                // WebGPU they draw skinned meshes from the skinning pass's vertices, so they need no
-                // SKIN builds there. WebGL2 skins in the vertex shader, so its builds keep the bit.
-                // They have no MORPH builds, which would double their WebGL2 builds again: on
-                // WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
+                // Custom materials draw at full precision, so their builds stay half as many. They
+                // keep the SKIN builds on both paths, as the vertex shaders skin by default, and
+                // skinned objects of one mesh and material then share an instanced draw (decision
+                // record D-20). They have no MORPH builds, which would double their WebGL2 builds
+                // again: on WebGL2 they draw morphed meshes at rest (decision record D-51). They read their
                 // instances from the culling shader's copies on every path, so they have no
                 // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
@@ -526,7 +531,6 @@ impl Compiler {
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
                 // detail, so their levels switch at once.
-                let skins = !variant.targets.contains(&Target::Wgsl);
                 let left_out = [
                     "HALF",
                     "MORPH",
@@ -539,7 +543,7 @@ impl Compiler {
                 let permutations = variant
                     .permutations
                     .iter()
-                    .filter(|bit| !left_out.contains(&bit.as_str()) && (skins || *bit != "SKIN"))
+                    .filter(|bit| !left_out.contains(&bit.as_str()))
                     .filter(|bit| transmits || *bit != "TRANSMISSION")
                     .cloned()
                     .collect();

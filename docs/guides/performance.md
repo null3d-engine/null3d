@@ -185,8 +185,8 @@ Each frame's list of GPU commands grows with the scene, so no count of objects o
 
 Animated characters also cost skinning work and memory:
 
-- Both paths skin each character in the vertex shader of each pass that draws it, so shadows skin a character again. A crowd costs GPU time in proportion to the vertices that each pass draws. A character out of every view costs no skinning work. On WebGL2, copies that share a mesh and a material draw in one instanced draw.
-- On WebGPU, the skinning pass skins morphed characters, and characters with custom materials, once per frame instead. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
+- Both paths skin each character in the vertex shader of each pass that draws it, so shadows skin a character again. A crowd costs GPU time in proportion to the vertices that each pass draws. A character out of every view costs no skinning work. Copies that share a mesh and a material draw in one instanced draw, custom materials included.
+- On WebGPU, the skinning pass skins morphed characters once per frame instead, and each one draws on its own. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
 - Each copy that the skinning pass skins keeps its own skinned vertices in GPU memory, even when copies share a mesh. A knight of the S5 benchmark takes 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
 - The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
 
