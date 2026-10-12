@@ -66,7 +66,8 @@ async function answers(url: string): Promise<boolean> {
 const running = new Set<ChildProcess>();
 /** Work that a signal waits for before the process ends, such as ending remote sessions. */
 const cleanups = new Set<() => Promise<unknown>>();
-const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+/** The signals that stop a run: Ctrl-C, a plain `kill`, and a closed terminal. */
+export const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 /** How long a signal waits for the cleanups before the process ends anyway. */
 const CLEANUP_LIMIT_MS = 20_000;
 let stopping = false;
