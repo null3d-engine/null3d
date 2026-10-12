@@ -108,7 +108,16 @@ How the data was produced: Chrome on the Mac's GPU, 12 October 2026, through `he
 
 ### Cost
 
-COST
+The light grid ranks the area lights and fades them on the CPU, in each view's grid, before it slices the lights. Its whole step, the choice and the slicing, took this long per frame in a release build on the Mac (Apple M5 Max), at a load below 8, on 13 October 2026:
+
+| Area lights in view | No cap reached | Cap of 4 |
+| --- | --- | --- |
+| 64 | 0.71 µs | 0.77 µs |
+| 256 | 2.57 µs | 2.80 µs |
+
+The ranking adds 0.06 µs for 64 lights and 0.23 µs for 256. It allocates only when the light table or the visible list grows past what an earlier frame met.
+
+The area lights' code first sat in the light loop of every lit build. S4 has no area light, and still drew 5.3% slower at Medium and 5.4% slower at High. [D-156](D-156-template-scoped-permutation-bits.md) gives the figures. That code now loads only in the lit templates' `AREA_LIGHTS` builds, on first use. UNUSED
 
 ## Decision
 

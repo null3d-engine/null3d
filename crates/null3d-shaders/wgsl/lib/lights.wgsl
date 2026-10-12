@@ -1,7 +1,9 @@
 #define_import_path null3d::lights
+#ifdef AREA_LIGHTS
 #import null3d::area_lights::{range_window, rectangle_light, tube_light}
-#import null3d::lighting::{PbrMaterial, Reflected, distance_attenuation, spot_attenuation}
 #import null3d::tables::{AreaTerms, area_terms}
+#endif
+#import null3d::lighting::{PbrMaterial, Reflected, distance_attenuation, spot_attenuation}
 #ifdef HALF
 #import null3d::half::{direct_light}
 #else
@@ -30,10 +32,12 @@
 /// Bits of a cluster's word that hold where its lights start in the light grid.
 const START_BITS: u32 = 23u;
 
+#ifdef AREA_LIGHTS
 /// The kind of a rectangle light's record: the core's `RECT`. Kinds from it on are area lights.
 const KIND_RECT: u32 = 6u;
 /// The kind of a tube light's record: the core's `TUBE`.
 const KIND_TUBE: u32 = 7u;
+#endif
 
 /// A point or spot light, as the light list holds it. Colors are linear and include the
 /// intensity. A point light shines in every direction: its cone cosines let every direction
@@ -95,6 +99,7 @@ fn light_of(i: u32) -> PointLight {
 #endif
 }
 
+#ifdef AREA_LIGHTS
 /// An area light's second vector: a rectangle's half side along its Y axis, or a tube's radius
 /// and two zeros. Its record keeps it in the places of a spot light's decay and cone cosines,
 /// and its first vector, half the rectangle's X side or half the tube's axis, in `direction_cone`.
@@ -124,6 +129,7 @@ fn area_light(
     let image = i32(light.penumbra.w) - 1;
     return rectangle_light(m, terms, normal, to_view, toward, along, across, color, image);
 }
+#endif
 
 /// The lights of the cluster that holds a position relative to the camera: where they start in
 /// the light grid, and how many there are. A position past the last slice, or in a view whose
@@ -160,11 +166,16 @@ fn clustered_light(
 ) -> Reflected {
     var sum = Reflected(vec3f(0.0), vec3f(0.0));
     let found = cluster_lights(relative);
-    // The area lights' tables for the surface, read with the cluster's first area light.
+#ifdef AREA_LIGHTS
+    // The area lights' tables for the surface, read with the cluster's first area light. The
+    // builds without AREA_LIGHTS meet no area light: the light grid lists them only while the lit
+    // pipelines draw with these builds.
     var terms = AreaTerms(vec4f(0.0), vec2f(0.0));
     var have_terms = false;
+#endif
     for (var k = 0u; k < found.y; k++) {
         let light = light_of(grid_word(found.x + k));
+#ifdef AREA_LIGHTS
         let kind = bitcast<u32>(light.penumbra.y);
         if kind >= KIND_RECT {
             if !have_terms {
@@ -176,6 +187,7 @@ fn clustered_light(
             sum.specular += reflected.specular;
             continue;
         }
+#endif
         let offset = light.position_range.xyz - relative;
         let gap = length(offset);
         let to_light = offset / max(gap, 1e-6);

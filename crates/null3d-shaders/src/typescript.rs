@@ -205,12 +205,14 @@ export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
 /**
  * The feature that loads on first use whose device modules hold the build of `shader` with the
  * permutation word `permutation`: the shader's own feature, or else that of the word's first bit in
- * the order of `FEATURE_BITS`. Undefined for a build that the device modules of the start hold.
+ * the order of `FEATURE_BITS`, among the bits whose names the shader lists (`FEATURE_MASKS`).
+ * Undefined for a build that the device modules of the start hold.
  */
 export function firstUseFeature(shader: string, permutation: number): string | undefined {
 	const feature = SHADER_FEATURES[shader];
 	if (feature !== undefined) return feature;
-	for (const [bit, name] of FEATURE_BITS) if ((permutation & bit) !== 0) return name;
+	const listed = permutation & (FEATURE_MASKS[shader] ?? 0);
+	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) return name;
 	return undefined;
 }
 
@@ -710,6 +712,19 @@ fn first_use_tables(
         "const FEATURE_BITS: readonly (readonly [number, string])[] = [{}];",
         bits.join(", ")
     ));
+    ts.line("");
+    ts.line(
+        "/** By shader name, the bits of `FEATURE_BITS` whose names the shader lists: a value can name another feature in another shader. */",
+    );
+    if first_use.listed.is_empty() {
+        ts.line("const FEATURE_MASKS: Readonly<Record<string, number>> = {};");
+    } else {
+        ts.open("const FEATURE_MASKS: Readonly<Record<string, number>> = {");
+        for (shader, mask) in &first_use.listed {
+            ts.line(&format!("{shader}: {mask},"));
+        }
+        ts.close("};");
+    }
 }
 
 /// A device module: `SHADERS`, the builds of every shader that loads by device for the module's
@@ -1167,6 +1182,7 @@ mod tests {
             .shaders
             .insert("sprite".to_owned(), "sprites".to_owned());
         output.first_use.bits.insert(BLOOM, "bloom".to_owned());
+        output.first_use.listed.insert("lit".to_owned(), BLOOM);
         output
     }
 
@@ -1242,6 +1258,10 @@ mod tests {
         ));
         assert!(main.contains(&format!(
             "FEATURE_BITS: readonly (readonly [number, string])[] = [[{}, 'bloom']];",
+            permutation::BLOOM
+        )));
+        assert!(main.contains(&format!(
+            "const FEATURE_MASKS: Readonly<Record<string, number>> = {{\n\tlit: {},\n}};",
             permutation::BLOOM
         )));
         let start = "const WGSL_MODULES: DeviceModules = {

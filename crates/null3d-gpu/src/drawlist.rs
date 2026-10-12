@@ -744,7 +744,8 @@ pub mod layout {
 /// changes what a shader costs is a bit, so a pipeline without the feature does not pay for it. A
 /// cheap option is a uniform value instead. A shader reads each bit as the shader def of the bit's
 /// name in [`NAMES`], and the shader manifest lists the bits that each shader is built with. A bit
-/// that no shader reads yet is reserved for the feature it names, so no two features share one.
+/// that no shader reads yet is reserved for the feature it names. Two features share a value only
+/// when no template lists both, as [`SHARED`] records (decision record D-156).
 pub mod permutation {
     /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
     pub const DRAW_INDEX: u32 = 1;
@@ -766,6 +767,10 @@ pub mod permutation {
     pub const MORPH: u32 = 128;
     /// The final pass smooths edges with FXAA before the output transform.
     pub const FXAA: u32 = 256;
+    /// The surface takes the light of the rectangle and tube lights in its cluster. Without it, the
+    /// light loop has no code for them, so scenes without area lights do not pay for it. It shares
+    /// [`FXAA`]'s value: only the lit templates list it, and only the final pass lists FXAA.
+    pub const AREA_LIGHTS: u32 = FXAA;
     /// The normal map's frame comes from the mesh's tangents, not from how the texture
     /// coordinates change between pixels.
     pub const VERTEX_TANGENT: u32 = 512;
@@ -834,7 +839,7 @@ pub mod permutation {
     pub const CASTER: u32 = 1 << 25;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 26] = [
+    pub const NAMES: [(&str, u32); 27] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -844,6 +849,7 @@ pub mod permutation {
         ("SKIN", SKIN),
         ("MORPH", MORPH),
         ("FXAA", FXAA),
+        ("AREA_LIGHTS", AREA_LIGHTS),
         ("VERTEX_TANGENT", VERTEX_TANGENT),
         ("DEBUG_VIEW_LOW", DEBUG_VIEW_LOW),
         ("DEBUG_VIEW_HIGH", DEBUG_VIEW_HIGH),
@@ -862,6 +868,10 @@ pub mod permutation {
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
     ];
+
+    /// Pairs of names that share one value, because no template lists both: the shader build
+    /// refuses a template that lists two names of one value, and any other shared value.
+    pub const SHARED: [(&str, &str); 1] = [("FXAA", "AREA_LIGHTS")];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
     /// the draw index where WebGL2 has multi-draw, tone mapping in the shader where the device
@@ -889,7 +899,7 @@ pub mod permutation {
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once.
-    pub const APART: [(u32, u32); 22] = [
+    pub const APART: [(u32, u32); 23] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -907,6 +917,7 @@ pub mod permutation {
         (CASTER, TRANSMISSION),
         (CASTER, PREPASS),
         (CASTER, INSTANCE_INDEX),
+        (CASTER, AREA_LIGHTS),
         (LOD_FADE, SKIN),
         (LOD_FADE, MORPH),
         (LOD_FADE, INSTANCE_INDEX),
@@ -2196,11 +2207,16 @@ mod tests {
     }
 
     #[test]
-    fn permutation_bits_are_distinct_single_bits_with_their_names() {
+    fn permutation_bits_are_single_bits_with_their_names_shared_only_as_listed() {
         let mut seen = 0;
-        for (name, bit) in permutation::NAMES {
+        for (k, (name, bit)) in permutation::NAMES.into_iter().enumerate() {
             assert!(bit.is_power_of_two(), "{name}");
-            assert_eq!(seen & bit, 0, "{name} shares a bit");
+            for (other, _) in permutation::NAMES[..k].iter().filter(|(_, b)| *b == bit) {
+                let listed = permutation::SHARED
+                    .iter()
+                    .any(|&(a, b)| (a, b) == (*other, name) || (a, b) == (name, *other));
+                assert!(listed, "{name} shares a bit with {other}");
+            }
             seen |= bit;
             assert_eq!(permutation::bit(name), Some(bit));
         }

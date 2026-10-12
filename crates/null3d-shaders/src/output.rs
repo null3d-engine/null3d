@@ -69,13 +69,18 @@ pub struct FirstUseFeatures {
     pub bits: BTreeMap<u32, String>,
     /// The bits whose features take the builds that they share with other features' bits.
     pub claiming: BTreeSet<u32>,
+    /// By shader name, the bits of [`Self::bits`] whose names the shader's variants list. A bit's
+    /// value can name another feature in another shader (decision record D-156), so a bit takes
+    /// only the builds of the shaders that list its name.
+    pub listed: BTreeMap<String, u32>,
 }
 
 impl FirstUseFeatures {
     /// The feature that a build of `shader` with the permutation word `permutation` belongs to:
-    /// the shader's, or else that of the first bit of the word in [`Self::bit_order`]. None for a
-    /// build that loads at the start.
+    /// the shader's, or else that of the first bit of the word, among the bits whose names the
+    /// shader lists, in [`Self::bit_order`]. None for a build that loads at the start.
     pub fn feature_of(&self, shader: &str, permutation: u32) -> Option<&str> {
+        let permutation = permutation & self.listed.get(shader).copied().unwrap_or(0);
         self.shaders
             .get(shader)
             .or_else(|| {
@@ -174,24 +179,35 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH};
+    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH};
 
     use super::*;
 
     #[test]
-    fn a_build_belongs_to_its_shaders_feature_or_else_to_that_of_its_lowest_feature_bit() {
+    fn a_build_belongs_to_its_shaders_feature_or_else_to_that_of_its_lowest_listed_feature_bit() {
         let mut first_use = FirstUseFeatures::default();
         first_use
             .shaders
             .insert("sprite".to_owned(), "sprites".to_owned());
         first_use.bits.insert(BLOOM, "bloom".to_owned());
         first_use.bits.insert(MORPH, "morph".to_owned());
+        first_use.bits.insert(AREA_LIGHTS, "area_lights".to_owned());
+        first_use.bits.insert(ALPHA_HASH, "alpha_hash".to_owned());
+        first_use.listed.insert("final".to_owned(), BLOOM);
+        first_use
+            .listed
+            .insert("lit".to_owned(), BLOOM | MORPH | AREA_LIGHTS | ALPHA_HASH);
         assert_eq!(first_use.feature_of("sprite", BLOOM), Some("sprites"));
         assert_eq!(first_use.feature_of("final", FXAA | BLOOM), Some("bloom"));
         assert_eq!(first_use.feature_of("lit", MORPH | BLOOM), Some("morph"));
-        assert_eq!(first_use.feature_of("lit", FXAA), None);
+        // A value that names another feature in another shader takes only its own shaders' builds.
+        assert_eq!(first_use.feature_of("final", FXAA), None);
+        assert_eq!(
+            first_use.feature_of("lit", AREA_LIGHTS),
+            Some("area_lights")
+        );
+        assert_eq!(first_use.feature_of("unlit", MORPH), None);
         // A feature that claims shared builds takes them from features of lower bits.
-        first_use.bits.insert(ALPHA_HASH, "alpha_hash".to_owned());
         assert_eq!(
             first_use.feature_of("lit", MORPH | ALPHA_HASH),
             Some("morph")

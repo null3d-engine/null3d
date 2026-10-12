@@ -1560,8 +1560,13 @@ impl FrameBuilder for CpuCulledRenderer {
         let skinned_appear =
             self.skins
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
+        // The lit templates switch to or from their builds that shade area lights.
+        let area_switched = self
+            .settings
+            .update_area_shading(&mut self.pipelines, input.pipelines_built);
         if input.structure_changed
             || !self.layout.built
+            || area_switched
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || prepass_changed

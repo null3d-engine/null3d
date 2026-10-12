@@ -56,6 +56,7 @@
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod ao;
+pub mod area_shading;
 pub mod arrays;
 pub mod background;
 pub mod bloom;

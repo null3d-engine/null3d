@@ -606,6 +606,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
             Some((pipeline, group, page, mesh, material, bounds))
         };
