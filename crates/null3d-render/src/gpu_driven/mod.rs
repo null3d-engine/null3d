@@ -1509,6 +1509,7 @@ impl GpuDrivenRenderer {
                     None
                 };
                 let (layout, cells) = (&self.layout, &self.cells);
+                let detail = self.settings.level_view(view, input.canvas);
                 self.culling.upload(
                     list,
                     arena,
@@ -1519,6 +1520,7 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                     levels.as_ref(),
+                    &detail,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning
@@ -1529,6 +1531,7 @@ impl GpuDrivenRenderer {
             let view = ViewId::OUTLINE;
             opaque::upload(list, arena, view, &frame)?;
             let (layout, outlined, cells) = (&self.layout, &self.outlined, &self.cells);
+            let detail = self.settings.level_view(view, input.canvas);
             self.culling.upload(
                 list,
                 arena,
@@ -1539,6 +1542,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
                 None,
+                &detail,
             )?;
         }
         if let (true, Some(frame), Some(motion_frame)) = (
@@ -1548,6 +1552,8 @@ impl GpuDrivenRenderer {
         ) {
             self.motion.upload(list, arena, &frame, motion_frame)?;
             let (layout, moving, cells) = (&self.layout, &self.moving, &self.cells);
+            // The motion view picks each instance's level of detail as the camera's view does.
+            let detail = self.settings.level_view(ViewId::CAMERA, input.canvas);
             self.culling.upload(
                 list,
                 arena,
@@ -1558,6 +1564,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
                 None,
+                &detail,
             )?;
         }
         self.cascade_frames = [None; MAX_CASCADES];
@@ -1568,6 +1575,7 @@ impl GpuDrivenRenderer {
         }
         self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
         self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+        let shadow_detail = self.settings.shadow_level_view(input.canvas);
         for tile in 0..tiles {
             let view = ViewId::tile(tile);
             let Some(frame) = self.tiles.frame(tile).copied() else {
@@ -1585,6 +1593,7 @@ impl GpuDrivenRenderer {
                 input.scene,
                 cells,
                 None,
+                &shadow_detail,
             )?;
             let offsets = self.culling.offsets();
             self.skinning
@@ -1607,6 +1616,7 @@ impl GpuDrivenRenderer {
                     input.scene,
                     cells,
                     None,
+                    &shadow_detail,
                 )?;
                 let offsets = self.culling.offsets();
                 self.skinning

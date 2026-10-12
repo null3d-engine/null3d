@@ -43,6 +43,11 @@ enable draw_index;
 // frame's time, places the second with the last frame's matrix, and the fragment shader writes the
 // difference on the screen. Like the casters, they ignore the material's alpha.
 //
+// The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
+// (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
+// keeps the pixels of its side of a 4 × 4 ordered dither, with the alpha test, after every
+// derivative.
+//
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
 // a sampler. A map reads
@@ -106,6 +111,9 @@ enable draw_index;
 #ifdef ROW_VALUES
 #import null3d::mesh::{row_values_of}
 #endif
+#ifdef LOD_FADE
+#import null3d::mesh::{instance_fade, lod_kept}
+#endif
 #ifdef CASTER
 #import null3d::mesh::{caster_clip}
 #endif
@@ -153,6 +161,11 @@ var<private> material_row: Material;
 #ifdef ALPHA_HASH
 /// The pixel's position in the mesh's own space, where the alpha hash finds its pattern.
 var<private> hash_place: vec3f;
+#endif
+
+#ifdef LOD_FADE
+/// The fade value of the instance's level of detail, which picks the pixels it draws.
+var<private> lod_fade: f32;
 #endif
 
 #ifdef CUSTOM_UNIFORMS
@@ -384,6 +397,11 @@ struct VertexOut {
     /// The values of the instance's row.
     @location(11) @interpolate(flat, either) row_values: vec4f,
 #endif
+#endif
+#ifdef LOD_FADE
+    /// The fade value of the instance's level of detail. It shares its slot with the object ids,
+    /// as only custom materials read those, and they have no fading builds.
+    @location(12) @interpolate(flat, either) lod_fade: f32,
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -791,6 +809,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.row_values = row.values;
 #endif
 #endif
+#ifdef LOD_FADE
+    out.lod_fade = instance_fade(i);
+#endif
 #ifdef OBJECT_MATRICES
     out.world_x = found.row_x;
     out.world_y = found.row_y;
@@ -963,6 +984,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef LOD_FADE
+    if !lod_kept(lod_fade, pixel.xy) {
+        discard;
+    }
+#endif
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
     // The copy holds display color, so the light from behind joins after the tone mapping, as far
@@ -1001,6 +1027,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #ifdef ALPHA_HASH
     hash_place = in.mesh_place;
+#endif
+#ifdef LOD_FADE
+    lod_fade = in.lod_fade;
 #endif
 #ifdef CUSTOM
     fill_builtins(in.origin);

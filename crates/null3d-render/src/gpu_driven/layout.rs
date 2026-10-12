@@ -31,6 +31,7 @@ use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
+use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
 use crate::motion::ChangedRanges;
 use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
@@ -48,11 +49,10 @@ const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
 
-/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
-/// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
-/// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
-/// keys have the same type, so both share one sort.
-type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
+// group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
+// level key (see `crate::levels`), its material id, and the bounds that cull its sources (see
+// `bounds_of`). The WebGL2 builder's keys have the same type, so both share one sort.
 
 /// What a layout's buckets draw.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -145,6 +145,8 @@ pub(super) struct Bucket {
     /// In the motion layout, true when its instances move by themselves, as skinned and morphed
     /// meshes and swaying custom materials do, so the motion view draws them in every frame.
     pub(super) moves: bool,
+    /// Its level of detail's error and links, for a bucket of a mesh with levels.
+    pub(super) levels: KeyLinks,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -695,6 +697,18 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        // A skinned or morphed object draws its base level: its vertices come from regions of its
+        // own, which the levels do not have.
+        let eligible = |key: &BucketKey| {
+            let object = key.5.checked_sub(OWN_BOUNDS);
+            key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0
+                && object.is_none_or(|slot| {
+                    skinning.object(slot).is_none() && scene.morphs()[slot as usize] == 0
+                })
+        };
+        let levels = settings.levels();
+        let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
+        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
         self.depthless = self
             .key_counts
             .iter()
@@ -731,7 +745,12 @@ impl Layout {
         self.draws.clear();
         self.skinned.clear();
         let (mut copied, mut indexed) = (0, 0);
-        for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
+        for &(key, count) in &self.key_counts {
+            let (pipeline, group, _, mesh, material, bounds) = key;
+            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            let mesh = levels
+                .mesh_of_key(mesh)
+                .expect("level keys name known levels");
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -797,6 +816,7 @@ impl Layout {
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
                 indexed: by_index,
                 moves,
+                levels: links,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -882,6 +902,10 @@ impl Layout {
                 // The motion layout's buckets never read by index: the word marks those whose
                 // instances move by themselves.
                 u32::from(bucket.indexed || bucket.moves),
+                // The culling shader reads a bucket as its index plus one, and 0 as none.
+                bucket.levels.error.to_bits(),
+                bucket.levels.next.map_or(0, |bucket| bucket + 1),
+                bucket.levels.fade.map_or(0, |bucket| bucket + 1),
             ]);
         }
         self.built = true;
@@ -1272,10 +1296,11 @@ mod tests {
             ]
         );
         // Each record holds its sphere's centre, where the culling shader reads it, then the
-        // first joint of a skin, which no bucket here has, and 0 for a slice of copies.
+        // first joint of a skin, which no bucket here has, 0 for a slice of copies, and zeros for
+        // the level of detail of a mesh without levels.
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8..], [0, 0]);
+        assert_eq!(record[8..], [0; 5]);
     }
 }

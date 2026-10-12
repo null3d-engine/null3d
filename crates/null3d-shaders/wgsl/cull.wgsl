@@ -30,6 +30,18 @@
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
+// A bucket of a mesh with levels of detail links to the bucket of its next coarser level, and each
+// level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
+// its base level's bucket. The thread walks the links while the next level's error, times the
+// instance's largest axis scale and the view's level factor, stays under its distance from the
+// main camera, and appends the instance to the last level that passes. Every view places its
+// instances relative to the main camera, shadow views too, so they all pick by its distance. Past
+// each switch distance lies a band in which the level before still draws: there, the instance goes
+// to both levels' fade buckets, whose pipelines dither each pixel to one of them, and the copy's
+// fourth id holds the fade value, positive for the new level and negative for the old. A link of 0
+// means none, so a bucket record without levels holds zeros there, and a view whose level factor
+// is 0 draws every instance's base level.
+//
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
 // runs. Each workgroup finds its run, and each thread reads its instance from the cell order.
@@ -65,7 +77,8 @@
 // last frame, or when its bucket moves by itself, as skinned meshes and swaying materials do. Each
 // copy holds the last frame's matrix after the ids, both moved by the cell's offset, 112 bytes in
 // all. An instance that changed grid cells keeps a last matrix relative to the old cell's center:
-// the move of whole cells that brings it nearest to the new matrix puts it right.
+// the move of whole cells that brings it nearest to the new matrix puts it right. An instance draws
+// its motion with the level of detail that the camera's view picks, without the fading band.
 
 /// An entry holds its bucket in the bits below OCCLUDER, the occluder mark at OCCLUDER, and the
 /// instance's cell index from CELL_SHIFT up.
@@ -101,6 +114,10 @@ struct CullParams {
     range_count: u32,
     /// The view's row of the cell offsets texture.
     offsets_row: u32,
+    /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
+    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and a
+    /// spare.
+    levels: vec4f,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
     /// What the occlusion phases read. Other views leave it unset.
@@ -125,6 +142,12 @@ struct Bucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    /// The error of the bucket's level of detail, 0 for a base level.
+    error: f32,
+    /// The bucket of the next coarser level plus one, or 0 for none.
+    next: u32,
+    /// The fade bucket of the bucket's level plus one, or 0 for none.
+    fade: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -197,6 +220,8 @@ struct Survivor {
     r2: vec4f,
     center: vec3f,
     radius: f32,
+    /// The largest axis scale of the instance's world matrix.
+    scale: f32,
 }
 
 /// Instance `i`, tested against the view's layers and frustum.
@@ -222,6 +247,7 @@ fn survivor(i: u32) -> Survivor {
         max(length(vec3f(out.r0.y, out.r1.y, out.r2.y)), length(vec3f(out.r0.z, out.r1.z, out.r2.z))),
     );
     out.radius = bucket.radius * scale;
+    out.scale = scale;
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
         if dot(plane.xyz, out.center) + plane.w < -out.radius {
@@ -232,24 +258,71 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
-/// Appends an instance in the view to its bucket's slice, and counts it in each of the bucket's
-/// draws, which start `draws_before` draws into the indirect draws.
+/// The level of detail that an instance in view draws: its bucket, the bucket of the level before
+/// it, and how far past the level's switch distance the instance lies, as a share of that distance.
+struct Level {
+    bucket: u32,
+    before: u32,
+    past: f32,
+}
+
+/// The level of detail that an instance in view draws, its base level where the view picks none.
+fn level_of(s: Survivor) -> Level {
+    var out = Level(s.bucket, s.bucket, 0.0);
+    let factor = params.levels.x;
+    var next = buckets[s.bucket].next;
+    if next == 0u || factor <= 0.0 {
+        return out;
+    }
+    let reach = s.scale * factor;
+    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
+    while next != 0u && buckets[next - 1u].error * reach < distance {
+        out.before = out.bucket;
+        out.bucket = next - 1u;
+        next = buckets[out.bucket].next;
+    }
+    if out.bucket != s.bucket {
+        out.past = distance / (buckets[out.bucket].error * reach) - 1.0;
+    }
+    return out;
+}
+
+/// Appends an instance in the view to the bucket of the level of detail it draws, and to the fade
+/// buckets of two levels inside a fading band. The draws start `draws_before` draws into the
+/// indirect draws.
 fn append(s: Survivor, draws_before: u32) {
-    let bucket = buckets[s.bucket];
+    let level = level_of(s);
+    let band = params.levels.z;
+    let fades = buckets[level.bucket].fade != 0u && buckets[level.before].fade != 0u;
+    if level.bucket != s.bucket && band > 0.0 && fades {
+        let t = level.past / band;
+        if t < 1.0 {
+            append_to(s, buckets[level.bucket].fade - 1u, draws_before, max(t, 1e-6));
+            append_to(s, buckets[level.before].fade - 1u, draws_before, -max(t, 0.0));
+            return;
+        }
+    }
+    append_to(s, level.bucket, draws_before, 0.0);
+}
+
+/// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
+/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws.
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
+    let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
     }
     if bucket.indices != 0u {
-        visible[bucket.base + slot] = vec4u(s.index, 0u, 0u, 0u);
+        visible[bucket.base + slot] = vec4u(s.index, bitcast<u32>(fade), 0u, 0u);
         return;
     }
     let dst = (bucket.base + slot) * 4u;
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, 0u);
+    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, bitcast<u32>(fade));
 }
 
 #ifdef MOTION
@@ -279,7 +352,7 @@ fn main(
     if s.bucket == HIDDEN {
         return;
     }
-    let bucket = buckets[s.bucket];
+    let bucket = buckets[level_of(s).bucket];
     let now = array<vec4f, 3>(matrices[i * 3u], matrices[i * 3u + 1u], matrices[i * 3u + 2u]);
     let last = array<vec4f, 3>(previous[i * 3u], previous[i * 3u + 1u], previous[i * 3u + 2u]);
     let still = all(now[0] == last[0]) && all(now[1] == last[1]) && all(now[2] == last[2]);
