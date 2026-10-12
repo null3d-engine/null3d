@@ -23,7 +23,7 @@ Status: not reported yet. Found 13 October 2026.
 - Browser: Chrome 152.0.7977.54, WebGL2. WebGPU and compatibility mode on the same tablet are right.
 - Seen in: null3D's sky (`crates/null3d-shaders/wgsl/sky.wgsl` and `null3d::atmosphere`) at commit 3ed5e6c61. On WebGL2, 62% of the background-sky image's pixels differed, and 90% of S6's.
 
-What happens: a fragment shader that keeps a float in a struct reads it back at half precision. Values below the smallest normal half-precision float read as zero. In a struct, 1234.567 read 1234, 0.123456 read 0.1234131, 1.0001 read 1, 70000 read 65504, and 1e-5 read 0. `highp` on the member changes nothing, nor does `highp` on every float declaration of the shader. These kinds of struct all lose precision:
+What happens: a fragment shader that keeps a float in a struct reads it back at half precision. Values below the smallest normal half-precision float read as zero. In a struct, the value 1234.567 read 1234. The value 0.123456 read 0.1234131. The value 1.0001 read 1, 70000 read 65504, and 1e-5 read 0. Writing `highp` on the member changes nothing. Nor does `highp` on every float declaration of the shader. These kinds of struct all lose precision:
 - a struct local;
 - a struct that a function returns or takes;
 - a struct of scalars, and a struct with a whole number or an array in it;
