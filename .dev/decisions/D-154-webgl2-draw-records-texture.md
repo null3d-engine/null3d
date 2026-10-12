@@ -31,7 +31,7 @@ The Galaxy Tab A9+ (SM-X216B, Adreno 619, Android 14, Chrome 152), BrowserStack'
 | A constant index | Links |
 | The table in an `RGBA32UI` texture, read with `texelFetch` (chosen) | Links |
 
-Over the first three of the nine parts of the shader check, 444 of 557 multi-draw programs failed as built and none failed with the texture. Small test programs that read a uniform table at `gl_DrawID` linked.
+The first three of the nine parts of the shader check hold 557 multi-draw programs. As built, 444 of them failed. With the texture, none failed. Small test programs that read a uniform table at `gl_DrawID` linked.
 
 Cost, on a Google Pixel 9 in BrowserStack's cloud (Chrome 152, WebGL2, which links both forms). Each figure is the median of one 10-second run, 3 runs of each build, at the device's default preset. The render thread replays the draw list, so it pays for the copies. The phone gives no GPU timer on WebGL2, so the frame interval stands in for GPU time.
 
@@ -53,7 +53,7 @@ The runs are 20261012-150623-bench and 20261012-152539-bench. The texture's figu
 
 ## Decision
 
-The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0, and read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the same uniform buffer range as before. When a program reads a texture at a slot where a bind group left a buffer range, the WebGL2 backend copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A copy that no draw read since that write takes a new range, so the textures stay as many as the ranges that draws read between two writes.
+The `DRAW_INDEX` builds declare the draw records as a `texture_2d<u32>` at group 1, binding 0. They read the record at the draw index (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer binds the same uniform buffer range as before. A program may read a texture at a slot where a bind group left a buffer range. The WebGL2 backend then copies the range into an `RGBA32UI` texture of its own, one texel per 16 bytes, through `PIXEL_UNPACK_BUFFER`, and binds that. A copy stays until the buffer's next write, so the depth prepass, the opaque pass and the shadow passes share it. A copy that no draw read since that write takes a new range, so the textures stay as many as the ranges that draws read between two writes.
 
 A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index (hard rule 21). It found the shader build's own test shader doing so, which now reads a texture too.
 

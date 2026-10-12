@@ -23,13 +23,21 @@ Status: not reported yet. Found 12 October 2026.
 - Browser: Chrome 152.0.7977.54, WebGL2 on ANGLE over OpenGL ES 3.2. `WEBGL_multi_draw` is offered, `KHR_parallel_shader_compile` is not.
 - Seen in: null3D's multi-draw mesh shaders (the `webgl2_draw_index` builds), at commit 3f8825965. Each read its draw's record from a uniform block of 256 `uvec4`s at `gl_DrawID`.
 
-What happens: both shaders compile, and the link fails with an empty log. `getError` gives no error and the context is not lost. The page had made only 5 programs. In the shader check, 444 of the 557 multi-draw programs of its first three parts failed. No other program failed. Whether a program links also depends on its fragment shader: one vertex shader linked with a fragment shader that tone maps, and failed with the same shader without tone mapping. The two fragment shaders read the same inputs. With a fragment shader that writes nothing, every vertex shader linked.
+What happens: both shaders compile, and the link fails with an empty log. `getError` gives no error and the context is not lost. The page had made only 5 programs. In the shader check, 444 of the 557 multi-draw programs of its first three parts failed. No other program failed. Whether a program links also depends on its fragment shader. One vertex shader linked with a fragment shader that tone maps. It failed with the same fragment shader without tone mapping. The two fragment shaders read the same inputs. With a fragment shader that writes nothing, every vertex shader linked.
 
-Changes to the failing vertex shaders that still failed: the index clamped or masked, the extension left out with the index in a uniform of its own, a table of 64 or 16 records, a loop that picks the record, the index mixed with `gl_VertexID` or `gl_InstanceID` so that it looks per vertex, no `invariant`, and the material set to a constant. The plain builds read their one record at index 0 and link, but fail when they read it at a uniform. Changes that linked: the record read at a constant index, and the table read from an `RGBA32UI` texture with `texelFetch`. With the texture, all 557 programs linked. Small programs that read such a table at `gl_DrawID` linked, so a test program at start-up would not find the fault.
+Many changes to the failing vertex shaders still failed:
+- the index clamped or masked;
+- the extension left out, with the index in a uniform of its own;
+- a table of 64 or 16 records;
+- a loop that picks the record;
+- the index mixed with `gl_VertexID` or `gl_InstanceID`, so that it looks per vertex;
+- no `invariant`, or the material set to a constant.
+
+The plain builds read their one record at index 0 and link, but fail when they read it at a uniform. Changes that linked: the record read at a constant index, and the table read from an `RGBA32UI` texture with `texelFetch`. With the texture, all 557 programs linked. Small programs that read such a table at `gl_DrawID` linked. So a test program at start-up would not find the fault.
 
 Smallest known case: the engine's `unlit` build `webgl2_draw_index`, with its own fragment shader.
 
-Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range, and the WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index.
+Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range. The WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index.
 
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the failing program's two shaders.
 
