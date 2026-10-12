@@ -12,13 +12,18 @@ enable draw_index;
 // ALPHA_COVERAGE builds fade it there for alpha to coverage, and the ALPHA_HASH builds test it
 // against the alpha hash (null3d::cutout). A material that blends writes premultiplied color.
 // null3d::mesh finds each instance on both GPU paths. The ROW_VALUES builds multiply the color by
-// the row's color, for the rows of instance batches with row values.
+// the row's color, for the rows of instance batches with row values. The LOD_FADE builds draw a
+// level of detail inside the band where it hands over to the next, on its side of a 4 × 4 ordered
+// dither.
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{map_layer, map_ready, material_of, relative_position, straight_texel}
 #import null3d::vertex::{mesh_position, mesh_second_uv, mesh_uv}
 #ifdef ROW_VALUES
 #import null3d::mesh::{row_values_of}
+#endif
+#ifdef LOD_FADE
+#import null3d::mesh::{instance_fade, lod_kept}
 #endif
 #ifdef ALPHA_COVERAGE
 #import null3d::cutout::{alpha_coverage}
@@ -86,6 +91,10 @@ struct VertexOut {
     /// The color of the instance's row.
     @location(5) @interpolate(flat, either) row_color: vec4f,
 #endif
+#ifdef LOD_FADE
+    /// The fade value of the instance's level of detail.
+    @location(6) @interpolate(flat, either) lod_fade: f32,
+#endif
 }
 
 @vertex
@@ -124,6 +133,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
 #ifdef ROW_VALUES
     out.row_color = row_values_of(found).color;
+#endif
+#ifdef LOD_FADE
+    out.lod_fade = instance_fade(i);
 #endif
     return out;
 }
@@ -165,6 +177,11 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     }
 #else ifdef ALPHA_MASK
     if alpha < m.emissive.w {
+        discard;
+    }
+#endif
+#ifdef LOD_FADE
+    if !lod_kept(in.lod_fade, in.clip.xy) {
         discard;
     }
 #endif

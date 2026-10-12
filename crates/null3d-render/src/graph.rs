@@ -188,10 +188,10 @@ pub enum Size {
     },
     /// The whole canvas at any render scale, as the final pass draws it.
     Canvas,
-    /// The canvas halved this many times each way, rounding up, which a pass fills whole at any
-    /// render scale: the texture of a pass that materials sample from 0 to 1 across, whatever the
-    /// render scale. 0 is the whole canvas.
-    Share(u8),
+    /// The render size halved this many times each way, rounding up, as the texture's own size:
+    /// the frame makes the texture again when the render scale changes, and a pass fills it whole,
+    /// so a material samples it from 0 to 1 across at any render scale.
+    Scaled(u8),
     /// A fixed size in pixels, such as a shadow map's.
     Fixed {
         /// Width in pixels.
@@ -209,12 +209,13 @@ impl Size {
 
     /// The size of a texture of this size for a canvas of `canvas` device pixels. Relative sizes
     /// are made for the whole canvas, the largest render size, so no render scale needs a new
-    /// texture. Every size is at least one pixel each way.
+    /// texture; a [`Size::Scaled`] texture takes the size that [`Size::made`] gives instead. Every
+    /// size is at least one pixel each way.
     pub fn extent(self, canvas: (u32, u32)) -> (u32, u32) {
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         match self {
             Self::Full | Self::Canvas => canvas,
-            Self::Halved(times) | Self::Share(times) => Self::halve(canvas, times),
+            Self::Halved(times) | Self::Scaled(times) => Self::halve(canvas, times),
             Self::Fixed { width, height } => (width.max(1), height.max(1)),
             Self::ShortSide { texels, halvings } => {
                 let short = canvas.0.min(canvas.1);
@@ -240,17 +241,25 @@ impl Size {
         texels
     }
 
+    /// The size of the texture that the frame makes for this size at render scale `scale`: the
+    /// render size halved for a [`Size::Scaled`] texture, and [`Size::extent`] otherwise.
+    pub fn made(self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
+        match self {
+            Self::Scaled(_) => self.viewport(canvas, scale),
+            _ => self.extent(canvas),
+        }
+    }
+
     /// The part of such a texture that a pass draws into at render scale `scale`: a top-left
-    /// corner for relative sizes, and the whole texture otherwise.
+    /// corner for relative sizes, the whole of a [`Size::Scaled`] texture, and the whole texture
+    /// otherwise.
     pub fn viewport(self, canvas: (u32, u32), scale: RenderScale) -> (u32, u32) {
         let canvas = (canvas.0.max(1), canvas.1.max(1));
         let render = (scale.of(canvas.0), scale.of(canvas.1));
         match self {
             Self::Full => render,
-            Self::Halved(times) => Self::halve(render, times),
-            Self::Canvas | Self::Share(_) | Self::Fixed { .. } | Self::ShortSide { .. } => {
-                self.extent(canvas)
-            }
+            Self::Halved(times) | Self::Scaled(times) => Self::halve(render, times),
+            Self::Canvas | Self::Fixed { .. } | Self::ShortSide { .. } => self.extent(canvas),
         }
     }
 
@@ -264,14 +273,13 @@ impl Size {
     /// The size's name in messages and the text dump.
     pub(crate) fn name(self) -> String {
         match self {
-            Self::Full => "full size".into(),
-            Self::Halved(1) => "half size".into(),
-            Self::Halved(2) => "quarter size".into(),
-            Self::Halved(times) => format!("1/{} size", 1u64 << times.min(63)),
-            Self::Canvas | Self::Share(0) => "canvas size".into(),
-            Self::Share(1) => "half canvas size".into(),
-            Self::Share(2) => "quarter canvas size".into(),
-            Self::Share(times) => format!("1/{} canvas size", 1u64 << times.min(63)),
+            Self::Full | Self::Scaled(0) => "full size".into(),
+            Self::Halved(1) | Self::Scaled(1) => "half size".into(),
+            Self::Halved(2) | Self::Scaled(2) => "quarter size".into(),
+            Self::Halved(times) | Self::Scaled(times) => {
+                format!("1/{} size", 1u64 << times.min(63))
+            }
+            Self::Canvas => "canvas size".into(),
             Self::Fixed { width, height } => format!("{width} x {height}"),
             Self::ShortSide { texels, halvings } => {
                 format!(

@@ -46,9 +46,11 @@ const CURVE = { kind: 'toneCurve', variants: {}, pieces: pieces(50) } as unknown
  * that draws.
  */
 function post(hdrEffects = true, join = true) {
-	const block = new Float32Array(C.EFFECT_FLOATS);
+	// The core's memory, with the block of values first and the block of texture handles after it.
+	const memory = new ArrayBuffer(512);
+	const block = new Float32Array(memory, 0, C.EFFECT_FLOATS);
 	const effects: { template: number; flags: number; values: number[]; textures: number[] }[] = [];
-	const handles = new Uint32Array(C.EFFECT_TEXTURES);
+	const handles = new Uint32Array(memory, 256, C.EFFECT_TEXTURES);
 	const groups: [number, number][] = [];
 	let fold: [number, number] = [0, 0];
 	const curves: number[] = [];
@@ -56,13 +58,12 @@ function post(hdrEffects = true, join = true) {
 	let setEffects = 0;
 	const core = {
 		generation: 0,
-		f32: (_address: number, length: number) =>
-			length === C.EFFECT_FLOATS ? block : new Float32Array(length),
-		u32: () => handles,
+		f32: (_address: number, length: number) => new Float32Array(length),
+		heap: (type: typeof Float32Array | typeof Uint32Array) => new type(memory),
 		glue: {
 			postValues: () => 0,
-			effectValues: () => 8,
-			effectTextures: () => 16,
+			effectValues: () => 0,
+			effectTextures: () => 256,
 			setOutput: () => 0,
 			setEffect(index: number, template: number, flags: number) {
 				setEffects++;

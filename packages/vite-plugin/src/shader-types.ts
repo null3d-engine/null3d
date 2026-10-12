@@ -141,6 +141,8 @@ export interface CompiledMaterial<
 	readonly attributes: number;
 	/** True when the shader reads the material's base color and opacity, as the template does. */
 	readonly baseColor: boolean;
+	/** True when the WGSL reads an instance's index or an object's id. */
+	readonly objectIds: boolean;
 	/**
 	 * On the dev server, the key that the plugin sends this WGSL's hot updates under. The engine
 	 * swaps the shader of each material made from it when an update comes.

@@ -52,6 +52,10 @@ pub(super) fn create_frame_buffer(list: &mut DrawList, view: ViewId) -> Result<(
 /// which only vertex shaders read.
 pub(super) const ROW_VALUES_BINDING: u32 = 16;
 
+/// The binding of the table of object ranges in the frame group and in the depth template's group,
+/// as the mesh shaders declare it.
+pub(super) const OBJECT_RANGES_BINDING: u32 = 17;
+
 /// Records the creation of a camera view's frame group: its frame uniform, the material table,
 /// the materials' custom values, three.js's table of the split-sum terms of specular light, the
 /// main directional light's shadow map, which is `shadow_map`, with its cascades and the sampler
@@ -91,9 +95,14 @@ pub(super) fn bind_frame(
         entry(14, resource_kind::SAMPLER, ids::SHADOW_TEXEL_SAMPLER),
         entry(transmission::BINDING, resource_kind::TEXTURE, transmission),
         entry(ROW_VALUES_BINDING, resource_kind::TEXTURE, ids::ROW_VALUES),
+        entry(
+            OBJECT_RANGES_BINDING,
+            resource_kind::BUFFER,
+            ids::OBJECT_RANGES,
+        ),
     ];
     let listed = 5 * entries.len();
-    let mut words = [0u32; 3 + 5 * 15 + environment::ENTRY_WORDS];
+    let mut words = [0u32; 3 + 5 * 16 + environment::ENTRY_WORDS];
     let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
     words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
     words[3..3 + listed].copy_from_slice(entries.as_flattened());

@@ -2,7 +2,7 @@
 // pass draws the scene from a camera of the sketch into a texture of its own size, which
 // `textures.fromPass` gives to materials and sprites, as a minimap or a security camera's screen
 // shows it. A reflection pass draws the camera's view mirrored across a plane, into a texture of
-// the canvas's size or a share of it, which a custom material reads where its surface shows on the
+// the render size or a part of it, which a custom material reads where its surface shows on the
 // screen, as water and polished floors do. A full-screen pass runs the sketch's WGSL, written as a
 // custom effect's, over the whole of a texture of its own: a blur step, a mask's edges or a
 // texture that the GPU makes, which materials and effects read. The engine core checks each
@@ -15,8 +15,8 @@ import * as C from '../generated/core';
 import { type ColorInput, linearColor } from './color';
 import {
 	type CompiledEffect,
-	EffectBlocks,
 	effectTemplate,
+	writeEffectBlocks,
 	writeTextures,
 	writeUniform,
 } from './effects';
@@ -45,7 +45,7 @@ export type PassScale = 1 | 0.5 | 0.25;
 
 /**
  * Options of `render.addPass` for a scene pass, which draws the scene from a camera into a texture
- * of its own size or a share of the canvas's. `textures.fromPass` gives the texture to materials
+ * of its own size or a share of the render size. `textures.fromPass` gives the texture to materials
  * and sprites.
  *
  * @category api/render
@@ -66,8 +66,8 @@ export interface ScenePassOptions {
 	/** The texture's size in pixels. A pass takes `size` or `scale`. */
 	readonly size?: RenderPassSize;
 	/**
-	 * The texture's size as a share of the canvas's size in pixels each way, which the pass fills
-	 * at any render scale, so its aspect ratio follows the canvas. A pass takes `size` or `scale`.
+	 * The texture's size as a share of the render size each way, which the pass fills at any render
+	 * scale, so its aspect ratio follows the canvas. A pass takes `size` or `scale`.
 	 */
 	readonly scale?: PassScale;
 	/** The pass's name in `render.dumpGraph()` and errors. It is `writes` by default. */
@@ -114,7 +114,7 @@ export interface ReflectionPlane {
 
 /**
  * Options of `render.addPass` for a reflection pass, which draws the camera's view mirrored across
- * a plane into a texture of the canvas's size or a share of it. A custom material reads it where its
+ * a plane into a texture of the render size or a part of it. A custom material reads it where its
  * surface shows on the screen, with `reflection_uv` from `null3d::reflection`, and lights it as
  * the surface's `reflection`. Nothing below the plane shows in it.
  *
@@ -131,8 +131,8 @@ export interface ReflectionPassOptions {
 	 */
 	readonly writes: string;
 	/**
-	 * The texture's size as a share of the canvas's size each way, which the pass fills at any
-	 * render scale. It follows the quality preset's `reflectionScale` by default.
+	 * The texture's size as a share of the render size each way, which the pass fills at any render
+	 * scale. It follows the quality preset's `reflectionScale` by default.
 	 */
 	readonly scale?: PassScale;
 	/**
@@ -189,8 +189,8 @@ export interface FullscreenPassOptions<Wgsl extends string | CompiledWgsl = stri
 	/** The texture's size in pixels. A pass takes `size` or `scale`. */
 	readonly size?: RenderPassSize;
 	/**
-	 * The texture's size as a share of the canvas's size in pixels each way, which the pass fills
-	 * at any render scale. It is 1 by default, without `size`.
+	 * The texture's size as a share of the render size each way, which the pass fills at any render
+	 * scale. It is 1 by default, without `size`.
 	 */
 	readonly scale?: PassScale;
 	/**
@@ -267,9 +267,9 @@ export class RenderPass {
 		readonly name: string,
 		/** The name of the texture it draws into. */
 		readonly writes: string,
-		/** The texture's width in pixels, or 0 for a texture that follows the canvas's size. */
+		/** The texture's width in pixels, or 0 for a texture that follows the render size. */
 		readonly width: number,
-		/** The texture's height in pixels, or 0 for a texture that follows the canvas's size. */
+		/** The texture's height in pixels, or 0 for a texture that follows the render size. */
 		readonly height: number,
 		/** @internal The camera it draws from, or none for a pass of another kind. */
 		readonly camera: Camera | undefined,
@@ -307,8 +307,6 @@ export class Render {
 	private readonly passes: RenderPass[] = [];
 	/** True when a pass came since the last frame, with pipelines to build. */
 	private newPipelines = false;
-	/** The core's blocks of a full-screen pass's uniforms and textures. */
-	private readonly blocks: EffectBlocks;
 
 	/** @internal */
 	constructor(
@@ -320,9 +318,7 @@ export class Render {
 		private readonly templates: ShaderTemplates,
 		/** The widest and tallest texture of the device. */
 		private readonly maxSize: number,
-	) {
-		this.blocks = new EffectBlocks(core);
-	}
+	) {}
 
 	/**
 	 * Adds a pass to the render graph, from the next frame on, and returns it. A scene pass draws
@@ -335,8 +331,8 @@ export class Render {
 	 * Scene and reflection passes draw the sun, its shadows where the main camera's cascades reach,
 	 * the ambient light, the point and spot lights that the pass's view sees, the environment's
 	 * light and fog. A point or spot light casts its shadow in a pass where the main camera's view
-	 * gives it a shadow. A light that only the pass sees casts none there. Neither kind draws
-	 * ambient occlusion, and a scene pass draws no sky background.
+	 * gives it a shadow. A light that only the pass sees casts none there. Both draw the scene's
+	 * background unless a scene pass has a `clearColor`. Neither kind draws ambient occlusion.
 	 *
 	 * Throws E1220 for options it does not take, a name that a live pass writes already, or the
 	 * 32nd live pass. Throws E1215 for full-screen WGSL that the plugin did not compile as an
@@ -399,7 +395,7 @@ export class Render {
 		const reflection = scene ? undefined : (options as ReflectionPassOptions);
 		const [nx, ny, nz] = reflection?.plane.normal ?? [0, 1, 0];
 		const [px, py, pz] = reflection?.plane.point ?? [0, 0, 0];
-		// A pass's share of the canvas, or 0 for a reflection that takes the preset's.
+		// A pass's share of the render size, or 0 for a reflection that takes the preset's.
 		const scale = options.scale ?? (scene ? 1 : 0);
 		this.shaders.need('views');
 		const place = this.core.check(
@@ -465,7 +461,7 @@ export class Render {
 				: options.input === 'outlineMask'
 					? C.PASS_SOURCE_OUTLINE_MASK
 					: C.PASS_SOURCE_NONE;
-		this.blocks.write(state.values, state.textures);
+		writeEffectBlocks(this.core, state.values, state.textures);
 		const place = this.core.check(
 			this.core.glue.addFullscreenPass(
 				name,
@@ -510,7 +506,7 @@ export class Render {
 				`got the ${pass.kind} pass "${pass.name}"; only a full-screen pass has uniforms.`,
 			);
 		writeUniform(state.values, passUniform(state, name, call), value, call);
-		this.blocks.write(state.values, state.textures);
+		writeEffectBlocks(this.core, state.values, state.textures);
 		this.core.check(this.core.glue.setPassValues(pass.place), call, undefined, true);
 	}
 
@@ -641,8 +637,7 @@ function checkOptions(options: RenderPassOptions, call: string, maxSize: number)
 function checkSize(size: unknown, scale: unknown, call: string, maxSize: number): void {
 	if (size !== undefined && scale !== undefined)
 		throw invalid(call, 'got both a size and a scale; give the pass one of them.');
-	if (scale !== undefined && scale !== 1 && scale !== 0.5 && scale !== 0.25)
-		throw invalid(call, `got the scale ${String(scale)}; it takes 1, 0.5 or 0.25.`);
+	checkScale(scale, call);
 	if (size === undefined) return;
 	const side = (value: unknown) =>
 		typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= maxSize;
@@ -662,7 +657,7 @@ function checkScene(options: ScenePassOptions, call: string, maxSize: number): v
 	if (size === undefined && scale === undefined)
 		throw invalid(
 			call,
-			'got neither a size nor a scale. Give the size of the texture in pixels, or its share of the canvas.',
+			'got neither a size nor a scale. Give the size of the texture in pixels, or its share of the render size.',
 		);
 	checkSize(size, scale, call, maxSize);
 }
@@ -694,6 +689,11 @@ function checkReflection(options: ReflectionPassOptions, call: string): void {
 			call,
 			`got the plane's normal ${JSON.stringify(normal)}; it takes [x, y, z] with a length above 0, toward the side that the reflection shows.`,
 		);
+	checkScale(scale, call);
+}
+
+/** Throws E1220 for a share of the render size other than 1, 0.5 or 0.25. */
+function checkScale(scale: unknown, call: string): void {
 	if (scale !== undefined && scale !== 1 && scale !== 0.5 && scale !== 0.25)
 		throw invalid(call, `got the scale ${String(scale)}; it takes 1, 0.5 or 0.25.`);
 }

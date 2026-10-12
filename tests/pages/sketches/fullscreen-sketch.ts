@@ -1,5 +1,5 @@
 // Full-screen passes. By default: a scene pass draws four colored boxes from above into a quarter of
-// the canvas's size, and a full-screen pass reads that texture and draws it posterized, with dark
+// the render size, and a full-screen pass reads that texture and draws it posterized, with dark
 // grid lines, into a texture of its own, which a screen at the right shows. A second full-screen
 // pass reads nothing and paints a texture of its own: red across its top half, green at its bottom
 // left and blue at its bottom right, which a screen at the left shows upright. The minimap shows
@@ -7,14 +7,18 @@
 // right, as the minimap test's screen does.
 //
 // ?glow outlines the sphere and the box with a width of 0, so the outline mask draws and no line
-// does. A full-screen pass at half the canvas's size reads the mask and blurs it into a soft glow,
+// does. A full-screen pass at half the render size reads the mask and blurs it into a soft glow,
 // and a custom effect adds the glow's texture to the scene's color, as three.js's OutlinePass
 // draws its glow.
 //
-// ?echo gives a full-screen pass the scene color as its input, at a quarter of the canvas's size,
+// ?echo gives a full-screen pass the scene color as its input, at a quarter of the render size,
 // in a cool tint, and a custom effect shows that texture as an inset at the top left of the frame.
 // The pass runs after the camera's passes and before the effect, so the inset shows the same
 // frame.
+//
+// ?half draws the frame at a render scale of 0.5, where each pass with a scale takes its share of
+// the smaller render size and fills its texture whole, so the glow and the inset land where they
+// do at full scale.
 import { defineSketch, type Texture } from '@null3d/engine';
 
 const params = new URL(import.meta.url).searchParams;
@@ -101,7 +105,9 @@ fn effect(input: EffectInput) -> vec4f {
 }
 `;
 
-export default defineSketch(({ scene, materials, geometry, textures, render, post }) => {
+export default defineSketch(({ scene, materials, geometry, textures, render, post, quality }) => {
+	if (params.has('half'))
+		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5, governor: false });
 	scene.setBackground('#20242c');
 	const camera = scene.createPerspectiveCamera({
 		fov: 50,

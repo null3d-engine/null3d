@@ -170,6 +170,50 @@ fn webgl2_tiles_draw_only_when_their_casters_or_lights_move() {
     }
 }
 
+/// Checks that a caster which moves while every tile must draw already is still remembered where
+/// it went: its next move, far from every light, draws no tile, on either builder.
+fn casters_that_move_while_every_tile_must_draw_are_remembered<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // Larger tiles leave every tile to draw, and the box leaves the light's reach meanwhile.
+    let larger = TileSettings {
+        size: 512,
+        ..TWO_TILES
+    };
+    world.renderer.settings_mut().set_tile_settings(larger);
+    world.scene.set_position(lit_box, [30.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+
+    // It moves on, out of reach before and after: no tile draws.
+    world.scene.set_position(lit_box, [40.0, 0.0, 0.0]).unwrap();
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_casters_that_move_while_every_tile_must_draw_are_remembered() {
+    casters_that_move_while_every_tile_must_draw_are_remembered(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
 #[test]
 fn a_tile_cull_and_draw_on_webgpu_reads_the_casters_alone() {
     let mut world = world(GpuDrivenRenderer::new(Default::default()), TWO_TILES);
@@ -616,6 +660,67 @@ fn webgpu_a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes() {
 #[test]
 fn webgl2_a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes() {
     a_still_animated_caster_draws_its_light_s_tile_as_its_pose_changes(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    ));
+}
+
+/// Checks that a still caster draws its light's tile again when its mesh's vertices change, and
+/// that the frame uploads only the vertex that changed.
+fn a_caster_whose_vertices_change_draws_its_light_s_tile<B: Tiles>(renderer: B) {
+    let mut world = world(renderer, TWO_TILES);
+    let lit_box = world.objects[0];
+    world.add_spot([-3.0, 4.0, 0.0], 6.0);
+    let mut mock = MockBackend::default();
+    world.frame = 0;
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    let slot = world.scene.resolve(lit_box).unwrap() as usize;
+    let mesh = world.scene.meshes()[slot] - 1;
+    let corner = |at: f32| {
+        [at; 3]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    // The mesh's first update changes the structure once, as the engine's call does.
+    let first = world
+        .renderer
+        .update_mesh_vertices(mesh, 0, 3, 0, 1, &corner(0.25));
+    assert_eq!(first, Ok(true));
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+    // A later update draws the tile again with no structure change, and uploads one vertex.
+    let later = world
+        .renderer
+        .update_mesh_vertices(mesh, 0, 3, 0, 1, &corner(0.3));
+    assert_eq!(later, Ok(false));
+    let [(_, first_byte, end_byte)] = world.renderer.settings().meshes().updated()[..] else {
+        panic!("one changed range")
+    };
+    let changed = step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 1);
+    let writes = changed
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[1] == first_byte as u32)
+        .filter(|(_, o)| o[3] == (end_byte - first_byte) as u32)
+        .count();
+    assert_eq!(writes, 1);
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.tiles().drawn(), 0);
+}
+
+#[test]
+fn webgpu_a_caster_whose_vertices_change_draws_its_light_s_tile() {
+    a_caster_whose_vertices_change_draws_its_light_s_tile(GpuDrivenRenderer::new(
+        Default::default(),
+    ));
+}
+
+#[test]
+fn webgl2_a_caster_whose_vertices_change_draws_its_light_s_tile() {
+    a_caster_whose_vertices_change_draws_its_light_s_tile(CpuCulledRenderer::new(
         CpuCulledConfig::default(),
     ));
 }

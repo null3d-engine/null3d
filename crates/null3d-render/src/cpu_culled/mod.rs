@@ -94,7 +94,7 @@ use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
-    DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage, format, permutation, sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -172,8 +172,11 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// The table of object ranges, which the vertex shaders of custom materials that read an
+    /// instance's index or an object's id search.
+    pub const OBJECT_RANGES: u32 = DOF + 1;
     /// The uniform buffer of the full-screen passes' blocks.
-    pub const FULLSCREEN: u32 = DOF + 1;
+    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FULLSCREEN + 1;
 
@@ -848,6 +851,7 @@ impl CpuCulledRenderer {
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + sizes::OBJECT_RANGE_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -869,6 +873,14 @@ impl CpuCulledRenderer {
                 1,
                 1,
                 view::D2,
+            ],
+        )?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::OBJECT_RANGES,
+                sizes::OBJECT_RANGE_BYTES,
+                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
             ],
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
@@ -1134,7 +1146,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
-        self.settings.pace_views();
+        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1265,6 +1277,7 @@ impl CpuCulledRenderer {
             .upload(list, arena, input.animations, input.morphs, meshes)?;
         self.clusters
             .upload(list, arena, &self.layout, &self.casters)?;
+        self.layout.upload_object_ranges(list, arena)?;
         let drawn_views = (0..views)
             .filter(|&index| self.culling.frame(ViewId::from_index(index)).is_some())
             .fold(0u32, |mask, index| mask | 1 << index);
@@ -1527,8 +1540,14 @@ impl FrameBuilder for CpuCulledRenderer {
         let filter = self.settings.shadow_quality().filter;
         let settings = &self.settings;
         let sways = |material| settings.sways(material);
-        self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
+        self.tiles.plan(
+            input,
+            tile_settings,
+            filter,
+            camera.as_ref(),
+            settings.meshes(),
+            &sways,
+        );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
@@ -1586,6 +1605,7 @@ impl FrameBuilder for CpuCulledRenderer {
                         .then(|| settings.view_frame(view, scene, parity, canvas, scale))
                         .flatten()
                 },
+                &|view| settings.level_view(view, canvas),
                 Some(sorted),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
@@ -1606,6 +1626,10 @@ impl FrameBuilder for CpuCulledRenderer {
                     .assign(view, frame, input, exposure, &self.tiles);
             }
         }
+        // Shadow views pick the camera's levels with a larger threshold, and the outline view the
+        // camera's own.
+        let shadow_rule = self.settings.shadow_level_view(canvas);
+        let camera_rule = self.settings.level_view(ViewId::CAMERA, canvas);
         // The cascades skip the cells out of their view too: the casters' layout gives every other
         // object no bucket, so the scene's cell order serves it.
         let shadow = self.shadow.as_ref();
@@ -1620,6 +1644,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1632,6 +1657,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1648,6 +1674,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|_| camera.filter(|_| outlines),
+                &|_| camera_rule,
                 None,
                 None,
             )
@@ -1694,6 +1721,13 @@ impl FrameBuilder for CpuCulledRenderer {
             self.skins.morph_mut().deltas_moved(first);
         }
         self.occluders.forget(ids);
+    }
+
+    fn meshes_updated(&mut self, id: u32, positions: bool) {
+        self.meshes.updated(self.settings.meshes().updated());
+        if positions {
+            self.occluders.stop_blocking(id);
+        }
     }
 
     fn mesh_gpu_bytes(&self) -> u64 {

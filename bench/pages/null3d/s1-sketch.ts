@@ -34,13 +34,19 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `passes` switch adds a full-screen pass that reads the scene's color at half the render
+// size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
+// the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
+// block and the effect's texture.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
 // switch makes the swarm's rows cast and receive them, for the cost of a large batch in the shadow
 // passes and for the allocation sample of its rows as moving casters. The `rowValues` switch gives
 // every row a color and values that change every frame, read by a custom material that sways and
-// tints each box, for the allocation sample of the row values' uploads.
+// tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
+// the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
+// fading bands between levels.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
@@ -65,6 +71,7 @@ export default defineSketch(async (context) => {
 			: createSwarm(context, count, true, undefined, switches.has('blend'), {
 					shadows: switches.has('batchShadows'),
 					rowValues: switches.has('rowValues'),
+					levels: switches.has('levels'),
 				}).pose;
 	const animate = createAnimatedCrowd(context, readAnimated(import.meta.url));
 	const morph = createMorphedRow(context, readMorphed(import.meta.url));
@@ -76,6 +83,7 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const soft = switches.has('passes') ? createSoftGlow(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -181,6 +189,7 @@ export default defineSketch(async (context) => {
 			mist[0] = 0.43 + 0.05 * Math.cos(t);
 			context.post.setEffectUniform(haze, 'color', mist);
 		}
+		if (soft) context.render.setPassUniform(soft, 'amount', 0.3 + 0.1 * Math.sin(t));
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.size = 1 + 0.25 * Math.cos(t);
@@ -212,6 +221,49 @@ struct Uniforms { color: vec3f, density: f32 }
 fn effect(input: EffectInput) -> vec4f {
     let fade = 1.0 - exp(-effectDistance(input.uv) * uniforms.density);
     return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
+}
+`;
+
+/**
+ * A full-screen pass that reads the scene's color at half the render size and softens it, with
+ * the glow's strength as a uniform, and a custom effect that adds its texture to the scene.
+ */
+function createSoftGlow({ render, post, textures }: SketchContext) {
+	const pass = render.addPass({
+		kind: 'fullscreen',
+		wgsl: SOFTEN,
+		writes: 'soft',
+		scale: 0.5,
+		input: 'sceneColor',
+		uniforms: { amount: 0.3 },
+	});
+	post.addEffect({ wgsl: ADD_SOFT, textures: { soft: textures.fromPass(pass) } });
+	return pass;
+}
+
+/** A full-screen pass that averages its input around each pixel, scaled by `amount`. */
+const SOFTEN = /* wgsl */ `
+struct Uniforms { amount: f32 }
+
+fn effect(input: EffectInput) -> vec4f {
+    let step = 2.0 / effectInputSize();
+    var sum = vec3f(0.0);
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            sum += effectColor(input.uv + vec2f(f32(x), f32(y)) * step).rgb;
+        }
+    }
+    return vec4f(sum / 9.0 * uniforms.amount, 1.0);
+}
+`;
+
+/** A custom effect that adds the soft pass's texture to the scene's color. */
+const ADD_SOFT = /* wgsl */ `
+var soft: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let glow = textureSampleLevel(soft, softSampler, effectPassUv(input.uv), 0.0).rgb;
+    return vec4f(input.color.rgb + glow * input.color.a, input.color.a);
 }
 `;
 

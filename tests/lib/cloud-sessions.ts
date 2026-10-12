@@ -53,6 +53,13 @@ export const POLL_MS = 30_000;
  */
 export const UNANSWERED_POLLS = 3;
 
+/**
+ * The errors that count a status read as unanswered, not as a lost session: no reply at all, and
+ * the cloud's reply that the read's script ran out of time, which a busy Android browser gives
+ * while a heavy page compiles.
+ */
+const UNANSWERED_ERRORS = new Set(['no answer', 'script timeout']);
+
 interface Session {
 	id: string;
 	link?: string;
@@ -200,7 +207,7 @@ export class CloudSessions {
 			if (session.closed) return;
 			if (
 				e instanceof WebDriverError &&
-				e.code === 'no answer' &&
+				UNANSWERED_ERRORS.has(e.code) &&
 				++session.unanswered < UNANSWERED_POLLS
 			) {
 				this.log(

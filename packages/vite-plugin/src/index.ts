@@ -39,8 +39,8 @@ import {
 	type WorkerFile,
 	workerFilesPlugin,
 } from './offline.ts';
+import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import type { CompiledWgsl } from './shader-types.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -207,9 +207,13 @@ const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
 /** The file that a production build writes beside the page, with every package's notices. */
 export const NOTICES_FILE = 'null3d-third-party-notices.txt';
 
+/** The null3D packages that run as tools on the developer's computer and put no code in a page. */
+const TOOL_PACKAGES = new Set(['@null3d/cli', '@null3d/vite-plugin']);
+
 /**
  * The third-party notices of the null3D packages that the project depends on: the engine's first,
- * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ * then each add-on's, by name. The tools' notices stay out, since a page ships none of their code.
+ * Null when none has notices, as in a project without the engine.
  */
 export function thirdPartyNotices(root: string): string | null {
 	const manifest = resolve(root, 'package.json');
@@ -217,7 +221,7 @@ export function thirdPartyNotices(root: string): string | null {
 	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
 	const require = createRequire(manifest);
 	const names = Object.keys({ ...dependencies, ...devDependencies })
-		.filter((name) => name.startsWith('@null3d/'))
+		.filter((name) => name.startsWith('@null3d/') && !TOOL_PACKAGES.has(name))
 		.sort(
 			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
 		);
@@ -277,14 +281,6 @@ function projectPath(root: string, file: string): string {
 	return relative(root, file).split(sep).join('/');
 }
 
-/**
- * A compiled shader as the JavaScript value that takes its source's place, with the key of its hot
- * updates on the dev server.
- */
-function shaderValue(shader: CompiledWgsl, key?: string): string {
-	return `(${JSON.stringify(key === undefined ? shader : { ...shader, hot: key })})`;
-}
-
 /** Shows WGSL that did not compile in Vite's overlay on the dev server's pages, and in the terminal. */
 function showError(environment: DevEnvironment, error: WgslError): void {
 	environment.logger.error(`${error.message}\n${error.frame}`, { timestamp: true });
@@ -292,6 +288,11 @@ function showError(environment: DevEnvironment, error: WgslError): void {
 		type: 'error',
 		err: { ...error, stack: '', plugin: 'null3d' },
 	});
+}
+
+/** Prints the warnings of WGSL that a hot update compiled, in the dev server's log. */
+function showWarnings(environment: DevEnvironment, warnings: readonly string[]): void {
+	for (const warning of warnings) environment.logger.warn(warning, { timestamp: true });
 }
 
 /** The modules of a changed file that Vite still updates: all but the one the plugin compiled. */
@@ -495,6 +496,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				const path = projectPath(root, id);
 				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), compiler);
 				if ('error' in compiled) return this.error(compiled.error);
+				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
 				if (key !== undefined) hot.remember(key, compiled.shader);
 				if (options.wgslDeclarations !== false && !PACKAGE_MODULE.test(id)) {
@@ -506,8 +508,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						);
 					}
 				}
+				const pack = new ShaderPack();
 				return {
-					code: `export default ${shaderValue(compiled.shader, key)};\n`,
+					code: `export default ${pack.value(compiled.shader, key)};\n${pack.unpacker()}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -525,12 +528,15 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					const path = projectPath(root, file);
 					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
+					for (const warning of tagged.warnings) this.warn(warning);
+					const pack = new ShaderPack();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, shaderValue(shader, key));
+						out.overwrite(start, end, pack.value(shader, key));
 					}
+					if (out && !pack.empty) out.append(pack.unpacker());
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}
@@ -570,6 +576,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					showError(environment, compiled.error);
 					return otherModules(modules, file);
 				}
+				showWarnings(environment, compiled.warnings);
 				const key = hotKey(path);
 				// Without a hot update, Vite reloads the page as it does for any module.
 				if (!hot.swaps(key, compiled.shader)) return;
@@ -591,6 +598,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					showError(environment, result.error);
 					return otherModules(modules, file);
 				}
+				showWarnings(environment, result.warnings);
 				const key = hotKey(path, changed[k]?.index);
 				if (!hot.swaps(key, result.shader)) return;
 				updates.push({ key, shader: result.shader });

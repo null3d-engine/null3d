@@ -93,7 +93,7 @@ async function parse(url: string): Promise<{ data: GltfData; parseMs: number }> 
 	const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
 	const decode = await meshoptDecoder(await WebAssembly.compileStreaming(fetch(MESHOPT_WASM)));
 	const started = performance.now();
-	const data = parseGltf(readContainer(bytes, address), new Map(), address, decode);
+	const data = parseGltf(readContainer(bytes, address), new Map(), address, { meshopt: decode });
 	return { data, parseMs: performance.now() - started };
 }
 
@@ -238,7 +238,7 @@ run('gltf-poses', async () => {
 			const instance = created(
 				core,
 				'createAnimatedInstance',
-				core.createAnimatedInstance(skeleton),
+				core.createAnimatedInstance(skeleton, 0),
 			);
 			const tool = await parse(AFTER_TOOL[model.url] as string);
 			if (!tool.data.animation)

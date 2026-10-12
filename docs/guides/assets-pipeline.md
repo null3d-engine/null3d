@@ -3,12 +3,12 @@ id: guides/assets-pipeline
 title: "The asset pipeline (the `assets` command)"
 status: experimental
 since: "0.2"
-summary: "optimize, env, convert; LODs; texture compression; blockers and stored trees; budget reports."
+summary: "optimize, convert, pack-orm, normal-from-bump, env; LODs; texture compression; blockers and stored trees; budget reports."
 ---
 
 # The asset pipeline (the `assets` command)
 
-> Ships in null3D 0.2. The command is experimental, so it can still change between versions. `assets optimize` and `assets env` are built. Not built yet: `assets convert`, `assets pack-orm` and `assets normal-from-bump`. The engine does not draw levels of detail yet, so it draws the full mesh of a model made with `--lod`. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The command is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ The integers need a transform that turns them back into positions. The command p
 
 The steps follow the mesh's longest side. So a mesh that spreads small parts over a large space gets coarse steps. One mesh that holds a city's buildings of one material, 760 m across, gets steps of 4.6 cm, and buildings that meet can open gaps. The extras `"quantizePositions": false` keep that mesh's positions as 32-bit floats. Its other vertex data still takes integers, and meshopt still compresses its buffers.
 
-Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`.
+Models with Draco or meshopt compression load too. The command writes their meshes with meshopt, or with no compression when you give `--compression none`. The engine loads Draco files as well. It then downloads Draco's decoder, about 60 KB after Brotli, and development builds warn about each such file. [Compressed meshes](../concepts/assets.md#compressed-meshes) says when a Draco file is worth keeping.
 
 ## What it does to clips
 
@@ -177,11 +177,11 @@ The command plans the levels as follows:
 3. A skinned mesh simplifies in its skeleton's rest pose, as it draws. Meshes with joints or morph targets keep their triangles more even, so they bend well.
 4. Each level stores its error: the largest distance between its surface and the full mesh's, in the units of the mesh's positions. Each level's error is at least 1.5 times the error of the level above, so the levels change at distances well apart.
 
-The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them.
+The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps.
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
-The engine does not draw levels of detail yet, and draws the full mesh. three.js's `GLTFLoader` also ignores `MSFT_lod`.
+`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. Skinned meshes draw their full mesh for now. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
 
 ### Fewer triangles in the full mesh
 
@@ -239,6 +239,103 @@ export default defineConfig({
 ```
 
 For TypeScript, add `@null3d/vite-plugin/client` to the `types` of your `tsconfig.json`, so `?optimized` imports have the type `string`.
+
+## Convert other formats
+
+The engine loads glTF files only. The `assets convert` command turns models of other formats into binary glTF (`.glb`) files:
+
+```sh
+bunx @null3d/cli assets convert models/hero.fbx models/hero.glb
+```
+
+```text
+models/hero.fbx to models/hero.glb: 51.5 KB to 11.4 KB, in 0.0 s
+  1 mesh, 34 triangles, 2 materials, 1 texture, 1 skin, 1 clip
+```
+
+| Input | What the output holds |
+| --- | --- |
+| `.gltf` | The file, its buffers and its images, in one `.glb` file, as they are |
+| `.glb` with Draco | The meshes with meshopt compression instead of Draco |
+| `.obj` | The meshes by object and material, with the materials of the MTL files that the file names, and their textures |
+| `.fbx` | Binary and text FBX from version 3000 (FBX 2006 on): meshes, materials, textures, skins, blend shapes as morph targets, and clips |
+| `.stl` | Binary and text STL: one mesh for each solid, with Materialise's face colors |
+| `.ply` | Text and binary PLY, with normals, colors and texture coordinates. A file without faces becomes points |
+
+Then run `assets optimize` on the output, which quantizes the meshes and encodes the textures for the GPU. `convert` changes the format only and keeps the texture images. The same input gives the same bytes on every computer.
+
+FBX and OBJ files read with [ufbx](https://github.com/ufbx/ufbx), the reader that Blender and Godot use, built into the command as WebAssembly. Nothing else needs installing:
+
+- Units become meters, and Y points up, as in glTF. A model made in centimeters, with Z up, keeps its size and stands up.
+- Each clip of the file becomes a glTF clip. Curves that glTF cannot hold, such as Bézier and step keys, get keys at up to 30 a second.
+- Cameras and lights are left out, and the command says so.
+
+FBX and MTL materials become glTF's metal-rough materials:
+
+| Source | glTF |
+| --- | --- |
+| Diffuse color and its texture | Base color. A texture replaces the color, as in the program that made the file |
+| Physically based roughness and metalness, and their textures | Roughness and metalness. Separate roughness, glossiness, metalness and occlusion textures join into one texture, as [`pack-orm`](#pack-occlusion-roughness-and-metalness) packs them |
+| A Phong exponent (FBX Phong, MTL's `Ns`), without physically based values | Roughness of `(2 / (exponent + 2))^(1/4)`, the roughness whose highlight matches the exponent's |
+| Normal map | Normal map |
+| Bump map, and a gray image in a normal map's place | A normal map made from the heights, as [`normal-from-bump`](#normal-maps-from-bump-maps) makes one, with the file's bump factor as its scale |
+| Opacity | Base color alpha, blended. An opacity texture other than the base color's alpha is left out |
+| Emissive color and its texture | Emission, with `KHR_materials_emissive_strength` above 1 |
+
+Textures go into the file as PNG and JPEG images. TGA images become PNG. The command looks for each texture file where the model names it, then by its name in the model's folder. A missing file gets a note, and the material keeps its other maps.
+
+STL files hold facets with no other data. The command joins corners at the same place and leaves the facets' normals out, so glTF readers shade the faces flat, as the facets say. PLY and STL colors in bytes are sRGB, and the output stores them as linear values, as glTF requires. The engine does not draw glTF points yet, so a PLY point cloud loads with nothing to draw. three.js draws it.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--compression <none\|meshopt>` | `meshopt` stores vertices as integers and compresses the buffers, as `assets optimize` does. `none` leaves them as floats | `meshopt` for a Draco or meshopt input, else `none` |
+
+## Pack occlusion, roughness and metalness
+
+glTF reads a material's roughness from the green channel of one texture and its metalness from the blue. Its occlusion map may share the texture, in the red. Many texture sets come as separate gray maps. `assets pack-orm` packs them:
+
+```sh
+bunx @null3d/cli assets pack-orm textures/brick_orm.ktx2 \
+  --occlusion textures/brick_ao.png --roughness textures/brick_rough.png --metalness textures/brick_metal.png
+```
+
+Each map is a PNG, JPEG or TGA image, read from its red channel. Give at least one. A missing occlusion map is white, for no occlusion. A missing roughness map is white, so the material's roughness factor applies as it is. A missing metalness map is black, for no metal. The texture takes the size of the largest map, and the others stretch to it, so the maps must have one shape.
+
+A `.ktx2` output is UASTC with every mip level, each side at its nearest power of two, as `assets optimize` encodes data maps. A `.png` output keeps the size of the largest map, for a model that `assets optimize` then encodes. Use the texture as the material's metal-rough map and, when you packed occlusion, as its occlusion map too:
+
+```ts
+const orm = await assets.loadTexture('/textures/brick_orm.ktx2', { colorSpace: 'linear' });
+const brick = materials.standard({ metalnessRoughnessMap: orm, aoMap: orm });
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--occlusion <image>` | The occlusion map | White |
+| `--roughness <image>` | The roughness map | White |
+| `--metalness <image>` | The metalness map | Black |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+## Normal maps from bump maps
+
+A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine reads normal maps only. `assets normal-from-bump` makes one from a bump map, such as a three.js material's `bumpMap`:
+
+```sh
+bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2
+```
+
+White stands high and black low. The height map is a PNG, JPEG or TGA image, read from its red channel. A 16-bit PNG keeps its full depth, so gentle slopes do not show steps. The normal map follows glTF: X to the right and Y up the image.
+
+`--scale` works as three.js's `bumpScale`. At 1, a slope of the whole height range per texel tilts the surface 45 degrees. three.js measures the slope per pixel of the screen, so its bumps look stronger when a texel covers less than a pixel. The normal map keeps the strength that three.js shows where one texel covers one pixel. Give the three.js material's `bumpScale` as `--scale`, and check the look up close.
+
+The map tiles: the texels at each edge take their neighbors from the opposite edge. `--clamp` stops that, for a map that does not tile.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--scale <number>` | The strength of the slopes, as three.js's `bumpScale` | 1 |
+| `--clamp` | The edge texels take no neighbors from the opposite edge | The map tiles |
+| `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
+
+A `.ktx2` output is UASTC with every mip level, as `assets optimize` encodes normal maps. A `.png` output keeps the height map's size.
 
 ## Environment maps
 

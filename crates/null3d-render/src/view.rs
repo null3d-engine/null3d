@@ -115,8 +115,9 @@ pub struct ViewTarget {
     pub size: Option<(u32, u32)>,
     /// How many times a target without a size of its own halves the render size each way.
     pub halvings: u8,
-    /// True when a target without a size of its own takes the canvas's size, halved, and the view
-    /// fills it whole at any render scale, so a material samples it from 0 to 1 across.
+    /// True when a target without a size of its own is made at the render size, halved, and made
+    /// again when the render scale changes, so the view fills it whole and a material samples it
+    /// from 0 to 1 across.
     pub whole: bool,
     /// The color it clears to before the view draws, as exposed linear color with alpha, or
     /// `None` for the color that the camera's target clears to.
@@ -129,6 +130,9 @@ pub struct ViewTarget {
     pub wait: u32,
     /// True when the view's turn comes in this frame.
     pub due: bool,
+    /// The size of its texture when it last moved its turns on: a texture of a new size holds no
+    /// image, so the view draws into it at once.
+    pub made: (u32, u32),
     /// True while a texture shows the target, so the camera's passes read it.
     pub shown: bool,
     /// The views whose targets this view reads, as a mask of view places: the objects it draws
@@ -149,6 +153,7 @@ impl Default for ViewTarget {
             every: 1,
             wait: 0,
             due: true,
+            made: (0, 0),
             shown: false,
             reads: 0,
         }
@@ -161,10 +166,13 @@ impl ViewTarget {
         self.enabled && self.due
     }
 
-    /// Moves the view's turns on to the next frame: a view that draws once in `every` frames
-    /// draws in the first, then waits `every - 1` frames after each frame that it draws.
-    pub(crate) fn pace(&mut self) {
-        self.due = self.wait == 0;
+    /// Moves the view's turns on to the next frame, in which its texture has the size `made`: a
+    /// view that draws once in `every` frames draws in the first, then waits `every - 1` frames
+    /// after each frame that it draws. A texture of a new size starts its turns again.
+    pub(crate) fn pace(&mut self, made: (u32, u32)) {
+        let remade = made != self.made;
+        self.made = made;
+        self.due = remade || self.wait == 0;
         self.wait = if self.due {
             self.every.max(1) - 1
         } else {
@@ -172,12 +180,12 @@ impl ViewTarget {
         };
     }
 
-    /// The size of the render graph's target: its own size, the canvas's halved, which the view
-    /// fills whole, or the render size halved.
+    /// The size of the render graph's target: its own size, or the render size halved, which a
+    /// target that the view fills whole takes as its texture's size.
     pub fn graph_size(&self) -> Size {
         match (self.size, self.halvings) {
             (Some((width, height)), _) => Size::Fixed { width, height },
-            (None, halvings) if self.whole => Size::Share(halvings),
+            (None, halvings) if self.whole => Size::Scaled(halvings),
             (None, 0) => Size::Full,
             (None, halvings) => Size::Halved(halvings),
         }
@@ -302,7 +310,7 @@ impl View {
     }
 
     /// A full-screen pass, which draws `fullscreen` over the whole of `target`: of its own size, or
-    /// of the canvas's halved as many times as it says, at any render scale.
+    /// of the render size halved as many times as it says.
     pub fn fullscreen(fullscreen: Fullscreen, target: ViewTarget) -> Self {
         Self {
             fullscreen: Some(fullscreen),
@@ -329,9 +337,9 @@ impl View {
     }
 
     /// Takes a mirror view's size and layers for the frame: the preset's halvings `halvings`
-    /// unless it has its own, and the camera's layers `camera_layers` unless it has its own. Its
-    /// target takes a share of the canvas, which it fills whole at any render scale, so a material
-    /// reads it at the place where its surface shows on the screen.
+    /// unless it has its own, and the camera's layers `camera_layers` unless it has its own. It
+    /// fills its target whole at any render scale, so a material reads it at the place where its
+    /// surface shows on the screen.
     pub(crate) fn follow_camera(&mut self, halvings: u8, camera_layers: u32) {
         let Some(mirroring) = self.mirror else {
             return;
@@ -407,6 +415,8 @@ impl View {
         let world: Affine = *scene.world(parity).matrix(slot as usize);
         Some(CameraTransform {
             view_proj: lens.relative_view_projection(&world, aspect),
+            view: lens.relative_view(&world),
+            projection: lens.projection(aspect),
             eye: lens.eye(&world),
             cell: scene.cell_position(slot, parity),
             depth: lens.depth(&world),
@@ -418,6 +428,9 @@ impl View {
 pub(crate) struct CameraTransform {
     /// The view-projection matrix for positions relative to the camera.
     pub view_proj: Mat4,
+    /// The view matrix for those positions, and the projection: `view_proj` is their product.
+    pub view: Mat4,
+    pub projection: Mat4,
     /// The camera's place for those positions, as [`Lens::eye`] gives it.
     pub eye: [f32; 4],
     /// The camera's cell, and its position in the cell.
@@ -479,13 +492,21 @@ mod tests {
         };
         let mut drawn = Vec::new();
         for _ in 0..7 {
-            target.pace();
+            target.pace((64, 32));
             drawn.push(target.draws());
         }
         assert_eq!(drawn, [true, false, false, true, false, false, true]);
+        // A texture of a new size, such as at a new render scale, holds no image.
+        target.pace((32, 16));
+        assert!(
+            target.draws(),
+            "a view draws into a texture of a new size at once"
+        );
+        target.pace((32, 16));
+        assert!(!target.draws(), "then it waits its turn again");
         let mut every_frame = ViewTarget::default();
         for _ in 0..3 {
-            every_frame.pace();
+            every_frame.pace((64, 32));
             assert!(
                 every_frame.draws(),
                 "a view draws in every frame by default"
@@ -530,7 +551,7 @@ mod tests {
         let mut follows = View::mirror(mirror, None, None);
         follows.follow_camera(2, 0b101);
         assert_eq!(follows.target().halvings, 2);
-        assert_eq!(follows.target().graph_size(), Size::Share(2));
+        assert_eq!(follows.target().graph_size(), Size::Scaled(2));
         assert_eq!(follows.layers(), 0b101);
         assert_eq!(follows.mirrored(), Some(&mirror));
         let mut own = View::mirror(mirror, Some(0), Some(0b10));

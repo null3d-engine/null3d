@@ -28,6 +28,7 @@ fn custom(textures: u32) -> Shading {
         transmission: false,
         row_values: false,
         caster: false,
+        object_ids: false,
     })
 }
 

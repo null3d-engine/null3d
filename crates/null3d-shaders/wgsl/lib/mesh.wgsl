@@ -72,6 +72,14 @@ enable draw_index;
 // beside it in the group of data textures, laid out by the same source rows. A source without row
 // values never draws with these builds, so its texels hold anything.
 //
+// The OBJECT_IDS builds, which only custom materials whose WGSL reads an instance's index or an
+// object's id have, find both in the table of object ranges, a uniform block in the frame's group:
+// at binding 17 on WebGPU, where the depth template's group has it too, and at binding 8 on WebGL2.
+// Sources below the scene's rows are the scene's slots, so an object's id is its slot. Each batch's
+// rows follow in one range, which the table lists by its first source, with the batch's id. On
+// WebGL2 a key of a row of the streamed data texture has its top bit set. `object_ids` finds the
+// range of a key by halving the table, so a page that reads no ids pays nothing.
+//
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
 // and encodes sRGB, into a target that resolves straight into the canvas.
@@ -169,6 +177,9 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    level_error: f32,
+    next_level: u32,
+    fade_bucket: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -249,6 +260,64 @@ struct RowValues {
 
 /// Sources per texel row of the row values texture are 1 << VALUES_ROW_SHIFT, two texels each.
 const VALUES_ROW_SHIFT: u32 = 10u;
+
+#ifdef OBJECT_IDS
+/// Vectors of the table of object ranges: its header, then two ranges in each.
+const OBJECT_RANGE_VECTORS: u32 = 1024u;
+/// The bit of a key that marks a row of WebGL2's streamed data texture.
+const STREAMED_KEY: u32 = 1u << 31u;
+/// The id of a range whose rows read no index and no id: the place past the last range that the
+/// table holds.
+const NO_OBJECT: u32 = 0xffffffffu;
+/// Steps that halve the table's ranges down to one.
+const OBJECT_RANGE_STEPS: u32 = 11u;
+
+/// The table of object ranges: in the first vector, the scene's rows and the count of ranges, then
+/// each range's first key and id, two ranges to a vector, by first key.
+struct ObjectRanges {
+    items: array<vec4u, OBJECT_RANGE_VECTORS>,
+}
+
+#ifdef WEBGL2
+@group(0) @binding(8) var<uniform> object_ranges: ObjectRanges;
+#else
+@group(0) @binding(17) var<uniform> object_ranges: ObjectRanges;
+#endif
+
+/// The first key and the id of range `k` of the table.
+fn object_range(k: u32) -> vec2u {
+    let pair = object_ranges.items[1u + k / 2u];
+    return select(pair.xy, pair.zw, (k & 1u) != 0u);
+}
+
+/// An instance's index in its batch and its object's id: 0 and the slot for an object of the
+/// scene, the row's place and the batch's id for a row of a batch.
+fn object_ids(found: Instance) -> vec2u {
+    let key = found.source | select(0u, STREAMED_KEY, found.streamed);
+    let head = object_ranges.items[0];
+    if key < head.x {
+        return vec2u(0u, key);
+    }
+    var low = 0u;
+    var high = head.y;
+    for (var step = 0u; step < OBJECT_RANGE_STEPS; step++) {
+        if high - low <= 1u {
+            break;
+        }
+        let middle = (low + high) / 2u;
+        if object_range(middle).x <= key {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    let range = object_range(low);
+    if high == 0u || range.x > key || range.y == NO_OBJECT {
+        return vec2u(0u);
+    }
+    return vec2u(key - range.x, range.y);
+}
+#endif
 
 #ifdef ROW_VALUES
 /// The row values of an instance's source.
@@ -411,7 +480,12 @@ fn fragment_color(m: Material, color: vec3f, alpha: f32) -> vec4f {
 fn instance_of(record: vec4u, instance: u32) -> Instance {
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let shift = record.w;
+#ifdef LOD_FADE
+    // A fade bucket's entries come in pairs: the entry, then its fade value.
+    let slot = record.x + instance * 2u;
+#else
     let slot = record.x + (instance >> shift);
+#endif
     let entry = textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
     var source = entry & ((1u << CELL_SHIFT) - 1u);
     if shift != 0u {
@@ -483,6 +557,43 @@ fn find_instance(i: InstanceIn) -> Instance {
     return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true, i.ids.z, false);
 #endif
 }
+
+#ifdef LOD_FADE
+/// The fade value of the instance that a vertex shader invocation draws, from a fade bucket of a
+/// level of detail: positive for the level that a band hands over to, negative for the level it
+/// hands over from. On WebGPU the culling shader writes it into the copy's fourth id, and on
+/// WebGL2 it follows the instance's entry in the index list.
+fn instance_fade(i: InstanceIn) -> f32 {
+#ifdef WEBGL2
+#ifdef DRAW_INDEX
+    let record = draws.items[i.draw];
+#else
+    let record = draws.items[0];
+#endif
+    let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
+    let slot = record.x + i.instance * 2u + 1u;
+    return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+#else
+    return bitcast<f32>(i.ids.w);
+#endif
+}
+
+/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade`: the
+/// pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies under a positive fade value,
+/// or at or over the size of a negative one. The two levels of a band take the fade value with
+/// opposite signs, so each pixel draws one of them, and a fade value of 0 keeps every pixel.
+fn lod_kept(fade: f32, pixel: vec2f) -> bool {
+    let p = vec2u(pixel) & vec2u(3u);
+    let low = p & vec2u(1u);
+    let high = p >> vec2u(1u);
+    // The 2 × 2 dither is 0, 2 on its first row and 3, 1 on its second.
+    let cell = 4u * (2u * (low.x ^ low.y) + low.y) + 2u * (high.x ^ high.y) + high.y;
+    let value = (f32(cell) + 0.5) / 16.0;
+    let new_side = fade > 0.0;
+    let kept_new = value < fade;
+    return select(value >= -fade, kept_new, new_side);
+}
+#endif
 
 /// The instance's world matrix, relative to the camera.
 fn transform_of(found: Instance) -> Transform {

@@ -33,6 +33,7 @@ import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
+import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
 
 export interface PageEntry {
@@ -60,6 +61,9 @@ export const AREAS: readonly (readonly [id: string, heading: string])[] = [
 export const STATUSES = ['planned', 'experimental', 'stable', 'generated'] as const;
 
 const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
+
+/** A roadmap step named as a release, such as "null3D 0.2", which no release is called. */
+const STEP_AS_RELEASE = /\bnull3D (0\.[23])(?!\.?\d)/;
 
 /** Every page the docs will have. A page that does not exist yet is generated as a placeholder. */
 // biome-ignore format: one page per line keeps the inventory readable as a table
@@ -94,7 +98,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
 	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
-	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; meshes from arrays; vertex formats; large meshes.' },
+	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
 	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
@@ -294,9 +298,7 @@ ${reference}
  * "API reference" heading.
  */
 export function placeholderPage(page: PageEntry, reference = ''): string {
-	const when = page.since.startsWith('after ')
-		? `after null3D ${page.since.slice('after '.length)}`
-		: `null3D ${page.since}`;
+	const when = releaseOf(page.since);
 	const note = reference
 		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.`
 		: `Planned for ${when}. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.`;
@@ -368,7 +370,7 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	lines.push('Status values:\n');
 	for (const [key, text] of Object.entries(mapping.statusLegend))
 		lines.push(`- \`${key}\`: ${text}`);
-	lines.push('\nThe "Since" column gives the first engine version with the feature:\n');
+	lines.push(`\nThe "Since" column gives the roadmap step that adds the feature. ${STEPS_NOTE}\n`);
 	for (const [version, label] of Object.entries(mapping.sinceLegend))
 		lines.push(`- ${version}: ${label}`);
 	lines.push('');
@@ -493,7 +495,7 @@ export function pageList(pages: PageInfo[]): string {
 			[
 				`## ${heading}`,
 				'',
-				'| Page | What it covers | Status | Version |',
+				'| Page | What it covers | Status | Step |',
 				'| --- | --- | --- | --- |',
 				...rows,
 			].join('\n'),
@@ -514,7 +516,7 @@ export function pageListPage(pages: PageInfo[]): string {
 	])}
 # All pages
 
-> The docs generator writes this list from each page's front matter. [The docs home](index.md) explains the status labels.
+> The docs generator writes this list from each page's front matter. [The docs home](index.md) explains the status labels. The step column gives the roadmap step that adds each page's feature. ${STEPS_NOTE}
 
 ${pageList(listed)}
 `;
@@ -606,6 +608,19 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 			`${path}: since "${String(data.since)}" must be a quoted version such as "0.1", or "after 1.0"`,
 		);
 	}
+	const note = /^> .*/m.exec(text)?.[0] ?? '';
+	const ships = typeof data.since === 'string' ? shipsSentence(data.since) : '';
+	if (
+		(data.status === 'experimental' || data.status === 'stable') &&
+		id !== 'index' &&
+		!note.startsWith(`> ${ships}`)
+	)
+		problems.push(`${path}: the note under the title must start "${ships}"`);
+	const named = STEP_AS_RELEASE.exec(text)?.[0];
+	if (named)
+		problems.push(
+			`${path}: names ${named}, a roadmap step and not a release. ${STEPS_NOTE} Say "step ${named.slice(-3)}".`,
+		);
 	if (data.status !== 'generated' && !inventory.has(id)) {
 		problems.push(`${path}: page is not in the inventory in tools/lib/docs.ts`);
 	}

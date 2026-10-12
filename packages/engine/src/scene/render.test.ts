@@ -33,8 +33,10 @@ function setup() {
 	let error: [number, string] = [0, ''];
 	let next = 1;
 	const written = new Set<string>();
-	const values = new Float32Array(C.EFFECT_FLOATS);
-	const textures = new Uint32Array(C.EFFECT_TEXTURES);
+	// The core's memory, with the block of values first and the block of texture handles after it.
+	const memory = new ArrayBuffer(512);
+	const values = new Float32Array(memory, 0, C.EFFECT_FLOATS);
+	const textures = new Uint32Array(memory, 256, C.EFFECT_TEXTURES);
 	const glue = {
 		addPass(...args: unknown[]) {
 			calls.push(['add', ...args]);
@@ -55,8 +57,8 @@ function setup() {
 			calls.push(['values', place, [...values], [...textures]]);
 			return 0;
 		},
-		effectValues: () => 8,
-		effectTextures: () => 16,
+		effectValues: () => 0,
+		effectTextures: () => 256,
 		removeScenePass(place: number) {
 			calls.push(['remove', place]);
 			return 0;
@@ -73,8 +75,7 @@ function setup() {
 	const core = {
 		glue,
 		generation: 0,
-		f32: () => values,
-		u32: () => textures,
+		heap: (type: typeof Float32Array | typeof Uint32Array) => new type(memory),
 		check(result: number, call: string, what?: string, isStatus = false) {
 			if (isStatus ? result !== 0 : result === 0) throw coreFailure(glue, call, what);
 			return result;
@@ -393,7 +394,7 @@ describe('render passes', () => {
 		expect(add({ plane: { point }, reads: ['w'] }).code).toBe('E1504');
 	});
 
-	it('adds a scene pass that takes a share of the canvas', () => {
+	it('adds a scene pass that takes a share of the render size', () => {
 		const { render, calls } = setup();
 		const pass = render.addPass({
 			kind: 'scene',

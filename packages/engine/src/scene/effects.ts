@@ -258,8 +258,6 @@ export class EffectChain {
 	private readonly chain: Effect[] = [];
 	/** How many effects were added, which orders effects of the same order value. */
 	private added = 0;
-	/** The core's blocks of one effect's uniforms and textures. */
-	private readonly blocks: EffectBlocks;
 	/** The custom tone curve, which a fold holds: its first template and its pieces' size. */
 	private curve: { readonly template: number; readonly sizes: PieceSizes } | undefined;
 	/** The size of each compiled effect's or curve's pieces, found once. */
@@ -272,9 +270,7 @@ export class EffectChain {
 		private readonly templates: ShaderTemplates,
 		/** False when each effect draws in a pass of its own, as ?join=off asks. */
 		private readonly join = true,
-	) {
-		this.blocks = new EffectBlocks(core);
-	}
+	) {}
 
 	/** True while at least one effect runs. */
 	get any(): boolean {
@@ -477,35 +473,24 @@ export class EffectChain {
 	/** Gives the core one effect at its place, with its uniforms and textures. */
 	private send(effect: Effect, call: string): void {
 		const { core } = this;
-		this.blocks.write(effect.values, effect.textures);
+		writeEffectBlocks(core, effect.values, effect.textures);
 		const flags = effect.depth ? EFFECT_DEPTH : 0;
 		core.check(core.glue.setEffect(effect.place, effect.template, flags), call, undefined, true);
 	}
 }
 
 /**
- * The core's blocks of one effect's or full-screen pass's uniforms and texture handles, which the
- * sketch's thread writes before the call that takes them. Views of them are made again after the
- * core's memory grew. Writing allocates nothing.
+ * Writes one effect's or full-screen pass's uniforms and texture handles into the core's blocks,
+ * which the call after it takes. It writes through the memory's shared views, so it keeps no view
+ * of its own and allocates nothing.
  */
-export class EffectBlocks {
-	private values: Float32Array | undefined;
-	private textures: Uint32Array | undefined;
-	private generation = -1;
-
-	constructor(private readonly core: CoreMemory) {}
-
-	/** Writes `values` and `textures` into the core's blocks. */
-	write(values: Float32Array, textures: Uint32Array): void {
-		const { core } = this;
-		if (!this.values || !this.textures || this.generation !== core.generation) {
-			this.values = core.f32(core.glue.effectValues(), EFFECT_FLOATS);
-			this.textures = core.u32(core.glue.effectTextures(), EFFECT_TEXTURES);
-			this.generation = core.generation;
-		}
-		this.values.set(values);
-		this.textures.set(textures);
-	}
+export function writeEffectBlocks(
+	core: CoreMemory,
+	values: Float32Array,
+	textures: Uint32Array,
+): void {
+	core.heap(Float32Array).set(values, core.glue.effectValues() / Float32Array.BYTES_PER_ELEMENT);
+	core.heap(Uint32Array).set(textures, core.glue.effectTextures() / Uint32Array.BYTES_PER_ELEMENT);
 }
 
 /**

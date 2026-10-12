@@ -19,7 +19,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes, template};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
@@ -27,8 +27,10 @@ use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::write_row_values;
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
-    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
+use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
+use crate::object_ranges::ObjectRanges;
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
 use crate::shadows::CasterPasses;
@@ -44,11 +46,10 @@ const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The index entries that fit in the bytes of one copied instance.
 const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE;
 
-/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
-/// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
-/// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
-/// keys have the same type, so both share one sort.
-type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
+// group of its material's map, the mesh page of its mesh's first part, its engine mesh id or a
+// level key (see `crate::levels`), its material id, and the bounds that cull its sources (see
+// `bounds_of`). The WebGL2 builder's keys have the same type, so both share one sort.
 
 /// What a layout's buckets draw.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -135,6 +136,8 @@ pub(super) struct Bucket {
     /// per instance from entry `base` on, after every copy; false when it holds a copy per instance
     /// from copy `base` on.
     pub(super) indexed: bool,
+    /// Its level of detail's error and links, for a bucket of a mesh with levels.
+    pub(super) levels: KeyLinks,
 }
 
 /// One indexed indirect draw of each view: a part of a bucket's mesh.
@@ -257,6 +260,10 @@ pub(super) struct Layout {
     /// The sources up to the last row of a batch with row values, which the row values texture
     /// holds, or 0 while no batch has them.
     pub(super) value_sources: u32,
+    /// The table of object ranges, which the scene's layout builds when it changes while a live
+    /// material reads ids, and true while the GPU lacks its last build.
+    object_ranges: ObjectRanges,
+    ranges_pending: bool,
     pub(super) buckets: Vec<Bucket>,
     /// The slots of the buckets that read copies, and of those that read indices, which each
     /// view's compacted instance buffer holds after the copies.
@@ -370,7 +377,13 @@ impl Layout {
         let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
         // A frame that writes every record writes the skinned objects' bounds again after them.
         let writes = if self.skinned.is_empty() { 1 } else { 2 };
-        rows + self.buckets.len() * BUCKET_BYTES as usize * writes
+        // The scene's layout may build its table of object ranges in the frame, after this bound.
+        let ranges = if self.owns_sources() {
+            sizes::OBJECT_RANGE_BYTES as usize
+        } else {
+            0
+        };
+        rows + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -544,6 +557,12 @@ impl Layout {
             return Err(RecordError::TooManySources { limit });
         }
         self.sources = sources;
+        if self.owns_sources() && settings.materials().reads_object_ids() {
+            let bases = self.batch_bases.iter();
+            let ranges = bases.map(|&(id, base)| (base, Handle::from_raw(id)));
+            self.object_ranges.build(scene_rows, ranges);
+            self.ranges_pending = true;
+        }
         let owned = self.owned(sources);
         self.order
             .try_reserve(owned as usize)
@@ -646,6 +665,18 @@ impl Layout {
             scene_key,
             |_, batch| batch_key(batch),
         );
+        // A skinned or morphed object draws its base level: its vertices come from regions of its
+        // own, which the levels do not have.
+        let eligible = |key: &BucketKey| {
+            let object = key.5.checked_sub(OWN_BOUNDS);
+            key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0
+                && object.is_none_or(|slot| {
+                    skinning.object(slot).is_none() && scene.morphs()[slot as usize] == 0
+                })
+        };
+        let levels = settings.levels();
+        let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
+        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
         self.depthless = self
             .key_counts
             .iter()
@@ -681,7 +712,12 @@ impl Layout {
         self.draws.clear();
         self.skinned.clear();
         let (mut copied, mut indexed) = (0, 0);
-        for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
+        for &(key, count) in &self.key_counts {
+            let (pipeline, group, _, mesh, material, bounds) = key;
+            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            let mesh = levels
+                .mesh_of_key(mesh)
+                .expect("level keys name known levels");
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -733,6 +769,7 @@ impl Layout {
                 skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
                 first_joint: skin.map_or(0, |skin| skin.joint_base),
                 indexed: by_index,
+                levels: links,
             });
             *base += count;
             self.draws.extend(parts.iter().enumerate().map(|(k, part)| {
@@ -816,6 +853,10 @@ impl Layout {
                 bucket.center[2].to_bits(),
                 bucket.first_joint,
                 u32::from(bucket.indexed),
+                // The culling shader reads a bucket as its index plus one, and 0 as none.
+                bucket.levels.error.to_bits(),
+                bucket.levels.next.map_or(0, |bucket| bucket + 1),
+                bucket.levels.fade.map_or(0, |bucket| bucket + 1),
             ]);
         }
         self.built = true;
@@ -1025,6 +1066,20 @@ impl Layout {
         Ok(())
     }
 
+    /// Uploads the table of object ranges after the layout built it again.
+    pub(super) fn upload_object_ranges(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !std::mem::take(&mut self.ranges_pending) {
+            return Ok(());
+        }
+        let (at, bytes) = arena.push(self.object_ranges.bytes())?;
+        list.push(Op::WriteBuffer, &[ids::OBJECT_RANGES, 0, at, bytes])?;
+        Ok(())
+    }
+
     /// Uploads changed world matrices straight from the core's world buffers of this parity, or
     /// every matrix after the layout changed.
     pub(super) fn upload_matrices(
@@ -1058,17 +1113,28 @@ impl Layout {
             }
             return Ok(());
         }
+        // Scene rows that changed close together upload in one write, as a span that grows until
+        // the next run lies too far from it.
+        let scene = input.scene.world(parity).matrices();
+        let mut span: Option<(u32, u32)> = None;
         for range in input.snapshot.uploads() {
             let Some(base) = self.base_of(range.target) else {
                 continue;
             };
             if range.target == SCENE_TARGET {
-                let scene = input.scene.world(parity).matrices();
-                if let Some((start, count)) =
-                    drawn_rows(&self.home_buckets, range.start, range.count)
-                {
-                    upload(base, scene, start, count)?;
-                }
+                let Some((start, count)) = drawn_rows(&self.home_buckets, range.start, range.count)
+                else {
+                    continue;
+                };
+                span = match span.and_then(|span| joined_rows(span, start, count)) {
+                    Some(joined) => Some(joined),
+                    None => {
+                        if let Some((first, rows)) = span {
+                            upload(0, scene, first, rows)?;
+                        }
+                        Some((start, count))
+                    }
+                };
                 continue;
             }
             let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
@@ -1080,6 +1146,9 @@ impl Layout {
                 range.start,
                 range.count,
             )?;
+        }
+        if let Some((first, rows)) = span {
+            upload(0, scene, first, rows)?;
         }
         Ok(())
     }
@@ -1165,10 +1234,11 @@ mod tests {
             ]
         );
         // Each record holds its sphere's centre, where the culling shader reads it, then the
-        // first joint of a skin, which no bucket here has, and 0 for a slice of copies.
+        // first joint of a skin, which no bucket here has, 0 for a slice of copies, and zeros for
+        // the level of detail of a mesh without levels.
         let words = BUCKET_WORDS as usize;
         let record = &layout.bucket_records[2 * words..3 * words];
         assert_eq!(record[5..8], [0.0f32, 1.5, 0.0].map(f32::to_bits));
-        assert_eq!(record[8..], [0, 0]);
+        assert_eq!(record[8..], [0; 5]);
     }
 }

@@ -3,12 +3,12 @@ id: api/render
 title: Render graph API
 status: experimental
 since: "0.2"
-summary: "render.addPass for scene passes, reflection passes and full-screen passes of your own WGSL that draw into textures; shares of the canvas's size; the outline mask as an input; switching and removing passes; render.dumpGraph."
+summary: "render.addPass for scene passes, reflection passes and full-screen passes of your own WGSL that draw into textures; half and quarter render sizes; the outline mask as an input; switching and removing passes; render.dumpGraph."
 ---
 
 # Render graph API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 | `camera` | The camera that the pass draws from. Its lens takes the texture's shape, so a perspective camera's aspect ratio follows `size`. | Required |
 | `writes` | The name of the pass's texture. Other passes name it in `reads`, and `render.dumpGraph()` and errors show it. | Required |
 | `size` | The texture's size in pixels, as `[width, height]`, from 1 to `textures.maxSize`. | Give `size` or `scale` |
-| `scale` | The texture's size as a share of the canvas's size in pixels each way: `1`, `0.5` or `0.25`. The camera's aspect ratio follows the canvas. | Give `size` or `scale` |
+| `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. The camera's aspect ratio follows the canvas. | Give `size` or `scale` |
 | `name` | The pass's name in `render.dumpGraph()` and errors. | `writes` |
 | `layers` | The layers of the objects that the pass draws, as a 32-bit mask. | The camera's layers |
 | `every` | The pass draws in one frame of every `every`, from the first, and the texture keeps its last image between. | 1: every frame |
@@ -59,7 +59,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 - The image stands upright on a plane, with v = 0 at its bottom row, as three.js's render targets do.
 - Each pass texture has the scene's anti-aliasing: with MSAA the pass draws with the same samples, then resolves.
 - A pass never draws an object whose material shows the texture of a pass that it does not read, or its own texture. So a mirror does not show itself, and a minimap's screen does not appear in the minimap. To show a mirror in a mirror, add a second pass for it.
-- A pass with a `scale` fills its whole texture at any render scale, so a material samples it from 0 to 1 across. Its texture follows the canvas's size.
+- A pass with a `scale` fills its whole texture at any render scale, so a material samples it from 0 to 1 across. Its texture follows the render size: when the engine lowers the render scale to keep up, the texture shrinks with it, and the pass costs less too.
 - A sketch can add at most 31 passes of all kinds at once.
 
 ### What a scene pass draws
@@ -78,7 +78,7 @@ flowchart LR
     water --> opaque["The camera's passes"]
 ```
 
-`render.addPass({ kind: 'reflection', ... })` draws what a mirror on a plane shows. It draws the camera's view, mirrored across the plane, into a texture of the canvas's size or a share of it, which it fills at any render scale. Everything below the plane is clipped, so a riverbed or the floor's underside never shows in the reflection. A custom material reads the texture where its surface shows on the screen. It gives the color to the engine's lighting as the surface's `reflection` ([Surface functions](../shaders/surface-functions.md#reflections)).
+`render.addPass({ kind: 'reflection', ... })` draws what a mirror on a plane shows. It draws the camera's view, mirrored across the plane, into a texture of the render size or a part of it. Everything below the plane is clipped, so a riverbed or the floor's underside never shows in the reflection. A custom material reads the texture where its surface shows on the screen. It gives the color to the engine's lighting as the surface's `reflection` ([Surface functions](../shaders/surface-functions.md#reflections)).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -125,7 +125,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 | `kind` | `'reflection'`: the pass draws the camera's view mirrored across `plane`. | Required |
 | `plane` | The plane: `point`, a point on it in the world, and `normal`, toward the side that the reflection shows. The normal need not have length 1. | Required; `normal` is up, `[0, 1, 0]` |
 | `writes` | The name of the pass's texture, as for a scene pass. | Required |
-| `scale` | The texture's size as a share of the canvas's size each way: `1`, `0.5` or `0.25`. | The quality preset's `reflectionScale` |
+| `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. | The quality preset's `reflectionScale` |
 | `every` | The pass draws in one frame of every `every`, from the first, and the texture keeps its last image between. | 1: every frame |
 | `name` | The pass's name in `render.dumpGraph()` and errors. | `writes` |
 | `layers` | The layers of the objects that the pass draws, as a 32-bit mask. | The camera's layers, which it follows |
@@ -133,7 +133,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 | `clearColor` | The color that the texture clears to, behind the scene's background. | The scene's background color |
 | `clearAlpha` | The alpha that the texture clears to with `clearColor`, from 0 to 1. | 1 |
 
-- The pass follows the active camera, its lens and the canvas's shape, so it needs no camera of its own. Its texture follows the canvas's size: `RenderPass.width` and `height` are 0. The render scale does not shrink it, so `reflection_uv` reads it whole at any scale.
+- The pass follows the active camera, its lens and the canvas's shape, so it needs no camera of its own. Its texture follows the render size: `RenderPass.width` and `height` are 0.
 - The texture holds the mirrored image, turned around across x and upright. `reflection_uv` from `null3d::reflection` finds where a surface point lies in it. It takes the point's clip position, and an offset that moves the place. A normal that ripples then bends the reflection.
 - The pass clips the scene at the plane with the projection's near plane, so the clip costs nothing in any shader. An object that crosses the plane shows only its part above the plane.
 - When the camera stands on the plane or below it, the pass draws nothing, and its texture keeps its last image.
@@ -149,7 +149,7 @@ Devices that draw 8-bit color apply the tone curve twice to a reflection, as to 
 
 ### Cost of a reflection
 
-A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the canvas's size each way it shades a quarter of the pixels. Each quality preset gives it a share of the canvas's size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms. Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
+A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the render size each way it shades a quarter of the pixels. Each quality preset gives it a share of the render size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. When the engine lowers the render scale to keep up, the reflection's texture shrinks with it, so the reflection costs less too. Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms. Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
 
 ## Full-screen passes
 
@@ -206,7 +206,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render, pos
 | `wgsl` | WGSL that the null3D Vite plugin compiled, which declares `fn effect(input: EffectInput) -> vec4f`. | Required |
 | `writes` | The name of the pass's texture, as for a scene pass. | Required |
 | `size` | The texture's size in pixels, as `[width, height]`. | Give `size` or `scale` |
-| `scale` | The texture's size as a share of the canvas's size in pixels each way: `1`, `0.5` or `0.25`. | 1, without `size` |
+| `scale` | The texture's size as a share of the render size each way: `1`, `0.5` or `0.25`. The texture shrinks and grows with the render scale. | 1, without `size` |
 | `input` | The image that the pass reads: `'sceneColor'`, the scene's color as the camera's passes leave it, before custom effects and bloom, or `'outlineMask'`, the [outline](post.md#outlines)'s mask. | None: transparent black |
 | `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: textures from files or data, or other passes' textures from `textures.fromPass`. | None: white |
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name. | 0 for each field |
@@ -254,6 +254,7 @@ console.log(render.dumpGraph());
 | E1502 | A name in `reads` that no pass writes. Or `render.removePass` on a pass whose texture another pass reads. |
 | E1503 | A `writes` name that the engine's own passes write, such as `sceneColor`. |
 | E1504 | A pass that reads its own texture, or passes that read each other's textures. |
+| E1505 | A pass whose targets one GPU render pass cannot hold together, such as a target of another size. |
 | E1101 | A call on a pass that `render.removePass` removed. |
 
 The core checks the whole graph when `render.addPass`, `render.removePass` or `textures.fromPass` changes it, so the call that breaks the graph throws.
