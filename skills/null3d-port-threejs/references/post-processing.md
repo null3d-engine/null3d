@@ -75,7 +75,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `fxaa(node)`, `smaa(node)` | `createEngine({ antialias: 'fxaa' })`, or MSAA, which the presets from Medium use |
 | `ao(...)`, `gtao(...)` | `ao` (0.2) |
 | `dof(node, viewZ, focus, aperture, maxblur)` | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), mapped as `BokehPass` |
-| `ssr(...)` | `ssr` (0.2), mapped as `SSRPass`; `resolutionScale` becomes `ssrScale` |
+| `ssr(...)` | `ssr` (0.2), mapped as `SSRPass`; `resolutionScale` becomes `ssrScale`, and `quality` becomes `ssrSteps` |
 | Custom node graphs on the scene color | A custom effect in WGSL (0.2), section 6. The pass's color node becomes `input.color` or `effectColor(uv)`, and its depth node `effectDepth(uv)` |
 
 ## 5. Bloom settings

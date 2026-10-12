@@ -84,7 +84,9 @@ Option D, pending the measurements and the owner's review of the look.
 
 ## Consequences
 
-- Code: `crates/null3d-render/src/ssr.rs` (the steps, their blocks, the frame's values and the reprojection), `frame_graph.rs` (the steps between the depth copy and ambient occlusion's search, the shared grid, the color copy as a kept target, the last view), `ao.rs` (the denoise copies z), `frame.rs` and both builders, `crates/null3d-wasm/src/lib.rs` (`setSsr`, `setSsrQuality`, `readsLastFrame`), `ssr.wgsl`, `lib/ssr.wgsl`, `lit.wgsl`, `ao.wgsl` and the frame's values in `globals.wgsl`. `packages/engine/src/scene/post.ts` (`ssr`), the preset table's `ssrScale` and `ssrSteps`, the governor's last step, and hold mode's second frame (`HeldFrom`).
+- Rust: `crates/null3d-render/src/ssr.rs` holds the steps, their blocks, the frame's values and the reprojection. `frame_graph.rs` places the steps between the depth copy and ambient occlusion's search. It also holds the shared grid, the color copy as a kept target and the last view. In `ao.rs` the denoise copies z. `frame.rs` and both builders set the steps. `crates/null3d-wasm/src/lib.rs` adds `setSsr`, `setSsrQuality` and `readsLastFrame`.
+- Shaders: `ssr.wgsl`, `lib/ssr.wgsl`, `lit.wgsl`, `ao.wgsl` and the frame's values in `globals.wgsl`.
+- TypeScript: `packages/engine/src/scene/post.ts` (`ssr`), the preset table's `ssrScale` and `ssrSteps`, the governor's last step, and hold mode's second frame (`HeldFrom`).
 - Hold mode: when the last frame reads the frame before, the sketch thread records it twice and the thread that draws draws both. Temporal anti-aliasing would need the same, so it is a general rule, not one for reflections.
 - Docs: `api/post` (Screen-space reflections), `concepts/post-processing`, `porting/threejs-postprocessing`, the quality preset tables, and the mapping entry `ssr`.
 - Skills: the develop skill's task table and quick reference, and the port skill's post-processing table.
