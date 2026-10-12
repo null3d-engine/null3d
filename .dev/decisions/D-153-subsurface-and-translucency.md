@@ -82,6 +82,15 @@ The material API: `subsurfaceRadius`, how far light spreads under the surface in
 
 Cost: nothing while no material has a radius or the setting is 0: no pass, target, binding or shader download. While it draws: the skin objects draw once more, and their pixels are shaded once more; the two steps read their taps only at skin pixels whose blur covers a pixel or more, and every other pixel reads one texel and copies the scene color. Targets per pixel of the render size: 16 bytes of skin light, 4 of its depth, 8 of the blurred light and 8 of the copy.
 
+### The candlelight demo's lighting
+
+The `subsurface` demo shows wax, jade and soap by candlelight. Its first looks hid the blur, and these choices fixed that (looks reviewed 12 and 13 October 2026):
+
+- **The flames cast no shadows.** With shadows on, each flame's point light threw hard diagonal bands across the other candles. Those bands vanished only when the flames cast no shadows, not when the tea light alone stopped. A point light's shadow edge is sharp. A real flame is a wide light a few centimetres from the wax, so its shadows are soft. Hard bands read as the opposite of what the blur shows. So only the tea light that the pointer moves casts shadows, and the blur softens their edges on the wax.
+- **A light inside each lit candle.** A flame's light enters the pool of melted wax and leaves through the wall, brightest just under the flame. A small shadowless point light inside the candle, at a fifth of the flame's intensity and with a range of 12 cm, stands for it. The wax's diffuse transmission lets it through the wall, and the blur reddens it with depth. The unlit candle glows only from the others' light.
+- **Exposure 0.25.** The flames' lights sit 4 cm above the wax, so the wax under them takes far more light than the rest. At an exposure of 2.2, the tone curve turned the upper half of each candle white. At 0.25, the wax keeps its amber color, and the falloff down each candle shows.
+- **The soap egg lets 35% of its light through**, so its dark side glows a little. The room has a plaster wall close behind the candles, so their light fades across it.
+
 ## Data
 
 **Checks of the look.** `tests/image/translucency.spec.ts` measures the `translucency` test's image on all three tiers, on the Mac's GPU and on SwiftShader, on 12 October 2026. Four panels with the low sun behind them let 0, 1/3, 2/3 and all of their diffuse light through. Each panel must show more light than the one before, by 0.03 of full brightness, and the last 0.2 more than the first. The box's shadow on the last panel's back must show through at most 0.6 of the lit part's brightness. The lamp behind the second panel must make its lower half redder by 0.1. The thick red volume and the striped maps change the last panel as they should. Both runs pass on every tier.
