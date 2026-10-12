@@ -41,6 +41,8 @@ export interface BenchResult extends TimedRun {
 	glTiming?: GlTiming;
 	/** Scenes that stream in: how long the load took and what it downloaded. */
 	load?: SceneLoad;
+	/** Why the window's display ran slower than the display's highest rate, when it did. */
+	displayProblem?: string;
 }
 
 /**

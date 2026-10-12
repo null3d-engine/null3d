@@ -26,14 +26,30 @@ export interface WebDriver {
 	windowHandle(session: string): Promise<string>;
 	/** Switches to a window or tab, which a browser also brings to the front. */
 	switchToWindow(session: string, handle: string): Promise<void>;
+	/** The Appium context that commands go to: the device's own screen, or a browser's page. */
+	context(session: string): Promise<string>;
+	/** Sends later commands to another Appium context, such as `NATIVE_APP`. */
+	setContext(session: string, name: string): Promise<void>;
+	/** The IDs of the elements that an XPath query finds in the current context. */
+	findElements(session: string, xpath: string): Promise<string[]>;
+	/** Taps or clicks an element. */
+	click(session: string, element: string): Promise<void>;
 	/** Ends the session. */
 	deleteSession(session: string): Promise<void>;
 }
+
+/** The key under which the protocol names an element's ID. */
+const ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
 /** How long a command may take, apart from a new session, which waits for a device. */
 const COMMAND_TIMEOUT_MS = 120_000;
 /** How long a new session may wait for a device, as a cloud queues sessions over its limit. */
 export const NEW_SESSION_TIMEOUT_MS = 600_000;
+/**
+ * How long a command to read or tap the device's own screen may take. These checks run beside the
+ * page's run, so a device that is slow to answer them must not hold the driver up.
+ */
+export const SCREEN_COMMAND_TIMEOUT_MS = 20_000;
 
 /**
  * A WebDriver client for the server at `hub`, such as `https://hub.example.com/wd/hub`, that sends
@@ -103,6 +119,33 @@ export function webDriver(
 		},
 		async switchToWindow(session, handle) {
 			await call('POST', `${sessionPath(session)}/window`, { handle });
+		},
+		async context(session) {
+			return String(
+				await call('GET', `${sessionPath(session)}/context`, undefined, SCREEN_COMMAND_TIMEOUT_MS),
+			);
+		},
+		async setContext(session, name) {
+			await call('POST', `${sessionPath(session)}/context`, { name }, SCREEN_COMMAND_TIMEOUT_MS);
+		},
+		async findElements(session, xpath) {
+			const found = await call(
+				'POST',
+				`${sessionPath(session)}/elements`,
+				{ using: 'xpath', value: xpath },
+				SCREEN_COMMAND_TIMEOUT_MS,
+			);
+			return Array.isArray(found)
+				? found.map((element) => String((element as Record<string, unknown>)[ELEMENT_KEY]))
+				: [];
+		},
+		async click(session, element) {
+			await call(
+				'POST',
+				`${sessionPath(session)}/element/${encodeURIComponent(element)}/click`,
+				{},
+				SCREEN_COMMAND_TIMEOUT_MS,
+			);
 		},
 		async deleteSession(session) {
 			await call('DELETE', sessionPath(session));

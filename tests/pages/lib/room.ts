@@ -48,6 +48,9 @@ export const FULL_COUNT = 64;
  */
 const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000, 15_000];
 
+/** The longest that a wait for the room can take, in seconds: its pauses, and as long again for its counts. */
+export const ROOM_WAIT_SECONDS = (2 * ROOM_PAUSES_MS.reduce((sum, pause) => sum + pause, 0)) / 1000;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A new shared memory with the given maximum in 64 KiB pages. */
