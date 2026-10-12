@@ -429,6 +429,13 @@ anim.setTimeScale(0.5);                 // 0 pauses the object's clips
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
+const head = anim.joint('Head');        // a joint's index; throws E1218 for a name it lacks
+anim.setJointRotation(head, q, 0.5);    // turn halfway from the animated rotation toward q
+anim.addJointRotation('Spine', twist);  // turn on top of the clips, in the joint's own frame
+anim.clearJoint(head);                  // rotations hold every frame until cleared; 8 per object
+const AIM = Object.freeze({ joints: ['Spine', 'Neck', 'Head'], limit: 0.8 }); // radians per joint
+anim.lookAt(target, AIM, weight);       // the chain aims its last joint at a world point
+anim.lookAt(point);                     // keeps the chain; anim.lookAt(null) stops
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
 // Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.

@@ -395,16 +395,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 10, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/10 }
-          - { part: shard 2 of 10, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/10 }
-          - { part: shard 3 of 10, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/10 }
-          - { part: shard 4 of 10, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/10 }
-          - { part: shard 5 of 10, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/10 }
-          - { part: shard 6 of 10, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/10 }
-          - { part: shard 7 of 10, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/10 }
-          - { part: shard 8 of 10, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/10 }
-          - { part: shard 9 of 10, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/10 }
-          - { part: shard 10 of 10, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/10 }
+          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
+          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
+          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
+          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
+          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
+          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
+          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
+          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
+          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
+          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
+          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -425,7 +426,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "103:202:367:254:189:75:176:180:124:254"
+          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -535,13 +536,11 @@ jobs:
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
-    # The parity file runs its selected tests in order in one worker, so its time decides
-    # shard 2's. Shard 1 takes the glTF scenes' parity tests, which start after S4's group ends,
-    # beside S5's last minute. In main's run 38136100450 (11 October 2026), shard 1's tests took
-    # 7.9 minutes and were done with S4 at 7.1. Shard 2's took 13.7: 1.1 for page tests, then
-    # 12.5 for the parity tests in one worker, while the other worker ended at 6.5. Shard 2's
-    # jobs took 14.2 to 14.9 of their 15 minutes that day. The glTF groups took 3.3 minutes, so
-    # each shard's tests should take about 10.4. .dev/benchmarks.md holds the figures.
+    # Shard 2 takes every parity test. Each scene's tests run in order in one worker, and the
+    # scenes spread over both workers. In main's run 38176334909 (11 October 2026), the parity
+    # tests took 13.2 minutes one after another, and shard 2's other tests 3.1 minutes, so shard
+    # 2's tests should take about 8.2 minutes on two workers. Shard 1's page tests ended at 7.2.
+    # .dev/benchmarks.md holds the figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so both shards need the city's files.
     needs: [build, city, changes]
@@ -558,7 +557,7 @@ jobs:
             select: --grep-invert
     env:
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b|parity\.spec\.ts.*\bgltf-'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
