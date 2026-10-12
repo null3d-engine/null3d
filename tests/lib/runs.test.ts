@@ -697,6 +697,9 @@ describe('the checks plan', () => {
 			},
 		};
 		expect(judge(check, good, NONE_MISSING)).toEqual([]);
+		// A screen with a fractional pixel ratio snaps the overlay's edges to its device pixels.
+		const snapped = { ...good, overlay: { ...good.overlay, offset: [0.43, -0.38] } };
+		expect(judge(check, snapped, NONE_MISSING)).toEqual([]);
 		const { sketch: _sketch, jobs: _jobs, gpu: _gpu, ...fewer } = good.overlay.figures;
 		const bad = {
 			...good,
