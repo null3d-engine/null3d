@@ -3541,14 +3541,29 @@ pub fn destroy_skeleton(skeleton: u32) -> u32 {
     })
 }
 
-/// Adds an animated instance of `skeleton`; returns its id plus one.
+/// Adds an animated instance of `skeleton` that moves the object of handle `object`; returns its
+/// id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
-pub fn create_animated_instance(skeleton: u32) -> u32 {
+pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
     with_animations(|animations, _| {
         let instance = animations
             .add_instance(skeleton.wrapping_sub(1))
             .map_err(animation_failure)?;
+        animations
+            .set_object(instance, object)
+            .map_err(animation_failure)?;
         Ok(instance + 1)
+    })
+}
+
+/// Makes the table of joint overrides and look-at targets, once; returns 0.
+#[wasm_bindgen(js_name = enableJointOverrides)]
+pub fn enable_joint_overrides() -> u32 {
+    with_animations(|animations, _| {
+        animations
+            .enable_joint_overrides()
+            .map_err(animation_failure)?;
+        Ok(0)
     })
 }
 
@@ -3600,6 +3615,8 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
             animation_field::SLOT_SOURCES => address(&animations.slots().source),
             animation_field::BLEND_VALUES => address(animations.blend_values()),
+            animation_field::JOINT_OVERRIDES => address(animations.joint_overrides()),
+            animation_field::LOOK_TARGETS => address(animations.look_targets()),
             _ => address(animations.matrices()),
         })
     })
@@ -3726,6 +3743,9 @@ pub fn update_animations(step_us: u32) -> u32 {
     };
     with_engine(|e| {
         if let Some(animations) = e.animations.as_mut() {
+            let scene = &e.scene;
+            animations
+                .resolve_look_targets(|object| scene.next_world_matrix64(Handle::from_raw(object)));
             animations.update(jobs, step_us as f32 * 1e-6);
         }
         let meshes = e.renderer.settings().meshes();
