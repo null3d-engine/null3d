@@ -462,18 +462,22 @@ export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
 
 /**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
- * more shader variants never make it time out. A page that stops still fails, with the last step it
- * noted.
+ * more shader variants never make it time out. A slower device gets more: after each batch, the page
+ * tells the runner page when it expects to end, from its own pace, and the runner page waits that
+ * long, up to a cap. A page that stops still fails, with the last step it noted.
  */
 export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * Math.ceil(GLSL_PROGRAMS / SHADER_PARTS),
 );
 
+/** The checks plan's item for one part of the shaders page. */
+const shaderPageId = (part: number) => `shaders-${part}`;
+
 /** The parts of the shaders page, each with its share of the programs and modules. */
 const shaderPages = (): PlanItem<Check>[] =>
 	Array.from({ length: SHADER_PARTS }, (_, i) =>
 		pageItem(
-			`shaders-${i + 1}`,
+			shaderPageId(i + 1),
 			'shaders',
 			{ kind: 'shaders' },
 			{
@@ -1814,6 +1818,39 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 		line: `the new sky's light shows ${since} frames after the move, over ${after.length} captures`,
 		problems: last.since === 15 ? [] : [`the last capture shows frame ${last.since}, not 15`],
 	};
+}
+
+/**
+ * The items that must share an item's shard: the items it needs, and for a part of the shaders
+ * page, the first part. Safari on CI's Mac compiles a part's programs about twice as fast after
+ * another part in the same browser, and four times as fast after two more, so the parts run in one
+ * shard, where only the first is slow.
+ */
+export function itemsTogether(item: PlanItem<Check>): string[] {
+	const needed = itemsNeeded(item.check);
+	return item.check.kind === 'shaders' ? [...needed, shaderPageId(1)] : needed;
+}
+
+/**
+ * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
+ * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
+ * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
+ * counts at their mean. The WebGPU pages of the same names skip there.
+ */
+const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
+	[/^shaders-\d+$/, 48],
+	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
+	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
+	[/^image-demo-creek-webgl2-/, 22],
+	[/restarts/, 20],
+];
+
+/** The mean time of every other page of the plan there, the skipped pages among them. */
+const PAGE_SECONDS = 1.5;
+
+/** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
+export function expectedSeconds({ id }: { id: string }): number {
+	return SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ?? PAGE_SECONDS;
 }
 
 /**

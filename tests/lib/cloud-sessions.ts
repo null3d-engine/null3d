@@ -60,6 +60,25 @@ export const UNANSWERED_POLLS = 3;
  */
 const UNANSWERED_ERRORS = new Set(['no answer', 'script timeout']);
 
+/** The Appium context of the device's own screen, where the system's and the browser's prompts show. */
+export const NATIVE_CONTEXT = 'NATIVE_APP';
+
+/**
+ * Chrome's Local Network Access prompt on Android, as the device's own screen shows it: "<site> wants
+ * to access other apps and services on this device", with Allow and Block. Chrome asks it of the
+ * runner page that BrowserStack Local serves, and the page's requests wait until someone answers,
+ * which nobody does in an Automate session. The page itself cannot see the prompt.
+ */
+export const NETWORK_PROMPT_XPATH =
+	'//*[contains(@text, "wants to access other apps and services on this device")]';
+
+/** The prompt's button that lets the page reach the network. */
+export const ALLOW_XPATH = '//*[@text="Allow"]';
+
+/** Why a runner page stalls when Chrome's local network prompt shows and the driver cannot answer it. */
+export const PROMPT_HOLD =
+	"Chrome's local network prompt holds the runner page's requests, and it shows no Allow button for the driver to tap";
+
 interface Session {
 	id: string;
 	link?: string;
@@ -71,6 +90,12 @@ interface Session {
 	unanswered: number;
 	/** Why the cloud ended the session, when it did before the driver closed it. */
 	lost?: string;
+	/** How often the driver answered Chrome's local network prompt. */
+	allowed: number;
+	/** Why the runner page's requests wait on the device's own screen, while a prompt holds them. */
+	held?: string;
+	/** Why the driver could not read the device's own screen, printed once. */
+	nativeFailed?: string;
 	closed?: boolean;
 }
 
@@ -102,7 +127,7 @@ export class CloudSessions {
 			this.log(`${runner}: the cloud did not open a session: ${(e as Error).message}`);
 			return false;
 		}
-		const session: Session = { id, unanswered: 0 };
+		const session: Session = { id, unanswered: 0, allowed: 0 };
 		this.sessions.set(runner, session);
 		session.link = await this.account.link(id).catch(() => undefined);
 		this.log(`${runner}: session ${session.link ?? id}`);
@@ -113,6 +138,7 @@ export class CloudSessions {
 			await this.close(runner);
 			return false;
 		}
+		await this.answerPrompt(runner, device, session);
 		await this.bringToFront(runner, device, id, url);
 		session.timer = setInterval(() => void this.poll(runner), this.pollMs);
 		return true;
@@ -190,6 +216,49 @@ export class CloudSessions {
 	}
 
 	/**
+	 * On Android, answers Chrome's local network prompt with Allow when the device's own screen shows
+	 * it, and then sends commands to the page again. Other systems show no such prompt to a page.
+	 */
+	private async answerPrompt(runner: string, device: CloudDevice, session: Session): Promise<void> {
+		if (device.os !== 'android') return;
+		const { id } = session;
+		let page: string | undefined;
+		try {
+			page = await this.driver.context(id);
+			await this.driver.setContext(id, NATIVE_CONTEXT);
+			const [prompt] = await this.driver.findElements(id, NETWORK_PROMPT_XPATH);
+			if (!prompt) {
+				session.held = undefined;
+				return;
+			}
+			const [allow] = await this.driver.findElements(id, ALLOW_XPATH);
+			if (!allow) {
+				if (!session.held) {
+					session.held = PROMPT_HOLD;
+					this.log(`${runner}: ${PROMPT_HOLD}`);
+				}
+				return;
+			}
+			await this.driver.click(id, allow);
+			session.held = undefined;
+			session.allowed++;
+			this.log(
+				`${runner}: Chrome's local network prompt held the runner page's requests ("wants to access other apps and services on this device"); the driver tapped Allow`,
+			);
+		} catch (e) {
+			if (!session.nativeFailed) {
+				session.nativeFailed = (e as Error).message;
+				this.log(
+					`${runner}: reading the device's own screen for prompts failed: ${session.nativeFailed}`,
+				);
+			}
+		} finally {
+			if (page && page !== NATIVE_CONTEXT)
+				await this.driver.setContext(id, page).catch(() => undefined);
+		}
+	}
+
+	/**
 	 * Sends the session a light command, and prints the runner page's status line when it changed.
 	 * A session that the cloud ended counts as lost, and its polls stop, as does one that gave no
 	 * answer to several reads in a row.
@@ -199,6 +268,8 @@ export class CloudSessions {
 		if (!session || session.closed || session.lost || session.polling) return;
 		session.polling = true;
 		try {
+			const device = this.devices.get(runner);
+			if (device) await this.answerPrompt(runner, device, session);
 			const status = String((await this.driver.execute(session.id, STATUS_SCRIPT)) ?? '').trim();
 			if (status && status !== session.status) this.log(`${runner}: ${status}`);
 			session.status = status;
@@ -221,6 +292,14 @@ export class CloudSessions {
 		} finally {
 			session.polling = false;
 		}
+	}
+
+	/**
+	 * Why a runner's pages wait on the device's own screen, while a prompt that the driver could not
+	 * answer holds them, or undefined.
+	 */
+	heldBy(runner: string): string | undefined {
+		return this.sessions.get(runner)?.held;
 	}
 
 	/** Whether the cloud ended a runner's session before its turn ended. */
@@ -262,12 +341,24 @@ export class CloudSessions {
 		}
 	}
 
-	/** A line for each runner that had a session: its link, and why the cloud ended it early. */
+	/**
+	 * A line for each runner that had a session: its link, why the cloud ended it early, whether a
+	 * prompt on the device's own screen still held its pages, and how often Chrome's local network
+	 * prompt held its pages until the driver allowed it.
+	 */
 	summary(): string[] {
-		return [...this.sessions].map(
-			([runner, { id, link, lost }]) =>
-				`${runner}: ${link ?? `session ${id}`}${lost ? ` (the cloud ended it early: ${lost})` : ''}`,
-		);
+		return [...this.sessions].map(([runner, { id, link, lost, allowed, held }]) => {
+			const notes = [
+				...(lost ? [`the cloud ended it early: ${lost}`] : []),
+				...(held ? [held] : []),
+				...(allowed > 0
+					? [
+							`Chrome's local network prompt held its pages ${allowed === 1 ? 'once' : `${allowed} times`} until the driver allowed it`,
+						]
+					: []),
+			];
+			return `${runner}: ${link ?? `session ${id}`}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`;
+		});
 	}
 }
 
