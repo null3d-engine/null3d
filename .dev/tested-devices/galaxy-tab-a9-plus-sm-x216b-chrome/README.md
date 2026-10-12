@@ -15,4 +15,4 @@ The debug lines differ by one pixel along slanted edges, as on the S24+.
 The shaders page, which compiles every shader, went back to its start for 30 minutes without a result.
 In a long session, pages slowed until they timed out and the runner page stopped; a fresh session passed them
 
-On WebGL2, the driver fails to link many of the engine's draw index programs, which read the draw's index through `WEBGL_multi_draw`, and gives empty logs. On 12 October 2026, the shaders pages listed 430 of 560 such programs as not linked, and no other program, and 13 engine pages failed, among them 10 image pages, stats and warm-up. M2-R28 fixes the fault.
+On WebGL2, the driver fails to link many of the engine's draw index programs, which read the draw's index through `WEBGL_multi_draw`, and gives empty logs. On 12 October 2026, the shaders pages listed 430 of 560 such programs as not linked, and no other program. 13 engine pages failed, among them 10 image pages, stats and warm-up. M2-R28 fixes the fault.
