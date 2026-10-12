@@ -117,7 +117,7 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | `scene.createLod`, or LODs from `bunx @null3d/cli assets optimize --lod` (0.2, not built yet: the tool writes the LODs, but the engine draws only the full mesh) | `concepts/lod` |
+| Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |

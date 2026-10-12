@@ -91,6 +91,12 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	lodThreshold: {
+		label: 'Level of detail threshold',
+		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
+	},
+	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
+	lodFade: { label: 'Level of detail fades', print: yesNo },
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

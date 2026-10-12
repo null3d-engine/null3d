@@ -178,6 +178,8 @@ export type {
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	MeshLevel,
+	MeshLevelOptions,
 	MorphTargets,
 	PlaneOptions,
 	RingOptions,
