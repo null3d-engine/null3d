@@ -77,6 +77,8 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/basis/basis_transcoder.mjs',
 			'vendor/basis/basis_transcoder.wasm',
 			'vendor/meshopt/meshopt_decoder.wasm',
+			'vendor/draco/draco_wasm_wrapper_gltf.js',
+			'vendor/draco/draco_decoder_gltf.wasm',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],
@@ -91,6 +93,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	geometry: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
@@ -104,6 +113,9 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/basis/package.json',
 			'vendor/basis/LICENSE',
 			'vendor/basis/NOTICE',
+			'vendor/ufbx/ufbx.wasm',
+			'vendor/ufbx/LICENSE',
+			'THIRD-PARTY-NOTICES.txt',
 		],
 	},
 };

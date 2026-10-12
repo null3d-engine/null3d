@@ -8,7 +8,7 @@ summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for asset
 
 # Hosting and cross-origin isolation
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD
@@ -49,7 +49,7 @@ The engine starts under a strict policy. Send this one, or add its parts to your
 Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 ```
 
-- `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt decoder and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md). The engine needs no `'unsafe-eval'`.
+- `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt and Draco decoders and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md). The engine needs no `'unsafe-eval'`.
 - `worker-src 'self'`: the engine's sketch, render, job and probe workers, and the glTF loader's worker.
 - `connect-src`: the engine downloads its `.wasm` files and your sketch module from the page's origin, which `default-src 'self'` allows. Add the origin of each CDN that your sketch loads models or textures from.
 
@@ -162,10 +162,11 @@ The engine ships code from other projects:
 
 - the Basis Universal transcoder for KTX2 files, with the Zstandard code inside it
 - the meshoptimizer decoder for meshopt-compressed glTF files
+- Draco's decoder for Draco-compressed glTF files
 - a table of values from three.js, in the engine core
 - the Rust crates in the engine core
 
-Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`.
+Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
 ## Let browsers keep the build files
 
@@ -207,7 +208,7 @@ A game can play with no network after its first visit. Its own service worker ca
 | Feature | Files | The game uses it when it calls |
 | --- | --- | --- |
 | `ao`, `background`, `bloom`, `lines`, `morph`, `occlusion`, `skinning`, `sky`, `sprites` | The feature's shaders, and the code of sprites and lines | The calls that `createEngine`'s `preload` lists for the same name ([Engine](../api/engine.md)) |
-| `gltf` | The glTF loader, its worker and the meshopt decoder | `assets.loadGltf` |
+| `gltf` | The glTF loader, its worker, and the meshopt and Draco decoders | `assets.loadGltf` |
 | `ktx2` | The KTX2 loader and the Basis Universal transcoder | `assets.loadTexture` or `assets.loadGltf` with a KTX2 texture |
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
 | `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |

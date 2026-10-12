@@ -43,6 +43,7 @@ import {
 	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	linkLogs,
 	metalFault,
 	mipmapTemplate,
 	type Pipeline,
@@ -692,7 +693,7 @@ export class WebGL2Backend {
 			if (!old || !linked) {
 				if (old)
 					console.error(
-						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${gl.getProgramInfoLog(program.program)}`,
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${linkLogs(gl, program)}`,
 					);
 				this.deleteProgram(program);
 				continue;
@@ -1135,7 +1136,7 @@ export class WebGL2Backend {
 		const joined = program.joined;
 		if (!joined || joined.failed) return;
 		if (this.gl.getProgramParameter(program.program, this.gl.LINK_STATUS) !== true)
-			this.joinFailed(program, this.gl.getProgramInfoLog(program.program) ?? 'its link failed');
+			this.joinFailed(program, linkLogs(this.gl, program) || 'its link failed');
 		else this.joins.built(joined.template, performance.now() - joined.start);
 	}
 

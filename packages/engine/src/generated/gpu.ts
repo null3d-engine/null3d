@@ -243,7 +243,7 @@ export const TEMPLATE_PARTICLE = 53;
 export const TEMPLATE_PARTICLE_MAP = 54;
 export const TEMPLATE_PARTICLE_DEPTH = 55;
 export const TEMPLATE_PARTICLE_DEPTH_MS = 56;
-export const TEMPLATE_CUSTOM_FIRST = 64;
+export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
 export const BUFFER_USAGE_COPY_SRC = 4;
@@ -263,7 +263,7 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_INDEX_STRIDE = 16;
-export const SIZE_FRAME_UNIFORM_BYTES = 560;
+export const SIZE_FRAME_UNIFORM_BYTES = 704;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;

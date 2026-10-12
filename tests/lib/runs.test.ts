@@ -34,6 +34,7 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PARTS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -50,6 +51,7 @@ import {
 	handovers,
 	type ItemResult,
 	inLanes,
+	moduleNote,
 	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
@@ -62,6 +64,7 @@ import {
 	runName,
 	shardItems,
 	turnBatches,
+	unloadedModule,
 	waitForRunners,
 	writePlan,
 	writeRunnerFile,
@@ -225,6 +228,7 @@ describe('waitForRunners', () => {
 			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode',
 			'the browser did not get back the memory of engines in removed frames: it had room for 10 shared memories before 43 starts in frames, and for 7 after',
 			'RangeError: Out of memory',
+			'WebGL2 context lost after 2240 of 2844 programs: the browser took the GPU context away, so the page cannot check the rest',
 		])
 			expect(rerunsInNewTab('Safari', ['another problem', problem])).toBe(true);
 		expect(rerunsInNewTab('Safari', ['the image differs from its reference in 812 pixels'])).toBe(
@@ -232,6 +236,36 @@ describe('waitForRunners', () => {
 		);
 		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('names a sketch module that did not load, with what the test server sends for it now', async () => {
+		const body = 'x'.repeat(250_000);
+		const server = Bun.serve({
+			port: 0,
+			fetch: (request) =>
+				new URL(request.url).pathname === '/sketch.ts'
+					? new Response(body)
+					: new Response('gone', { status: 404 }),
+		});
+		try {
+			const url = `http://localhost:${server.port}/sketch.ts`;
+			const failure = `E1410: the sketch module ${url} did not load: Importing a module script failed. Pass the sketch as new URL('./sketch.ts', import.meta.url)`;
+			expect(unloadedModule(['another problem', failure])).toBe(url);
+			expect(unloadedModule(['E1302: the render worker lost its GPU'])).toBeUndefined();
+			expect(await moduleNote(url)).toMatch(
+				new RegExp(
+					`^module import failed: ${url}\\. The test server now answers 200 with 0\\.25 MB in \\d+ ms$`,
+				),
+			);
+			expect(await moduleNote(`http://localhost:${server.port}/missing.ts`)).toContain(
+				'answers 404',
+			);
+		} finally {
+			server.stop(true);
+		}
+		expect(await moduleNote('http://localhost:1/sketch.ts')).toContain(
+			'The test server does not send it now either',
+		);
 	});
 
 	it('ends the turn of a runner whose handover found no new runner page', () =>
@@ -890,7 +924,7 @@ describe('the checks plan', () => {
 
 	it('skips a WebGL2 page, and the shaders page, on a browser without WebGL2 only when allowed', () => {
 		const webgl2 = items.find((item) => item.id === 'engine-webgl2-pipelined');
-		const shaders = items.find((item) => item.id === 'shaders');
+		const shaders = items.find((item) => item.id === 'shaders-1');
 		const webgpu = items.find((item) => item.id === 'image-clear-webgpu');
 		if (!webgl2 || !shaders || !webgpu) throw new Error('the plan lacks the pages');
 		const noWebGL2 = { webgpu: false, webgl2: true };
@@ -906,12 +940,22 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
-	it('gives the shaders page more time than other pages, in proportion to its GLSL programs', async () => {
-		const shaders = items.find((item) => item.id === 'shaders');
+	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
+		const parts = items.filter((item) => item.check.kind === 'shaders');
 		const programs = glslProgramsOf(await everyShader()).length;
 		expect(programs).toBeGreaterThan(100);
-		expect(shaders?.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
-		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / 4);
+		expect(parts.length).toBe(SHADER_PARTS);
+		expect(SHADER_PARTS).toBeGreaterThan(1);
+		expect(parts.map(({ id, path }) => [id, path])).toEqual(
+			parts.map((_, i) => [
+				`shaders-${i + 1}`,
+				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
+			]),
+		);
+		// No part compiles more than a few hundred programs in one WebGL2 context.
+		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {
@@ -1464,8 +1508,10 @@ describe('the bench plan', () => {
 		expect(item?.timeoutSeconds).toBe(2 * 300 + 60);
 		expect(parseArgs(['--plan', 'bench', '--seconds', '300', 'Safari']).seconds).toBe(300);
 		expect(() => parseArgs(['--plan', 'memory', '--seconds', '300'])).toThrow(
-			'--seconds works with --plan bench only',
+			'--seconds works with --plan bench, showcase or occlusion-s6 only',
 		);
+		expect(parseArgs(['--plan', 'showcase', '--seconds', '60', 'Safari']).seconds).toBe(60);
+		expect(parseArgs(['--plan', 'occlusion-s6', '--seconds', '5', 'Safari']).seconds).toBe(5);
 	});
 
 	it('takes the number of runs and the instance count', () => {
@@ -1943,8 +1989,10 @@ describe('parseArgs', () => {
 		);
 		expect(() => parseArgs(['--plan', 'bench', '--scenes', ''])).toThrow('--scenes: use some of');
 		expect(() => parseArgs(['--plan', 'parity', '--scenes', 's2'])).toThrow(
-			'--scenes works with --plan bench or --plan scale only',
+			'--scenes works with --plan bench, showcase, soak or scale only',
 		);
+		expect(parseArgs(['--plan', 'soak', '--scenes', 's5,s6']).scenes).toEqual(['s5', 's6']);
+		expect(parseArgs(['--plan', 'showcase', '--scenes', 's6']).scenes).toEqual(['s6']);
 		expect(() =>
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
 		).toThrow('leave out threejs-webgl');

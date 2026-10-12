@@ -27,5 +27,10 @@
 		"examples/vite.build.config.ts",
 		"vite.config.ts"
 	],
-	"exclude": ["packages/engine/**", "packages/controls/**", "packages/particles/**"]
+	"exclude": [
+		"packages/engine/**",
+		"packages/controls/**",
+		"packages/geometry/**",
+		"packages/particles/**"
+	]
 }

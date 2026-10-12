@@ -69,6 +69,17 @@ How the data was produced: a scratch page draws each route with raw WebGPU and W
 
 **Allocation.** `bun run bench:allocation --particles` on the Mac's GPU on 11 October 2026, S1 with two systems that emit 5,500 particles per second, one of them soft. The first version of the add-on allocated 3,671 bytes per frame on the sketch's thread: it passed each particle's numbers as arguments to calls that the engine did not inline, which boxed every number. The add-on now keeps them in typed arrays and fields, and the buffer's `write` takes a typed array. The thread then allocated 345 bytes per frame on WebGPU and 342 on WebGL2, the same as S1 without particles within a few bytes, apart from the sample's own loop. The culling sphere changes only when the births outgrow it or shrink well inside it, as a call that sets it boxes its radius. The soft system's depth copy adds one render pass, whose encoder takes 64 bytes on WebGPU, as each of bloom's passes does.
 
+**Cost per preset.** `bun run bench:run` on S1, with and without the `particles` switch, on the Mac's GPU in the quiet window on 11 October 2026 (1-minute load 3.1 to 6.4). The switch adds about 12,500 live particles in two systems, one of them soft. Each figure is the median of 3 runs of 10 seconds:
+
+| Preset | Page | CPU ms, without | CPU ms, with | GPU ms, without | GPU ms, with |
+| --- | --- | --- | --- | --- | --- |
+| High | WebGPU | 1.69 | 1.71 | 2.92 | 3.67 |
+| High | WebGL2 | 2.05 | 1.97 | 4.52 | 4.27 |
+| Low | WebGPU | 1.69 | 1.71 | 3.00 | 3.42 |
+| Low | WebGL2 | 1.94 | 1.87 | 4.27 | 4.83 |
+
+The CPU time does not change beyond the runs' spread (1.63 to 2.05 ms). On WebGPU the particles cost 0.75 ms of GPU time at High, with the soft system's depth copy, and 0.42 ms at Low, without it. The WebGL2 GPU figures move by 0.3 to 0.6 ms between runs, more than the particles' cost, so they show no clear cost. Without particles, nothing changes: `bun run bench:gpu-check` found S4 and S6 within 2% of main at Medium and High.
+
 ## Decision
 
 Option A for the motion, the soft particles' depth copy for soft particles, and one sorted object per system.

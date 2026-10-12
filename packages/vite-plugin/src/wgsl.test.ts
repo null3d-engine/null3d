@@ -5,12 +5,14 @@ import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { WGSL_UPDATE_EVENT } from './hot';
 import null3d, { type Null3dPluginOptions } from './index';
+import { UNPACK } from './pack';
 import type { ShaderProblem } from './shader-compiler';
 import type { CompiledMaterial, CompiledShader } from './shader-types';
 import {
 	codeFrame,
 	compileTaggedWgsl,
 	compileWgsl,
+	compileWgslFile,
 	findTaggedWgsl,
 	placeOf,
 	type WgslCompile,
@@ -458,6 +460,24 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 		expect(error.message).toContain(`src/glow.wgsl:${where(broken, '1.0);\n#else')}: `);
 		expect(error.message).toEndWith('(in the WebGL2 build)');
 	});
+
+	it("builds a user's compare-exchange with a warning that Safari 27.0 cannot compile it", async () => {
+		const claim = `var<workgroup> slots: array<atomic<u32>, 64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_index) lane: u32) {
+    let claim = atomicCompareExchangeWeak(&slots[lane], 0u, 1u);
+}
+`;
+		const result = await compileWgslFile('src/claim.wgsl', 'x', claim);
+		if (!('shader' in result)) throw new Error(result.error.message);
+		expect(result.warnings).toHaveLength(1);
+		const [warning] = result.warnings;
+		expect(warning).toStartWith(
+			`null3D: src/claim.wgsl:${where(claim, 'atomicCompareExchangeWeak')}: \`atomicCompareExchangeWeak\` does not compile on Safari 27.0`,
+		);
+		expect(warning).toContain('321006@main');
+	});
 });
 
 /** A project with a page that starts a sketch, which imports WGSL in both ways. */
@@ -603,9 +623,10 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		};
 		try {
 			const file = await server.transformRequest('/src/tint.wgsl');
-			expect(file?.code).toContain('"hot":"src/tint.wgsl"}');
+			// The key of the hot updates follows the shader's packed records.
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl"\)/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/"hot": ?"src\/tint\.ts#0"/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0"\)/);
 
 			const brighter = surface.replace('return', 'var s = defaultSurface(input);\n    return');
 			const [update] = await change('src/tint.wgsl', brighter);
@@ -644,7 +665,9 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			expect(sketch?.code).toContain('#version 300 es');
 			expect(sketch?.code).not.toContain('-> @builtin(position) vec4f {');
 			const file = await server.transformRequest('/src/shaders/glow.wgsl');
-			expect(file?.code).toStartWith('export default ({"kind":"shader","webgpu":');
+			expect(file?.code).toStartWith(
+				`export default ${UNPACK}("{\\"kind\\":\\"shader\\",\\"webgpu\\":`,
+			);
 			const error = await server.transformRequest('/src/broken.ts').then(
 				() => null,
 				(e: { plugin?: string; loc?: unknown; frame?: string }) => e,

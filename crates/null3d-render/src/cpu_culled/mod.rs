@@ -94,7 +94,7 @@ use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{
-    DrawList, MAX_WORDS, Op, format, permutation, sizes, texture_usage, view,
+    DrawList, MAX_WORDS, Op, buffer_usage, format, permutation, sizes, texture_usage, view,
 };
 
 use crate::ao::{self, AoIds};
@@ -113,7 +113,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::{GraphError, RenderGraph};
-use crate::light_grid::{CameraLights, LightGrid, LightLimits};
+use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
@@ -175,8 +175,11 @@ mod ids {
     pub const DOF: u32 = EFFECTS + 1;
     /// The particle systems' buffers, three for each system from here.
     pub const PARTICLE_BUFFERS: u32 = DOF + 1;
+    /// The table of object ranges, which the vertex shaders of custom materials that read an
+    /// instance's index or an object's id search.
+    pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    pub const PAGES: u32 = OBJECT_RANGES + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -195,11 +198,16 @@ mod ids {
     /// values, with three.js's table of the split-sum terms of specular light in the columns after
     /// the rows' texels.
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEW_IDS as u32;
-    /// The ring of light data textures of the camera's view, one per ring slot: the records of the
-    /// lights that the light grid lists, and the grid's words.
-    pub const LIGHT_DATA: u32 = MATERIALS + 1;
+    /// Each camera view's ring of light data textures, one per ring slot, from
+    /// `LIGHT_DATA + RING * view`: the records of the lights that the view's light grid lists, and
+    /// the grid's words.
+    const LIGHT_DATA: u32 = MATERIALS + 1;
+
+    pub const fn light_data(view: ViewId) -> u32 {
+        LIGHT_DATA + RING * view.index() as u32
+    }
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
-    pub const BLANK_LUT: u32 = LIGHT_DATA + RING;
+    pub const BLANK_LUT: u32 = LIGHT_DATA + RING * MAX_VIEWS as u32;
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
@@ -399,8 +407,8 @@ pub struct CpuCulledRenderer {
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
-    /// The point and spot lights of the camera's view, and the textures that hold them.
-    lights: CameraLights,
+    /// The point and spot lights of each camera view, and the textures that hold them.
+    lights: LightGrids,
     light_textures: LightTextures,
     /// The skinned scene objects, and the textures that their vertex shaders read.
     skins: Skins,
@@ -530,7 +538,7 @@ impl CpuCulledRenderer {
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
-            lights: CameraLights::new(config.light_limits),
+            lights: LightGrids::new(config.light_limits, false),
             light_textures: LightTextures::default(),
             skins: Skins::default(),
             created: false,
@@ -547,7 +555,13 @@ impl CpuCulledRenderer {
     /// The light grid of the camera's view in the frame recorded last, with the records that the
     /// shaders read.
     pub fn light_grid(&self) -> &LightGrid {
-        self.lights.grid()
+        self.lights.camera().grid()
+    }
+
+    /// The light grid of camera view `view` in the frame recorded last, or `None` while the view
+    /// has seen no point or spot light.
+    pub fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid> {
+        Some(self.lights.get(view)?.grid())
     }
 
     /// The tiles of the point and spot lights' shadow atlas, as the frame that culled last planned
@@ -843,6 +857,7 @@ impl CpuCulledRenderer {
             + self
                 .particles
                 .upload_bound(self.settings.particles(), views)
+            + sizes::OBJECT_RANGE_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -864,6 +879,14 @@ impl CpuCulledRenderer {
                 1,
                 1,
                 view::D2,
+            ],
+        )?;
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::OBJECT_RANGES,
+                sizes::OBJECT_RANGE_BYTES,
+                buffer_usage::UNIFORM | buffer_usage::COPY_DST,
             ],
         )?;
         environment::create_objects(list, ids::BLANK_ENVIRONMENT, ids::ENVIRONMENT_SAMPLER)?;
@@ -1128,7 +1151,7 @@ impl CpuCulledRenderer {
             tiles: s.layers,
             size: s.size,
         }));
-        self.settings.pace_views();
+        self.settings.pace_views(input.canvas, input.render_scale);
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
@@ -1149,29 +1172,33 @@ impl CpuCulledRenderer {
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
+            lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
-        };
-        // Only the camera's view copies its opaque color for surfaces that let light through.
-        let copy = self.graph.transmission_texture();
-        let lit_of = |lit: LitTextures, index: usize| LitTextures {
-            transmission: if index == ViewId::CAMERA.index() {
-                copy
-            } else {
-                ids::BLANK_TRANSMISSION
-            },
-            ..lit
         };
         let first_new = self.opaque.views();
         let lights_remade =
             self.light_textures
                 .size(list, &mut self.lights, self.config.max_texture_size)?;
         self.opaque.add_views(list, views)?;
-        // Every camera view's frame groups bind the shadow maps and the light textures, so each
-        // view binds them again when the graph or the light textures make them again.
-        let rebind = lights_remade || self.graph.textures_made();
+        // Every camera view's frame groups bind the shadow maps and its light textures, so a view
+        // binds them again when the graph or its light textures make them again. Only the camera's
+        // view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
+        let light_textures = &self.light_textures;
+        let lit_for = |lit: LitTextures, view: ViewId| LitTextures {
+            lights: ids::light_data(light_textures.owner(view)),
+            transmission: if view == ViewId::CAMERA {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            },
+            ..lit
+        };
+        let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
-            if index >= first_new || rebind {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
+            if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
+                let view = ViewId::from_index(index);
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         let cascades = self.cascades();
@@ -1209,7 +1236,8 @@ impl CpuCulledRenderer {
             self.bound_environment = environment;
             lit.environment = environment;
             for index in 0..self.opaque.views() {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
+                let view = ViewId::from_index(index);
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         for index in 0..views {
@@ -1265,8 +1293,12 @@ impl CpuCulledRenderer {
             .upload(list, arena, input.animations, input.morphs, meshes)?;
         self.clusters
             .upload(list, arena, &self.layout, &self.casters)?;
+        self.layout.upload_object_ranges(list, arena)?;
+        let drawn_views = (0..views)
+            .filter(|&index| self.culling.frame(ViewId::from_index(index)).is_some())
+            .fold(0u32, |mask, index| mask | 1 << index);
         self.light_textures
-            .upload(list, arena, &mut self.lights, input.frame)?;
+            .upload(list, arena, &mut self.lights, input.frame, drawn_views)?;
 
         // The streamed ring moves to a new slot only for moving rows, and each view's rings only
         // for new data: a changed frame uniform, or an index list that differs from the previous
@@ -1351,7 +1383,7 @@ impl CpuCulledRenderer {
         let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
         let particles = &self.particles;
-        let light_slot = self.light_textures.slot();
+        let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
         let settings = &self.settings;
         let hidden_in = |view: ViewId| {
@@ -1376,6 +1408,7 @@ impl CpuCulledRenderer {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let backdrop = settings.draws_background(view);
                     let slot = opaque.frame_slot(view);
+                    let light_slot = light_textures.slot(view);
                     let group = ids::frame_group(view) + light_slot;
                     if backdrop {
                         background.record(list, group, &[slot, slot], Place::First)?;
@@ -1391,7 +1424,9 @@ impl CpuCulledRenderer {
                 }
                 Role::Prepass(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
-                    let shading = Shading::Prepass { light_slot };
+                    let shading = Shading::Prepass {
+                        light_slot: light_textures.slot(view),
+                    };
                     let hidden = hidden_in(view);
                     opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)
                 }
@@ -1423,6 +1458,7 @@ impl CpuCulledRenderer {
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
                     let hidden = hidden_in(view);
                     let index = view.index();
@@ -1432,7 +1468,8 @@ impl CpuCulledRenderer {
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
-                    let group = ids::frame_group(ViewId::CAMERA) + light_slot;
+                    let group =
+                        ids::frame_group(ViewId::CAMERA) + light_textures.slot(ViewId::CAMERA);
                     lines.record(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
@@ -1522,8 +1559,14 @@ impl FrameBuilder for CpuCulledRenderer {
         let filter = self.settings.shadow_quality().filter;
         let settings = &self.settings;
         let sways = |material| settings.sways(material);
-        self.tiles
-            .plan(input, tile_settings, filter, camera.as_ref(), &sways);
+        self.tiles.plan(
+            input,
+            tile_settings,
+            filter,
+            camera.as_ref(),
+            settings.meshes(),
+            &sways,
+        );
         // Receivers read the shadow maps while the sun or a point or spot light casts shadows, and
         // casters draw into the passes of each.
         let cascades = self.settings.cascade_depth().targets();
@@ -1591,9 +1634,17 @@ impl FrameBuilder for CpuCulledRenderer {
                 }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
-        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
-            self.lights.assign(input.jobs, frame, input.lights);
-            self.lights.mark_shadows(&self.tiles, input.shadow_lights);
+        let main = self.culling.frame(ViewId::CAMERA).map(|frame| frame.camera);
+        let exposure = self.settings.drawn_output().exposure;
+        for index in 0..self.settings.views().len() {
+            let view = ViewId::from_index(index);
+            if let Some(frame) = self.culling.frame_mut(view) {
+                if let Some(main) = &main {
+                    frame.set_shadow_origin(main);
+                }
+                self.lights
+                    .assign(view, frame, input, exposure, &self.tiles);
+            }
         }
         // The cascades skip the cells out of their view too: the casters' layout gives every other
         // object no bucket, so the scene's cell order serves it.
@@ -1683,6 +1734,13 @@ impl FrameBuilder for CpuCulledRenderer {
             self.skins.morph_mut().deltas_moved(first);
         }
         self.occluders.forget(ids);
+    }
+
+    fn meshes_updated(&mut self, id: u32, positions: bool) {
+        self.meshes.updated(self.settings.meshes().updated());
+        if positions {
+            self.occluders.stop_blocking(id);
+        }
     }
 
     fn mesh_gpu_bytes(&self) -> u64 {

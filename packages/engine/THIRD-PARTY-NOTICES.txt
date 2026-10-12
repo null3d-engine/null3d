@@ -300,6 +300,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
+Draco: the Draco decoder (draco_wasm_wrapper_gltf.js, draco_decoder_gltf.wasm)
+==============================================================================
+
+Draco 1.5.7, from https://github.com/google/draco: its decoder for glTF files, the
+draco_wasm_wrapper_gltf.js script and the draco_decoder_gltf.wasm module, unchanged from the
+release's javascript folder.
+
+Copyright 2016 The Draco Authors.
+
+Licensed under the Apache License, Version 2.0, whose text the Basis Universal section above
+gives in full.
+
+==============================================================================
 three.js: the table of specular terms in the engine core (null3d_bg.wasm), and the OpenEXR
 decoders in the HDR file reader (panorama-worker.js)
 ==============================================================================

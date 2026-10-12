@@ -8,7 +8,7 @@ summary: "Measuring; the frame budget on computers, phones and tablets; common c
 
 # Performance guide
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 null3D keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, which the engine's repository runs with `bun run bench:run`.
 
@@ -263,7 +263,7 @@ Objects marked with `setOccluder(true)` or the `occluder` option hide what lies 
 
 ### Blockers on WebGL2
 
-On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion culling on, and every preset leaves it off. Objects marked with `setOccluder(true)` or the `occluder` option then hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
 
 ### Occlusion culling on the GPU
 
@@ -301,7 +301,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `occludedEntries` | On WebGL2, the entries per frame that blockers hid after the frustum test. It is null on WebGPU |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
-| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none, and neither does a new render scale |
+| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none. A new render scale makes some only while a reflection pass draws: its texture, and the bind groups made again with it |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
