@@ -113,6 +113,7 @@ import {
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
+import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
@@ -202,6 +203,8 @@ export type Check =
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
+	/** The first-draw page: a device's first pass of indirect draws, bare and after the engine's. */
+	| { kind: 'first-draw'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -534,6 +537,14 @@ export function checksPlan(): PlanItem<Check>[] {
 				{ switches: [`gpu=${path}`] },
 			),
 		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`first-draw-${path}`,
+				'first-draw',
+				{ kind: 'first-draw', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
 		// The device's own check each run, never one that an earlier run stored.
 		pageItem('quality', 'quality', { kind: 'quality' }, { switches: ['check=fresh'] }),
 		...TIERS.map((tier) =>
@@ -724,6 +735,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'stats',
 	'ktx2',
 	'skin-pass',
+	'first-draw',
 	'environment-generator',
 ]);
 
@@ -2349,6 +2361,11 @@ export function judge(
 			const skin = result as unknown as SkinPassResult;
 			context?.note?.(skinPassNote(skin));
 			return skinPassProblems(skin);
+		}
+		case 'first-draw': {
+			const first = result as unknown as FirstDrawResult;
+			context?.note?.(firstDrawNote(first));
+			return firstDrawProblems(first);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];

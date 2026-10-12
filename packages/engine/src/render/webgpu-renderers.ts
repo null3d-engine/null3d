@@ -7,6 +7,7 @@ import { QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
 import { captureWebGPU } from '../gpu/readback';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
+import { FirstPass } from '../gpu/webgpu/first-pass';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { ImageTable } from '../shared/images';
@@ -151,6 +152,8 @@ class WebGPUSceneRenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly frames: FrameReplay;
+	/** The pass that the device draws before its first frame. */
+	private readonly firstPass: FirstPass;
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	/**
@@ -180,6 +183,7 @@ class WebGPUSceneRenderer implements Renderer {
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		this.errors = new GpuErrorWatch(device, gpuError);
+		this.firstPass = new FirstPass(device);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -213,8 +217,9 @@ class WebGPUSceneRenderer implements Renderer {
 			this.backend.skinWithFloatDirections();
 	}
 
+	/** A frame draws once its pipelines and the device's first pass are built. */
 	prepare(frame: number): boolean {
-		return this.frames.prepare(frame);
+		return this.frames.prepare(frame) && this.firstPass.ready;
 	}
 
 	get building(): boolean {
@@ -232,6 +237,7 @@ class WebGPUSceneRenderer implements Renderer {
 		const figures = record.figures;
 		if (figures && !this.culledLoading) this.loadCulledCounts();
 		backend.culled?.beginFrame(figures);
+		this.firstPass.draw();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
@@ -260,6 +266,8 @@ class WebGPUSceneRenderer implements Renderer {
 	 */
 	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
 		const frame = await this.frames.builtTaken();
+		await this.firstPass.built;
+		this.firstPass.draw();
 		const { width, height } = this.canvas;
 		const pixels = await captureWebGPU(this.device, width, height, this.format, (texture) => {
 			this.backend.canvasTarget = texture;
