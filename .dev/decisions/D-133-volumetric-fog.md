@@ -6,7 +6,7 @@ Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main dir
 
 ## Question
 
-The showcase scenes need light shafts and lit fog (D-132, the owner's ruling of 11 October 2026). Creek wants sun rays through its trees at golden hour. Night town wants glowing cones around its street lamps and car headlights, and Battle wants dusty light. The fog of [D-74](D-74-native-fog.md) has a sun glow that no shadow blocks, and lamps do not light it. Which technique lights the fog through shadows on WebGPU, its compatibility mode and WebGL2? Where does it run, what does each preset draw, and what does it cost?
+The showcase scenes need light shafts and lit fog ([D-132](D-132-showcase-look-and-features-2026-10-11.md), the owner's ruling of 11 October 2026). Creek wants sun rays through its trees at golden hour. Night town wants glowing cones around its street lamps and car headlights, and Battle wants dusty light. The fog of [D-74](D-74-native-fog.md) has a sun glow that no shadow blocks, and lamps do not light it. Which technique lights the fog through shadows on WebGPU, its compatibility mode and WebGL2? Where does it run, what does each preset draw, and what does it cost?
 
 ## Rule
 
