@@ -260,7 +260,7 @@ async function start(
 				cellCulling: true,
 				joinEffects: true,
 				depthPrepass: false,
-				skinning: C.SKINNING_LEAN,
+				skinning: C.SKINNING_VERTEX,
 				indexInstances: false,
 				shadowDepthBits: 16,
 				largeWorld: false,

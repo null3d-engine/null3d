@@ -45,15 +45,15 @@
 //!
 //! # Skinning in the vertex shader
 //!
-//! With [`SkinningMode::vertex_shader`], the builder skins in the vertex shader of each pass
-//! instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN builds,
-//! which read the joint texture through a bind group of their own. Each skinned object's bucket
-//! names the first joint of its skin, which the culling pass copies into each instance it draws.
-//! Custom materials and the debug views have no SKIN builds, so they draw skinned meshes at rest
-//! in this mode. Morphed objects, skinned or not, still go through the skinning pass, as WebGPU
-//! has no MORPH builds. The mode is there to measure against the skinning pass, as decision record
-//! D-20 asks. The other modes turn the pass's two savings off one at a time, for the same
-//! measurement.
+//! With [`SkinningMode::vertex_shader`], the default, the builder skins in the vertex shader of
+//! each pass instead, as WebGL2 does: skinned objects draw their mesh's vertices with the SKIN
+//! builds, which read the joint texture through a bind group of their own. Each skinned object's
+//! bucket names the first joint of its skin, which the culling pass copies into each instance it
+//! draws. The skinning pass still skins and morphs the objects that the vertex shaders cannot:
+//! morphed objects, skinned or not, as WebGPU has no MORPH builds, and objects whose material
+//! has no SKIN build, such as custom materials and the debug views. Decision record D-20 holds
+//! the measurements that chose the vertex shader. The other modes skin every object in the pass,
+//! with its two savings, or with one of them turned off, for the same measurement.
 
 use null3d_core::animation::Animations;
 use null3d_core::morph::MorphWeights;
@@ -66,7 +66,7 @@ use null3d_gpu::drawlist::{
 
 use super::ids;
 use crate::frame::{
-    CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, words_as_bytes,
+    CellOffsets, MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, words_as_bytes,
 };
 use crate::meshes::MeshStorage;
 use crate::morph::{MORPH_LOCATION, MorphTexture, morph_of};
@@ -444,6 +444,9 @@ impl Skinning {
     /// The key of the pipeline that draws skinned or morphed object `object`, whose pair's
     /// pipeline has `key`: the pair's for the plain vertices of the mesh's skinned format, which
     /// the skinning pass writes, or the SKIN build of the pair's where the vertex shader skins.
+    /// Only objects whose pair has a SKIN build skin in the vertex shader, and the casters' and
+    /// the outline mask's templates have SKIN builds too. A template without one would draw the
+    /// mesh at rest.
     pub(super) fn skinned_key(&self, object: &SkinnedObject, key: DrawKey) -> DrawKey {
         if object.computed {
             return DrawKey {
@@ -451,8 +454,6 @@ impl Skinning {
                 ..key
             };
         }
-        // Custom materials, the debug views and the test templates have no SKIN builds on WebGPU,
-        // so they draw the mesh at rest in this mode.
         if SKIN_TEMPLATES.contains(&key.template) {
             skinned_in_vertex_shader(key)
         } else {
@@ -492,19 +493,21 @@ impl Skinning {
     /// vertex buffer of at most `buffer_bytes` for each part of each such object's mesh that the
     /// pass skins or morphs, page by page, and a segment of the table for each run of one page's
     /// parts in one buffer. Fails, with no object laid out, when the parts need more mesh pages or
-    /// skinned vertex buffers than the pass has.
+    /// skinned vertex buffers than the pass has. The pipelines of `settings` say which objects
+    /// the vertex shaders can skin.
     pub(super) fn rebuild(
         &mut self,
         scene: &SceneStorage,
         animations: Option<&Animations>,
         morphs: &MorphWeights,
-        meshes: &MeshStorage,
+        settings: &SceneSettings,
         buffer_bytes: u32,
     ) -> Result<(), RecordError> {
+        let meshes = settings.meshes();
         self.morph.rebuild(scene, morphs, meshes);
         self.joints.upload_again();
         let laid_out = self
-            .gather(scene, animations, morphs, meshes)
+            .gather(scene, animations, morphs, settings)
             .and_then(|()| self.place(buffer_bytes));
         if laid_out.is_err() {
             self.objects.clear();
@@ -531,14 +534,17 @@ impl Skinning {
 
     /// Lists the skinned and morphed objects in slot order and the parts of their meshes that the
     /// pass skins or morphs, with the mesh pages that hold those parts and the pages' vertex
-    /// formats.
+    /// formats. The pass takes every such object unless the vertex shaders skin: then it takes
+    /// the morphed ones, and those whose pair, by `settings`, draws with a template that has no
+    /// SKIN build.
     fn gather(
         &mut self,
         scene: &SceneStorage,
         animations: Option<&Animations>,
         morphs: &MorphWeights,
-        meshes: &MeshStorage,
+        settings: &SceneSettings,
     ) -> Result<(), RecordError> {
+        let meshes = settings.meshes();
         self.objects.clear();
         self.parts.clear();
         self.pages.clear();
@@ -556,7 +562,12 @@ impl Skinning {
             let Some(mesh) = meshes.mesh(scene.meshes()[slot] - 1) else {
                 continue;
             };
-            let computed = morphed || !self.mode.vertex_shader;
+            let vertex_skins = || {
+                settings
+                    .pipeline_of(scene.meshes()[slot], scene.materials()[slot])
+                    .is_none_or(|key| SKIN_TEMPLATES.contains(&key.template))
+            };
+            let computed = morphed || !self.mode.vertex_shader || !vertex_skins();
             self.computed += u32::from(computed);
             let first_part = self.parts.len() as u32;
             let parts = if computed { meshes.parts(mesh) } else { &[] };

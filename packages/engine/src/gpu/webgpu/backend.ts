@@ -159,6 +159,11 @@ export class WebGPUBackend {
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
 	 */
 	private readonly parkedCompute: Uint32Array[] = [];
+	/**
+	 * True when the vertex shaders skin skinned meshes, so a preload of skinning prepares the
+	 * shaders of its SKIN builds.
+	 */
+	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
@@ -690,21 +695,21 @@ export class WebGPUBackend {
 	 * it creates each build's shader module, which the feature's pipelines then share, and builds
 	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
 	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
-	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
-	 * shader serve only the `?skinning=vertex` switch, and are left out.
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's file holds the SKIN
+	 * builds, which skin in the vertex shader, and the skinning pass, which morphs and skins what
+	 * they cannot. It builds the pass's pipelines in every mode, and prepares the SKIN builds only
+	 * while the vertex shaders skin.
 	 */
 	precompile(feature: string, module: FirstUseShaders): void {
 		const compute = PRECOMPILED[feature];
-		if (compute) {
-			for (const [template, bits] of compute)
-				this.device
-					.createComputePipelineAsync(this.pipelines.compute(template, bits))
-					.catch(() => undefined);
-			return;
-		}
-		for (const [name, builds] of Object.entries(module))
-			for (const build of Object.values(builds))
-				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+		if (!compute || (feature === 'skinning' && this.skinsInVertexShaders))
+			for (const [name, builds] of Object.entries(module))
+				for (const build of Object.values(builds))
+					if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+		for (const [template, bits] of compute ?? [])
+			this.device
+				.createComputePipelineAsync(this.pipelines.compute(template, bits))
+				.catch(() => undefined);
 	}
 
 	/**
