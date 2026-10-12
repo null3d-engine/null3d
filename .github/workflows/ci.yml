@@ -627,23 +627,22 @@ jobs:
     # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
     # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
-    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard:
-    # add it to the list, and raise the count in the name and the command.
+    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard: add it to
+    # the shard list and raise the count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
-    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
-    # each time the runner replaces it. The restart pages wait for Safari to give back the memory
-    # of stopped engines, and at their slowest each one takes 7 minutes; a shard holds 4 of them.
-    # The limit leaves room for all of that at once, and for a plan that grows.
-    timeout-minutes: 45
+    # Each shard should take at most about 12 minutes, setup included, which leaves room under the
+    # limit for a runner page that goes quiet: each one costs about a minute more.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5]
+        shards: [5]
     env:
       HUSKY: "0"
     steps:
@@ -660,8 +659,8 @@ jobs:
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
+      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
