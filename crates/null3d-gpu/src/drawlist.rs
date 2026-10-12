@@ -803,6 +803,11 @@ pub mod permutation {
     /// A custom effect reads the scene's depth from a multisampled target, at sample 0.
     pub const DEPTH_MULTISAMPLED: u32 = 262144;
 
+    /// The builds of a level of detail that hands over to the next in a fading band: each instance
+    /// carries a fade value, and the fragment shader keeps the pixels that a 4 × 4 ordered dither
+    /// gives its side of the band. Only the fade buckets of meshes with levels draw with it, so
+    /// the other buckets keep the GPU's early depth test.
+    pub const LOD_FADE: u32 = 1 << 19;
     /// The fragment shader of a masked surface writes its coverage of the pixel's samples itself,
     /// through `sample_mask`, from the faded alpha of [`ALPHA_COVERAGE`]. WebGPU builds only, for
     /// multisampled targets whose format has no alpha, where the pipeline cannot turn alpha to
@@ -834,7 +839,7 @@ pub mod permutation {
     pub const TRANSLUCENCY: u32 = 1 << 28;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 26] = [
+    pub const NAMES: [(&str, u32); 27] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -854,6 +859,7 @@ pub mod permutation {
         ("OUTLINE_VISIBLE", OUTLINE_VISIBLE),
         ("INSTANCE_INDEX", INSTANCE_INDEX),
         ("DEPTH_MULTISAMPLED", DEPTH_MULTISAMPLED),
+        ("LOD_FADE", LOD_FADE),
         ("SAMPLE_MASK", SAMPLE_MASK),
         ("ALPHA_COVERAGE", ALPHA_COVERAGE),
         ("ALPHA_HASH", ALPHA_HASH),
@@ -888,7 +894,10 @@ pub mod permutation {
     /// A caster's build writes depth alone, so it has none of the bits that shade or tone map.
     /// Transmission wins over light through a thin surface, as glTF orders them, and only the test
     /// switch reads instances by index, which no build of such a surface needs.
-    pub const APART: [(u32, u32); 20] = [
+    /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
+    /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
+    /// that tests its alpha by the hash switches its levels at once.
+    pub const APART: [(u32, u32); 25] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -909,6 +918,11 @@ pub mod permutation {
         (TRANSLUCENCY, TRANSMISSION),
         (TRANSLUCENCY, CASTER),
         (TRANSLUCENCY, INSTANCE_INDEX),
+        (LOD_FADE, SKIN),
+        (LOD_FADE, MORPH),
+        (LOD_FADE, INSTANCE_INDEX),
+        (LOD_FADE, TRANSMISSION),
+        (LOD_FADE, ALPHA_HASH),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
@@ -1366,9 +1380,10 @@ pub mod sizes {
     pub const INDIRECT_WORDS: u32 = 5;
     /// 32-bit words per bucket record of the culling shader: its slice's base, its material, its
     /// local sphere's radius, its first draw and draw count, the sphere's centre, the first joint
-    /// of a skin that the vertex shader skins, and 1 for a bucket whose slice holds source indices
-    /// instead of copies of the matrices.
-    pub const BUCKET_WORDS: u32 = 10;
+    /// of a skin that the vertex shader skins, 1 for a bucket whose slice holds source indices
+    /// instead of copies of the matrices, and for a mesh with levels of detail, the level's error,
+    /// the bucket of the next coarser level plus one, and the level's fade bucket plus one.
+    pub const BUCKET_WORDS: u32 = 13;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;

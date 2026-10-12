@@ -1674,6 +1674,48 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold,
 		size: [480, 270] as const,
 	})),
+	// Levels of detail: copies of a sphere whose levels each take a color, just before and just past
+	// each of three switch distances. Every GPU path must draw the first path's image, so each
+	// switches at the same distances. The copies draw as objects and as the rows of a batch, with
+	// the levels switching at once and in their fading bands, opaque and as a mask smoothed by alpha
+	// to coverage, and one copy casts a coarser level's shadow onto a wall.
+	{
+		name: 'lod',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-batch',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?crisp&batch',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod',
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	{
+		name: 'lod-fade',
+		sketch: 'tests/pages/sketches/lod-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The fading bands of a mask smoothed by alpha to coverage, whose alpha passes every pixel, must
+	// draw the opaque bands' image.
+	{
+		name: 'lod-fade-coverage',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?mask',
+		hold: 0,
+		size: [480, 270],
+		reference: 'lod-fade',
+	},
+	{
+		name: 'lod-shadows',
+		sketch: 'tests/pages/sketches/lod-sketch.ts?shadows',
+		hold: 0,
+		size: [480, 270],
+	},
 	// The built-in values of custom materials, at a held time: frame, camera and object, and the
 	// surface's world position, in a surface function and a vertex offset.
 	// A full shader as a custom material, at a held time: a hologram on meshes and instances, and a
@@ -2006,9 +2048,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// Each comparison with three.js, held at its time and count, in each engine and mode. Each engine
 	// draws its own references: the owner reviews the two frames side by side, as each draws each
 	// effect with its own technique for the same look. The instanced mode builds the same scene with
-	// batches of copies, so it borrows the scene graph's references.
+	// batches of copies, so it borrows the scene graph's references, unless three.js draws that mode
+	// with another renderer, whose effects differ: then it keeps references of its own.
 	...COMPARISONS.flatMap((comparison) =>
 		(['null3d', 'threejs'] as const).flatMap((engine): ImageTest[] => {
+			const ownRenderer =
+				engine === 'threejs' && comparison.threeRenderers?.instanced !== undefined;
 			const name = `compare-${comparison.name}-${engine}`;
 			const test: ImageTest = {
 				name,
@@ -2017,7 +2062,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				size: [640, 360],
 				hold: comparison.hold.seconds,
 				tiers: ['webgpu', 'webgl2'],
-				timeoutSeconds: 90,
+				timeoutSeconds: comparison.holdTimeoutSeconds ?? 90,
+				...(comparison.swiftShaderHoldCount !== undefined && {
+					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
+				}),
 			};
 			return [
 				test,
@@ -2025,7 +2073,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 					...test,
 					name: `${name}-instanced`,
 					switches: [...(test.switches ?? []), 'mode=instanced'],
-					reference: name,
+					...(!ownRenderer && { reference: name }),
 				},
 			];
 		}),
