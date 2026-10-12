@@ -151,7 +151,7 @@ type DeviceModules = Readonly<Record<number, () => Promise<{ SHADERS: DeviceShad
  * target: the permutation bits that a device fixes and that those builds vary in, and the loader of
  * the module of each value of those bits.
  */
-interface FirstUseFiles {
+export interface FirstUseFiles {
 	readonly bits: number;
 	readonly modules: Readonly<Record<number, () => Promise<{ SHADERS: FirstUseShaders }>>>;
 }
@@ -170,6 +170,17 @@ function importShaders<Shaders>(url: URL): Promise<{ SHADERS: Shaders }> {
 /// The start of each module of a shader that loads on first use.
 const FIRST_USE_HEADER: &str = r"
 import type { ShaderVariant } from './shaders';
+";
+
+/// The start of each module of a target's loader table of the device modules of builds that need
+/// several features.
+const COMBINED_HEADER: &str = r"
+import type { FirstUseFiles, FirstUseShaders } from './shaders';
+
+/** Imports a device module by its address, as the main module's loaders do. */
+function importShaders(url: URL): Promise<{ SHADERS: FirstUseShaders }> {
+	return import(/* @vite-ignore */ url.href);
+}
 ";
 
 /// The loaders of the device modules, after the loader tables. Each target has a table and a
@@ -218,33 +229,39 @@ export function firstUseFile(shader: string, permutation: number): string | unde
 
 function loadFirstUse(
 	files: Readonly<Record<string, FirstUseFiles>>,
+	combined: () => Promise<Readonly<Record<string, FirstUseFiles>>>,
 	target: string,
 	file: string,
 	bits: number,
 ) {
-	const of = files[file];
-	const load = of?.modules[bits & of.bits];
-	if (!load) {
-		const message = `no shader module holds the ${target} builds of ${file} with permutation bits ${bits}`;
-		return Promise.reject(new Error(message));
-	}
-	return load().then((module) => module.SHADERS);
+	const table = file.includes(FEATURE_JOIN) ? combined() : Promise.resolve(files);
+	return table.then((loaded) => {
+		const of = loaded[file];
+		const load = of?.modules[bits & of.bits];
+		if (!load)
+			throw new Error(
+				`no shader module holds the ${target} builds of ${file} with permutation bits ${bits}`,
+			);
+		return load().then((module) => module.SHADERS);
+	});
 }
 
 /**
  * Loads the WGSL builds that need the features of `file`, a key that `firstUseFile` gives, for a
- * device whose fixed permutation bits are `bits`. Its module holds only those builds.
+ * device whose fixed permutation bits are `bits`. Its module holds only those builds. The table of
+ * the modules of several features loads first, the first time a key of several asks for it.
  */
 export function loadWgslFeature(file: string, bits: number): Promise<FirstUseShaders> {
-	return loadFirstUse(WGSL_FIRST_USE, 'WGSL', file, bits);
+	return loadFirstUse(WGSL_FIRST_USE, loadWgslCombined, 'WGSL', file, bits);
 }
 
 /**
  * Loads the GLSL builds that need the features of `file`, a key that `firstUseFile` gives, for a
- * device whose fixed permutation bits are `bits`. Its module holds only those builds.
+ * device whose fixed permutation bits are `bits`. Its module holds only those builds. The table of
+ * the modules of several features loads first, the first time a key of several asks for it.
  */
 export function loadGlslFeature(file: string, bits: number): Promise<FirstUseShaders> {
-	return loadFirstUse(GLSL_FIRST_USE, 'GLSL', file, bits);
+	return loadFirstUse(GLSL_FIRST_USE, loadGlslCombined, 'GLSL', file, bits);
 }
 
 /**
@@ -252,7 +269,7 @@ export function loadGlslFeature(file: string, bits: number): Promise<FirstUseSha
  * features names the module of the builds that need each of them.
  */
 export function wgslFirstUseFiles(): string[] {
-	return Object.keys(WGSL_FIRST_USE);
+	return [...Object.keys(WGSL_FIRST_USE), ...WGSL_COMBINED];
 }
 
 /**
@@ -260,7 +277,7 @@ export function wgslFirstUseFiles(): string[] {
  * features names the module of the builds that need each of them.
  */
 export function glslFirstUseFiles(): string[] {
-	return Object.keys(GLSL_FIRST_USE);
+	return [...Object.keys(GLSL_FIRST_USE), ...GLSL_COMBINED];
 }
 
 /**
@@ -270,11 +287,17 @@ export function glslFirstUseFiles(): string[] {
  */
 export async function everyShader(): Promise<Record<string, ShaderVariants>> {
 	const every: Record<string, ShaderVariants> = { ...SHADERS };
+	const tables = [
+		WGSL_FIRST_USE,
+		GLSL_FIRST_USE,
+		await loadWgslCombined(),
+		await loadGlslCombined(),
+	];
 	const loads = [
 		...Object.values(WGSL_MODULES),
 		...Object.values(GLSL_MODULES),
-		...[...Object.values(WGSL_FIRST_USE), ...Object.values(GLSL_FIRST_USE)].flatMap((files) =>
-			Object.values(files.modules),
+		...tables.flatMap((table) =>
+			Object.values(table).flatMap((files) => Object.values(files.modules)),
 		),
 		...FIRST_USE,
 	];
@@ -452,7 +475,87 @@ pub(crate) fn modules(output: &Output) -> BTreeMap<String, String> {
             first_use_module(output, shader, target),
         );
     }
+    for target in [Target::Wgsl, Target::Glsl] {
+        let combined = first_use_files(&devices, target, true);
+        if !combined.is_empty() {
+            modules.insert(
+                format!("{}.ts", combined_module_name(target)),
+                combined_module(target, &combined),
+            );
+        }
+    }
     modules
+}
+
+/// The name of the module, without its extension, that holds the loader table of a target's device
+/// modules of builds that need several features, such as `shaders-wgsl-combos`.
+fn combined_module_name(target: Target) -> String {
+    format!("{MAIN_MODULE}-{}-combos", target.name())
+}
+
+/// A target's device modules of features that load on first use, by `firstUseFile`'s key, with the
+/// bits that each key's modules vary in: those of single features, or of sets of several features
+/// when `combined` is true.
+fn first_use_files<'a>(
+    devices: &'a BTreeMap<DeviceModule, Builds<'_>>,
+    target: Target,
+    combined: bool,
+) -> BTreeMap<&'a str, (u32, Vec<&'a DeviceModule>)> {
+    let mut files: BTreeMap<&str, (u32, Vec<&DeviceModule>)> = BTreeMap::new();
+    for module in devices.keys().filter(|module| module.target == target) {
+        if let Some(file) = &module.file
+            && file.contains(FEATURE_JOIN) == combined
+        {
+            let (bits, modules) = files.entry(file).or_default();
+            *bits |= module.bits;
+            modules.push(module);
+        }
+    }
+    files
+}
+
+/// Writes a loader table of device modules of features that load on first use, by their key.
+fn files_table(
+    ts: &mut Writer,
+    declaration: &str,
+    files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>,
+) {
+    if files.is_empty() {
+        ts.line(&format!("{declaration} {{}};"));
+        return;
+    }
+    ts.open(&format!("{declaration} {{"));
+    for (file, (bits, modules)) in files {
+        ts.open(&format!("{}: {{", property(file)));
+        ts.line(&format!("bits: {bits},"));
+        ts.open("modules: {");
+        for module in modules {
+            ts.line(&loader_entry(module));
+        }
+        ts.close("},");
+        ts.close("},");
+    }
+    ts.close("};");
+}
+
+/// The module of a target's loader table of the device modules of builds that need several
+/// features that load on first use. The main module loads it the first time a pipeline or a
+/// preload asks for one of those builds, so the table's addresses add nothing to the start.
+fn combined_module(target: Target, files: &BTreeMap<&str, (u32, Vec<&DeviceModule>)>) -> String {
+    let mut ts = Writer::default();
+    ts.out.push_str(HEADER);
+    ts.out.push_str(COMBINED_HEADER);
+    let name = target.name().to_ascii_uppercase();
+    ts.line("");
+    ts.line(&format!(
+        "/** The {name} device modules of builds that need several features, by `firstUseFile`'s key. */"
+    ));
+    files_table(
+        &mut ts,
+        "export const FILES: Readonly<Record<string, FirstUseFiles>> =",
+        files,
+    );
+    ts.out
 }
 
 /// The module that names the features that load on first use, which a page may preload: no shader
@@ -674,6 +777,14 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
     ts.out
 }
 
+/// A target's name in the main module's function names, such as `Wgsl`.
+fn target_word(target: Target) -> &'static str {
+    match target {
+        Target::Wgsl => "Wgsl",
+        Target::Glsl => "Glsl",
+    }
+}
+
 /// A loader table's entry for a device module: its bits, and the import of its file by address.
 fn loader_entry(module: &DeviceModule) -> String {
     format!(
@@ -683,9 +794,9 @@ fn loader_entry(module: &DeviceModule) -> String {
     )
 }
 
-/// The tables of the features that load on first use: each target's modules of each set of
-/// features whose builds need just them, the feature of each shader whose builds all need one, and
-/// the feature of each permutation bit.
+/// The tables of the features that load on first use: each target's modules of each feature, the
+/// keys of its modules of builds that need several features and the loader of their table, the
+/// feature of each shader whose builds all need one, and the feature of each permutation bit.
 fn first_use_tables(
     ts: &mut Writer,
     first_use: &FirstUseFeatures,
@@ -693,35 +804,41 @@ fn first_use_tables(
 ) {
     for target in [Target::Wgsl, Target::Glsl] {
         let name = target.name().to_ascii_uppercase();
-        let mut files: BTreeMap<&str, (u32, Vec<&DeviceModule>)> = BTreeMap::new();
-        for module in devices.keys().filter(|module| module.target == target) {
-            if let Some(file) = &module.file {
-                let (bits, modules) = files.entry(file).or_default();
-                *bits |= module.bits;
-                modules.push(module);
-            }
-        }
-        let table = format!("const {name}_FIRST_USE: Readonly<Record<string, FirstUseFiles>> =");
         ts.line("");
         ts.line(&format!(
-            "/** The {name} device modules of the features that load on first use, by `firstUseFile`'s key. */"
+            "/** The {name} device modules of each feature that loads on first use, by its name. */"
         ));
-        if files.is_empty() {
-            ts.line(&format!("{table} {{}};"));
-            continue;
+        files_table(
+            ts,
+            &format!("const {name}_FIRST_USE: Readonly<Record<string, FirstUseFiles>> ="),
+            &first_use_files(devices, target, false),
+        );
+        let combined = first_use_files(devices, target, true);
+        let keys: Vec<String> = combined.keys().map(|key| quote(key)).collect();
+        ts.line("");
+        ts.line(&format!(
+            "/** The keys of the {name} device modules of builds that need several features. */"
+        ));
+        ts.line(&format!(
+            "const {name}_COMBINED: readonly string[] = [{}];",
+            keys.join(", ")
+        ));
+        ts.line("");
+        ts.line(&format!(
+            "/** Loads the table of the {name} device modules of builds that need several features. */"
+        ));
+        if combined.is_empty() {
+            ts.line(&format!(
+                "const load{}Combined = (): Promise<Readonly<Record<string, FirstUseFiles>>> => Promise.resolve({{}});",
+                target_word(target)
+            ));
+        } else {
+            ts.line(&format!(
+                "const load{}Combined = () => import('./{}').then((module) => module.FILES);",
+                target_word(target),
+                combined_module_name(target)
+            ));
         }
-        ts.open(&format!("{table} {{"));
-        for (file, (bits, modules)) in &files {
-            ts.open(&format!("{}: {{", property(file)));
-            ts.line(&format!("bits: {bits},"));
-            ts.open("modules: {");
-            for module in modules {
-                ts.line(&loader_entry(module));
-            }
-            ts.close("},");
-            ts.close("},");
-        }
-        ts.close("};");
     }
     ts.line("");
     ts.line(
@@ -1336,7 +1453,18 @@ mod tests {
             ["webgpu_bloom_hash_skin"]
         );
         assert_eq!(names(module("hash+sprites", 0), "sprite"), ["webgpu_hash"]);
-        let main = &self::modules(&output)["shaders.ts"];
+        let modules = self::modules(&output);
+        let main = &modules["shaders.ts"];
+        assert!(main.contains(
+            "const WGSL_COMBINED: readonly string[] = ['bloom+hash', 'bloom+hash+skinning', 'hash+sprites'];"
+        ));
+        assert!(main.contains("const GLSL_COMBINED: readonly string[] = [];"));
+        assert!(
+            !main.contains("shaders-bloom-and-hash"),
+            "the start's main module names no module of several features"
+        );
+        assert!(!modules.contains_key("shaders-glsl-combos.ts"));
+        let combined = &modules["shaders-wgsl-combos.ts"];
         let pair = "	'bloom+hash': {
 		bits: 2,
 		modules: {
@@ -1345,8 +1473,8 @@ mod tests {
 		},
 	},
 ";
-        assert!(main.contains(pair), "{main}");
-        assert!(main.contains("	'bloom+hash+skinning': {\n		bits: 0,\n"));
+        assert!(combined.contains(pair), "{combined}");
+        assert!(combined.contains("	'bloom+hash+skinning': {\n		bits: 0,\n"));
         assert!(main.contains("export const FEATURE_JOIN = '+';"));
         assert!(main.contains("export function firstUseFile(shader: string, permutation: number)"));
     }
