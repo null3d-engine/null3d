@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use null3d_gpu::drawlist::{permutation, vertex};
+use null3d_gpu::drawlist::vertex;
 
 use crate::manifest::{Manifest, Pipeline, Shader, Target, Variant};
 use crate::position::locate;
@@ -345,14 +345,8 @@ pub struct MaterialOutput {
     pub uniforms: Vec<Uniform>,
     /// The textures that the WGSL declares, in the order of their slots: none without any.
     pub textures: Vec<Texture>,
-    /// The template's variants with the WGSL, or the full shader's, by name, without those of
-    /// `skin_variants`.
+    /// The template's variants with the WGSL, or the full shader's, by name.
     pub variants: BTreeMap<String, VariantOutput>,
-    /// The template's WebGPU builds that skin in the vertex shader, by name. They load on first
-    /// use, when the material first draws a skinned mesh, so the Vite plugin puts them in a module
-    /// of their own, which pages without such a mesh never download. Empty for a full shader.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub skin_variants: BTreeMap<String, VariantOutput>,
     /// The vertex shader locations that the vertex stage reads from a mesh's vertices, in order.
     pub locations: Vec<u32>,
     /// The optional vertex attributes (`vertex::*` bits) that those locations read, which a mesh
@@ -527,11 +521,10 @@ impl Compiler {
                 // Custom materials draw at full precision, so their builds stay half as many. They
                 // keep the SKIN builds on both paths, as the vertex shaders skin by default, and
                 // skinned objects of one mesh and material then share an instanced draw (decision
-                // record D-20). The WebGPU ones load on first use (`skin_variants`). They have no
-                // MORPH builds, which would double their WebGL2 builds again: on WebGL2 they draw
-                // morphed meshes at rest (decision record D-51). They read their
-                // instances from the culling shader's copies on every path, so they have no
-                // INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
+                // record D-20). They have no MORPH builds, which would double their WebGL2 builds
+                // again: on WebGL2 they draw morphed meshes at rest (decision record D-51). They
+                // read their instances from the culling shader's copies on every path, so they
+                // have no INSTANCE_INDEX builds (decision record D-23). They have no builds of alpha to
                 // coverage or the alpha hash either: they test their alpha against the cutoff.
                 // Only WGSL that sets the surface's transmission has the builds that let light
                 // through, so other materials keep their builds as few as before. Every material
@@ -588,15 +581,11 @@ impl Compiler {
         // A mesh without second texture coordinates offers its first set in their place, so the
         // second set is no attribute that a mesh needs.
         let attributes = attributes & !vertex::UV1;
-        let (skin_variants, variants) = built.into_iter().partition(|(_, variant)| {
-            variant.wgsl.is_some() && variant.permutation & permutation::SKIN != 0
-        });
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             textures: texture_fields,
-            variants,
-            skin_variants,
+            variants: built,
             locations,
             attributes,
             base_color: true,
@@ -682,7 +671,6 @@ impl Compiler {
             uniforms: Vec::new(),
             textures: Vec::new(),
             variants: built,
-            skin_variants: BTreeMap::new(),
             locations,
             attributes,
             base_color: false,
