@@ -7,13 +7,17 @@
 //   reads no depth texture type with textureLoad.
 // - `horizon` is three.js's GTAOShader: it rebuilds the surface's normal from the depth around it,
 //   then searches each of a few slices around the view for the horizons that hide the sky, and
-//   writes how open the surface is, with the normal.
+//   writes how open the surface is, with the normal. It also marches the sun's contact shadows
+//   through the depth copy. It writes the occlusion, the normal's x and y, and the contact shadows.
+//   The normal faces the camera, so its z follows from x and y.
 // - `denoise` is three.js's PoissonDenoiseShader: a blur over a disk of taps that keeps the taps on
 //   the pixel's own surface, by their occlusion, their distance from its plane and their normal. It
-//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao). It is the
-//   last step, so it also marches the sun's contact shadows through the depth copy and writes
-//   them in the fourth channel. When only contact shadows draw, the frame runs the depth step and
-//   this step alone: this step then writes no occlusion, and its second texture is the depth copy.
+//   writes the occlusion beside the depth, which the opaque pass reads (null3d::gtao). The same
+//   taps blur the contact shadows, kept to the surface by its plane and normal alone, which
+//   smooths the noise of the march's start without bleeding across an object's edge.
+//
+// When only contact shadows draw, the same steps run: the horizon step skips the horizon search,
+// and the denoise writes no occlusion.
 //
 // The last step's target holds one value per channel: the occlusion, the depth, the length of a
 // reflected ray (written by a step of screen-space reflections, which this step copies through, or
@@ -24,7 +28,7 @@
 // ends on the screen, where the depth value changes linearly. A step whose ray lies behind the
 // surface that the copy holds, by more than a small bias and less than a thickness, is in shadow.
 // They close the lit gap that the cascades' texels and biases leave where small objects meet the
-// ground. Each texel jitters its steps with interleaved gradient noise.
+// ground. Each texel jitters its steps with interleaved gradient noise, which the denoise blurs.
 //
 // Positions are in the camera's view space, from texture coordinates of the render size that count
 // from the top left. A texel of the steps stands for the pixel of the scene under its center.
@@ -57,8 +61,7 @@ struct Settings {
 }
 
 // Binding 1 is the scene's depth target in the depth step, and the steps' copy of the depth in the
-// others. Binding 2 is the horizon step's target, which only the denoise reads. Without ambient
-// occlusion, the denoise's binding 2 is the depth copy, which it does not read.
+// others. Binding 2 is the horizon step's target, which only the denoise reads.
 @group(0) @binding(0) var<uniform> settings: Settings;
 #ifdef MULTISAMPLED
 @group(0) @binding(1) var source: texture_multisampled_2d<f32>;
@@ -192,12 +195,17 @@ fn raise(horizon: f32, center: vec3f, to_view: vec3f, offset: vec3f, falloff: f3
 @fragment
 fn horizon(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = corner_texel(position);
-    if depth_at(texel) <= 0.0 {
-        // The far plane, where no surface hides the sky.
-        return vec4f(1.0, 0.0, 0.0, 0.0);
+    let depth = depth_at(texel);
+    if depth <= 0.0 {
+        // The far plane, where no surface hides the sky or the sun.
+        return vec4f(1.0, 0.0, 0.0, 1.0);
     }
     let center = position_at(texel);
     let normal = rebuilt_normal(texel, center);
+    let contact = contact_light(texel, depth);
+    if settings.march.z <= 0.0 {
+        return vec4f(1.0, normal.xy, contact);
+    }
     let noise = (texel % NOISE_SIZE + NOISE_SIZE) % NOISE_SIZE;
     let turn = 2.0 * PI * f32(magic_square(noise)) / f32(NOISE_SIZE * NOISE_SIZE);
     let tangent = vec3f(cos(turn), sin(turn), 0.0);
@@ -234,10 +242,11 @@ fn horizon(@builtin(position) position: vec4f) -> @location(0) vec4f {
         open += nx * nxb + ny * nyb;
     }
     let occlusion = pow(clamp(open / f32(slices), 0.0, 1.0), settings.shape.x);
-    return vec4f(occlusion, normal);
+    return vec4f(occlusion, normal.xy, contact);
 }
 
-/// The horizon step's occlusion and normal at a texel, clamped inside the corner.
+/// The horizon step's occlusion, normal's x and y, and contact shadows at a texel, clamped inside
+/// the corner.
 fn horizon_at(texel: vec2i) -> vec4f {
     let inside = clamp(texel, vec2i(0), vec2i(settings.corners.zw) - 1);
     return textureLoad(horizons, vec2i(inside.x, turned(inside.y, settings.extents.w)), 0);
@@ -249,19 +258,24 @@ fn gradient_noise(texel: vec2i) -> f32 {
     return fract(52.9829189 * fract(dot(vec2f(texel), vec2f(0.06711056, 0.00583715))));
 }
 
+/// The unit normal whose x and y the horizon step wrote. It faces the camera, so its z is positive.
+fn unpacked_normal(xy: vec2f) -> vec3f {
+    return vec3f(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
+}
+
 /// three.js's Poisson denoise of the horizon step's occlusion at `texel`, whose copied depth is
-/// `depth`: 1 where ambient occlusion does not draw, at the far plane, and where the horizon step
-/// found no surface.
-fn blurred_occlusion(texel: vec2i, depth: f32) -> f32 {
-    if settings.march.z <= 0.0 {
-        return 1.0;
+/// `depth`, then the same disk's blur of its contact shadows. The contact shadows' taps keep to the
+/// surface by their distance from its plane, within a share of its distance from the camera, and
+/// by their normal. Each is 1 where it does not draw, and at the far plane.
+fn blurred(texel: vec2i, depth: f32) -> vec2f {
+    let draws = vec2f(settings.march.z, settings.march.x) > vec2f(0.0);
+    if depth <= 0.0 || !any(draws) {
+        return vec2f(1.0);
     }
     let found = horizon_at(texel);
-    if depth <= 0.0 || dot(found.yzw, found.yzw) == 0.0 {
-        return 1.0;
-    }
     let center = position_at(texel);
-    let normal = found.yzw;
+    let normal = unpacked_normal(found.yz);
+    let contact_phi = CONTACT_PLANE * -center.z;
     // Interleaved gradient noise turns the disk at each texel, where three.js reads a noise texture.
     let noise = gradient_noise(texel);
     let swing = vec2f(sin(noise * 2.0 * PI), cos(noise * 2.0 * PI));
@@ -271,25 +285,30 @@ fn blurred_occlusion(texel: vec2i, depth: f32) -> f32 {
     let depth_phi = settings.denoise.y;
     let normal_phi = settings.denoise.z;
     let radius = settings.denoise.w;
-    var sum = found.x;
-    var total = 1.0;
+    var sums = found.xw;
+    var totals = vec2f(1.0);
     for (var tap = 0; tap < DENOISE_TAPS; tap++) {
         let angle = 2.0 * PI * DENOISE_RINGS * f32(tap) / f32(DENOISE_TAPS);
         let spread = f32(tap) / f32(DENOISE_TAPS - 1);
         let offset = turn * (vec2f(cos(angle), sin(angle)) * (1.0 + spread * (radius - 1.0)));
         let other = texel + vec2i(floor(offset + 0.5));
         let held = horizon_at(other);
-        let normal_weight = pow(max(dot(normal, held.yzw), 0.0), normal_phi);
+        let normal_weight = pow(max(dot(normal, unpacked_normal(held.yz)), 0.0), normal_phi);
         let luma_weight = max(1.0 - abs(held.x - found.x) / luma_phi, 0.0);
         let plane = abs(dot(center - position_at(other), normal));
         let depth_weight = max(1.0 - plane / depth_phi, 0.0);
-        let weight = luma_weight * depth_weight * normal_weight;
-        sum += held.x * weight;
-        total += weight;
+        let contact_weight = max(1.0 - plane / contact_phi, 0.0);
+        let weights = vec2f(luma_weight * depth_weight, contact_weight) * normal_weight;
+        sums += held.xw * weights;
+        totals += weights;
     }
-    return sum / total;
+    return select(vec2f(1.0), sums / totals, draws);
 }
 
+/// How far from a surface's plane the blur of its contact shadows still takes a tap, as a share of
+/// the surface's distance from the camera. A tap on a small object above the surface, such as a
+/// pebble on the ground, lies further out, so its shadow does not bleed onto the object.
+const CONTACT_PLANE: f32 = 0.01;
 /// The share of the march's reach, at its far end, over which a hit's shadow fades out, so each
 /// contact shadow ends softly rather than at a hard line.
 const CONTACT_FADE: f32 = 0.5;
@@ -380,5 +399,6 @@ fn contact_light(texel: vec2i, depth: f32) -> f32 {
 fn denoise(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = corner_texel(position);
     let depth = depth_at(texel);
-    return vec4f(blurred_occlusion(texel, depth), depth, 0.0, contact_light(texel, depth));
+    let values = blurred(texel, depth);
+    return vec4f(values.x, depth, 0.0, values.y);
 }

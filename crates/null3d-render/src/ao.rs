@@ -6,15 +6,15 @@
 //! 1. The depth step copies one texel of the prepass's depth per pixel: sample 0 of a multisampled
 //!    target. The opaque pass draws the same depth, so the occlusion lines up with its surfaces.
 //! 2. The horizon step is three.js's GTAO: it rebuilds each surface's normal from the depth around
-//!    it, and searches a few slices around the view for the horizons that hide the sky.
+//!    it, and searches a few slices around the view for the horizons that hide the sky. It also
+//!    marches the sun's contact shadows through the depth copy.
 //! 3. The denoise step is three.js's Poisson denoise: it blurs the occlusion over a disk of taps
-//!    that keeps to the pixel's own surface, and writes it beside the depth. As the last step, it
-//!    also marches the sun's contact shadows through the depth copy, and writes them in the fourth
-//!    channel.
+//!    that keeps to the pixel's own surface, and writes it beside the depth. The same taps blur the
+//!    contact shadows into the fourth channel, which smooths the noise of each march's start.
 //!
 //! The sun's contact shadows use the same steps, as they read the same depth copy. When they draw
-//! without ambient occlusion, only the depth step and the last step run, and the last step writes
-//! no occlusion ([`Steps::Contact`]).
+//! without ambient occlusion, the horizon step skips its search and the denoise writes no
+//! occlusion.
 //!
 //! The opaque pass then reads the four texels around each pixel, weighted by how close their depth
 //! lies to the pixel's own (`null3d::gtao`). It darkens only the ambient light, the light that
@@ -40,25 +40,6 @@ use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 /// The steps before the opaque pass: the depth copy, the horizon search and the denoise.
 pub(crate) const STEPS: usize = 3;
 
-/// Which of the steps run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Steps {
-    /// All three, for ambient occlusion, with or without contact shadows.
-    Occlusion,
-    /// The depth copy and the last step, for contact shadows alone.
-    Contact,
-}
-
-impl Steps {
-    /// The steps that run, by their index.
-    pub(crate) fn indices(self) -> &'static [usize] {
-        match self {
-            Steps::Occlusion => &[0, 1, 2],
-            Steps::Contact => &[0, 2],
-        }
-    }
-}
-
 /// The most steps that one march of contact shadows takes.
 pub const MAX_CONTACT_STEPS: u32 = 32;
 
@@ -66,7 +47,7 @@ pub const MAX_CONTACT_STEPS: u32 = 32;
 /// of their reach. A ray that passes further behind a surface goes behind it, not into it.
 const CONTACT_THICKNESS: f32 = 0.5;
 
-/// The main directional light's contact shadows, as the last step marches them.
+/// The main directional light's contact shadows, as the horizon step marches them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Contact {
     /// The unit direction toward the light, in the camera's view space.
@@ -78,7 +59,7 @@ pub struct Contact {
 }
 
 /// The format of each step's target: the depth copy in one float, then the occlusion with the
-/// normal, then the occlusion with the depth.
+/// normal and the contact shadows, then the occlusion with the depth and the contact shadows.
 pub(crate) const FORMATS: [u32; STEPS] = [
     format::R32_FLOAT,
     format::RGBA16_FLOAT,
@@ -227,8 +208,6 @@ pub(crate) struct AoPass {
     uploaded: Option<Block>,
     /// The textures that each step's bind group reads, or zeros before the group exists.
     bound: StepSources,
-    /// The steps that run.
-    steps: Steps,
 }
 
 impl AoPass {
@@ -242,30 +221,20 @@ impl AoPass {
             staged: Block::default(),
             uploaded: None,
             bound: [[0; 2]; STEPS],
-            steps: Steps::Occlusion,
         }
-    }
-
-    /// Runs `steps` from the next frame on.
-    pub(crate) fn set_steps(&mut self, steps: Steps) {
-        self.steps = steps;
     }
 
     /// Bytes a frame may copy into its arena: the whole uniform buffer.
     pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES;
 
-    /// The ids of the pipelines of the steps that run, once the pass asked for them.
+    /// The ids of the steps' pipelines, once the pass asked for them.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
-        self.steps
-            .indices()
-            .iter()
-            .filter_map(|&step| self.pipelines[step])
+        self.pipelines.iter().flatten().copied()
     }
 
-    /// Asks `pipelines` for the pipelines of the steps that run, once.
+    /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
-        for &step in self.steps.indices() {
-            let slot = &mut self.pipelines[step];
+        for (step, slot) in self.pipelines.iter_mut().enumerate() {
             if slot.is_none() {
                 *slot = Some(pipelines.id(pipeline(step, self.multisampled)));
             }
@@ -273,8 +242,8 @@ impl AoPass {
     }
 
     /// Makes the buffer when the GPU lacks it, uploads the settings when they changed, and binds
-    /// each step that runs to its `sources` when its group is new or the frame made the plan's
-    /// textures again. `ao` is ambient occlusion's settings while it draws, `contact` the contact
+    /// each step to its `sources` when its group is new or the frame made the plan's textures
+    /// again. `ao` is ambient occlusion's settings while it draws, `contact` the contact
     /// shadows' while they draw, `projection` the camera's projection matrix and `inverse` its
     /// inverse.
     #[allow(clippy::too_many_arguments)]
@@ -309,8 +278,7 @@ impl AoPass {
             list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
             self.uploaded = Some(self.staged);
         }
-        for &step in self.steps.indices() {
-            let textures = sources[step];
+        for (step, &textures) in sources.iter().enumerate() {
             if !textures_made && self.bound[step] == textures {
                 continue;
             }

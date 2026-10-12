@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-F12 on 11 October 2026, for the owner's review. It changes where [D-53](D-53-technique-defaults.md) ruling 6 runs the march: at ambient occlusion's half size, not in the lit shader. Date: 2026-10-11. Task: M2-F12.
 
-Summary: The main directional light draws contact shadows: short shadows found in the camera's depth, which close the lit gap that the cascades leave where small objects meet the ground. Ambient occlusion's last half-size step marches them toward the sun through its depth copy and writes them in the fourth channel of its screen texture. The opaque pass reads that channel with the four reads it already makes for ambient occlusion, and multiplies the sun's light by it. `shadow: { contactDistance }` sets the reach (0.3 m by default), and the `contactShadowSteps` quality setting sets the steps: 8 on High, 16 on Ultra, 4 on WebGL2's Medium, none on Low.
+Summary: The main directional light draws contact shadows: short shadows found in the camera's depth, which close the lit gap that the cascades leave where small objects meet the ground. Ambient occlusion's half-size horizon step marches them toward the sun through its depth copy, and its denoise blurs them by depth and normal into the fourth channel of its screen texture. The opaque pass reads that channel with the four reads it already makes for ambient occlusion, and multiplies the sun's light by it. `shadow: { contactDistance }` sets the reach (0.3 m by default), and the `contactShadowSteps` quality setting sets the steps: 8 on High, 16 on Ultra, 4 on WebGL2's Medium, none on Low.
 
 ## Question
 
@@ -37,7 +37,7 @@ The S25 failed the rule at both sizes. The prototype's pictures showed a dotted 
 | Option | Who does it | Verdict |
 | --- | --- | --- |
 | A: in the lit shader, at every pixel, as D-53 ruling 6 said | Filament | Rejected. It failed S3's rule on the S25 by 30 to 50%. A gate on the cascade helps only where shadows already fall. Each pixel also pays the steps' reads in the heaviest shader of the frame |
-| B: in ambient occlusion's last half-size step, into a channel of its screen texture | This design | Chosen. A quarter of the marches. The opaque pass reads the result with reads it makes already, so the lit shader gains one multiply |
+| B: in ambient occlusion's half-size steps, into a channel of its screen texture | This design | Chosen. A quarter of the marches. The opaque pass reads the result with reads it makes already, so the lit shader gains one multiply |
 | C: Bend Studio's compute pass, which marches along the light's lines on the screen with shared memory | Days Gone, Unreal Engine 5 | Rejected for now. It needs compute shaders, so WebGL2 needs a second technique. It also needs a resolved full-size depth, which costs a resolve on tile GPUs |
 
 Option B marches at half the render size each way. The depth-aware read that ambient occlusion uses takes the result to the full size, so a contact shadow keeps to its own surface at depth edges. The march starts from the depth copy's own surface at each texel, so it agrees with the depth it steps through. That leaves fewer false hits than a march from the full-size pixel.
@@ -52,11 +52,13 @@ Contact shadows read ambient occlusion's depth step: the depth prepass's depth, 
 
 | Ambient occlusion | Contact shadows | Steps |
 | --- | --- | --- |
-| On | On or off | Depth copy, horizon search, denoise. The denoise also marches, or writes 1 when contact shadows are off |
-| Off | On | Depth copy and the last step. The last step writes no occlusion, and binds the depth copy in place of the horizon target |
+| On | On or off | Depth copy, horizon search, denoise. The horizon step also marches, or writes 1 when contact shadows are off. The denoise blurs both |
+| Off | On | The same three steps. The horizon step skips its search and writes no occlusion. The denoise blurs the contact shadows alone |
 | Off | Off | None, and no prepass on WebGPU |
 
-The contact-only mode needs no new pipeline: the denoise's shader skips its blur by a value in its uniform block.
+The contact-only mode needs no new pipeline: the steps' shaders skip the occlusion by a value in their uniform block. The horizon step's target holds the occlusion, the normal's x and y, and the contact shadows. The normal faces the camera, so the denoise rebuilds its z from x and y.
+
+A first version marched in the denoise, and ran only the depth copy and the denoise without ambient occlusion. Its shadows had ragged, noisy edges, as the march's noise had no blur after it ([The noise](#the-noise)).
 
 ### The shared screen texture
 
@@ -70,7 +72,7 @@ The coordinator ruled on 11 October 2026 how the features share ambient occlusio
 | w | The share of the sun's light that contact shadows let through | 1 |
 
 - The trace step of screen-space reflections runs first and writes z. It passes x, y and w through, or writes their neutral values.
-- Ambient occlusion's denoise, or the contact-only step, runs last. It writes x, y and w, and copies z through unchanged. Before reflections merge, it writes z = 0.
+- Ambient occlusion's denoise runs last, also when only contact shadows draw. It writes x, y and w, and copies z through unchanged. Before reflections merge, it writes z = 0.
 - When ambient occlusion and contact shadows are off, the reflections' step writes last and leaves x, y and w neutral.
 - The blank texture, which the opaque pass binds while the steps draw nothing, holds the neutral values. A frame that reads it before the steps' pipelines build keeps every light.
 - The frame's `occlusion` values keep their meaning: x is ambient occlusion's strength, 0 when it is off. z and w describe the texture's grid while any step draws, and the opaque pass reads the texture only then.
@@ -81,10 +83,23 @@ From the surface at each texel, a ray goes toward the sun for `contactDistance` 
 
 - A step is in shadow when the ray lies behind the depth copy's surface by more than a bias and less than a thickness. The bias is 0.4% of the surface's distance from the camera. The thickness is half the reach, so a ray behind a thin pole does not stay in shadow.
 - The depth copy holds each texel's depth at one point, its center. A step between two centers compares the ray with the depth that the start texel's slope predicts at the step's own point. The slope comes from the start's nearer neighbour on each axis, so an object's edge does not bend it. Without this, flat ground seen at a low angle shaded itself in rows of dots: on the Mac, the walking demo's far ground changed in 31% to 49% of its pixels, and the morph test's eggs gained dots along their sides.
-- Interleaved gradient noise jitters each texel's steps. The depth-aware read blends four texels, which softens the jitter's dots.
+- Interleaved gradient noise jitters each texel's steps. The denoise then blurs them ([The noise](#the-noise)).
 - A hit's shadow fades over the last half of the reach, so each shadow ends softly.
 - Shadows fade over the last 5% of the screen at each edge, where rays leave the depth copy.
 - Every texel runs the same steps. A loop whose count differs between the pixels of a work group runs wrongly on Adreno 830's driver, as the cascades' code notes.
+
+### The noise
+
+Each texel starts its march at its own jittered point. Without a blur, the edges of the shadows are ragged: in the stone garden demo's low sun, each pebble's long contact shadow had a fringe of dots along its sides (12 October 2026). The four depth-aware reads of the opaque pass blend only neighbouring texels, which is too little.
+
+| Option | Verdict |
+| --- | --- |
+| Leave the noise | Rejected by the coordinator on 12 October 2026. The engine's default must be the best technique, and the noise shows in every scene that uses contact shadows |
+| More steps, or no jitter | Rejected. Without jitter, the shadows' ends step in bands one step long. 16 steps cost 0.2 ms more than 8 on the Mac at 1080p, and their jitter still needs a blur |
+| A wider read in the opaque pass | Rejected. Every pixel of the render size would pay the reads, in the heaviest shader of the frame |
+| Blur in ambient occlusion's denoise | Chosen. The horizon step marches, and the denoise's 16 taps, which three.js's denoise reads already, blur the result |
+
+The blur keeps to the surface: a tap counts by its distance from the surface's plane, within 1% of the surface's distance from the camera, and by its normal. A pebble's taps then stay off the ground around it, so the shadow does not bleed onto the pebble or its edge onto the ground. It uses none of the occlusion's other weights, as those keep the noise. Without ambient occlusion, the frame runs the horizon step too, which costs one more pass over half the render size ([Cost](#cost)).
 
 ### Spot lights
 
