@@ -20,7 +20,7 @@ import { transformQuat } from '../../../packages/engine/src/math/vec3.ts';
 import { dfgLut } from './dfg-table.ts';
 
 type V2 = [number, number];
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 type V4 = [number, number, number, number];
 
 /** Input texels per case, after the texel that holds the function number. */
@@ -351,7 +351,7 @@ const AGX_MAX_EV = 4.026069;
 
 const rrtAndOdtFit = (v: V3) =>
 	map3(v, (x) => (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081));
-const acesFilmic = (c: V3) =>
+export const acesFilmic = (c: V3) =>
 	map3(mat3(ACES_OUTPUT, rrtAndOdtFit(mat3(ACES_INPUT, scale(c, 1 / 0.6)))), saturate);
 const agxContrast = (v: V3) =>
 	map3(v, (x) => {
@@ -368,7 +368,7 @@ const agxContrast = (v: V3) =>
 		);
 	});
 /** AgX, with Filament's punchy look after the contrast curve when `punchy` is true. */
-function agx(c: V3, punchy = false): V3 {
+export function agx(c: V3, punchy = false): V3 {
 	const inset = mat3(AGX_INSET, mat3(SRGB_TO_REC2020, c));
 	const logged = map3(
 		inset,
