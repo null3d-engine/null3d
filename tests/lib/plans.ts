@@ -457,7 +457,11 @@ const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
  */
 const SHADER_PROGRAMS_PER_PART = 400;
 
-/** The parts of the shaders page: enough that none holds more than that many programs. */
+/**
+ * The parts of the shaders page: enough that each holds about that many programs. A build that
+ * several device modules hold counts in each part that downloads one of them, so a part may hold
+ * somewhat more.
+ */
 export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
 
 /**

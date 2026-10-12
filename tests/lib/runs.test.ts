@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { glslProgramsOf, wgslModulesOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -990,7 +990,8 @@ describe('the checks plan', () => {
 
 	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
 		const parts = items.filter((item) => item.check.kind === 'shaders');
-		const programs = glslProgramsOf(await everyShader()).length;
+		const all = await everyShader();
+		const programs = glslProgramsOf(all).length;
 		expect(programs).toBeGreaterThan(100);
 		expect(parts.length).toBe(SHADER_PARTS);
 		expect(SHADER_PARTS).toBeGreaterThan(1);
@@ -1000,8 +1001,14 @@ describe('the checks plan', () => {
 				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
 			]),
 		);
-		// No part compiles more than a few hundred programs in one WebGL2 context.
+		// The parts together check every build, and no part compiles more than a few hundred
+		// programs in one WebGL2 context.
+		const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, SHADER_PARTS)));
+		const names = (lists: (readonly [string, unknown])[]) => new Set(lists.map(([name]) => name));
+		expect(names(shares.flatMap(glslProgramsOf))).toEqual(names(glslProgramsOf(all)));
+		expect(names(shares.flatMap(wgslModulesOf))).toEqual(names(wgslModulesOf(all)));
 		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
 		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});
