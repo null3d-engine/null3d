@@ -22,7 +22,7 @@ import {
 	S5_GROUND,
 	S5_ORBIT,
 	S5_VIEW_LIGHTS,
-	s5Camera,
+	s5CameraPath,
 	s5CharactersAt,
 } from '../../scenes/s5';
 import { S5_MODEL_URL } from '../lib/s5-model';
@@ -83,30 +83,30 @@ export default defineSketch(async (context) => {
 	const rotations = new Float64Array(data.count * 4);
 	// Still knights keep the place of the first move.
 	let placed = false;
+	// A knight takes its place in a function that takes its index alone, so the browser boxes no
+	// number for the call where it does not inline it.
+	const place = (i: number): void => {
+		const character = characters[i] as Object3D;
+		character.setPosition(
+			positions[i * 3] as number,
+			positions[i * 3 + 1] as number,
+			positions[i * 3 + 2] as number,
+		);
+		character.setRotation(
+			rotations[i * 4] as number,
+			rotations[i * 4 + 1] as number,
+			rotations[i * 4 + 2] as number,
+			rotations[i * 4 + 3] as number,
+		);
+	};
 	const moveCharacters = (): void => {
 		s5CharactersAt(data, clock, positions, rotations);
-		for (let i = 0; i < data.count; i++) {
-			if (placed && still(i)) continue;
-			const character = characters[i] as Object3D;
-			character.setPosition(
-				positions[i * 3] as number,
-				positions[i * 3 + 1] as number,
-				positions[i * 3 + 2] as number,
-			);
-			character.setRotation(
-				rotations[i * 4] as number,
-				rotations[i * 4 + 1] as number,
-				rotations[i * 4 + 2] as number,
-				rotations[i * 4 + 3] as number,
-			);
-		}
+		for (let i = 0; i < data.count; i++) if (!placed || !still(i)) place(i);
 		placed = true;
 	};
 
 	if (demo) return playable();
-	const moveCamera = followPath(camera, (t, position, target) =>
-		s5Camera(data, t, position, target),
-	);
+	const moveCamera = followPath(camera, s5CameraPath(data));
 	const pose = (t: number): void => {
 		clock[0] = t;
 		moveCharacters();
@@ -124,7 +124,7 @@ export default defineSketch(async (context) => {
 	function playable() {
 		debug.stats(true);
 		const start = new Float64Array(3);
-		s5Camera(data, 0, start, new Float64Array(3));
+		s5CameraPath(data)(0, start, new Float64Array(3));
 		camera.setPosition(start[0] as number, start[1] as number, start[2] as number);
 		const controls = createOrbitControls(context, camera, {
 			target: [0, S5_ORBIT.lookHeight, 0],

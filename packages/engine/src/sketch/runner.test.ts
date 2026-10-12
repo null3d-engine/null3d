@@ -355,13 +355,29 @@ describe('SketchRunner', () => {
 		const quiet = await start(() => ({}), undefined, { jobs: light });
 		for (let frame = 0; frame < 200; frame++) quiet.runner.step(frame * 16);
 		expect(light.asked).toEqual([]);
-		// A window with too little work stops the timing for 270 frames, then it times again.
+		// A window with too little work stops the timing for 4.5 s of sketch time, then it times again.
 		expect(light.timing).toEqual([false]);
-		for (let frame = 200; frame < 301; frame++) quiet.runner.step(frame * 16);
+		for (let frame = 200; frame < 311; frame++) quiet.runner.step(frame * 16);
+		expect(light.timing).toEqual([false]);
+		quiet.runner.step(311 * 16);
 		expect(light.timing).toEqual([false, true]);
 		light.handedMs = 0.3;
-		for (let frame = 301; frame < 331; frame++) quiet.runner.step(frame * 16);
+		for (let frame = 312; frame < 342; frame++) quiet.runner.step(frame * 16);
 		expect(light.asked).toEqual([2]);
+	});
+
+	it('times its parallel loops again after the same sketch time at a slow frame rate', async () => {
+		// About 9 frames a second, as CI's software GPU draws some pages. The first window has too
+		// little work, as a page's first frames before its heavy work starts.
+		const slow = { most: 2, handedMs: 0.1, asked: [] as number[], timing: [] as boolean[] };
+		const { runner } = await start(() => ({}), undefined, { jobs: slow });
+		for (let frame = 0; frame < 70; frame++) runner.step(frame * 111);
+		expect(slow.timing).toEqual([false]);
+		runner.step(70 * 111);
+		expect(slow.timing).toEqual([false, true]);
+		slow.handedMs = 5;
+		for (let frame = 71; frame < 101; frame++) runner.step(frame * 111);
+		expect(slow.asked).toEqual([2]);
 	});
 
 	it('updates no transforms a second time for a sketch without a late update', async () => {
