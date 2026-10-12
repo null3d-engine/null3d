@@ -5547,6 +5547,44 @@
 					"sha256": "e96bf8138858afa559ca0e3e78a792aa629e7da6c032ccc50d10876f78cbbf3d"
 				}
 			]
+		},
+		{
+			"id": "showcase/creek",
+			"title": "Creek trees, plants and cave",
+			"purpose": "The organic models of the engine's Creek showcase scene: oak, beech and birch trees, a fern, a hosta, a shrub, wildflowers and a rocky cave mouth",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.py",
+			"fetched": "2026-10-11",
+			"changes": "Built in Blender 5.2 by tools/samples/blender/creek.py in the engine repository, with every texture made by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/creek.ts.",
+			"dir": "sources/showcase/creek",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/creek.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/creek/cave.glb",
+					"bytes": 796728,
+					"sha256": "278c2e22e3e6de40b2a0bbc2138a6f48f2cb4dfa1d4b361618f42a012bf5eafd"
+				},
+				{
+					"path": "sources/showcase/creek/plants.glb",
+					"bytes": 453632,
+					"sha256": "5914339906c581a994f3bc4b98942b98c01ec1a3027b660e5286e725df51fec4"
+				},
+				{
+					"path": "sources/showcase/creek/trees.glb",
+					"bytes": 1835860,
+					"sha256": "4eb309f320e2a8e6608e981fa98e90fc6c18bf5688870c7a58187fc753acb55e"
+				}
+			]
 		}
 	]
 }
