@@ -1,6 +1,6 @@
-// Rules of the runner page that need no browser: how long a test page may take when its own pace
-// shows that it needs longer than its time limit, as the shaders page does on a slow device, and
-// how a finished page counts while the run goes on.
+// Rules of the runner page that need no browser: how long a test page may take when its files load
+// slowly, or when its own pace shows that it needs longer than its time limit, as the shaders page
+// does on a slow device, and how a finished page counts while the run goes on.
 
 /** The most time a page may ask for, as a share of its time limit. */
 export const MOST_TIME_SHARE = 3;
@@ -27,12 +27,35 @@ export function expectedEndSeconds(
 }
 
 /**
- * The time in seconds that the runner page gives a page: its limit, or longer when the page expects
- * to end later, up to a few times the limit.
+ * The time in seconds that the runner page gives a page: its limit plus the time that it spent
+ * loading files, or longer when the page expects to end later, up to a few times the limit. A
+ * device that reaches the server through a slow link, as the cloud's devices do through their
+ * tunnel, then gets the time its loads take, and a page whose own work is slow still fails.
  */
-export function grantedSeconds(limitSeconds: number, endsBy: number | undefined): number {
-	if (endsBy === undefined || !Number.isFinite(endsBy)) return limitSeconds;
-	return Math.max(limitSeconds, Math.min(Math.ceil(endsBy), limitSeconds * MOST_TIME_SHARE));
+export function grantedSeconds(
+	limitSeconds: number,
+	endsBy: number | undefined,
+	loadingSeconds = 0,
+): number {
+	const expected = endsBy !== undefined && Number.isFinite(endsBy) ? endsBy : 0;
+	const asked = Math.max(limitSeconds + loadingSeconds, expected);
+	return Math.max(limitSeconds, Math.min(Math.ceil(asked), limitSeconds * MOST_TIME_SHARE));
+}
+
+/**
+ * The seconds in which at least one of `loads` was in flight, each a start and an end in
+ * milliseconds: the time that a page spent loading files, with loads at the same time counted once.
+ */
+export function loadingSeconds(loads: readonly (readonly [number, number])[]): number {
+	const sorted = [...loads].sort(([a], [b]) => a - b);
+	let total = 0;
+	let to = Number.NEGATIVE_INFINITY;
+	for (const [start, end] of sorted) {
+		const from = Math.max(start, to);
+		if (end > from) total += end - from;
+		to = Math.max(to, end);
+	}
+	return total / 1000;
 }
 
 /** A test page's result as the runner page reads it. */
