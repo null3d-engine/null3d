@@ -17,3 +17,4 @@ BrowserStack offers no iPad with the A12X on a system that runs the gate's pages
 Its A12Z iPad Pro runs iOS 14 only.
 The A14 is the closest chip with a current Safari
 Safari 27.0 cannot compile a shader that calls `atomicCompareExchangeWeak`; the engine's shaders do not call it ([Browser faults](../../implementation-notes.md#browser-faults))
+On 12 October 2026, 5 of the 137 smoke pages ran out of time on the cloud iPad and none reported an engine error: two parts of the shaders page at 220 seconds, after 74 to 86 seconds to load their files, and three glTF pages at 30 seconds, after 24 to 28 seconds before their workers were ready ([20261012-133710-smoke](20261012-133710-smoke.md)).
