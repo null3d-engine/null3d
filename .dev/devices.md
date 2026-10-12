@@ -639,7 +639,16 @@ Swap these in when a device of a tier is busy, or to widen the cover from one mi
 - `--part 2/3` runs only the second of three parts of the picked devices, in the list's order. Each part is a run of its own, with its own build on the dashboard. With one session at a time, tier A's 10 devices take about 2 hours, so run them as `--part 1/3`, `--part 2/3` and `--part 3/3`. On 4 October 2026, the three parts took 25, 18 and 47 minutes.
 - `--plan` picks the plan, which is `smoke` by default. `--parallel 2` opens at most two sessions at once.
 - Options after `--` go to the device runner as they are. For example, `bun run devices:cloud --only bspixel10-chrome -- --only capabilities` runs one page on one device.
-- Ctrl-C ends every open session before the command exits.
+- Ctrl-C ends every open session before the command exits. So does a stop sent to the command's own process, such as `pkill -INT -f tests/devices-cloud.ts`.
+
+#### Stop a run
+
+The device runner holds the sessions, and the command passes each stop signal on to it. A stop then ends the open session before the command exits, and no further run starts.
+
+- Send the stop to the command's own process. A stop sent only to a process above it, such as `bun run`, a shell or the load limiter, may not reach it.
+- Wait until the session's line has printed before you stop a run. A session that is still opening is not yet the runner's to end. It then holds the plan's only session until Automate's idle limit ends it.
+- A stopped command exits with code 130. A queue that runs cloud jobs one after another must count that code as a job to run again. It must not count it as finished.
+- On 12 October 2026, a stop sent to the command alone left its session running, because the command only waited for the device runner. A queue then marked the stopped job as finished, so the job would never have run again.
 
 ### What the command does
 
