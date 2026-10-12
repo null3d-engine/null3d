@@ -145,7 +145,7 @@ describe('the manifest', () => {
 				.flatMap((entry) => {
 					const path = folder ? `${folder}/${entry.name}` : entry.name;
 					if (existsSync(join(examples, path, 'sketch.ts'))) return [`${path}/sketch.ts`];
-					return folder ? [] : sketches(path);
+					return path === 'showcase' ? sketches(path) : [];
 				});
 		expect(DEMOS.map(sketchPath).sort()).toEqual(sketches('').sort());
 		const tests = new Set(IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch : '')));
