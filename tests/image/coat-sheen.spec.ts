@@ -14,10 +14,16 @@ interface Frame {
 	pixels: string;
 }
 
+/** The longest that one page may take to draw its image, long for a software GPU's slow builds. */
+const PAGE_MS = 60_000;
+
+/** The pages that the test draws for each run: with the layers, turned off, and without them. */
+const PAGES_PER_RUN = 3;
+
 /** Each pixel's red, green and blue, from 0 to 1. */
 async function imageOf(page: Page, path: string): Promise<Float32Array> {
 	await page.goto(path);
-	const frame = await pageResult<Frame>(page, 60_000);
+	const frame = await pageResult<Frame>(page, PAGE_MS);
 	expect(frame.error).toBeUndefined();
 	const pixels = new Uint8Array(Buffer.from(frame.pixels, 'base64'));
 	const rgb = new Float32Array((pixels.length / 4) * 3);
@@ -50,9 +56,9 @@ function changed(a: Float32Array, b: Float32Array, step: number): number {
 test('coat-sheen: turned off they draw as none, and turned on they change the image', async ({
 	page,
 }) => {
-	test.setTimeout(240_000);
 	const runs = IMAGE_RUNS.filter((run) => run.test === 'coat-sheen');
 	expect(runs.length).toBe(3);
+	test.setTimeout(runs.length * PAGES_PER_RUN * PAGE_MS);
 	for (const run of runs) {
 		const layered = await imageOf(page, run.path);
 		const off = await imageOf(page, variant(run.path, '?off'));

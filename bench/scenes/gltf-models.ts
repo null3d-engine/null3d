@@ -56,7 +56,15 @@ export interface ModelScene {
 	 * `scene.environment` in three.js: a clear coat and a sheen show their reflections there.
 	 */
 	environment?: boolean;
+	/**
+	 * The seconds that the scene's image test waits for its frame, when a software GPU takes longer
+	 * than the default to build its shaders, as for a clear coat or a sheen.
+	 */
+	timeoutSeconds?: number;
 }
+
+/** The wait of a scene with a clear coat or a sheen, whose builds a software GPU makes slowly. */
+const LAYERS_SECONDS = 60;
 
 /** The HDR file of the model scenes' environment: the backgrounds scene's, at full intensity. */
 export const MODELS_HDR = sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr');
@@ -103,6 +111,7 @@ export const MODEL_SCENES = {
 	},
 	ktx2: {
 		url: sampleUrl('sources/khronos/StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf'),
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'alpha-modes': {
 		url: sampleUrl('sources/khronos/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb'),
@@ -163,32 +172,47 @@ export const MODEL_SCENES = {
 		frame: { center: [0, 0.05, 0.1], radius: 1.05 },
 		view: [0.3, 0.35, 1],
 	},
-	clearcoat: { url: sampleUrl('sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb') },
+	clearcoat: {
+		url: sampleUrl('sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb'),
+		timeoutSeconds: LAYERS_SECONDS,
+	},
 	'clearcoat-env': {
 		url: sampleUrl('sources/khronos/ClearCoatTest/glTF-Binary/ClearCoatTest.glb'),
 		environment: true,
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'clearcoat-car-paint': {
 		url: sampleUrl('sources/khronos/ClearCoatCarPaint/glTF-Binary/ClearCoatCarPaint.glb'),
 		environment: true,
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'clearcoat-wicker': {
 		url: sampleUrl('sources/khronos/ClearcoatWicker/glTF-Binary/ClearcoatWicker.glb'),
 		view: [0.4, 0.5, 1],
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'sheen-chair': {
 		url: sampleUrl('sources/khronos/SheenChair/glTF-Binary/SheenChair.glb'),
 		view: [0.6, 0.35, 1],
+		timeoutSeconds: LAYERS_SECONDS,
 	},
-	'sheen-cloth': { url: sampleUrl('sources/khronos/SheenCloth/glTF/SheenCloth.gltf') },
-	'sheen-grid': { url: sampleUrl('sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb') },
+	'sheen-cloth': {
+		url: sampleUrl('sources/khronos/SheenCloth/glTF/SheenCloth.gltf'),
+		timeoutSeconds: LAYERS_SECONDS,
+	},
+	'sheen-grid': {
+		url: sampleUrl('sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb'),
+		timeoutSeconds: LAYERS_SECONDS,
+	},
 	'sheen-grid-env': {
 		url: sampleUrl('sources/khronos/SheenTestGrid/glTF-Binary/SheenTestGrid.glb'),
 		environment: true,
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 	'toy-car': {
 		url: sampleUrl('sources/khronos/ToyCar/glTF-Binary/ToyCar.glb'),
 		view: [0.7, 0.45, 1],
+		timeoutSeconds: LAYERS_SECONDS,
 	},
 } as const satisfies Record<string, ModelScene>;
 

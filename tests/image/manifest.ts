@@ -809,13 +809,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// GLTFLoader. A model compressed with meshopt must draw as its uncompressed scene does. A model
 	// with a clip holds the clip's time.
 	...MODEL_NAMES.map((model): ImageTest => {
-		const { uncompressed, clip } = MODEL_SCENES[model] as ModelScene;
+		const { uncompressed, clip, timeoutSeconds } = MODEL_SCENES[model] as ModelScene;
 		return {
 			name: `gltf-${model}`,
 			sketch: `tests/pages/sketches/gltf-sketch.ts?model=${model}`,
 			size: [MODELS_IMAGE.width, MODELS_IMAGE.height],
 			hold: clip?.time ?? 0,
 			...(uncompressed ? { reference: `gltf-${uncompressed}` } : {}),
+			...(timeoutSeconds ? { timeoutSeconds } : {}),
 		};
 	}),
 	// The asset tool's test scene, then the tool's output, which must draw the source's image: its
@@ -1962,8 +1963,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
 	// Clear coats over car paint and sheens over velvet, their maps, and a wet stone whose surface
 	// function sets its coat, in the room's light. The layers spec checks that layers turned off
-	// draw as no layers do.
-	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0 },
+	// draw as no layers do. A software GPU builds the layers' shaders and the room slowly.
+	{ name: 'coat-sheen', sketch: COAT_SHEEN_SKETCH, hold: 0, timeoutSeconds: 60 },
 	// The coated and sheened balls with a custom material that keeps the default surface: they
 	// draw as the standard material does, so the references are copies of the coat-sheen test's.
 	{
@@ -1971,6 +1972,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: `${COAT_SHEEN_SKETCH}?custom`,
 		hold: 0,
 		reference: 'coat-sheen',
+		timeoutSeconds: 60,
 	},
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.

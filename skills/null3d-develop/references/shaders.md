@@ -332,7 +332,7 @@ Water that shows its bed (0.2): give the custom material `transmission: 1`, `thi
 
 ## 8. Portable WGSL rules
 
-These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4 or 9, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
+These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2, 4, 9 or 11, and warns on rule 10, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
@@ -344,6 +344,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.
 9. Do not copy an array out of a uniform buffer: no `let` or by-value argument of an array, or of a struct that holds one. Some phone GPUs leave the copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`.
 10. Do not call `atomicCompareExchangeWeak`. Safari 27.0 cannot compile it, so the shader fails on Apple devices with that version. The build warns but still builds it. To claim a slot, store into a free slot with `atomicStore`, call `workgroupBarrier()`, then read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also work everywhere.
+11. Do not name anything `gl`, or with a name that starts with `gl_`. GLSL ES reserves names that start with `gl_`, and the WebGL2 build turns the second of two names `gl` in one shader into `gl_1`. The build rejects such a shader and names it.
 
 ## 9. Imports from the shader library
 
