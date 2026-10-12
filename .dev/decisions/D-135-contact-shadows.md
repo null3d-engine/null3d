@@ -102,7 +102,7 @@ Contact shadows draw for the main directional light alone. A spot light needs it
 | High | 8 | 8 |
 | Ultra | 16 | 16 |
 
-WebGL2 draws the depth prepass on every preset, so its Medium pays only the copy and the march. On WebGPU, Medium would also pay the prepass. Phones start at Low and take none, unless a page asks for a heavier preset. Desktops on WebGL2 and WebGPU's compatibility mode stop at Medium, so they take 4 steps there.
+WebGL2 draws the depth prepass on every preset, so its Medium pays only the copy and the march. On WebGPU, Medium would also pay the prepass. Phones start at Low and take none, unless a page asks for a heavier preset. Desktops on WebGL2 stop at Medium, so they take 4 steps there. WebGPU's compatibility mode stops at Medium too, and takes none.
 
 ## The governor
 
@@ -110,13 +110,37 @@ The governor's last step lowers the steps to 4. It comes after ambient occlusion
 
 ## Cost
 
-To be filled from this branch's quiet-window runs: the GPU time per frame on the Mac at each preset, with contact shadows on and off, on WebGPU and WebGL2; `bench:gpu-check`; the allocation check; and the size check. The S25 figure at High follows the next cloud sitting.
+The contact cost spec (`tests/image/contact-cost.spec.ts`) times the effect cost page's contact scene with contact shadows off and on, in turns, three times each. It ran on the Mac (Apple M5 Max, Chrome) in a quiet window on 12 October 2026, at 1920 x 1080 with a pixel ratio of 1, at loads of 5 to 8. The figures are the medians of the GPU time per frame, in ms. The scene is small, so the prepass costs almost nothing in it.
+
+| GPU path | Steps | Off, scale 1 | On, scale 1 | Off, scale 0.5 | On, scale 0.5 |
+| --- | --- | --- | --- | --- | --- |
+| WebGPU | 4 | 1.245 | 1.769 (+0.52) | 1.049 | 1.376 (+0.33) |
+| WebGPU | 8 (High) | 1.245 | 1.769 (+0.52) | 1.049 | 1.376 (+0.33) |
+| WebGPU | 16 (Ultra) | 1.245 | 1.966 (+0.72) | 1.049 | 1.442 (+0.39) |
+| Compatibility mode | 4 | 1.114 | 1.638 (+0.52) | 0.786 | 1.114 (+0.33) |
+| WebGL2 | 4 (Medium) | 2.703 | 3.190 (+0.49) | 1.750 | 2.120 (+0.37) |
+| WebGL2 | 8 (High) | 2.684 | 3.266 (+0.58) | 1.748 | 2.142 (+0.39) |
+| WebGL2 | 16 (Ultra) | 2.696 | 3.450 (+0.75) | 1.749 | 2.203 (+0.45) |
+
+- Most of the cost is fixed: the depth copy and the contact step, each a pass over half the render size. On WebGPU, 4 and 8 steps cost the same. 16 steps add 0.2 ms at scale 1.
+- With the prepass kept on for both sides (`?prepass=on`), WebGPU gave the same figures, except 16 steps at scale 0.5: +0.46 ms. So in this scene the prepass costs nothing that the timer sees. In a scene of many vertices, it costs a second pass over them ([quality presets](../../docs/concepts/quality-presets.md#the-depth-prepass)).
+- The CPU time did not change: under 0.03 ms either way.
+- Prototype S3's inline march cost 0.41 to 0.48 ms on the same Mac at 3,024 x 1,520. On the Mac, the half-size step costs about as much at less than half those pixels: its two passes cost more than the march saves there. On the S25 the inline march cost 2.2 ms at scale 1, so the march is dear there. Only the S25's figure can show whether the half-size step saves that time.
+- Medium on WebGPU stays at 0 steps (the coordinator's request of 11 October). Even 4 steps cost 0.52 ms on the Mac at 1080p, which is over the 0.5 ms that S3's rule allows on the S25, before the prepass of a heavy scene.
+- The S25 figure at High follows the next cloud sitting.
 
 ## Budgets
 
-- JavaScript: one light option, one quality setting and one governor step. To be filled from the size check.
-- WebAssembly: the steps' mode and their uniform values. To be filled from the size check.
-- Shaders: the march sits in ambient occlusion's first-use shader file, which loads only when ambient occlusion or contact shadows first draw. The lit shader's start file gains the read of the fourth channel.
+The figures compare this branch's build with main's (be8606696), on 12 October 2026, after Brotli.
+
+- JavaScript: one light option, one quality setting and one governor step. The sketch runner grows by 175 bytes, the page by 29 and the core's glue by 23.
+- WebAssembly: the steps' mode and their uniform values. The threaded core grows by 290 bytes and the single-threaded core by 638 (1.7 KB before compression).
+- Shaders: the march sits in ambient occlusion's first-use shader file, which loads only when ambient occlusion or contact shadows first draw. It grows by 982 bytes in WGSL, to 4.2 KB, and by 956 in GLSL, to 4.4 KB. A first-use shader file may take 32 KB. The lit shader's start files gain the read of the fourth channel: 94 bytes in WGSL and 114 in GLSL.
+- No file passed its budget. The two ambient occlusion shader files grew by 28% and 31%, more than the size check allows without a reason. A `Size-Growth` trailer names them, with the march as the reason.
+
+## Allocation
+
+The engine's code allocates nothing per frame for contact shadows. On WebGPU, though, the browser makes an encoder object for each render pass. With ambient occlusion off, contact shadows add render passes: the depth prepass's own pass, the depth copy and the contact step. In `bun run bench:allocation --scene s4` on the Mac, at a load of 11, the WebGPU replay allocated 595 bytes per frame with contact shadows and 342 with every preset's steps at 0. So `bench/allocation.ts` allows 4 x 64 bytes more in scenes whose sun casts shadows, at bloom's allowance per pass. That covers the 253 bytes measured. With ambient occlusion on, contact shadows add no pass: S1 with `--batch-shadows --ao` allocated 652 bytes per frame in the replay with them and 671 without. WebGL2 makes no such objects, and S4 on WebGL2 passed.
 
 ## three.js
 
