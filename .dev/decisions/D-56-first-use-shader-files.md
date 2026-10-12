@@ -226,9 +226,40 @@ Status: decided, 2026-10-12, by the coordinator for the owner (ruling C).
 - A set of features without builds has no files. A set has one file for each value of the device's fixed bits that its builds vary in, as a single feature's files have.
 - The `claims_shared_builds` setting is gone. No table needs it now.
 
-**How the engine loads them.** The main shader module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: its features' names, sorted and joined by `+`, such as `hash+skinning`. A pipeline whose build is missing loads the file of that key, once, and nothing else. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
+**How the engine loads them.** The main shader module's `firstUseFile(shader, permutation)` gives the key of the file that holds a build: its features' names, sorted and joined by `+`, such as `hash+skinning`. A pipeline whose build is missing loads the file of that key, once, and nothing else.
+
+The addresses of the combined files do not sit in the main module. There, 157 hashed file names grew the renderer that every page loads at its start by about 2 KB after Brotli: 24% for the page's renderer and 18% for the render worker. So each GPU path has a small table of its own, `shaders-wgsl-combos.ts` and `shaders-glsl-combos.ts`. The engine loads it the first time it needs a combined file. The main module keeps only the keys. Once a page has asked for the own file of each feature of a combined key, the table starts to download beside that file. A combined build then mostly waits for its own file alone. A preload, from `createEngine`'s `preload` list or from the sketch, loads each feature's own file. It also loads each file of several features once the preloads so far have named all of them (`filesFor` in `gpu/device-shaders.ts`). So a page that uses X and Y loads X's file, Y's file and the X and Y file, and no other. The offline file list (D-102) puts a file of several features under each of them, so a game that caches either feature has it.
 
 **Figures.** Measured on 12 October 2026, on the merge of main at 3f8825965, before displacement merges.
 
 - The new rule makes 157 new files for 24 sets of features. The largest is the WebGL2 morph and skinning file with the draw index, tone mapping and half precision: 21.1 KB after Brotli, 45.1 KB after gzip and 406 KB uncompressed. That is 66%, 14% and 26% of the limits of a file that loads on first use. The smallest, skinning with the test template, is 2.7 KB after Brotli.
 - The sets with the most files are skinning, alpha to coverage, the alpha hash, level fades, transmission and morph targets in pairs and triples, 8 or 12 files each. The cutout shader's sets have 2 or 3 files each.
+- No feature's own file grew. These shrank, after Brotli, as their combined builds moved out:
+
+| Feature | Files | Change after Brotli | Largest file, before and after |
+| --- | --- | --- | --- |
+| `coverage` | 12 | -17% to -19% | 23.1 to 19.0 KB |
+| `hash` | 12 | -17% to -19% | 24.0 to 19.8 KB |
+| `lod_fade` | 12 | -15% to -19% | 23.4 to 19.8 KB |
+| `transmission` | 12 | -10% to -15% | 22.6 to 19.4 KB |
+| `skinning` | 12 | 0% to -10.5% | 22.7 to 21.7 KB |
+| `cutout` | 3 | -41% to -58% | 9.3 to 3.9 KB |
+| `sprites` | 6 | -16% to -24% | 6.4 to 5.4 KB |
+| `texcoords` | 6 | 0% to -22% | 4.2 to 3.5 KB |
+
+- The renderer that every page loads at its start grew by about 0.4 KB after Brotli: 5.1% for the page's renderer, 5.0% for the sketch worker's and 3.8% for the render worker. About half is the keys of the combined files: 805 bytes uncompressed for both paths, about 0.2 KB after Brotli. The rest is the loader of the two tables, the check that starts a table early, and the preload's choice of files. These cannot move into a file that loads on first use. A preload and the early check must know which combined files exist before any of them loads. Without the keys, a page would have to fetch the table as soon as it used two features, and most pages use bloom and ambient occlusion. It would then download 0.7 to 1.7 KB that it never reads. Each table takes 0.7 KB after Brotli for WebGPU and 1.7 KB for WebGL2, and loads only with the first combined file.
+
+**Files that pages fetch.** The demos ran for 12 seconds each in Chrome on the Mac, on the dev server, on both GPU paths. The count is the first-use shader files that each fetched, without the environment generator's. On main, each build of several features sat in the file of one of its features, so a page fetched one file per feature.
+
+| Page | Features | Files on main | Files now |
+| --- | --- | --- | --- |
+| Battle comparison: skins and custom materials | 5 to 7 | 5 to 7 | 5 to 7 |
+| Look-at: skins and per-instance colors | 5 | 5 | 5 |
+| Animated characters | 4 | 4 | 4 |
+| Objects, a plain page | 2 | 2 | 2 |
+| Instancing | 3 | 3 | 3 |
+| Creek: masks, level fades, sprites, transmission | 9 on WebGPU, 8 on WebGL2 | 9 and 8 | 11 and 10 |
+
+Only Creek uses two features whose builds meet. It fetches the files of alpha to coverage with level fades and with sprites, and the WebGL2 or WebGPU table. Battle's count depends on how far its scene got in the 12 seconds. Battle and Creek did not start on the main build that the size check left, so their counts on main follow from the rule: one file per feature that the branch's run fetched.
+
+**The cost of the table on first use.** Creek asks for the files of alpha to coverage, level fades and cutout in the same frame as the two combined ones. So the table cannot start earlier, and the combined files wait for it. On WebGL2 in three runs, the table took 7, 6 and 112 ms on the dev server. The combined files' last byte came 26, 33 and 0 ms after that of the level fades' file, which held those builds on main. On WebGPU it came 24, 22 and 16 ms after it. That is at most two frames at 60 Hz, once per page, while the masked plants' pipelines build. It is not done earlier, at a page's first feature file: most pages that use skinning or sprites would then fetch a table that they never read.
