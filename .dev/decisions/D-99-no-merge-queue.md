@@ -62,3 +62,11 @@ Rules:
 - Main's runs share one concurrency group, `ci-main`, with `cancel-in-progress`. The Release workflow and the exit gate already accept a run started by hand, which covers a commit whose own run was cancelled. The weights tool reads only runs that passed, so cancelled runs drop out of it.
 - More macOS time: each full run takes 2 macOS jobs. With 5 at once, two full runs and the hourly benchmark run fill them.
 - The workflow keeps its `merge_group` trigger only while main's rules still use the queue. Nothing reads the queue's runs any more.
+
+## Addendum, 2026-10-12: main's benchmark run once a day, with S5 and S6
+
+The owner chose on 8 October 2026 that main's speed comparison runs once a day, not every hour, and compares S5 and S6 too. The workflow runs at 19:07 UTC, in the hour with the fewest merges to main, so CI's Safari jobs need the Mac machines least then. The search for main's last measured commit reads 30 runs, which cover about a month without a merge.
+
+With S5 and S6 the plan has 16 pages. The owner's rule of 12 October 2026 says that each CI job should take at most 15 minutes, and stops it at 20. A compared page took 3.6 to 3.8 minutes in main's runs, and the step that compares one S6 page took 5.3 to 5.9 minutes with the pages' production build. So the pages run in 8 shards of 2 pages. On 13 October 2026, two full runs on main took 9.2 to 10.7 minutes per shard with the cache of the city files, and up to 11.4 when it missed. An S6 shard whose cache misses would take about 13 minutes. GitHub gives 5 Mac machines at once, so the last shards wait for a machine. That costs the run's time, not a job's. [Benchmarks](../benchmarks.md#the-benchmark-job-in-ci) gives the figures.
+
+Until 12 October 2026, every S6 page in CI's benchmark job timed out. The comparison served both builds from the job's own checkout, which the shards never build, so the sample environment map failed. A cache of the city files also kept files of an older sample pin. Both are fixed, and the benchmark guide and AGENTS.md record them.
