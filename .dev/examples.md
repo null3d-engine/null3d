@@ -352,9 +352,11 @@ The owner asked for a richer contact shadows demo (`contact-shadows`, Stone gard
 
 - Sand raked in rings around each rock, and in straight furrows between them. A normal map from the same rake gives the low sun a light relief. A stronger relief drew dark stripes that hid the cast shadows.
 - Granite rocks: polyhedra from `@null3d/geometry` with bumps, flat underneath, each with its own shape and warmth. One granite texture made from value noise covers the rocks, the stepping stones, the curb and the lantern. Moss covers the rocks' tops through their vertex colors.
-- Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, a plaster wall with a tiled cap, and the forest demo's pines beyond it.
+- Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, and a plaster wall with a tiled cap.
+- Beyond the wall, a bamboo grove and pines of seven ragged tiers that droop at their tips. Their greens hold little red. A green with more red turned khaki in the orange light of the low sun.
 - The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stood higher than the hour's, the sky was too bright for the low sun's light, and the long shadows hardly showed. The sky's environment lights the scene, so the demo has no ambient light.
-- The wall stands behind the garden, away from the sun's side. A wall on the sun's side would shade the whole bed under a sun this low.
+- The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. The first left wall stood 1.2 m high and shaded half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
+- The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
 
 ## Showcase scenes
 

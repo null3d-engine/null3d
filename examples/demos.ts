@@ -228,7 +228,7 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Contact shadows',
 		scene: 'Stone garden',
 		summary:
-			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern and a plaster wall. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
 		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
 		hold: 1,
 		timeoutSeconds: 60,

@@ -1,11 +1,13 @@
 // The stone garden's scenery, all made in code. The sand is raked in rings around each rock and
 // in straight furrows between them, and its normal map catches the low sun. Granite rocks with moss
 // on their tops, stepping stones, pebbles, tufts of grass and a stone lantern stand on it, inside a
-// granite curb on a moss lawn, with a plaster wall and pines behind. Each object in the garden
-// casts and receives shadows, so contact shadows show wherever things touch.
-import { math, type SketchContext } from '@null3d/engine';
+// granite curb on a moss lawn. A plaster wall closes the back and the left side, with bamboo and
+// pines beyond it. Each object in the garden casts and receives shadows, so contact shadows show
+// wherever things touch.
+import { type MeshArrays, math, quat, type SketchContext } from '@null3d/engine';
 import { icosahedron } from '@null3d/geometry';
-import { pineWithLevels } from '../lib/pines';
+import { type Arrays, grid, TURN } from '../lib/pines';
+import { random } from '../lib/procedural';
 
 /** The sand bed's side in meters, its texels along each side, and the rake's spacing in meters. */
 const BED = 10;
@@ -33,6 +35,19 @@ const PINES = [
 	[-21, -3, 6.5],
 	[-19, 4, 4.5],
 ] as const;
+/** The pines' tiers of boughs, lowest first, for a tree 1 high: base height, radius and height. */
+const TIERS = [0, 1, 2, 3, 4, 5, 6].map((k) => [0.16 + k * 0.11, 0.36 - k * 0.042, 0.2] as const);
+/**
+ * The wall's two runs, behind the garden and along its left side: middle x and z, width, depth
+ * and height. The low sun stands on the left, so the left run is low enough to leave the bed lit.
+ */
+const WALLS = [
+	[0, -6.4, 13, 0.3, 1.2],
+	[-6.4, -0.6, 0.3, 11.9, 0.5],
+] as const;
+/** Bamboo stalks in the grove beyond the left wall, and the leaves on each. */
+const STALKS = 72;
+const LEAVES = 30;
 /** Where the lantern stands. */
 const LANTERN = [1.2, -3.8] as const;
 /** A bright, quiet rise and fall in 0..1 along a coordinate. */
@@ -59,6 +74,40 @@ function noise(size: number, cells: number): Float32Array {
 			out[y * size + x] = math.lerp(top, math.lerp(at(i, j + 1), at(i + 1, j + 1), tx), ty);
 		}
 	return out;
+}
+
+/**
+ * A pine 1 high: a trunk under tiers of boughs, each tier ragged around its edge and drooping at
+ * its tips, in mottled greens that lighten toward the tips' new growth.
+ */
+function pine(): MeshArrays {
+	const next = random(7);
+	const out: Arrays = { positions: [], colors: [], indices: [] };
+	grid(out, 8, 1, (u, h) => {
+		const a = u * TURN;
+		return [Math.cos(a) * 0.03, h * 0.4, Math.sin(a) * 0.03, 0.16, 0.09, 0.05];
+	});
+	const around = 30;
+	TIERS.forEach(([y, radius, height], k) => {
+		const reach = Array.from({ length: around }, (_, c) => {
+			return 0.8 + 0.25 * Math.sin((c / around) * TURN * 5 + k * 2) + 0.3 * next();
+		});
+		grid(out, around, 4, (u, h) => {
+			const bough = reach[Math.round(u * around) % around] as number;
+			const e = radius * (1 - h) ** 1.3 * math.lerp(bough, 1, h);
+			const a = u * TURN + k;
+			const [tone, fresh] = [(0.55 + 0.45 * h) * (0.6 + 0.8 * next()), (1 - h) ** 3];
+			return [
+				Math.cos(a) * e,
+				y + height * h - 0.1 * bough * (1 - h) ** 2,
+				Math.sin(a) * e,
+				(0.008 + 0.03 * fresh) * tone,
+				(0.1 + 0.1 * fresh) * tone,
+				(0.03 + 0.01 * fresh) * tone,
+			];
+		});
+	});
+	return { ...out, computeNormals: true };
 }
 
 /** Builds the garden in the scene of `ctx`. */
@@ -132,8 +181,8 @@ export function garden(ctx: SketchContext): void {
 			...solid,
 		});
 
-	// A plaster wall behind the garden, with faint streaks of rain, under a cap of dark tiles,
-	// and pines beyond it.
+	// A plaster wall behind the garden and along its left side, with faint streaks of rain, under
+	// a cap of dark tiles, and bamboo and pines beyond it.
 	const clay = new Uint8Array(GRANITE * GRANITE * 4).fill(255);
 	for (let y = 0; y < GRANITE; y++)
 		for (let x = 0; x < GRANITE; x++) {
@@ -141,25 +190,34 @@ export function garden(ctx: SketchContext): void {
 			const shade = 0.86 + 0.1 * broad[i] - 0.1 * fine[(y >> 4) * GRANITE + x] ** 3;
 			clay.set([shade * 255, shade * 0.92 * 255, shade * 0.8 * 255], i * 4);
 		}
-	scene.createMesh({
-		mesh: geometry.box({ width: 13, height: 1.2, depth: 0.3 }),
+	const plaster = materials.standard({
+		map: textures.fromData({ ...tile, data: clay, mipmaps: true }),
+		color: '#e6d6bc',
+		roughness: 0.95,
+		uvTransform: { repeat: [6, 1] },
+	});
+	const tiles = materials.standard({ color: '#3a3b3e', roughness: 0.55 });
+	for (const [x, z, w, d, h] of WALLS) {
+		scene.createMesh({
+			mesh: geometry.box({ width: w, height: h, depth: d }),
+			material: plaster,
+			position: [x, h / 2, z],
+			...solid,
+		});
+		scene.createMesh({
+			mesh: geometry.box({ width: w + 0.3, height: 0.12, depth: d + 0.3 }),
+			material: tiles,
+			position: [x, h + 0.06, z],
+			...solid,
+		});
+	}
+	const pines = scene.createInstances(geometry.fromArrays(pine()), PINES.length, {
 		material: materials.standard({
-			map: textures.fromData({ ...tile, data: clay, mipmaps: true }),
-			color: '#e6d6bc',
-			roughness: 0.95,
-			uvTransform: { repeat: [6, 1] },
+			color: '#ffffff',
+			roughness: 0.85,
+			vertexColors: true,
+			doubleSided: true,
 		}),
-		position: [0, 0.6, -6.4],
-		...solid,
-	});
-	scene.createMesh({
-		mesh: geometry.box({ width: 13.4, height: 0.12, depth: 0.6 }),
-		material: materials.standard({ color: '#3a3b3e', roughness: 0.55 }),
-		position: [0, 1.26, -6.4],
-		...solid,
-	});
-	const pines = scene.createInstances(pineWithLevels(geometry), PINES.length, {
-		material: materials.standard({ color: '#ffffff', roughness: 0.85, vertexColors: true }),
 	});
 	PINES.forEach(([x, z, height], i) => {
 		pines.positions.set([x, 0, z], i * 3);
@@ -167,6 +225,65 @@ export function garden(ctx: SketchContext): void {
 		pines.rotations.set([0, Math.sin(i), 0, Math.cos(i)], i * 4);
 	});
 	pines.markDirty();
+	// Bamboo: tall jointless stalks that lean a little, with narrow leaves that hang from their
+	// upper halves.
+	const next = random(3);
+	const stalks = scene.createInstances(
+		geometry.cylinder({ radiusTop: 1, radiusBottom: 1, height: 1, radialSegments: 6 }),
+		STALKS,
+		{ material: materials.standard({ color: '#ffffff', roughness: 0.45 }), colors: true },
+	);
+	const leaves = scene.createInstances(
+		geometry.cone({ radius: 1, height: 1, radialSegments: 4 }),
+		STALKS * LEAVES,
+		{
+			material: materials.standard({ color: '#ffffff', roughness: 0.7, doubleSided: true }),
+			colors: true,
+		},
+	);
+	const [turn, twist] = [quat.create(), quat.create()];
+	for (let i = 0; i < STALKS; i++) {
+		const [x, z, h] = [-7.2 - 2 * next() ** 2, -8 + 11 * next(), 3.5 + 2.5 * next()];
+		const [lean, heading] = [0.04 + 0.1 * next(), next() * TURN];
+		const tip = [
+			Math.sin(lean) * Math.cos(heading),
+			Math.cos(lean),
+			Math.sin(lean) * Math.sin(heading),
+		];
+		quat.setAxisAngle(turn, [Math.sin(heading), 0, -Math.cos(heading)], lean);
+		stalks.positions.set([x + (tip[0] * h) / 2, (tip[1] * h) / 2, z + (tip[2] * h) / 2], i * 3);
+		stalks.rotations.set(turn, i * 4);
+		stalks.scales.set([0.028, h, 0.028], i * 3);
+		const green = 0.8 + 0.3 * next();
+		stalks.colors?.set([0.16 * green, 0.36 * green, 0.06 * green, 1], i * 4);
+		for (let k = 0; k < LEAVES; k++) {
+			const j = i * LEAVES + k;
+			const up = h * (0.55 + 0.45 * next());
+			const [spin, droop, length] = [next() * TURN, 1.9 + 0.8 * next(), 0.3 + 0.2 * next()];
+			// A leaf points out from the stalk and hangs down, twisted about its length.
+			quat.fromEuler(turn, 0, spin, -droop, 'YXZ');
+			quat.multiply(turn, turn, quat.setAxisAngle(twist, [0, 1, 0], next() * Math.PI));
+			const out = [
+				Math.cos(spin) * Math.sin(droop),
+				Math.cos(droop),
+				-Math.sin(spin) * Math.sin(droop),
+			];
+			leaves.positions.set(
+				[
+					x + tip[0] * up + (out[0] * length) / 2,
+					tip[1] * up + (out[1] * length) / 2,
+					z + tip[2] * up + (out[2] * length) / 2,
+				],
+				j * 3,
+			);
+			leaves.rotations.set(turn, j * 4);
+			leaves.scales.set([0.006, length, 0.045], j * 3);
+			const shade = 0.7 + 0.4 * next();
+			leaves.colors?.set([0.08 * shade, 0.3 * shade, 0.04 * shade, 1], j * 4);
+		}
+	}
+	stalks.markDirty();
+	leaves.markDirty();
 
 	// Rocks: rough polyhedra, flat underneath, each its own shape and shade, with moss on top.
 	const rockLook = materials.standard({

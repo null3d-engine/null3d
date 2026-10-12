@@ -3,17 +3,19 @@
 // shadows give each pebble, blade and stone the dark line where it meets the sand. Every 3 seconds
 // they turn off and on again, so the difference shows. The sun swings slowly around the garden, or
 // follows the pointer, and the sky's sun goes with it. The garden itself is in garden.ts.
-import { defineSketch, math, timeOfDay } from '@null3d/engine';
+import { defineSketch, math, timeOfDay, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 import { garden } from './garden';
 
 /** How far contact shadows reach toward the sun, in meters, and the seconds of each half cycle. */
 const REACH = 0.4;
 const CYCLE = 3;
-/** What the camera looks at. */
-const TARGET = [0, 0.2, 0] as const;
+/** What the camera looks at: a stepping stone by a rock, in its drift of pebbles. */
+const TARGET = [0.6, 0.1, 1.1] as const;
+/** Where the camera stands on a wide screen. */
+const EYE = [2.4, 0.75, 3.5] as const;
 /** The hour of the light, a low sun before sunset, and the sun's heading around the garden. */
-const HOUR = 16.8;
+const HOUR = 17.2;
 const HEADING = -1.6;
 
 export default defineSketch(async (ctx) => {
@@ -32,17 +34,26 @@ export default defineSketch(async (ctx) => {
 	const [background, light] = [{ sky }, { intensity: day.skyIntensity }];
 	scene.setBackground(background, light);
 	scene.setEnvironment(await assets.skyEnvironment(), light);
-	scene.setFog({ ...day.fog, density: 0.012 });
+	// Thin fog with a faint glow, so the pines keep their greens against the low sun.
+	scene.setFog({ ...day.fog, density: 0.006, sunGlow: 0.4 });
 	post.set({
 		exposure: day.exposure,
 		bloom: { intensity: 0.2, threshold: 1 },
 		ao: { radius: 0.4 },
 	});
-	const camera = scene.createPerspectiveCamera({ fov: 40, near: 0.1, far: 2000 });
-	camera.setPosition(3.6, 1.9, 5);
-	camera.lookAt(...TARGET);
+	// A tall screen sees less of the garden's width, so there the camera stands farther back with
+	// a wider view.
+	const { width, height } = ctx.engine.viewport;
+	const tall = width < height;
+	const camera = scene.createPerspectiveCamera({ fov: tall ? 50 : 40, near: 0.1, far: 2000 });
+	// There it also looks over the stones, so they sit low and the wall and trees show above.
+	const target: readonly [number, number, number] = tall
+		? vec3.add(vec3.create(), TARGET, [0, 0.6, 0])
+		: TARGET;
+	camera.setPosition(...vec3.lerp(vec3.create(), target, EYE, tall ? 1.15 : 1));
+	camera.lookAt(...target);
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, { target: TARGET, groundY: 0, bounds: [-6, 0, -6, 6, 0, 6] });
+	const view = interact(ctx, camera, { target, groundY: 0, bounds: [-6, 0, -6, 6, 0, 6] });
 	const sun = scene.createDirectionalLight({
 		...day.light,
 		direction: [-sky.sunPosition[0], -rise, -sky.sunPosition[2]],
