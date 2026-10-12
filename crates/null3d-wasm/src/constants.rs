@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind, joints,
 };
 use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, MAX_SLOTS, SLOT_BITS};
@@ -421,6 +421,12 @@ pub mod animation_field {
     /// The numbers of the next `animatorPlay` or `animatorPlayBlend` call, `play_arg::COUNT`
     /// floats, which TypeScript writes before the call.
     pub const PLAY_ARGS: u32 = 10;
+    /// The joint overrides of every instance, `OVERRIDE_BLOCK` floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const JOINT_OVERRIDES: u32 = 11;
+    /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const LOOK_TARGETS: u32 = 12;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -1164,6 +1170,8 @@ pub fn typescript() -> String {
                 ("SLOT_SOURCES", animation_field::SLOT_SOURCES),
                 ("BLEND_VALUES", animation_field::BLEND_VALUES),
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
+                ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
+                ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -1202,6 +1210,27 @@ pub fn typescript() -> String {
                 ("LINEAR", Interpolation::Linear as u32),
                 ("STEP", Interpolation::Step as u32),
                 ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
+            ],
+        ),
+        // The layout of each instance's block of joint overrides (`animation::joints`).
+        (
+            "JOINT_OVERRIDE",
+            &[
+                ("BLOCK", joints::BLOCK_FLOATS as u32),
+                ("SLOTS", joints::MAX_OVERRIDES as u32),
+                ("FLOATS", joints::OVERRIDE_FLOATS as u32),
+                ("JOINT", joints::place::JOINT as u32),
+                ("MODE", joints::place::MODE as u32),
+                ("WEIGHT", joints::place::WEIGHT as u32),
+                ("ROTATION", joints::place::ROTATION as u32),
+                ("SET", joints::mode::SET),
+                ("ADD", joints::mode::ADD),
+                ("LOOK_WEIGHT", joints::place::LOOK_WEIGHT as u32),
+                ("LOOK_COUNT", joints::place::LOOK_COUNT as u32),
+                ("LOOK_FORWARD", joints::place::LOOK_FORWARD as u32),
+                ("LOOK_JOINTS", joints::place::LOOK_JOINTS as u32),
+                ("LOOK_JOINT_FLOATS", joints::place::LOOK_JOINT_FLOATS as u32),
+                ("MAX_LOOK_JOINTS", joints::MAX_LOOK_JOINTS as u32),
             ],
         ),
         (
