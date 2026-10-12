@@ -1,10 +1,10 @@
 // The relief demo's height maps, made in code: rolling hills, cut rock on a sphere, a wall of bricks
 // and the grain of stone, each as linear gray texels for a displacement or bump map, with colors to
-// go with them.
+// go with them, which the paints at the end give.
 import { math } from '@null3d/engine';
 
 /** Texels along each side of the height maps, unless a map asks for more. */
-export const SIZE = 256;
+const SIZE = 256;
 /**
  * A height map from `height` at u and v, as linear gray texels, with the colors that `paint` gives
  * for each height and place: `size` texels along each side.
@@ -116,11 +116,45 @@ export const bricks = (u: number, v: number) => {
 	return edge * (0.8 + 0.2 * hash(Math.floor(along), row, 0));
 };
 
-/** A steady number from 0 to 1 for the brick at u and v, which picks its color. */
-export const brickTone = (u: number, v: number) => {
+/** A steady number from 0 to 1 for the brick at u and v, which picks its shade. */
+const brickTone = (u: number, v: number) => {
 	const [along, row] = brickAt(u, v);
 	return hash(Math.floor(along), row, 1);
 };
 
 /** Fine grain for a bump map on stone, from 0 to 1. */
 export const grain = (u: number, v: number) => layers(u * 10, v * 10, 11, 5);
+
+/** The color a share `t` of the way from `from` to `to`. */
+const blend = (from: number[], to: number[], t: number) =>
+	from.map((c, i) => math.lerp(c, to[i] ?? c, t));
+/** A color broken up by a mottle of finer noise, `w` strong, `scale` patches to the map. */
+const mottle = (color: number[], u: number, v: number, w: number, scale: number) =>
+	color.map((c) => c * (1 - w + 2 * w * layers(u * scale, v * scale, 3, 2)));
+
+/** Grass in the hills' hollows, blending into dry earth, then bare rock on the tops. */
+export const hillColor = (h: number, u: number, v: number) => {
+	const dry = blend([86, 116, 52], [150, 122, 82], math.smoothstep(h, 0.4, 0.55));
+	return mottle(blend(dry, [168, 160, 150], math.smoothstep(h, 0.7, 0.85)), u, v, 0.2, 160);
+};
+
+/** Gray rock with lichen on the faces that look up, for the rock of `rock(seed)`. */
+export const rockColor = (seed: number) => (_h: number, u: number, v: number) => {
+	const up = onSphere(u, v)[1] + (layers(u * 24, v * 12, seed, 3) - 0.5) * 0.8;
+	return blend(
+		mottle([128, 122, 114], u, v, 0.25, 40),
+		[150, 150, 88],
+		math.smoothstep(up, 0.4, 0.6),
+	);
+};
+
+/** Fired bricks, each its own shade and a few burnt dark, in pale mortar. */
+export const brickColor = (h: number, u: number, v: number) => {
+	const tone = brickTone(u, v);
+	const fired = tone < 0.12 ? [72, 34, 30] : blend([118, 44, 32], [182, 96, 64], tone);
+	return h > 0.04 ? mottle(fired, u, v, 0.12, 64) : [158, 148, 130];
+};
+
+/** Pale sandstone, lighter where its grain stands higher. */
+export const grainColor = (h: number, u: number, v: number) =>
+	mottle(blend([170, 150, 118], [214, 198, 166], h), u, v, 0.08, 30);

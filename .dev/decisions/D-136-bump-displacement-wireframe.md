@@ -1,6 +1,6 @@
 # D-136: Bump maps, displacement maps and wireframe materials
 
-Status: decided by the helper of M2-J4 on 11 October 2026, for the owner's review. Date: 2026-10-11. Task: M2-J4.
+Status: decided by the helper of M2-J4 on 11 October 2026. The owner approved the relief demo's look on 12 October 2026. Date: 2026-10-11. Task: M2-J4.
 
 Summary: The standard material takes three.js's `bumpMap`, `bumpScale`, `displacementMap`, `displacementScale` and `displacementBias`, and every material takes `wireframe`. A bump map shares the normal map's slot, so it adds no texture binding. A displacement map has a binding of its own that only the vertex stage reads. Its builds load on first use, and its shadows, depth prepass and culling follow the moved vertices. Where no normal or bump map bends the normals, the engine bends them by the displacement map's slope, which three.js does not do. `parallax: true` adds parallax occlusion mapping from the same map, on opaque and masked surfaces, which the Low preset turns off.
 
@@ -107,11 +107,15 @@ Option A for each part. A page pays nothing for a feature it does not use. A bum
 
 ## Measurements
 
-To follow: GPU and CPU time per frame with each feature on and off, per preset, on the Mac in a quiet window, and the size of the first-use shader files.
+To follow: GPU and CPU time per frame with each feature on and off, per preset, on the Mac in a quiet window, from the relief-cost test page, and the size of the first-use shader files.
+
+The relief-cost page (`tests/pages/relief-cost.ts`) draws a hillside from the relief demo's height maps: displaced terrain, 40 displaced boulders, brick walls with parallax, bump-mapped cap stones and a wireframe frame, under the sun's shadows. It times one feature off and on in turns: displacement (the terrain and boulders draw their materials without the map), parallax (the quality setting), bump maps (the cap stones without the map) or wireframe (the frame's triangles instead of its edges). `NULL3D_RELIEF_COST=1 bun run test:browser -- relief-cost.spec.ts` runs it on each GPU path and preset.
 
 ## Consequences
 
 - Rust: map slot `Displacement` outside the row's eight layers; row flags `BUMP` (32) and `HEIGHT_NORMALS` (64); permutation bits `DISPLACEMENT` (1 << 26) and `PARALLAX` (1 << 27) and their first-use shader set; material features `WIREFRAME` (16384) and `PARALLAX` (32768); bind layout 34, `MATERIAL_MAPS_PARALLAX`, the maps group with the displacement map visible to the fragment stage too; per-draw edge lists in mesh storage; caster and prepass keys for displaced materials; bounds margins.
 - Levels of detail (D-137): a level with a displaced material switches at once and never fades, as skinned levels do. Fading builds with displacement would double the standard maps template's fading builds, which every page with fading levels downloads.
 - TypeScript: the options on `materials.standard`, `wireframe` on every material, checks in development builds, the quality setting `parallax`, and bounds that grow with a displaced material.
+- First-use shader files: a build that mixes displacement with another feature that loads on first use, such as a displaced skinned mesh, goes into a file of its own, which a page loads only when it uses both. Filed under the other feature, those builds grew the skinning, morph, row-value, transmission, alpha-to-coverage and alpha-hash files by 20 to 30% for pages that never displace a vertex.
 - Docs: `api/materials`, the three.js mapping entries for bump maps, displacement maps, wireframe and edges, both skills, and a feature demo.
+- The relief demo (`examples/relief`) shows every part on a hillside at sundown: displaced hills and cut boulders, a brick wall that steps down the slope with parallax bricks and bump-mapped cap stones, and a geodesic frame drawn as a wireframe that casts line shadows. A button and the P key turn parallax off and on.
