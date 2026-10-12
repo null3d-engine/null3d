@@ -239,6 +239,9 @@ describe('SketchQuality.lower', () => {
 			aoScale: low.aoScale,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			lodThreshold: low.lodThreshold,
+			lodShadowFactor: low.lodShadowFactor,
+			lodFade: low.lodFade,
 			softwareOcclusion: low.softwareOcclusion,
 			parallax: low.parallax,
 			governor: true,
@@ -257,7 +260,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size and parallax did.
+		// the reflections' size, the levels of detail and parallax did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -266,6 +269,9 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 			'parallax',
 		]);
 	});

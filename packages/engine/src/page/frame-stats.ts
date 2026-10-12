@@ -135,7 +135,8 @@ export interface FrameSummary {
 	pipelines: number;
 	/**
 	 * GPU buffers, textures, texture views, samplers and bind groups that the engine made during the
-	 * measurement. Steady play makes none, and neither does a new render scale.
+	 * measurement. Steady play makes none. A new render scale makes some only while a reflection
+	 * pass draws: its texture, and the bind groups made again with it.
 	 */
 	gpuObjects: number;
 	/**

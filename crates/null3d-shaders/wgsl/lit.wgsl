@@ -37,6 +37,11 @@ enable draw_index;
 // pipelines have no fragment stage on WebGPU, and on WebGL2 their fragment shader writes nothing
 // that the pass keeps.
 //
+// The LOD_FADE builds draw a level of detail inside the band where it hands over to the next
+// (null3d::mesh): the vertex shader passes on the instance's fade value, and the fragment shader
+// keeps the pixels of its side of a 4 × 4 ordered dither, with the alpha test, after every
+// derivative.
+//
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive, light, specular intensity and specular color maps, each a layer of a texture array with
 // a sampler. A map reads
@@ -106,6 +111,9 @@ enable draw_index;
 #ifdef ROW_VALUES
 #import null3d::mesh::{row_values_of}
 #endif
+#ifdef LOD_FADE
+#import null3d::mesh::{instance_fade, lod_kept}
+#endif
 #ifdef CASTER
 #import null3d::mesh::{caster_clip}
 #endif
@@ -154,6 +162,11 @@ var<private> material_row: Material;
 #ifdef ALPHA_HASH
 /// The pixel's position in the mesh's own space, where the alpha hash finds its pattern.
 var<private> hash_place: vec3f;
+#endif
+
+#ifdef LOD_FADE
+/// The fade value of the instance's level of detail, which picks the pixels it draws.
+var<private> lod_fade: f32;
 #endif
 
 #ifdef CUSTOM_UNIFORMS
@@ -545,8 +558,9 @@ struct VertexOut {
 #ifdef DISPLACEMENT
     /// How far a unit of the displacement map's red channel moves the surface, in world units: the
     /// material's scale times the object's scale along the normal. Then how far the displacement
-    /// moved the surface here, past the bias, in world units, as the vertices give it.
-    @location(12) heights: vec2f,
+    /// moved the surface here, past the bias, in world units, as the vertices give it. Its own slot,
+    /// as displaced levels of detail fade too.
+    @location(13) heights: vec2f,
 #endif
 #ifdef ROW_VALUES
     /// The color of the instance's row.
@@ -555,6 +569,11 @@ struct VertexOut {
     /// The values of the instance's row.
     @location(11) @interpolate(flat, either) row_values: vec4f,
 #endif
+#endif
+#ifdef LOD_FADE
+    /// The fade value of the instance's level of detail. It shares its slot with the object ids,
+    /// as only custom materials read those, and they have no fading builds.
+    @location(12) @interpolate(flat, either) lod_fade: f32,
 #endif
 #ifdef OBJECT_MATRICES
     /// The rows of the object's world matrix that give x, y and z, relative to the camera.
@@ -936,6 +955,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.row_values = row.values;
 #endif
 #endif
+#ifdef LOD_FADE
+    out.lod_fade = instance_fade(i);
+#endif
 #ifdef OBJECT_MATRICES
     out.world_x = found.row_x;
     out.world_y = found.row_y;
@@ -984,7 +1006,7 @@ fn light_surface(
     // holds, so it skips the lookup and the filter's reads.
     let to_sun = -engine_frame.sun_direction.xyz;
     if dot(normal, to_sun) > 0.0 {
-        sun_color *= sun_shadow(relative, normal, to_sun);
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun);
     }
 #endif
     let sun = direct_light(
@@ -1108,6 +1130,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         discard;
     }
 #endif
+#ifdef LOD_FADE
+    if !lod_kept(lod_fade, pixel.xy) {
+        discard;
+    }
+#endif
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
     // The copy holds display color, so the light from behind joins after the tone mapping, as far
@@ -1153,6 +1180,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef PARALLAX
     surface_height = in.heights.y;
     pixel_material = in.material;
+#endif
+#ifdef LOD_FADE
+    lod_fade = in.lod_fade;
 #endif
 #ifdef CUSTOM
     fill_builtins(in.origin);
