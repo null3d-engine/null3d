@@ -72,7 +72,7 @@ import {
 	setViewHeight,
 } from './lens';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import {
 	type ObjectEventHandler,
 	type ObjectEventType,
@@ -611,8 +611,8 @@ function splitPosition(rest: Float32Array, cells: Int32Array, i: number, value: 
 	rest[i] = value - cell * C.CELL_SIZE;
 }
 
-/** Views of the per-slot arrays and the command ring. */
-class SceneViews {
+/** Views of the per-slot arrays and the command ring, which the scene keeps until the memory grows. */
+interface SceneViews {
 	/** Positions, 3 per slot: in large-world mode, the part that `positionCells` leaves. */
 	readonly positions: Float32Array;
 	/**
@@ -630,26 +630,27 @@ class SceneViews {
 	readonly writeIndex: Uint32Array;
 	readonly readIndex: Uint32Array;
 	readonly ringCapacity: number;
+}
 
-	constructor(core: CoreMemory) {
-		const { glue } = core;
-		const rows = glue.sceneCapacity() + 1;
-		this.positions = core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3);
-		const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
-		this.positionCells = cells ? core.i32(cells, rows * 3) : undefined;
-		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
-		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
-		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
-		this.centers = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3);
-		this.dirty = core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32));
-		this.ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
-		this.records = core.u32(
-			glue.commandRing(C.RING_FIELD_RECORDS),
-			this.ringCapacity * C.COMMAND_WORDS,
-		);
-		this.writeIndex = core.u32(glue.commandRing(C.RING_FIELD_WRITE_INDEX), 1);
-		this.readIndex = core.u32(glue.commandRing(C.RING_FIELD_READ_INDEX), 1);
-	}
+/** The views of the per-slot arrays and the command ring, as the memory is now. */
+function sceneViews(core: CoreMemory): SceneViews {
+	const { glue } = core;
+	const rows = glue.sceneCapacity() + 1;
+	const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
+	const ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
+	return {
+		positions: core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3),
+		positionCells: cells ? core.i32(cells, rows * 3) : undefined,
+		rotations: core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4),
+		scales: core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3),
+		radii: core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows),
+		centers: core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3),
+		dirty: core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32)),
+		ringCapacity,
+		records: core.u32(glue.commandRing(C.RING_FIELD_RECORDS), ringCapacity * C.COMMAND_WORDS),
+		writeIndex: core.u32(glue.commandRing(C.RING_FIELD_WRITE_INDEX), 1),
+		readIndex: core.u32(glue.commandRing(C.RING_FIELD_READ_INDEX), 1),
+	};
 }
 
 /**
@@ -1874,7 +1875,7 @@ export class AmbientLight extends Light {}
  *
  * @category api/scene
  */
-export class InstanceBatch {
+export class InstanceBatch implements ViewHolder {
 	private generation = -1;
 	private rows!: {
 		positions: Float32Array;
@@ -1908,6 +1909,14 @@ export class InstanceBatch {
 		readonly uses: BatchUses = NO_USES,
 	) {
 		this.activeRows = count;
+		scene.core.holdViews(this);
+	}
+
+	/** @internal Forgets the row arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.rows = NO_ROWS;
 	}
 
 	/** @internal The batch, as error messages name it. */
@@ -2114,6 +2123,18 @@ export interface BatchUses {
 
 const NO_USES: BatchUses = { meshes: [], materials: [] };
 
+/** A view of no floats, which objects keep in place of views that they dropped. */
+const NO_FLOATS = new Float32Array(0);
+
+/** The row arrays of a batch that dropped its views, until its next read makes them again. */
+const NO_ROWS = {
+	positions: NO_FLOATS,
+	rotations: NO_FLOATS,
+	scales: NO_FLOATS,
+	colors: undefined,
+	values: undefined,
+};
+
 /** The row fields of an instance batch, which the check of unmarked row writes hashes. */
 const MESH_ROW_FIELDS: readonly RowField[] = [
 	[C.BATCH_FIELD_POSITIONS, 3],
@@ -2314,11 +2335,11 @@ export type SceneChecks = typeof SCENE_CHECKS;
  *
  * @category api/scene
  */
-export class Scene {
+export class Scene implements ViewHolder {
 	/** @internal The scene API's checks and errors, for code that loads on first use. */
 	readonly checks: SceneChecks = SCENE_CHECKS;
 	private viewsGeneration = -1;
-	private currentViews!: SceneViews;
+	private currentViews: SceneViews | undefined;
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
@@ -2378,7 +2399,7 @@ export class Scene {
 	/** @internal True once an object has morph weights, so each frame's animation step runs. */
 	morphed = false;
 	/** The core's table of morph weights, made again after the engine's memory grew. */
-	private morphTable: Float32Array = new Float32Array(0);
+	private morphTable: Float32Array = NO_FLOATS;
 	private morphGeneration = -1;
 
 	/** @internal */
@@ -2402,6 +2423,14 @@ export class Scene {
 			this.unmarkedWrites = new UnmarkedWrites(this);
 			this.unmarkedRows = new UnmarkedRows(core);
 		}
+		core.holdViews(this);
+	}
+
+	/** @internal Forgets the views of the scene's arrays and of the morph weights. */
+	dropViews(): void {
+		this.currentViews = undefined;
+		this.morphGeneration = -1;
+		this.morphTable = NO_FLOATS;
 	}
 
 	/** @internal The cameras of the last frames, for `screenToRay` and `worldToScreen`. */
@@ -2463,8 +2492,8 @@ export class Scene {
 
 	/** @internal */
 	get views(): SceneViews {
-		if (this.viewsGeneration !== this.core.generation) {
-			this.currentViews = new SceneViews(this.core);
+		if (this.viewsGeneration !== this.core.generation || !this.currentViews) {
+			this.currentViews = sceneViews(this.core);
 			this.viewsGeneration = this.core.generation;
 		}
 		return this.currentViews;
