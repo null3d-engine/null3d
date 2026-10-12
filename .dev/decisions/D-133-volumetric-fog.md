@@ -47,7 +47,7 @@ The grid takes the fog's `density` as the density of exponential fog, with any c
 
 ### Where it runs
 
-On the HDR path, after the transparent passes and before the custom effects. The 8-bit path cannot add HDR light to display color, as bloom cannot. In WebGPU's compatibility mode with MSAA, turning the grid on moves the engine to HDR color with FXAA, as bloom and depth of field do. On WebGL2 devices whose float targets fail the engine's test, the fog keeps its glow. That is the stated fallback.
+On the HDR path, after the transparent passes and before the custom effects. The 8-bit path cannot add HDR light to display color, as bloom cannot. In WebGPU's compatibility mode with MSAA, turning the grid on moves the engine to HDR color with FXAA, as bloom and depth of field do. It moves only once `fogSlices` is above 0. With 0 slices, as on Low, the grid draws nothing, so the move would cost for nothing and change the edges. Until 13 October 2026 it moved anyway, and the image test `fog-volume-no-slices` on compatibility mode then differed from the plain fog's image at 0.53% of its pixels, all on edges. The test now guards it. On WebGL2 devices whose float targets fail the engine's test, the fog keeps its glow. That is the stated fallback.
 
 Applying the grid in the main pass's shaders instead would dim and light each surface, transparent ones too, with no pass at the render size. It needs a texture binding in the main pass, which the slot plan keeps for other features. The pass after the main pass costs one read and one write of the scene color.
 
@@ -93,7 +93,15 @@ three.js has no volumetric fog in its core. Its `webgpu_volume_lighting` example
 
 ## Data
 
-To come: the GPU and CPU time per preset on the Mac, on WebGPU and WebGL2, with the grid on and off. Then the allocation check, the download sizes and the image tests.
+To come: the GPU and CPU time per preset on the Mac, on WebGPU and WebGL2, with the grid on and off, and the download sizes.
+
+### Allocation
+
+The allocation check (`bun run bench:allocation --fog`) turns the volumetric fog on in S1, with height fog, while the camera orbits. It passed on WebGPU and on WebGL2 on 12 October 2026. On WebGPU the sketch worker allocated 248 bytes per frame, and on WebGL2 the sketch worker 222 and the render worker 174, each within its budget. On WebGPU the replay may allocate 192 bytes per frame more than without the fog: the browser's encoders of the three render passes, at bloom's 64 bytes per pass.
+
+### Image tests
+
+The fog's tests draw the sun scene and the night scene with the volumetric fog on and off, the fog turned on during play, half the render scale, Medium's grid, no slices and the 8-bit path, on WebGPU, compatibility mode and WebGL2, in both reference sets. At Medium's grid the three paths drew the same image within 0.8 levels of 255 on average on the Mac's GPU. The light shafts demo's held frame has references on each path in both sets.
 
 ## Decision
 

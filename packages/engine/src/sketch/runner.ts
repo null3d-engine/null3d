@@ -879,7 +879,7 @@ export class SketchRunner {
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
 	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
-	 * turns on, on a device that started
+	 * with slices to draw turns on, on a device that started
 	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
 	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
 	 * until they are built, and the frame before stays on screen meanwhile.
@@ -891,7 +891,7 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		const needsHdr = this.post.needsHdr || this.context.scene.needsHdr;
+		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
 		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
