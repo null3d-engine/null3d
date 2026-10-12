@@ -85,6 +85,12 @@ Custom materials get the layers too. The surface record gains `clearcoat`, `clea
 
 The layers' math runs at full precision in the `HALF` builds, which keep the base layer at half precision. The shadow of the sun is looked up where either the surface's normal or the coat's normal faces the sun.
 
+### Test time in CI
+
+The bit joins every other bit of the lit templates, so it took the engine's WebGL2 programs from 3,404 to 5,996, and its builds with half precision held the fault that "Data" names. Each material bit that joins every other bit about doubles the WebGL2 programs that the shaders page compiles, and adds first-use files. The next such bit needs the same look at test time and at the files' sizes.
+
+The shaders page grew from 9 parts to 15, which put the Safari shard that runs them at 12.0 minutes of pages in the model, past the limit of 10. A sixth Safari shard would wait for a second turn on GitHub's 5 macOS machines, and keeping the coat apart from some bits would drop those pairs for users. So CI's Safari compiles the builds without the bit and one part of a sample of those with it: the 192 programs that pair the coat only with shadows, row values, masks, normal maps' tangents, tone mapping, the draw index and half precision. Firefox on Linux compiles every build. [Device sessions](../devices.md#browser-apps-on-the-mac) has the rule.
+
 ### Cost and the quality governor
 
 A material without layers pays nothing. A layered material pays, per pixel and per light, a GGX lobe for the coat and a Charlie lobe for the sheen, each skipped when its layer is off, and one more read of the environment for the coat. No preset turns a layer off, since that changes the material's look. The governor's render scale already bounds the cost.
@@ -103,7 +109,8 @@ Measured on 11 and 12 October 2026 in Chrome on the Mac's GPU (Apple M5 Max), an
 - Image tests: 1,020 per set on the Mac's GPU and on SwiftShader, after the last merge of main. All pass, with the demo's references made again for its approved look. Before the layers, the 922 tests of that time drew as before, and the 36 new ones (12 tests on three tiers) have references in both sets. The custom material that keeps the default surface draws the standard material's image. The layers turned off draw within one step of 8-bit color of a material without them.
 - Shader files: the first-use files of the layers are 20.3 to 24.8 KB after Brotli, under the 32 KB limit. The builds that join the layers with alpha to coverage, the alpha hash or transmission go to those features' files, by the rule that the lowest bit claims a shared build. Those files grew by 20% to 30%, to 28.9 KB at most. The start's JavaScript grew in `page-renderer.js` (+2.3%) and `gltf-worker.js` (+3.1%).
 - Allocation: S1 with every box coated and sheened, on WebGPU, allocates 238.9 bytes per frame in the sketch worker and 561.5 in the render worker, within the budgets. On WebGL2 they allocate 220.7 and 162.7 bytes. A first WebGL2 sample put the sketch worker's clock reads 2.4 bytes over their budget of 4, at a place that the layers do not touch, and a second sample passed.
-- GPU check: S4 and S6 at Medium and High changed by -0.5% to +0.9%, within the noise.
+- GPU check: S4 and S6 at Medium and High changed by -0.5% to +0.9%, within the noise. After the last merge of main, they changed by -0.7% to +0.4%.
+- Names that GLSL reserves: in a build that joins the coat with half precision, the half and full precision forms of the GGX visibility term each held a local `gl`. naga's GLSL writer named the second `gl_1`, which GLSL ES reserves, so all 2,592 WebGL2 builds with the bit failed to compile in CI's Chrome, Firefox and Safari. The locals have other names now, and the GLSL build fails on any name that starts with `gl_` and is no built-in (AGENTS.md hard rule 26).
 - Cost in S1, with every box of the swarm coated and sheened, 3 runs of 10 s: on WebGPU the GPU time rose from 2.92 to 3.70 ms per frame (+0.78 ms, +27%). The CPU time stayed at 1.63 to 1.65 ms. On WebGL2 the GPU figure went from 4.66 to 4.12 ms, within its spread from run to run, so it shows no cost that it can measure.
 
 ## Consequences
