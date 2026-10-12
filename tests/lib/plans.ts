@@ -462,8 +462,9 @@ export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
 
 /**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
- * more shader variants never make it time out. A page that stops still fails, with the last step it
- * noted.
+ * more shader variants never make it time out. A slower device gets more: after each batch, the page
+ * tells the runner page when it expects to end, from its own pace, and the runner page waits that
+ * long, up to a cap. A page that stops still fails, with the last step it noted.
  */
 export const SHADERS_PAGE_SECONDS = Math.ceil(
 	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * Math.ceil(GLSL_PROGRAMS / SHADER_PARTS),
