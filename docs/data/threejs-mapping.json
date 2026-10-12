@@ -1408,9 +1408,20 @@
       "status": "manual",
       "since": "0.2",
       "target": "Author the skeleton in a modeling tool and export glTF: const hero = scene.instantiate(await assets.loadGltf(url)); hero.animator().play('walk')",
-      "notes": "Building skeletons in code is not supported, and joints are not objects. Meshes that hang on bones, such as a sword in a hand, follow their joints when the file puts them under the bone. Joint overrides for procedural aiming (0.2) are not built yet.",
+      "notes": "Building skeletons in code is not supported, and joints are not objects. Meshes that hang on bones, such as a sword in a hand, follow their joints when the file puts them under the bone. To turn a joint from code, use the animator's joint calls (see the bone rotation entry).",
       "docs": "api/animation",
       "detect": "\\bSkinnedMesh\\b|new\\s+(THREE\\.)?(Skeleton|Bone)\\s*\\("
+    },
+    {
+      "id": "bone-rotation",
+      "category": "Animation",
+      "three": "bone.quaternion / bone.rotation set after mixer.update(dt); bone.lookAt(target); skeleton.getBoneByName",
+      "status": "changed",
+      "since": "0.2",
+      "target": "const head = anim.joint('Head'); anim.setJointRotation(head, q, weight); anim.addJointRotation(head, q, weight); anim.lookAt(target, { joints: ['Spine', 'Neck', 'Head'], limit }, weight)",
+      "notes": "Setting bone.quaternion after the mixer's update becomes setJointRotation, and multiplying it becomes addJointRotation, which turns the joint in its own frame. Turn a bone.rotation Euler into a quaternion with quat.fromEuler first. Both take a weight from 0 to 1 that blends with the animated rotation. A rotation holds in every frame until clearJoint, where three.js's mixer overwrites the bone in its next update. bone.lookAt becomes lookAt, which turns a chain of up to 4 joints toward a point in the world, each within its limit, and aims again every frame until lookAt(null). The joints below follow, so a held rifle aims with the arms.",
+      "docs": "api/animation",
+      "detect": "\\bgetBoneByName\\s*\\(|\\b\\w*(bone|Bone|head|Head|spine|Spine|neck|Neck)\\.(quaternion|rotation)\\.(copy|set|multiply|premultiply|slerp|setFromEuler|setFromAxisAngle)\\s*\\("
     },
     {
       "id": "anim-utils",
