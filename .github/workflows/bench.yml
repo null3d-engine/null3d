@@ -40,6 +40,10 @@ on:
         description: The commit to compare with. Empty takes the merge base with main, or the commit before on main
         required: false
         default: ""
+      scenes:
+        description: The scenes to compare, such as s6 or s5,s6, for a trial of a scene. Empty compares every scene
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -275,10 +279,13 @@ jobs:
 
       # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md. The command builds
       # each commit's benchmark pages for production, and serves each build on a port of its own.
+      # A run started by hand may name its scenes. It never sets main's baseline.
       - name: Run both builds' benchmark pages in turns, and compare them
+        env:
+          SCENES: ${{ inputs.scenes }}
         run: |
           rm -rf target/bench
-          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5 --shard ${{ matrix.shard }}/${{ strategy.job-total }} ${SCENES:+--scenes "$SCENES"}
 
       - name: Show the shard's summary on the job's page
         if: always()

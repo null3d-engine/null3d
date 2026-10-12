@@ -72,7 +72,7 @@ import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
-import { pageResult } from '../tests/lib/page-result.ts';
+import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
 import {
@@ -170,6 +170,12 @@ const START_MARGIN_MS = 60_000;
 const STREAM_MARGIN_MS: Partial<Record<BenchScene, number>> = { s6: 240_000 };
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
+/**
+ * Rounds in a row in which a page fails in both builds before a comparison stops running it. Such a
+ * page is broken in both, so more rounds only spend the job's time: S6's pages once timed out in
+ * every round and ran CI's shards past their time limit.
+ */
+const FAILED_ROUNDS_TO_STOP = 2;
 /** A comparison of two builds needs this many runs of each page per build, or more. */
 const MIN_COMPARE_RUNS = 3;
 
@@ -302,14 +308,22 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	});
 }
 
-/** Opens one benchmark page in a fresh parked window and waits for its result. */
+/** Problems of a failed page that its error carries: enough to name the cause, few to print. */
+const PAGE_PROBLEMS = 8;
+
+/**
+ * Opens one benchmark page in a fresh parked window and waits for its result. A page that fails
+ * gives its first problems with its error.
+ */
 async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
 	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
+	const problems = watchPageProblems(page);
 	try {
 		await page.goto(url);
 		return await pageResult<BenchResult>(page, timeoutMs);
 	} catch (e) {
-		return { ok: false, error: (e as Error).message } as BenchResult;
+		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
+		return { ok: false, error } as BenchResult;
 	} finally {
 		await page.close();
 	}
@@ -579,21 +593,32 @@ async function runComparison(
 			servers.push(server);
 			urls[build] = server.url;
 		}
+		// Rounds in a row in which a page failed in both builds, by page.
+		const failedRounds = new Map<string, number>();
 		for (let round = 1; round <= options.runs; round++)
-			for (const { scene, kind } of pages)
+			for (const { scene, kind } of pages) {
+				const page = `${scene}-${kind}`;
+				if ((failedRounds.get(page) ?? 0) >= FAILED_ROUNDS_TO_STOP) continue;
+				let failed = 0;
 				for (const build of roundOrder(round)) {
 					const result = await runPage(
 						browser,
 						`${urls[build]}${pagePath(scene, kind, switches)}`,
 						pageTimeoutMs(options.seconds, scene),
 					);
-					const name = `${build}-${scene}-${kind}-${round}`;
+					const name = `${build}-${page}-${round}`;
 					writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
 					results.push({ build, scene, kind, round, result });
+					if (!result.ok) failed++;
 					console.log(
 						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}${result.load ? `, whole after ${(result.load.wholeMs / 1000).toFixed(1)} s` : ''}`,
 					);
 				}
+				const streak = failed === BUILDS.length ? (failedRounds.get(page) ?? 0) + 1 : 0;
+				failedRounds.set(page, streak);
+				if (streak === FAILED_ROUNDS_TO_STOP)
+					console.log(`${page}: failed in both builds in ${streak} rounds in a row, so it stops`);
+			}
 	} finally {
 		for (const server of servers) server.stop();
 	}
