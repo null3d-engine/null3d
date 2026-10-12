@@ -175,6 +175,7 @@ A pull request that changes only docs files runs only the checks that read them.
 
 ## CI's jobs
 
+- Every CI job stops at 15 minutes at most, the owner's rule of 12 October 2026. A job should take at most about 12, so that a slow runner still fits. On that day, `rust-tests` took 5.0 to 9.0 minutes in 46 passing runs, and the benchmark workflow's `build` 4.5 to 7.7 in main's last 5. Their limits went from 25 and 20 minutes to 15. The weekly newest-nightly Rust job took 2.0 and 15.1 minutes in its two runs, with 10 of the 15.1 in `cargo test`. It now runs the tests through cargo-nextest as `rust-tests` does, with a Rust cache of its own, under a 15-minute limit. The cache's key holds the compiler's version, so each new nightly still builds the dependencies once. The release workflow's jobs keep 30 minutes, as [Releases](releases.md#making-a-release) says why.
 - One `build` job builds the WebAssembly files and the shader modules, and every browser, benchmark and macOS job downloads them. Before, each browser shard built them again, which took 1.5 minutes.
 - The browser tests run in 11 shards and the benchmark page tests in 2, so that no shard nears the 15-minute limit of its job. Before the first split, in the 25 runs up to 1 October 2026, the two browser shards took 10 and 12 minutes. A whole merge queue run took 16.5 minutes. After it, a pull request's run took 6.9 minutes.
 - Playwright splits the browser tests by count, so the `browser` job weights its shards. [Image tests](image-tests.md#ci) says how to retune the weights and when to add a shard.
