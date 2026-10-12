@@ -240,6 +240,9 @@ describe('SketchQuality.lower', () => {
 			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			lodThreshold: low.lodThreshold,
+			lodShadowFactor: low.lodShadowFactor,
+			lodFade: low.lodFade,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -256,8 +259,8 @@ describe('SketchQuality.lower', () => {
 			morphTargets: MEDIUM.morphTargets,
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
-		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps
-		// and the reflections' size did.
+		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
+		// the reflections' size and the levels of detail did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -266,6 +269,9 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 		]);
 	});
 });

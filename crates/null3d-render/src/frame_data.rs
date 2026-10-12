@@ -56,6 +56,10 @@ pub struct FrameUniform {
     /// first, `n.y` times the second and `n.z` times the third (see
     /// [`null3d_core::lights::FrameLights::hemisphere`]).
     pub hemisphere: [[f32; 4]; 3],
+    /// The view's camera relative to the camera of the camera's view, and 0. The matrices of the
+    /// shadow maps take positions relative to the camera of the camera's view, so shadow lookups
+    /// add this to a position relative to the view's camera. It is 0 in the camera's view.
+    pub shadow_origin: [f32; 4],
     /// The view matrix for positions relative to the camera, which custom materials read as
     /// `camera.view`: `projection` times it is `view_proj`. Zero in the views of lights.
     pub view: Mat4,

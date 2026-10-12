@@ -113,7 +113,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::graph::{GraphError, RenderGraph};
-use crate::light_grid::{CameraLights, LightGrid, LightLimits};
+use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
@@ -141,7 +141,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
-    use crate::view::{MAX_VIEW_IDS, ViewId};
+    use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
@@ -194,11 +194,16 @@ mod ids {
     /// values, with three.js's table of the split-sum terms of specular light in the columns after
     /// the rows' texels.
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEW_IDS as u32;
-    /// The ring of light data textures of the camera's view, one per ring slot: the records of the
-    /// lights that the light grid lists, and the grid's words.
-    pub const LIGHT_DATA: u32 = MATERIALS + 1;
+    /// Each camera view's ring of light data textures, one per ring slot, from
+    /// `LIGHT_DATA + RING * view`: the records of the lights that the view's light grid lists, and
+    /// the grid's words.
+    const LIGHT_DATA: u32 = MATERIALS + 1;
+
+    pub const fn light_data(view: ViewId) -> u32 {
+        LIGHT_DATA + RING * view.index() as u32
+    }
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
-    pub const BLANK_LUT: u32 = LIGHT_DATA + RING;
+    pub const BLANK_LUT: u32 = LIGHT_DATA + RING * MAX_VIEWS as u32;
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// The final pass's blank outline texture, which it binds while no outline draws.
@@ -388,8 +393,8 @@ pub struct CpuCulledRenderer {
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
-    /// The point and spot lights of the camera's view, and the textures that hold them.
-    lights: CameraLights,
+    /// The point and spot lights of each camera view, and the textures that hold them.
+    lights: LightGrids,
     light_textures: LightTextures,
     /// The skinned scene objects, and the textures that their vertex shaders read.
     skins: Skins,
@@ -512,7 +517,7 @@ impl CpuCulledRenderer {
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
-            lights: CameraLights::new(config.light_limits),
+            lights: LightGrids::new(config.light_limits, false),
             light_textures: LightTextures::default(),
             skins: Skins::default(),
             created: false,
@@ -529,7 +534,13 @@ impl CpuCulledRenderer {
     /// The light grid of the camera's view in the frame recorded last, with the records that the
     /// shaders read.
     pub fn light_grid(&self) -> &LightGrid {
-        self.lights.grid()
+        self.lights.camera().grid()
+    }
+
+    /// The light grid of camera view `view` in the frame recorded last, or `None` while the view
+    /// has seen no point or spot light.
+    pub fn view_light_grid(&self, view: ViewId) -> Option<&LightGrid> {
+        Some(self.lights.get(view)?.grid())
     }
 
     /// The tiles of the point and spot lights' shadow atlas, as the frame that culled last planned
@@ -1136,29 +1147,33 @@ impl CpuCulledRenderer {
             atlas,
             occlusion: self.graph.ao_texture().unwrap_or(ids::BLANK_AO),
             environment: self.bound_environment,
+            lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
-        };
-        // Only the camera's view copies its opaque color for surfaces that let light through.
-        let copy = self.graph.transmission_texture();
-        let lit_of = |lit: LitTextures, index: usize| LitTextures {
-            transmission: if index == ViewId::CAMERA.index() {
-                copy
-            } else {
-                ids::BLANK_TRANSMISSION
-            },
-            ..lit
         };
         let first_new = self.opaque.views();
         let lights_remade =
             self.light_textures
                 .size(list, &mut self.lights, self.config.max_texture_size)?;
         self.opaque.add_views(list, views)?;
-        // Every camera view's frame groups bind the shadow maps and the light textures, so each
-        // view binds them again when the graph or the light textures make them again.
-        let rebind = lights_remade || self.graph.textures_made();
+        // Every camera view's frame groups bind the shadow maps and its light textures, so a view
+        // binds them again when the graph or its light textures make them again. Only the camera's
+        // view copies its opaque color for surfaces that let light through.
+        let copy = self.graph.transmission_texture();
+        let light_textures = &self.light_textures;
+        let lit_for = |lit: LitTextures, view: ViewId| LitTextures {
+            lights: ids::light_data(light_textures.owner(view)),
+            transmission: if view == ViewId::CAMERA {
+                copy
+            } else {
+                ids::BLANK_TRANSMISSION
+            },
+            ..lit
+        };
+        let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
-            if index >= first_new || rebind {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
+            if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
+                let view = ViewId::from_index(index);
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         let cascades = self.cascades();
@@ -1197,7 +1212,8 @@ impl CpuCulledRenderer {
             self.bound_environment = environment;
             lit.environment = environment;
             for index in 0..self.opaque.views() {
-                Opaque::bind_frame(list, ViewId::from_index(index), Some(lit_of(lit, index)))?;
+                let view = ViewId::from_index(index);
+                Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
         for index in 0..views {
@@ -1238,8 +1254,11 @@ impl CpuCulledRenderer {
         self.clusters
             .upload(list, arena, &self.layout, &self.casters)?;
         self.layout.upload_object_ranges(list, arena)?;
+        let drawn_views = (0..views)
+            .filter(|&index| self.culling.frame(ViewId::from_index(index)).is_some())
+            .fold(0u32, |mask, index| mask | 1 << index);
         self.light_textures
-            .upload(list, arena, &mut self.lights, input.frame)?;
+            .upload(list, arena, &mut self.lights, input.frame, drawn_views)?;
 
         // The streamed ring moves to a new slot only for moving rows, and each view's rings only
         // for new data: a changed frame uniform, or an index list that differs from the previous
@@ -1323,7 +1342,7 @@ impl CpuCulledRenderer {
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
         let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
-        let light_slot = self.light_textures.slot();
+        let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
         let settings = &self.settings;
         let hidden_in = |view: ViewId| {
@@ -1348,6 +1367,7 @@ impl CpuCulledRenderer {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let backdrop = settings.draws_background(view);
                     let slot = opaque.frame_slot(view);
+                    let light_slot = light_textures.slot(view);
                     let group = ids::frame_group(view) + light_slot;
                     if backdrop {
                         background.record(list, group, &[slot, slot], Place::First)?;
@@ -1363,7 +1383,9 @@ impl CpuCulledRenderer {
                 }
                 Role::Prepass(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
-                    let shading = Shading::Prepass { light_slot };
+                    let shading = Shading::Prepass {
+                        light_slot: light_textures.slot(view),
+                    };
                     let hidden = hidden_in(view);
                     opaque.record(list, arena, view, starts, layout, meshes, shading, &hidden)
                 }
@@ -1395,6 +1417,7 @@ impl CpuCulledRenderer {
                 Role::Transparent(view) if culling.frame(view).is_some() => {
                     let at = opaque.sorted_records_at(view, layout);
                     let draws = ids::draws_group(view);
+                    let light_slot = light_textures.slot(view);
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
                     let hidden = hidden_in(view);
                     let index = view.index();
@@ -1402,7 +1425,8 @@ impl CpuCulledRenderer {
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
-                    let group = ids::frame_group(ViewId::CAMERA) + light_slot;
+                    let group =
+                        ids::frame_group(ViewId::CAMERA) + light_textures.slot(ViewId::CAMERA);
                     lines.record(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
@@ -1559,6 +1583,7 @@ impl FrameBuilder for CpuCulledRenderer {
                         .then(|| settings.view_frame(view, scene, parity, canvas, scale))
                         .flatten()
                 },
+                &|view| settings.level_view(view, canvas),
                 Some(sorted),
                 Some(cull::Occlusion {
                     occluders: &mut self.occluders,
@@ -1567,10 +1592,22 @@ impl FrameBuilder for CpuCulledRenderer {
                 }),
             )
             .map_err(|_| out_of_memory(&self.layout))?;
-        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
-            self.lights.assign(input.jobs, frame, input.lights);
-            self.lights.mark_shadows(&self.tiles, input.shadow_lights);
+        let main = self.culling.frame(ViewId::CAMERA).map(|frame| frame.camera);
+        let exposure = self.settings.drawn_output().exposure;
+        for index in 0..self.settings.views().len() {
+            let view = ViewId::from_index(index);
+            if let Some(frame) = self.culling.frame_mut(view) {
+                if let Some(main) = &main {
+                    frame.set_shadow_origin(main);
+                }
+                self.lights
+                    .assign(view, frame, input, exposure, &self.tiles);
+            }
         }
+        // Shadow views pick the camera's levels with a larger threshold, and the outline view the
+        // camera's own.
+        let shadow_rule = self.settings.shadow_level_view(canvas);
+        let camera_rule = self.settings.level_view(ViewId::CAMERA, canvas);
         // The cascades skip the cells out of their view too: the casters' layout gives every other
         // object no bucket, so the scene's cell order serves it.
         let shadow = self.shadow.as_ref();
@@ -1585,6 +1622,7 @@ impl FrameBuilder for CpuCulledRenderer {
                     let shadow = shadow.filter(|s| s.draws(cascade))?;
                     Some(shadow.view_frame(cascade))
                 },
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1597,6 +1635,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|view| tiles.frame(view.tile_index()?).copied(),
+                &|_| shadow_rule,
                 None,
                 None,
             )
@@ -1613,6 +1652,7 @@ impl FrameBuilder for CpuCulledRenderer {
                 &mut self.clusters,
                 cells,
                 &|_| camera.filter(|_| outlines),
+                &|_| camera_rule,
                 None,
                 None,
             )
