@@ -1409,7 +1409,8 @@ pub mod sizes {
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
-    /// Draw records one multi-draw call reads: a 4 KiB uniform block.
+    /// Draw records one multi-draw call reads: a 4 KiB uniform block, which WebGL2's multi-draw
+    /// vertex shaders read through a texture copy, one texel per record.
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
@@ -2145,7 +2146,6 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.
             format!(
                 "textureLoad(materials, vec2u({}u, id), 0)",
