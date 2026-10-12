@@ -32,15 +32,18 @@ export function memoryBytes(memory: WebAssembly.Memory | undefined): number | un
 export class MemoryViews {
 	/** Increments each time the views must be made again. */
 	generation = 0;
-	/** The buffer that the kept views view. */
-	private viewsOf: ArrayBufferLike;
+	/**
+	 * The memory's size when the kept views were made. A memory only grows, so its size tells a
+	 * new buffer apart without keeping the old one.
+	 */
+	private viewsAt: number;
 	/** A view of the whole memory by typed array class. */
 	private readonly heaps = new Map<unknown, unknown>();
 	/** The objects that keep views, which drop them when the memory grows. */
 	private readonly holders = new Set<WeakRef<ViewHolder>>();
 
 	constructor(readonly memory: WebAssembly.Memory) {
-		this.viewsOf = memory.buffer;
+		this.viewsAt = this.bytes;
 	}
 
 	/** The memory's size in bytes. */
@@ -94,9 +97,9 @@ export class MemoryViews {
 	 * those of every holder that is still alive go, each to be made again at its next use.
 	 */
 	grown(): boolean {
-		const buffer = this.memory.buffer;
-		if (buffer === this.viewsOf) return false;
-		this.viewsOf = buffer;
+		const bytes = this.bytes;
+		if (bytes === this.viewsAt) return false;
+		this.viewsAt = bytes;
 		this.generation++;
 		this.heaps.clear();
 		for (const ref of this.holders) {
