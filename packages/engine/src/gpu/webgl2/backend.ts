@@ -98,13 +98,15 @@ interface GlBuffer {
 	size: number;
 	/** Counts the writes into the buffer, each of which leaves its texture copies out of date. */
 	writes: number;
-	/** Texture copies of ranges of the buffer, by the range's offset (see `copyOfBlock`). */
-	copies: Map<number, BlockCopy> | null;
+	/** Texture copies of ranges of the buffer (see `copyOfBlock`). */
+	copies: BlockCopy[] | null;
 }
 
 /** A texture that holds a uniform buffer range, one `RGBA32UI` texel per 16 bytes, in one row. */
 interface BlockCopy {
 	texture: WebGLTexture;
+	/** The range's start in the buffer. */
+	offset: number;
 	width: number;
 	/** The buffer's write count when the texture last took the range's bytes. */
 	writes: number;
@@ -1285,7 +1287,11 @@ export class WebGL2Backend {
 		if (!old) return;
 		this.gl.deleteBuffer(old.buffer);
 		this.gpuMemory.addBuffers(-old.size);
-		if (old.copies) for (const [offset, copy] of old.copies) this.dropCopy(old, offset, copy);
+		if (old.copies)
+			for (const copy of old.copies) {
+				this.gl.deleteTexture(copy.texture);
+				this.gpuMemory.addTextures(-copy.width * 16);
+			}
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
 			if (this.blockBuffers[slot] === old) this.blockBuffers[slot] = null;
@@ -2538,31 +2544,34 @@ export class WebGL2Backend {
 		const buffer = this.blockBuffers[slot] as GlBuffer;
 		const offset = this.blockOffsets[slot] as number;
 		const width = (this.blockSizes[slot] as number) >> 4;
-		buffer.copies ??= new Map();
-		let copy = buffer.copies.get(offset);
-		if (copy?.width !== width) {
-			if (copy) this.dropCopy(buffer, offset, copy);
-			// A copy that no draw has read since the buffer's last write takes the new range, so the
-			// textures stay as many as the ranges that draws read between two writes.
-			for (const [other, stale] of buffer.copies) {
-				if (stale.writes !== buffer.writes && stale.width === width) {
-					buffer.copies.delete(other);
-					copy = stale;
-					break;
-				}
+		buffer.copies ??= [];
+		const copies = buffer.copies;
+		let copy: BlockCopy | undefined;
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const known = copies[k] as BlockCopy;
+			if (known.offset === offset && known.width === width) copy = known;
+		}
+		// A copy that no draw has read since the buffer's last write takes the new range, so the
+		// textures stay as many as the ranges that draws read between two writes. Ranges move each
+		// frame with the ring's slots, so the copies are taken over in place, which allocates nothing.
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const stale = copies[k] as BlockCopy;
+			if (stale.writes !== buffer.writes && stale.width === width) {
+				stale.offset = offset;
+				stale.writes = -1;
+				copy = stale;
 			}
-			if (copy?.width !== width) {
-				const texture = gl.createTexture();
-				if (!texture) throw new Error('WebGL2 could not create a texture');
-				this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
-				gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, 1);
-				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-				this.gpuMemory.addTextures(width * 16);
-				copy = { texture, width, writes: -1 };
-			}
-			copy.writes = -1;
-			buffer.copies.set(offset, copy);
+		}
+		if (!copy) {
+			const texture = gl.createTexture();
+			if (!texture) throw new Error('WebGL2 could not create a texture');
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
+			gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, 1);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			this.gpuMemory.addTextures(width * 16);
+			copy = { texture, offset, width, writes: -1 };
+			copies.push(copy);
 		}
 		if (copy.writes !== buffer.writes) {
 			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, copy.texture);
@@ -2572,13 +2581,6 @@ export class WebGL2Backend {
 			copy.writes = buffer.writes;
 		}
 		return copy.texture;
-	}
-
-	/** Deletes the texture copy of a buffer's range at `offset`. */
-	private dropCopy(buffer: GlBuffer, offset: number, copy: BlockCopy): void {
-		this.gl.deleteTexture(copy.texture);
-		this.gpuMemory.addTextures(-copy.width * 16);
-		buffer.copies?.delete(offset);
 	}
 
 	/** Binds a sampler to a texture unit, or none. */
