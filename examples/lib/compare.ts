@@ -23,6 +23,7 @@ import { allEffects, type CompareMode, type Effects, effectsToText } from './com
 import {
 	type DeviceClass,
 	deviceClass,
+	displayRate,
 	type RampOptions,
 	type RampPlan,
 	type RampResult,
@@ -548,6 +549,8 @@ export async function rampComparison(
 	const plan = options.plan ?? run.plan;
 	run.setCount(plan.start);
 	await new Promise((resolve) => setTimeout(resolve, (options.warmupSeconds ?? 2) * 1000));
-	const displayHz = await measureDisplayHz();
+	const pageHz = await measureDisplayHz();
+	const start = await run.measure(1);
+	const displayHz = displayRate(pageHz, start.fps);
 	return runRamp(run, plan, { ...options, displayHz });
 }

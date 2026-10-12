@@ -55,6 +55,24 @@ export const STEP_SECONDS = 1.5;
 /** Seconds at the start of each step that the measurement skips, while the new count settles. */
 export const SETTLE_SECONDS = 0.5;
 
+/** The refresh rates that displays run at, which an engine's measured frame rate rounds to. */
+const REFRESH_RATES = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 240] as const;
+
+/**
+ * The display rate that a ramp judges against, from the rate of the page's own frames and the
+ * frame rate that the engine draws at the ramp's start. Chrome can slow the page thread's frames
+ * while an engine draws from its workers at the full rate: on a 120 Hz Mac it once gave the page
+ * 30 frames a second. An engine cannot draw faster than the display, so an engine clearly faster
+ * than the page's rate sets the display rate, rounded to the nearest common refresh rate.
+ */
+export function displayRate(pageHz: number, engineFps: number): number {
+	if (engineFps <= pageHz * 1.05) return pageHz;
+	let nearest: number = REFRESH_RATES[0];
+	for (const rate of REFRESH_RATES)
+		if (Math.abs(rate - engineFps) < Math.abs(nearest - engineFps)) nearest = rate;
+	return Math.max(pageHz, nearest);
+}
+
 /** The count at a step of the ramp. */
 export function rampCount(plan: RampPlan, step: number): number {
 	return Math.min(plan.max, Math.round(plan.start * plan.factor ** Math.max(0, step)));

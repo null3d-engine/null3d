@@ -3,6 +3,7 @@ import {
 	countRange,
 	countToSlider,
 	deviceClass,
+	displayRate,
 	HOLD_SHARE,
 	RampTracker,
 	rampCount,
@@ -98,6 +99,14 @@ describe('the ramp', () => {
 			},
 		);
 		expect(result.steps).toHaveLength(1);
+	});
+
+	test("judges against the engine's rate when the page's own frames run slower than the display", () => {
+		expect(displayRate(30, 120.07)).toBe(120);
+		expect(displayRate(60, 143.2)).toBe(144);
+		expect(displayRate(120, 119.4)).toBe(120);
+		expect(displayRate(120, 64)).toBe(120);
+		expect(displayRate(60, 61)).toBe(60);
 	});
 });
 
