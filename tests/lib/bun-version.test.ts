@@ -34,6 +34,15 @@ describe('the Bun version', () => {
 		expect(pins.filter((pin) => !pin.endsWith(`: ${PINNED}`))).toEqual([]);
 	});
 
+	it('is the minimum that the README and the install guide name', () => {
+		for (const file of ['README.md', 'docs/getting-started/install.md']) {
+			const text = readFileSync(join(ROOT, file), 'utf8');
+			expect(text, `${file} names Bun ${PINNED} or newer`).toMatch(
+				new RegExp(`Bun\\]\\(https://bun\\.sh/?\\) ${PINNED?.replaceAll('.', '\\.')} or newer`),
+			);
+		}
+	});
+
 	it('that runs the tests is not older than package.json names', () => {
 		expect(
 			before(Bun.version, PINNED ?? ''),
