@@ -159,3 +159,20 @@ The review's low findings on the same files land with this record:
 - `assets.loadGltf` takes `LoadGltfOptions` with `rewriteUrl`, which the three.js mapping lists for `LoadingManager.setURLModifier`.
 - `concepts/assets` lists the limits; `api/assets`, `api/textures` and the pages of E1109, E1218, E1412 and E1416 name them.
 - The record is in the table in [README.md](README.md).
+
+## Addendum, 2026-10-08: malformed files made from good ones
+
+Task M2-L6 asked for unit tests that parse malformed glTF and KTX2 files. The hostile files of `gltf-hostile.test.ts` are made by hand, one per fault that the review found. They cover what we thought of. `malformed-files.test.ts` makes many more broken files from good ones. So it also covers faults that nobody thought of.
+
+- The glTF files are five. The test pages give the asset scene, its optimized copy with meshopt data and KTX2 textures, and the meshopt instancing file. The builder of test files gives the skinned arm with its clips, and the mesh with morph targets.
+- Each glTF file is cut short at 500 lengths. Each also gets 500 copies with 1 to 4 random bytes changed. Half of these changes fall inside the binary chunk, where the JSON still parses.
+- Each glTF file also gets 500 copies with one value of its JSON replaced. The new value can be an index past every array, or a number below zero, not whole or past 32 bits. It can also be a value of another type, a text key such as `constructor`, or no value at all.
+- The KTX2 files: the test pages' ETC1S, UASTC and UASTC HDR files, one with alpha, and one that the asset tool wrote. Each is cut short at every length and gets 500 copies with random bytes changed. Copies whose header still reads go to the transcoder task.
+- The rule: the parser reads a file or refuses it with its own error (`GltfError`, `Ktx2Refusal`), in under 1.5 seconds. Any other error, such as a `TypeError` or a `RangeError`, fails the test, which names the change that caused it. The transcoder writes the bytes that the header promises, or fails at its `run` stage. After each failure it must still transcode a good file.
+- A seeded generator picks the changes, so every run makes the same files.
+
+Data, 8 October 2026, on main at 061177262:
+
+- With 4,000 copies of each kind per file, 26 tests and 28,801 checks, the parsers found no fault. They took 4 seconds in all. The committed test takes 500 copies of each kind, which runs in under a second.
+- On some copies, the Basis transcoder printed `elemental_vector::increase_capacity: Allocation failed!` and failed the file. It still transcoded the good file each time after. The engine checks a file's sides and bytes before the transcoder starts (`ktx2TooLarge`), so the sizes that a broken header claims never reach it.
+- To show that the test sees a fault, we removed the index check of `gltf-json.ts` (an index at or past its array's length). 5 of the 26 tests then failed, each on a `TypeError` that names the change, such as "accessors.15.bufferView set to 255".

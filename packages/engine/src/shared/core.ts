@@ -475,16 +475,18 @@ export interface CoreGlue extends CoreErrors {
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
-	 * Adds a pass named `pass`, which draws into a target named `target` and reads the targets
-	 * named in `reads`, one per line. With `clears`, the target clears to the exposed linear color
-	 * `r`, `g`, `b`, `a`. With `scale` below 0 it is a scene pass of a `width` x `height` target.
-	 * From 0 it is a reflection pass across the plane through the point (`px`, `py`, `pz`) with
-	 * normal (`nx`, `ny`, `nz`), whose target takes `scale` of the render size each way, or the
-	 * share that `setReflectionScale` sets for 0, and which draws the objects on `layers`, or the
-	 * camera's for -1, in one frame of every `every`. Returns the view's place from 1, or 0 on
+	 * Adds a pass of `kind` (`PASS_KIND_SCENE` or `PASS_KIND_REFLECTION`) named `pass`, which draws
+	 * into a target named `target` and reads the targets named in `reads`, one per line. With
+	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. A scene pass has
+	 * a `width` x `height` target, or with a width of 0, one of `scale` of the render size each
+	 * way. A reflection pass mirrors across the plane through the point (`px`, `py`, `pz`) with
+	 * normal (`nx`, `ny`, `nz`), its target takes `scale` of the render size each way, or the share
+	 * that `setReflectionScale` sets for 0, and it draws the objects on `layers`, or the camera's
+	 * for -1. Either draws in one frame of every `every`. Returns the view's place from 1, or 0 on
 	 * failure: the render graph's errors (1502 to 1505), whose message `renderGraphMessage` gives.
 	 */
 	addPass(
+		kind: number,
 		pass: string,
 		target: string,
 		reads: string,
@@ -505,6 +507,30 @@ export interface CoreGlue extends CoreErrors {
 		py: number,
 		pz: number,
 	): number;
+	/**
+	 * Adds a full-screen pass named `pass`, which draws the compiled WGSL of render pipeline
+	 * template `template` over the whole of a target named `target`: of `width` x `height`
+	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
+	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
+	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
+	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
+	 */
+	addFullscreenPass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		flags: number,
+		source: number,
+	): number;
+	/**
+	 * Gives the full-screen pass of a view place the uniforms at `effectValues` and the textures at
+	 * `effectTextures`, from the next frame on, or fails with the render graph's error.
+	 */
+	setPassValues(place: number): number;
 	/**
 	 * Sets the share of the render size each way that the targets of reflection passes without a
 	 * scale of their own take.
@@ -586,9 +612,14 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	effectValues(): number;
 	/**
+	 * The address of a custom effect's or full-screen pass's texture handles (`EFFECT_TEXTURES`
+	 * 32-bit words), which TypeScript writes with its uniforms.
+	 */
+	effectTextures(): number;
+	/**
 	 * Sets the custom effect at a place in the order effects run, from the next frame on: its render
-	 * pipeline template, its flags (`EFFECT_DEPTH`) and the uniforms at `effectValues`. Template 0
-	 * removes the effect at the place and every one after it.
+	 * pipeline template, its flags (`EFFECT_DEPTH`), the uniforms at `effectValues` and the textures
+	 * at `effectTextures`. Template 0 removes the effect at the place and every one after it.
 	 */
 	setEffect(index: number, template: number, flags: number): number;
 	/**
@@ -880,6 +911,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOrthographicCamera',
 	'clearShadowCamera',
 	'addPass',
+	'addFullscreenPass',
+	'setPassValues',
 	'setReflectionScale',
 	'removeScenePass',
 	'setScenePassEnabled',
@@ -909,6 +942,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setEnvironment',
 	'setOutline',
 	'effectValues',
+	'effectTextures',
 	'setEffect',
 	'setEffectGroup',
 	'setEffectFold',
