@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { BROWSER_GONE, watchBrowser } from './browser.js';
+import { BROWSER_GONE, runningState, watchBrowser } from './browser.js';
 
 /**
  * A browser as the guard sees it: connected until `noticed`, with a client connection that records
@@ -56,5 +56,15 @@ describe('watchBrowser', () => {
 		await wait(60);
 		expect(state.closedWith).toBeUndefined();
 		disconnect();
+	});
+});
+
+describe('runningState', () => {
+	it('counts a process that ended but was not reaped as ended', () => {
+		expect(runningState('Zs\n')).toBe(false);
+		expect(runningState('Z')).toBe(false);
+		expect(runningState('')).toBe(false);
+		expect(runningState('Sl\n')).toBe(true);
+		expect(runningState('R+')).toBe(true);
 	});
 });
