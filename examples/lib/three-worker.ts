@@ -690,7 +690,9 @@ class ThreeRuntime {
 		drawer.render();
 		this.gpuTimer?.after();
 		const end = performance.now();
+		const drawnBefore = this.drawn.count;
 		this.drawn.note(renderer.info.render.drawCalls ?? renderer.info.render.calls ?? 0, end);
+		if (drawnBefore === 0 && this.drawn.count > 0) this.post({ type: 'drawn' });
 		if (interval > 0) this.rings.add(time, interval, end - start, posed - start, end - posed);
 	};
 

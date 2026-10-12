@@ -67,6 +67,8 @@ export type FromThree =
 			limit: { count: number; reason: string } | null;
 	  }
 	| { type: 'failed'; message: string }
+	/** The first frame that drew anything, after three.js has built the shaders that it needs. */
+	| { type: 'drawn' }
 	| {
 			type: 'measured';
 			id: number;

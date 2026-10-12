@@ -43,6 +43,20 @@ describe('the three.js worker', () => {
 		expect(source).toContain('measuredFigures(means, this.drawn.since(');
 	});
 
+	// A guard on the start: a live three.js run starts at its first frame that draws, as null3D's run
+	// starts at its first frame, so a warm-up and a measurement never fall in three.js's shader builds.
+	test('a live three.js run starts at its first frame that draws', () => {
+		const worker = readFileSync(new URL('./three-worker.ts', import.meta.url), 'utf8');
+		expect(worker).toContain(
+			"if (drawnBefore === 0 && this.drawn.count > 0) this.post({ type: 'drawn' });",
+		);
+		const page = readFileSync(new URL('./compare.ts', import.meta.url), 'utf8');
+		const started = page.slice(page.indexOf("case 'started':"), page.indexOf("case 'held':"));
+		expect(started).toContain("case 'drawn':");
+		expect(started.split("case 'drawn':")[0]).not.toContain('started({');
+		expect(started.split("case 'drawn':")[1]).toContain('if (!held) started({ label });');
+	});
+
 	test("CSM's lights get three.js's own setup lines, with the standard material's energy terms", () => {
 		const standard = three.ShaderChunk.lights_fragment_begin;
 		const chunks = { lights_fragment_begin: standard };

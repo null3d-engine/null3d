@@ -454,6 +454,9 @@ async function startThree(
 				label = `${data.version}, ${data.renderer}`;
 				limit = data.limit && data.limit.count < plan.max ? data.limit : undefined;
 				meter?.started(data.renderer, data.version, data.gpuTimer);
+				return;
+			case 'drawn':
+				// A live run starts at its first frame that draws, as null3D's starts at its first frame.
 				if (!held) started({ label });
 				return;
 			case 'held':
