@@ -20,6 +20,12 @@ import { createWood } from './wood';
 const [CYCLE, GOLDEN, BLUE, STEP] = [36, 17.1, 18.7, 1 / 30];
 /** The share of the sky's color that the haze keeps in shade, so the sunlit air stands out. */
 const SHADE = 0.3;
+// The wood stands in the sky's light, so its floor never falls to black. The sun's own light in the
+// haze sits above the sky's, so the shafts stand out, and the sky itself stays below white.
+const FILL = 1.8;
+const SKY = 0.5;
+const SHAFT = 2.2;
+const EXPOSURE = 0.9;
 /** The lanterns along the path: x and z, each on a post that leans its light over the path. */
 const LANTERNS = [1.6, 8, -1.6, 1, 1.6, -6, -1.6, -13];
 /** What the camera looks at down the path, and the box that the pointed point stays in. */
@@ -107,7 +113,7 @@ export default defineSketch(async (ctx) => {
 			sun.setDirection(...day.light.direction);
 			sun.setColor(day.light.color);
 			sun.setIntensity(day.light.intensity);
-			scene.setEnvironment(skyLight, { intensity: day.skyIntensity });
+			scene.setEnvironment(skyLight, { intensity: day.skyIntensity * FILL });
 			const [r, g, b] = day.fog.color;
 			scene.setFog({
 				color: [r * SHADE, g * SHADE, b * SHADE],
@@ -115,10 +121,10 @@ export default defineSketch(async (ctx) => {
 				density: 0.03,
 				height: 0,
 				heightFalloff: 0.12,
-				volumetric: { intensity: 2.5, anisotropy: 0.7, distance: 60 },
+				volumetric: { intensity: SHAFT, anisotropy: 0.7, distance: 60 },
 			});
-			post.set({ exposure: day.exposure });
-			scene.setBackground({ sky }, { intensity: day.skyIntensity });
+			post.set({ exposure: day.exposure * EXPOSURE });
+			scene.setBackground({ sky }, { intensity: day.skyIntensity * SKY });
 		},
 	};
 });
