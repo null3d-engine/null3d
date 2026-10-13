@@ -238,6 +238,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         lines: DebugLines::NONE,
         lights: &[],
         shadow_lights: &[],
+        light_table: None,
         pipelines_built: u32::MAX,
         animations: None,
         morphs: &world.morphs,
@@ -1058,6 +1059,7 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 300.0,
+        contact: 0.0,
         layers: DEFAULT_LAYERS,
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {

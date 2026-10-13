@@ -30,6 +30,24 @@
 // Each instance also has a layer mask, and the view one of its own. The thread skips an instance
 // whose mask shares no bit with the view's.
 //
+// Skinned objects whose vertex shaders skin them share a bucket by mesh and material, as a crowd
+// of one model draws in one instanced draw per part. Their bucket's first joint is
+// PER_SOURCE_JOINT, and each copy takes the first joint of its own object's skin from the skin
+// firsts texture, at the object's source, laid out as the index textures are. The texture keeps
+// the culling group within the eight storage buffers that every device allows a shader stage.
+//
+// A bucket of a mesh with levels of detail links to the bucket of its next coarser level, and each
+// level's bucket holds the level's error, in the units of the base mesh. An instance's entry names
+// its base level's bucket. The thread walks the links while the next level's error, times the
+// instance's largest axis scale and the view's level factor, stays under its distance from the
+// main camera, and appends the instance to the last level that passes. Every view places its
+// instances relative to the main camera, shadow views too, so they all pick by its distance. Past
+// each switch distance lies a band in which the level before still draws: there, the instance goes
+// to both levels' fade buckets, whose pipelines dither each pixel to one of them, and the copy's
+// fourth id holds the fade value, positive for the new level and negative for the old. A link of 0
+// means none, so a bucket record without levels holds zeros there, and a view whose level factor
+// is 0 draws every instance's base level.
+//
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
 // runs. Each workgroup finds its run, and each thread reads its instance from the cell order.
@@ -93,6 +111,10 @@ struct CullParams {
     range_count: u32,
     /// The view's row of the cell offsets texture.
     offsets_row: u32,
+    /// What the level choice reads: the level factor (0 for none), 1 for an orthographic camera,
+    /// whose distance counts as 1, the share of a switch distance that a fading band covers, and a
+    /// spare.
+    levels: vec4f,
     /// Each run: its first position in the cell order, its end, and its first workgroup.
     ranges: array<vec4u, MAX_RANGES>,
     /// What the occlusion phases read. Other views leave it unset.
@@ -101,10 +123,10 @@ struct CullParams {
 
 /// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer and
 /// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
-/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A skinned
-/// object's bucket names the first joint of its skin, which the vertex shaders that skin read
-/// beside the material. A bucket with `indices` 1 writes each survivor's index instead, one entry
-/// each, from entry `base` on.
+/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`. A bucket of
+/// skinned objects names the first joint of their skin, which the vertex shaders that skin read
+/// beside the material, or PER_SOURCE_JOINT, which sends each copy to its own. A bucket with
+/// `indices` 1 writes each survivor's index instead, one entry each, from entry `base` on.
 struct Bucket {
     base: u32,
     material: u32,
@@ -116,6 +138,12 @@ struct Bucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    /// The error of the bucket's level of detail, 0 for a base level.
+    error: f32,
+    /// The bucket of the next coarser level plus one, or 0 for none.
+    next: u32,
+    /// The fade bucket of the bucket's level plus one, or 0 for none.
+    fade: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -135,8 +163,16 @@ struct Bucket {
 /// cell x's offset for the view whose row is y.
 @group(0) @binding(9) var cell_offsets: texture_2d<f32>;
 
+/// The first joint of each source that a bucket of skinned objects shares: texel x of row y holds
+/// source y << INDEX_ROW_SHIFT | x's.
+@group(0) @binding(10) var skin_firsts: texture_2d<u32>;
+
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
+/// A bucket's first joint that sends each copy to its source's own in `skin_firsts`.
+const PER_SOURCE_JOINT: u32 = 0xffffffffu;
+/// Sources per row of the skin firsts texture are 1 << INDEX_ROW_SHIFT.
+const INDEX_ROW_SHIFT: u32 = 11u;
 /// 32-bit words of one indexed indirect draw: index count, instance count, first index, base
 /// vertex, first instance.
 const INDIRECT_WORDS: u32 = 5u;
@@ -182,6 +218,8 @@ struct Survivor {
     r2: vec4f,
     center: vec3f,
     radius: f32,
+    /// The largest axis scale of the instance's world matrix.
+    scale: f32,
 }
 
 /// Instance `i`, tested against the view's layers and frustum.
@@ -207,6 +245,7 @@ fn survivor(i: u32) -> Survivor {
         max(length(vec3f(out.r0.y, out.r1.y, out.r2.y)), length(vec3f(out.r0.z, out.r1.z, out.r2.z))),
     );
     out.radius = bucket.radius * scale;
+    out.scale = scale;
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
         if dot(plane.xyz, out.center) + plane.w < -out.radius {
@@ -217,24 +256,61 @@ fn survivor(i: u32) -> Survivor {
     return out;
 }
 
-/// Appends an instance in the view to its bucket's slice, and counts it in each of the bucket's
-/// draws, which start `draws_before` draws into the indirect draws.
+/// Appends an instance in the view to the bucket of the level of detail it draws, and to the fade
+/// buckets of two levels inside a fading band. The draws start `draws_before` draws into the
+/// indirect draws.
 fn append(s: Survivor, draws_before: u32) {
-    let bucket = buckets[s.bucket];
+    let base = buckets[s.bucket];
+    let factor = params.levels.x;
+    if base.next == 0u || factor <= 0.0 {
+        append_to(s, s.bucket, draws_before, 0.0);
+        return;
+    }
+    let reach = s.scale * factor;
+    let distance = select(length(s.center), 1.0, params.levels.y > 0.5);
+    var before = s.bucket;
+    var level = s.bucket;
+    var next = base.next;
+    while next != 0u && buckets[next - 1u].error * reach < distance {
+        before = level;
+        level = next - 1u;
+        next = buckets[level].next;
+    }
+    let band = params.levels.z;
+    if level != s.bucket && band > 0.0 && buckets[level].fade != 0u && buckets[before].fade != 0u {
+        let t = (distance / (buckets[level].error * reach) - 1.0) / band;
+        if t < 1.0 {
+            append_to(s, buckets[level].fade - 1u, draws_before, max(t, 1e-6));
+            append_to(s, buckets[before].fade - 1u, draws_before, -max(t, 0.0));
+            return;
+        }
+    }
+    append_to(s, level, draws_before, 0.0);
+}
+
+/// Appends an instance in the view to bucket `b`'s slice with the fade value `fade`, and counts it
+/// in each of the bucket's draws, which start `draws_before` draws into the indirect draws.
+fn append_to(s: Survivor, b: u32, draws_before: u32, fade: f32) {
+    let bucket = buckets[b];
     let first = (draws_before + bucket.first_draw) * INDIRECT_WORDS + 1u;
     let slot = atomicAdd(&indirect[first], 1u);
     for (var d = 1u; d < bucket.draws; d++) {
         atomicAdd(&indirect[first + d * INDIRECT_WORDS], 1u);
     }
     if bucket.indices != 0u {
-        visible[bucket.base + slot] = vec4u(s.index, 0u, 0u, 0u);
+        visible[bucket.base + slot] = vec4u(s.index, bitcast<u32>(fade), 0u, 0u);
         return;
+    }
+    var first_joint = bucket.first_joint;
+    if first_joint == PER_SOURCE_JOINT {
+        let row = (1u << INDEX_ROW_SHIFT) - 1u;
+        first_joint = textureLoad(skin_firsts, vec2u(s.index & row, s.index >> INDEX_ROW_SHIFT), 0).x;
     }
     let dst = (bucket.base + slot) * 4u;
     visible[dst] = bitcast<vec4u>(s.r0);
     visible[dst + 1u] = bitcast<vec4u>(s.r1);
     visible[dst + 2u] = bitcast<vec4u>(s.r2);
-    visible[dst + 3u] = vec4u(bucket.material, bucket.first_joint, s.index, 0u);
+    visible[dst + 3u] = vec4u(bucket.material, first_joint, s.index, bitcast<u32>(fade));
 }
 
 #ifndef OCCLUSION

@@ -74,6 +74,24 @@ fn transform_normal(t: Transform, n: vec3f) -> vec3f {
     return normalize(vec3f(dot(bc, n), dot(ca, n), dot(ab, n)) * facing);
 }
 
+/// The 4 x 4 matrix of a 3 x 4 affine transform whose rows that give x, y and z are `x`, `y` and
+/// `z`, with its translation in their w components.
+fn affine_matrix(x: vec4f, y: vec4f, z: vec4f) -> mat4x4f {
+    return transpose(mat4x4f(x, y, z, vec4f(0.0, 0.0, 0.0, 1.0)));
+}
+
+/// The inverse transpose of the 3 x 3 part of the affine transform whose rows are `x`, `y` and `z`:
+/// the matrix that turns a normal as `transform_normal` turns it, before normalizing.
+fn affine_normal_matrix(x: vec4f, y: vec4f, z: vec4f) -> mat3x3f {
+    let a = x.xyz;
+    let b = y.xyz;
+    let c = z.xyz;
+    let bc = cross(b, c);
+    let det = dot(a, bc);
+    let scale = select(0.0, 1.0 / det, det != 0.0);
+    return transpose(mat3x3f(bc, cross(c, a), cross(a, b))) * scale;
+}
+
 /// The transform moved by `offset`. Moving a transform relative to its grid cell by the offset
 /// from the camera to the cell makes it relative to the camera.
 fn move_transform(t: Transform, offset: vec3f) -> Transform {

@@ -112,9 +112,9 @@ pub fn skin_of(
         .filter(|&(_, joints)| mesh.joints <= joints)
 }
 
-/// How the WebGPU frame builder skins skinned meshes, which decision record D-20 measures: in the
-/// skinning pass, with each of its two savings on or off, or in the vertex shader of each pass
-/// that draws them.
+/// How the WebGPU frame builder skins skinned meshes, which decision record D-20 measured: in the
+/// vertex shader of each pass that draws them, the default, or in the skinning pass, with each of
+/// its two savings on or off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SkinningMode {
     /// True to skin in the vertex shader of each pass, as WebGL2 does.
@@ -128,13 +128,13 @@ pub struct SkinningMode {
 }
 
 impl SkinningMode {
-    /// The skinning pass with both savings: the default.
+    /// The skinning pass with both savings.
     pub const LEAN: Self = Self {
         vertex_shader: false,
         skip_held_poses: true,
         narrow_directions: true,
     };
-    /// Skinning in the vertex shader of each pass.
+    /// Skinning in the vertex shader of each pass: the default.
     pub const VERTEX: Self = Self {
         vertex_shader: true,
         ..Self::LEAN
@@ -181,7 +181,7 @@ impl SkinningMode {
 
 impl Default for SkinningMode {
     fn default() -> Self {
-        Self::LEAN
+        Self::VERTEX
     }
 }
 
@@ -713,7 +713,7 @@ mod tests {
         }
         assert_eq!(SkinningMode::from_code(0), Some(SkinningMode::LEAN));
         assert_eq!(SkinningMode::from_code(5), None);
-        assert_eq!(SkinningMode::default(), SkinningMode::LEAN);
+        assert_eq!(SkinningMode::default(), SkinningMode::VERTEX);
     }
 
     #[test]

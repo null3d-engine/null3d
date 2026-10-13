@@ -40,24 +40,19 @@ pub struct Manifest {
 }
 
 /// A feature whose shader builds go into files of their own, which a page loads the first time a
-/// pipeline asks for one of the builds. A build belongs to the feature of its shader, or else to
-/// the feature of its lowest permutation bit that a feature with `claims_shared_builds` names, or
-/// else to that of its lowest bit that any feature names.
+/// pipeline asks for one of the builds. A build needs the feature of its shader and the feature of
+/// each of its permutation bits that a feature names. A build that needs one feature belongs to its
+/// files, and a build that needs several to files of their own.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FirstUse {
-    /// Shaders that load by device, every build of which belongs to the feature.
+    /// Shaders that load by device, every build of which needs the feature.
     #[serde(default)]
     pub shaders: Vec<String>,
-    /// Permutation bits by name: a build of a shader that loads by device with one of them belongs
-    /// to the feature.
+    /// Permutation bits by name: a build of a shader that loads by device with one of them needs
+    /// the feature.
     #[serde(default)]
     pub bits: Vec<String>,
-    /// True when the feature's bits take the builds that they share with the bits of features
-    /// without it, such as a rare feature's SKIN builds, which would otherwise grow the skinning
-    /// files.
-    #[serde(default)]
-    pub claims_shared_builds: bool,
 }
 
 /// One entry shader.
@@ -402,9 +397,10 @@ fn check_first_use(errors: &mut Vec<String>, manifest: &Manifest) {
             || [Target::Wgsl, Target::Glsl]
                 .iter()
                 .any(|t| t.name() == feature)
+            || feature.split('_').any(|word| word == "and")
         {
             errors.push(format!(
-                "{key}: \"{feature}\" is not a valid feature name. Use lowercase letters, digits and underscores, start with a letter, and do not use \"wgsl\" or \"glsl\", because the name becomes part of a file name."
+                "{key}: \"{feature}\" is not a valid feature name. Use lowercase letters, digits and underscores, start with a letter, and do not use \"wgsl\", \"glsl\" or the word \"and\", because the name becomes part of a file name, and \"and\" joins the names of the features whose builds share a file."
             ));
         }
         if first_use.shaders.is_empty() && first_use.bits.is_empty() {
@@ -729,13 +725,14 @@ bits = ["BLOOM"]
     #[test]
     fn features_that_load_on_first_use_are_checked() {
         let text = format!(
-            "{FEATURES}\n[first_use.Glow]\nshaders = [\"sprite\", \"mesh\"]\nbits = [\"TONE_MAP\", \"SHINY\", \"BLOOM\", \"SKIN\"]\n\n[first_use.wgsl]\n"
+            "{FEATURES}\n[first_use.Glow]\nshaders = [\"sprite\", \"mesh\"]\nbits = [\"TONE_MAP\", \"SHINY\", \"BLOOM\", \"SKIN\"]\n\n[first_use.wgsl]\n\n[first_use.cut_and_paste]\nshaders = [\"final\"]\n"
         );
         let all = Manifest::parse(&text).unwrap_err().join("\n");
         for expected in [
             "first_use.Glow: \"Glow\" is not a valid feature name",
             "first_use.wgsl: \"wgsl\" is not a valid feature name",
             "first_use.wgsl names no shaders and no bits",
+            "first_use.cut_and_paste: \"cut_and_paste\" is not a valid feature name",
             "first_use.Glow.shaders has \"mesh\", which is not a shader of the manifest",
             "first_use.sprites.shaders has \"sprite\", which first_use.Glow names too",
             "first_use.Glow.bits has \"TONE_MAP\", which a device fixes",

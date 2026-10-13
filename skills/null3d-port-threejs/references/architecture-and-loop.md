@@ -161,8 +161,8 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes after 1.0); DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
-| troika-three-text | Not available: use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
-| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping now, effects in 0.2 (`references/post-processing.md`) |
+| troika-three-text | The MSDF text add-on (0.3, not built yet). Until then, use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping, and the effects (0.2) (`references/post-processing.md`) |
 | three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
 
 ## 7. The two-step route for large apps

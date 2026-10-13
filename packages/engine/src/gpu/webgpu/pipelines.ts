@@ -26,6 +26,9 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_PARTICLE,
+	LAYOUT_PARTICLE_DEPTH_MS,
+	LAYOUT_PARTICLE_SCENE_DEPTH,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
@@ -85,6 +88,10 @@ import {
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_PARTICLE,
+	TEMPLATE_PARTICLE_DEPTH,
+	TEMPLATE_PARTICLE_DEPTH_MS,
+	TEMPLATE_PARTICLE_MAP,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -113,6 +120,7 @@ import {
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
+import { PARTICLE_RECORDS } from '../particle-records';
 import { variantFor } from '../variants';
 import {
 	plainScale,
@@ -185,6 +193,13 @@ export interface RenderTemplate {
  * template's group, as the frame builder binds it and the mesh shaders declare it.
  */
 const ROW_VALUES_BINDING = 16;
+
+/**
+ * The binding of the table of object ranges in the frame group and in the depth template's group,
+ * which the vertex shaders of custom materials that read an instance's index or an object's id
+ * search.
+ */
+const OBJECT_RANGES_BINDING = 17;
 
 /** The fragment shader of a prepass that draws with a template's own vertex shader. */
 const EMPTY_FRAGMENT = '@fragment\nfn fs() -> @location(0) vec4f {\n    return vec4f(0.0);\n}\n';
@@ -420,8 +435,8 @@ export class Pipelines {
 	) {
 		const fragment = GPUShaderStage.FRAGMENT;
 		// The frame's constants and the material table, which depth-only pipelines read too, then
-		// the materials' custom values and the row values of instance batches, which the vertex
-		// shaders of custom materials' shadow casters read too.
+		// the materials' custom values, the row values of instance batches and the table of object
+		// ranges, which the vertex shaders of custom materials' shadow casters read too.
 		const frameEntries: GPUBindGroupLayoutEntry[] = [
 			{
 				binding: 0,
@@ -435,6 +450,11 @@ export class Pipelines {
 			visibility: GPUShaderStage.VERTEX,
 			texture: { sampleType: 'unfilterable-float' },
 		};
+		const objectRanges: GPUBindGroupLayoutEntry = {
+			binding: OBJECT_RANGES_BINDING,
+			visibility: GPUShaderStage.VERTEX,
+			buffer: { type: 'uniform' },
+		};
 		this.defineLayout(LAYOUT_DEPTH, 'depth', [
 			...frameEntries,
 			{
@@ -443,6 +463,7 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float' },
 			},
 			rowValues,
+			objectRanges,
 		]);
 		// The materials' custom values, the table of specular terms, then the shadow map, whose
 		// depths the receivers read as floats, the sampler that compares depths in the shadow
@@ -451,7 +472,7 @@ export class Pipelines {
 		// textureLoad, the environment's cube map with its filtering sampler, the sampler that reads
 		// four texels of the shadow map at once, the copy of the opaque color that surfaces which
 		// let light through sample with the environment's sampler, and the row values of instance
-		// batches, which only vertex shaders read.
+		// batches and the table of object ranges, which only vertex shaders read.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
 			{
@@ -482,6 +503,7 @@ export class Pipelines {
 			{ binding: 14, visibility: fragment, sampler: { type: 'non-filtering' } },
 			{ binding: 15, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			rowValues,
+			objectRanges,
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -509,8 +531,9 @@ export class Pipelines {
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
-		// occluders. Their history shares the buffer of the indirect draws, as eight storage buffers
-		// is all that every device allows a shader stage.
+		// occluders, the cell offsets, and the first joint of each skinned source. Their history
+		// shares the buffer of the indirect draws, as eight storage buffers is all that every device
+		// allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
@@ -522,6 +545,7 @@ export class Pipelines {
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -663,6 +687,50 @@ export class Pipelines {
 			...foldEntries,
 			unfiltered(5, true),
 		]);
+		// A particle system's values, then the block of the view that draws, at a dynamic offset;
+		// then the view's copy of its opaque depth, which soft particles read with textureLoad.
+		const vertexAndFragment = GPUShaderStage.VERTEX | fragment;
+		this.defineLayout(LAYOUT_PARTICLE, 'particle', [
+			{ binding: 0, visibility: vertexAndFragment, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: vertexAndFragment,
+				buffer: { type: 'uniform', hasDynamicOffset: true },
+			},
+		]);
+		this.defineLayout(LAYOUT_PARTICLE_SCENE_DEPTH, 'particle scene depth', [unfiltered(0)]);
+		// The copy of the opaque depth for soft particles reads a multisampled depth's first sample;
+		// the one-sample copy binds as a view's copy does.
+		this.defineLayout(LAYOUT_PARTICLE_DEPTH_MS, 'particle depth ms', [unfiltered(0, true)]);
+		for (const [id, label, shader, layout] of [
+			[TEMPLATE_PARTICLE_DEPTH, 'particle depth', shaders.particle_depth, LAYOUT_VIEW_COPY],
+			[
+				TEMPLATE_PARTICLE_DEPTH_MS,
+				'particle depth ms',
+				shaders.particle_depth_ms,
+				LAYOUT_PARTICLE_DEPTH_MS,
+			],
+		] as const)
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: [layout],
+				vertexBuffers: [],
+			});
+		for (const [id, label, shader, map] of [
+			[TEMPLATE_PARTICLE, 'particles', shaders.particle, false],
+			[TEMPLATE_PARTICLE_MAP, 'particles map', shaders.particle_map, true],
+		] as const) {
+			const layouts = [LAYOUT_FRAME, LAYOUT_PARTICLE, LAYOUT_PARTICLE_SCENE_DEPTH];
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: map ? [...layouts, LAYOUT_TEXTURES] : layouts,
+				vertexBuffers: [PARTICLE_RECORDS],
+			});
+		}
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -841,8 +909,9 @@ export class Pipelines {
 	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
 	 * template with the material's WGSL, in the shader variants that the plugin built, which also
 	 * read the first texture coordinates. A material with textures binds them in the slots of the
-	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and so does a
-	 * group of joined effects. A custom tone curve's binds as the final pass or its bloom build does,
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and its own
+	 * textures in a second group of the maps' layout, and a group of joined effects draws as an
+	 * effect without textures does. A custom tone curve's binds as the final pass or its bloom build does,
 	 * and the final pass with effects folded into it binds their buffer and the depth too.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
@@ -858,12 +927,14 @@ export class Pipelines {
 							undefined,
 							`custom tone curve ${id}`,
 						];
+			// An effect's own textures bind in a second group of the maps' layout.
+			const maps = shader.textures > 0 ? [LAYOUT_MATERIAL_MAPS] : [];
 			this.defineTemplate(id, {
 				label,
 				shader: shader.variants,
 				pipeline: 'main',
-				layouts: [layout],
-				multisampledLayouts: multisampled === undefined ? undefined : [multisampled],
+				layouts: [layout, ...maps],
+				multisampledLayouts: multisampled === undefined ? undefined : [multisampled, ...maps],
 				vertexBuffers: [],
 			});
 			return;

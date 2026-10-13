@@ -1,8 +1,8 @@
 # D-23: Index-only instance data on core WebGPU
 
-Status: decided for now: the index path stays a test switch, off by default. The owner's iPad timing is still to come and can reopen it. Date: 2026-10-05. Task: M2-K1 (T-23).
+Status: decided for now: the index path stays a test switch, off by default. The owner's iPad ran it on 2026-10-11 and gained 2.1% in S1-static, under the rule's 5%, so the switch stays off. Date: 2026-10-05. Task: M2-K1 (T-23).
 
-Summary: Behind `?instances=index` on core WebGPU only, the culling pass writes a 16-byte entry with the source's index in place of a 64-byte copy. The vertex shaders then read the matrix, material and cell offset from storage buffers. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad. S1-static changes by less than 2% on both, and the Mac shows no change. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
+Summary: Behind `?instances=index` on core WebGPU only, the culling pass writes a 16-byte entry with the source's index in place of a 64-byte copy. The vertex shaders then read the matrix, material and cell offset from storage buffers. Twelve scenes draw the same images both ways, to the pixel, on the Mac's GPU and SwiftShader. The builds load on first use, 15.1 to 16.7 KB after Brotli each. On the device cloud, S1 is 13% faster on a Galaxy S25 and 1.4% slower on an iPad. S1-static changes by less than 2% on both, and the Mac shows no change. On the owner's iPad the indices are 0.2% to 2.1% faster, within the runs' spread. No device saves the 5% of GPU time in S1-static that a capability flag needs, so it stays off by default.
 
 ## Question
 
@@ -70,12 +70,21 @@ On the S25, S1 gains 13%, but S1-static, where the rule looks, gains only 1.3%. 
 
 The Mac ran Chrome on WebGPU, five runs of each page, with its load about 3.9 (run `20261005-162153-bench`). Its GPU times are equal: S1 takes 2.11 ms with the copies and 2.13 ms with the indices, and S1-static changes by 0%. On the main thread, S1 takes 2.05 ms with the copies and 2.33 ms with the indices, 0.28 ms more. S1-static takes 0.07 ms both ways, and S4 0.12 ms with the copies and 0.10 ms with the indices.
 
+The owner's iPad Pro 11 (2018, A12X, Safari 26.6.2) ran the same plan over the local network on 11 October 2026. It ran main at f854dd72d (run `20261011-092631-bench`). It ran `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`. Every page passed: 33 of 33. The iPad was on its charger, with Limit Frame Rate on, and the screen ran at 60 Hz.
+
+| Device, 2026-10-11 | Scene | Copies (ms) | Indices (ms) | Change | Range of the five runs, copies / indices (ms) |
+| --- | --- | --- | --- | --- | --- |
+| iPad Pro 11, Safari 26.6.2, the owner's | S1 | 13.33 | 13.30 | 0.2% faster | 13.13 to 13.38 / 13.10 to 13.77 |
+| | S1-static | 6.11 | 5.98 | 2.1% faster | 5.78 to 6.14 / 5.69 to 6.18 |
+| | S4 | 10.67 | 10.65 | 0.2% faster | 10.54 to 10.73 / 10.59 to 10.70 |
+
+On the owner's iPad the indices are slightly faster in every scene, but by less than the spread of the five runs. S1-static gains 2.1%, under the rule's 5%. The main thread's time hardly changed: 4.50 against 4.44 ms in S1, and 0.24 ms both ways in S1-static. In S4 the governor held 60 fps for 99% of the time both ways.
+
 Still to run:
 
-- The owner's iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`
 - S6, when it exists: the same commands with `--scenes s6`.
 
-The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`.
+The device cloud runs above came from `bun tests/real-browsers.ts --plan bench --cloud bsgalaxys25-chrome,bsipad10-safari --scenes s1,s1-static,s4 --pages null3d-webgpu,null3d-webgpu-index`, run `20261005-100625-bench`. Its files are in the [S25's folder](../tested-devices/galaxy-s25-sm-s931b-chrome/20261005-100625-bench.md) and the [iPad's folder](../tested-devices/ipad-10th-generation-safari/20261005-100625-bench.md).
 
 S1 and S1-static are each one instance batch, whose rows cast no shadows (batches cast only with `castShadows`, since M2-R6). So their runs time the culling and the camera's pass. S4's sun casts shadows in the preset's cascades, so S4 times the shadow passes too.
 
@@ -83,7 +92,7 @@ What to expect: per visible instance and pass, the index path writes 60 bytes le
 
 ## Decision
 
-No device meets the rule's 5% in S1-static: the Galaxy S25 gains 1.3%, the cloud iPad loses 1.4%, and the Mac shows no change. So the copies stay the only default, and `?instances=index` stays a test switch, off by default. The owner's iPad run is still to come and can reopen this. If a device then meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it.
+No device meets the rule's 5% in S1-static. The Galaxy S25 gains 1.3% and the owner's iPad 2.1%. The cloud iPad loses 1.4%, and the Mac shows no change. So the copies stay the only default, and `?instances=index` stays a test switch, off by default. S6, when it exists, can still reopen this. If a device then meets the rule, the index path ships behind a capability flag for core WebGPU, and the transparent pass's instances follow it.
 
 ## Consequences
 

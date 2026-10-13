@@ -1,8 +1,8 @@
 # D-129: Temporal anti-aliasing
 
-Status: proposed on 11 October 2026, for the owner to rule on. The prototype is on the branch `proto/m2-ex18-taa`, which has no pull request and does not merge. Date: 2026-10-11. Task: M2-EX18.
+Status: decided by the owner on 11 October 2026, as the recommendation proposed: no TAA for 1.0. Per-object motion vectors move before 1.0, as task M2-EX25. The prototype is on the branch `proto/m2-ex18-taa`, which has no pull request and does not merge. Date: 2026-10-11. Task: M2-EX18.
 
-Summary: Proposed: do not ship temporal anti-aliasing (TAA) for 1.0. Keep FXAA on Low and MSAA 4x from Medium up. A prototype cut the shimmer of the Creek's far grass by 92% against MSAA. But it drew the scene at 0.55 to 0.75 of a 64-sample reference's sharpness. It smeared swaying grass two to three times as much, and it made still thin lines crawl. On the Mac it cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene with WebGPU, and 7.5 ms in the Creek with WebGL2.
+Summary: The owner ruled: do not ship temporal anti-aliasing (TAA) for 1.0. Keep FXAA on Low and MSAA 4x from Medium up. Per-object motion vectors come before 1.0 (M2-EX25), as the base for a later TAA attempt. A prototype cut the shimmer of the Creek's far grass by 92% against MSAA. But it drew the scene at 0.55 to 0.75 of a 64-sample reference's sharpness. It smeared swaying grass two to three times as much, and it made still thin lines crawl. On the Mac it cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene with WebGPU, and 7.5 ms in the Creek with WebGL2.
 
 ## Question
 
@@ -201,6 +201,15 @@ Do not add MSAA + FXAA as a preset either. It trades shimmer for softness and mo
 If TAA comes back after 1.0, build it as TAA over MSAA on WebGPU, for High and Ultra only. Do the four items under "Trade-offs" first. Then measure it again with these sequences, and on phones. On this Mac it should cost about 0.3 ms in the Creek and 1 to 2 ms in a light scene.
 
 The prototype stays on the branch `proto/m2-ex18-taa`. Its capture page, thin scene, analysis and fixed-step clock can come back with it.
+
+## Decision
+
+The owner ruled on 11 October 2026:
+
+- TAA does not ship for 1.0, neither as a default nor as an option on any preset.
+- The anti-aliasing presets stay as they are: FXAA on Low, and MSAA 4x from Medium up.
+- Per-object motion vectors move before 1.0, as task M2-EX25. Every moving, bending and skinned surface writes them, the grass's wind among them. They are the first of the four items under "Trade-offs".
+- TAA can come back on top of those motion vectors, once the other three items are done. Then it is measured again with this record's sequences, and on phones, as the recommendation says.
 
 ## Consequences
 

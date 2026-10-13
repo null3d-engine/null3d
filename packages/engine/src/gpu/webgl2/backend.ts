@@ -43,6 +43,7 @@ import {
 	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	linkLogs,
 	metalFault,
 	mipmapTemplate,
 	type Pipeline,
@@ -95,6 +96,20 @@ export interface CanvasTarget {
 interface GlBuffer {
 	buffer: WebGLBuffer;
 	size: number;
+	/** Counts the writes into the buffer, each of which leaves its texture copies out of date. */
+	writes: number;
+	/** Texture copies of ranges of the buffer (see `copyOfBlock`). */
+	copies: BlockCopy[] | null;
+}
+
+/** A texture that holds a uniform buffer range, one `RGBA32UI` texel per 16 bytes, in one row. */
+interface BlockCopy {
+	texture: WebGLTexture;
+	/** The range's start in the buffer. */
+	offset: number;
+	width: number;
+	/** The buffer's write count when the texture last took the range's bytes. */
+	writes: number;
 }
 
 /** How GL stores a texture format, and how texels of it upload. */
@@ -188,6 +203,8 @@ function glAttribute(
 	format: GPUVertexFormat,
 ): [number, number, boolean] {
 	switch (format) {
+		case 'uint32':
+			return [1, gl.UNSIGNED_INT, false];
 		case 'float32x2':
 			return [2, gl.FLOAT, false];
 		case 'float32x3':
@@ -490,7 +507,7 @@ export class WebGL2Backend {
 	 * borrowed changed since the program's units were set.
 	 */
 	private unitsChanged = true;
-	private readonly blockBuffers: (WebGLBuffer | null | undefined)[] = [];
+	private readonly blockBuffers: (GlBuffer | null | undefined)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
 	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
@@ -690,7 +707,7 @@ export class WebGL2Backend {
 			if (!old || !linked) {
 				if (old)
 					console.error(
-						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${gl.getProgramInfoLog(program.program)}`,
+						`null3D could not build the new WGSL of a custom material on this GPU, so its objects keep the old shader: ${linkLogs(gl, program)}`,
 					);
 				this.deleteProgram(program);
 				continue;
@@ -723,14 +740,14 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Starts to compile the programs of the builds of `module`, a feature's module that the page or
-	 * the sketch preloaded, so that the feature's first objects draw at once. They compile in the
-	 * background where the browser can, and the first frame waits for them. Skinning's and morph
-	 * targets' builds vary in every material bit, and a scene's materials draw with a few of them, so
-	 * `scene.warmUp()` builds those, as for any material.
+	 * Starts to compile the programs of the builds of `module`, a module that the page or the sketch
+	 * preloaded, whose builds need `features`, so that the features' first objects draw at once.
+	 * They compile in the background where the browser can, and the first frame waits for them.
+	 * Skinning's and morph targets' builds vary in every material bit, and a scene's materials draw
+	 * with a few of them, so `scene.warmUp()` builds those, as for any material.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		if (WARM_UP_FEATURES.has(feature)) return;
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		if (features.some((feature) => WARM_UP_FEATURES.has(feature))) return;
 		const held = this.moreShaders?.shaders as Readonly<Record<string, ShaderVariants>> | undefined;
 		for (const [name, builds] of Object.entries(module)) {
 			const variants = held?.[name];
@@ -859,11 +876,14 @@ export class WebGL2Backend {
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
 				case G.OP_WRITE_BUFFER: {
-					const buffer = this.need(this.buffers, words[a] as number, 'buffer').buffer;
+					const record = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
 					const source = words[a + 2] as number;
 					const bytes = words[a + 3] as number;
-					gl.bindBuffer(gl.COPY_WRITE_BUFFER, buffer);
+					record.writes++;
+					// Units that read a texture copy of the buffer copy it again before they draw.
+					if (record.copies) this.unitsChanged = true;
+					gl.bindBuffer(gl.COPY_WRITE_BUFFER, record.buffer);
 					this.writeBytes(gl.COPY_WRITE_BUFFER, offset, source, bytes);
 					this.counts.uploadBytes += bytes;
 					break;
@@ -1133,7 +1153,7 @@ export class WebGL2Backend {
 		const joined = program.joined;
 		if (!joined || joined.failed) return;
 		if (this.gl.getProgramParameter(program.program, this.gl.LINK_STATUS) !== true)
-			this.joinFailed(program, this.gl.getProgramInfoLog(program.program) ?? 'its link failed');
+			this.joinFailed(program, linkLogs(this.gl, program) || 'its link failed');
 		else this.joins.built(joined.template, performance.now() - joined.start);
 	}
 
@@ -1260,7 +1280,7 @@ export class WebGL2Backend {
 		this.useVertexArray(null);
 		gl.bindBuffer(target, buffer);
 		gl.bufferData(target, size, gl.DYNAMIC_DRAW);
-		this.buffers[id] = { buffer, size };
+		this.buffers[id] = { buffer, size, writes: 0, copies: null };
 		this.gpuMemory.addBuffers(size);
 	}
 
@@ -1269,9 +1289,14 @@ export class WebGL2Backend {
 		if (!old) return;
 		this.gl.deleteBuffer(old.buffer);
 		this.gpuMemory.addBuffers(-old.size);
+		if (old.copies)
+			for (const copy of old.copies) {
+				this.gl.deleteTexture(copy.texture);
+				this.gpuMemory.addTextures(-copy.width * 16);
+			}
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
-			if (this.blockBuffers[slot] === old.buffer) this.blockBuffers[slot] = null;
+			if (this.blockBuffers[slot] === old) this.blockBuffers[slot] = null;
 	}
 
 	private format(code: number): GlFormat {
@@ -2345,14 +2370,17 @@ export class WebGL2Backend {
 				dynamic++;
 				const size = entry.size || buffer.size - offset;
 				if (
-					this.blockBuffers[slot] !== buffer.buffer ||
+					this.blockBuffers[slot] !== buffer ||
 					this.blockOffsets[slot] !== offset ||
 					this.blockSizes[slot] !== size
 				) {
 					gl.bindBufferRange(gl.UNIFORM_BUFFER, slot, buffer.buffer, offset, size);
-					this.blockBuffers[slot] = buffer.buffer;
+					this.blockBuffers[slot] = buffer;
 					this.blockOffsets[slot] = offset;
 					this.blockSizes[slot] = size;
+					// A program that reads the slot as a texture reads a copy of the range.
+					this.slotTextures[slot] = null;
+					this.unitsChanged = true;
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
@@ -2361,6 +2389,9 @@ export class WebGL2Backend {
 					this.slotTargets[slot] = texture.target;
 					this.unitsChanged = true;
 				}
+				// The slot's texture replaces a buffer range that a program read through a copy, so
+				// the range binds again when a bind group next leaves it there.
+				this.blockBuffers[slot] = undefined;
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
@@ -2404,17 +2435,25 @@ export class WebGL2Backend {
 		if (!vao) throw new Error('WebGL2 could not create a vertex array');
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		// An attribute of the instance's step moves on once for each instance. Integer formats
+		// reach the shader as integers.
+		const divisor = layout.stepMode === 'instance' ? 1 : 0;
 		for (const attribute of layout.attributes) {
 			const [size, type, normalized] = glAttribute(gl, attribute.format);
-			gl.enableVertexAttribArray(attribute.shaderLocation);
-			gl.vertexAttribPointer(
-				attribute.shaderLocation,
-				size,
-				type,
-				normalized,
-				layout.arrayStride,
-				attribute.offset,
-			);
+			const location = attribute.shaderLocation;
+			gl.enableVertexAttribArray(location);
+			if (attribute.format.startsWith('uint') || attribute.format.startsWith('sint'))
+				gl.vertexAttribIPointer(location, size, type, layout.arrayStride, attribute.offset);
+			else
+				gl.vertexAttribPointer(
+					location,
+					size,
+					type,
+					normalized,
+					layout.arrayStride,
+					attribute.offset,
+				);
+			gl.vertexAttribDivisor(location, divisor);
 		}
 		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
 		return vao;
@@ -2494,11 +2533,64 @@ export class WebGL2Backend {
 			const unit = units[k] as number;
 			const slot = units[k + 1] as number;
 			const sampler = units[k + 2] as number;
-			const texture = this.slotTextures[slot] ?? null;
+			const texture = this.slotTextures[slot];
 			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			else if (this.blockBuffers[slot])
+				this.bindTexture(unit, this.gl.TEXTURE_2D, this.copyOfBlock(slot));
 			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
 		this.unitsChanged = false;
+	}
+
+	/**
+	 * The texture copy of the uniform buffer range that a bind group left at a slot, for a shader
+	 * that reads the slot as a texture: one texel of four unsigned integers per 16 bytes, in one
+	 * row. The multi-draw vertex shaders read their draw records so, since some Adreno drivers fail
+	 * to link a program whose vertex shader reads a uniform array at the draw index. The copy runs on
+	 * the GPU, from the buffer, and again only after a write into the buffer.
+	 */
+	private copyOfBlock(slot: number): WebGLTexture {
+		const gl = this.gl;
+		const buffer = this.blockBuffers[slot] as GlBuffer;
+		const offset = this.blockOffsets[slot] as number;
+		const width = (this.blockSizes[slot] as number) >> 4;
+		buffer.copies ??= [];
+		const copies = buffer.copies;
+		let copy: BlockCopy | undefined;
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const known = copies[k] as BlockCopy;
+			if (known.offset === offset && known.width === width) copy = known;
+		}
+		// A copy that no draw has read since the buffer's last write takes the new range, so the
+		// textures stay as many as the ranges that draws read between two writes. Ranges move each
+		// frame with the ring's slots, so the copies are taken over in place, which allocates nothing.
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const stale = copies[k] as BlockCopy;
+			if (stale.writes !== buffer.writes && stale.width === width) {
+				stale.offset = offset;
+				stale.writes = -1;
+				copy = stale;
+			}
+		}
+		if (!copy) {
+			const texture = gl.createTexture();
+			if (!texture) throw new Error('WebGL2 could not create a texture');
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
+			gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, 1);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			this.gpuMemory.addTextures(width * 16);
+			copy = { texture, offset, width, writes: -1 };
+			copies.push(copy);
+		}
+		if (copy.writes !== buffer.writes) {
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, copy.texture);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer.buffer);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, offset);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			copy.writes = buffer.writes;
+		}
+		return copy.texture;
 	}
 
 	/** Binds a sampler to a texture unit, or none. */

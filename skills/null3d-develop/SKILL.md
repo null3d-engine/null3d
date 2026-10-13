@@ -13,17 +13,17 @@ null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 ## 1. Find the docs that match the installed engine
 
-The engine docs are the source of truth. This skill describes engine 0.1, and names the version of each later part it mentions. A project may use another version, so check before you rely on anything here.
+The engine docs are the source of truth. This skill describes the first release, null3D 0.1.0, and marks the parts that are not built yet. A project may use another version, so check before you rely on anything here.
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
-   - from any terminal (0.3): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
+   - from any terminal (0.3, not built yet): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
+Doc IDs appear in backticks throughout, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today.
 
 ## 2. The model
 
@@ -103,7 +103,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers the render scale, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
-10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` file through the Vite plugin. It compresses the models with meshopt, which the engine decodes on load. It gives each mesh that encloses space a checked blocker for WebGL2's occlusion culling. It stores raycast trees for mesh parts of at least `--bvh` triangles, 20,000 by default. It bakes each normal map's detail into the roughness mip levels of the material's metal-rough map, so distant bumpy surfaces do not flicker. Keep the two maps on the same texture coordinates. Large PNG files and float meshes cost download time and GPU memory. The KTX2 transcoder and the meshopt decoder load with the first file that needs them, and run in the engine's own workers. Set no decoder path, and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
+10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). Encode KTX2 files with `basisu`. From 0.2, `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` file through the Vite plugin. It compresses the models with meshopt, which the engine decodes on load. It gives each mesh that encloses space a checked blocker for WebGL2's occlusion culling. It stores raycast trees for mesh parts of at least `--bvh` triangles, 20,000 by default. It bakes each normal map's detail into the roughness mip levels of the material's metal-rough map, so distant bumpy surfaces do not flicker. Keep the two maps on the same texture coordinates. It records the shader features and permutation bits each model needs. The engine loads those shader files with the model, then builds only the pipelines it draws with. Large PNG files and float meshes cost download time and GPU memory. The KTX2 transcoder and the meshopt decoder load with the first file that needs them, and run in the engine's own workers. Set no decoder path, and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
@@ -117,8 +117,9 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | `scene.createLod`, or LODs from `bunx @null3d/cli assets optimize --lod` (0.2) | `concepts/lod` |
-| Camera-facing quads and simple particles | `scene.createSprites` (0.2) | `api/sprites` |
+| Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
+| Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
+| Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
@@ -129,11 +130,11 @@ Materials:
 | --- | --- | --- |
 | Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
-| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
+| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2, not built yet) | `api/materials` |
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces show one directional light, the ambient and hemisphere lights (0.2), and clustered point and spot lights. A hemisphere light is the cheap fill light: sky color from above, ground color from below. Any number cost the same. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. An environment gives standard materials reflections and soft diffuse light (0.2). Use `scene.setEnvironment(await assets.builtinEnvironment('room'))` for neutral studio light. Or use `assets.loadEnvironment(url)` with an HDR image (`.hdr` or `.exr`), or with the map that `bunx @null3d/cli assets env` makes from it. Ask for the room or an HDR image in the setup. The GPU filters the whole map in one frame, so a call during play makes one long frame. The tool's map skips that work. For outdoor scenes under `setBackground({ sky })`, `scene.setEnvironment(await assets.skyEnvironment())` lights them with that sky and follows its sun with no further call (0.2). `timeOfDay(hours or 'goldenHour')` gives a matching sun, sky, fog and exposure (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`)
+Lighting and shadows: surfaces show one directional light, the ambient and hemisphere lights (0.2), and clustered point and spot lights. A hemisphere light is the cheap fill light: sky color from above, ground color from below. Any number cost the same. One directional light with shadows covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered. A spot light with shadows takes a tile of the shadow atlas, and a point light six, on High and Ultra only. A tile draws again only when its light or a caster in its range moves. Shadow quality follows the preset. On High and Ultra the directional light also draws contact shadows, short shadows where small objects touch the ground; `shadow: { contactDistance }` sets their reach (0.2). An environment gives standard materials reflections and soft diffuse light (0.2). Use `scene.setEnvironment(await assets.builtinEnvironment('room'))` for neutral studio light. Or use `assets.loadEnvironment(url)` with an HDR image (`.hdr` or `.exr`), or with the map that `bunx @null3d/cli assets env` makes from it. Ask for the room or an HDR image in the setup. The GPU filters the whole map in one frame, so a call during play makes one long frame. The tool's map skips that work. For outdoor scenes under `setBackground({ sky })`, `scene.setEnvironment(await assets.skyEnvironment())` lights them with that sky and follows its sun with no further call (0.2). `timeOfDay(hours or 'goldenHour')` gives a matching sun, sky, fog and exposure (0.2). (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
 Interaction:
 
@@ -206,11 +207,11 @@ The full table and the debugging tools are in `references/testing-and-debugging.
 
 Read these when the task needs them:
 
-- `references/api-quickref.md`: the API by area, with the version that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
-- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
+- `references/api-quickref.md`: the API by area, with the roadmap step that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
+- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds and particle effects.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
-- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3), error codes and a full troubleshooting table.
+- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a full troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
 ## 9. Before you finish

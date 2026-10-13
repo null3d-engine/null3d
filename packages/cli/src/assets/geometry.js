@@ -4,6 +4,7 @@
 import { Accessor, Primitive } from '@gltf-transform/core';
 import { KHRMeshQuantization } from '@gltf-transform/extensions';
 import { MeshoptEncoder } from 'meshoptimizer';
+import { lodOf, MSFT_LOD } from './lod-extension.js';
 
 /** @import { Document, Mesh, Node, PrimitiveTarget, Skin } from '@gltf-transform/core' */
 
@@ -226,8 +227,9 @@ function withVolume({ t, r, s }, { offset, scale }) {
  */
 
 /**
- * Finds the meshes that must share one volume: those that share position streams, as levels of
- * detail do, and those that one skin binds, whose inverse bind matrices hold the volume.
+ * Finds the meshes that must share one volume: those that share position streams, as the tool's
+ * own levels of detail do, the meshes of a file's own levels of detail, which draw with their base
+ * node's place, and those that one skin binds, whose inverse bind matrices hold the volume.
  *
  * @param {Document} doc
  * @returns {Mesh[][]}
@@ -260,6 +262,11 @@ function volumeGroups(doc) {
 		const mesh = node.getMesh();
 		const skin = node.getSkin();
 		if (mesh && skin) link(skin, mesh);
+		const levels = lodOf(node)?.listLevels() ?? [];
+		for (const level of levels) {
+			const lower = level.getMesh();
+			if (mesh && lower) join(lower, mesh);
+		}
 	}
 	/** @type {Map<Mesh, Mesh[]>} */
 	const groups = new Map();
@@ -499,6 +506,10 @@ function quantizeGroupPositions(doc) {
 		for (const node of users) {
 			const skin = node.getSkin();
 			const instancing = instancingOf(node);
+			// A file's own level errors are in the units of the mesh's positions, which now take
+			// steps of the volume's scale. A skinned mesh's errors are in the scene's units.
+			const lod = lodOf(node);
+			if (lod && !skin) lod.setErrors(lod.getErrors().map((error) => error / volume.scale));
 			if (skin) {
 				if (!skins.has(skin)) foldIntoSkin(doc, skin, volume);
 				skins.add(skin);
@@ -516,6 +527,10 @@ function quantizeGroupPositions(doc) {
 					.setTranslation(/** @type {any} */ (volume.offset))
 					.setScale([volume.scale, volume.scale, volume.scale]);
 				node.setMesh(null).addChild(child);
+				if (lod) {
+					node.setExtension(MSFT_LOD, null);
+					child.setExtension(MSFT_LOD, /** @type {any} */ (lod));
+				}
 			}
 		}
 	}

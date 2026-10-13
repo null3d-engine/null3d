@@ -58,6 +58,7 @@ export const READ_EXTENSIONS: readonly string[] = [
 	'KHR_materials_volume',
 	'KHR_lights_punctual',
 	'EXT_mesh_gpu_instancing',
+	'MSFT_lod',
 	'KHR_meshopt_compression',
 	'EXT_meshopt_compression',
 	'KHR_draco_mesh_compression',
@@ -492,6 +493,20 @@ export interface NodeData {
 	morphJoint?: number;
 	/** The morph weights of the node's mesh, when the node gives its own in place of the mesh's. */
 	weights?: number[];
+	/** The levels of detail of the node's mesh, from `MSFT_lod`, when it gives any. */
+	levels?: NodeLevels;
+}
+
+/**
+ * The lower levels of detail of a node's mesh, as `MSFT_lod` names them: the mesh of each lower
+ * level's node, from the most detailed down, and each level's error from the asset tool's
+ * `NULL3D_lod_error`, or else the screen coverage of each level from `MSFT_screencoverage`, the
+ * node's own first.
+ */
+export interface NodeLevels {
+	meshes: number[];
+	errors?: number[];
+	coverage?: number[];
 }
 
 /** An image: its bytes when the file holds it, or its address when the file names it. */
@@ -523,11 +538,17 @@ export interface GltfData {
 	notes: string[];
 	/** True when the file holds Draco data, which development builds warn about. */
 	draco?: true;
+	/**
+	 * The shader list that the asset tool recorded with the file (`asset.extras.NULL3D_shaders`):
+	 * the permutation bits and the first-use shader files that its draws need. The loader asks for
+	 * the files while the textures decode. A file from another tool has none.
+	 */
+	shaders?: { permutations: string[]; features: string[] };
 }
 
 /** The parts of a glTF file's JSON that the parser reads. */
 interface Json {
-	asset?: { version?: unknown };
+	asset?: { version?: unknown; extras?: unknown };
 	extensionsRequired?: unknown;
 	extensions?: { KHR_lights_punctual?: { lights?: unknown } };
 	scene?: unknown;
@@ -1099,7 +1120,32 @@ export function parseGltf(
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
+	const shaders = parseShaders(json);
+	if (shaders) data.shaders = shaders;
 	return data;
+}
+
+/**
+ * The shader list that the asset tool recorded with the file, under
+ * `asset.extras.NULL3D_shaders`: the permutation bits and the first-use shader files that the
+ * file's draws need. Names that are not text are left out, and an empty list counts as none. The
+ * loader checks each name against the engine's own tables; a file without the list, such as one
+ * from another tool, simply has none.
+ */
+export function parseShaders(
+	json: Json,
+): { permutations: string[]; features: string[] } | undefined {
+	const asset = (json.asset ?? {}) as Entry;
+	const extras = asset.extras as Entry | undefined;
+	const held = extras?.NULL3D_shaders as Entry | undefined;
+	if (typeof held !== 'object' || held === null) return undefined;
+	const names = (value: unknown): string[] =>
+		Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+	const permutations = names(held.permutations);
+	const features = names(held.features);
+	return permutations.length === 0 && features.length === 0
+		? undefined
+		: { permutations, features };
 }
 
 /**
@@ -1495,9 +1541,41 @@ function parseNodes(
 			const targets = (meshes[data.mesh] as MeshData).weights?.length ?? 0;
 			data.weights = numbers(node.weights, targets, undefined, `${what}'s weights`);
 		}
+		const lod = extensions.MSFT_lod as Entry | undefined;
+		if (lod && data.mesh >= 0) data.levels = parseLevels(lod, node, defs, meshes.length, what);
 		return data;
 	});
 	return { nodes, place };
+}
+
+/**
+ * A node's levels of detail from its `MSFT_lod` extension: the meshes of the level nodes it names,
+ * which need not be in the scene, and their errors or screen coverage from the node's extras. A
+ * level node without a mesh ends the list there. Errors or coverage of the wrong length are left
+ * out, and the loader then gives the mesh no levels.
+ */
+function parseLevels(
+	lod: Entry,
+	node: Entry,
+	defs: readonly Entry[],
+	meshCount: number,
+	what: string,
+): NodeLevels | undefined {
+	const meshes: number[] = [];
+	for (const id of list(lod.ids, `${what}'s MSFT_lod ids`)) {
+		const level = defs[index(id, defs.length, `${what}'s MSFT_lod level`)] as Entry;
+		if (level.mesh === undefined) break;
+		meshes.push(index(level.mesh, meshCount, `${what}'s MSFT_lod level's mesh`));
+	}
+	if (meshes.length === 0) return undefined;
+	const extras = (node.extras ?? {}) as Entry;
+	const read = (value: unknown, length: number) =>
+		Array.isArray(value) && value.length >= length && value.every((n) => typeof n === 'number')
+			? (value.slice(0, length) as number[])
+			: undefined;
+	const errors = read(extras.NULL3D_lod_error, meshes.length);
+	const coverage = errors ? undefined : read(extras.MSFT_screencoverage, meshes.length);
+	return { meshes, errors, coverage };
 }
 
 /** A node's position, rotation and scale, from its matrix or its own values. */

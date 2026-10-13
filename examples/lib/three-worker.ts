@@ -25,11 +25,104 @@ export const THREE_VERSION = '0.186.1';
 /** The build of three.js that a scene's objects come from: `three` or `three/webgpu`. */
 export type Three = typeof ThreeModule;
 
+/** The settings of three.js's `Sky`, which null3D's generated sky takes by the same names. */
+export interface ThreeSky {
+	sunPosition: readonly [number, number, number];
+	turbidity: number;
+	rayleigh: number;
+	mieCoefficient: number;
+	mieDirectionalG: number;
+	/** The clouds, three.js's defaults where left out. */
+	cloudCoverage?: number;
+	cloudDensity?: number;
+	cloudElevation?: number;
+	/** The size of the clouds' pattern, three.js's default when left out. */
+	cloudScale?: number;
+	/**
+	 * The factor of the sky's color where it shows behind the scene, 1 when left out. Its light on
+	 * the scene stays whole, and the look's `environmentIntensity` scales that.
+	 */
+	shown?: number;
+}
+
+/** A sun: a directional light whose shadows fall in cascades over the camera's view. */
+export interface ThreeSun {
+	/** The direction that the light travels. */
+	direction: readonly [number, number, number];
+	color: Hex;
+	intensity: number;
+	cascades: number;
+	/** Meters from the camera that the cascades cover. */
+	distance: number;
+	mapSize: number;
+}
+
+/** three.js's own chunk that starts the lighting, before CSM puts its copy in its place. */
+let standardLightsBegin: string | undefined;
+const LIGHTS_FROM = 'IncidentLight directLight;';
+
+/**
+ * CSM's copy of the chunk that starts the lighting, with the lines before its lights taken from
+ * three.js's own chunk. In three.js 0.186.1 the copy lacks the standard material's energy terms,
+ * which every direct light's specular and the environment's reflection multiply by. Without them,
+ * a material that CSM sets up shows no highlights and no reflections on WebGLRenderer.
+ */
+function withCurrentLightSetup(csmChunk: string, standard: string): string {
+	const csmAt = csmChunk.indexOf(LIGHTS_FROM);
+	const standardAt = standard.indexOf(LIGHTS_FROM);
+	if (csmAt < 0 || standardAt < 0 || standard.slice(0, standardAt) === csmChunk.slice(0, csmAt))
+		return csmChunk;
+	return standard.slice(0, standardAt) + csmChunk.slice(csmAt);
+}
+
+/**
+ * Makes the CSM add-on with `make`, and then puts three.js's own setup lines back in front of the
+ * add-on's lights, so that materials set up for it keep their highlights and reflections.
+ */
+export function withCsmLightFix<T>(three: Three, make: () => T): T {
+	standardLightsBegin ??= three.ShaderChunk.lights_fragment_begin;
+	const csm = make();
+	three.ShaderChunk.lights_fragment_begin = withCurrentLightSetup(
+		three.ShaderChunk.lights_fragment_begin,
+		standardLightsBegin,
+	);
+	return csm;
+}
+
 /** The look that the worker draws around a scene, from the scene's shared description. */
 export interface ThreeLook {
 	exposure: number;
 	environmentIntensity: number;
-	fog: { color: Hex; density: number; height: number; heightFalloff: number };
+	/**
+	 * The background and the environment light: three.js's `RoomEnvironment` by default, or its
+	 * `Sky` as the background with the sky's light through PMREMGenerator.
+	 */
+	sky?: ThreeSky;
+	/** A sun with cascaded shadows: the CSM add-on, or the CSM shadow node on WebGPURenderer. */
+	sun?: ThreeSun;
+	/**
+	 * Height fog. It also scatters a light toward the camera, as null3D's fog does: brightest
+	 * toward the light, by an amount and a power.
+	 */
+	fog: {
+		color: Hex;
+		density: number;
+		height: number;
+		heightFalloff: number;
+		/** How much of the sun's light the fog scatters toward the camera, and how tightly. */
+		sunGlow?: number;
+		sunGlowExponent?: number;
+		/**
+		 * The glow toward a light that is not the look's sun, such as a moon that the scene casts
+		 * itself: its direction of travel, and its linear color times its intensity.
+		 */
+		glow?: {
+			amount: number;
+			exponent: number;
+			direction: readonly [number, number, number];
+			color: readonly [number, number, number];
+		};
+	};
 	/** UnrealBloomPass's settings. */
 	bloom: { threshold: number; strength: number; radius: number };
 	/** Ambient occlusion's search radius in meters, and its targets' share of the render size. */
@@ -42,6 +135,8 @@ export interface ThreeSceneBuild {
 	scene: ThreeModule.Scene;
 	camera: ThreeModule.PerspectiveCamera;
 	look: ThreeLook;
+	/** The most of the count that three.js can draw here, and why, where the scene finds a limit. */
+	limit?: { count: number; reason: string };
 	/** Shows `count` of the scene, in the scene's own unit. */
 	setCount(count: number): void;
 	/** Runs one simulation step. */
@@ -50,12 +145,19 @@ export interface ThreeSceneBuild {
 	pose(seconds: number): void;
 }
 
+/** What the worker updates before each draw, such as the sun's cascades. */
+interface BeforeDraw {
+	update(): void;
+}
+
 /** What a scene's build gets. */
 export interface ThreeBuildContext {
 	three: Three;
 	options: ThreeStart;
 	/** The texture anisotropy that the renderer offers, at most 8, as null3D's preset caps it. */
 	anisotropy: number;
+	/** The renderer, for scenes that set up its lighting or shadows, or test what it can build. */
+	renderer: ThreeModule.WebGLRenderer;
 }
 
 export type ThreeBuilder = (
@@ -172,6 +274,43 @@ class FrameRings {
 	}
 }
 
+/**
+ * Frames whose render calls drew anything, and the time of the last one. While three.js cannot draw
+ * the scene, such as while it builds its shaders, its render calls return at once and draw nothing.
+ * Such frames are not frames of the scene, and a frame rate of them would look like the display's.
+ */
+export class DrawnFrames {
+	count = 0;
+	private last = -Infinity;
+
+	/** Notes a frame that ended at `time` with `drawCalls` draws. */
+	note(drawCalls: number, time: number): void {
+		if (drawCalls <= 0) return;
+		this.count++;
+		this.last = time;
+	}
+
+	/** True when a frame drew at `time` or later. */
+	since(time: number): boolean {
+		return this.last >= time;
+	}
+}
+
+/**
+ * A measurement's figures from the frame rings' means, or no frames and a frame rate of 0 when no
+ * frame of the measurement drew.
+ */
+export function measuredFigures(means: Float64Array, drew: boolean) {
+	const frames = drew ? (means[0] as number) : 0;
+	return {
+		frames,
+		fps: drew ? (means[1] as number) : 0,
+		cpuMs: frames ? (means[2] as number) : null,
+		codeMs: frames ? (means[3] as number) : null,
+		renderMs: frames ? (means[4] as number) : null,
+	};
+}
+
 class ThreeRuntime {
 	private renderer: AnyRenderer | null = null;
 	private build: ThreeSceneBuild | null = null;
@@ -185,7 +324,9 @@ class ThreeRuntime {
 	private reportTimer: ReturnType<typeof setInterval> | null = null;
 	/** Instances drawn in the frame, from three.js's own count of each draw. */
 	private objects = 0;
+	private readonly drawn = new DrawnFrames();
 	private gpuTimer: GpuTimer | null = null;
+	private beforeDraw: BeforeDraw | null = null;
 
 	constructor(
 		private readonly canvas: OffscreenCanvas,
@@ -204,7 +345,12 @@ class ThreeRuntime {
 		renderer.shadowMap.enabled = options.effects.shadows;
 		renderer.shadowMap.type = three.PCFShadowMap;
 		const anisotropy = Math.min(8, renderer.capabilities?.getMaxAnisotropy?.() ?? 8);
-		const build = await this.builder({ three, options, anisotropy });
+		const build = await this.builder({
+			three,
+			options,
+			anisotropy,
+			renderer: renderer as ThreeModule.WebGLRenderer,
+		});
 		this.build = build;
 		const { look, scene, camera } = build;
 		renderer.toneMapping = three.AgXToneMapping;
@@ -212,6 +358,7 @@ class ThreeRuntime {
 		camera.aspect = options.width / options.height;
 		camera.updateProjectionMatrix();
 		await this.addEnvironment(three, scene, look);
+		if (look.sun) this.beforeDraw = await this.addSun(three, scene, camera, look.sun);
 		if (options.effects.fog) await this.addFog(three, scene, look);
 		// Post-processing draws count too, so the counts reset once a frame, not once a draw.
 		renderer.info.autoReset = false;
@@ -222,6 +369,14 @@ class ThreeRuntime {
 			update(...args);
 		};
 		this.drawer = await makeDrawer(three, renderer, build, options);
+		const before = this.beforeDraw;
+		if (before) {
+			const draw = this.drawer.render;
+			this.drawer.render = () => {
+				before.update();
+				draw();
+			};
+		}
 		const skipped = this.clock.skipTo(options.hold ?? 0);
 		for (let i = 0; i < skipped; i++) build.step();
 		build.pose(this.clock.time);
@@ -235,6 +390,7 @@ class ThreeRuntime {
 			renderer: name,
 			version: `three.js ${THREE_VERSION}`,
 			gpuTimer: this.gpuTimer !== null,
+			limit: build.limit ?? null,
 		});
 		if (options.hold !== null) {
 			await this.hold(three, renderer);
@@ -254,8 +410,11 @@ class ThreeRuntime {
 				antialias: true,
 				powerPreference: 'high-performance',
 				trackTimestamp: options.gpuTimer,
+				forceWebGL: options.forceWebGL === true,
 			}) as unknown as AnyRenderer;
 			await renderer.init?.();
+			if (options.forceWebGL)
+				return { three: webgpu as unknown as Three, renderer, name: 'WebGPURenderer (WebGL2)' };
 			// WebGPURenderer falls back to WebGL 2 when WebGPU fails to start. A WebGPU run must never
 			// measure WebGL by mistake, so that counts as an error.
 			if (!renderer.backend?.isWebGPUBackend)
@@ -268,16 +427,183 @@ class ThreeRuntime {
 			antialias: true,
 			powerPreference: 'high-performance',
 		}) as AnyRenderer;
+		// A program that fails to link draws nothing. The page hears why, and the console still does.
+		renderer.debug.onShaderError = (gl, program) => {
+			const message = `three.js could not link a shader program (WebGL error ${gl.getError()}): ${
+				gl.getProgramInfoLog(program)?.trim() || 'the driver gave no log'
+			}`;
+			console.error(message);
+			this.post({ type: 'failure', message });
+		};
 		return { three, renderer, name: 'WebGLRenderer' };
 	}
 
-	/** The room environment, prefiltered by the PMREMGenerator of the renderer's build. */
+	/**
+	 * The environment, prefiltered by the PMREMGenerator of the renderer's build: the room, or the
+	 * sky. A sky is the background too: `Sky` on WebGLRenderer and `SkyMesh` on WebGPURenderer, as
+	 * three.js's sky examples draw it. The sky's light leaves out the sun's disc, whose light the
+	 * sun gives.
+	 */
 	private async addEnvironment(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
-		const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
 		const pmrem = new three.PMREMGenerator(this.renderer as ThreeModule.WebGLRenderer);
-		scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+		if (look.sky) {
+			const makeSky = await this.skyMaker(look.sky);
+			scene.add(makeSky(true));
+			const lightScene = new three.Scene();
+			lightScene.add(makeSky(false));
+			scene.environment = pmrem.fromScene(lightScene).texture;
+		} else {
+			const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
+			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+		}
 		scene.environmentIntensity = look.environmentIntensity;
 		pmrem.dispose();
+	}
+
+	/**
+	 * Makes sky objects with the look's settings: the background, with the sun's disc, or the sky
+	 * that lights the scene, without it.
+	 */
+	private async skyMaker(sky: ThreeSky): Promise<(background: boolean) => ThreeModule.Object3D> {
+		const [sx, sy, sz] = sky.sunPosition;
+		const given = {
+			turbidity: sky.turbidity,
+			rayleigh: sky.rayleigh,
+			mieCoefficient: sky.mieCoefficient,
+			mieDirectionalG: sky.mieDirectionalG,
+			cloudCoverage: sky.cloudCoverage,
+			cloudDensity: sky.cloudDensity,
+			cloudElevation: sky.cloudElevation,
+			cloudScale: sky.cloudScale ?? 0.0002,
+		};
+		const settings = Object.entries(given).filter(
+			(entry): entry is [keyof typeof given, number] => entry[1] !== undefined,
+		);
+		const shown = sky.shown ?? 1;
+		if (this.options.renderer === 'webgpu') {
+			const { SkyMesh } = await import('three/addons/objects/SkyMesh.js');
+			return (background) => {
+				const mesh = new SkyMesh();
+				mesh.scale.setScalar(10_000);
+				const uniforms = mesh as unknown as Record<keyof typeof given, { value: number }>;
+				for (const [name, value] of settings) uniforms[name].value = value;
+				mesh.sunPosition.value.set(sx, sy, sz);
+				mesh.showSunDisc.value = background ? 1 : 0;
+				if (background && shown !== 1) {
+					const material = mesh.material as unknown as { colorNode: { mul(k: number): unknown } };
+					material.colorNode = material.colorNode.mul(shown) as typeof material.colorNode;
+				}
+				return mesh as unknown as ThreeModule.Object3D;
+			};
+		}
+		const { Sky } = await import('three/addons/objects/Sky.js');
+		return (background) => {
+			const mesh = new Sky();
+			mesh.scale.setScalar(10_000);
+			const material = mesh.material as ThreeModule.ShaderMaterial;
+			const uniforms = material.uniforms;
+			for (const [name, value] of settings) (uniforms[name] as { value: number }).value = value;
+			(uniforms.sunPosition as { value: ThreeModule.Vector3 }).value.set(sx, sy, sz);
+			(uniforms.showSunDisc as { value: number }).value = background ? 1 : 0;
+			if (background && shown !== 1) {
+				uniforms.skyShown = { value: shown };
+				material.fragmentShader = material.fragmentShader
+					.replace('uniform float time;', 'uniform float time;\nuniform float skyShown;')
+					.replace(
+						'gl_FragColor = vec4( texColor, 1.0 );',
+						'gl_FragColor = vec4( texColor * skyShown, 1.0 );',
+					);
+			}
+			return mesh;
+		};
+	}
+
+	/**
+	 * The sun and its cascaded shadows, as three.js's examples cast them: the CSM add-on on
+	 * WebGLRenderer, with a light per cascade and every lit material set up for it, and the CSM
+	 * shadow node on WebGPURenderer. A material's own shader hook runs after the add-on's.
+	 */
+	private async addSun(
+		three: Three,
+		scene: ThreeModule.Scene,
+		camera: ThreeModule.PerspectiveCamera,
+		sun: ThreeSun,
+	): Promise<BeforeDraw | null> {
+		const shadows = this.options.effects.shadows;
+		const direction = new three.Vector3(...sun.direction).normalize();
+		if (this.options.renderer === 'webgpu') {
+			const light = new three.DirectionalLight(sun.color, sun.intensity);
+			light.position.copy(direction).multiplyScalar(-100);
+			light.target.position.set(0, 0, 0);
+			scene.add(light, light.target);
+			if (!shadows) return null;
+			light.castShadow = true;
+			light.shadow.mapSize.set(sun.mapSize, sun.mapSize);
+			light.shadow.bias = -0.0003;
+			light.shadow.normalBias = 0.03;
+			const { CSMShadowNode } = await import('three/addons/csm/CSMShadowNode.js');
+			const csm = new CSMShadowNode(light as never, {
+				cascades: sun.cascades,
+				maxFar: sun.distance,
+				mode: 'practical',
+				lightMargin: 120,
+			});
+			(light.shadow as unknown as { shadowNode: unknown }).shadowNode = csm;
+			return null;
+		}
+		if (!shadows) {
+			const light = new three.DirectionalLight(sun.color, sun.intensity);
+			light.position.copy(direction).multiplyScalar(-100);
+			scene.add(light, light.target);
+			return null;
+		}
+		const { CSM } = await import('three/addons/csm/CSM.js');
+		const csm = withCsmLightFix(
+			three,
+			() =>
+				new CSM({
+					camera,
+					parent: scene,
+					cascades: sun.cascades,
+					maxFar: sun.distance,
+					mode: 'practical',
+					shadowMapSize: sun.mapSize,
+					shadowBias: -0.0003,
+					lightDirection: direction,
+					lightIntensity: sun.intensity,
+					lightMargin: 120,
+				}),
+		);
+		for (const light of csm.lights) {
+			light.color.set(sun.color);
+			light.shadow.normalBias = 0.03;
+		}
+		scene.traverse((object) => {
+			const mesh = object as ThreeModule.Mesh;
+			const list = Array.isArray(mesh.material)
+				? mesh.material
+				: mesh.material
+					? [mesh.material]
+					: [];
+			for (const material of list as ThreeModule.Material[]) {
+				if (!(material as ThreeModule.MeshStandardMaterial).isMeshStandardMaterial) continue;
+				if (material.userData.csm) continue;
+				material.userData.csm = true;
+				const own = material.onBeforeCompile;
+				csm.setupMaterial(material);
+				const added = material.onBeforeCompile;
+				material.onBeforeCompile = (shader, renderer) => {
+					added.call(material, shader, renderer);
+					own.call(material, shader, renderer);
+				};
+			}
+		});
+		return {
+			update() {
+				camera.updateMatrixWorld();
+				csm.update();
+			},
+		};
 	}
 
 	/**
@@ -287,6 +613,17 @@ class ThreeRuntime {
 	 */
 	private async addFog(three: Three, scene: ThreeModule.Scene, look: ThreeLook) {
 		const { color, density, height, heightFalloff } = look.fog;
+		// The glow toward the sun, or the look's other light, as null3D's fog adds it: the light
+		// times the glow, falling away from the light's direction by a power.
+		const own = look.fog.glow;
+		const glow = own?.amount ?? (look.sun ? (look.fog.sunGlow ?? 0) : 0);
+		const glowPower = own?.exponent ?? look.fog.sunGlowExponent ?? 8;
+		const toSun = new three.Vector3(...(own?.direction ?? look.sun?.direction ?? [0, -1, 0]))
+			.normalize()
+			.negate();
+		const sunLight = own
+			? new three.Color(...own.color)
+			: new three.Color(look.sun?.color ?? '#ffffff').multiplyScalar(look.sun?.intensity ?? 0);
 		if (this.options.renderer === 'webgpu') {
 			const tsl = await import('three/tsl');
 			const ray = tsl.positionWorld.sub(tsl.cameraPosition);
@@ -302,7 +639,13 @@ class ThreeRuntime {
 			const atCamera = tsl.exp(tsl.cameraPosition.y.sub(height).mul(-heightFalloff));
 			const path = ray.length().mul(atCamera).mul(ratio);
 			const factor = tsl.float(1).sub(tsl.exp(path.mul(-density)));
-			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(tsl.color(color), factor);
+			const facing = tsl.max(tsl.dot(ray.normalize(), tsl.vec3(toSun.x, toSun.y, toSun.z)), 0);
+			const shine = tsl.pow(facing, glowPower).mul(glow);
+			const base = new three.Color(color);
+			const tint = tsl
+				.vec3(base.r, base.g, base.b)
+				.add(tsl.vec3(sunLight.r, sunLight.g, sunLight.b).mul(shine));
+			(scene as unknown as { fogNode: unknown }).fogNode = tsl.fog(tint, factor);
 			return;
 		}
 		const chunks = three.ShaderChunk as unknown as Record<string, string>;
@@ -318,6 +661,7 @@ class ThreeRuntime {
 	vFogWorld = ( modelMatrix * fogWorld ).xyz;
 #endif`;
 		const f = heightFalloff.toFixed(6);
+		const v = (value: number) => value.toFixed(6);
 		chunks.fog_pars_fragment = `#ifdef USE_FOG
 	uniform vec3 fogColor;
 	varying vec3 vFogWorld;
@@ -328,7 +672,9 @@ class ThreeRuntime {
 	float fogClimb = ${f} * fogRay.y;
 	float fogRatio = abs( fogClimb ) < 0.01 ? 1.0 + fogClimb * ( fogClimb / 6.0 - 0.5 ) : ( 1.0 - exp( min( - fogClimb, 40.0 ) ) ) / fogClimb;
 	float fogPath = length( fogRay ) * exp( - ${f} * ( cameraPosition.y - ${height.toFixed(6)} ) ) * fogRatio;
-	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, 1.0 - exp( - fogDensity * fogPath ) );
+	float fogFacing = max( dot( normalize( fogRay ), vec3( ${v(toSun.x)}, ${v(toSun.y)}, ${v(toSun.z)} ) ), 0.0 );
+	vec3 fogTint = fogColor + vec3( ${v(sunLight.r)}, ${v(sunLight.g)}, ${v(sunLight.b)} ) * ( ${v(glow)} * pow( fogFacing, ${v(glowPower)} ) );
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogTint, 1.0 - exp( - fogDensity * fogPath ) );
 #endif`;
 		scene.fog = new three.FogExp2(color, density);
 	}
@@ -352,6 +698,9 @@ class ThreeRuntime {
 		drawer.render();
 		this.gpuTimer?.after();
 		const end = performance.now();
+		const drawnBefore = this.drawn.count;
+		this.drawn.note(renderer.info.render.drawCalls ?? renderer.info.render.calls ?? 0, end);
+		if (drawnBefore === 0 && this.drawn.count > 0) this.post({ type: 'drawn' });
 		if (interval > 0) this.rings.add(time, interval, end - start, posed - start, end - posed);
 	};
 
@@ -434,7 +783,9 @@ class ThreeRuntime {
 				height,
 			)) as ArrayBufferView;
 			const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-			pixels = packRows(bytes, width, height, bytes.length / height, false);
+			// The WebGL2 backend reads a target's rows from the bottom, as WebGL keeps them.
+			const bottomFirst = renderer.backend?.isWebGPUBackend !== true;
+			pixels = packRows(bytes, width, height, bytes.length / height, bottomFirst);
 			target.dispose();
 		} else {
 			drawer.render();
@@ -451,9 +802,10 @@ class ThreeRuntime {
 		const renderer = this.renderer;
 		if (!renderer) return;
 		const means = this.means;
-		this.rings.window(performance.now() - WINDOW_MS, means);
-		const frames = means[0] as number;
-		const fps = means[1] as number;
+		const now = performance.now();
+		this.rings.window(now - WINDOW_MS, means);
+		// Frames that drew nothing show no frame rate.
+		const { frames, fps } = measuredFigures(means, this.drawn.since(now - WINDOW_MS));
 		if (!this.sampling) {
 			this.post({ type: 'rate', frames, fps });
 			return;
@@ -476,20 +828,31 @@ class ThreeRuntime {
 		this.post({ type: 'figures', figures });
 	}
 
+	/**
+	 * Measures `seconds` of frames from the first frame that draws, after waiting at most as long
+	 * for it. A measurement in which no frame draws reports no frames.
+	 */
 	measure(id: number, seconds: number): void {
-		const since = performance.now();
+		const asked = performance.now();
+		const wait = setInterval(() => {
+			const now = performance.now();
+			if (this.drawn.since(asked)) {
+				clearInterval(wait);
+				this.measureFrom(id, seconds, now);
+			} else if (now - asked >= seconds * 1000) {
+				clearInterval(wait);
+				this.post({ type: 'measured', id, ...measuredFigures(this.means, false) });
+			}
+		}, 50);
+	}
+
+	private measureFrom(id: number, seconds: number, since: number): void {
+		const drawnBefore = this.drawn.count;
 		setTimeout(() => {
 			const means = this.means;
 			this.rings.window(since, means);
-			this.post({
-				type: 'measured',
-				id,
-				frames: means[0] as number,
-				fps: means[1] as number,
-				cpuMs: means[0] ? (means[2] as number) : null,
-				codeMs: means[0] ? (means[3] as number) : null,
-				renderMs: means[0] ? (means[4] as number) : null,
-			});
+			const drew = this.drawn.count > drawnBefore;
+			this.post({ type: 'measured', id, ...measuredFigures(means, drew) });
 		}, seconds * 1000);
 	}
 
@@ -650,28 +1013,22 @@ async function makeDrawer(
 	return { render: () => composer.render(), setSize };
 }
 
-/** Runs the worker's side of a comparison with a scene's builder. */
-export function runThreeWorker(builder: ThreeBuilder): void {
-	const scope = self as unknown as {
-		postMessage(message: FromThree, transfer?: Transferable[]): void;
-		onmessage: ((event: MessageEvent<ToThree>) => void) | null;
-		close(): void;
-	};
+/**
+ * The side of a comparison that runs three.js: it takes the page's messages and posts its replies.
+ * `close` ends the thread it runs on, where it has one of its own.
+ */
+export function threeHandler(
+	builder: ThreeBuilder,
+	post: (message: FromThree, transfer?: Transferable[]) => void,
+	close: () => void,
+): (message: ToThree) => void {
 	let runtime: ThreeRuntime | null = null;
 	const fail = (error: unknown) =>
-		scope.postMessage({
-			type: 'failed',
-			message: error instanceof Error ? error.message : String(error),
-		});
-	scope.onmessage = ({ data: message }) => {
+		post({ type: 'failed', message: error instanceof Error ? error.message : String(error) });
+	return (message) => {
 		switch (message.type) {
 			case 'start':
-				runtime = new ThreeRuntime(
-					message.canvas,
-					message.options,
-					(reply, transfer) => scope.postMessage(reply, transfer ?? []),
-					builder,
-				);
+				runtime = new ThreeRuntime(message.canvas, message.options, post, builder);
 				runtime.start().catch(fail);
 				return;
 			case 'count':
@@ -689,8 +1046,23 @@ export function runThreeWorker(builder: ThreeBuilder): void {
 			case 'stop':
 				runtime?.stop();
 				runtime = null;
-				scope.close();
+				close();
 				return;
 		}
 	};
+}
+
+/** Runs the worker's side of a comparison with a scene's builder. */
+export function runThreeWorker(builder: ThreeBuilder): void {
+	const scope = self as unknown as {
+		postMessage(message: FromThree, transfer?: Transferable[]): void;
+		onmessage: ((event: MessageEvent<ToThree>) => void) | null;
+		close(): void;
+	};
+	const handle = threeHandler(
+		builder,
+		(reply, transfer) => scope.postMessage(reply, transfer ?? []),
+		() => scope.close(),
+	);
+	scope.onmessage = ({ data }) => handle(data);
 }

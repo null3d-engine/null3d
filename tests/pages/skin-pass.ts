@@ -18,6 +18,7 @@
 import { PERMUTATION_VERTEX_TANGENT } from '../../packages/engine/src/generated/gpu';
 import { loadWgslFeature } from '../../packages/engine/src/generated/shaders';
 import { variantFor } from '../../packages/engine/src/gpu/variants';
+import { FirstPass } from '../../packages/engine/src/gpu/webgpu/first-pass';
 import type { SkinPassCase, SkinPassResult, SkinPassWrong } from '../lib/skin-pass-checks';
 import { progress, run } from './lib/result';
 
@@ -716,6 +717,11 @@ run('skin-pass', async () => {
 			compute: { module, entryPoint: 'main', constants },
 		});
 	};
+	// The device first draws the pass that the engine draws before its first frame, so a driver that
+	// draws nothing in a device's first indirect pass fails the first-draw page, not this one.
+	const firstPass = new FirstPass(device);
+	await firstPass.built;
+	firstPass.draw();
 	const cases: SkinPassCase[] = [];
 	let jointsRead = true;
 	for (const narrow of [true, false]) {
