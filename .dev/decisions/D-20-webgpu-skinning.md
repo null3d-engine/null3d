@@ -369,7 +369,8 @@ Options rejected:
 
 Battle on the Mac's Chrome 155, WebGPU, on 13 October 2026, before and after the change ([D-121](D-121-comparison-tier.md#battles-gpu-cost-and-memory-12-october-2026) has the whole run):
 
-- Draws a frame fell from 10,214 to 333 at 1,000 units, and from 10,464 to 343 at 4,000.
-- The busiest CPU thread's time fell from 8.6 to 13.9 ms to 5.7 to 9.6 ms at 4,000 units. The sketch worker no longer lays out a bucket for each unit.
+- Draws a frame fell from 10,214 to 333 at 1,000 units, and from 10,464 to 343 on the 4,000-unit pages.
+- The busiest CPU thread's time fell from 8.6 to 13.9 ms to 5.7 to 9.6 ms on the 4,000-unit pages.
+- The 4,000-unit pages held only 1,024 soldiers, in a scene that stood still: the engine's table of animated objects held at most 1,024 objects (found on 13 October 2026, task M2-R36). Their figures compare the two builds on that same scene, not null3D's cost at 4,000 units. The sketch worker no longer lays out a bucket for each unit.
 - The frame's compute work fell from 1.4 to 1.6 ms to 0.1 ms, as the vertex shaders now skin Battle's custom materials.
 - The GPU's frame time did not change: 12.6 to 17.1 ms before, 9.7 to 16.7 ms after, in runs that varied as much as that from page to page. Its largest render pass took 6.8 to 9.6 ms in both builds. So the draw count was not what bound Battle's GPU time on the Mac.

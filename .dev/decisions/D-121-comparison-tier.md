@@ -308,22 +308,23 @@ The figures, before and after, on the Mac's Chrome 155 with WebGPU at High, on 1
 - "Before" is main of 12 October 2026 (`16a710a2f`). Main's only engine change since then lets game code turn joints, which Battle does not use.
 - Each page ran in a production build in a visible window, for 10 seconds after 4 seconds of warm-up. Each count ran twice, before and after in turn, and once more with the memory figure. Two "before" pages ended at a load just over 8 and are left out. The table gives the range of the other runs.
 - The ramps wait for the fix to the ramp's reading of the display rate, from task M2-EX7. Without it, a ramp can report a held count that it never held.
+- The 4,000-unit pages held only 1,024 soldiers, and their scene stood still. The engine's table of animated objects held at most 1,024 objects, so each frame stopped at the first unit past it, before the units, the bullets and the camera moved (found on 13 October 2026, task M2-R36). Those rows compare the two builds on the same still scene of 1,024 soldiers. They do not give null3D's cost at 4,000 units.
 
 | Mode | Units | Draws a frame | Frames a second | Busiest CPU thread | GPU frame time |
 | --- | --- | --- | --- | --- | --- |
 | Instanced | 1,000 | 10,214 → 333 | 68 → 79 to 90 | 3.0 → 1.8 to 2.5 ms | 16.8 → 13.9 to 16.7 ms |
-| Instanced | 4,000 | 10,464 → 343 | 55 to 61 → 68 to 91 | 9.3 to 13.9 → 5.7 to 9.6 ms | 13.2 to 14.9 → 9.7 to 13.7 ms |
+| Instanced | 4,000 (1,024 held, still) | 10,464 → 343 | 55 to 61 → 68 to 91 | 9.3 to 13.9 → 5.7 to 9.6 ms | 13.2 to 14.9 → 9.7 to 13.7 ms |
 | Scene graph | 1,000 | 10,214 → 333 | 61 to 68 → 91 to 94 | 2.9 to 4.4 → 1.7 to 2.9 ms | 12.6 to 17.1 → 12.0 to 13.2 ms |
-| Scene graph | 4,000 | 10,464 → 343 | 60 to 63 → 89 to 90 | 8.6 to 10.7 → 5.8 to 6.2 ms | 12.7 to 13.9 → 13.3 to 13.6 ms |
+| Scene graph | 4,000 (1,024 held, still) | 10,464 → 343 | 60 to 63 → 89 to 90 | 8.6 to 10.7 → 5.8 to 6.2 ms | 12.7 to 13.9 → 13.3 to 13.6 ms |
 
-| Memory at 4,000 units | Instanced | Scene graph |
+| Memory at the 4,000-unit pages (1,024 soldiers, still) | Instanced | Scene graph |
 | --- | --- | --- |
 | Page, the shared memory counted once | 525 → 115 MiB | 567 → 115 MiB |
 | The browser's whole figure | 669 → 252 MiB | 710 → 252 MiB |
 | Sketch worker | 479 → 94 MiB | 521 → 94 MiB |
 | Render worker | 112 → 84 MiB | 112 → 84 MiB |
 
-- The page's memory fell to a fifth. three.js's instanced page took 58 MiB at 4,000 units in the run of 12 October, so null3D now takes twice its figure, not 6 to 10 times.
-- The draws fell by 97%, and the CPU time by about 40% at 4,000 units. The sketch worker no longer lays out a bucket for each unit.
+- The page's memory fell to a fifth. three.js's instanced page took 58 MiB at 4,000 units in the run of 12 October. null3D's page held only 1,024 soldiers, so the two figures do not compare.
+- The draws fell by 97%, and the CPU time by about 40% on the 4,000-unit pages. The sketch worker no longer lays out a bucket for each unit.
 - The GPU's frame time did not change. It varied from 9.7 to 17.1 ms from page to page in both builds. Its largest render pass took 6.8 to 9.6 ms in both. The frame's compute work fell from 1.4 to 1.6 ms to 0.1 ms, as the vertex shaders now skin Battle's custom materials. So on the Mac, the draw count was not what bound Battle's GPU time. Its largest pass is, and the next step is to find what that pass spends its time on.
-- At 4,000 units, null3D now draws about 89 frames a second in both modes, against about 60 before. There the busiest CPU thread had set the rate. The rate rose at 1,000 units too, though the GPU's frame time did not fall. Apple's GPUs work on two frames at once, so a frame time from GPU timestamps does not bound the rate ([Frames in flight](../implementation-notes.md#frames-in-flight)).
+- On the 4,000-unit pages, null3D now draws about 89 frames a second in both modes, against about 60 before. There the busiest CPU thread had set the rate. The rate rose at 1,000 units too, though the GPU's frame time did not fall. Apple's GPUs work on two frames at once, so a frame time from GPU timestamps does not bound the rate ([Frames in flight](../implementation-notes.md#frames-in-flight)).
