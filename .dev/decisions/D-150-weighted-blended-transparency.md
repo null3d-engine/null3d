@@ -2,7 +2,7 @@
 
 Status: decided by the helper of M2-EX33 on 12 October 2026, for the owner's review. Date: 2026-10-12. Task: M2-EX33.
 
-Summary: A material with `blending: 'weighted'` blends with the other such surfaces in any order, by McGuire and Bavoil's weighted blended order-independent transparency, with three.js's default weight (the paper's equation 9). The camera's view draws them after its transparent pass into two one-sample targets: a color sum in four 16-bit floats and a coverage sum in one. A full-screen step then blends them over the scene. The coverage adds `-log2(1 - alpha)`, so both targets blend alike, and compatibility mode and WebGL2 draw the layer in one pass with no extension. Nothing runs or downloads until a material asks for it.
+Summary: A material with `blending: 'weighted'` blends with the other such surfaces in any order. The method is McGuire and Bavoil's weighted blended order-independent transparency, with three.js's default weight (the paper's equation 9). After its transparent pass, the camera's view draws them into two one-sample targets: a color sum and a coverage sum. A full-screen step then blends them over the scene. The coverage adds `-log2(1 - alpha)`, so both targets blend alike. Compatibility mode and WebGL2 then draw the layer in one pass with no extension. Nothing runs or downloads until a material asks for it.
 
 ## Question
 
@@ -36,7 +36,7 @@ Weighted blending is an approximation: where a dark and a bright surface overlap
 | A: a fourth `blending`, `'weighted'`, per material | Chosen. Only `normal` blending depends on the order: `additive` and `multiply` give the same result in any order. One option, one place |
 | B: a scene-wide switch, as three.js's pass takes every transparent material of normal blending | Rejected. Glass that is in front of all else wants the exact sort, and a switch beside the option would be a second way to do one thing ([design principle 10](../../AGENTS.md#design-principles)). A port sets the option on the materials that the pass blended |
 
-A material with `transmission` sorts, as three.js's pass leaves such materials out, and throws E1217 with `'weighted'`. Custom materials and lines throw E1217 too: their builds are made at build time for every bit they list, and the weighted bit would double every custom material's builds.
+A material with `transmission` sorts, as three.js's pass leaves such materials out, and throws E1217 with `'weighted'`. Custom materials and lines throw E1217 too. A custom material's builds are made at build time for every bit it lists, so the weighted bit would double them.
 
 ### Two targets with one blend
 
@@ -52,7 +52,7 @@ Alpha is held below 0.9995, so a fully opaque fragment adds a finite 10.97. The 
 
 ### The weight
 
-three.js's default, equation 9 of the paper: `w = alpha * clamp(0.03 / (1e-5 + (z / 200)^4), 1e-2, 3e3)`, with `z` the depth along the view. The engine scales it by 1/32, since only the ratio of weights shows: bright HDR colors of many near layers then stay inside the range of 16-bit floats. three.js's floor of the composite's divisor scales with it.
+three.js's default, equation 9 of the paper: `w = alpha * clamp(0.03 / (1e-5 + (z / 200)^4), 1e-2, 3e3)`, with `z` the depth along the view. The engine scales it by 1/32, since only the ratio of weights shows. Bright HDR colors of many near layers then stay inside the range of 16-bit floats. three.js's floor of the composite's divisor scales with it.
 
 ### Samples and depth
 
@@ -63,13 +63,13 @@ The layer draws at one sample on every path:
 
 The weighted pass tests the scene's depth and writes none. A one-sample scene lends its own depth. A multisampled scene's weighted pass creates a one-sample depth target. Its first draw copies the first sample of each pixel's depth into it (template `WEIGHTED_DEPTH`, which writes `frag_depth`). WebGPU reads the multisampled depth as unfilterable floats, which compatibility mode allows. WebGL2's backend hands the copy its one-sample blit, as it does for ambient occlusion. MSAA therefore does not smooth the edges of weighted surfaces. three.js's pass matches the scene's samples on WebGPU and turns MSAA off on WebGL2.
 
-The copy first was a pass of its own. The render graph joined it to the weighted pass, since its one target is a subset of that pass's targets, and the frame graph's test caught the mismatch of formats. The copy now draws first in the weighted pass by design, which saves a render pass. Its pipeline names both color targets of the pass and writes no color (`template::draws_two_targets`).
+The copy first was a pass of its own. The render graph joined it to the weighted pass, since its one target is a subset of that pass's targets. The frame graph's test caught the mismatch of formats. The copy now draws first in the weighted pass by design, which saves a render pass. Its pipeline names both color targets of the pass and writes no color (`template::draws_two_targets`).
 
 ### Where the layer draws
 
-After the camera's transparent pass, as three.js's pass does: weighted surfaces show over the other blended surfaces and the surfaces that let light through, where nothing nearer wrote depth. Then the composite blends over the scene color, in a render pass of its own, before the outline, the effects, bloom and the final pass.
+After the camera's transparent pass, as three.js's pass does. Weighted surfaces show over the other blended surfaces and the surfaces that let light through, where nothing nearer wrote depth. The composite then blends over the scene color in a render pass of its own, before the outline, the effects, bloom and the final pass.
 
-Rejected: before the transmission copy, so glass would bend the smoke behind it. Smoke in front of glass would then show behind it, and that is the common case in the showcase scenes: steam in a street in front of shop windows.
+Rejected: before the transmission copy, so glass would bend the smoke behind it. Smoke in front of glass would then show behind it. That is the common case in the showcase scenes: steam in a street in front of shop windows.
 
 ### Fallbacks
 
@@ -97,8 +97,8 @@ Options A throughout: weighted blended OIT per material, both targets additive, 
 
 ## Consequences
 
-- Code: `crates/null3d-render/src/weighted.rs` (the composite and the depth copy), `frame_graph.rs` (the two passes and the second color target), `sorted.rs` (each bucket's weighted pipeline and the choice of rows per pass), both builders' transparent passes, `pipelines.rs` (`DrawKey::weighted`) and `materials.rs` (`feature::WEIGHTED`). The shaders are `lib/weighted.wgsl`, `weighted_layer.wgsl` and the `WEIGHTED` builds of `lit.wgsl`, `unlit.wgsl`, `unlit_map.wgsl` and `sprite.wgsl`, in the first-use set `weighted`. The WebGPU and WebGL2 backends draw two color targets.
+- Code: `crates/null3d-render/src/weighted.rs` holds the composite and the depth copy. The frame graph, `frame_graph.rs`, holds the two passes and the second color target. The sorted layout, `sorted.rs`, holds each bucket's weighted pipeline and the choice of rows per pass, beside both builders' transparent passes. The pipeline keys have `DrawKey::weighted`, and the material table has `feature::WEIGHTED`. The shaders are `lib/weighted.wgsl` and `weighted_layer.wgsl`, with the `WEIGHTED` builds of `lit.wgsl`, `unlit.wgsl`, `unlit_map.wgsl` and `sprite.wgsl`. They load as the first-use set `weighted`. The WebGPU and WebGL2 backends draw two color targets.
 - Docs: `api/materials` (Weighted blending), `api/sprites`, `api/points`, `api/lines`, `concepts/materials`, the E1217 page, and the mapping entries `oit-pass` and `mat-flags`.
 - Skills: the develop skill's quick reference, and the port skill's materials notes.
-- Tests: the frame graph's test of the layer, the image tests `weighted` and `weighted-reverse` (the same images in the reverse order), the first-use download test, and the demo `weighted-transparency`.
-- Later: weighted builds for custom materials on request, the particles add-on's weighted build (M2-EX20: whichever of the two merges second adds it), and a half-size layer as a step of the quality governor if a scene needs it.
+- Tests: the frame graph's test of the layer and the first-use download test. The image tests are `weighted`, `weighted-reverse` (the same images in the reverse order) and the demo `weighted-transparency`.
+- Later: weighted builds for custom materials on request, and the particles add-on's weighted build (M2-EX20: whichever of the two merges second adds it). A half-size layer can become a step of the quality governor if a scene needs it.

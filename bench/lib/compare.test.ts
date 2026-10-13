@@ -450,7 +450,12 @@ describe('the expected-change trailer', () => {
 describe('the verdict', () => {
 	test('passes when no page is slower than the rule allows', () => {
 		const runs = page([2, 2, 2], [1.9, 2, 2.05]);
-		expect(judge(compare(runs))).toEqual({ pass: true, failures: [], measurementChanges: [] });
+		expect(judge(compare(runs))).toEqual({
+			pass: true,
+			failures: [],
+			unjudged: [],
+			measurementChanges: [],
+		});
 	});
 
 	test('fails on a slower page that no trailer names, and says which', () => {
@@ -480,17 +485,28 @@ describe('the verdict', () => {
 			failures: [
 				's1 null3d-webgpu: the new build kept 0 runs of 3 and the baseline 3 runs of 3, so 0 rounds have a run of each, and a comparison needs 2',
 			],
+			unjudged: [],
 			measurementChanges: [],
 		});
 		expect(judge(compare(failBuild(page([1, 1, 1], [1, 1, 1]), 'baseline'))).pass).toBe(true);
 	});
 
-	test('reports and passes every page when the measurement changed', () => {
+	test('reports and passes every slower page when the measurement changed', () => {
 		const changes = ['the benchmark pages changed: bench/pages/lib/options.ts'];
 		const verdict = judge(compare(page([2, 2, 2], [2.5, 2.5, 2.5])), changes);
 		expect(verdict.pass).toBe(true);
-		expect(verdict.failures).toHaveLength(2);
+		expect(verdict.failures).toEqual([]);
+		expect(verdict.unjudged).toHaveLength(2);
 		expect(verdict.measurementChanges).toEqual(changes);
+	});
+
+	test('fails a page that the new build kept too few runs of, when the measurement changed too', () => {
+		const changes = ['the benchmark pages changed: bench/pages/lib/options.ts'];
+		const runs = failBuild(failBuild(page([1, 1, 1], [1, 1, 1]), 'new'), 'baseline');
+		const verdict = judge(compare(runs), changes);
+		expect(verdict.pass).toBe(false);
+		expect(verdict.failures).toHaveLength(1);
+		expect(verdict.failures[0]).toStartWith('s1 null3d-webgpu: the new build kept 0 runs of 3');
 	});
 });
 
@@ -687,7 +703,7 @@ describe('the report', () => {
 			trailers: { changes: [], problems: [] },
 		}).join('\n');
 		expect(text).toContain(
-			"**Measurement changed**: the run reports every page and judges none, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
+			"**Measurement changed**: the run reports every page and judges no time, because the two builds measure in different ways. Main's next run compares with this commit.\n- the comparison's switches changed from none to `x=1`",
 		);
 		expect(text).toContain(
 			'Not judged: 2 problems.\n- s1 null3d-webgpu, busiest thread: +25.0% slower, noise 0.0% (medians 2.000 ms and 2.500 ms)',
@@ -757,6 +773,7 @@ describe('shards of a comparison', () => {
 				's2 null3d-webgpu, busiest thread: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
 				's2 null3d-webgpu, own work: +100.0% slower, noise 0.0% (medians 1.000 ms and 2.000 ms)',
 			],
+			unjudged: [],
 			measurementChanges: [],
 		});
 		expect(report.slice(3)).toEqual(alone.report.slice(3));

@@ -3,7 +3,7 @@ id: api/animation
 title: Animation
 status: experimental
 since: "0.2"
-summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, events; morph weights."
+summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, joint overrides and look-at, events; morph weights."
 ---
 
 # Animation
@@ -12,10 +12,10 @@ summary: "The animator; play, crossFade, clip weights, start times, 1D blends, l
 
 ```mermaid
 flowchart LR
-    calls["Your sketch:<br/>play, crossFade, stop,<br/>clip and layer weights,<br/>blend values"] --> state["Each object's clips:<br/>times, weights and fades"]
+    calls["Your sketch:<br/>play, crossFade, stop,<br/>clip and layer weights,<br/>blend values, joint rotations,<br/>look-at targets"] --> state["Each object's clips:<br/>times, weights and fades,<br/>joint overrides"]
     file["A clip in a file:<br/>keys at any times"] -->|"once, at load,<br/>on a job worker"| clip["The engine's clip:<br/>keys at one fixed rate"]
     state --> step
-    clip --> step["Each frame, on the job workers:<br/>advance, sample 4 joints at once,<br/>blend layers, compose"]
+    clip --> step["Each frame, on the job workers:<br/>advance, sample 4 joints at once,<br/>blend layers, turn joints, compose"]
     step --> matrices["One skinning matrix<br/>per joint"]
     step --> events["Events reach<br/>your handlers"]
 ```
@@ -199,6 +199,85 @@ anim.setLayerWeight(2, 0.5);     // half the breath
 
 The engine works out the additive form of a clip the first time you play it as additive. It keeps that form for every later play. The clip's layer weight and joint mask scale the change.
 
+## Joint overrides
+
+Your sketch can turn a character's joints on top of its clips. A soldier then aims its rifle while it walks, and a head turns to follow the player. The job workers apply the turns after they blend the clips, and before they compose the skinning matrices.
+
+`anim.joint(name)` returns a joint's index. The joint calls take an index or a name. Look up the index once in the setup, and keep it.
+
+```ts
+const anim = soldier.animator();
+anim.play('walk');
+const spine = anim.joint('Spine');
+const twist = quat.create();
+
+return {
+  onUpdate() {
+    quat.setAxisAngle(twist, [0, 1, 0], Math.sin(time.now) * 0.4);
+    anim.addJointRotation(spine, twist);   // twists on top of the walk
+  },
+};
+```
+
+- `setJointRotation(joint, rotation, weight)` sets the joint's rotation relative to its parent, as a quaternion. The joint turns from its animated rotation toward it by the weight, from 0 to 1. At 1, the default, the joint takes the rotation.
+- `addJointRotation(joint, rotation, weight)` turns the joint by the rotation in its own frame, on top of its animated rotation. The weight scales the turn.
+- `clearJoint(joint)` removes both kinds of rotation from the joint.
+
+The joints below a turned joint follow it, and so do the meshes that hang on them. A rotation holds in every frame until `clearJoint` removes it, or a new call replaces it. The calls write engine memory, so calling them every frame costs nothing and allocates nothing. An object holds 8 joint rotations at once. A joint with a set rotation and an added one takes two of them.
+
+### Looking at a point
+
+`lookAt(target, options, weight)` turns a chain of joints so that the last one aims at a point in the world. The engine aims again in each frame from the animated pose, until `lookAt(null)` stops it. So a soldier keeps its rifle on a target while its walk sways its body. Call `lookAt` every frame to follow a moving point.
+
+```ts
+const AIM = Object.freeze({ joints: ['Spine', 'Chest', 'Neck'], limit: 0.8 });
+let aim = 0;
+
+return {
+  onUpdate(dt) {
+    aim = Math.min(1, aim + dt * 2);          // raise the aim over half a second
+    anim.lookAt(enemyPosition, AIM, aim);
+  },
+};
+```
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `joints` | none | The joints that turn, parents first, up to 4. Each one must be below the joint before it. The last one aims. |
+| `limit` | π / 3 | The most that each joint turns away from its animated pose, in radians. Give one number for every joint, or an array with one per joint. |
+| `shares` | equal | How the turn splits between the joints, one number per joint. |
+| `forward` | `[0, 0, 1]` | The direction that the last joint aims, in the object's space when the model was bound. |
+
+The first call needs `joints`. Later calls without options keep the chain, so `anim.lookAt(point)` only moves the target. A frozen options object is read once, as with `play`.
+
+Each joint takes its share of the turn that the joints before it left, up to its limit. The last joint then finishes the aim, within its limit. A target far behind the character turns each joint as far as its limit allows. The weight blends each joint between its animated rotation and the turned one, so an eased weight raises and lowers an aim smoothly.
+
+The last joint aims where the model faced when it was bound: +Z, for a glTF model that follows the format's rules. Give `forward` for a joint that aims elsewhere, such as a hand that holds a gun along +X. The engine aims from the object's place in the frame that it draws. So a moving soldier aims without a frame of lag.
+
+### Order and cost
+
+In each frame, the clips blend first, then each joint rotation applies in the order of its slot, then the look-at turns its chain. A look-at therefore aims from a pose that the joint rotations already turned.
+
+A scene that never calls a joint call pays nothing: the engine makes the table of joint overrides at the first call. After that, an object without overrides costs a few reads in each frame. A joint rotation costs one quaternion blend. A look-at costs a few matrix products for each joint between the skeleton's root and the chain's last joint.
+
+The calls allocate nothing, but a weight that changes in each frame can. The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. To keep a crowd's weights from boxing, call the joint calls from a small function of its own. Give it only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
+
+```ts
+const now = new Float64Array(1);
+const aimCrowd = (anim: Animator, k: number) => {
+  anim.lookAt(enemyPosition, undefined, 0.5 + 0.5 * Math.sin(now[0] + k));
+};
+
+return {
+  onUpdate() {
+    now[0] = time.now;
+    for (let k = 0; k < crowd.length; k++) aimCrowd(crowd[k], k);
+  },
+};
+```
+
+The default weight, 1, is a small whole number, which never boxes. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+
 ## Events
 
 `onEvent(name, handler)` calls `handler` each time a playing clip reaches an event of that name. It returns a function that removes the handler. The handler gets the event's `name`, its `clip` and its `layer`. The animator passes the same object to every handler, so copy what you keep.
@@ -245,19 +324,19 @@ Seven glTF sample models play their clips as three.js plays them. Each joint's s
 
 A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it, as three.js draws a `SkinnedMesh`.
 
-On WebGPU, a compute pass skins each skinned mesh once per frame, before the shadow passes and the scene passes. Those passes then draw the skinned vertices as a plain mesh, so every material skins, custom materials included. A skinned mesh that no view draws in a frame, neither the camera nor a shadow cascade, is not skinned in that frame. A skinned mesh whose pose and morph weights did not change since its last skin is not skinned either. So a character that stands still, or whose clips are paused, costs no skinning work, and neither does moving it in its pose.
+On both paths, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's skinning builds download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
 
-On WebGL2, which has no compute shaders, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the phones and tablets that the engine was measured on, this was faster than skinning once per frame with transform feedback. Every material skins there too, custom materials included. Skinned meshes that share a mesh and a material still draw in one instanced draw, so a crowd costs few draw calls. Each frame uploads every animated object's skinning matrices to one float texture, 48 bytes per joint.
+On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes that a debug view draws, or that a [full shader](../guides/custom-shaders.md#full-shaders) of the sketch's draws. Neither has a skinning build of its vertex shader. The passes then draw the skinned vertices as a plain mesh. Each mesh that the pass skins draws on its own, as it has vertices of its own. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin. The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
 
 A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
 ### Limits of skinning
 
-- On WebGPU, each skinned copy keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. A knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB. A morphed mesh takes the same room, as the skinning pass morphs it there.
+- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
 - Those vertices fill at most 8 GPU buffers, each as large as the device lets a shader read. That is 1 GiB in all at WebGPU's default limit of 128 MiB per buffer.
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
-- WebGL2 skins in the vertex shader, so it has neither limit.
+- Meshes that the vertex shaders skin count toward neither limit, on WebGPU or on WebGL2.
 - The engine's animation table holds 65,536 joints in all, for every animated object.
 
 ## Morph targets
@@ -294,16 +373,21 @@ A morphed object culls with a sphere that its weights grow: each target's longes
 | `gltf.animations` and `new AnimationMixer(gltf.scene)` | `prefab.clips` and `scene.instantiate(prefab).animator()` |
 | `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
 | `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
+| `skeleton.getBoneByName('Head')` | `anim.joint('Head')`, an index that the joint calls take |
+| `bone.quaternion.copy(q)` after `mixer.update(dt)` | `anim.setJointRotation('Head', q)`, which holds until `clearJoint` |
+| `bone.quaternion.multiply(q)` after `mixer.update(dt)` | `anim.addJointRotation('Spine', q)` |
+| `bone.lookAt(point)`, or a look-at chain that your code works out | `anim.lookAt(point, { joints: ['Spine', 'Neck', 'Head'] })` |
 | `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
 | `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; the mesh geometry's `morphTargetNames`, such as `prefab.find('Face')?.mesh?.morphTargetNames`, lists the names in order |
 | `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
 | `geometry.morphAttributes.color` | `geometry.fromArrays({ ..., colors, morphTargets: { colors } })` |
-| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | WebGPU skins each skinned mesh once per frame, for every pass that draws it. WebGL2 skins in the vertex shader of each pass, as three.js does |
+| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | The same on both paths, custom materials included. On WebGPU, the skinning pass skins morphed meshes once per frame instead |
 
 Where three.js and null3D differ:
 
 - A three.js fade out starts from full weight. null3D fades a clip out from the weight it has, so a quick change of mind does not jump.
-- three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To move a joint from code, play a clip on a masked layer.
+- three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To turn a joint from code, use the joint calls of [Joint overrides](#joint-overrides). A three.js bone keeps a rotation that you set only until the next `mixer.update`. A null3D joint rotation holds until `clearJoint`.
+- three.js's `bone.lookAt` turns one bone and has no limits. null3D's `lookAt` turns a chain of up to 4 joints, each within its limit.
 - A three.js action played backward starts at time 0 and wraps to the end. A null3D clip with a negative speed starts at its end.
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
 - A morphed vertex color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it. A glTF target that leaves out `COLOR_0` while another target has it changes no color in null3D, as the specification says. three.js r186 adds the base color there instead. Its WebGPURenderer draws no color targets, and its WebGLRenderer cannot draw them on colors without alpha.
@@ -323,8 +407,8 @@ Where three.js and null3D differ:
 
 | Code | When |
 | --- | --- |
-| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have |
-| [E1203](../errors/E1203.md) | A fade, speed, start time, weight, blend point, blend value, phase, morph weight or time scale that is NaN or infinite |
+| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have; a joint rotation past the 8 that an object holds; a look-at chain of no joints or more than 4, or whose joints are not one chain parents first; a first `lookAt` without options |
+| [E1203](../errors/E1203.md) | A fade, speed, start time, weight, blend point, blend value, phase, morph weight, time scale, joint rotation, look-at target, limit or share that is NaN or infinite |
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 | [E1501](../errors/E1501.md) | A crowd of skinned meshes past WebGPU skinning's limits (see [Limits of skinning](#limits-of-skinning)) |

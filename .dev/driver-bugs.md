@@ -15,6 +15,32 @@ Smallest known case: any compute shader with one `atomicCompareExchangeWeak` cal
 
 Workaround in the engine: no engine shader calls it, and the engine's shader build fails on it. Users' shaders build with a warning ([D-100](decisions/D-100-workgroup-counters.md), [Browser faults](implementation-notes.md#browser-faults)).
 
+## Adreno 619: a program whose vertex shader reads a uniform array at the draw index fails to link
+
+Status: not reported yet. Found 12 October 2026.
+
+- Device: Samsung Galaxy Tab A9+ (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGL2 on ANGLE over OpenGL ES 3.2. `WEBGL_multi_draw` is offered, `KHR_parallel_shader_compile` is not.
+- Seen in: null3D's multi-draw mesh shaders (the `webgl2_draw_index` builds), at commit 3f8825965. Each read its draw's record from a uniform block of 256 `uvec4`s at `gl_DrawID`.
+
+What happens: both shaders compile, and the link fails with an empty log. `getError` gives no error and the context is not lost. The page had made only 5 programs. In the shader check, 444 of the 557 multi-draw programs of its first three parts failed. No other program failed. Whether a program links also depends on its fragment shader. One vertex shader linked with a fragment shader that tone maps. It failed with the same fragment shader without tone mapping. The two fragment shaders read the same inputs. With a fragment shader that writes nothing, every vertex shader linked.
+
+Many changes to the failing vertex shaders still failed:
+- the index clamped or masked;
+- the extension left out, with the index in a uniform of its own;
+- a table of 64 or 16 records;
+- a loop that picks the record;
+- the index mixed with `gl_VertexID` or `gl_InstanceID`, so that it looks per vertex;
+- no `invariant`, or the material set to a constant.
+
+The plain builds read their one record at index 0 and link, but fail when they read it at a uniform. Changes that linked: the record read at a constant index, and the table read from an `RGBA32UI` texture with `texelFetch`. With the texture, all 557 programs linked. Small programs that read such a table at `gl_DrawID` linked. So a test program at start-up would not find the fault.
+
+Smallest known case: the engine's `unlit` build `webgl2_draw_index`, with its own fragment shader.
+
+Workaround in the engine: the multi-draw builds read their draw records from a texture (`crates/null3d-shaders/wgsl/lib/mesh.wgsl`). The renderer still binds the records as a uniform buffer range. The WebGL2 backend copies the range into a texture on the GPU, once for each write of the buffer ([Browser faults](implementation-notes.md#browser-faults)). A unit test fails when a multi-draw vertex shader reads a uniform array at the draw index. The texture costs no measurable time on a Pixel 9 or on the Mac ([D-154](decisions/D-154-webgl2-draw-records-texture.md)).
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>ANGLE), with the failing program's two shaders.
+
 ## Adreno 830: a uniform array read at a per-thread index returns one thread's entry
 
 Status: not reported yet. Found 7 October 2026.
@@ -51,6 +77,46 @@ The engine's case also uses the transient attachment usage on the multisampled t
 Workaround in the engine: the frame graph makes its multisampled targets again when the pass to the canvas changes. A capture draws such targets into textures of its own (see "Browser faults").
 
 To report: as above, after a standalone page confirms the three steps.
+
+## Adreno 619: the first pass on a device that draws gets nothing from indirect draws
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU and WebGPU compatibility mode. Both fail the same way, so the fault is not in one of Chrome's two GPU backends alone.
+- Seen in: the skinning pass page (`tests/pages/skin-pass.ts`). Its first case, the first draw on its device, read back none of its 120 points. Every later case was right. Main showed the same in run `20261012-074025-smoke`.
+
+What happens: on a new device, take the first render pass that draws anything. Its indexed or plain indirect draws draw nothing when the CPU wrote their arguments. The pass clears its target, and no point lands. Every later pass on the device draws right. No WebGPU error is reported. A new device fails again.
+
+These made no difference (run `20261012-183358-smoke`, a probe of 15 forms, each on a new device):
+
+- a render bundle, plain indirect draws instead of indexed ones, and draws with one vertex buffer only;
+- arguments written with `writeBuffer` or mapped at creation, and a wait for the queue after the writes;
+- a pipeline built with `createRenderPipelineAsync`;
+- an earlier render pass that only clears, and an earlier compute pass.
+
+These drew right:
+
+- direct draws, indexed or plain, as the first pass;
+- the same indirect draws after an earlier pass that drew one point, by a direct or an indirect draw;
+- arguments that a compute pass wrote in the same command encoder before the render pass.
+
+Smallest known case: a new device, an index buffer and a vertex buffer, five `drawIndexedIndirect` calls whose arguments came from `writeBuffer`, in the device's first render pass. The first-draw page (`tests/pages/first-draw.ts`) draws it and reads it back.
+
+Workaround in the engine: before a device's first frame, the WebGPU scene renderer draws one point into a 1x1 target (`gpu/webgpu/first-pass.ts`). Its pipeline builds in the background with the frame's own pipelines, and the first frame waits for it. The engine writes the arguments of its indirect draws from the CPU each frame, and culling then adds the counts on the GPU. So without the pass, the first frame after each device start could lose its indirect draws on such a device. An image test cannot see this, because a capture draws the frame a second time ([Image tests](image-tests.md#other-browsers-and-devices)).
+
+The pass makes the first frame no later. On 13 October 2026, `bun run bench:startup` loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155), with and without the pass, in turns. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
+
+| GPU path | Load | With the pass, ms | Without it, ms |
+| --- | --- | --- | --- |
+| WebGPU | cold | 552 | 620 |
+| WebGPU | warm | 439 | 625 |
+| Compatibility mode | cold | 630 | 662 |
+| Compatibility mode | warm | 636 | 655 |
+
+The GPU check found no change in the frame time of scenes S4 and S6.
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>Dawn), with the first-draw page.
 
 ## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
 

@@ -64,9 +64,10 @@ afterAll(() => {
  * Runs a module's code and returns what it exports by default. Each module gets a folder of its
  * own, since Bun keeps what it read of a folder when it resolved an earlier import there.
  */
-async function run(code: string): Promise<unknown> {
+async function run(code: string, others: Record<string, string> = {}): Promise<unknown> {
 	const folder = mkdtempSync(join(tmpdir(), 'null3d-pack-'));
 	folders.push(folder);
+	for (const [name, text] of Object.entries(others)) writeFileSync(join(folder, name), text);
 	const file = join(folder, 'module.mjs');
 	writeFileSync(file, code);
 	return ((await import(file)) as { default: unknown }).default;
@@ -93,6 +94,28 @@ describe('ShaderPack', () => {
 		const shader = material(2);
 		const code = `const first = ${pack.value(shader)};\nexport default first.variants.standard_1.glsl.main.fragment.source;\n${pack.unpacker()}`;
 		expect(await run(code)).toBe(stage('f1').source);
+	});
+
+	it("builds the text of the GPU path that the page reads, and never the other path's", async () => {
+		const pack = new ShaderPack();
+		const shader = material(3);
+		const code = `const shader = ${pack.value(shader)};\nconst wgsl = shader.variants.standard_2.wgsl.source;\nexport default [wgsl, ${UNPACK}.paths.map((path) => path.tables !== undefined)];\n${pack.unpacker()}`;
+		expect(await run(code)).toEqual([variant(2).wgsl?.source, [true, false]]);
+	});
+
+	it('gives a shader whose builds load on first use a function that imports them', async () => {
+		const pack = new ShaderPack();
+		const shader = material(2);
+		const later = new ShaderPack();
+		const builds = { variants: { standard_skin: variant(7) } };
+		const code = `export default ${pack.value(shader, undefined, './later.mjs')};\n${pack.unpacker()}`;
+		const laterCode = `export default ${later.value(builds as unknown as CompiledWgsl)};\n${later.unpacker()}`;
+		const loaded = (await run(code, { 'later.mjs': laterCode })) as CompiledMaterial & {
+			skinBuilds: () => Promise<unknown>;
+		};
+		const { skinBuilds, ...rest } = loaded;
+		expect(rest).toEqual(shader);
+		expect(await skinBuilds()).toEqual(builds);
 	});
 
 	it('needs no function in a module without compiled shaders', () => {
