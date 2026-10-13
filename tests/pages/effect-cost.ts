@@ -4,6 +4,7 @@
 // the gather's taps, which is otherwise the preset's. The tone effect is punchy AgX against plain
 // AgX, in bloom's scene with bloom off. The vignette effect draws lit boxes over a background
 // color: with ?fill=covered a wall of them covers the view, else the background covers most of it.
+// ?background=none leaves out its background color.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
@@ -48,6 +49,7 @@ const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
 const fill = params.get('fill');
+const background = params.get('background');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
@@ -68,7 +70,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${fill === null ? '' : `&fill=${fill}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
