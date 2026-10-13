@@ -10,10 +10,8 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import { fromHex } from '../math/color';
-import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
-import { type ColorInput, isComponent } from './color';
+import { type ColorInput, writeLinearColor } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
 import { Lut } from './lut';
 import type { CoreMemory, ViewHolder } from './memory';
@@ -23,14 +21,15 @@ import { ShaderTemplates } from './shader-templates';
 import type { UniformValues } from './wgsl-uniforms';
 
 /**
- * How the engine maps the scene's high dynamic range color to the screen, with three.js's
- * formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping`
- * (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at
- * 1, as `LinearToneMapping` does.
+ * How the engine maps the scene's high dynamic range color to the screen. Three curves use
+ * three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and
+ * `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds
+ * contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'`
+ * clips the exposed color at 1, as `LinearToneMapping` does.
  *
  * @category api/post
  */
-export type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
+export type ToneMapping = 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none';
 
 /**
  * A custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the
@@ -46,6 +45,7 @@ export type ToneCurve = CompiledWgsl | `${string}toneCurve${string}`;
 const CODES: Readonly<Record<ToneMapping, number>> = {
 	aces: C.TONE_MAPPING_ACES,
 	agx: C.TONE_MAPPING_AGX,
+	'agx-punchy': C.TONE_MAPPING_AGX_PUNCHY,
 	neutral: C.TONE_MAPPING_NEUTRAL,
 	none: C.TONE_MAPPING_NONE,
 };
@@ -89,7 +89,7 @@ const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
 const DOF_NUMBERS = ['focusDistance', 'aperture', 'focalLength', 'maxBlur', 'blades'] as const;
 /** The most blur that depth of field takes, as a share of the image's height. */
 const MAX_DOF_BLUR = 0.1;
-const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+const TONE_MAPPINGS = "'agx', 'agx-punchy', 'neutral', 'aces' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
 const EV100_MIN = -20;
@@ -300,9 +300,10 @@ export interface DofSettings {
 export interface PostSettings {
 	/**
 	 * How the engine maps high dynamic range color to the screen: a built-in curve's name, or a
-	 * custom tone curve's WGSL. The default is `'aces'`. three.js uses no tone mapping by default,
-	 * so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR color, as
-	 * bloom does; on a device without an HDR target the built-in curve stays.
+	 * custom tone curve's WGSL. The default is `'agx-punchy'`, which keeps the hues of bright colors
+	 * on their way to white and keeps the picture's contrast. three.js uses no tone mapping by
+	 * default, so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR
+	 * color, as bloom does; on a device without an HDR target the built-in curve stays.
 	 */
 	toneMapping?: ToneMapping | ToneCurve;
 	/**
@@ -374,28 +375,6 @@ function writeNumber(values: Float32Array, place: number, value: unknown): void 
 	if (typeof value === 'number') values[place] = value;
 }
 
-/** Scratch for a hex color's linear components, so reading one allocates nothing. */
-const linear = [0, 0, 0];
-
-/**
- * Writes a color input's linear components into the post-processing values from `place` on. It
- * throws E1204 for a color it cannot read.
- */
-function writeColor(values: Float32Array, place: number, color: ColorInput, call: string): void {
-	if (typeof color === 'string' || typeof color === 'number') {
-		if (hexValue(color) < 0) throw invalidColor(color, call);
-		fromHex(linear, color);
-		values[place] = linear[0] as number;
-		values[place + 1] = linear[1] as number;
-		values[place + 2] = linear[2] as number;
-		return;
-	}
-	if (color?.length !== 3 || !color.every(isComponent)) throw invalidColor(color, call);
-	values[place] = color[0];
-	values[place + 1] = color[1];
-	values[place + 2] = color[2];
-}
-
 /**
  * The post-processing settings, as `ctx.post`. The engine applies them to every pixel of the scene,
  * the background included, after lighting and before the canvas shows it.
@@ -403,7 +382,7 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  * @category api/post
  */
 export class Post implements ViewHolder {
-	private toneMapping = C.TONE_MAPPING_ACES;
+	private toneMapping = C.TONE_MAPPING_AGX_PUNCHY;
 	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
 	private exposure = 1;
 	private ev100: number | false = false;
@@ -451,7 +430,7 @@ export class Post implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the view of the block, which the next write makes again. */
+	/** Forgets the view of the block, which the next write makes again. */
 	dropViews(): void {
 		this.values = undefined;
 	}
@@ -566,11 +545,12 @@ export class Post implements ViewHolder {
 			this.outline = outline !== false;
 			if (outline !== false) {
 				const { color, hiddenColor, width } = outline;
-				if (color !== undefined) writeColor(values, C.POST_VALUE_OUTLINE_COLOR, color, 'post.set');
+				if (color !== undefined)
+					writeLinearColor(values, color, 'post.set', C.POST_VALUE_OUTLINE_COLOR);
 				if (hiddenColor !== undefined) {
 					values[C.POST_VALUE_OUTLINE_HIDDEN] = hiddenColor === false ? 0 : 1;
 					if (hiddenColor !== false)
-						writeColor(values, C.POST_VALUE_OUTLINE_HIDDEN_COLOR, hiddenColor, 'post.set');
+						writeLinearColor(values, hiddenColor, 'post.set', C.POST_VALUE_OUTLINE_HIDDEN_COLOR);
 				}
 				if (width !== undefined) values[C.POST_VALUE_OUTLINE_WIDTH] = width;
 			}
@@ -776,7 +756,7 @@ function checkSettings(settings: PostSettings): void {
 	)
 		throw new EngineError(
 			'E1213',
-			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness.",
+			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness. Under AgX, keep intensity at 1 or less and set falloff to 3.",
 		);
 	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'intensity, size, falloff and roundness');
 	if (vignette) {

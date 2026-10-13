@@ -268,6 +268,8 @@ The owner raised the bar on 11 October 2026: every comparison meets the look bar
 
 ### Battle's figures on the Mac
 
+**Invalid above 1,024 units (13 October 2026, task M2-R36).** Every null3D figure in this section above 1,024 units measured a scene that stood still. The engine's animation table held at most 1,024 animated objects. At about 1,030 units, Battle's next soldier failed with E1102 in the sketch's update. From then on the update threw in every frame before it moved the soldiers, the bullets and the camera. The engine logged the error once and kept presenting frames, so the ramp and the fixed counts measured 1,024 soldiers frozen in place. The null3D "held" counts of 3,698 and 7,668, and the null3D columns at 4,000 and 10,000 units, are void. The figures at 1,000 units stand. The owner found the fault by eye on 13 October 2026. The true figures follow M2-R36's fix.
+
 The runs are from 12 October 2026, measured as for Factory, on the approved look. Each count had room for that count only. The ramps had room for 40,000 units and started at 200. The [run's record](../tested-devices/macbook-pro-chrome/20261012-002614-battle-modes.md) has each figure.
 
 | Mode | Engine and path | Held | 1,000 units | 4,000 | 10,000 | Page memory at 4,000 |

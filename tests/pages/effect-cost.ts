@@ -1,10 +1,13 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
 // ?effect=dof, ?effect=contact (the sun's contact shadows, with ?steps= steps per march, 8 by
-// default) or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
-// bloom's scene. ?effect=area measures ?count= area lights over the light scenes' floor, 4 by
-// default: rectangle lights, or ?kind=point or ?kind=tube lights, and ?image gives the rectangle
-// lights pictures. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
-// otherwise the preset's.
+// default), ?effect=effects, ?effect=tone or ?effect=vignette names it. The effects effect adds
+// ?count= custom effects, 4 by default, to bloom's scene. ?effect=area measures ?count= area lights
+// over the light scenes' floor, 4 by default: rectangle lights, or ?kind=point or ?kind=tube lights,
+// and ?image gives the rectangle lights pictures. With dof, ?taps= sets the quality setting
+// dofSamples, the gather's taps, which is otherwise the preset's. The tone effect is punchy AgX
+// against plain AgX, in bloom's scene with bloom off. The vignette effect draws lit boxes over a
+// background color: with ?fill=covered a wall of them covers the view, else the background covers
+// most of it. ?background=none leaves out its background color.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
@@ -36,10 +39,12 @@ import { run } from './lib/result';
 const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
+	tone: './sketches/bloom-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
 	contact: './sketches/contact-shadows-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 	area: './sketches/area-cost-sketch.ts',
+	vignette: './sketches/vignette-cost-sketch.ts',
 } as const;
 
 type Effect = keyof typeof SKETCHES;
@@ -48,6 +53,8 @@ const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
+const fill = params.get('fill');
+const background = params.get('background');
 const steps = params.get('steps');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
@@ -71,7 +78,7 @@ run('effect-cost', async () => {
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
 	const kind = params.get('kind');
 	const area = `${kind === null ? '' : `&kind=${kind}`}${params.has('image') ? '&image' : ''}`;
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${steps === null ? '' : `&steps=${steps}`}${area}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${steps === null ? '' : `&steps=${steps}`}${area}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,

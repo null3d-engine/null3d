@@ -497,6 +497,59 @@ fn a_clip_weight_below_one_blends_with_the_rest_pose() {
 }
 
 #[test]
+fn a_table_that_grows_poses_as_one_made_large_enough() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(8);
+    let pose = |animations: &mut Animations, grow: bool| {
+        let id = animations.add_skeleton(skeleton.clone()).unwrap();
+        let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+        let mut added = Vec::new();
+        for i in 0..9u32 {
+            if grow && let Some((instances, joints)) = animations.growth_for(id, 1 << 20) {
+                let old = animations.try_grow(instances, joints).unwrap();
+                assert_eq!(old[0].len(), old[1].len());
+            }
+            let instance = animations.add_instance(id).unwrap();
+            animations.set_sample(instance, 0, clip, i as f32 * 0.1, 1.0);
+            added.push(instance);
+            animations.update(&jobs, 1.0 / 60.0);
+        }
+        animations.remove_instance(added[3]).unwrap();
+        animations.add_instance(id).unwrap();
+        animations.update(&jobs, 1.0 / 60.0);
+        animations.matrices()[..animations.joints() as usize * MATRIX_FLOATS].to_vec()
+    };
+    let mut small = Animations::new(&jobs, 2, 12).unwrap();
+    let grown = pose(&mut small, true);
+    assert_eq!(small.instance_capacity(), 16);
+    assert_eq!(small.joint_capacity(), 96);
+    let mut large = Animations::new(&jobs, 16, 96).unwrap();
+    assert_eq!(grown, pose(&mut large, false));
+    assert!(grown.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn growth_stops_at_the_most_joints_and_never_shrinks() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, _) = character(8);
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    assert_eq!(
+        animations.growth_for(id, 64),
+        None,
+        "the first instance fits"
+    );
+    animations.add_instance(id).unwrap();
+    assert_eq!(animations.growth_for(id, 64), Some((2, 16)));
+    assert_eq!(animations.growth_for(id, 12), None, "past the most joints");
+    animations.try_grow(1, 4).unwrap();
+    assert_eq!(
+        (animations.instance_capacity(), animations.joint_capacity()),
+        (1, 8)
+    );
+}
+
+#[test]
 fn many_instances_on_many_threads_match_one_thread() {
     let (skeleton, clips) = character(40);
     let build = |jobs: &JobSystem| {
@@ -1891,6 +1944,52 @@ fn a_pose_step_changes_only_when_the_instances_matrices_do() {
     assert_eq!(animations.pose_step(again), Some(animations.changed_step()));
     assert_eq!(animations.pose_step(walking), held.0);
     assert_eq!(animations.pose_step(99), None);
+}
+
+#[test]
+fn a_slow_instance_poses_on_its_interval_alone() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(4);
+    let mut animations = Animations::new(&jobs, 2, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let slow = animations.add_instance(id).unwrap();
+    let every = animations.add_instance(id).unwrap();
+    animations.play(slow, clip, Play::default()).unwrap();
+    animations.play(every, clip, Play::default()).unwrap();
+    let intervals = animations.update_intervals_mut();
+    assert_eq!(
+        [intervals[slow as usize], intervals[every as usize]],
+        [1, 1]
+    );
+    intervals[slow as usize] = 4;
+
+    let dt = 1.0 / 60.0;
+    // Every update poses the instance that has no interval, and the first poses the slow one too.
+    animations.update(&jobs, dt);
+    let posed = animations.pose_step(slow);
+    assert_eq!(posed, animations.pose_step(every));
+
+    // The three updates in between leave the slow instance in its pose, and its matrices carry
+    // over unchanged, so the skinning pass skips the held pose too.
+    let held = animations.instance_matrices(slow).to_vec();
+    for _ in 0..3 {
+        animations.update(&jobs, dt);
+        assert_eq!(animations.pose_step(slow), posed);
+        assert_eq!(animations.instance_matrices(slow), held.as_slice());
+    }
+
+    // The next update poses it again. Its clips covered the frames in between, so its pose matches
+    // the instance that poses in every one of them.
+    animations.update(&jobs, dt);
+    assert_ne!(animations.pose_step(slow), posed);
+    let slow_pose = animations.instance_matrices(slow).to_vec();
+    let largest = slow_pose
+        .iter()
+        .zip(animations.instance_matrices(every))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(largest < 1e-4, "the slow pose differs by {largest}");
 }
 
 /// Writes a rotation override into slot `slot` of instance `instance`'s block.
