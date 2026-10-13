@@ -193,13 +193,13 @@ describe('the background priority guard', () => {
 
 	it.skipIf(!mac)('stops a script at background priority before it starts a browser', () => {
 		const script = `import { launchInWindow } from ${JSON.stringify(new URL('./app-window.ts', import.meta.url).pathname)};
-try { await launchInWindow(); console.log('started'); } catch (e) { console.log(e.message); }`;
+try { await launchInWindow(); console.log('BROWSER LAUNCHED'); } catch (e) { console.log(e.message); }`;
 		const { stdout } = spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
 			encoding: 'utf8',
 			timeout: 30_000,
 		});
 		expect(stdout).toContain('macOS background priority');
-		expect(stdout).not.toContain('started');
+		expect(stdout).not.toContain('BROWSER LAUNCHED');
 	});
 
 	it("reads this process's priority on macOS only", () => {
