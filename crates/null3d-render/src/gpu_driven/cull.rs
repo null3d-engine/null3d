@@ -86,9 +86,10 @@ const _: () = assert!(OCCLUSION_WORDS as u32 * 4 == sizes::CULL_OCCLUSION_BYTES)
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// The buffers of the culling pass's bind group, one per binding, the last the depth pyramid, then
-/// the cell offsets texture. Eight storage buffers is what every device allows a shader stage, so
-/// the history shares the indirect draws' buffer, and the cell offsets sit in a texture.
-const CULL_BINDINGS: usize = 10;
+/// the cell offsets texture and the skin firsts texture. Eight storage buffers is what every device
+/// allows a shader stage, so the history shares the indirect draws' buffer, and the cell offsets
+/// and the first joints sit in textures.
+const CULL_BINDINGS: usize = 11;
 /// Words of the culling pass's bind group entries, the largest group that binds the cell offsets
 /// texture: three for the group, five per entry.
 const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
@@ -154,20 +155,27 @@ pub(super) enum Phase {
     Late,
 }
 
-/// Records a bind group of `layout` that binds `buffers` in order, then the cell offsets texture.
+/// Records a bind group of `layout` that binds `buffers` in order, then the cell offsets texture,
+/// then `textures`.
 fn push_offsets_group(
     list: &mut DrawList,
     group: u32,
     layout: u32,
     buffers: &[u32],
+    textures: &[u32],
 ) -> Result<(), RecordError> {
-    let count = buffers.len() + 1;
+    let count = buffers.len() + 1 + textures.len();
     let mut entries = [0u32; CULL_GROUP_WORDS];
     entries[..3].copy_from_slice(&[group, layout, count as u32]);
     let resources = buffers
         .iter()
         .map(|&buffer| (resource_kind::BUFFER, buffer))
-        .chain(std::iter::once((resource_kind::TEXTURE, ids::CELL_OFFSETS)));
+        .chain(std::iter::once((resource_kind::TEXTURE, ids::CELL_OFFSETS)))
+        .chain(
+            textures
+                .iter()
+                .map(|&texture| (resource_kind::TEXTURE, texture)),
+        );
     for (binding, (kind, id)) in resources.enumerate() {
         let at = 3 + binding * 5;
         entries[at..at + 5].copy_from_slice(&[binding as u32, kind, id, 0, 0]);
@@ -339,13 +347,20 @@ impl Culling {
                 ids::ORDER,
                 pyramid,
             ];
-            push_offsets_group(list, ids::cull_group(view), bind_layout::CULL, &buffers)?;
+            push_offsets_group(
+                list,
+                ids::cull_group(view),
+                bind_layout::CULL,
+                &buffers,
+                &[ids::SKIN_FIRSTS],
+            )?;
             if self.index_instances {
                 push_offsets_group(
                     list,
                     ids::index_group(view),
                     bind_layout::INSTANCE_INDEX,
                     &buffers[..4],
+                    &[],
                 )?;
             }
         }

@@ -656,7 +656,7 @@ function makeMeshes(
 function storeTree(core: CoreMemory, mesh: number, bytes: Uint8Array, call: string): boolean {
 	const words = Math.ceil(bytes.byteLength / 4);
 	const at = core.checkGrowth(core.glue.meshArrays(words), call);
-	new Uint8Array(core.u32(at, words).buffer, at, bytes.byteLength).set(bytes);
+	core.view(Uint8Array, at, bytes.byteLength).set(bytes);
 	return core.glue.setMeshBvh(mesh, bytes.byteLength) === 1;
 }
 

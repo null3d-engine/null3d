@@ -113,6 +113,7 @@ import {
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
+import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
@@ -202,6 +203,8 @@ export type Check =
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
+	/** The first-draw page: a device's first pass of indirect draws, bare and after the engine's. */
+	| { kind: 'first-draw'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -457,7 +460,11 @@ const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
  */
 const SHADER_PROGRAMS_PER_PART = 400;
 
-/** The parts of the shaders page: enough that none holds more than that many programs. */
+/**
+ * The parts of the shaders page: enough that each holds about that many programs. A build that
+ * several device modules hold counts in each part that downloads one of them, so a part may hold
+ * somewhat more.
+ */
 export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
 
 /**
@@ -531,6 +538,14 @@ export function checksPlan(): PlanItem<Check>[] {
 				`skin-pass-${path}`,
 				'skin-pass',
 				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`first-draw-${path}`,
+				'first-draw',
+				{ kind: 'first-draw', tier: 'webgpu' },
 				{ switches: [`gpu=${path}`] },
 			),
 		),
@@ -724,6 +739,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'stats',
 	'ktx2',
 	'skin-pass',
+	'first-draw',
 	'environment-generator',
 ]);
 
@@ -1070,10 +1086,10 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 }
 
 /**
- * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
- * custom effects.
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
+ * sun's contact shadows, or 4 custom effects.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1087,13 +1103,16 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
- * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing.
- * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
- * D-119 those of the dof plan.
+ * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
+ * contact plan times the sun's contact shadows at 4 and 8 steps, the steps of Medium on WebGL2
+ * and of High, with the prepass on in both halves too, as for ambient occlusion.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
+ * D-119 those of the dof plan, and D-135 those of the contact plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
-	const prepass = effect === 'ao' ? [false, true] : [false];
+	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
 	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
+	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1109,23 +1128,26 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
 			prepass.flatMap((on) =>
-				tapCounts.map((taps) =>
-					pageItem(
-						`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}`,
-						'effect-cost',
-						{ kind: 'effect', effect, tier, scale },
-						{
-							switches: [
-								`gpu=${tier}`,
-								`scale=${scale}`,
-								`effect=${effect}`,
-								...(on ? ['prepass=on'] : []),
-								...(taps ? [`taps=${taps}`] : []),
-								// One pass for each effect, so a quarter of the difference is one pass.
-								...(effect === 'effects' ? ['join=off'] : []),
-							],
-							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-						},
+				tapCounts.flatMap((taps) =>
+					stepCounts.map((steps) =>
+						pageItem(
+							`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}${steps ? `-${steps}` : ''}`,
+							'effect-cost',
+							{ kind: 'effect', effect, tier, scale },
+							{
+								switches: [
+									`gpu=${tier}`,
+									`scale=${scale}`,
+									`effect=${effect}`,
+									...(on ? ['prepass=on'] : []),
+									...(taps ? [`taps=${taps}`] : []),
+									...(steps ? [`steps=${steps}`] : []),
+									// One pass for each effect, so a quarter of the difference is one pass.
+									...(effect === 'effects' ? ['join=off'] : []),
+								],
+								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+							},
+						),
 					),
 				),
 			),
@@ -1706,6 +1728,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	dof: () => effectPlan('dof'),
+	contact: () => effectPlan('contact'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
@@ -2349,6 +2372,11 @@ export function judge(
 			const skin = result as unknown as SkinPassResult;
 			context?.note?.(skinPassNote(skin));
 			return skinPassProblems(skin);
+		}
+		case 'first-draw': {
+			const first = result as unknown as FirstDrawResult;
+			context?.note?.(firstDrawNote(first));
+			return firstDrawProblems(first);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];

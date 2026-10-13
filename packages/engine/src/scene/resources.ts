@@ -89,7 +89,7 @@ import {
 	type VertexLayout,
 } from './mesh-arrays';
 import { ShaderPreloads } from './shader-preloads';
-import { ShaderTemplates } from './shader-templates';
+import { type BuildsLoader, ShaderTemplates } from './shader-templates';
 import { Texture } from './textures';
 import type { TextureValues, UniformType, UniformValue, UniformValues } from './wgsl-uniforms';
 
@@ -1295,6 +1295,10 @@ interface CompiledUniform {
 interface CompiledMaterial extends CompiledWgsl {
 	readonly kind: 'material';
 	readonly variants: ShaderVariants;
+	/** The WebGPU builds that skin, where a hot update brings them with the others. */
+	readonly skinVariants?: ShaderVariants;
+	/** Imports the WebGPU builds that skin in the vertex shader, which load on first use. */
+	readonly skinBuilds?: BuildsLoader;
 	readonly locations: readonly number[];
 	/** The optional vertex attributes (`VERTEX_*` bits) that the vertex stage reads. */
 	readonly attributes: number;
@@ -1309,12 +1313,17 @@ interface CompiledMaterial extends CompiledWgsl {
 	readonly hot?: string;
 }
 
-/** What the thread that draws builds a custom material's pipelines from. */
+/**
+ * What the thread that draws builds a custom material's pipelines from. Its builds that skin come
+ * on first use, unless the compiled WGSL holds them.
+ */
 function customShader(compiled: CompiledMaterial): CustomShader {
+	const { skinVariants } = compiled;
 	return {
-		variants: compiled.variants,
+		variants: skinVariants ? { ...compiled.variants, ...skinVariants } : compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
+		...(!skinVariants && compiled.skinBuilds && { skinBuilds: true }),
 	};
 }
 
@@ -1676,11 +1685,11 @@ function uniformWrites(
 }
 
 /**
- * The texture of each slot that a custom material's WGSL declares, from its `textures` option, with
- * none where the option gives none. Throws E1216 for a name that the WGSL does not declare, and for
- * a value that is not a texture of one layer.
+ * The texture of each slot that a custom material's or effect's WGSL declares, from its `textures`
+ * option, with none where the option gives none. Throws E1216 for a name that the WGSL does not
+ * declare, and for a value that is not a texture of one layer.
  */
-function textureSlots(
+export function textureSlots(
 	declared: readonly { readonly name: string }[],
 	given: Readonly<Record<string, unknown>>,
 	call: string,
@@ -1694,7 +1703,7 @@ function textureSlots(
 			const names = declared.map((texture) => texture.name).join(', ') || 'none';
 			throw new EngineError(
 				'E1216',
-				`${call}() got the texture ${name}, which the material's WGSL does not declare. Its textures: ${names}.`,
+				`${call}() got the texture ${name}, which the WGSL does not declare. Its textures: ${names}.`,
 			);
 		}
 		if (!(value instanceof Texture) || value.depth !== 1)
@@ -2004,7 +2013,12 @@ export class Materials {
 	 * dev server, WGSL under one hot update key shares one template, which takes the newest WGSL.
 	 */
 	private templateOf(compiled: CompiledMaterial): number {
-		return this.templates.of(compiled, () => [customShader(compiled)], compiled.hot);
+		return this.templates.of(
+			compiled,
+			() => [customShader(compiled)],
+			compiled.hot,
+			compiled.skinBuilds,
+		);
 	}
 
 	/**

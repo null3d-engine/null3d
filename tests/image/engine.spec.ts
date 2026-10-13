@@ -321,6 +321,7 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'lines', sketch: 'tests/pages/sketches/lines-sketch.ts' },
 	{ feature: 'sprites', sketch: 'tests/pages/sketches/sprites-sketch.ts' },
+	{ feature: 'particles', sketch: 'tests/pages/sketches/particles-sketch.ts' },
 	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
 	{ feature: 'transmission', sketch: 'tests/pages/sketches/transmission-sketch.ts' },
 	{ feature: 'decals', sketch: 'tests/pages/sketches/decals-sketch.ts' },
