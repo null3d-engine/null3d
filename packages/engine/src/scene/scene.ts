@@ -410,6 +410,13 @@ export interface DirectionalShadowOptions {
 	 * default is 200.
 	 */
 	distance?: number;
+	/**
+	 * How far contact shadows reach from each surface toward the light, in meters, at least 0. They
+	 * are short shadows found in the camera's depth, which show where small objects touch the
+	 * ground: stones, feet, wheels, crates. 0 turns them off for this light. The quality preset's
+	 * `contactShadowSteps` decides whether they draw. The default is 0.3.
+	 */
+	contactDistance?: number;
 }
 
 /**
@@ -581,6 +588,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		Number.MAX_VALUE,
 		'above 0',
 	],
+	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
 };
 
 /** The options of a directional light's shadows, and their codes in the light table. */
@@ -590,6 +598,7 @@ const SHADOW_NUMBERS = [
 	['bias', C.LIGHT_VALUE_SHADOW_BIAS],
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
+	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
