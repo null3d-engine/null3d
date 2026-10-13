@@ -105,21 +105,34 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
         "webgpu_vertex_color_alpha_mask_receive_shadows",
         "webgpu_vertex_color_receive_shadows",
     ];
-    let skinned = plain
-        .iter()
-        .filter(|name| name.starts_with("webgl2"))
-        .map(|name| format!("{name}_skin"));
+    let skinned = |path: &'static str| {
+        plain
+            .iter()
+            .filter(move |name| name.starts_with(path))
+            .map(|name| format!("{name}_skin"))
+    };
     // Rows with row values never skin, so the builds that read them have no twin that skins.
     let rows = plain.iter().map(|name| format!("{name}_row_values"));
     let mut expected: Vec<String> = plain
         .iter()
         .map(|&name| name.to_owned())
-        .chain(skinned)
+        .chain(skinned("webgl2"))
         .chain(rows)
         .collect();
     expected.sort();
     let names: Vec<&String> = built.variants.keys().collect();
     assert_eq!(names, expected.iter().collect::<Vec<_>>());
+    // The WebGPU builds that skin load on first use, apart from the others.
+    let mut expected_skins: Vec<String> = skinned("webgpu").collect();
+    expected_skins.sort();
+    let skins: Vec<&String> = built.skin_variants.keys().collect();
+    assert_eq!(skins, expected_skins.iter().collect::<Vec<_>>());
+    assert!(
+        built
+            .skin_variants
+            .values()
+            .all(|variant| variant.wgsl.is_some() && variant.glsl.is_none())
+    );
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn square(x: f32) -> f32"), "{wgsl}");
     assert!(wgsl.contains("@location(2) uv0"), "{wgsl}");
@@ -150,7 +163,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 128, "{problem}");
+    assert_eq!(problem.variants.len(), 144, "{problem}");
 }
 
 #[test]
@@ -288,11 +301,16 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values, and on WebGL2
-    // one that skins. Then the shadow caster's builds: with and without the caster offset and row
-    // values, on WebGL2 with and without the draw index and skins. Then the motion builds, with and
-    // without row values: one on WebGPU, and on WebGL2 with and without the draw index.
-    assert_eq!(built.variants.len(), 128 + 4 + 12 + 6);
+    // 16 WebGPU builds and 32 WebGL2 builds, each with a twin that reads row values and one that
+    // skins. Then the shadow caster's builds: with and without the caster offset, each plain, with
+    // row values or skinned, and on WebGL2 with and without the draw index. The WebGPU builds that
+    // skin, 16 and 2 of the caster's, come apart. Then the motion builds, with and without row
+    // values: one on WebGPU, and on WebGL2 with and without the draw index.
+    assert_eq!(
+        built.variants.len() + built.skin_variants.len(),
+        144 + 6 + 12 + 6
+    );
+    assert_eq!(built.skin_variants.len(), 16 + 2);
     let caster = &built.variants["webgpu_shadow_caster_offset_row_values_caster"]
         .wgsl
         .as_ref()
@@ -455,7 +473,7 @@ fn inputs_that_cost_something_build_only_into_materials_that_read_them() {
     // its first set, so a mesh needs no second set.
     assert_eq!(built.locations, [0, 1, 2, 3]);
     assert_eq!(built.attributes, null3d_gpu::drawlist::vertex::UV0);
-    for (name, variant) in &built.variants {
+    for (name, variant) in built.variants.iter().chain(&built.skin_variants) {
         if let Some(wgsl) = &variant.wgsl {
             assert!(wgsl.source.contains("object_ranges"), "{name}");
             // Compatibility mode passes 15 values between the stages, and 14 into a fragment
@@ -608,6 +626,17 @@ fn textures_build_into_every_variant_and_read_their_layers_in_both_stages() {
         assert_eq!(maps(&program.fragment), 2, "{name}");
         assert!(program.fragment.source.contains("sampler2DArray"));
     }
+    // WebGPU's skinned builds read the joint texture from the group after the maps'.
+    let skin = &built.skin_variants["webgpu_skin"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(skin.contains("@group(1) @binding(0)\nvar detail"), "{skin}");
+    assert!(
+        skin.contains("@group(2) @binding(0)\nvar joint_matrices"),
+        "{skin}"
+    );
 }
 
 #[test]
@@ -783,13 +812,15 @@ fn shares_of_a_material_hold_every_build_once_and_the_vertex_inputs_each() {
             assert_eq!(share.locations, whole.locations);
             assert_eq!(share.attributes, whole.attributes);
             assert_eq!(share.uniforms, whole.uniforms);
-            for (name, variant) in share.variants {
+            for (name, variant) in share.variants.into_iter().chain(share.skin_variants) {
                 let first = joined.insert(name.clone(), variant.clone());
                 // Only the WebGPU builds without bits, which give the vertex inputs, repeat.
                 assert!(first.is_none() || variant.permutation == 0, "{name}");
             }
         }
-        assert_eq!(joined, whole.variants);
+        let mut all = whole.variants.clone();
+        all.extend(whole.skin_variants.clone());
+        assert_eq!(joined, all);
     }
 }
 

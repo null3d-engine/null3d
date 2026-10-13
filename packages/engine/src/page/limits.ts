@@ -32,8 +32,8 @@ export type AntialiasMode = QualitySettings['antialias'];
 
 /** The core's code of each skinning mode that ?skinning= picks. */
 const SKINNING_CODES: Record<SkinningSwitch, number> = {
-	lean: C.SKINNING_LEAN,
 	vertex: C.SKINNING_VERTEX,
+	compute: C.SKINNING_LEAN,
 	full: C.SKINNING_FULL,
 	skip: C.SKINNING_SKIP_ONLY,
 	narrow: C.SKINNING_NARROW_ONLY,
@@ -142,8 +142,8 @@ export interface CoreDevice {
 	 */
 	depthPrepass: boolean;
 	/**
-	 * The core's code of WebGPU's skinning mode: the skinning pass, with or without its savings, or
-	 * the vertex shader of each pass.
+	 * The core's code of WebGPU's skinning mode: the vertex shader of each pass, or the skinning
+	 * pass, with or without its savings.
 	 */
 	skinning: number;
 	/** The bits per texel of the shadow cascades' depth: 16, or 32 for floats. */
