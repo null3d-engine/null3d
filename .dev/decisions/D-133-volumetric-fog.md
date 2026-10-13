@@ -2,7 +2,7 @@
 
 Status: proposed, 2026-10-11. Date: 2026-10-11. Task: M2-EX21.
 
-Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Three fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. The figures per preset are to come.
+Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Four fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. The figures per preset are to come.
 
 ## Question
 
@@ -34,7 +34,7 @@ Option C lights each cell once. A grid of 160 x 90 cells in 64 slices lights abo
 The grid is a texture of slices side by side, 8 slices to a row. Each slice is a tile of columns and rows across the view. The tiles follow the canvas's shape, with a fixed count of cells on its short side. So the grid's cost does not follow the screen's pixels or the render scale. Slice edges lie at `distance × (k / slices)²` along the view, so near slices are thin and far ones thick.
 
 1. **Light**, one triangle over the grid's texture. Each texel is a cell. It finds a point in the cell, moved by the frame's offset. The scene fog's density and height falloff give the fog's density there. It adds the sun's light where the cascades see it, through the four texels nearest the point. Henyey-Greenstein's phase function weighs each light. It adds each point and spot light of the point's cluster, with its range, cone and shadow tile. It blends the result with the last frame's light at the same place in the world, where the last frame's grid held it. It writes the light that the fog scatters per meter and the fog's extinction. Two kept textures take turns, so each frame reads the last frame's grid from one and writes the other.
-2. **Sum**, one triangle over a second texture of the grid's size. Each cell sums the cells in front of it, front to back. Frostbite's integral over each slice keeps the light right however thick the slice is. It writes the light scattered toward the camera up to the cell's far edge and the share of light that passes.
+2. **Sum**, in two steps of one triangle each, into two more textures of the grid's size. The slices fall into blocks of 8, a row of tiles each. The block step sums, for each cell, the cells from its block's first slice to its own, front to back. Frostbite's integral over each slice keeps the light right however thick the slice is. The sum step then joins, for each cell, the sums of the whole blocks in front of it, front to back, and its own block's sum up to it. It writes the light scattered toward the camera up to the cell's far edge and the share of light that passes. A cell reads at most 8 slices in the first step and one texel per block in the second: 12 and 20 reads at 32 and 96 slices. Until 13 October 2026 one step summed every slice in front of each cell, so its work grew with the square of the slices, and 96 slices cost 3.2 times what 64 did (see Data).
 3. **Apply**, one triangle at the render size. Each pixel finds its place in the grid from its depth. It reads the two nearest slices, each through a cubic B-spline over the 16 nearest cells (see [Smooth reads on a coarse grid](#smooth-reads-on-a-coarse-grid)), and adds that light to the scene's color. Past the grid's reach it adds the sun's light that the fog scatters there, without shadows, in closed form. So no edge shows where the grid ends. The background takes the grid's light in front of it, but none from past the reach. It takes none of D-74's fog either, and its sky holds its own haze around the sun. Adding the closed form there turned a low sun's sky white. The step writes a target that the custom effects, depth of field, bloom and the final pass read.
 
 The light step binds the camera's frame group, as the background and the debug lines do. So it reads the cascades, the clustered lights and the shadow atlas with no new binding there. Its own group holds its block, the last frame's grid and a sampler: three bindings, which fit WebGL2's three slots of group 1.
@@ -57,7 +57,7 @@ A single filtered read blends the four nearest cells along straight lines. Where
 
 The apply step therefore reads each slice through a cubic B-spline over the four by four nearest cells. Four filtered reads, each placed between two pairs of cells by their weights, give the spline's sum, so the step takes 8 reads in place of 2. The spline's slope changes smoothly, so no cell's edge shows at any slice count. It softens the shafts' edges by about a cell, which the grid cannot resolve anyway. The cost is in the figures below.
 
-The image test `fog-volume-medium` draws the sun scene at Medium's 32 slices on every GPU path, and each path must draw the first path's image. A plain filtered read would change its image and fail it. Comparing images by a roughness measure, the mean absolute Laplacian, did not catch the steps: each step spans many pixels, so the measure barely changes. Look at a zoomed crop when judging grid artifacts.
+The image test `fog-volume-medium` draws the sun scene at Medium's 32 slices on every GPU path, and each path must draw the first path's image. A plain filtered read would change its image and fail it. Hold mode has a second blind spot. Its frame never blends a last frame's grid, so no held image test runs the light step's blend, and WebGL2 runs that blend with code of its own, as its rows run bottom first. The test `fog-live.spec.ts` covers it: each GPU path draws the sun scene in play, at Medium's grid with a still camera, for 2 s, and compatibility mode and WebGL2 must draw WebGPU's frame. Comparing images by a roughness measure, the mean absolute Laplacian, did not catch the steps: each step spans many pixels, so the measure barely changes. Look at a zoomed crop when judging grid artifacts.
 
 ### See-through surfaces
 
@@ -93,7 +93,19 @@ three.js has no volumetric fog in its core. Its `webgpu_volume_lighting` example
 
 ## Data
 
-To come: the GPU and CPU time per preset on the Mac, on WebGPU and WebGL2, with the grid on and off, and the download sizes.
+To come: the download sizes.
+
+### Cost on the Mac
+
+The fog cost test (`NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts`) times the effect cost page's fog scene with the volumetric fog off and on, in turns, three times each, at 1920 x 1080 and a render scale of 1, with the governor off. It ran on 13 October 2026 on the Mac's GPU in Chrome, on this record's branch with the smooth read, at loads of 3.4 to 7.1. The figures are the extra GPU time per frame with the grid on, from the medians of each side. The sun scene is a low sun behind pillars; the night scene has three shadowed spot lights and a point light.
+
+| Slices (preset) | WebGPU sun / night | Compatibility mode sun / night | WebGL2 sun / night |
+| --- | --- | --- | --- |
+| 32 (Medium) | +0.52 / +0.52 ms | +0.52 / +0.46 ms | +0.50 / +0.71 ms |
+| 64 (High) | +1.70 / +1.70 ms | +1.70 / +1.57 ms | +1.47 / +1.61 ms |
+| 96 (Ultra) | +5.37 / +5.37 ms | +5.31 / +5.05 ms | +4.40 / +4.65 ms |
+
+The CPU time per frame stayed within 0.04 ms of the fog's off side on every path. The lamps cost little: each cell loops over the lights of its own cluster. The cost grows faster than the cells: from 32 to 96 slices the cells grow about 12 times, and the cost about 10 times, but from 64 to 96 the cells grow 2.7 times and the cost 3.2 times. The sum step loops, for each cell, over every slice in front of it, so its work grows with the square of the slices.
 
 ### Allocation
 

@@ -375,11 +375,13 @@ pipelines.light = { vertex = "vs", fragment = "light" }
 variants.webgpu = { defs = ["RECEIVE_SHADOWS"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2", "RECEIVE_SHADOWS"], targets = ["glsl"] }
 
-# The volumetric fog's sum and apply steps (see fog_volume.wgsl): `sum` sums the grid's cells front
-# to back, and `apply` adds the summed light to the scene's color at the render size.
+# The volumetric fog's block, sum and apply steps (see fog_volume.wgsl): `block` sums the grid's
+# cells front to back within each block of slices, `sum` joins the blocks, and `apply` adds the
+# summed light to the scene's color at the render size.
 [shaders.fog_volume]
 file = "fog_volume.wgsl"
 by_device = true
+pipelines.block = { vertex = "vs", fragment = "block_sum" }
 pipelines.sum = { vertex = "vs", fragment = "sum" }
 pipelines.apply = { vertex = "vs", fragment = "apply" }
 variants.webgpu = { targets = ["wgsl"] }

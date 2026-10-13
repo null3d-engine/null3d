@@ -74,6 +74,7 @@ import {
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_FOG_APPLY,
 	TEMPLATE_FOG_APPLY_MS,
+	TEMPLATE_FOG_BLOCK,
 	TEMPLATE_FOG_LIGHT,
 	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
@@ -769,8 +770,9 @@ export class Pipelines {
 				'composite',
 				LAYOUT_DOF_COMPOSITE_MS,
 			],
-			// The volumetric fog's sum binds as a step of bloom, and its apply step as depth of
-			// field's composite, with the summed grid in place of the blurred image.
+			// The volumetric fog's block step and sum bind as steps of bloom, and its apply step as
+			// depth of field's composite, with the summed grid in place of the blurred image.
+			[TEMPLATE_FOG_BLOCK, 'fog block', shaders.fog_volume, 'block', LAYOUT_BLOOM],
 			[TEMPLATE_FOG_SUM, 'fog sum', shaders.fog_volume, 'sum', LAYOUT_BLOOM],
 			[TEMPLATE_FOG_APPLY, 'fog apply', shaders.fog_volume, 'apply', LAYOUT_DOF_COMPOSITE],
 			[

@@ -161,17 +161,17 @@ With the fog's `volumetric` option, the lights light the fog itself, through the
 
 ```mermaid
 flowchart LR
-    light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum step<br/>each cell adds up<br/>the cells in front of it"]
+    light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum steps<br/>each cell adds up<br/>the cells in front of it,<br/>block by block"]
     last["Last frame's grid"] --> light
     sum --> apply["Apply step<br/>each pixel adds the<br/>light at its depth"]
     scene["Scene color and depth"] --> apply
     apply --> effects["Custom effects, depth of field,<br/>bloom, final pass"]
 ```
 
-The engine lights a grid of cells that follow the camera's view, a technique called froxels, which Frostbite and Unreal Engine use too. The grid's columns and rows cover the view, and its slices run away from the camera, thin near it and thicker far away. Each frame runs three steps:
+The engine lights a grid of cells that follow the camera's view, a technique called froxels, which Frostbite and Unreal Engine use too. The grid's columns and rows cover the view, and its slices run away from the camera, thin near it and thicker far away. Each frame runs three stages:
 
 1. The light step lights each cell once. It finds how dense the fog is there, from the fog's `density` and `heightFalloff`. It adds the sun's light where the sun's shadow map sees the cell, and the light of each point and spot light of the cell's cluster, through its shadow. A phase function sets how much of each light the fog sends toward the camera. It sends most when the camera looks into the light, as `anisotropy` sets.
-2. The sum step adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them.
+2. The sum adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them. It runs in two steps: the first sums each block of 8 slices, and the second joins the blocks. So its cost grows with the slices, not with their square.
 3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects. It reads the grid through a smooth cubic filter over the 16 nearest cells, so the cells' edges never show, even on Medium's coarse grid.
 
 Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that settles the light in each cell, so rays show steady, smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.

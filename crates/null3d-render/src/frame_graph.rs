@@ -256,10 +256,13 @@ const EFFECT_TARGETS: [&str; MAX_EFFECTS] = [
 const DOF_PASSES: [&str; dof::STEPS] = ["DofSetup", "DofGather", "DofTent", "DofComposite"];
 const DOF_TARGETS: [&str; dof::STEPS] = ["dofHalf0", "dofHalf1", "dofHalf2", "dofColor"];
 /// The volumetric fog's light steps, one for each of the two light textures that they write and
-/// take turns with, the light textures, the sum and its target, and the apply step and its target,
-/// which the custom effects, depth of field, bloom and the final pass read.
+/// take turns with, the light textures, the block step and its target, the sum and its target, and
+/// the apply step and its target, which the custom effects, depth of field, bloom and the final
+/// pass read.
 const FOG_LIGHT_PASSES: [&str; 2] = ["FogLight0", "FogLight1"];
 const FOG_LIGHT: [&str; 2] = ["fogLight0", "fogLight1"];
+const FOG_BLOCK_PASS: &str = "FogBlock";
+const FOG_BLOCKS: &str = "fogBlocks";
 const FOG_SUM_PASS: &str = "FogSum";
 const FOG_SUMMED: &str = "fogSummed";
 const FOG_APPLY_PASS: &str = "FogApply";
@@ -370,6 +373,8 @@ pub(crate) enum Role {
     /// graph records it, apart from the binding of the camera's frame group, which the builder
     /// records. A frame draws the step of one texture and leaves out the other.
     FogLight(u8),
+    /// The volumetric fog's block step, which the graph records itself.
+    FogBlock,
     /// The volumetric fog's sum, which the graph records itself.
     FogSum,
     /// The volumetric fog's apply step, which the graph records itself.
@@ -1764,9 +1769,9 @@ impl FrameGraph {
     }
 
     /// Declares the volumetric fog's steps for a grid of `slices` slices: the two light steps, each
-    /// into a kept light texture that it reads the other one of, then the sum, which reads both,
-    /// and the apply step, which reads the scene's color and depth as every pass leaves them and
-    /// the sum's target. The light steps bind the camera's frame group, so they read what its
+    /// into a kept light texture that it reads the other one of, then the block step, which reads
+    /// both, the sum, which reads the block step's target, and the apply step, which reads the
+    /// scene's color and depth as every pass leaves them and the sum's target. The light steps bind the camera's frame group, so they read what its
     /// opaque pass reads of the lights and the shadows. The first light step reads the second's
     /// texture as the frame starts, before the second step writes it.
     fn declare_fog(&mut self, slices: u32) {
@@ -1792,10 +1797,15 @@ impl FrameGraph {
             }
             self.add(pass, Role::FogLight(parity as u8));
         }
-        let sum = Pass::new(FOG_SUM_PASS, PassKind::Fullscreen)
+        let block = Pass::new(FOG_BLOCK_PASS, PassKind::Fullscreen)
             .size(size)
             .reads(FOG_LIGHT[0])
             .reads(FOG_LIGHT[1])
+            .creates(FOG_BLOCKS, grid);
+        self.add(block, Role::FogBlock);
+        let sum = Pass::new(FOG_SUM_PASS, PassKind::Fullscreen)
+            .size(size)
+            .reads(FOG_BLOCKS)
             .creates(FOG_SUMMED, grid);
         self.add(sum, Role::FogSum);
         let apply = Pass::new(FOG_APPLY_PASS, PassKind::Fullscreen)
@@ -2348,6 +2358,7 @@ impl FrameGraph {
                 };
                 let sources = FogVolumeSources {
                     lit: FOG_LIGHT.map(id),
+                    blocks: id(FOG_BLOCKS),
                     summed: id(FOG_SUMMED),
                     color: id(SCENE_COLOR),
                     depth: id(SCENE_DEPTH),
@@ -2582,8 +2593,9 @@ impl FrameGraph {
                                 record(list, Role::FogLight(parity))?;
                                 fog.draw(list)?;
                             }
-                            Role::FogSum => self.fog_steps_ref().record(list, 1)?,
-                            Role::FogApply => self.fog_steps_ref().record(list, 2)?,
+                            Role::FogBlock => self.fog_steps_ref().record(list, 1)?,
+                            Role::FogSum => self.fog_steps_ref().record(list, 2)?,
+                            Role::FogApply => self.fog_steps_ref().record(list, 3)?,
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
