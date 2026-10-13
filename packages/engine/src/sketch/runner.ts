@@ -125,6 +125,12 @@ export interface SketchCore {
 	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
+	/**
+	 * Tells the page of an error that the sketch's own code threw in a frame, once for each distinct
+	 * message. The engine keeps drawing; the page reports it through `onSketchError`, and counts the
+	 * frames whose update failed.
+	 */
+	reportSketchError?(message: string): void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -252,6 +258,10 @@ export class SketchRunner {
 	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
+	/** True once the frame in progress has reported an error: its update did not run to its end. */
+	private updateFailed = false;
+	/** True while a frame is open, so an error outside one does not mark the next frame. */
+	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
@@ -345,6 +355,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
 			shadowTileSize,
@@ -357,8 +368,11 @@ export class SketchRunner {
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		// Directional lights that name no cascades or map size take the preset's.
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
+		const values = this.core.callValues();
+		values[0] = shadowCascades;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
+		values[0] = shadowMapSize;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.
@@ -368,7 +382,6 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(
@@ -679,7 +692,8 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
-		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
+		this.core.callValues()[0] = viewport.pixelRatio;
+		this.sketch.glue.setPixelRatio();
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -695,9 +709,11 @@ export class SketchRunner {
 	 */
 	private report(error: unknown): void {
 		const message = messageOf(error);
+		if (this.frameOpen) this.updateFailed = true;
 		if (!this.reported.has(message)) {
 			this.reported.add(message);
 			console.error(error);
+			this.sketch.reportSketchError?.(message);
 		}
 		if (this.holding) throw error;
 	}
@@ -789,7 +805,7 @@ export class SketchRunner {
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
-			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
+			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
@@ -803,8 +819,16 @@ export class SketchRunner {
 	 * them.
 	 */
 	private setLevelQuality(): number {
-		const threshold = this.lodThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(threshold, this.lodShadowFactor, this.lodFade);
+		const values = this.core.callValues();
+		values[0] = this.lodThreshold * this.governor.detailFactor;
+		values[1] = this.lodShadowFactor;
+		return this.sketch.glue.setLevelQuality(this.lodFade);
+	}
+
+	/** Gives the core the share of the render size that reflection targets take by default. */
+	private setReflectionScale(scale: number): number {
+		this.core.callValues()[0] = scale;
+		return this.sketch.glue.setReflectionScale();
 	}
 
 	/**
@@ -814,11 +838,11 @@ export class SketchRunner {
 	 */
 	private setShadowQuality(): number {
 		const { governor } = this;
+		this.core.callValues()[0] = this.cascadeBlend;
 		return this.sketch.glue.setShadowQuality(
 			governor.filter,
 			governor.farInterval,
 			this.followMovers,
-			this.cascadeBlend,
 		);
 	}
 
@@ -1021,6 +1045,8 @@ export class SketchRunner {
 		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
+		this.updateFailed = false;
+		this.frameOpen = true;
 		this.phaseStart = start;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
@@ -1154,6 +1180,9 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// A frame whose update threw still presents, so its record marks it: the figure that counts
+		// completed updates leaves it out.
+		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
 		// The memory figures change slowly, so a few times a window is enough. They start with the
 		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
 		// memory of the last time a reader sampled.
@@ -1176,6 +1205,7 @@ export class SketchRunner {
 		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
 		this.core.refresh();
 		this.endPhase(Phase.Record);
+		this.frameOpen = false;
 		this.record.commit(performance.now() - start);
 		// Only the job workers asked for so far have records, so the figures count the ones that run.
 		const asked = this.sketch.wantJobs(0);
