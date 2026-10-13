@@ -59,6 +59,14 @@ export interface GpuPassStats {
 export interface FrameSummary {
 	/** Frames that the sketch computed and the renderer drew within the measurement. */
 	frames: number;
+	/**
+	 * Frames per second whose scene update ran to its end. A frame whose sketch update threw still
+	 * presents, so `presentedFps` hides it; this figure falls to 0 as the engine fails to update.
+	 * The ramp of a comparison judges this figure, not the presented rate.
+	 */
+	updatedFps: number;
+	/** Frames of the measurement whose scene update did not run to its end. */
+	updateErrors: number;
 	/** CPU time per frame of the busiest thread, the time that limits the frame rate. */
 	cpuMs: Percentiles;
 	/** CPU time per frame summed over every thread. */
@@ -340,8 +348,22 @@ export function summarizeFrames(
 	const gpu = ring(Role.Gpu).busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
+	// A frame whose update failed still presented, so the ramp must not count its interval. The
+	// sketch thread's record marks each failed frame; the frames it never recorded count as failed.
+	const failed = new Set<number>();
+	sketch.frames.forEach((frame, i) => {
+		if ((sketch.counters[Counter.UpdateErrors]?.[i] ?? 0) !== 0) failed.add(frame);
+	});
+	const updated: number[] = [];
+	for (const frame of frames) {
+		if (failed.has(frame)) continue;
+		const ms = render.intervals[drawn.get(frame) as number] as number;
+		if (ms > 0) updated.push(ms);
+	}
 	return {
 		frames: frames.length,
+		updatedFps: ratePerSecond(updated) ?? 0,
+		updateErrors: frames.filter((frame) => failed.has(frame)).length,
 		cpuMs: percentiles(slowest),
 		cpuMsAllThreads: percentiles(total),
 		threads: threadStats,

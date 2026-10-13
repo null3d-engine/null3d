@@ -497,6 +497,59 @@ fn a_clip_weight_below_one_blends_with_the_rest_pose() {
 }
 
 #[test]
+fn a_table_that_grows_poses_as_one_made_large_enough() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(8);
+    let pose = |animations: &mut Animations, grow: bool| {
+        let id = animations.add_skeleton(skeleton.clone()).unwrap();
+        let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+        let mut added = Vec::new();
+        for i in 0..9u32 {
+            if grow && let Some((instances, joints)) = animations.growth_for(id, 1 << 20) {
+                let old = animations.try_grow(instances, joints).unwrap();
+                assert_eq!(old[0].len(), old[1].len());
+            }
+            let instance = animations.add_instance(id).unwrap();
+            animations.set_sample(instance, 0, clip, i as f32 * 0.1, 1.0);
+            added.push(instance);
+            animations.update(&jobs, 1.0 / 60.0);
+        }
+        animations.remove_instance(added[3]).unwrap();
+        animations.add_instance(id).unwrap();
+        animations.update(&jobs, 1.0 / 60.0);
+        animations.matrices()[..animations.joints() as usize * MATRIX_FLOATS].to_vec()
+    };
+    let mut small = Animations::new(&jobs, 2, 12).unwrap();
+    let grown = pose(&mut small, true);
+    assert_eq!(small.instance_capacity(), 16);
+    assert_eq!(small.joint_capacity(), 96);
+    let mut large = Animations::new(&jobs, 16, 96).unwrap();
+    assert_eq!(grown, pose(&mut large, false));
+    assert!(grown.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn growth_stops_at_the_most_joints_and_never_shrinks() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, _) = character(8);
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    assert_eq!(
+        animations.growth_for(id, 64),
+        None,
+        "the first instance fits"
+    );
+    animations.add_instance(id).unwrap();
+    assert_eq!(animations.growth_for(id, 64), Some((2, 16)));
+    assert_eq!(animations.growth_for(id, 12), None, "past the most joints");
+    animations.try_grow(1, 4).unwrap();
+    assert_eq!(
+        (animations.instance_capacity(), animations.joint_capacity()),
+        (1, 8)
+    );
+}
+
+#[test]
 fn many_instances_on_many_threads_match_one_thread() {
     let (skeleton, clips) = character(40);
     let build = |jobs: &JobSystem| {
