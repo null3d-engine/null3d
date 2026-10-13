@@ -184,6 +184,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0.25, 0.5, 1],
 	},
+	// Soft particles: while a particle system fades near the surfaces behind it, the camera copies
+	// its opaque depth once per frame, which splits its opaque and transparent passes. Low, which
+	// phones draw, keeps one render pass and draws particles with hard edges (D-131).
+	softParticles: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
 	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
 	// scale picks coarser levels too. 0 draws every mesh's base level. D-137 gives the figures.
@@ -536,6 +544,12 @@ export interface QualitySettings {
 	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when particle systems with `softness` fade where they near the surfaces behind them. The
+	 * camera then copies its opaque depth once per frame, while such a system draws. False draws
+	 * them with hard edges where they cut into the scene. It changes during play.
+	 */
+	softParticles: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

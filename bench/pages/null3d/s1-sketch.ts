@@ -48,6 +48,7 @@
 // the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
 // fading bands between levels.
 import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
+import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
 import { createAnimatedCrowd, readAnimated } from './crowd';
@@ -83,6 +84,7 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const particles = switches.has('particles') ? await createParticleFountains(context) : [];
 	const soft = switches.has('passes') ? createSoftGlow(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
@@ -212,8 +214,45 @@ export default defineSketch(async (context) => {
 			pose(time.now);
 			if (frames) Atomics.add(frames, 0, 1);
 		},
+		onLateUpdate() {
+			for (let k = 0; k < particles.length; k++) particles[k]?.update();
+		},
 	};
 });
+
+/**
+ * Two particle systems for the `particles` switch, which write births every frame: soft dots that
+ * bounce off the ground, and glows from a texture made in code that fade near the boxes behind
+ * them, so the frame copies the opaque depth.
+ */
+async function createParticleFountains(context: SketchContext): Promise<ParticleSystem[]> {
+	const fountain = await createParticles(context, {
+		rate: 4000,
+		lifetime: [1.5, 2.5],
+		shape: { type: 'cone', radius: 0.5, angle: 0.4 },
+		speed: [6, 9],
+		gravity: [0, -9.8, 0],
+		groundHeight: 0,
+		size: [0.08, 0.12],
+		colors: ['#9cc8ff', '#ffffff'],
+		alphaOverLife: [1, 1, 0],
+	});
+	const glows = await createParticles(context, {
+		...particleTextures.glow(context.textures),
+		position: [0, S1_BOB_HEIGHT, 0],
+		rate: 1500,
+		lifetime: 3,
+		shape: { type: 'box', size: [2 * S1_EXTENT, 2, 2 * S1_EXTENT] },
+		speed: 0.2,
+		turbulence: 1,
+		size: [0.3, 0.5],
+		colors: '#ffb060',
+		intensity: 2,
+		alphaOverLife: [0, 1, 0],
+		softness: 1,
+	});
+	return [fountain, glows];
+}
 
 /** A custom effect that tints each pixel toward a color. */
 const TINT = /* wgsl */ `
