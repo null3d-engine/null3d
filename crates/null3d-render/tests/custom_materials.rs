@@ -201,7 +201,7 @@ fn destroyed_materials_free_their_ids_and_pipelines_on_webgl2() {
 
 #[test]
 fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
-    use null3d_render::effects::{EFFECT_FLOATS, Effect};
+    use null3d_render::effects::{EFFECT_FLOATS, Effect, EffectMaps};
     use null3d_render::frame::CanvasOutput;
     use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
     use null3d_render::output::{Antialias, SceneColor};
@@ -225,6 +225,7 @@ fn destroying_a_custom_material_keeps_the_pipelines_of_custom_effects() {
             template,
             depth: false,
             values: [0.0; EFFECT_FLOATS],
+            maps: EffectMaps::default(),
         };
         settings.set_effect(place, Some(effect));
     }

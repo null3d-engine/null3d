@@ -80,7 +80,7 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
-#import null3d::gtao::{screen_occlusion}
+#import null3d::gtao::{screen_occlusion, screen_values}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
@@ -749,11 +749,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
 /// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
 /// light also fades where the shading `normal` reflects the view below the mesh's own
-/// `vertex_normal`. `relative` is the surface's position relative to the camera, `to_view` points
-/// from the surface toward the camera, and `dfg` holds the split-sum terms at the surface's
-/// roughness and view angle. In custom materials, `reflection` holds light from the mirror
-/// direction and its share, which takes the place of that share of the environment's reflection,
-/// with or without an environment.
+/// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
+/// through. `relative` is the surface's position relative to the camera, `to_view` points from the
+/// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
+/// view angle. In custom materials, `reflection` holds light from the mirror direction and its
+/// share, which takes the place of that share of the environment's reflection, with or without an
+/// environment.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
@@ -763,6 +764,7 @@ fn light_surface(
     dfg: vec2f,
     extra: vec3f,
     occlusion: f32,
+    contact: f32,
 #ifdef CUSTOM
     reflection: vec4f,
 #endif
@@ -771,10 +773,11 @@ fn light_surface(
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
     // A surface that faces away from the sun gets none of its light whatever the shadow map
-    // holds, so it skips the lookup and the filter's reads.
+    // holds, so it skips the lookup and the filter's reads. Contact shadows add the short shadows
+    // that the map's texels are too coarse to hold.
     let to_sun = -engine_frame.sun_direction.xyz;
     if dot(normal, to_sun) > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun);
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
     }
 #endif
     let sun = direct_light(
@@ -821,8 +824,9 @@ fn light_surface(
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
 /// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
-/// the frame's ambient occlusion. That darkens the indirect light, with the surface's own
-/// occlusion.
+/// the frame's screen texture. Its ambient occlusion darkens the indirect light, with the surface's
+/// own occlusion, and its contact shadows darken the sun's light where the surface receives
+/// shadows.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
@@ -846,6 +850,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
+    let screen = screen_values(pixel.xyz, blended);
     let reflected = light_surface(
         pbr,
         input.relativePosition,
@@ -854,7 +859,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
-        s.occlusion * screen_occlusion(pixel.xyz, blended),
+        s.occlusion * screen_occlusion(screen),
+        screen.w,
 #ifdef CUSTOM
         s.reflection,
 #endif

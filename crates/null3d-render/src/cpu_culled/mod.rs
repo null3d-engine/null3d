@@ -112,6 +112,7 @@ use crate::frame::{
     SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
@@ -174,8 +175,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = DOF + 1;
+    /// The uniform buffer of the full-screen passes' blocks.
+    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = FULLSCREEN + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -224,8 +227,12 @@ mod ids {
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The texel that a full-screen pass without an input image reads, and the one that it binds
+    /// in place of the scene's depth when it reads none.
+    pub const BLANK_PASS_COLOR: u32 = BLANK_TRANSMISSION + 1;
+    pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The row values of instance batches at the resident texture's rows, two texels per row.
-    pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
     /// The render graph's textures, from this id on.
@@ -244,8 +251,10 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The linear sampler of the full-screen passes.
+    pub const FULLSCREEN_SAMPLER: u32 = 7;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 7;
+    pub const SAMPLERS: u32 = 8;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -279,8 +288,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind groups of materials' maps, after the copy's.
-    pub const TEXTURE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the copy's.
+    pub const FULLSCREEN_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of materials' maps, after the full-screen passes'.
+    pub const TEXTURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -467,6 +478,13 @@ impl CpuCulledRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
+                        fullscreen: FullscreenIds {
+                            buffer: ids::FULLSCREEN,
+                            sampler: ids::FULLSCREEN_SAMPLER,
+                            first_group: ids::FULLSCREEN_GROUPS,
+                            blank_color: ids::BLANK_PASS_COLOR,
+                            blank_depth: ids::BLANK_PASS_DEPTH,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -810,8 +828,9 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
+            + dfg::BYTES
+            + ao::BLANK_BYTES;
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
                 + layout.draws_slot_bytes as usize
@@ -1096,6 +1115,7 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
+        self.settings.prepare_effect_maps();
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1109,6 +1129,8 @@ impl CpuCulledRenderer {
         self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
+        self.graph
+            .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
@@ -1197,12 +1219,18 @@ impl CpuCulledRenderer {
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
+            ao::upload_blank(list, arena, ids::BLANK_AO)?;
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings.record_materials(input, list, arena, table)?;
+        // The frame's texture work made the passes' targets and uploads ready, so the textures
+        // of the effects and the full-screen passes sample from this frame on.
+        self.settings.update_post_layers();
+        self.graph
+            .set_post_values(self.settings.effects(), self.settings.views());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
@@ -1534,13 +1562,15 @@ impl FrameBuilder for CpuCulledRenderer {
                 .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
         };
         let outlines = self.settings.outline().is_some();
-        // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
-        // the prepass, whose pipelines the layout holds.
-        let ao = self
-            .settings
-            .ao()
-            .zip(self.settings.camera_projection(canvas));
-        self.graph.set_ao(ao, self.settings.ao_scale());
+        // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
+        // turning them on or off can switch the prepass, whose pipelines the layout holds.
+        let settings = &self.settings;
+        self.graph.set_ao(
+            settings.ao(),
+            settings.contact(camera.as_ref(), canvas),
+            settings.camera_projection(canvas),
+            settings.screen_scale(),
+        );
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
@@ -1744,12 +1774,14 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn check_graph(&mut self) -> Result<(), GraphError> {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .check(self.settings.views(), self.settings.view_names())
     }
 
     fn graph_dot(&mut self) -> String {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());

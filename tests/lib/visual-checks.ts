@@ -59,7 +59,10 @@ export interface VisualLimits {
  * them. The shadow scene's seam limit fails its frame without the blend between cascades, where the
  * long edge's softness jumps where the first cascade hands over to the second. S4's contact limit fails its frame without the casters' offset in CI, and catches only
  * larger faults on the Mac's GPU. S4's acne limit fails its frame when the filter's reads compare
- * with the receiver's depth at its point instead of its plane.
+ * with the receiver's depth at its point instead of its plane. The shadow scene's contact limit
+ * fails it far from the origin without large-world mode, where 32-bit positions part the casters'
+ * feet from their shadows. S5's limits are the other scenes' limits, and a contact limit about
+ * 1.5 times its highest figure.
  */
 export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
 	'shadow-scene': {
@@ -67,9 +70,11 @@ export const VISUAL_LIMITS: Readonly<Record<string, VisualLimits>> = {
 		edgeOffsetPixels: 0.15,
 		stairStepPixels: 0.19,
 		seamPixels: 1.2,
+		contactGapPixels: 0.1,
 	},
 	s2: { changedPercent: 0.05, edgeOffsetPixels: 0.15 },
 	s4: { changedPercent: 0.05, edgeOffsetPixels: 0.114, contactGapPixels: 0.06, acnePercent: 0.2 },
+	s5: { changedPercent: 0.05, edgeOffsetPixels: 0.15, contactGapPixels: 0.25, acnePercent: 0.2 },
 };
 
 /** The views of the contact scene that the contact checks draw. */

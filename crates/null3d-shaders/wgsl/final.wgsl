@@ -256,6 +256,19 @@ fn effectPixel(pixel: vec2i) -> vec4f {
     return textureLoad(scene_color, effect_texel(pixel), 0);
 }
 
+/// The place in a render pass's texture that holds the image's place `uv`, from 0 at the top
+/// left to 1 at the bottom right. A pass's texture keeps the image's bottom row first, as materials
+/// sample it, so `v` turns around.
+fn effectPassUv(uv: vec2f) -> vec2f {
+    return vec2f(uv.x, 1.0 - uv.y);
+}
+
+/// The input image's size in pixels: the render size. An effect's own pixels have this size too;
+/// a full-screen pass's may differ.
+fn effectInputSize() -> vec2f {
+    return effect_blocks.blocks[0].size.xy;
+}
+
 /// The scene color at `uv` on the image, read with a linear filter.
 fn effectColor(uv: vec2f) -> vec4f {
     let render = effect_blocks.blocks[0].size.xy;
