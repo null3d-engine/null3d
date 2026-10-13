@@ -1,8 +1,8 @@
 # D-134: Screen-space reflections
 
-Status: proposed, 2026-10-11. Date: 2026-10-11. Task: M2-EX22.
+Status: decided by the helper of M2-EX22 on 13 October 2026, for the owner's review. The owner approved the wet street demo's look on 13 October 2026. Date: 2026-10-11. Task: M2-EX22.
 
-Summary: `post.set({ ssr })` adds screen-space reflections to the camera's opaque surfaces: wet streets, puddles, polished floors and metal. Before the opaque pass, a depth pyramid and a trace at half the render size find how far each surface's reflected ray travels before it hits something on the screen. The opaque pass then casts its own reflected ray along its shading normal, for that length, and reads last frame's color where the ray ends. Its roughness picks a blurrier mip level. The reflection takes the place of the environment's reflection by its confidence, which fades at the screen's edges and on misses. So the environment's light takes over with no hard edge. Planar reflections win on their plane, and surfaces that let light through keep the environment. The quality setting `ssrScale` keeps it off on Low, which phones run. Nothing runs or downloads while it is off. The figures come with the build.
+Summary: `post.set({ ssr })` adds screen-space reflections to the camera's opaque surfaces: wet streets, puddles, polished floors and metal. Before the opaque pass, a depth pyramid and a trace at half the render size find how far each surface's reflected ray travels before it hits something on the screen. The opaque pass then casts its own reflected ray along its shading normal, for that length, and reads last frame's color where the ray ends. Its roughness picks a blurrier mip level. The reflection takes the place of the environment's reflection by its confidence, which fades at the screen's edges and on misses. So the environment's light takes over with no hard edge. Planar reflections win on their plane, and surfaces that let light through keep the environment. The quality setting `ssrScale` keeps it off on Low, which phones run. Nothing runs or downloads while it is off. Medium traces at a quarter of the render size, and High and Ultra at half. On the Mac's WebGPU that costs about 0.7 ms and 1.8 ms of GPU time per frame.
 
 ## Question
 
@@ -70,17 +70,37 @@ On the 8-bit path the copy holds display color, so reflections look a little gre
 | Setting | Values | What it changes |
 | --- | --- | --- |
 | `ssrScale` | 0, 0.25 or 0.5 | The trace's size as a share of the render size. 0 draws none, with the environment's light alone |
-| `ssrSteps` | to be set | The most steps of the march per pixel |
+| `ssrSteps` | 16, 24, 32, 48 or 64 | The most steps of the march per pixel |
 
-Low keeps `ssrScale` at 0: phones keep the environment's light. The other presets' values come from the measurements below.
+Low keeps `ssrScale` at 0: phones keep the environment's light. Medium traces at 0.25 with 24 steps, High at 0.5 with 48, and Ultra at 0.5 with 64. The data below gives the cost.
 
 ## Data
 
-To come: GPU and CPU time per frame on WebGPU and WebGL2 per preset, and with the reflections off; the allocation check; the size check; the GPU check; and the image tests.
+GPU time per frame, S1 with 100,000 boxes over its polished floor, the camera orbiting. The switch `ssr` turns the reflections on, and `ssr=off` keeps the same floor with the reflections off. The governor was off, so each preset kept its settings. MacBook Pro M5 Max, Chrome 155, through `bun run bench:run -- --scenes s1 --pages null3d-webgpu,null3d-webgl2 --runs 3 --seconds 10`, on 13 October 2026 at f0e374a43. The display ran at 120 Hz on every page. Medians of 3 runs:
+
+| Preset (`ssrScale`, `ssrSteps`) | WebGPU GPU ms, off and on | Change | WebGL2 GPU ms, off and on | Change |
+| --- | --- | --- | --- | --- |
+| Medium (0.25, 24) | 3.25 and 3.91 | +0.66 | 3.69 and 4.93 | +1.24 |
+| High (0.5, 48) | 3.22 and 5.03 | +1.81 | 4.84 and 5.12 | +0.28 |
+| Ultra (0.5, 64) | 3.18 and 5.08 | +1.90 | 4.84 and 5.09 | +0.25 |
+
+- On WebGPU the trace's pixels set most of the cost: a quarter of the render size costs about a third of half size. 64 steps cost 0.07 ms more than 48.
+- On WebGL2 the figures spread more. On High and Ultra the floor without reflections already took 1.15 ms more than on Medium, and the reflections then added only about 0.25 ms. Take WebGL2's split as a rough guide.
+- The draw calls went from 3 to 14 on WebGPU, and from 5 to 14 on WebGL2. The new ones are the prepass, the depth copy, the six pyramid levels, the trace, and the color copy with its mip levels.
+- The busiest thread's CPU time did not change beyond its noise. It took 1.68 to 2.18 ms per frame with the reflections off, and 1.68 to 2.06 ms with them on.
+- Each step started at a load below 8. During four of the six steps the load rose to between 8.9 and 14 by the step's end. GPU time changes little with the CPU's load.
+
+Allocation, `bun run bench:allocation --ssr`: S1 with 100,000 boxes and the reflections on, on 13 October 2026 at f0e374a43. Every place stayed within its budget on both paths. On WebGPU the sketch worker took 236 bytes per frame and the render worker 1,529. The replay took 971 of its 1,024 bytes. The browser returns an encoder object for each of the reflections' passes. So with `--ssr` the check allows 64 bytes for each of 11 passes, as it does for bloom's passes. On WebGL2 the sketch worker took 221 bytes per frame and the render worker 168.
+
+Size, `bun run build:check-size` against the branch's base after Brotli. The ambient occlusion shader set now holds the pyramid and the trace, and loads on first use. It grew from 3.4 KB to 5.5 KB on WebGL2, and from 3.2 KB to 5.3 KB on WebGPU. The 96 lit shader builds grew 4 to 7%, as every lit build reads the trace and the color copy. The WebAssembly files grew 1.0 to 1.2%. The pipelined start grew 1.5 KB on WebGPU, to 136.5 KB, and 1.6 KB on WebGL2, to 133.5 KB, within the budget of 140 KB.
+
+GPU check, `bun run bench:gpu-check` against the branch's base on 13 October 2026: not judged, as the branch changes the benchmark pages (the `ssr` switches). S4 at Medium drew 3.95 ms per frame on the base and 4.00 on the branch, +1.2%. S6 at Medium moved +0.4%, S4 at High +1.3% and S6 at High +1.7%. Each stays far below the check's line of 25% and 0.3 ms.
+
+Image tests: the `ssr-*` tests and the `wet-street` demo run on WebGPU, compatibility mode and WebGL2. They have references on the Mac's GPU and on SwiftShader. `ssr.spec.ts` checks that each box's reflection hangs below it on its own side. It also checks that a rough floor blurs it, and that the floor shows no box without the reflections.
 
 ## Decision
 
-Option D, pending the measurements and the owner's review of the look.
+Option D: a depth pyramid and a trace at the screen texture's size run before the opaque pass. The opaque pass then samples last frame's color by the roughness's cone. Presets: Low keeps the reflections off, so phones keep the environment's light. Medium traces at a quarter of the render size with 24 steps, which costs about a third of half size on the Mac. High traces at half size with 48 steps, and Ultra with 64, which costs only 0.07 ms more. When frames take too long, the governor lowers `ssrScale` to a quarter in the step after ambient occlusion's.
 
 ## Consequences
 
