@@ -61,7 +61,7 @@ describe('the smoke plan', () => {
 		for (const id of [
 			'capabilities',
 			'isolation',
-			'shaders',
+			'shaders-1',
 			'uploads',
 			'mip-levels',
 			'shader-library-webgpu',
@@ -485,11 +485,11 @@ describe('the GPU pages of the checks plan', () => {
 			failures: [],
 			removed: [{ ...removed, name: '_group_0_binding_9_fs' }],
 		};
-		expect(judge(checkOf('shaders'), result, NONE_MISSING, context)).toEqual([]);
+		expect(judge(checkOf('shaders-1'), result, NONE_MISSING, context)).toEqual([]);
 		expect(notes.join('\n')).toContain('_group_0_binding_9_fs');
 		const undeclared = { ...removed, log: 'the source declares no texture uniform _x' };
 		expect(
-			judge(checkOf('shaders'), { ...result, failures: [undeclared] }, NONE_MISSING, context),
+			judge(checkOf('shaders-1'), { ...result, failures: [undeclared] }, NONE_MISSING, context),
 		).toEqual([`${removed.shader} fragment: ${undeclared.log}`]);
 	});
 
@@ -506,7 +506,7 @@ describe('the GPU pages of the checks plan', () => {
 			failures: [],
 			relinked: [{ shader, stage: 'link', log }],
 		};
-		expect(judge(checkOf('shaders'), result, NONE_MISSING, context)).toEqual([]);
+		expect(judge(checkOf('shaders-1'), result, NONE_MISSING, context)).toEqual([]);
 		expect(notes).toEqual([
 			`1 program linked at the second try after Safari's random Metal fault: ${shader} (${error})`,
 		]);

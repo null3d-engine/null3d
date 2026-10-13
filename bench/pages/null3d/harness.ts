@@ -66,13 +66,17 @@ export interface Null3dPageOptions {
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
  * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
- * lets light through under it, `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * lets light through under it, `particles` adds two particle systems over it, one of them soft,
+ * `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
+ * makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
- * a custom material reads, `sides` draws S2's boxes
- * see-through and double-sided: `two` draws each one's back faces, then its front faces, and `one`
- * draws both in one draw, `alpha=hash` draws S2's boxes with the alpha hash, and `still` makes that
- * share of S5's knights stand still in one pose, as waiting characters do, and `frames` makes S1
- * count the frames it steps, which the page publishes for the allocation check.
+ * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
+ * hemisphere lights to S1, `sides` draws S2's boxes see-through and double-sided: `two` draws each
+ * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
+ * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
+ * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
+ * publishes for the allocation check. A switch missing here never reaches the sketch, which then
+ * runs without it, so a unit test checks that every switch a sketch reads is listed.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -99,9 +103,13 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'particles',
+	'passes',
 	'still',
 	'batchShadows',
 	'rowValues',
+	'levels',
+	'hemisphere',
 	'frames',
 ] as const;
 
@@ -169,6 +177,13 @@ export function runNull3dPage(
 		});
 		bindLabels(engine, Number(params.get('labels') ?? 0));
 		const whole = pageOptions.started?.(engine);
+		// Tools that sample a running scene, such as the soak and allocation checks, start only once
+		// the scene is whole, so a scene that streams in finishes loading in their warm-up.
+		const markWhole = () => {
+			(globalThis as { __null3dWhole?: boolean }).__null3dWhole = true;
+		};
+		if (whole) whole.then(markWhole, () => {});
+		else markWhole();
 		const log = pageOptions.trace ? new QualityLog() : undefined;
 		// One handler, since only the first handler hears the messages that came before it.
 		engine.onSketchMessage((name, data) => {
@@ -194,9 +209,10 @@ export function runNull3dPage(
 				},
 			}),
 		};
-		// A demo keeps the engine running until the page closes. A tool that watches a long run, such
-		// as the soak test, measures the engine through the page.
-		if (options.demo) {
+		// A demo keeps the engine running until the page closes, and so does `?keep`, which runs the
+		// scene as a timed run does. A tool that watches a long run, such as the soak test, measures
+		// the engine through the page.
+		if (options.demo || options.keep) {
 			(globalThis as { __null3dEngine?: Engine }).__null3dEngine = engine;
 			return report;
 		}

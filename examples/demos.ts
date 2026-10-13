@@ -1,5 +1,6 @@
-// The feature demos. Each demo is a sketch of under 150 lines in a folder of its own, such as
-// instances/sketch.ts. The examples page lists the demos by group and runs each one live, and the image test
+// The demos. Each feature demo is a sketch of under 150 lines in a folder of its own, such as
+// instances/sketch.ts. A showcase scene has no line limit, and its folder, such as
+// showcase/creek/, holds its sketch.ts and the modules that it imports. The examples page lists the demos by group and runs each one live, and the image test
 // manifest draws each one in hold mode at its hold time. Each entry names its sketch with a literal
 // `new URL('./<name>/sketch.ts', import.meta.url)`, so a production build of the page ships every
 // sketch, under any address prefix.
@@ -61,13 +62,55 @@ export interface Demo {
 	 * in code, and loads files only when loading them is what it shows.
 	 */
 	assets?: string;
+	/**
+	 * Choices that the page offers as buttons, such as a time of day. The page sends each pick to the
+	 * sketch as a message named by the choice, with the option's text as its value.
+	 */
+	choices?: readonly DemoChoice[];
 }
+
+/** A choice that a page offers for a demo: one button for each option. */
+export interface DemoChoice {
+	/** The name of the message that the page sends to the sketch. */
+	name: string;
+	/** The choice's label, such as "Time of day". */
+	label: string;
+	/** The options, as the buttons show them. The first is the sketch's own at its start. */
+	options: readonly string[];
+}
+
+/** The demo's sketch module, from the examples folder. */
+export const sketchPath = (demo: Demo) =>
+	demo.code?.endsWith('/') ? `${demo.code}sketch.ts` : `${demo.name}/sketch.ts`;
 
 /** How every demo's camera moves: the first sentence of most demos' controls. */
 const CAMERA =
 	'Drag to turn the camera, scroll or pinch to zoom, and right-drag or drag two fingers to pan.';
 
 export const DEMOS: readonly Demo[] = [
+	{
+		name: 'creek',
+		group: 'Showcase',
+		sketch: new URL('./showcase/creek/sketch.ts', import.meta.url),
+		code: 'showcase/creek/',
+		title: 'Creek',
+		scene: 'A stream in a grassy valley',
+		summary:
+			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
+		assets:
+			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
+		controls: `${CAMERA} Pick a time of day, and turn on the DSLR lens to focus on the middle of the view.`,
+		hold: 4,
+		timeoutSeconds: 60,
+		choices: [
+			{
+				name: 'mood',
+				label: 'Time of day',
+				options: ['Afternoon', 'Golden', 'Blue', 'Night', 'Studio'],
+			},
+			{ name: 'dslr', label: 'DSLR', options: ['Off', 'On'] },
+		],
+	},
 	{
 		name: 'generators',
 		group: 'Building scenes',
@@ -90,6 +133,30 @@ export const DEMOS: readonly Demo[] = [
 			'An island and a crystal made with geometry.fromArrays. The engine computes their normals: smooth where triangles share vertices, and hard edges where they do not. Each vertex of the island has a color of its own, and a reflection pass mirrors the island in the water.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the crystal over the hills.`,
 		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'extra-shapes',
+		group: 'Building scenes',
+		sketch: new URL('./extra-shapes/sketch.ts', import.meta.url),
+		title: 'Extra shapes',
+		scene: 'Mirror floor at dusk',
+		summary:
+			'A torus knot, polyhedra, a lathe, an extruded star, a tube and a flat heart from @null3d/geometry, with the parameters of three.js geometry classes, in glass, metals and glazed clay over a polished stone floor.',
+		controls: `${CAMERA} Move the mouse, or tap, and the shapes turn toward it.`,
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'vertex-updates',
+		group: 'Building scenes',
+		sketch: new URL('./vertex-updates/sketch.ts', import.meta.url),
+		title: 'Vertex updates',
+		scene: 'Pool at golden hour',
+		summary:
+			"A glowing float leaves rings on a pool. Each frame the sketch rewrites the water's positions and normals and passes them to mesh.updateVertices, which allocates nothing.",
+		controls: `${CAMERA} Move the mouse, or tap, to lead the float.`,
+		hold: 2.5,
 		timeoutSeconds: 60,
 	},
 	{
@@ -130,6 +197,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'shader-inputs',
+		group: 'Light, materials and effects',
+		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
+		code: 'shader-inputs/',
+		title: 'Custom shader inputs',
+		scene: 'Crystal spiral',
+		summary:
+			"900 crystals in one batch take their color and their place in a wave from their row, which a custom material reads as input.instance. Three stones share one material, whose bands follow each stone's own axis through object.worldMatrix, and the picked stone lights up by object.id.",
+		controls: `${CAMERA} Hover over a stone, or tap it, to light it.`,
+		hold: 1,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),
@@ -139,6 +218,19 @@ export const DEMOS: readonly Demo[] = [
 			"A day passes over a lighthouse in 40 seconds. timeOfDay gives each hour's sky, sun or moon, fog and exposure, and the sky's light follows the sun. At dusk the windows light up and the lighthouse beams sweep the sea.",
 		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
 		hold: 6,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'contact-shadows',
+		group: 'Light, materials and effects',
+		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
+		code: 'contact-shadows/',
+		title: 'Contact shadows',
+		scene: 'Stone garden',
+		summary:
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
+		hold: 1,
 		timeoutSeconds: 60,
 	},
 	{
@@ -204,6 +296,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'particles',
+		group: 'Light, materials and effects',
+		sketch: new URL('./particles/sketch.ts', import.meta.url),
+		code: 'particles/',
+		title: 'Particles',
+		scene: 'Campfire glade',
+		summary:
+			'A campfire in an autumn glade at dusk: flames from a flipbook made in code, rising embers, thin smoke lit from below, leaves that tumble from a birch and settle, and blinking fireflies. The GPU moves every particle, and the sketch writes only the births.',
+		controls: `${CAMERA} Move the mouse, or tap, to either side of the fire to turn the wind.`,
+		hold: 4,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'security-camera',
 		group: 'Light, materials and effects',
 		sketch: new URL('./security-camera/sketch.ts', import.meta.url),
@@ -226,6 +331,20 @@ export const DEMOS: readonly Demo[] = [
 		assets: 'Shows how a skinned character and its animation clips load from a glTF file.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the Knight.`,
 		hold: 4.5,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'look-at',
+		group: 'Motion and interaction',
+		sketch: new URL('./look-at/sketch.ts', import.meta.url),
+		title: 'Joint overrides',
+		scene: 'Knights watch a wisp',
+		summary:
+			'Seven KayKit Knights stand in a ring in a castle courtyard at dusk and watch a wisp of light. Each plays its own idle clip, and a look-at turns its spine, chest and head toward the wisp on top of the clip, each joint within its limit.',
+		assets:
+			'Shows joint overrides on a skinned character and its clips, which load from a glTF file.',
+		controls: `${CAMERA} Move the mouse, or tap, to lead the wisp.`,
+		hold: 3,
 		timeoutSeconds: 60,
 	},
 	{
@@ -311,6 +430,18 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'100,000 columns in one batch at golden hour, and 10,000 on phones. Each frame the sketch writes the height of every row into the batch arrays, with no call per row.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the center of the wave.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'forest',
+		group: 'Scale',
+		sketch: new URL('./forest/sketch.ts', import.meta.url),
+		title: 'Levels of detail',
+		scene: 'Pine forest',
+		summary:
+			'40,000 pines over rolling hills at golden hour, and 8,000 on phones, in one instance batch. Each pine has four levels of detail, from 6,400 triangles down to 40, and every tree picks its own in each frame by its size on the screen. Near a switch the two levels share the pixels, so no tree pops.',
+		controls: `${CAMERA} Press L to draw every tree at its full detail, and again to bring the levels back.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},

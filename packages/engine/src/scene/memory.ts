@@ -1,16 +1,25 @@
-// Typed-array views on engine memory. A shared memory keeps its old buffer when it grows, but
-// views made before the growth cannot reach past the old end; the single-threaded build's memory
-// detaches every view when it grows, and a write through a detached view is lost. The scene's
-// arrays also move within the memory when the scene grows, which the core counts in a word of its
-// own. Each view therefore is re-made when the buffer changes or that count does. Every core call
-// that can grow the memory or the scene goes through `checkGrowth`, and the sketch runner
-// refreshes after the frame's steps, so sketch code never writes through a stale view. When the engine stops, every later call
-// through the core and every view made after it fails with E1420: the page keeps its copy of the
-// core for the next engine, which sketch code that outlives the engine must never reach.
+// The engine core and its memory, on the sketch's thread. Views of the memory come from the one
+// place that makes them (`shared/memory-views.ts`), which also has every object that keeps views
+// drop them when the memory grows. The scene's arrays also move within the memory when the scene
+// grows, which the core counts in a word of its own. Each view therefore is made again when the
+// memory grows or that count changes, which steps the generation. Every core call that can grow
+// the memory or the scene goes through `checkGrowth`, and the sketch runner refreshes after the
+// frame's steps, so sketch code never writes through a stale view. When the engine stops, every
+// later call through the core and every view made after it fails with E1420: the page keeps its
+// copy of the core for the next engine, which sketch code that outlives the engine must never
+// reach.
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import type { CoreGlue } from '../shared/core';
+import {
+	type HeapConstructor,
+	MemoryViews,
+	type ViewConstructor,
+	type ViewHolder,
+} from '../shared/memory-views';
+
+export type { HeapConstructor, ViewConstructor, ViewHolder };
 
 /** The error of a call that reached an engine after it stopped. */
 function stoppedError(): EngineError {
@@ -26,17 +35,8 @@ function stoppedGlue(): CoreGlue {
 	});
 }
 
-export type ViewConstructor<T> = new (
-	buffer: ArrayBufferLike,
-	byteOffset: number,
-	length: number,
-) => T;
-
 /** The engine core and its memory, with view helpers. */
-export class CoreMemory {
-	private viewsOf: ArrayBufferLike;
-	/** Increments each time the views must be re-made. */
-	generation = 0;
+export class CoreMemory extends MemoryViews implements ViewHolder {
 	/** The core's copy of the world matrix it read last, made again when the memory grows. */
 	private worldMatrixView: Float64Array | undefined;
 	/** The core's count of moves of viewed arrays, made again when the memory grows. */
@@ -52,10 +52,11 @@ export class CoreMemory {
 	 */
 	constructor(
 		public glue: CoreGlue,
-		readonly memory: WebAssembly.Memory,
+		memory: WebAssembly.Memory,
 		private readonly movedAddress = 0,
 	) {
-		this.viewsOf = memory.buffer;
+		super(memory);
+		this.holdViews(this);
 		this.moved = this.movedCount();
 	}
 
@@ -70,61 +71,51 @@ export class CoreMemory {
 	 */
 	stop(): void {
 		this.stoppedNow = true;
+		this.dropViews();
 		this.glue = stoppedGlue();
 		this.generation++;
-		this.worldMatrixView = undefined;
 	}
 
 	/**
-	 * True once after the memory's buffer changed or viewed arrays moved; callers then re-make their
-	 * views.
+	 * @internal Forgets the views of the core's own words and those of the glue, which their next
+	 * use makes again.
+	 */
+	dropViews(): void {
+		this.worldMatrixView = undefined;
+		this.movedView = undefined;
+		this.glue.dropMemoryViews?.();
+	}
+
+	/**
+	 * True once after the memory grew or viewed arrays moved; the generation steps then, and
+	 * callers make their views again.
 	 */
 	refresh(): boolean {
 		if (this.stoppedNow) return false;
-		const buffer = this.memory.buffer;
-		if (buffer !== this.viewsOf) {
-			this.viewsOf = buffer;
-			this.movedView = undefined;
-		} else {
+		if (!this.grown()) {
 			const moved = this.movedCount();
 			if (moved === this.moved) return false;
+			this.generation++;
 		}
 		this.moved = this.movedCount();
-		this.generation++;
 		return true;
 	}
 
 	/** The core's count of moves of viewed arrays, or 0 for a core without one. */
 	private movedCount(): number {
 		if (this.movedAddress === 0) return 0;
-		let view = this.movedView;
-		if (view === undefined) {
-			view = new Uint32Array(this.memory.buffer, this.movedAddress, 1);
-			this.movedView = view;
-		}
-		return view[0] as number;
+		this.movedView ??= super.view(Uint32Array, this.movedAddress, 1);
+		return this.movedView[0] as number;
 	}
 
-	/** A view of `length` values of `type` on engine memory from `address`. */
-	view<T>(type: ViewConstructor<T>, address: number, length: number): T {
+	override view<T>(type: ViewConstructor<T>, address: number, length: number): T {
 		if (this.stoppedNow) throw stoppedError();
-		return new type(this.memory.buffer, address, length);
+		return super.view(type, address, length);
 	}
 
-	f32(address: number, length: number): Float32Array {
-		return this.view(Float32Array, address, length);
-	}
-
-	f64(address: number, length: number): Float64Array {
-		return this.view(Float64Array, address, length);
-	}
-
-	u32(address: number, length: number): Uint32Array {
-		return this.view(Uint32Array, address, length);
-	}
-
-	i32(address: number, length: number): Int32Array {
-		return this.view(Int32Array, address, length);
+	override heap<T>(type: HeapConstructor<T>): T {
+		if (this.stoppedNow) throw stoppedError();
+		return super.heap(type);
 	}
 
 	/**
@@ -135,12 +126,9 @@ export class CoreMemory {
 	readWorldMatrix(handle: number, out: Float64Array): number {
 		const status = this.glue.worldMatrix(handle);
 		if (status !== 0) return status;
-		let view = this.worldMatrixView;
-		if (view === undefined || view.buffer !== this.memory.buffer) {
-			view = this.f64(this.glue.worldMatrixAddress(), out.length);
-			this.worldMatrixView = view;
-		}
-		out.set(view);
+		this.grown();
+		this.worldMatrixView ??= this.f64(this.glue.worldMatrixAddress(), out.length);
+		out.set(this.worldMatrixView);
 		return 0;
 	}
 

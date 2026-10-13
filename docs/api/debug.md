@@ -57,6 +57,8 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
 | `skeleton(object, color)` | The joints of an animated object: a line from each joint of a skin to its parent joint, as three.js's `SkeletonHelper` draws them | Blue at the joint, green at its parent |
 
+`grid` takes `center`, `color` and `centerColor`, gray (`'#888888'`) and darker gray (`'#444444'`) by default. `light` takes `position`, `size` in meters (1 by default) and `color`.
+
 Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
@@ -259,7 +261,7 @@ The engine counts every draw of every pass on the thread that draws. That covers
 | `JS heap` | The JavaScript heap of the page's own thread, from `performance.memory`, where the browser gives it |
 | Whole page | The memory of the whole page and its workers, from `performance.measureUserAgentSpecificMemory`, where the browser gives it |
 
-The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. The engine's job workers never stop to run it, so in the threaded build each measurement takes about a minute. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
+The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. While a measurement runs, the engine's idle job workers leave the job loop to run it between frame jobs, so it does not wait on them. `measurePageMemory()` from `@null3d/engine/stats` takes one measurement the same way, for a page that wants the browser's own breakdown. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
 
 Some browsers offer the measurement but never answer it. When no answer comes within two minutes of the first request, the overlay hides the line. The page then asks no more for the rest of its life. An answer that comes later still shows.
 

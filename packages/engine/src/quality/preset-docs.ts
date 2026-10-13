@@ -80,6 +80,10 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
+	contactShadowSteps: {
+		label: 'Contact shadows',
+		print: (value) => (Number(value) > 0 ? `${value} steps at half resolution` : 'off'),
+	},
 	dofSamples: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
@@ -97,11 +101,18 @@ export const SETTING_DOCS: {
 				Number(value)
 			] ?? '',
 	},
+	lodThreshold: {
+		label: 'Level of detail threshold',
+		print: (value) => (Number(value) > 0 ? `${value} px` : 'base levels only'),
+	},
+	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
+	lodFade: { label: 'Level of detail fades', print: yesNo },
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
 	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
+	softParticles: { label: 'Soft particles', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

@@ -185,11 +185,10 @@ Each frame's list of GPU commands grows with the scene, so no count of objects o
 
 Animated characters also cost skinning work and memory:
 
-- WebGPU skins each character that some view draws once per frame, in a compute pass. So a crowd costs GPU time in proportion to the vertices of the characters that move. A character out of every view costs no skinning work. Neither does a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
-- In a crowd where many characters wait or stand guard, pause them with `setTimeScale(0)` while they wait. On WebGPU a still pose costs no skinning work, and a moving one costs its vertices in every frame, even when it barely moves.
-- Each skinned copy keeps its own skinned vertices in GPU memory, even when copies share a mesh. The S5 benchmark's 500 knights take about 50 MB: 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
-- WebGPU skinning holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
-- WebGL2 skins in the vertex shader of each pass, so shadows skin a character again. Copies that share a mesh and a material draw in one instanced draw.
+- Both paths skin each character in the vertex shader of each pass that draws it, so shadows skin a character again. A crowd costs GPU time in proportion to the vertices that each pass draws. A character out of every view costs no skinning work. Copies that share a mesh and a material draw in one instanced draw, custom materials included.
+- On WebGPU, the skinning pass skins morphed characters once per frame instead, and each one draws on its own. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
+- Each copy that the skinning pass skins keeps its own skinned vertices in GPU memory, even when copies share a mesh. A knight of the S5 benchmark takes 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
+- The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
 
 For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
 
@@ -263,7 +262,7 @@ Objects marked with `setOccluder(true)` or the `occluder` option hide what lies 
 
 ### Blockers on WebGL2
 
-On WebGL2, objects marked with `setOccluder(true)` or the `occluder` option hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion culling on, and every preset leaves it off. Objects marked with `setOccluder(true)` or the `occluder` option then hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. A model from `assets optimize` blocks with every mesh that got a blocker, small props too. Each such blocker takes only a few dozen triangles, and the engine skips those under 2 pixels of the buffer. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers and stored trees](assets-pipeline.md#blockers-and-stored-trees)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
 
 ### Occlusion culling on the GPU
 
@@ -301,7 +300,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `occludedEntries` | On WebGL2, the entries per frame that blockers hid after the frustum test. It is null on WebGPU |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
-| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none, and neither does a new render scale |
+| `gpuObjects` | GPU buffers, textures, views, samplers and bind groups that the engine made. Steady play makes none. A new render scale makes some only while a reflection pass draws: its texture, and the bind groups made again with it |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
@@ -314,7 +313,7 @@ The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cu
 
 To measure your page with no code, run `bunx @null3d/cli bench` in your project's folder. It builds the project for production and opens the page in a headless browser with the `?bench` switch. That switch publishes the running engine as `window.__null3dEngine`. Then `bench` takes 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. It prints the median and the spread of the figures above ([The `null3d` command](../cli/null3d.md#bench)).
 
-Chrome measures the heap of the page and its workers only when every worker answers, or after a minute. Job workers never answer while the engine runs, so each sample takes about a minute and leaves them out. Chrome also adds shared memory, such as the engine's own, to each worker's figure. A render worker whose own heap is 1.4 MB can show as 52 MB. The `jsHeapNote` field says when the figures cover only the page.
+Chrome measures the heap of the page and its workers only when every worker answers, or after a minute. While a measurement runs, the engine's idle job workers stop waiting in the job loop and answer it between frame jobs, so a sample takes about a second. Chrome also adds shared memory, such as the engine's own, to each worker's figure. A render worker whose own heap is 1.4 MB can show as 52 MB. The `jsHeapNote` field says when the figures cover only the page.
 
 ### The presented rate, the completed rate and GPU time
 

@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MEMORY_REFUSED } from '../pages/lib/room.ts';
+import { MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
 import type { DeviceFacts } from './device-record.ts';
 import type { GpuPath, MissingAllowed } from './gpu-paths.ts';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
@@ -109,6 +110,35 @@ const HELD_MEMORY_FAILURE =
  */
 export function rerunsInNewTab(browser: string, verdict: readonly string[]): boolean {
 	return browser === 'Safari' && verdict.some((problem) => HELD_MEMORY_FAILURE.test(problem));
+}
+
+/** The address of the sketch module that a failure names as not loaded (E1410), if any. */
+export function unloadedModule(verdict: readonly string[]): string | undefined {
+	for (const problem of verdict) {
+		const url = /\bE1410: the sketch module (\S+) did not load/.exec(problem)?.[1];
+		if (url) return url;
+	}
+	return undefined;
+}
+
+/** How long the runner waits for the test server to send a module again, for a failure's note. */
+const MODULE_NOTE_MS = 60_000;
+
+/**
+ * A note that names a module that a page could not import, with what the test server sends for it
+ * now: its size and time, or the server's own failure. A module that the server sends in full
+ * points at the browser, and its size shows whether the module was too large.
+ */
+export async function moduleNote(url: string): Promise<string> {
+	const start = performance.now();
+	try {
+		const response = await fetch(url, { signal: AbortSignal.timeout(MODULE_NOTE_MS) });
+		const bytes = (await response.arrayBuffer()).byteLength;
+		const ms = Math.round(performance.now() - start);
+		return `module import failed: ${url}. The test server now answers ${response.status} with ${(bytes / 1e6).toFixed(2)} MB in ${ms} ms`;
+	} catch (e) {
+		return `module import failed: ${url}. The test server does not send it now either: ${(e as Error).message}`;
+	}
 }
 
 /** The run that waiting runner pages start, and the runners that may start it now. */
@@ -276,15 +306,17 @@ export function readShard(text: string | undefined): Shard | null {
 
 /**
  * The items of one shard of a plan, in the plan's order. An item stays in the shard of the items
- * that `needs` names for it, so each group of items that need each other moves as one. The groups,
- * in the order of their first items, go each to the shard with the fewest items so far, the first
- * such shard on a tie. So the split depends only on the plan, and the shards' item counts differ
- * by at most the size of the largest group.
+ * that `together` names for it, so each group of items that need each other moves as one. The
+ * groups, the longest first by the seconds that `seconds` expects of each item, go each to the
+ * shard with the fewest seconds so far, the first such shard on a tie. Groups of the same length
+ * keep the plan's order. So the split depends only on the plan, and the slow pages spread over the
+ * shards in place of meeting in one.
  */
 export function shardItems<Check>(
 	items: readonly PlanItem<Check>[],
 	{ index, count }: Shard,
-	needs: (item: PlanItem<Check>) => readonly string[],
+	together: (item: PlanItem<Check>) => readonly string[],
+	seconds: (item: PlanItem<Check>) => number,
 ): PlanItem<Check>[] {
 	// Each item points to another item of its group, and the group's root points to itself.
 	const parent = new Map(items.map((item) => [item.id, item.id]));
@@ -293,15 +325,16 @@ export function shardItems<Check>(
 		return up === id ? id : root(up);
 	};
 	for (const item of items)
-		for (const id of needs(item)) if (parent.has(id)) parent.set(root(item.id), root(id));
-	const sizes = new Map<string, number>();
-	for (const item of items) sizes.set(root(item.id), (sizes.get(root(item.id)) ?? 0) + 1);
-	const counts = new Array<number>(count).fill(0);
+		for (const id of together(item)) if (parent.has(id)) parent.set(root(item.id), root(id));
+	const lengths = new Map<string, number>();
+	for (const item of items)
+		lengths.set(root(item.id), (lengths.get(root(item.id)) ?? 0) + seconds(item));
+	const totals = new Array<number>(count).fill(0);
 	const shardOf = new Map<string, number>();
-	for (const [group, size] of sizes) {
-		const fewest = counts.indexOf(Math.min(...counts));
-		shardOf.set(group, fewest);
-		counts[fewest] = (counts[fewest] ?? 0) + size;
+	for (const [group, length] of [...lengths].sort(([, a], [, b]) => b - a)) {
+		const shortest = totals.indexOf(Math.min(...totals));
+		shardOf.set(group, shortest);
+		totals[shortest] = (totals[shortest] ?? 0) + length;
 	}
 	return items.filter((item) => shardOf.get(root(item.id)) === index - 1);
 }
@@ -386,13 +419,19 @@ export async function inLanes<T>(
 	if (failed) throw failed.reason;
 }
 
-/** Time a batch may take: every page's timeout, plus time to open the browser and pause between pages. */
+/**
+ * Time a batch may take: the most time that each page may get, a few times its timeout where its
+ * loads or its own pace ask for it, plus time to open the browser and pause between pages.
+ */
 export function batchTimeoutMs(plan: Plan): number {
 	const PER_ITEM_SLACK_SECONDS = 5;
 	const START_SECONDS = 120;
 	return (
 		(START_SECONDS +
-			plan.items.reduce((sum, item) => sum + item.timeoutSeconds + PER_ITEM_SLACK_SECONDS, 0)) *
+			plan.items.reduce(
+				(sum, item) => sum + item.timeoutSeconds * MOST_TIME_SHARE + PER_ITEM_SLACK_SECONDS,
+				0,
+			)) *
 		1000
 	);
 }
