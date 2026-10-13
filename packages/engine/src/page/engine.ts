@@ -369,7 +369,8 @@ export interface EngineCapabilities {
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
 	 * averages the samples after the tone mapping. It reports the path that the engine started on:
-	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on.
+	 * in compatibility mode, bloom moves the engine to HDR color with FXAA when a sketch turns it on,
+	 * and so does a `subsurfaceSamples` setting above 0 that the page or the sketch gives.
 	 */
 	hdr: boolean;
 	/**

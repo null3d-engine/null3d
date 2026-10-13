@@ -289,7 +289,10 @@ export class SketchRunner {
 	private aoSetting = 0;
 	/** True while ambient occlusion draws: the sketch has it on, and its scale is above 0. */
 	private aoDrawn = false;
-	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
+	/**
+	 * True once the core draws HDR color for an effect or the subsurface blur, on a device that
+	 * started on the 8-bit path.
+	 */
 	private hdrForEffects = false;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
@@ -865,10 +868,11 @@ export class SketchRunner {
 
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
-	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
-	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
-	 * until they are built, and the frame before stays on screen meanwhile.
+	 * The first time bloom, a custom effect or a custom tone curve turns on, or the page or the sketch
+	 * itself gives the subsurface blur taps, on a device that started on the 8-bit path only for
+	 * MSAA, the core moves to HDR color with FXAA for the engine's life. A preset's taps alone do not
+	 * move it. Returns true then: the frame has new targets and pipelines, so the thread that draws
+	 * holds it until they are built, and the frame before stays on screen meanwhile.
 	 */
 	private followBloom(): boolean {
 		const on = this.post.bloomOn;
@@ -877,8 +881,10 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
-			return false;
+		if (this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
+		const { quality } = this;
+		const blur = quality.settings.subsurfaceSamples > 0 && quality.chose('subsurfaceSamples');
+		if (!this.post.needsHdr && !blur) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)

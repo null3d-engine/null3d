@@ -1,8 +1,9 @@
-// The subsurface blur spreads skin's light under its surface, on every tier whose engine draws HDR
-// color: the subsurface tests of the image test manifest. The 8-bit path draws no blur. A panel
-// that blurs nothing still draws a plausible picture, which a new reference could take in. This
-// spec measures each effect against the plain panel beside it, or against the same panel without
-// the blur, so it fails even before a test has references.
+// The subsurface blur spreads skin's light under its surface: the subsurface tests of the image
+// test manifest. The sketch gives the blur its taps itself, which moves compatibility mode from its
+// 8-bit path to HDR color, so every tier blurs. A panel that blurs nothing still draws a plausible
+// picture, which a new reference could take in. This spec measures each effect against the plain
+// panel beside it, or against the same panel without the blur, so it fails even before a test has
+// references.
 import { expect, test } from '@playwright/test';
 import {
 	type Image,
@@ -89,17 +90,13 @@ const edges = (image: Image, pixels: readonly number[]) => {
 };
 
 /**
- * Checks that the right panel's light spreads into the bar's shadow and keeps its level away. On the
- * 8-bit path, which draws no blur, both panels' shadows match instead. Measured on 13 October 2026,
- * the blur lifts the shadow by 0.021 to 0.030 on the HDR path, and by 0.0003 at most without it.
+ * Checks that the right panel's light spreads into the bar's shadow and keeps its level away.
+ * Measured on 13 October 2026, the blur lifts the shadow by 0.021 to 0.030, and by 0.0003 at most
+ * without it.
  */
 function expectBlur(image: Image, id: string): void {
 	const [plain, skin] = [shaded(image, 0), shaded(image, 1)];
 	const gain = brightness(image, skin) - brightness(image, plain);
-	if (!image.hdr) {
-		expect.soft(Math.abs(gain), `${id}: the 8-bit path draws no blur`).toBeLessThan(0.01);
-		return;
-	}
 	expect.soft(gain, `${id}: light spreads into the shadow`).toBeGreaterThan(0.01);
 	expect
 		.soft(
@@ -141,12 +138,10 @@ test('subsurface-maps and subsurface-scale-50: maps soften, and corners blur ali
 		const mapped = await imageOf(page, variant(run.path, SKETCH, '?maps'));
 		// The skin's stripes have softer edges than without the blur: 0.5 to 0.6 times as steep on
 		// 13 October 2026.
-		if (mapped.hdr) {
-			const sharp = await imageOf(page, variant(run.path, SKETCH, '?maps&off'));
-			expect
-				.soft(edges(mapped, lit(mapped, 1)), `${run.id}: the skin's map softens under the blur`)
-				.toBeLessThan(0.8 * edges(sharp, lit(sharp, 1)));
-		}
+		const sharp = await imageOf(page, variant(run.path, SKETCH, '?maps&off'));
+		expect
+			.soft(edges(mapped, lit(mapped, 1)), `${run.id}: the skin's map softens under the blur`)
+			.toBeLessThan(0.8 * edges(sharp, lit(sharp, 1)));
 		expectBlur(mapped, `${run.id} maps`);
 		const half = await imageOf(page, variant(run.path, SKETCH, '?scale=0.5'));
 		expectBlur(half, `${run.id} at half scale`);

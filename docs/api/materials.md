@@ -187,7 +187,7 @@ const wax = materials.standard({
 Give `subsurfaceRadius` when you create the material, even as 0, to change it later with `set`. A material created without it draws no blur. With `diffuseTransmission` too, light from behind glows through the surface's thin parts, as through an ear or a candle's rim. The blur spreads that light as well.
 
 - The blur draws on the High and Ultra quality presets, where the quality setting `subsurfaceSamples` gives it 17 or 25 taps. Low and Medium give it 0. So do WebGL2 and WebGPU's compatibility mode, which run Medium at most. There the material draws as without a radius. `quality.set({ subsurfaceSamples: 11 })` turns it on wherever the engine draws HDR color.
-- It draws on the HDR path only. The 8-bit path, which compatibility mode takes with MSAA, draws no blur. `engine.capabilities.hdr` says which path the engine took.
+- It draws on the HDR path only. Compatibility mode with MSAA starts on the 8-bit path. A `subsurfaceSamples` setting above 0 that the page or the sketch gives moves it to HDR color with FXAA, as bloom does. A preset's taps alone do not move it. `engine.capabilities.hdr` says which path the engine started on.
 - Materials that blend or let light through by `transmission`, custom materials and instance batches take no blur. Development builds throw E1217 for `subsurfaceRadius` on `materials.shader`.
 - A blur narrower than a pixel draws nothing, so distant objects cost nothing more.
 - The glTF loader reads the draft `KHR_materials_volume_scatter`: each channel spreads `attenuationDistance` times its `multiscatterColor`. See [Assets](assets.md).

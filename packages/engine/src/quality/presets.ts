@@ -410,7 +410,9 @@ export interface QualitySettings {
 	 * The taps of each step of the subsurface blur, which spreads the light under the surface of
 	 * materials with a `subsurfaceRadius`, such as skin: 11, 17 or 25, or 0, which draws no blur.
 	 * More taps spread a wide blur more smoothly and cost more. High takes 17 and Ultra 25; Low and
-	 * Medium take 0. It changes during play.
+	 * Medium take 0. The blur needs HDR color: a value above 0 that the page or the sketch gives
+	 * moves compatibility mode from its 8-bit path to HDR color, as bloom does. It changes during
+	 * play.
 	 */
 	subsurfaceSamples: 0 | 11 | 17 | 25;
 	/**
