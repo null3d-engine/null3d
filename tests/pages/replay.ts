@@ -299,6 +299,20 @@ run('replay', async () => {
 		1,
 		G.VIEW_2D_ARRAY,
 	);
+	// The first joint of each source of a shared skinned bucket, which the culling group binds:
+	// one texel, since this view draws no skinned object.
+	memory.push(
+		G.OP_CREATE_TEXTURE,
+		9,
+		1,
+		1,
+		1,
+		G.FORMAT_R32_UINT,
+		GPUTextureUsage.TEXTURE_BINDING,
+		1,
+		1,
+		G.VIEW_2D,
+	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
@@ -342,7 +356,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		10,
+		11,
 		...[10, 5, 6, 7, 8, 9, 11, 12, 17].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
@@ -351,6 +365,9 @@ run('replay', async () => {
 			0,
 		]),
 		...[9, G.RESOURCE_TEXTURE, 7, 0, 0],
+		// The first joint of each source of a shared skinned bucket. This view draws no skinned
+		// object, but the culling group's last binding must still be filled.
+		...[10, G.RESOURCE_TEXTURE, 9, 0, 0],
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);
