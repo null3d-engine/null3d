@@ -351,7 +351,11 @@ fn destroying_a_texture_with_a_kept_copy_releases_it() {
     world.step(&mut mock, true);
     world.arrive(&mut mock, 1, SIZE);
     world.step(&mut mock, false);
-    world.renderer.settings_mut().textures_mut().sync(1, world.frame - 1);
+    world
+        .renderer
+        .settings_mut()
+        .textures_mut()
+        .sync(1, world.frame - 1);
     let commands = world.step(&mut mock, false);
     assert_eq!(count(&commands, Op::ReleaseImage), 0);
     world
