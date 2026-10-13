@@ -142,8 +142,8 @@ use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena,
+    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
+    RecordError, SceneSettings, UploadArena,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -556,6 +556,8 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
+    /// The layouts' scratch for rebuilds, which they share.
+    key_counts: KeyCounts,
     /// The shadow passes of the frame that the layouts were built for.
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
@@ -707,6 +709,7 @@ impl GpuDrivenRenderer {
             layout: Layout::new(Drawn::Scene, config.index_instances),
             casters: Layout::new(Drawn::Casters, config.index_instances),
             outlined: Layout::new(Drawn::Outlined, config.index_instances),
+            key_counts: KeyCounts::new(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             outline_made: false,
@@ -902,6 +905,7 @@ impl GpuDrivenRenderer {
                 passes,
                 self.graph.depth_pass(Prepass::DepthTemplate),
                 &self.skinning,
+                &mut self.key_counts,
             )?;
             self.layout_prepass = self.graph.depth_prepass();
             let (skinning, layout) = (&self.skinning, &self.layout);
@@ -916,6 +920,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                    &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
             // The casters' layout holds buckets only while a light casts shadows.
@@ -931,6 +936,7 @@ impl GpuDrivenRenderer {
                     passes,
                     Prepass::Off,
                     &self.skinning,
+                    &mut self.key_counts,
                 )?;
             } else {
                 self.casters.clear();
@@ -950,6 +956,7 @@ impl GpuDrivenRenderer {
                     passes,
                     Prepass::Off,
                     &self.skinning,
+                    &mut self.key_counts,
                 )?;
             } else {
                 self.outlined.clear();

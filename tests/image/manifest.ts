@@ -95,10 +95,11 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
- * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
+ * look, which three.js lacks, joins the curves that three.js shares here.
  */
 function toneMappingTests(): ImageTest[] {
-	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -1161,7 +1162,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
-	// a scene has, so other devices get a wider tolerance here.
+	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
+	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1169,7 +1171,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -2251,6 +2253,7 @@ const HALF_PRECISION_TESTS = [
 	'lights-16',
 	'shadows',
 	toneMappingTest('agx', 0),
+	toneMappingTest('agx-punchy', 0),
 	eightBitTest('aces'),
 ];
 

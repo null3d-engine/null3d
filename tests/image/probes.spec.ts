@@ -24,10 +24,14 @@ interface Image {
 
 type Rgb = readonly [number, number, number];
 
-/** The colors that the spec looks for, by the channels that lead in each. */
+/**
+ * The colors that the spec looks for, by the channels that lead in each. The threshold is looser
+ * than a saturated wall's, because the 8-bit path (compatibility mode with MSAA) has the captures
+ * hold display color, so probe reflections there look grayer (D-149).
+ */
 const COLORS = {
-	red: ([r, g, b]: Rgb) => r > g + 60 && r > b + 60,
-	green: ([r, g, b]: Rgb) => g > r + 60 && g > b + 60,
+	red: ([r, g, b]: Rgb) => r > g + 30 && r > b + 30,
+	green: ([r, g, b]: Rgb) => g > r + 30 && g > b + 30,
 } as const;
 
 async function imageOf(page: Page, path: string): Promise<Image> {

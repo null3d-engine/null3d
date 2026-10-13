@@ -72,7 +72,7 @@ enable draw_index;
 // in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
 // build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, multiscatter_compensation, pbr_material}
-#import null3d::lighting::{with_specular}
+#import null3d::lighting::{specular_aa_kernel, with_specular}
 #ifdef HALF
 #import null3d::half::{direct_light, indirect_diffuse}
 #else
@@ -83,7 +83,7 @@ enable draw_index;
 #import null3d::gtao::{screen_occlusion, screen_values}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #import null3d::ibl::{reflected_direction}
-#import null3d::lighting::{indirect_specular, specular_occlusion}
+#import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
@@ -122,7 +122,7 @@ enable draw_index;
 #import null3d::refraction::{transmitted_light}
 #ifdef TONE_MAP
 #import null3d::fog::{fog_factor}
-#import null3d::tonemap::{encode, tone_map}
+#import null3d::tonemap::{encode, tone_map, vignette}
 #endif
 #endif
 #ifdef RECEIVE_SHADOWS
@@ -782,16 +782,19 @@ fn surrounding_light(
 /// the ambient and hemisphere lights, as three.js adds the environment's, and neither its
 /// intensity nor the material's factor scales them.
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
-/// its specular light as three.js's `computeSpecularOcclusion` does. `contact` is the share of the
-/// sun's light that the sun's contact shadows let through. `relative` is the surface's
-/// position relative to the camera, `to_view` points from the surface toward the camera, and
-/// `dfg` holds the split-sum terms at the surface's roughness and view angle. In custom materials,
-/// `reflection` holds light from the mirror direction and its share, which takes the place of
-/// that share of the probes' and the environment's reflection, with or without them.
+/// its specular light as three.js's `computeSpecularOcclusion` does. The environment's specular
+/// light also fades where the shading `normal` reflects the view below the mesh's own
+/// `vertex_normal`. `contact` is the share of the sun's light that the sun's contact shadows let
+/// through. `relative` is the surface's position relative to the camera, `to_view` points from the
+/// surface toward the camera, and `dfg` holds the split-sum terms at the surface's roughness and
+/// view angle. In custom materials, `reflection` holds light from the mirror direction and its
+/// share, which takes the place of that share of the probes' and the environment's reflection,
+/// with or without them.
 fn light_surface(
     m: PbrMaterial,
     relative: vec3f,
     normal: vec3f,
+    vertex_normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
     extra: vec3f,
@@ -842,7 +845,8 @@ fn light_surface(
 #endif
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
-        let specular = image.specular * specular_occlusion(n_dot_v, occlusion, m.roughness);
+        let fading = horizon_occlusion(to_view, normal, vertex_normal);
+        let specular = image.specular * (specular_occlusion(n_dot_v, occlusion, m.roughness) * fading);
         indirect += image.diffuse * occlusion + specular;
 #ifdef TRANSMISSION
         diffuse_light += image.diffuse * occlusion;
@@ -859,17 +863,16 @@ fn light_surface(
 /// shadows.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
-    // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
-    // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
-    // it.
-    let change = max(abs(dpdx(input.normal)), abs(dpdy(input.normal)));
-    let geometry_roughness = max(max(change.x, change.y), change.z);
+    // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
+    // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
+    // function bends it.
+    let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
 #ifdef MAPS
     specular *= specular_texel;
 #endif
-    let plain = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    let plain = pbr_material(s.baseColor, s.metalness, s.roughness, kernel);
     let pbr = with_specular(plain, material_row.uv_v.w, specular.rgb, specular.a);
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
@@ -886,6 +889,7 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         pbr,
         input.relativePosition,
         normal,
+        input.normal,
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
@@ -942,11 +946,13 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
 #ifdef TRANSMISSION
 #ifdef TONE_MAP
-    // The copy holds display color, so the light from behind joins after the tone mapping, as far
-    // as the fog lets it.
+    // The copy holds display color, darkened by the vignette already, so the light from behind
+    // joins after the tone mapping, as far as the fog lets it.
     let unfogged = (u32(material_row.strengths.z) & NO_FOG) != 0u;
     let fog = select(fog_factor(engine_frame.fog, input.relativePosition), 0.0, unfogged);
-    let toned = tone_map(fogged(outgoing, input.relativePosition, material_row), engine_frame.output);
+    let shade = vignette(pixel.xy, engine_frame.target_size.xy, engine_frame.vignette);
+    let shaded = fogged(outgoing, input.relativePosition, material_row) * shade;
+    let toned = tone_map(shaded, engine_frame.output);
     let display = toned + through * share * (1.0 - fog);
     let finished = vec4f(encode(saturate(display), pixel.xy), 1.0);
 #else

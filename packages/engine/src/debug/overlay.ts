@@ -59,6 +59,7 @@ export function overlayFigures(stats: FrameStats, page: PageFigures): StatsFigur
 		frames: stats.frames,
 		presentedFps: stats.presentedFps,
 		completedFps: stats.completedFps,
+		updateErrors: stats.updateErrors,
 		cpuMs: stats.cpuMs,
 		threads: stats.threads,
 		gpuMs: stats.gpuMs,

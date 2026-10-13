@@ -657,7 +657,13 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 /// The color a fragment writes for exposed linear color `c`, such as light from the frame's lights,
 /// at framebuffer position `pixel`, as `finish` writes it.
 fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
-    return null3d::tonemap::finish(c, pixel, frame.output);
+    return null3d::tonemap::finish(
+        c,
+        pixel,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
