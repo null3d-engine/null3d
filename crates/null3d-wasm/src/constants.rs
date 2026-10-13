@@ -837,7 +837,8 @@ pub fn typescript() -> String {
                 ("MSAA", Antialias::Msaa.code()),
             ],
         ),
-        // WebGPU's skinning modes, which ?skinning= picks to measure them (decision record D-20).
+        // WebGPU's skinning modes, which ?skinning= picks: the vertex shaders by default, or the
+        // skinning pass with or without its savings (decision record D-20).
         (
             "SKINNING",
             &[

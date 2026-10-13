@@ -650,7 +650,7 @@ pub mod layout {
     pub const FRAME: u32 = 0;
     /// Group 0 of the culling compute pipelines, plain and of the two occlusion phases: the
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
-    /// depth pyramid or a placeholder.
+    /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
@@ -1391,6 +1391,10 @@ pub mod sizes {
     /// instead of copies of the matrices, and for a mesh with levels of detail, the level's error,
     /// the bucket of the next coarser level plus one, and the level's fade bucket plus one.
     pub const BUCKET_WORDS: u32 = 13;
+    /// A bucket record's first joint that sends the culling shader to each source's own: the
+    /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
+    /// object's skin from a data texture of 32-bit indices, at the object's source.
+    pub const PER_SOURCE_JOINT: u32 = u32::MAX;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -2141,6 +2145,14 @@ mod tests {
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
+            format!(
+                "const PER_SOURCE_JOINT: u32 = {:#x}u;",
+                sizes::PER_SOURCE_JOINT
+            ),
+            format!(
+                "const INDEX_ROW_SHIFT: u32 = {}u;",
+                sizes::INDICES_PER_TEXTURE_ROW.trailing_zeros()
+            ),
             format!(
                 "const WORKGROUP_SIZE: u32 = {}u;",
                 sizes::CULL_WORKGROUP_SIZE

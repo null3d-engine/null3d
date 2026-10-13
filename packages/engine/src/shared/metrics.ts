@@ -51,6 +51,7 @@ export const COUNTER_NAMES = [
 	'triangles',
 	'drawnObjects',
 	'uncountedFigures',
+	'updateErrors',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
@@ -85,7 +86,7 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
-const RECORD_WORDS = 24;
+const RECORD_WORDS = 32;
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;

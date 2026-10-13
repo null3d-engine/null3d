@@ -59,6 +59,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
 	type PreloadSender,
@@ -100,6 +101,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Sends a shader's builds that load on first use to the thread that draws. */
+	sendBuilds: BuildsSender;
+	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
+	onAskBuilds(handler: (template: number) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -120,6 +125,12 @@ export interface SketchCore {
 	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
+	/**
+	 * Tells the page of an error that the sketch's own code threw in a frame, once for each distinct
+	 * message. The engine keeps drawing; the page reports it through `onSketchError`, and counts the
+	 * frames whose update failed.
+	 */
+	reportSketchError?(message: string): void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -247,6 +258,10 @@ export class SketchRunner {
 	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
+	/** True once the frame in progress has reported an error: its update did not run to its end. */
+	private updateFailed = false;
+	/** True while a frame is open, so an error outside one does not mark the next frame. */
+	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
@@ -448,10 +463,15 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				wasmBytes: () => this.core.memory.buffer.byteLength,
+				wasmBytes: () => this.core.bytes,
 			},
 		};
-		const templates = new ShaderTemplates(sketch.sendShader);
+		const templates = new ShaderTemplates(
+			sketch.sendShader,
+			device.webgl2 ? 'glsl' : 'wgsl',
+			sketch.sendBuilds,
+		);
+		sketch.onAskBuilds((template) => templates.answer(template));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -693,9 +713,11 @@ export class SketchRunner {
 	 */
 	private report(error: unknown): void {
 		const message = messageOf(error);
+		if (this.frameOpen) this.updateFailed = true;
 		if (!this.reported.has(message)) {
 			this.reported.add(message);
 			console.error(error);
+			this.sketch.reportSketchError?.(message);
 		}
 		if (this.holding) throw error;
 	}
@@ -1047,6 +1069,8 @@ export class SketchRunner {
 		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
+		this.updateFailed = false;
+		this.frameOpen = true;
 		this.phaseStart = start;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
@@ -1180,6 +1204,9 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// A frame whose update threw still presents, so its record marks it: the figure that counts
+		// completed updates leaves it out.
+		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
 		// The memory figures change slowly, so a few times a window is enough. They start with the
 		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
 		// memory of the last time a reader sampled.
@@ -1202,6 +1229,7 @@ export class SketchRunner {
 		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
 		this.core.refresh();
 		this.endPhase(Phase.Record);
+		this.frameOpen = false;
 		this.record.commit(performance.now() - start);
 		// Only the job workers asked for so far have records, so the figures count the ones that run.
 		const asked = this.sketch.wantJobs(0);

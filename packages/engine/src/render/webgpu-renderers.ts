@@ -1,7 +1,7 @@
 // The renderers of the WebGPU path. A thread downloads this file only when it draws with WebGPU, so
 // a page that draws with WebGL2 never downloads the WebGPU backend.
 
-import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
+import { SKINNING_FULL, SKINNING_SKIP_ONLY, SKINNING_VERTEX } from '../generated/core';
 import { clearWebGPUCanvas } from '../gpu/canvas-release';
 import { QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
@@ -36,7 +36,7 @@ export function webgpuRenderer(
 	const { scene, metrics } = options;
 	if (!scene || !shaders)
 		return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
-	const renderer = new WebGPUSceneRenderer(
+	return new WebGPUSceneRenderer(
 		gpu.tier,
 		gpu.device,
 		canvas,
@@ -46,10 +46,9 @@ export function webgpuRenderer(
 		options.imageTable,
 		shaders,
 		options.device.transparent,
+		options.device.skinning,
 		options.gpuError,
 	);
-	renderer.setSkinningMode(options.device.skinning);
-	return renderer;
 }
 
 class WebGPURenderer implements Renderer {
@@ -167,7 +166,9 @@ class WebGPUSceneRenderer implements Renderer {
 
 	/**
 	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
-	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
+	 * `skinning` is the core's code of the skinning mode, which picks the shaders that a preload
+	 * of skinning prepares and the skinning pass's directions. `gpuError` hears the first WebGPU
+	 * error of each kind that no error scope caught.
 	 */
 	constructor(
 		readonly tier: Tier,
@@ -179,6 +180,7 @@ class WebGPUSceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
+		skinning: number,
 		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -202,6 +204,10 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
+		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
+		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
+			this.backend.skinWithFloatDirections();
+		this.backend.skinsInVertexShaders = skinning === SKINNING_VERTEX;
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
@@ -210,12 +216,6 @@ class WebGPUSceneRenderer implements Renderer {
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
-
-	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
-	setSkinningMode(mode: number): void {
-		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
-			this.backend.skinWithFloatDirections();
-	}
 
 	/** A frame draws once its pipelines and the device's first pass are built. */
 	prepare(frame: number): boolean {
