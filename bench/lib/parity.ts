@@ -648,11 +648,20 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
  * The dev-server path of the page that draws one scene's hold frame, at the references' preset, with
  * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
+/**
+ * Switches that a scene's hold page always gets, whatever the command asks for. S5 gives a far
+ * character a longer update interval by default, which steps its pose; a hold frame that parity or
+ * the image tests compare must hold every character at every frame, so the twin's pose matches.
+ */
+const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
+
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
 	return pagePath(
 		scene,
 		kind,
-		['hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
+		['hold', REFERENCE_PRESET_SWITCH, SCENE_HOLD_SWITCHES[scene], switches]
+			.filter(Boolean)
+			.join('&'),
 	);
 }
 
