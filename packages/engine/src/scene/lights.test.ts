@@ -11,6 +11,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { type Light, Scene } from './scene';
 
@@ -64,7 +65,7 @@ function fakeCore() {
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: FRAME }, false);
 	/** The command records the scene queued, as [operation, handle, a, b]. */
 	const commands = () => {
