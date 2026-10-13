@@ -177,6 +177,17 @@ impl Shading {
         }
     }
 
+    /// True when its shader draws screen-space reflections: the standard material's, with or
+    /// without maps, and a custom material's, whose WGSL the standard material's template holds.
+    /// The reflections' own shader builds load on first use, so a page that never turns them on
+    /// downloads none of their code.
+    pub const fn reflects(self) -> bool {
+        matches!(
+            self,
+            Shading::Lit | Shading::StandardMaps | Shading::Custom(_)
+        )
+    }
+
     /// True when its shader reads the material's base color and opacity, which vertex colors
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {

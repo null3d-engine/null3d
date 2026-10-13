@@ -849,9 +849,15 @@ pub mod permutation {
     /// caster's, and the pipeline has no fragment stage. Only custom materials with a vertex
     /// offset build it, beside [`CASTER_OFFSET`] for casters that draw their back faces.
     pub const CASTER: u32 = 1 << 25;
+    /// A lit surface reads screen-space reflections: it reads the trace's ray length from the
+    /// shared screen texture and samples last frame's color along its own reflected ray. Only the
+    /// material's own draw sets it, so the depth prepass, the shadow passes and the debug views
+    /// drop it. Its builds load on first use, so a page that never turns the reflections on
+    /// downloads none of their code.
+    pub const REFLECTIONS: u32 = 1 << 26;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 26] = [
+    pub const NAMES: [(&str, u32); 27] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -878,6 +884,7 @@ pub mod permutation {
         ("TRANSMISSION", TRANSMISSION),
         ("ROW_VALUES", ROW_VALUES),
         ("CASTER", CASTER),
+        ("REFLECTIONS", REFLECTIONS),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -906,7 +913,7 @@ pub mod permutation {
     /// A fading level's builds dither its pixels after the mask's own test, by its cutoff or by
     /// coverage: skinned, morphed, transmissive and index-read instances never fade, and a mask
     /// that tests its alpha by the hash switches its levels at once.
-    pub const APART: [(u32, u32); 22] = [
+    pub const APART: [(u32, u32); 23] = [
         (ALPHA_HASH, ALPHA_COVERAGE),
         (SKIN, INSTANCE_INDEX),
         (TRANSMISSION, ALPHA_MASK),
@@ -929,6 +936,7 @@ pub mod permutation {
         (LOD_FADE, INSTANCE_INDEX),
         (LOD_FADE, TRANSMISSION),
         (LOD_FADE, ALPHA_HASH),
+        (REFLECTIONS, TRANSMISSION),
     ];
 
     /// True when a permutation word holds every bit that each of its bits needs ([`NEEDS`]), and
