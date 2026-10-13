@@ -792,7 +792,8 @@ impl Layout {
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
             let object = object_of(bounds);
-            if let Some(object) = object.filter(|&object| skinning.object(object).is_some()) {
+            let skin = object.and_then(|object| skinning.object(object));
+            if let (Some(object), Some(_)) = (object, skin) {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
