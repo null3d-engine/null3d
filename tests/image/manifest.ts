@@ -2125,7 +2125,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
-			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
+			// update rates are its default, and a held frame otherwise catches far characters
+			// between two of their poses.
+			...(scene === 's5' && {
+				switches: ['anim=every'],
+				swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`],
+			}),
 			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),

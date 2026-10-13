@@ -796,7 +796,9 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
-        for entry in o[3..].chunks(5) {
+        // Only the group's own entries: the operands may hold a spare word or more after them.
+        let count = o[2] as usize;
+        for entry in o[3..3 + 5 * count].chunks(5) {
             let id = entry[2];
             match entry[1] {
                 resource_kind::BUFFER => {
