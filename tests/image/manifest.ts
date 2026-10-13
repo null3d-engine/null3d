@@ -562,6 +562,33 @@ function minimapTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the full-screen pass tests. */
+export const FULLSCREEN_SKETCH = 'tests/pages/sketches/fullscreen-sketch.ts';
+
+/**
+ * Full-screen passes on every tier. The first test chains a scene pass at a quarter of the
+ * render size into a full-screen pass that posterizes it, and paints a second texture from
+ * nothing, which shows upright: red at its top. The glow test blurs the outline mask at half size
+ * and adds it to the scene's color through an effect's texture. The echo test reads the scene
+ * color at a quarter size in a full-screen pass, and an effect shows it as an inset. The scale-50
+ * tests draw the glow and the echo at a render scale of 0.5, where each pass's texture takes its
+ * share of the smaller render size and the pass fills it whole.
+ */
+function fullscreenTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FULLSCREEN_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('fullscreen-passes', ''),
+		test('fullscreen-glow', '?glow'),
+		test('fullscreen-echo', '?echo'),
+		test('fullscreen-glow-scale-50', '?glow&half'),
+		test('fullscreen-echo-scale-50', '?echo&half'),
+	];
+}
+
 /** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
 export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
 
@@ -1081,6 +1108,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...fullscreenTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1242,6 +1270,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
+	// Contact shadows: pebbles, a thin pole, a crate and an upright tyre under a low sun, with a
+	// coarse shadow map. The march runs in the step after the depth copy alone, in ambient
+	// occlusion's last step with it on, and with 4 steps. Off, the cascades draw alone.
+	...(
+		[
+			['contact-shadows', ''],
+			['contact-shadows-ao', '?ao'],
+			['contact-shadows-steps-4', '?steps=4'],
+			['contact-shadows-off', '?off'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/contact-shadows-sketch.ts${query}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.
@@ -1315,9 +1363,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		tolerance: { maxDiffRatio: 0.005 },
 	},
 	// Skinning: three characters skinned to chains of joints, each in another pose of one clip. The
-	// parity test compares the image with three.js's SkinnedMesh. WebGPU skins them in a compute
-	// pass, and WebGL2 in the vertex shader of each pass. ?shadows stands them on a ground under a
-	// sun whose shadows must follow each pose. Every tier draws the same image.
+	// parity test compares the image with three.js's SkinnedMesh. Every tier skins them in the
+	// vertex shader of each pass. ?shadows stands them on a ground under a sun whose shadows must
+	// follow each pose. Every tier draws the same image.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}` : 'skinning',
@@ -1327,8 +1375,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			sameOnEveryTier: true,
 		}),
 	),
-	// The characters with a custom material that samples a texture, which WebGPU skins in the
-	// skinning pass and WebGL2 in the vertex shader of the material's own skinned builds.
+	// The characters with a custom material that samples a texture. WebGPU has no skinned builds of
+	// custom materials, so its skinning pass skins them, and WebGL2 skins them in the vertex shader
+	// of the material's own skinned builds.
 	{
 		name: 'skinning-custom-textures',
 		sketch: 'tests/pages/sketches/skinning-sketch.ts?textured',
@@ -1346,9 +1395,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sameOnEveryTier: true,
 	},
 	// The characters with tangents and a normal map of grooves, which light alike only when every
-	// way to skin turns the tangents alike: the skinning pass stores them in 8 bits, the vertex
-	// shaders of WebGL2 in floats. The skinning pass with 32-bit tangents draws the same image.
-	...(['', '-full'] as const).map(
+	// way to skin turns the tangents alike: the vertex shaders turn them in floats, and the
+	// skinning pass stores them in 8 bits, or in 32-bit floats with ?skinning=full.
+	...(['', '-compute', '-full'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-normal-map${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?normalmap',
@@ -1357,7 +1406,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=full'],
+						switches: [`skinning=${way.slice(1)}`],
 						reference: 'skinning-normal-map',
 					}
 				: { sameOnEveryTier: true }),
@@ -1375,7 +1424,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// The middle character sees through, so the transparent pass draws it skinned, in front of its
 	// shadow, with each way to skin, and on WebGL2 in the vertex shader. Compatibility mode blends
 	// on the 8-bit path, which differs in the see-through pixels, so each tier has its own image.
-	...(['', '-vertex'] as const).map(
+	...(['', '-compute'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-blend${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?shadows&blend',
@@ -1384,28 +1433,28 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=vertex'],
+						switches: ['skinning=compute'],
 						reference: 'skinning-blend',
 					}
 				: {}),
 		}),
 	),
-	// The same scenes skinned in the vertex shader of each pass, which D-20 measures against the
-	// skinning pass: they must draw the same images.
+	// The same scenes skinned in the skinning pass, which ?skinning=compute picks and which D-20
+	// measured against the vertex shaders: they must draw the same images.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
-			name: variant ? `skinning-${variant}-vertex` : 'skinning-vertex',
+			name: variant ? `skinning-${variant}-compute` : 'skinning-compute',
 			sketch: `tests/pages/sketches/skinning-sketch.ts${variant ? `?${variant}` : ''}`,
 			hold: SKINNING_HOLD,
 			size: [SKINNING_IMAGE.width, SKINNING_IMAGE.height],
 			tiers: ['webgpu', 'compat'],
-			switches: ['skinning=vertex'],
+			switches: ['skinning=compute'],
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
 	// The same scenes from the skinning pass with neither of its savings: normals as 32-bit floats,
-	// and every character skinned in every frame. The default pass writes 8-bit normals, which must
-	// draw the same images.
+	// and every character skinned in every frame. The pass's default writes 8-bit normals, which
+	// must draw the same images.
 	...(['', 'shadows'] as const).map(
 		(variant): ImageTest => ({
 			name: variant ? `skinning-${variant}-full` : 'skinning-full',
@@ -1417,10 +1466,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			reference: variant ? `skinning-${variant}` : 'skinning',
 		}),
 	),
-	// The middle character outlined: the outline's mask skins it in its pose, from the skinning
-	// pass's vertices or in the vertex shader, and on WebGL2 always in the vertex shader. Each tier
+	// The middle character outlined: the outline's mask skins it in its pose, in the vertex shader
+	// or from the skinning pass's vertices, and on WebGL2 always in the vertex shader. Each tier
 	// draws the scene in its own way, so each has its own image.
-	...(['', '-vertex'] as const).map(
+	...(['', '-compute'] as const).map(
 		(way): ImageTest => ({
 			name: `skinning-outline${way}`,
 			sketch: 'tests/pages/sketches/skinning-sketch.ts?outline',
@@ -1429,7 +1478,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			...(way
 				? {
 						tiers: ['webgpu', 'compat'],
-						switches: ['skinning=vertex'],
+						switches: ['skinning=compute'],
 						reference: 'skinning-outline',
 					}
 				: {}),
@@ -1916,6 +1965,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Particles of the particles add-on: soft dots that bounce, smoke from a flipbook made in code,
+	// sparks along their velocity, and tumbling leaves, each moved by the GPU in closed form.
+	{
+		name: 'particles',
+		sketch: 'tests/pages/sketches/particles-sketch.ts',
+		hold: 2,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2078,7 +2134,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
+				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
+			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
+			// its test shares that comparison's references, in the scene graph mode only.
+			if (comparison.sameSceneAs)
+				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
 			return [
 				test,
 				{
@@ -2220,7 +2281,7 @@ const HALF_PRECISION_TESTS = [
  * The tests that draw again with vertex shaders that read each culled instance by index from
  * storage buffers, as `?instances=index` asks on core WebGPU (decision record D-23): objects with an
  * instance batch, cells far from the origin, the standard material's maps, cascaded shadows, point
- * light shadows, skinned characters from the skinning pass and skinned in the vertex shader,
+ * light shadows, skinned characters skinned in the vertex shader and from the skinning pass,
  * outlines, see-through objects beside culled ones, custom materials, which keep the culling
  * shader's copies, S1-cells and S4. Each copy must draw its test's image. Compatibility mode and
  * WebGL2 ignore the switch, so the copies draw on core WebGPU only, in their test's first thread
@@ -2233,7 +2294,7 @@ const INDEX_INSTANCE_TESTS = [
 	'shadows',
 	'point-shadows',
 	'skinning-shadows',
-	'skinning-vertex',
+	'skinning-compute',
 	'outline-hidden',
 	'transparency',
 	'custom-textures',

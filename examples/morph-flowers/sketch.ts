@@ -78,7 +78,7 @@ export default defineSketch(async (ctx) => {
 	// The raised bed: soil of crumbs, clods and pebbles made in code, in planks, on a lawn.
 	const data = new Uint8Array(64 * 64 * 4).fill(255);
 	for (let i = 0, w = Math.PI / 32; i < 64 * 64; i++) {
-		const [x, y, r] = [i % 64, i >> 6, Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1)];
+		const [x, y, r] = [i % 64, i >> 6, math.random()];
 		const clod = (0.6 + 0.5 * r) * (0.85 + 0.2 * Math.sin(6 * w * x) * Math.sin(7 * w * y));
 		data.set(r > 0.97 ? [140, 128, 112] : [92 * clod, 62 * clod, 42 * clod], i * 4);
 	}

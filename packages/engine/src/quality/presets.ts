@@ -155,6 +155,17 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 0.25, 0.5],
 	},
+	// The steps of each march of the sun's contact shadows, which ambient occlusion's last step
+	// takes at its half size. 0 draws none. Contact shadows read the depth prepass, which WebGL2
+	// draws on every preset, so its Medium takes the fewest steps. On WebGPU they would turn the
+	// prepass on, so Medium leaves them off there. The steps live in a uniform block, so a change
+	// makes no GPU object; a change to or from 0 adds or removes the steps' passes (D-135).
+	contactShadowSteps: {
+		presets: [0, 0, 8, 16],
+		webgl2: [0, 4, 8, 16],
+		changes: 'live',
+		values: [0, 4, 8, 16],
+	},
 	// The taps of depth of field's gather at half the render size: a spiral of taps over a disk
 	// around a center tap. More taps fill a wide blur more smoothly. 0 draws no depth
 	// of field even when the sketch turns it on. The taps live in a uniform block, so a change
@@ -182,6 +193,14 @@ export const QUALITY_SETTINGS = {
 		presets: [0.25, 0.5, 0.5, 1],
 		changes: 'live',
 		values: [0.25, 0.5, 1],
+	},
+	// Soft particles: while a particle system fades near the surfaces behind it, the camera copies
+	// its opaque depth once per frame, which splits its opaque and transparent passes. Low, which
+	// phones draw, keeps one render pass and draws particles with hard edges (D-131).
+	softParticles: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
 	},
 	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
 	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
@@ -400,6 +419,13 @@ export interface QualitySettings {
 	 */
 	aoScale: 0 | 0.25 | 0.5;
 	/**
+	 * The steps of each search for the sun's contact shadows: 4, 8 or 16, or 0, which draws none.
+	 * More steps find thinner contacts and cost more. Contact shadows need a directional light that
+	 * casts shadows, with a `contactDistance` above 0. They read the depth of a prepass, which they
+	 * turn on where the preset leaves it off. It changes during play.
+	 */
+	contactShadowSteps: 0 | 4 | 8 | 16;
+	/**
 	 * The taps of depth of field's gather: 16, 22, 43 or 71, or 0, which draws no depth of field
 	 * even when `post.set` turns it on. More taps fill a wide blur more smoothly and cost more. It
 	 * changes during play.
@@ -521,6 +547,12 @@ export interface QualitySettings {
 	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when particle systems with `softness` fade where they near the surfaces behind them. The
+	 * camera then copies its opaque depth once per frame, while such a system draws. False draws
+	 * them with hard edges where they cut into the scene. It changes during play.
+	 */
+	softParticles: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */
