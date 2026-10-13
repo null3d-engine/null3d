@@ -1,12 +1,12 @@
 // The vignette's cost: lit boxes over a plain background color, for the effect cost page. With
-// ?fill=covered a wall of boxes covers the whole view; otherwise one small box stands in the middle,
-// and the background color covers almost all of it. On the 8-bit path the vignette darkens the
-// boxes in their shaders and draws the background color as a background, and on the HDR path the
-// final pass darkens every pixel. With ?background=none the sketch sets no background color, so the
-// clear stays black and nothing draws behind the boxes. ?scale= draws at that render scale, and with ?fixed the range
-// holds that scale alone, and the governor is off, for timing. On the page's 'vignette' message it
-// turns the vignette on, waits until its pipelines are built, and posts 'settled'. The
-// 'vignette-off' message turns it off.
+// ?fill=covered a wall of boxes covers the whole view; otherwise one small box stands in the
+// middle, and the background color covers almost all of it. On the 8-bit path the vignette darkens
+// the boxes in their shaders and draws the background color as a background, and on the HDR path
+// the final pass darkens every pixel. With ?background=none the sketch sets no background color,
+// so the clear stays black and nothing draws behind the boxes. ?scale= draws at that render scale,
+// and with ?fixed the range holds that scale alone, and the governor is off, for timing. On the
+// page's 'vignette' message it turns the vignette on, waits until its pipelines are built, and
+// posts 'settled'. The 'vignette-off' message turns it off.
 //
 // The module uses no type annotations: an address whose last value holds a dot, such as scale=0.5,
 // makes the dev server read the module as JavaScript.
