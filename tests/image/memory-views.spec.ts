@@ -7,7 +7,7 @@
 // worker's own heap. The page's measurement releases idle job workers so they can answer.
 import { expect, test } from '@playwright/test';
 import { type HeapSnapshot, retainerChains, takeHeapSnapshot } from '../lib/heap-retainers.ts';
-import { pageResult } from '../lib/page-result.ts';
+import { pageResultWhileProgressing } from '../lib/page-result.ts';
 import { sharedStores, workerSessions } from '../lib/shared-buffers.ts';
 
 interface MemoryViewsResult {
@@ -24,6 +24,14 @@ const MIN_GROWTHS = 8;
 const MARGIN_BYTES = 16 * 2 ** 20;
 /** The workers that answer the debugger: job workers block between jobs. */
 const WORKERS = ['sketch-worker', 'render-worker'] as const;
+/**
+ * The run fails when its page notes no new step for this long. The sketch notes a step after each
+ * of its 24 growth steps, and drawing every batch takes seconds on a software GPU, so a slower
+ * machine slows the run without failing it, while a stuck growth still fails.
+ */
+const STALL_MS = 30_000;
+/** The most time the run may take in all, as it always had. */
+const RUN_LIMIT_MS = 4 * 60_000;
 
 /** Why a thread fails: each memory store that it views through more than one buffer object. */
 function extraBuffers(thread: string, heap: HeapSnapshot): string | undefined {
@@ -36,9 +44,9 @@ function extraBuffers(thread: string, heap: HeapSnapshot): string | undefined {
 test('each thread holds one buffer object of the shared memory after it grew in many steps', async ({
 	page,
 }) => {
-	test.setTimeout(240_000);
+	test.setTimeout(RUN_LIMIT_MS);
 	await page.goto('memory-views.html');
-	const result = await pageResult<MemoryViewsResult>(page, 120_000);
+	const result = await pageResultWhileProgressing<MemoryViewsResult>(page, STALL_MS);
 	expect(result.error).toBeUndefined();
 	expect(result.failures).toEqual([]);
 	expect(result.mode).toMatchObject({
