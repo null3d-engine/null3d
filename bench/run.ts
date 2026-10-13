@@ -23,8 +23,8 @@
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 //   bun run bench:run -- --scenes s2 --pages null3d-webgpu,threejs-webgpu --switches shadows=3
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
-//                     --sweep or --compare
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4, s5, s6; the default is s1, and every
+//                     scene with --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
 //                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
@@ -36,7 +36,11 @@
 //                     the runs above
 //   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
 //                     build b. Each checkout's pages get a production build of their own, served
-//                     on its own port, NULL3D_PORT's and the next. Every page runs at the High
+//                     on its own port, NULL3D_PORT's and the next. The build stays in
+//                     target/bench-pages-baseline or -new, and the next comparison reuses it while
+//                     the checkout's sources and engine build stay the same. The baseline a may
+//                     also be a prepared baseline from the GPU check's cache, whose pages are
+//                     built already (bench/lib/baseline-cache.ts). Every page runs at the High
 //                     preset, within each GPU path's ceiling, with the quality governor off,
 //                     unless --switches names them. The command fails when b is slower than
 //                     the rules in bench/lib/compare.ts allow and no Bench-Expected trailer in
@@ -63,14 +67,24 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { type Browser, chromium } from '@playwright/test';
-import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
+import type { Browser } from '@playwright/test';
+import {
+	launchChromium,
+	SWIFTSHADER_ARGS,
+	WEBGPU_DEVELOPER_FEATURES,
+} from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
-import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
+import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
-import { pageResult } from '../tests/lib/page-result.ts';
+import { pageResult, watchPageProblems } from '../tests/lib/page-result.ts';
 import { readShard, runName, SHARD_FORMAT, type Shard } from '../tests/lib/runs.ts';
 import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
+import {
+	type PreparedBaseline,
+	preparedPages,
+	readPreparedBaseline,
+	switchesOf,
+} from './lib/baseline-cache';
 import {
 	BUILDS,
 	type Build,
@@ -108,7 +122,13 @@ import {
 	summaryRow,
 	sweepReport,
 } from './lib/report';
-import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
+import {
+	comparePagesDir,
+	DEV_OPTION,
+	pagesText,
+	serveBenchPages,
+	serveBuiltPages,
+} from './lib/serve';
 import { S5_DEFAULT_COUNT } from './scenes/s5';
 import { S6_FULL_COUNT } from './scenes/s6';
 import {
@@ -139,13 +159,6 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	// S6's counts are the objects nearest the route's start, up to the whole city.
 	s6: [1, 100, 1_000, 5_000, 10_000, S6_FULL_COUNT],
 };
-/**
- * The scenes that a comparison of two builds runs unless `--scenes` names others: every scene but
- * S5 and S6. They join the benchmark job in CI once that job pins a preset for them; `--scenes s5`
- * or `--scenes s6` compares them now. Each build of the pages still holds their pages, so the job
- * needs the sample content.
- */
-const COMPARED_SCENES = BENCH_SCENES.filter((scene) => scene !== 's5' && scene !== 's6');
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',
@@ -154,8 +167,19 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 ];
 /** Time for a page to start, beyond its warm-up and measured seconds. */
 const START_MARGIN_MS = 60_000;
+/**
+ * More time to start for a scene that streams in before its warm-up. S6's whole city took more than
+ * the start margin on CI's Mac machines, so every run of its pages failed there.
+ */
+const STREAM_MARGIN_MS: Partial<Record<BenchScene, number>> = { s6: 240_000 };
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
+/**
+ * Rounds in a row in which a page fails in both builds before a comparison stops running it. Such a
+ * page is broken in both, so more rounds only spend the job's time: S6's pages once timed out in
+ * every round and ran CI's shards past their time limit.
+ */
+const FAILED_ROUNDS_TO_STOP = 2;
 /** A comparison of two builds needs this many runs of each page per build, or more. */
 const MIN_COMPARE_RUNS = 3;
 
@@ -187,10 +211,10 @@ const runSeconds = (seconds: number | null) => ({
 	measure: seconds ?? MEASURE_SECONDS,
 });
 
-/** How long a page may take to publish its result. */
-function pageTimeoutMs(seconds: number | null): number {
+/** How long a page of a scene may take to publish its result. */
+function pageTimeoutMs(seconds: number | null, scene: BenchScene): number {
 	const { warmup, measure } = runSeconds(seconds);
-	return (warmup + measure) * 1000 + START_MARGIN_MS;
+	return (warmup + measure) * 1000 + START_MARGIN_MS + (STREAM_MARGIN_MS[scene] ?? 0);
 }
 
 function list<T extends string>(
@@ -278,7 +302,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
  */
 function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
-		return chromium.launch({
+		return launchChromium({
 			headless: true,
 			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
 		});
@@ -288,14 +312,27 @@ function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	});
 }
 
-/** Opens one benchmark page in a fresh parked window and waits for its result. */
+/** Problems of a failed page that its error carries: enough to name the cause, few to print. */
+const PAGE_PROBLEMS = 8;
+
+/**
+ * Opens one benchmark page in a fresh parked window and waits for its result. The window's display
+ * rate is measured first, and a result whose rate fell short of the display's says why. A page that
+ * fails gives its first problems with its error.
+ */
 async function runPage(browser: Browser, url: string, timeoutMs: number): Promise<BenchResult> {
 	const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
+	const problems = watchPageProblems(page);
 	try {
+		const displayProblem = await displayRateCheck(page);
+		if (displayProblem)
+			console.warn(`${url}: ${displayProblem}, so its timing figures do not compare with others`);
 		await page.goto(url);
-		return await pageResult<BenchResult>(page, timeoutMs);
+		const result = await pageResult<BenchResult>(page, timeoutMs);
+		return displayProblem ? { ...result, displayProblem } : result;
 	} catch (e) {
-		return { ok: false, error: (e as Error).message } as BenchResult;
+		const error = [(e as Error).message, ...problems.slice(0, PAGE_PROBLEMS)].join('\n  ');
+		return { ok: false, error } as BenchResult;
 	} finally {
 		await page.close();
 	}
@@ -308,7 +345,6 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const timeoutMs = pageTimeoutMs(seconds);
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
 	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
@@ -328,7 +364,7 @@ async function runProtocol(
 					const result = await runPage(
 						browser,
 						`${baseUrl}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						pageTimeoutMs(seconds, scene),
 					);
 					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
 					// A page that ran with another job worker count would put its times under the wrong count.
@@ -391,7 +427,6 @@ async function runSweep(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds ?? 5;
-	const timeoutMs = 2 * seconds * 1000 + START_MARGIN_MS;
 	const report: string[] = [];
 	// A window larger than the charts; each picture is of its chart alone.
 	const chartPage = await newParkedPage(browser, { viewport: { width: 1200, height: 800 } });
@@ -404,7 +439,7 @@ async function runSweep(
 				const result = await runPage(
 					browser,
 					`${baseUrl}${pagePath(scene, kind, withSwitches([`seconds=${seconds}`, `n=${n}`], options))}`,
-					timeoutMs,
+					pageTimeoutMs(seconds, scene),
 				);
 				writeFileSync(
 					join(dir, `sweep-${scene}-${kind}-${n}.json`),
@@ -455,9 +490,13 @@ function git(dir: string, ...args: string[]): string {
 /**
  * Each checkout's commit as its short hash and subject, the messages of the commits that the new
  * build adds to the baseline, where expected-change trailers are, and the page sources that those
- * commits change. A checkout outside git goes by its folder, with no messages and no page changes.
+ * commits change. A checkout outside git goes by its folder, with no messages and no page changes,
+ * and a prepared baseline by the commit that its record names.
  */
-function commitsOf(roots: Record<Build, string>): {
+function commitsOf(
+	roots: Record<Build, string>,
+	preparedBaseline: PreparedBaseline | null,
+): {
 	labels: Record<Build, string>;
 	messages: string[];
 	pageFiles: string[];
@@ -466,9 +505,11 @@ function commitsOf(roots: Record<Build, string>): {
 	const labels = { ...roots };
 	for (const build of BUILDS)
 		try {
-			const sha = git(roots[build], 'rev-parse', 'HEAD');
+			const record = build === 'baseline' ? preparedBaseline : null;
+			const sha = record?.commit ?? git(roots[build], 'rev-parse', 'HEAD');
+			const subject = record?.subject ?? git(roots[build], 'log', '-1', '--format=%s', sha);
 			shas[build] = sha;
-			labels[build] = `${sha.slice(0, 7)} "${git(roots[build], 'log', '-1', '--format=%s', sha)}"`;
+			labels[build] = `${sha.slice(0, 7)} "${subject}"`;
 		} catch {}
 	if (!shas.baseline || !shas.new) return { labels, messages: [], pageFiles: [] };
 	const range = `${shas.baseline}..${shas.new}`;
@@ -485,21 +526,6 @@ function commitsOf(roots: Record<Build, string>): {
 	}
 }
 
-/**
- * The comparison switches of a checkout's commit, or none when its comparison had none. They come
- * from the checkout's own comparison code.
- */
-async function switchesOf(root: string): Promise<readonly string[]> {
-	try {
-		const code = (await import(join(root, 'bench/lib/compare.ts'))) as {
-			COMPARISON_SWITCHES?: readonly string[];
-		};
-		return code.COMPARISON_SWITCHES ?? [];
-	} catch {
-		return [];
-	}
-}
-
 /** The browser and the machine, in a few words for the report. */
 function machineText(browser: Browser, name: BenchOptions['browser']): string {
 	const cores = cpus();
@@ -513,9 +539,9 @@ const RECORD_FILE = 'runs.json';
 
 /**
  * Runs the null3d pages of two built checkouts in turns, and returns the record of the runs. Each
- * checkout's pages get a production build of their own, which a server of their own serves; with
- * `--dev`, each checkout's dev server serves its pages. Every run's result goes to `dir`. With
- * `--shard`, only the shard's share of the pages runs.
+ * checkout's pages get a production build of their own, which a server of their own serves, and a
+ * prepared baseline's pages are built already; with `--dev`, each checkout's dev server serves its
+ * pages. Every run's result goes to `dir`. With `--shard`, only the shard's share of the pages runs.
  */
 async function runComparison(
 	browser: Browser,
@@ -524,17 +550,26 @@ async function runComparison(
 	dir: string,
 ): Promise<ComparisonRecord> {
 	const roots: Record<Build, string> = { baseline: resolve(baselineDir), new: resolve(newDir) };
-	for (const root of Object.values(roots))
-		if (!existsSync(join(root, BUILT_CORE)))
-			throw new Error(`${root} holds no built engine: run bun run build there first`);
-	const plan = (options.scenes ?? COMPARED_SCENES).flatMap((scene) =>
+	const preparedBaseline = readPreparedBaseline(roots.baseline);
+	if (preparedBaseline && options.dev)
+		throw new Error(`${roots.baseline} holds a production build only: leave out ${DEV_OPTION}`);
+	const isPrepared = (build: Build) => build === 'baseline' && preparedBaseline !== null;
+	for (const build of BUILDS)
+		if (!isPrepared(build) && !existsSync(join(roots[build], BUILT_CORE)))
+			throw new Error(`${roots[build]} holds no built engine: run bun run build there first`);
+	// The folder that holds each build's pages: a prepared baseline's build, or the checkout itself.
+	const pageRoots: Record<Build, string> = {
+		baseline: preparedBaseline ? preparedPages(roots.baseline) : roots.baseline,
+		new: roots.new,
+	};
+	const plan = (options.scenes ?? BENCH_SCENES).flatMap((scene) =>
 		(options.pages ?? JOBS_PAGES).map((kind) => ({ scene, kind })),
 	);
 	const share = options.shard ? shardPages(plan, options.shard) : plan;
 	// A scene that one checkout lacks, such as a benchmark that the new build adds, has nothing to
 	// compare with, so it runs in neither.
 	const hasScene = (scene: BenchScene) =>
-		Object.values(roots).every((root) =>
+		Object.values(pageRoots).every((root) =>
 			existsSync(join(root, pagePath(scene, 'null3d-webgpu').split('?')[0] as string)),
 		);
 	for (const scene of new Set(share.map((page) => page.scene)))
@@ -548,49 +583,64 @@ async function runComparison(
 		],
 		options,
 	);
-	const timeoutMs = pageTimeoutMs(options.seconds);
 	const servers: DevServer[] = [];
 	const results: BuildRun[] = [];
 	try {
 		// The new build takes the port after the dev server's, where the HTTPS server would be.
 		const urls = {} as Record<Build, string>;
 		for (const [index, build] of BUILDS.entries()) {
-			const server = await serveBenchPages({
-				dev: options.dev,
-				root: roots[build],
-				port: HTTP_PORT + index,
-				outDir: join(REPO_ROOT, `target/bench-pages-${build}`),
-			});
+			const port = HTTP_PORT + index;
+			const server = isPrepared(build)
+				? await serveBuiltPages(pageRoots[build], port)
+				: await serveBenchPages({
+						dev: options.dev,
+						root: roots[build],
+						port,
+						outDir: comparePagesDir(build),
+						reuse: true,
+					});
 			servers.push(server);
 			urls[build] = server.url;
 		}
+		// Rounds in a row in which a page failed in both builds, by page.
+		const failedRounds = new Map<string, number>();
 		for (let round = 1; round <= options.runs; round++)
-			for (const { scene, kind } of pages)
+			for (const { scene, kind } of pages) {
+				const page = `${scene}-${kind}`;
+				if ((failedRounds.get(page) ?? 0) >= FAILED_ROUNDS_TO_STOP) continue;
+				let failed = 0;
 				for (const build of roundOrder(round)) {
 					const result = await runPage(
 						browser,
 						`${urls[build]}${pagePath(scene, kind, switches)}`,
-						timeoutMs,
+						pageTimeoutMs(options.seconds, scene),
 					);
-					const name = `${build}-${scene}-${kind}-${round}`;
+					const name = `${build}-${page}-${round}`;
 					writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
 					results.push({ build, scene, kind, round, result });
+					if (!result.ok) failed++;
 					console.log(
-						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}`,
+						`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}${result.load ? `, whole after ${(result.load.wholeMs / 1000).toFixed(1)} s` : ''}`,
 					);
 				}
+				const streak = failed === BUILDS.length ? (failedRounds.get(page) ?? 0) + 1 : 0;
+				failedRounds.set(page, streak);
+				if (streak === FAILED_ROUNDS_TO_STOP)
+					console.log(`${page}: failed in both builds in ${streak} rounds in a row, so it stops`);
+			}
 	} finally {
 		for (const server of servers) server.stop();
 	}
-	const { labels, messages, pageFiles } = commitsOf(roots);
+	const { labels, messages, pageFiles } = commitsOf(roots, preparedBaseline);
 	const { warmup, measure } = runSeconds(options.seconds);
+	const baselineSwitches = preparedBaseline?.switches ?? (await switchesOf(roots.baseline));
 	return {
 		shard: options.shard,
 		plan,
 		pages: share,
 		commits: labels,
 		messages,
-		measurementChanges: measurementChanges(pageFiles, await switchesOf(roots.baseline)),
+		measurementChanges: measurementChanges(pageFiles, baselineSwitches),
 		browser: `${machineText(browser, options.browser)}, on each commit's ${pagesText(options.dev)}`,
 		runs: options.runs,
 		warmupSeconds: warmup,

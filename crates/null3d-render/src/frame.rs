@@ -18,6 +18,7 @@ use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::levels::{FADE_BAND, LevelRule};
 use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
 use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
@@ -26,26 +27,28 @@ use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
-use crate::ao::{self, Ao};
+use crate::ao::{self, Ao, Contact};
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
-use crate::camera::{Lens, Mat4};
+use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
-use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
+use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
 use crate::graph::{GraphError, RenderScale};
+use crate::levels::{LevelError, Levels};
 use crate::materials::{
     MAP_SLOTS, MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, NO_UNIT, Shading,
     blend_state, feature,
 };
-use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
+use crate::particles::ParticleTable;
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
@@ -234,6 +237,10 @@ pub struct FrameInput<'a> {
     pub lights: &'a [VisibleLight],
     /// The point and spot lights that cast shadows (see [`LightTable::shadows`]).
     pub shadow_lights: &'a [LightShadow],
+    /// The scene's light table, from which each camera view other than the camera's gathers the
+    /// point and spot lights it sees (see [`LightTable::gather_view`]), or `None`: then only the
+    /// camera's view lists such lights.
+    pub light_table: Option<&'a LightTable>,
     /// The newest frame that the thread that draws drew with every pipeline built, or 0 before
     /// any.
     pub pipelines_built: u32,
@@ -305,15 +312,41 @@ pub trait FrameBuilder {
     }
     /// Removes the live meshes among `ids`, which no object or batch names any more, packs the
     /// storage over their data, and makes the next frame upload the data that moved. The next
-    /// frame rebuilds the draw tables, as after any structure change.
+    /// frame rebuilds the draw tables, as after any structure change. The removed meshes lose
+    /// their levels of detail, and so do the meshes whose levels name one of them.
     fn remove_meshes(&mut self, ids: &[u32]) {
         let moves = self.settings_mut().meshes_mut().remove(ids);
+        self.settings_mut().forget_removed_levels();
         self.meshes_moved(ids, &moves);
     }
     /// Makes the GPU copies of the meshes follow a removal: the pages and the delta texels upload
     /// again from where `moves` says they changed, and the removed `ids` lose what the builder
     /// kept for them.
     fn meshes_moved(&mut self, ids: &[u32], moves: &MeshMoves);
+    /// Writes new values into one attribute of mesh `id`'s vertices, as
+    /// [`MeshStorage::update_vertices`] says, and makes the next frame upload the bytes that
+    /// changed. Returns true for the mesh's first update.
+    ///
+    /// # Errors
+    /// [`UpdateError`] for an update that does not fit the mesh, which then changes nothing.
+    fn update_mesh_vertices(
+        &mut self,
+        id: u32,
+        location: usize,
+        components: u32,
+        start: u32,
+        count: u32,
+        bytes: &[u8],
+    ) -> Result<bool, UpdateError> {
+        let meshes = self.settings_mut().meshes_mut();
+        let first = meshes.update_vertices(id, location, components, start, count, bytes)?;
+        self.meshes_updated(id, location == vertex::POSITION);
+        Ok(first)
+    }
+    /// Makes the GPU copies of the meshes follow the last vertex update, of mesh `id`: the byte
+    /// ranges that [`MeshStorage::updated`] lists upload again. When the update changed the
+    /// positions, the builder also stops using what it made from the mesh's old shape.
+    fn meshes_updated(&mut self, id: u32, positions: bool);
     /// The GPU bytes of the meshes: the buffers of every page and the texture of morph deltas.
     fn mesh_gpu_bytes(&self) -> u64;
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
@@ -664,6 +697,9 @@ pub struct SceneSettings {
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
     /// quality settings set: 0 draws none.
     ao_scale: f32,
+    /// The steps of each march of the main directional light's contact shadows, which the quality
+    /// settings set: 0 draws none.
+    contact_steps: u32,
     /// Depth of field's settings while the sketch turns it on.
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
@@ -701,6 +737,38 @@ pub struct SceneSettings {
     /// How many times the targets of mirror views without a size of their own halve the render
     /// size, which the quality settings set.
     mirror_halvings: u8,
+    /// The particle systems of the particles add-on.
+    particles: ParticleTable,
+    /// The meshes with levels of detail.
+    levels: Levels,
+    /// How the levels of detail are picked, which the quality settings set.
+    level_quality: LevelQuality,
+    /// The render scale that the levels of detail pick by: the frame's, which the WebGL2 builder's
+    /// culling, which runs at the canvas's full size, would not see otherwise.
+    level_scale: RenderScale,
+}
+
+/// How objects and batches pick their meshes' levels of detail.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LevelQuality {
+    /// The error in pixels under which a coarser level draws, in the views of cameras. 0 draws
+    /// every mesh's base level.
+    pub threshold: f32,
+    /// What the threshold is multiplied by in the shadow maps' views, so that casters draw a
+    /// coarser level.
+    pub shadow_factor: f32,
+    /// True when two levels hand over in a fading band, where the meshes' levels allow it.
+    pub fades: bool,
+}
+
+impl Default for LevelQuality {
+    fn default() -> Self {
+        Self {
+            threshold: 1.0,
+            shadow_factor: 2.0,
+            fades: true,
+        }
+    }
 }
 
 impl SceneSettings {
@@ -742,6 +810,7 @@ impl SceneSettings {
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
+            contact_steps: 0,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
             lut: None,
@@ -759,6 +828,10 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             shadow_camera: None,
             mirror_halvings: 1,
+            particles: ParticleTable::default(),
+            levels: Levels::default(),
+            level_quality: LevelQuality::default(),
+            level_scale: RenderScale::FULL,
         }
     }
 
@@ -871,6 +944,42 @@ impl SceneSettings {
         }
     }
 
+    /// Finds the bind group of the textures that each custom effect and each full-screen pass
+    /// samples, and writes each texture's layer into its last values, -1 while its image is not on
+    /// the GPU. A full-screen pass reads the targets of the views that its textures show. A builder
+    /// calls it each frame before it gives the graph the effects and syncs the graph with the
+    /// views, and before the texture store records, which makes a new group. It allocates nothing
+    /// once each group exists.
+    pub(crate) fn prepare_effect_maps(&mut self) {
+        let textures = &mut self.textures;
+        for effect in &mut self.effects {
+            resolve_maps(textures, &mut effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            let Some(pass) = view.fullscreen_pass_mut() else {
+                continue;
+            };
+            resolve_maps(textures, &mut pass.maps, &mut pass.values);
+            let reads = pass.maps.views;
+            view.target_mut().reads = reads;
+        }
+    }
+
+    /// Writes the layer of each texture that the custom effects and full-screen passes sample into
+    /// their values again, once the frame's texture work has given the passes' targets their
+    /// textures and finished uploads, so a texture samples in the frame that makes it ready.
+    pub(crate) fn update_post_layers(&mut self) {
+        let textures = &self.textures;
+        for effect in &mut self.effects {
+            write_layers(textures, &effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            }
+        }
+    }
+
     /// How the sketch joins its effects.
     pub(crate) fn effect_joins(&self) -> &EffectJoins {
         &self.effect_joins
@@ -980,6 +1089,53 @@ impl SceneSettings {
     /// same targets, so it makes no GPU object.
     pub fn set_ao_scale(&mut self, scale: f32) {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// The size of the targets of ambient occlusion's steps, as a share of the render size each
+    /// way: ambient occlusion's scale, or the largest when that is 0 and only contact shadows
+    /// draw.
+    pub fn screen_scale(&self) -> f32 {
+        if self.ao_scale > 0.0 {
+            self.ao_scale
+        } else {
+            ao::MAX_SCALE
+        }
+    }
+
+    /// Sets the steps of each march of the main directional light's contact shadows, from 0,
+    /// which draws none, from the next recorded frame on. A new count above 0 changes only the
+    /// steps' settings, so it makes no GPU object.
+    pub fn set_contact_steps(&mut self, steps: u32) {
+        self.contact_steps = steps.min(ao::MAX_CONTACT_STEPS);
+    }
+
+    /// How far the main directional light's contact shadows reach, in meters, while they draw:
+    /// while the light casts shadows with a reach above 0, the quality settings give each march
+    /// steps, and no debug view draws.
+    fn contact_reach(&self) -> Option<f32> {
+        let reach = self.lighting.sun_shadow?.contact;
+        (reach > 0.0 && self.contact_steps > 0 && !self.debug_view.is_debug()).then_some(reach)
+    }
+
+    /// The main directional light's contact shadows for a frame whose camera view has the values
+    /// `camera`, on a canvas of `canvas` pixels, or `None` while they draw nothing.
+    pub fn contact(&self, camera: Option<&ViewFrame>, canvas: (u32, u32)) -> Option<Contact> {
+        let distance = self.contact_reach()?;
+        let (_, inverse) = self.camera_projection(canvas)?;
+        // The camera's view-projection matrix for positions relative to it is its projection after
+        // its turn, so the inverse projection leaves the turn, which takes the direction toward
+        // the light into view space.
+        let turn = multiply(&inverse, &camera?.uniform.view_proj);
+        let [x, y, z, _] = self.lighting.sun_direction;
+        let toward = [-x, -y, -z];
+        let view: [f32; 3] =
+            std::array::from_fn(|row| (0..3).map(|k| turn[k * 4 + row] * toward[k]).sum());
+        let length = view.iter().map(|c| c * c).sum::<f32>().sqrt();
+        (length > 0.0).then(|| Contact {
+            to_light: view.map(|c| c / length),
+            distance,
+            steps: self.contact_steps,
+        })
     }
 
     /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,
@@ -1175,6 +1331,110 @@ impl SceneSettings {
         };
     }
 
+    /// The meshes with levels of detail.
+    pub fn levels(&self) -> &Levels {
+        &self.levels
+    }
+
+    /// Gives the mesh with engine id `base` the lower levels `meshes`, from the most detailed
+    /// down, with their errors in the base mesh's units, or with none takes its levels away.
+    /// `fades` lets two levels hand over in a fading band. Every mesh must be live, with the base
+    /// mesh's vertex attributes. The frame builders take the change when the scene's structure
+    /// changes next.
+    pub fn set_mesh_levels(
+        &mut self,
+        base: u32,
+        meshes: &[u32],
+        errors: &[f32],
+        fades: bool,
+    ) -> Result<(), LevelError> {
+        let format = |mesh: u32| Some(self.meshes.mesh(mesh.checked_sub(1)?)?.format);
+        let Some(own) = format(base) else {
+            return Err(LevelError::Mesh);
+        };
+        for &mesh in meshes {
+            match format(mesh) {
+                None => return Err(LevelError::Mesh),
+                Some(other) if other != own => return Err(LevelError::Format),
+                Some(_) => {}
+            }
+        }
+        self.levels.set(base, meshes, errors, fades)
+    }
+
+    /// Takes the levels away from the meshes that are no longer live, and from the meshes whose
+    /// levels name one.
+    pub(crate) fn forget_removed_levels(&mut self) {
+        let meshes = &self.meshes;
+        self.levels
+            .forget_removed(|mesh| mesh.checked_sub(1).and_then(|id| meshes.mesh(id)).is_some());
+    }
+
+    /// How the levels of detail are picked.
+    pub fn level_quality(&self) -> LevelQuality {
+        self.level_quality
+    }
+
+    /// Sets how the levels of detail are picked. Returns true when the fading bands turned on or
+    /// off, which changes the buckets, so the scene's structure must count as changed.
+    pub fn set_level_quality(&mut self, quality: LevelQuality) -> bool {
+        let rebuild = quality.fades != self.level_quality.fades && self.levels.any();
+        self.level_quality = quality;
+        rebuild
+    }
+
+    /// Sets the render scale that the levels of detail pick by: the frame's.
+    pub fn set_level_scale(&mut self, scale: RenderScale) {
+        self.level_scale = scale;
+    }
+
+    /// True when the buckets of meshes with levels get fade buckets: some mesh has levels, and the
+    /// quality settings let levels fade.
+    pub(crate) fn levels_fade(&self) -> bool {
+        self.levels.any() && self.level_quality.fades
+    }
+
+    /// The level inputs of `view`, for a canvas of `canvas` pixels drawn at the frame's render scale.
+    /// A view with a camera of its own picks by that camera's projection and draw height; a mirror
+    /// and the outline view pick as the camera's view does, as their positions are relative to the
+    /// main camera. Off while no mesh has levels, or without a camera.
+    pub(crate) fn level_view(&self, view: ViewId, canvas: (u32, u32)) -> LevelRule {
+        let quality = self.level_quality;
+        let band = if quality.fades { FADE_BAND } else { 0.0 };
+        let own = self
+            .views
+            .get(view.index())
+            .filter(|own| own.mirrored().is_none() && own.camera().is_some());
+        let source = own.or_else(|| self.views.first());
+        self.level_view_of(source, canvas, quality.threshold, band)
+    }
+
+    /// The level inputs of the shadow maps' views: as the camera's view picks, with the threshold
+    /// times the shadow factor, so casters draw a coarser level, and no fading band.
+    pub(crate) fn shadow_level_view(&self, canvas: (u32, u32)) -> LevelRule {
+        let quality = self.level_quality;
+        let threshold = quality.threshold * quality.shadow_factor.max(1.0);
+        self.level_view_of(self.views.first(), canvas, threshold, 0.0)
+    }
+
+    /// The level inputs of a view drawn from `view`'s camera with `threshold` and `band`.
+    fn level_view_of(
+        &self,
+        view: Option<&View>,
+        canvas: (u32, u32),
+        threshold: f32,
+        band: f32,
+    ) -> LevelRule {
+        let lens = view.and_then(|view| Some((view, view.camera()?.1)));
+        let (Some((view, lens)), true) = (lens, self.levels.any()) else {
+            return LevelRule::default();
+        };
+        let (width, height) = view.draw_size(canvas, self.level_scale);
+        let p11 = lens.projection(width as f32 / height.max(1) as f32)[5];
+        let orthographic = matches!(lens, Lens::Orthographic(_));
+        LevelRule::new(height as f32, p11, orthographic, threshold, band)
+    }
+
     pub fn meshes(&self) -> &MeshStorage {
         &self.meshes
     }
@@ -1303,7 +1563,7 @@ impl SceneSettings {
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
         match pipeline.template {
-            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP => {
+            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP | template::PARTICLE_MAP => {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
@@ -1477,27 +1737,59 @@ impl SceneSettings {
         self.mirror_halvings = halvings;
     }
 
+    /// The particle systems of the particles add-on.
+    pub fn particles(&self) -> &ParticleTable {
+        &self.particles
+    }
+
+    /// The particle systems, to make, change and destroy them.
+    pub fn particles_mut(&mut self) -> &mut ParticleTable {
+        &mut self.particles
+    }
+
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
     /// has its own, and the preset's size unless it has its own, and each view that draws once in
-    /// several frames moves its turn on. A builder calls it once per frame, before it syncs its
-    /// graph with the views.
-    pub(crate) fn pace_views(&mut self) {
+    /// several frames moves its turn on, drawing at once into a texture of a new size for the
+    /// frame's canvas `canvas` and render scale `scale`. A builder calls it once per frame, before
+    /// it syncs its graph with the views.
+    pub(crate) fn pace_views(&mut self, canvas: (u32, u32), scale: RenderScale) {
         let camera_layers = self.views[ViewId::CAMERA.index()].layers();
         let halvings = self.mirror_halvings;
         for view in self.views.iter_mut().skip(1) {
             view.follow_camera(halvings, camera_layers);
-            view.target_mut().pace();
+            let made = view.target().graph_size().made(canvas, scale);
+            view.target_mut().pace(made);
         }
     }
 
-    /// True when a view draws the scene's background behind its objects: the camera's view, and
-    /// each mirror view, whose image shows the sky as a mirror does.
+    /// True when a view draws the scene's background behind its objects: the camera's view, each
+    /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
+    /// that clears to the camera's color, as a three.js render target shows the scene's
+    /// background. A view with a clear color of its own shows that color instead.
     pub(crate) fn draws_background(&self, view: ViewId) -> bool {
         view == ViewId::CAMERA
-            || self
-                .views
-                .get(view.index())
-                .is_some_and(|view| view.mirrored().is_some())
+            || self.views.get(view.index()).is_some_and(|view| {
+                view.mirrored().is_some()
+                    || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
+            })
+    }
+
+    /// Gives the full-screen pass of a view new values and textures, from the next frame on. A view
+    /// of a scene, or a removed one, keeps what it has.
+    pub fn set_fullscreen_values(
+        &mut self,
+        view: ViewId,
+        values: &[f32; EFFECT_FLOATS],
+        textures: &[Handle; MAX_TEXTURES],
+    ) {
+        if let Some(pass) = self
+            .views
+            .get_mut(view.index())
+            .and_then(View::fullscreen_pass_mut)
+        {
+            pass.values = *values;
+            pass.maps.textures = *textures;
+        }
     }
 
     /// Switches a view other than the camera's on or off. A view switched off keeps the last
@@ -1509,12 +1801,21 @@ impl SceneSettings {
     }
 
     /// Marks each view's target shown while a live texture shows it, so the camera's passes read
-    /// it. A builder calls it before it syncs its graph with the views.
+    /// it. A full-screen pass that reads what the camera's view draws runs after the camera's
+    /// passes, so they show its image of the frame before. A builder calls it before it syncs its
+    /// graph with the views.
     pub(crate) fn mark_shown_views(&mut self) {
         let shown = self.textures.shown_views();
         for (index, view) in self.views.iter_mut().enumerate().skip(1) {
             view.target_mut().shown = shown & (1 << index) != 0;
         }
+    }
+
+    /// The views whose targets the custom effects' textures show, as a mask of view places.
+    pub(crate) fn effect_views(&self) -> u32 {
+        self.effects
+            .iter()
+            .fold(0, |mask, effect| mask | effect.maps.views)
     }
 
     /// Gives the textures that show views' targets the GPU id of each target, by `target_of`, once
@@ -1532,8 +1833,8 @@ impl SceneSettings {
     }
 
     /// True when a view may draw in the next frame: the camera's view, and any other view that is
-    /// switched on while a texture shows its target or another view reads it. The render graph
-    /// culls the rest, so a builder need not cull them.
+    /// switched on while a texture shows its target, or another view or a custom effect reads it.
+    /// The render graph culls the rest, so a builder need not cull them.
     pub fn view_draws(&self, view: ViewId) -> bool {
         if view == ViewId::CAMERA {
             return true;
@@ -1542,10 +1843,11 @@ impl SceneSettings {
             return false;
         };
         let bit = 1 << view.index();
-        let read = self
-            .views
-            .iter()
-            .any(|other| !other.is_removed() && other.target().reads & bit != 0);
+        let read = self.effect_views() & bit != 0
+            || self
+                .views
+                .iter()
+                .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
             && drawn.target().draws()
             && (self.textures.shown_views() & bit != 0 || read)
@@ -1879,6 +2181,9 @@ impl SceneSettings {
         if shading == Shading::Sprite && live(MapSlot::BaseColor) {
             shading = Shading::SpriteMap;
         }
+        if shading == Shading::Particle && live(MapSlot::BaseColor) {
+            shading = Shading::ParticleMap;
+        }
         if shading == Shading::Lit && uv0 && self.has_live_map(id) {
             shading = Shading::StandardMaps;
         }
@@ -1952,6 +2257,8 @@ impl SceneSettings {
         let output = self.drawn_output();
         let uniform = FrameUniform {
             view_proj: camera.view_proj,
+            view: camera.view,
+            projection: camera.projection,
             camera_position: camera.eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
@@ -1968,11 +2275,12 @@ impl SceneSettings {
                 2.0 * pixel_ratio / pixels.0.max(1) as f32,
                 2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
-            occlusion: match self.ao() {
-                Some(ao) if view_id == ViewId::CAMERA => {
-                    ao::frame_values(ao, canvas, scale, self.ao_scale)
-                }
-                _ => [0.0; 4],
+            occlusion: if view_id == ViewId::CAMERA
+                && (self.ao().is_some() || self.contact_reach().is_some())
+            {
+                ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            } else {
+                [0.0; 4]
             },
             ..FrameUniform::default()
         };
@@ -1985,6 +2293,36 @@ impl SceneSettings {
     }
 }
 
+/// Finds the bind group of the textures of `maps`, and the views whose targets they show, and
+/// writes each texture's layer into its float of `values`, -1 while its image is not on the GPU.
+/// A slot without a texture leaves its float alone: the sketch's thread writes -1 there for a
+/// texture that the WGSL declares and the sketch left out, and the float of a slot past the
+/// declared textures holds a uniform. WGSL without textures keeps group 0.
+fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut [f32]) {
+    if !maps.any() {
+        maps.group = 0;
+        maps.views = 0;
+        return;
+    }
+    let mut slots = [Handle::NONE; MAP_SLOTS];
+    slots[..maps.textures.len()].copy_from_slice(&maps.textures);
+    maps.group = textures.map_set_group(&slots).unwrap_or(0);
+    maps.views = textures.group_pass_views(maps.group);
+    write_layers(textures, maps, values);
+}
+
+/// Writes the layer of each texture of `maps` into its float of `values`, -1 while its image is
+/// not on the GPU. A slot without a texture leaves its float alone.
+fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) {
+    for (slot, &texture) in maps.textures.iter().enumerate() {
+        if !texture.is_none() {
+            values[EffectMaps::layer_float(slot)] = textures
+                .ready_layer(texture)
+                .map_or(-1.0, |layer| layer as f32);
+        }
+    }
+}
+
 /// True when the material of `materials` with engine id `material` moves its vertices by a vertex
 /// offset of its own WGSL, which its shadows follow.
 fn sways(materials: &MaterialTable, material: u32) -> bool {
@@ -1994,10 +2332,9 @@ fn sways(materials: &MaterialTable, material: u32) -> bool {
             .is_ok_and(Shading::casts_its_own_way)
 }
 
-/// What makes a bucket of a layout, in draw order: what its mesh and material ask of their
-/// pipeline, then five words that each layout reads its own way, such as the material's bind
-/// group, the mesh page, the engine mesh and material ids and the bounds or rows it culls.
-pub(crate) type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+/// What makes a bucket of a layout, the same key that [`crate::levels`] names, so both frame
+/// builders share one sort and one type.
+pub(crate) type BucketKey = crate::levels::BucketKey;
 
 /// Scratch for layout rebuilds: every bucket key with its source count, sorted and merged into one
 /// entry per bucket. It holds an entry for every scene slot while it sorts, so a frame builder
@@ -2054,6 +2391,9 @@ struct PageBuffers {
     /// The page's vertex bytes that the buffers hold.
     vertices: usize,
     indices: usize,
+    /// The page's vertex bytes that changed in place since the last upload, below `vertices`:
+    /// the first and the end byte, or an empty range.
+    changed: (usize, usize),
 }
 
 impl PageBuffers {
@@ -2071,7 +2411,9 @@ impl PageBuffers {
         } else {
             *self
         };
+        let (first, end) = held.changed;
         (page.vertices.len() - held.vertices)
+            + end.min(held.vertices).saturating_sub(first)
             + ((page.indices.len() - (held.indices & !1)) * 2).next_multiple_of(4)
     }
 }
@@ -2162,6 +2504,12 @@ impl MeshBuffers {
                 )?;
                 remade = true;
             }
+            let (first, end) = std::mem::take(&mut buffers.changed);
+            let end = end.min(buffers.vertices);
+            if first < end {
+                let (at, bytes) = arena.push(&page.vertices[first..end])?;
+                list.push(Op::WriteBuffer, &[vertex_id, first as u32, at, bytes])?;
+            }
             let new_vertices = &page.vertices[buffers.vertices..];
             if !new_vertices.is_empty() {
                 let offset = buffers.vertices as u32;
@@ -2188,6 +2536,27 @@ impl MeshBuffers {
                 buffers.vertices = buffers.vertices.min(vertices);
                 buffers.indices = buffers.indices.min(indices);
             }
+        }
+    }
+
+    /// Makes the next upload send the vertex bytes that `ranges` list, each a page's index with
+    /// its first and end byte. Bytes past what a page's buffers hold upload with the page's new
+    /// data anyway.
+    pub(crate) fn updated(&mut self, ranges: &[(u32, usize, usize)]) {
+        for &(page, first, end) in ranges {
+            let Some(buffers) = self.pages.get_mut(page as usize) else {
+                continue;
+            };
+            let end = end.min(buffers.vertices);
+            if first >= end {
+                continue;
+            }
+            let (low, high) = buffers.changed;
+            buffers.changed = if low < high {
+                (low.min(first), high.max(end))
+            } else {
+                (first, end)
+            };
         }
     }
 

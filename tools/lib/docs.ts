@@ -98,7 +98,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
 	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
-	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; meshes from arrays; vertex formats; large meshes.' },
+	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
 	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
@@ -115,6 +115,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
 	{ id: 'api/points', title: 'Points', since: '0.2', summary: 'createPoints; size attenuation; textures.' },
 	{ id: 'api/lines', title: 'Lines', since: '0.2', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
+	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
 	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
 	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
 

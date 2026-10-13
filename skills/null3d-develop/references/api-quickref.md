@@ -1,6 +1,6 @@
 # null3D API quick reference
 
-This is the API of null3D, with the parts planned up to version 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check its docs page's status (`stable`, `experimental` or `planned`) and the note under its title, as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
+This is the API of null3D, with the parts planned up to version 1.0. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Before using a part, check its docs page's status (`stable`, `experimental` or `planned`) and the note under its title, as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
 
 ## Contents
 
@@ -39,6 +39,7 @@ const engine = await createEngine({
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
+  softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -92,8 +93,8 @@ export default defineSketch(async (ctx) => {
   const {
     scene, assets, materials, geometry, textures,
     input, time, quality, post, page, debug, engine, preferences,
+    render, ui,  // (0.2)
   } = ctx;
-  // (0.2): ctx.render and ctx.ui
   // setup: create objects, load assets, await scene.warmUp()
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
@@ -133,7 +134,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createSprites({ count, map, atlas, sizeAttenuation, center, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<SpriteBatch> | Camera-facing quads in one batch; the first call downloads the sprite code: typed arrays `positions` (3), `sizes` (2), `rotations` (1, radians), `colors` (4, linear), `frames` (1, atlas frame from the top left); `markDirty`, `setActiveCount`, `material.set`, as instance batches. Blends by default; `sizeAttenuation: false` gives sizes in CSS pixels. Docs `api/sprites` |
 | `scene.createLines({ positions, colors, mode, width, worldUnits, dashed, dashSize, gapSize, dashScale, dashOffset, lit, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<LineBatch> | Segments between points in one batch, drawn as quads with round ends at any width; the first call downloads the line code. `mode`: `'strip'` (default), `'loop'` or `'segments'` (pairs). `width` in CSS pixels, or world units with `worldUnits`. Typed arrays `positions` (3 per point) and `colors` (3 per point, linear, 8 bits per channel); `markDirty` takes points; `setActiveCount` takes points; `setWidth`; `material.set` takes the dash values and, with `lit`, the standard values. Docs `api/lines` |
 | `scene.createPoints({ positions, colors, size, sizeAttenuation, map, dynamic, layers, origin, color, opacity, alphaMode, blending })` (0.2) | Promise<PointBatch> | Squares of one size that face the camera, in one batch; each point is a sprite row, and the first call downloads the sprite code. `size` in world units, or CSS pixels with `sizeAttenuation: false`. `colors` takes 3 or 4 numbers per point (linear). Typed arrays `positions` (3) and `colors` (4, RGBA); `setSize`, `markDirty`, `setActiveCount`, `material.set`, as instance batches. Opaque by default; a disc `map` with `alphaMode: 'mask'` makes round points. About 215 bytes of engine memory per point. Docs `api/points` |
-| `scene.createLod` (0.2) | | Docs `concepts/lod` |
+| `createParticles(ctx, { rate, bursts, lifetime, shape, speed, direction, spread, velocity, follow, subEmitters, gravity, drag, wind, turbulence, groundHeight, groundMode, size, sizeOverLife, colors, colorOverLife, alphaOverLife, intensity, facing, stretch, spin, blending, map, flipbook, softness, nearFade })` from `@null3d/particles` (0.2) | Promise<ParticleSystem> | A GPU particle system: the GPU moves each particle in closed form, and the CPU writes only births. Call `system.update()` every frame in `onLateUpdate`; it allocates nothing. `shape`: `point`, `sphere`, `cone`, `box`, `disc`. `facing`: `camera`, `velocity` (sparks, rain), `ground`, `tumble` (leaves). `colors` takes one color input or two that particles mix; `intensity` above 1 blooms; curves over life up to 16 steps. `follow: object` leaves trails in the world. `particleTextures.glow`, `spark`, `smoke`, `flame`, `rain`, `leaves` make maps in code: spread them into the options. `system.burst(n)`, `system.rate`, `system.emitting`, `system.set(values)`, `system.destroy()`. Docs `api/particles` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
 | `scene.raycast(...)` and other queries (0.2) | | Section 13 |
@@ -171,6 +172,7 @@ mesh.setRenderOrder(n);                                             // blended o
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 mesh.setMorphWeight('Smile', 0.8);   mesh.getMorphWeight(0);       // (0.2) by name or number; E1218 for a target it lacks
 mesh.setOccluder(true);              // (0.2) WebGL2: large solid meshes, such as buildings, hide what lies behind them
+mesh.shaderId;                       // (0.2) the number a custom material reads as object.id
 ```
 
 - Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions.
@@ -196,6 +198,7 @@ rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
 rocks.scales;      // Float32Array, 3 floats per row
 rocks.colors;      // Float32Array, 4 floats per row, when colors: true
 rocks.values;      // (0.2) Float32Array, 4 floats per row, when values: true
+rocks.shaderId;    // (0.2) every row's object.id in custom WGSL; input.instance is the row
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
 rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
@@ -239,6 +242,7 @@ const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, 
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
+sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
 light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
@@ -261,7 +265,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 
 ## 8. Geometry (`api/geometry`)
 
-`ctx.geometry` has `box`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, with the same parameters and defaults as the three.js geometry classes, as named options (for example `geometry.sphere({ radius, widthSegments, heightSegments })`). They build three.js's vertices, texture coordinates included. A mesh keeps the vertices its generator built, so turn, move or scale the object, not the mesh: three.js's `geometry.rotateX()` has no match. The package `@null3d/geometry` (0.2) adds `torusKnot`, `icosahedron`, `octahedron`, `tetrahedron`, `dodecahedron`, `polyhedron`, `lathe`, `extrude`, `shape` and `tube`.
+`ctx.geometry` has `box`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, with the same parameters and defaults as the three.js geometry classes, as named options (for example `geometry.sphere({ radius, widthSegments, heightSegments })`). They build three.js's vertices, texture coordinates included. A mesh keeps the vertices its generator built, so turn, move or scale the object, not the mesh: three.js's `geometry.rotateX()` has no match. The package `@null3d/geometry` (0.2) adds `torusKnot`, `icosahedron`, `octahedron`, `tetrahedron`, `dodecahedron`, `polyhedron`, `lathe`, `extrude`, `shape` and `tube`, with three.js's options. Each returns arrays for `geometry.fromArrays`: `geometry.fromArrays(torusKnot({ radius: 1, tube: 0.4 }))`. It also has `Shape`, `Path`, the curves (such as `CatmullRomCurve3`) and `ShapeUtils`, with points as `[x, y]` or `[x, y, z]` arrays.
 
 ```ts
 const mesh = geometry.fromArrays({
@@ -269,7 +273,7 @@ const mesh = geometry.fromArrays({
   normals,                  // 3 per vertex, or computeNormals: true instead
   uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
   tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
-  joints, weights,          // (0.2) 4 per vertex each, together; skinning itself comes later in 0.2
+  joints, weights,          // (0.2) 4 per vertex each, together, for skinning
   indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
   morphTargets: { positions: [smile, blink], normals, names: ['Smile', 'Blink'] },  // (0.2) deltas, 3 per vertex per target
   // morphTargets.colors: color deltas, as many per vertex as colors; morphed colors clamp to 0..1
@@ -278,10 +282,13 @@ mesh.radius;                // the distance from the mesh's origin to its farthe
 mesh.morphTargets;          // (0.2) the target count; mesh.morphTargetNames lists their names
 mesh.destroy();             // (0.2) after the objects and batches that use it, in the same frame or before; E1111 while one does
 geometry.memoryBytes;       // (0.2) GPU bytes of every mesh; destroyed meshes give their room to later ones
-mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
+mesh.updateVertices('positions', positions, start, count);  // (0.2) new values of every vertex, same array type; start/count pick vertices; no allocation
+mesh.setLevels([{ mesh: mid, error: 0.02 }, { mesh: far, error: 0.1 }]);  // (0.2) levels of detail, most detailed first
+// every object and batch of `mesh` draws the coarsest level whose error covers under lodThreshold pixels;
+// { mesh, distance } in place of error maps three.js's LOD.addLevel; errors grow; E1221 for bad levels
 ```
 
-(0.2) Each attribute also takes the 8-bit and 16-bit integer arrays that glTF's `KHR_mesh_quantization` allows. The GPU keeps them as integers, at half or a quarter of the floats' size. Plain integers read as whole numbers; `{ array, normalized: true }` reads them as fractions, as three.js's `BufferAttribute` does. Normals and tangents take `Int8Array` or `Int16Array`, colors and weights `Uint8Array` or `Uint16Array`, and joints `Uint8Array`, `Uint16Array` or whole numbers. Integer positions keep their units, so scale the object to meters, as a glTF node does. A mesh keeps the attributes it gets in their types. Meshes whose attributes have the same types share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
+(0.2) Each attribute also takes the 8-bit and 16-bit integer arrays that glTF's `KHR_mesh_quantization` allows. The GPU keeps them as integers, at half or a quarter of the floats' size. Plain integers read as whole numbers; `{ array, normalized: true }` reads them as fractions, as three.js's `BufferAttribute` does. Normals and tangents take `Int8Array` or `Int16Array`, colors and weights `Uint8Array` or `Uint16Array`, and joints `Uint8Array`, `Uint16Array` or whole numbers. Integer positions keep their units, so scale the object to meters, as a glTF node does. A mesh keeps the attributes it gets in their types. Meshes whose attributes have the same types share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206, and a generator option that is not a finite number throws E1203. `api/geometry` covers vertex formats and meshes over 65,535 vertices. `updateVertices` (0.2) takes `positions`, `normals`, `uvs`, `uvs1`, `colors` and `tangents`. Update the normals with the positions, because the engine does not compute them again. The mesh keeps the bounding sphere it was made with, so give objects whose vertices move outside it bounds with `setBounds`. A mesh with joints or morph targets takes no updates. The first update rebuilds the draw tables once, so make it in the setup.
 
 ## 9. Materials (`api/materials`)
 
@@ -333,7 +340,7 @@ worn.destroy();   // (0.2) objects that still use it draw nothing; its place fre
 - Full shaders work in `materials.shader`: a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one (`guides/custom-shaders`). They take no textures.
 - (0.2) A custom material's `textures` option gives the textures that its WGSL declares, up to 6, fixed at creation. `references/shaders.md` section 4 has the rules. Standard texture maps do not reach `materials.shader`.
 - (0.2) `material.destroy()` frees a material that no object needs, as three.js's `material.dispose()`. Objects that still use it draw nothing, and later calls with it throw E1101. Its textures stay: destroy them apart.
-- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` comes in 0.2.
+- `envIntensity` (0.2) scales the scene environment's light on one standard material, times `setEnvironment`'s `intensity`. `materials.shadowCatcher` (0.2, not built yet) makes a ground plane that shows only shadows.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material. They are the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `alphaToCoverage`, `forceSinglePass`, `blending`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
@@ -424,11 +431,18 @@ anim.setTimeScale(0.5);                 // 0 pauses the object's clips
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
-anim.setJointOverride('Head', rotation); // later in 0.2: procedural aiming
+const head = anim.joint('Head');        // a joint's index; throws E1218 for a name it lacks
+anim.setJointRotation(head, q, 0.5);    // turn halfway from the animated rotation toward q
+anim.addJointRotation('Spine', twist);  // turn on top of the clips, in the joint's own frame
+anim.clearJoint(head);                  // rotations hold every frame until cleared; 8 per object
+const AIM = Object.freeze({ joints: ['Spine', 'Neck', 'Head'], limit: 0.8 }); // radians per joint
+anim.lookAt(target, AIM, weight);       // the chain aims its last joint at a world point
+anim.lookAt(point);                     // keeps the chain; anim.lookAt(null) stops
 const twin = scene.clone(hero);         // the clone gets an animator of its own
 // Joints are not objects. Meshes under bones (a sword in a hand) follow their joints.
 // Clips also animate a model's morph weights, blended with the weights that setMorphWeight sets.
 
+// (0.2, not built yet): joint overrides for procedural aiming
 // after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
 ```
 
@@ -440,7 +454,7 @@ Sampling and blending run on job workers; there is no update call. Playing a cli
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
 const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
 const opts = { maxDistance: 100, layers: PICKABLE };   // layers default: layer 0 alone, as three.js
-camera.screenToRay(input.pointer.x, input.pointer.y, ray);   // (0.2) not built yet
+camera.screenToRay(input.pointer.x, input.pointer.y, ray);   // (0.2)
 if (scene.raycast(ray.origin, ray.direction, opts, hit)) { /* hit.object, hit.point, hit.normal */ }
 scene.raycastAny(origin, direction, opts);             // true or false; fastest: line of sight
 const n = scene.raycastAll(origin, direction, opts, hits);   // every triangle hit, nearest first
@@ -485,7 +499,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built; the other effects come later in 0.2. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
@@ -527,11 +541,23 @@ const water = render.addPass({
   scale: 0.5,                        // optional: the preset's reflectionScale by default
   every: 1,                          // optional: draw in one frame of every N
 });
+const half = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'half', scale: 0.5 }); // share of the render size
+const blur = render.addPass({
+  kind: 'fullscreen',                // an effect's WGSL (fn effect) over a texture of its own
+  wgsl: blurWgsl,
+  writes: 'blur',
+  scale: 0.5,                        // or size: [w, h]
+  input: 'outlineMask',              // optional: 'sceneColor' | 'outlineMask'
+  textures: { map: textures.fromPass(half) },  // optional: var map: texture_2d<f32> in the WGSL
+  uniforms: { radius: 3 },
+});
+render.setPassUniform(blur, 'radius', 4);   // allocates nothing
+post.addEffect({ wgsl: addBlur, textures: { blur: textures.fromPass(blur) } }); // effects take textures too
 ```
 
-- A pass runs only while a texture shows it. It draws the sun, its shadows, the ambient and environment light and fog, but no point or spot lights and no ambient occlusion for now. A scene pass draws no sky; a reflection draws the scene's background.
+- A pass runs only while a texture shows it or another pass or effect reads it. Scene and reflection passes draw the sun, its shadows, the ambient and environment light and fog. They draw the point and spot lights their view sees, and the scene's background; a scene pass with `clearColor` shows that color instead. A light that only the pass sees casts no shadow there. No pass draws ambient occlusion.
 - A custom material reads a reflection with `reflection_uv` from `null3d::reflection` and sets `s.reflection` (`shaders/surface-functions`, recipe 19).
-- Full-screen passes of your own WGSL come later in 0.2: use `post.addEffect` for now.
+- A full-screen pass's `input.uv` is (0, 0) at its top left. Pass textures hold their bottom row first: sample one at `effectPassUv(input.uv)`. `effectInputSize()` is the input image's size. A pass that reads the scene (input or depth) runs after the camera: materials showing it see the frame before; effects see the same frame.
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 
@@ -550,6 +576,7 @@ quality.settings.gpuOcclusion;          // true when the GPU skips hidden opaque
 quality.set({ shadowFilter: 5, farCascadeInterval: 1 });  // shadow edge softness, 3 or 5 texels; far cascades every frame
 quality.set({ followMovingCasters: false }); // far cascades keep their turns while dynamic casters move in them (on by default)
 quality.set({ shadowCascadeBlend: 0.2 });  // blend each cascade into the next over its last 20% (0 hands over at once)
+quality.set({ lodThreshold: 1, lodShadowFactor: 2, lodFade: true });  // (0.2) levels of detail: pixels, shadows' factor, dithered bands
 quality.governor.steps;                 // the governor's steps past the render scale; onChange runs after each
 quality.governor.farCascadeInterval;    // the shadow settings drawn now, which the governor may lower
 quality.set({ governor: false });       // no governor: maxRenderScale, and the shadow settings as set

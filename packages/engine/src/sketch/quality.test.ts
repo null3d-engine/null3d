@@ -237,8 +237,13 @@ describe('SketchQuality.lower', () => {
 			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
+			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
 			reflectionScale: low.reflectionScale,
+			softParticles: low.softParticles,
+			lodThreshold: low.lodThreshold,
+			lodShadowFactor: low.lodShadowFactor,
+			lodFade: low.lodFade,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -256,8 +261,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size
-		// and software occlusion culling did.
+		// the reflections' size, soft particles and the levels of detail did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -266,7 +270,10 @@ describe('SketchQuality.lower', () => {
 			'bloomSize',
 			'dofSamples',
 			'reflectionScale',
-			'softwareOcclusion',
+			'softParticles',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 		]);
 	});
 });
@@ -296,13 +303,16 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale, following of moving casters, cascade blend
-		// and governor, and Low and Medium the same ambient occlusion scale.
+		// Every preset has the same highest render scale, following of moving casters, cascade blend,
+		// software occlusion culling and governor, and Low and Medium on WebGPU the same ambient
+		// occlusion scale and contact shadow steps.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
 			'shadowCascadeBlend',
 			'aoScale',
+			'contactShadowSteps',
+			'softwareOcclusion',
 			'governor',
 		];
 		expect(changes.at(-1)).toEqual(LIVE_SETTINGS.filter((name) => !same.includes(name)));

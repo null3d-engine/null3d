@@ -68,6 +68,12 @@ pub enum Shading {
     Sprite,
     /// A sprite material with its map, at each sprite's frame of the atlas; nothing creates it.
     SpriteMap,
+    /// Particles of a particle system of the particles add-on: a soft dot for each record of the
+    /// system, whose shader moves it to its age (see [`crate::particles`]). With a live map the
+    /// material draws as [`Shading::ParticleMap`].
+    Particle,
+    /// A particle material with its map, a flipbook atlas; nothing creates it.
+    ParticleMap,
     /// Wide lines, as three.js's `LineMaterial` draws them: a quad with round ends for each
     /// segment of a line batch, in the base color times the segment's colors, with dashes that the
     /// material's custom values set.
@@ -101,6 +107,9 @@ pub struct CustomShading {
     /// True when it has the builds of a shadow caster that moves by its vertex offset, which its
     /// shadows draw with.
     pub caster: bool,
+    /// True when its WGSL reads an instance's index or an object's id, which its vertex shader
+    /// finds in the table of object ranges.
+    pub object_ids: bool,
 }
 
 impl CustomShading {
@@ -115,6 +124,7 @@ impl CustomShading {
             transmission: false,
             row_values: true,
             caster: false,
+            object_ids: false,
         })
     }
 }
@@ -130,6 +140,8 @@ impl Shading {
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
             Shading::Sprite => template::SPRITE,
             Shading::SpriteMap => template::SPRITE_MAP,
+            Shading::Particle => template::PARTICLE,
+            Shading::ParticleMap => template::PARTICLE_MAP,
             Shading::Line => template::LINE,
             Shading::LineLit => template::LINE_LIT,
             Shading::Custom(custom) => custom.template,
@@ -140,7 +152,12 @@ impl Shading {
     /// needs to draw with it.
     pub const fn attributes(self) -> u32 {
         match self {
-            Shading::Lit | Shading::Unlit | Shading::Line | Shading::LineLit => 0,
+            Shading::Lit
+            | Shading::Unlit
+            | Shading::Line
+            | Shading::LineLit
+            | Shading::Particle
+            | Shading::ParticleMap => 0,
             Shading::TexCoords
             | Shading::UnlitMap
             | Shading::StandardMaps
@@ -164,7 +181,7 @@ impl Shading {
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
         match self {
-            Shading::TexCoords => false,
+            Shading::TexCoords | Shading::Particle | Shading::ParticleMap => false,
             Shading::Custom(custom) => custom.base_color,
             _ => true,
         }
@@ -181,10 +198,22 @@ impl Shading {
         }
     }
 
+    /// True when its shader is a whole shader of the sketch's, not built from the standard
+    /// material's template. Such a shader has no builds that skin in the vertex shader.
+    pub const fn is_full_shader(self) -> bool {
+        matches!(self, Shading::Custom(custom) if !custom.row_values)
+    }
+
     /// True when its shadows draw with its own caster builds, which move each vertex by its
     /// vertex offset: a custom material's whose WGSL has one.
     pub const fn casts_its_own_way(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.caster)
+    }
+
+    /// True when its shader reads the table of object ranges: a custom material's whose WGSL
+    /// reads an instance's index or an object's id.
+    pub const fn reads_object_ids(self) -> bool {
+        matches!(self, Shading::Custom(custom) if custom.object_ids)
     }
 }
 
@@ -672,6 +701,12 @@ impl MaterialTable {
         self.states.get(id as usize) == Some(&State::Live)
     }
 
+    /// True when a live material's shader reads the table of object ranges, which the frame
+    /// builders then fill.
+    pub fn reads_object_ids(&self) -> bool {
+        (0..self.len()).any(|id| self.is_live(id) && self.shading[id as usize].reads_object_ids())
+    }
+
     /// True when a template is a custom one that no live material draws with.
     pub fn custom_template_unused(&self, template: u32) -> bool {
         template >= template::CUSTOM_FIRST && !(0..self.len()).any(|id| {
@@ -924,11 +959,27 @@ mod tests {
     }
 
     #[test]
+    fn templates_from_64_to_the_first_custom_one_belong_to_the_engine() {
+        let mut table = MaterialTable::with_capacity(1);
+        let first = template::CUSTOM_FIRST;
+        assert_eq!(first, 128);
+        let id = table
+            .create(CustomShading::standard(first), 0, [1.0; 4])
+            .unwrap();
+        // No material draws with the engine's ids, so no frame releases their pipelines.
+        assert!((64..first).all(|t| !table.custom_template_unused(t)));
+        assert!(!table.custom_template_unused(first));
+        assert!(table.custom_template_unused(first + 1));
+        table.destroy(id).unwrap();
+        assert!(table.custom_template_unused(first));
+    }
+
+    #[test]
     fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
         let mut table = MaterialTable::with_capacity(3);
         for _ in 0..3 {
             table
-                .create(CustomShading::standard(64), 0, [1.0; 4])
+                .create(CustomShading::standard(template::CUSTOM_FIRST), 0, [1.0; 4])
                 .unwrap();
         }
         assert_eq!(

@@ -555,7 +555,7 @@ A point batch that you never change is static, and costs no uploads after its fi
 
 ## Hide what walls hide
 
-Mark large, solid objects as occluders. The engine then skips the objects that lie wholly behind them. Here a wall hides a field of crates from the camera. On WebGL2, every quality preset but Low turns occlusion culling on. On WebGPU, `createEngine`'s `gpuOcclusion` option turns it on.
+Mark large, solid objects as occluders. The engine then skips the objects that lie wholly behind them. Here a wall hides a field of crates from the camera. Every quality preset leaves occlusion culling off. On WebGL2, `createEngine`'s `softwareOcclusion` option turns it on, and on WebGPU its `gpuOcclusion` option.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

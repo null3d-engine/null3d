@@ -143,7 +143,7 @@ Owner decision, 7 October 2026: double-sided blended materials keep two draws by
 
 The first build put the ramp and the hash in every masked build, and flags in the material's row chose one. That grew the start's GLSL file by 10% and the skinning files past their limit of 1,536 KB uncompressed ([D-56](D-56-first-use-shader-files.md)). The skinning files stood at 98% of that limit before. So the ramp and the hash have permutation bits of their own, `ALPHA_COVERAGE` and `ALPHA_HASH`, and the plain mask's builds stay as they were. Their builds load on first use, in the files `coverage` and `hash`.
 
-A build with SKIN and one of these bits would belong to the skinning file, by D-56's rule of the lowest bit. So a feature table can now claim the builds that it shares with features of lower bits (`claims_shared_builds`). Both new features do, and the skinning and morph files keep their size.
+A build with SKIN and one of these bits would belong to the skinning file, by D-56's rule of the lowest bit. So a feature table can now claim the builds that it shares with features of lower bits (`claims_shared_builds`). Both new features do, and the skinning and morph files keep their size. On 12 October 2026 a build that needs several features got files of its own, and the claim went ([D-56](D-56-first-use-shader-files.md#addendum-2026-10-12-builds-that-need-several-features)).
 
 Custom materials build none of the three bits. Each custom material builds every variant of the standard template with its own WGSL. The bits would add half again to each one's shader file. They take the `mask` mode's cutoff, and `materials.shader` throws E1217 for `alphaToCoverage` and the `hash` mode.
 
