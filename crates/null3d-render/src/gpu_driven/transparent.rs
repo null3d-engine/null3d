@@ -19,6 +19,7 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, index_format, si
 use super::ids;
 use super::skin::{DrawGroups, SkinnedPart, Skinning};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, grown_size, put_u32};
+use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedSource, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
@@ -178,6 +179,7 @@ impl Transparent {
     /// mesh for each of the bucket's passes, from its slice of the view's sorted instances. A skinned object's bucket draws its
     /// regions of skinned vertices, or with the vertex shaders that skin, binds the joint texture.
     /// It leaves out the objects whose maps show a target that the view does not read.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -186,6 +188,7 @@ impl Transparent {
         skinning: &Skinning,
         settings: &SceneSettings,
         meshes: &MeshBuffers,
+        particles: &ParticlePass,
     ) -> Result<(), RecordError> {
         let draws = self.views[view.index()].draws();
         if draws.is_empty() {
@@ -206,6 +209,16 @@ impl Transparent {
                 && bucket.textures != 0
                 && textures.group_pass_views(bucket.textures) & hidden_targets != 0
             {
+                continue;
+            }
+            // A particle system draws its records with its own groups, which every later draw
+            // sets again.
+            if let Some(system) = bucket.particle_system() {
+                if particles.record(list, view, system, bucket.pipeline, bucket.textures)? {
+                    pipeline = None;
+                    vertices = None;
+                    groups = DrawGroups::default();
+                }
                 continue;
             }
             let skinned = bucket.skinned_slot();

@@ -220,7 +220,7 @@ import shipUrl from './models/ship.glb?optimized';
 const ship = await assets.loadGltf(shipUrl);
 ```
 
-The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first:
+The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first. With Bun, use Bun 1.4.3 or newer ([Install null3D](../getting-started/install.md) says why):
 
 ```sh
 bun add -d @null3d/cli

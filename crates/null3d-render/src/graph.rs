@@ -350,6 +350,10 @@ pub struct Target {
     /// first level, through a view of that level, and the frame makes the others from it after
     /// the last render pass that draws it.
     pub mipmapped: bool,
+    /// True for a kept target that shaders may sample outside the passes that the graph orders,
+    /// so its texture can always be sampled: a full-screen pass's texture, whose image of the frame
+    /// before the camera's passes show.
+    pub shown: bool,
 }
 
 impl Target {
@@ -362,6 +366,7 @@ impl Target {
             layers: 1,
             array: false,
             mipmapped: false,
+            shown: false,
         }
     }
 
@@ -374,6 +379,7 @@ impl Target {
             layers: 1,
             array: false,
             mipmapped: false,
+            shown: false,
         }
     }
 
@@ -400,6 +406,14 @@ impl Target {
         Self {
             mipmapped: true,
             ..self.array()
+        }
+    }
+
+    /// The same kept target, which shaders may sample outside the graph's passes.
+    pub const fn shown(self) -> Self {
+        Self {
+            shown: true,
+            ..self
         }
     }
 

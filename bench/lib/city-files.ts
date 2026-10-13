@@ -17,15 +17,16 @@
 //   roughness and metalness go into one image per set, in glTF's red, green and blue channels.
 //
 // The files go into the shared samples cache, beside the pinned commits' folders, keyed by the
-// layout's SHA-256 and this module's source, so every copy of the repository builds them once.
-// Images stay where the sample content keeps them, and the files name them by relative paths.
+// layout's SHA-256, the pinned commit and this module's source, so every copy of the repository
+// builds them once. Images stay in the pinned commit's folder, and the files name them by relative
+// paths, so each pin gets files of its own even when the layout stays the same.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { encode as encodePng } from 'fast-png';
 import type { Plugin } from 'vite';
 import { decodeImage } from '../../packages/cli/src/assets/images.js';
-import { sampleFileFor, samplesCacheRoot, samplesDir } from '../../tools/lib/samples.ts';
+import { readLock, sampleFileFor, samplesCacheRoot, samplesDir } from '../../tools/lib/samples.ts';
 import type { S6Layout, S6Material } from '../scenes/s6.ts';
 
 /** The layout's path in the sample content. */
@@ -798,6 +799,18 @@ function cacheDir(): string {
 }
 
 /**
+ * The name of the folder of the city's built files, from the layout's SHA-256, the pinned commit,
+ * in whose folder the files name their images, and this module's source.
+ */
+export function cityFolderKey(layoutSha256: string, commit: string, source: Uint8Array): string {
+	return createHash('sha256')
+		.update(`${layoutSha256}\n${commit}\n`)
+		.update(source)
+		.digest('hex')
+		.slice(0, 24);
+}
+
+/**
  * The city's built files for the pinned layout, built on the first call into the shared cache:
  * the full paths of the kit file and the tower file. A build writes a folder of its own and moves
  * it into place, so two builds at once end with one whole folder.
@@ -809,11 +822,11 @@ export function cityFiles(root: string): Record<CityFile, string> {
 	const layoutPath = join(samples, CITY_LAYOUT);
 	if (!existsSync(layoutPath))
 		throw new Error(`${CITY_LAYOUT} is missing: run bun run samples:fetch`);
-	const key = createHash('sha256')
-		.update(`${layoutFile.sha256}\n`)
-		.update(readFileSync(new URL(import.meta.url)))
-		.digest('hex')
-		.slice(0, 24);
+	const key = cityFolderKey(
+		layoutFile.sha256,
+		readLock(root).commit,
+		readFileSync(new URL(import.meta.url)),
+	);
 	const folder = join(cacheDir(), key);
 	const paths = {
 		kit: join(folder, 'kit.gltf'),

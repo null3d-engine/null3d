@@ -98,9 +98,11 @@
 //                       occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
-//                       machines: the plan's items split evenly, and an item stays with the items
-//                       whose results its check compares with. Each shard loads the capabilities
-//                       page first, to skip the pages of the GPU paths that the device lacks
+//                       machines: the plan's items split by their expected time in CI's Safari,
+//                       and an item stays with the items whose results its check compares with,
+//                       as the shaders page's parts stay together. Each shard loads the
+//                       capabilities page first, to skip the pages of the GPU paths that the
+//                       device lacks
 //   --only <ids>        run only these items of a fixed plan, such as the pages that failed in an
 //                       earlier run, with the items whose results their checks compare with
 //   --rounds <n>        run the items n times over, one round after another, to catch a fault
@@ -171,6 +173,7 @@ import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import {
 	type AppWindow,
 	appWindow,
+	displayRateProblem,
 	frontApp,
 	giveFocusBack,
 	PARKED_APPS,
@@ -200,9 +203,11 @@ import {
 	benchSummary,
 	type Check,
 	depthSummary,
+	expectedSeconds,
 	governorSummary,
 	gpuPathOf,
 	itemsNeeded,
+	itemsTogether,
 	jitterSummary,
 	judge,
 	MEMORY_LIMIT_CHECKS,
@@ -708,6 +713,12 @@ function reportQuiet(name: string, seconds: number, at?: PlanPlace): false {
 	return false;
 }
 
+/** Names a prompt on a cloud device's own screen as the cause, when one held the runner page. */
+function reportHold(name: string, cloud: CloudSessions | undefined): void {
+	const held = cloud?.heldBy(name);
+	if (held) console.log(`${name}: the likely cause: ${held}`);
+}
+
 /** How many new runner pages the runner tool opens for one runner in one run. */
 const MAX_REOPENS = 2;
 
@@ -1020,8 +1031,6 @@ export function noFramesTodo(runner: string, launch: Launch | undefined): string
 
 /** The display refresh rate that the device checklist asks for, in hertz. */
 export const EXPECTED_REFRESH_HZ = 60;
-/** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
-export const LOWEST_REFRESH_HZ = 55;
 /** How far the refresh rate may change through one run, as a share of its highest reading. */
 export const REFRESH_SPREAD = 0.1;
 
@@ -1041,6 +1050,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'dof',
+	'contact',
 	'effects',
 	'effects-joined',
 	'occlusion',
@@ -1061,8 +1071,8 @@ export function refreshProblem(rates: readonly number[]): string | undefined {
 	if (rates.length === 0) return undefined;
 	const low = Math.min(...rates);
 	const high = Math.max(...rates);
-	if (low < LOWEST_REFRESH_HZ)
-		return `the display ran at ${low} Hz (expected ${EXPECTED_REFRESH_HZ})`;
+	const slow = displayRateProblem(low, EXPECTED_REFRESH_HZ);
+	if (slow) return slow;
 	if (high - low > REFRESH_SPREAD * high)
 		return `the display's rate changed between ${low} and ${high} Hz through the run`;
 	return undefined;
@@ -1289,7 +1299,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 			`the ${options.plan} plan crashes the tab on purpose, and after a crash soon after another, Safari on a tablet stops reloading the runner page; run it on --lan devices with --attended, while someone can reopen the page`,
 		);
 	if (!shard) return repeatItems(items, rounds);
-	const part = shardItems(items, shard, needs);
+	const part = shardItems(items, shard, itemsTogether, expectedSeconds);
 	if (part.length === 0)
 		throw new Error(
 			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
@@ -1345,13 +1355,18 @@ async function runPlan(
 		try {
 			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
 				onFinish: (runner) => console.log(`${runner}: finished`),
-				onQuiet: recovery.onQuiet,
+				onQuiet: (runner, seconds, at) => {
+					reportHold(runner, cloud);
+					return recovery.onQuiet(runner, seconds, at);
+				},
 				onHandover: recovery.onHandover,
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
-					onNoStart: (runner: string, seconds: number) =>
-						console.log(`${runner}: its runner page did not start within ${seconds} s`),
+					onNoStart: (runner: string, seconds: number) => {
+						console.log(`${runner}: its runner page did not start within ${seconds} s`);
+						reportHold(runner, cloud);
+					},
 				}),
 			});
 		} finally {
