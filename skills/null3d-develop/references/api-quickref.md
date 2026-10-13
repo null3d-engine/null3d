@@ -428,6 +428,8 @@ anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every 
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
 anim.play('breathe', { layer: 2, additive: true });      // adds its change from its first frame
 anim.setTimeScale(0.5);                 // 0 pauses the object's clips
+anim.setUpdateInterval(4);              // a far crowd: sample this copy's pose once in 4 frames; 1 is every frame
+anim.updateInterval;                    // reads it back
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
