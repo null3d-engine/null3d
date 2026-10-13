@@ -1615,8 +1615,11 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 	if (Array.isArray(value)) {
 		first = value[0];
 		fits = value.length === count;
-		for (let k = 0; fits && k < count; k++) fits = isFiniteNumber(value[k]);
-	} else fits = count === 1 && isFiniteNumber(value);
+		for (let k = 0; fits && k < count; k++) {
+			const number = value[k];
+			fits = typeof number === 'number' && Number.isFinite(number);
+		}
+	} else fits = count === 1 && typeof value === 'number' && Number.isFinite(value);
 	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
 	const takes =
 		count === 1
@@ -1628,11 +1631,6 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 		'E1216',
 		`${call}() got ${JSON.stringify(value)} for the ${type} uniform ${uniform.name}; it takes ${takes}.`,
 	);
-}
-
-/** True for a finite number. */
-function isFiniteNumber(value: unknown): boolean {
-	return typeof value === 'number' && Number.isFinite(value);
 }
 
 /** True for a standard value that `set` writes itself, which the uniform writes skip. */

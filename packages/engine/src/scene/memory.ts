@@ -144,12 +144,8 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 	 */
 	callValues(): Float64Array {
 		this.grown();
-		let view = this.callValuesView;
-		if (view === undefined) {
-			view = this.f64(this.glue.callValues(), CALL_VALUE_COUNT);
-			this.callValuesView = view;
-		}
-		return view;
+		this.callValuesView ??= this.f64(this.glue.callValues(), CALL_VALUE_COUNT);
+		return this.callValuesView;
 	}
 
 	/**
