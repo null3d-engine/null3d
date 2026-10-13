@@ -48,7 +48,9 @@
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
-// view into in every frame. `--transmission` puts clear water that lets light through under S1,
+// view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
+// births every frame, one of them soft, so the frame copies the opaque depth for it.
+// `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
 // frame. `--ssr` puts a polished floor under S1 and turns screen-space reflections on, whose
 // steps and copy of the opaque colors draw in every frame. `--passes` adds a full-screen pass that
@@ -98,6 +100,7 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import type { Page } from '@playwright/test';
@@ -342,6 +345,13 @@ const REFLECTION_REPLAY_BUDGET = 3 * 64;
 const TRANSMISSION_REPLAY_BUDGET = 64;
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--particles`:
+ * the encoder of the render pass that copies the opaque depth for the soft particles, at bloom's
+ * allowance per pass.
+ */
+const PARTICLES_REPLAY_BUDGET = 64;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--passes`:
  * the encoders of the full-screen pass's render pass and the effect's, at bloom's allowance per
  * pass.
@@ -560,6 +570,8 @@ async function main(): Promise<void> {
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
 		const ssr = args.includes('--ssr') ? '&ssr' : '';
 		if (ssr && scene !== 's1') throw new Error('--ssr puts a polished floor under S1 only');
+		const particles = args.includes('--particles') ? '&particles' : '';
+		if (particles && scene !== 's1') throw new Error('--particles adds particles to S1 only');
 		const passes = args.includes('--passes') ? '&passes' : '';
 		if (passes && scene !== 's1') throw new Error('--passes adds a full-screen pass to S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
@@ -568,7 +580,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${ssr}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${ssr}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -715,6 +727,7 @@ async function main(): Promise<void> {
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
 					(replay && ssr ? SSR_REPLAY_BUDGET : 0) +
+					(replay && particles ? PARTICLES_REPLAY_BUDGET : 0) +
 					(replay && passes ? PASSES_REPLAY_BUDGET : 0) +
 					(name === 'generateMipmaps webgpu/backend.ts' && (transmission || ssr)
 						? TRANSMISSION_MIPS_BUDGET

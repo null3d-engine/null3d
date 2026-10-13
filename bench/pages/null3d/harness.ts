@@ -66,7 +66,8 @@ export interface Null3dPageOptions {
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
  * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
  * lets light through under it, `ssr` puts a polished floor under it with screen-space reflections
- * on, `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
+ * on, `particles` adds two particle systems over it, one of them soft,
+ * `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
  * makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
@@ -101,6 +102,7 @@ const SKETCH_SWITCHES = [
 	'reflection',
 	'transmission',
 	'ssr',
+	'particles',
 	'passes',
 	'still',
 	'batchShadows',

@@ -43,6 +43,7 @@ use crate::frame::{
 use crate::materials::feature;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
+use null3d_gpu::drawlist::template;
 
 /// What makes a sorted bucket: what the mesh and material ask of their pipeline, the bind group of
 /// the material's map, the vertex page of the mesh's first part, the engine mesh and material ids,
@@ -54,6 +55,9 @@ const NOT_SORTED: u32 = u32::MAX;
 /// The bit of a sorted bucket's group that marks a skinned object's bucket of its own, whose slot
 /// the bits below hold.
 const SKINNED_GROUP: u32 = 1 << 31;
+/// The bit of a sorted bucket's group that marks a particle system's bucket of its own, whose id
+/// the bits below hold.
+const PARTICLE_GROUP: u32 = 1 << 30;
 
 /// One sorted bucket.
 #[derive(Clone, Copy, Debug)]
@@ -87,6 +91,12 @@ impl SortedBucket {
     /// draws no skinned object.
     pub(crate) fn skinned_slot(&self) -> Option<u32> {
         (self.group & SKINNED_GROUP != 0).then_some(self.group & !SKINNED_GROUP)
+    }
+
+    /// The id of the particle system whose bucket this is, or `None` for a bucket of meshes.
+    pub(crate) fn particle_system(&self) -> Option<u32> {
+        (self.group & (SKINNED_GROUP | PARTICLE_GROUP) == PARTICLE_GROUP)
+            .then_some(self.group & !PARTICLE_GROUP)
     }
 }
 
@@ -301,8 +311,15 @@ impl SortedLayout {
             let pipeline = settings.pipeline_of(mesh, material);
             key_of(pipeline, mesh, material, resident, scene.flags()[slot])
         };
+        // A particle system's object draws from a bucket of its own, with its system's records,
+        // and an object with the particle shading but no system draws nothing.
+        let particles = settings.particles();
         let scene_key = |slot: usize| {
             let key = pair_key(slot)?;
+            if matches!(key.0.template, template::PARTICLE | template::PARTICLE_MAP) {
+                let id = particles.system_of(slot as u32)?;
+                return Some((key.0, key.1, key.2, key.3, key.4, PARTICLE_GROUP | id));
+            }
             match skin(slot, key.0) {
                 SkinnedPipeline::NotSkinned => Some(key),
                 SkinnedPipeline::Drawn(skinned) => Some((
@@ -364,8 +381,15 @@ impl SortedLayout {
             };
             let passes = if back == 0 { 1 } else { 2 };
             most_parts = most_parts.max(meshes.parts(slot).len() as u32 * passes);
+            // A particle system's pipeline reads no draw index, so of the pass's bits it takes
+            // only tone mapping.
+            let in_pass = if group & PARTICLE_GROUP != 0 && group & SKINNED_GROUP == 0 {
+                targets.tone_map_only()
+            } else {
+                targets
+            };
             self.buckets.push(SortedBucket {
-                pipeline: pipelines.id(front.in_pass(targets)),
+                pipeline: pipelines.id(front.in_pass(in_pass)),
                 back,
                 textures,
                 mesh,

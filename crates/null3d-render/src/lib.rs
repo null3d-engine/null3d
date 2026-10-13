@@ -90,6 +90,7 @@ pub mod occlusion;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
+pub mod particles;
 pub mod pipelines;
 pub mod queries;
 pub mod shadow_tiles;

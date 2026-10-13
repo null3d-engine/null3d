@@ -48,6 +48,7 @@ use crate::materials::{
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError};
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
+use crate::particles::ParticleTable;
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
@@ -748,6 +749,8 @@ pub struct SceneSettings {
     /// How many times the targets of mirror views without a size of their own halve the render
     /// size, which the quality settings set.
     mirror_halvings: u8,
+    /// The particle systems of the particles add-on.
+    particles: ParticleTable,
     /// The meshes with levels of detail.
     levels: Levels,
     /// How the levels of detail are picked, which the quality settings set.
@@ -840,6 +843,7 @@ impl SceneSettings {
             debug_view: DebugView::Lit,
             shadow_camera: None,
             mirror_halvings: 1,
+            particles: ParticleTable::default(),
             levels: Levels::default(),
             level_quality: LevelQuality::default(),
             level_scale: RenderScale::FULL,
@@ -1618,7 +1622,7 @@ impl SceneSettings {
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
         match pipeline.template {
-            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP => {
+            template::INSTANCED_UNLIT_MAP | template::SPRITE_MAP | template::PARTICLE_MAP => {
                 let map = self.materials.map(material - 1, MapSlot::BaseColor);
                 self.textures.group_id(map).unwrap_or(0)
             }
@@ -1790,6 +1794,16 @@ impl SceneSettings {
     /// render size, from the next frame on.
     pub fn set_mirror_halvings(&mut self, halvings: u8) {
         self.mirror_halvings = halvings;
+    }
+
+    /// The particle systems of the particles add-on.
+    pub fn particles(&self) -> &ParticleTable {
+        &self.particles
+    }
+
+    /// The particle systems, to make, change and destroy them.
+    pub fn particles_mut(&mut self) -> &mut ParticleTable {
+        &mut self.particles
     }
 
     /// Moves the views on to the next frame: each mirror view takes the camera's layers unless it
@@ -2225,6 +2239,9 @@ impl SceneSettings {
         }
         if shading == Shading::Sprite && live(MapSlot::BaseColor) {
             shading = Shading::SpriteMap;
+        }
+        if shading == Shading::Particle && live(MapSlot::BaseColor) {
+            shading = Shading::ParticleMap;
         }
         if shading == Shading::Lit && uv0 && self.has_live_map(id) {
             shading = Shading::StandardMaps;

@@ -145,6 +145,7 @@ use crate::graph::{
 };
 use crate::outline::{self, Outline};
 use crate::output::{Antialias, Output, SceneColor};
+use crate::particles::{DEPTH_COPY_FORMAT, ParticleDepthCopy};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
@@ -176,6 +177,8 @@ pub(crate) struct GraphIds {
     /// The copy of the camera's opaque color that surfaces which let light through sample.
     pub(crate) transmission: TransmissionIds,
     pub(crate) ssr: SsrIds,
+    /// The bind group of the copy of the camera's opaque depth that soft particles read.
+    pub(crate) particle_depth: u32,
 }
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
@@ -306,6 +309,8 @@ const SSR_TARGETS: [&str; ssr::STEPS] = [
     "ssrLevel6",
     "ssrTrace",
 ];
+const PARTICLE_DEPTH_PASS: &str = "ParticleDepth";
+const PARTICLE_DEPTH: &str = "particleDepth";
 /// The color target of the camera's depth prepass while ambient occlusion splits it from the
 /// opaque pass. No pass reads it: it gives the prepass's render pass the formats that its
 /// pipelines draw into, so each render pass ends without storing it, and it can share a texture
@@ -400,6 +405,9 @@ pub(crate) enum Role {
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
+    /// Copies the camera's opaque depth into the target that soft particles read. The graph
+    /// records it itself.
+    ParticleDepthCopy,
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -625,6 +633,17 @@ pub(crate) struct FrameGraph {
     /// The textures that the copy reads and draws into, found once for each compile of the graph,
     /// which the count says.
     transmission_target: Option<(u32, u32, u32)>,
+    /// The copy of the camera's opaque depth for soft particles.
+    particle_depth: ParticleDepthCopy,
+    /// True while a particle system on the scene fades near the surfaces behind it.
+    particle_depth_wanted: bool,
+    /// True once the copy's pipeline is built, after the frame whose list created it.
+    particle_depth_built: bool,
+    /// True when the declared passes hold the copy.
+    particle_depth_declared: bool,
+    /// The textures that the copy reads and draws into, found once for each compile of the graph,
+    /// which the count says.
+    particle_depth_target: Option<(u32, u32, u32)>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
@@ -763,6 +782,11 @@ impl FrameGraph {
             transmission_built: false,
             transmission_declared: false,
             transmission_target: None,
+            particle_depth: ParticleDepthCopy::new(ids.particle_depth),
+            particle_depth_wanted: false,
+            particle_depth_built: false,
+            particle_depth_declared: false,
+            particle_depth_target: None,
             first_texture: ids.first_texture,
             made: Vec::new(),
             textures_made: false,
@@ -817,8 +841,10 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
-        // The copy's target takes the scene color's format, which its pipeline draws into.
+        // The copy's target takes the scene color's format, which its pipeline draws into, and the
+        // depth copy reads the depth's samples.
         self.transmission_built = false;
+        self.particle_depth_built = false;
         self.declared = false;
     }
 
@@ -1145,6 +1171,7 @@ impl FrameGraph {
             || self.fullscreen_reads_color
             || self.outline_draws()
             || self.transmission_declared
+            || self.particle_depth_declared
     }
 
     /// Says whether the render scale may drop below the whole canvas. Where the scene could
@@ -1495,6 +1522,32 @@ impl FrameGraph {
             .unwrap_or_else(|| self.transmission.blank())
     }
 
+    /// Turns the copy of the camera's opaque depth on while a particle system fades near the
+    /// surfaces behind it, and off otherwise, as [`FrameGraph::set_transmission`] turns its copy.
+    pub(crate) fn set_soft_particles(&mut self, on: bool) {
+        let was = self.particle_depth_draws();
+        self.particle_depth_wanted = on;
+        if self.particle_depth_draws() != was {
+            self.declared = false;
+        }
+    }
+
+    /// True while the copy of the camera's opaque depth draws: a particle system wants it, and its
+    /// pipeline is built.
+    fn particle_depth_draws(&self) -> bool {
+        self.particle_depth_wanted && self.particle_depth_built
+    }
+
+    /// The draw list's id of the copy of the camera's opaque depth while it draws, which the
+    /// camera's particle systems bind. Valid once the frame's [`FrameGraph::prepare`] made the
+    /// plan's textures.
+    pub(crate) fn particle_depth_texture(&self) -> Option<u32> {
+        if !self.particle_depth_declared {
+            return None;
+        }
+        self.particle_depth_target.map(|(_, _, target)| target)
+    }
+
     /// Switches each view's passes on or off with the view, and its transparent pass only while
     /// some object blends too.
     fn enable_views(&mut self) {
@@ -1775,6 +1828,16 @@ impl FrameGraph {
             };
             self.add(copy, Role::TransmissionCopy);
         }
+        self.particle_depth_declared = self.particle_depth_draws() && !views.is_empty();
+        if self.particle_depth_declared {
+            // The copy reads the scene depth as the opaque pass and the debug lines leave it.
+            let copy = Pass::new(PARTICLE_DEPTH_PASS, PassKind::Fullscreen)
+                .optional()
+                .size(view_size(&views[ViewId::CAMERA.index()]))
+                .reads_so_far(SCENE_DEPTH)
+                .creates(PARTICLE_DEPTH, Target::color(DEPTH_COPY_FORMAT));
+            self.add(copy, Role::ParticleDepthCopy);
+        }
         for (index, view) in views.iter().enumerate() {
             if self.fullscreen_views & (1 << index) != 0 {
                 continue;
@@ -1791,6 +1854,9 @@ impl FrameGraph {
                 .writes(names.depth.clone());
             if self.transmission_declared && index == ViewId::CAMERA.index() {
                 pass = pass.reads(TRANSMISSION_COLOR);
+            }
+            if self.particle_depth_declared && index == ViewId::CAMERA.index() {
+                pass = pass.reads(PARTICLE_DEPTH);
             }
             let pass = reads_targets(pass, views, &named, index);
             let pass = optional_beyond_camera(pass, index);
@@ -2304,6 +2370,19 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        // WebGL2 has no multisampled textures: its backend gives the copy a copy of one sample.
+        let samples = if self.gpu_culling { self.samples } else { 1 };
+        let particle_depth_built = self.particle_depth_wanted && {
+            let id = self.particle_depth.request_pipeline(pipelines, samples);
+            pipelines.built(id, pipelines_built)
+        };
+        if particle_depth_built != self.particle_depth_built {
+            let was = self.particle_depth_draws();
+            self.particle_depth_built = particle_depth_built;
+            if self.particle_depth_draws() != was {
+                self.declared = false;
+            }
+        }
         let views = self.view_colors.len() > 1;
         self.view_copy_built = match self.view_copies.as_mut() {
             Some(copies) if views => {
@@ -2384,6 +2463,7 @@ impl FrameGraph {
         self.upload_dof(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
+        self.bind_particle_depth(list)?;
         if !self.final_runs() {
             return Ok(());
         }
@@ -2663,6 +2743,29 @@ impl FrameGraph {
         self.transmission.prepare(list, source, self.textures_made)
     }
 
+    /// Binds the copy of the camera's opaque depth to the scene depth while it is declared, and
+    /// finds the texture of its target, once for each compile of the graph.
+    fn bind_particle_depth(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        if !self.particle_depth_declared {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let source = match self.particle_depth_target {
+            Some((at, source, _)) if at == compiles => source,
+            _ => {
+                let id = |name: &str| {
+                    self.sampled_id(name)
+                        .expect("the depth copy reads and writes planned textures")
+                };
+                let (source, target) = (id(SCENE_DEPTH), id(PARTICLE_DEPTH));
+                self.particle_depth_target = Some((compiles, source, target));
+                source
+            }
+        };
+        self.particle_depth
+            .prepare(list, source, self.textures_made)
+    }
+
     /// Records the making of the mip levels of the copy of the camera's opaque color, after the
     /// render pass of `passes` when the copy drew in it.
     fn make_transmission_levels(
@@ -2936,6 +3039,7 @@ impl FrameGraph {
                                 }
                             }
                             Role::TransmissionCopy => self.transmission.record(list)?,
+                            Role::ParticleDepthCopy => self.particle_depth.record(list)?,
                             role => record(list, role)?,
                         }
                     }
@@ -3140,6 +3244,7 @@ impl FrameGraph {
             copies.reset_gpu();
         }
         self.transmission.reset_gpu();
+        self.particle_depth.reset_gpu();
     }
 }
 
@@ -3553,6 +3658,7 @@ mod tests {
             buffer: 14,
             first_group: 70,
         },
+        particle_depth: 61,
     };
 
     /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling

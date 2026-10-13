@@ -21,6 +21,7 @@ use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
 use null3d_render::output::{Antialias, ToneMapping};
+use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 use null3d_render::{debug_view, fog};
@@ -86,6 +87,8 @@ pub mod shading {
     /// Wide lines lit as a standard material that faces the camera, for the rows of a line batch
     /// only.
     pub const LINE_LIT: u32 = 7;
+    /// Particles of a particle system of the particles add-on, for a system's object only.
+    pub const PARTICLE: u32 = 8;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -854,6 +857,17 @@ pub fn typescript() -> String {
                 ("NONE", ToneMapping::None.code()),
             ],
         ),
+        // The layout of a particle system's records and values in engine memory.
+        (
+            "PARTICLE",
+            &[
+                ("RECORD_BYTES", particles::RECORD_BYTES),
+                ("PARAM_FLOATS", particles::PARAM_FLOATS as u32),
+                ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
+                ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
+                ("MAX_RECORDS", particles::MAX_RECORDS),
+            ],
+        ),
         (
             "SHADING",
             &[
@@ -864,6 +878,7 @@ pub fn typescript() -> String {
                 ("SPRITE", shading::SPRITE),
                 ("LINE", shading::LINE),
                 ("LINE_LIT", shading::LINE_LIT),
+                ("PARTICLE", shading::PARTICLE),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),

@@ -609,6 +609,23 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
+	 * returns its id, or 0 when the scene holds the most systems already.
+	 */
+	createParticles(slot: number, capacity: number): number;
+	/** Forgets a particle system and frees its records. */
+	destroyParticles(id: number): number;
+	/** The address of a particle system's records in engine memory, or 0 for no such system. */
+	particleRecords(id: number): number;
+	/** The address of a particle system's values, then its frame's values, or 0 for none. */
+	particleValues(id: number): number;
+	/** Marks `count` records of a particle system from `start` on for the next frame's upload. */
+	markParticleRecords(id: number, start: number, count: number): number;
+	/** Marks a particle system's values for the next frame's upload. */
+	markParticleValues(id: number): number;
+	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
+	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -961,6 +978,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'createParticles',
+	'destroyParticles',
+	'particleRecords',
+	'particleValues',
+	'markParticleRecords',
+	'markParticleValues',
+	'setSoftParticles',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',
