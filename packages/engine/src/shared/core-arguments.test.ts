@@ -22,6 +22,7 @@ const MAKERS = new Set([
 	'addFullscreenPass',
 	'createClip',
 	'createClipLater',
+	'setReflectionProbe',
 ]);
 
 /** Each call that the core exports, by its JavaScript name, with its Rust parameters. */
