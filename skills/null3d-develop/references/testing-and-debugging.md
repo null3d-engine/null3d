@@ -230,7 +230,7 @@ Lifetime:
 Failures:
 
 - The page says something useful with JavaScript off, and when the start fails. Point `sketch` at a missing file to force a failure.
-- The page handles `engine.onFailure`. Try it with `engine.simulateGpuLoss()`: the scene comes back on a new device. A texture whose texels the engine freed draws with its color alone, so check your maps too: `keepTextureCopies` keeps a copy on any device, and phones and tablets keep one by default.
+- The page handles `engine.onFailure`. Try it with `engine.simulateGpuLoss()`: the scene comes back on a new device. A texture whose texels the engine freed draws with its color alone, so check your maps too. `keepTextureCopies` keeps a copy on any device, and phones and tablets keep one by default.
 - A batch too large for engine memory fails with E1109 in development, not on the user's phone. Size batches for the rows they use.
 
 Accessibility:

@@ -481,6 +481,12 @@ export interface EngineMode {
 	 * that the options asked for. `report.worker` holds the probe's answer.
 	 */
 	renderFallback: RenderFallback | null;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost. It is on for a phone and a tablet, and the page's
+	 * `keepTextureCopies` option can name either value.
+	 */
+	keepTextureCopies: boolean;
 }
 
 /**
@@ -1642,6 +1648,7 @@ async function startEngine(
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
 			renderFallback,
+			keepTextureCopies,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
