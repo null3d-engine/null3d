@@ -20,8 +20,9 @@ use null3d_render::light_grid::{CLUSTER_PARAMS_BYTES, DEFAULT_GRID};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// Where a view's culling parameters hold the runs of the cell order: after the planes.
-const RANGES: u32 = 112;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
+/// level choice's inputs.
+const RANGES: u32 = 128;
 /// The builder's buffers of world matrices, of the bucket of every source, and of the layer
 /// mask of every source.
 const MATRICES: u32 = 2;
@@ -134,11 +135,12 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // each while no light casts shadows, the table of specular terms, the materials' custom
     // values, the environment's blank cube, the blank textures that stand in for ambient
     // occlusion and for the copy that surfaces which let light through sample, the views' cell
-    // offsets, the white texel that the side view's texture shows until it draws, and the row
-    // values texture of instance batches, one texel row while no batch has row values.
+    // offsets, the white texel that the side view's texture shows until it draws, the row values
+    // texture of instance batches, one texel row while no batch has row values, and the first
+    // joints of skinned objects, one texel row while nothing is skinned.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 14);
+    assert_eq!(count(&commands, Op::CreateTexture), 15);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -261,9 +263,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // The color and depth targets, the shadow map and the shadow atlas, one texel each while no
     // light casts shadows, the table of specular terms, the materials' custom values, the
     // environment's blank cube, the blank textures that stand in for ambient occlusion and for
-    // the copy that surfaces which let light through sample, the views' cell offsets, and the row
-    // values texture of instance batches.
-    assert_eq!(count(&commands, Op::CreateTexture), 11);
+    // the copy that surfaces which let light through sample, the views' cell offsets, the row
+    // values texture of instance batches, and the first joints of skinned objects.
+    assert_eq!(count(&commands, Op::CreateTexture), 12);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -663,7 +665,7 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
     // The planes, then the runs of the cell order that the view culls: the far cell's still
     // objects and the batch's moving rows, which follow them, joined into one. The offsets from
     // the camera to the two cells in use go into the view's row of the offsets texture.
-    let params = vec![(0, 112), (RANGES, 16)];
+    let params = vec![(0, RANGES), (RANGES, 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
     let texture = offsets_texture(&world.commands());
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
@@ -711,7 +713,7 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
         cull_params_writes(&world.commands(), buffer),
-        vec![(0, 112)]
+        vec![(0, RANGES)]
     );
     let texture = offsets_texture(&world.commands());
     assert_eq!(offsets_writes(&world.commands(), texture), vec![(0, 1)]);
@@ -736,7 +738,7 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     // moved object's cell, out of view, lies between them.
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112), (RANGES, 2 * 16)]
+        vec![(0, RANGES), (RANGES, 2 * 16)]
     );
     assert_eq!(offsets_writes(&commands, texture), vec![(0, 2)]);
 }
@@ -1207,6 +1209,7 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             transmission: false,
             row_values: false,
             caster: false,
+            object_ids: false,
         });
         world.add_object(&common::grid(1, 1), custom);
         let mut mock = MockBackend::default();
@@ -1223,11 +1226,12 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
                 })
                 .collect()
         };
-        // Each view's culling group binds the same nine buffers and the cell offsets texture with
-        // the switch or without: the indices share the compacted instance buffer.
+        // Each view's culling group binds the same nine buffers, the cell offsets texture and the
+        // skin firsts texture with the switch or without: the indices share the compacted
+        // instance buffer.
         let culling = groups_of(layout::CULL);
         assert_eq!(culling.len(), 3, "the camera and two cascades: {culling:?}");
-        assert!(culling.iter().all(|group| group.len() == 1 + 10));
+        assert!(culling.iter().all(|group| group.len() == 1 + 11));
         // With the switch, each view's index group binds its culling parameters, the matrices, the
         // bucket tables of the layout it draws and the cell offsets texture, as its culling group
         // does.
@@ -1237,7 +1241,7 @@ fn with_index_instances_the_culled_buckets_draw_source_indices_beside_the_index_
             let cull = culling.iter().find(|c| c[1] == group[1]).unwrap();
             assert_eq!(group.len(), 1 + 5);
             assert_eq!(group[1..5], cull[1..5]);
-            assert_eq!(group.last(), cull.last());
+            assert_eq!(group.last(), cull.get(10));
         }
 
         let draws = bundle_draws(&commands);

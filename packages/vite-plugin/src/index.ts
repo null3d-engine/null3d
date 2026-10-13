@@ -39,8 +39,9 @@ import {
 	type WorkerFile,
 	workerFilesPlugin,
 } from './offline.ts';
+import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import type { CompiledWgsl } from './shader-types.ts';
+import { SKIN_BUILDS_ADDRESS, SkinBuilds } from './skin-builds.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -207,9 +208,13 @@ const PACKAGE_NOTICES = 'THIRD-PARTY-NOTICES.txt';
 /** The file that a production build writes beside the page, with every package's notices. */
 export const NOTICES_FILE = 'null3d-third-party-notices.txt';
 
+/** The null3D packages that run as tools on the developer's computer and put no code in a page. */
+const TOOL_PACKAGES = new Set(['@null3d/cli', '@null3d/vite-plugin']);
+
 /**
  * The third-party notices of the null3D packages that the project depends on: the engine's first,
- * then each add-on's, by name. Null when none has notices, as in a project without the engine.
+ * then each add-on's, by name. The tools' notices stay out, since a page ships none of their code.
+ * Null when none has notices, as in a project without the engine.
  */
 export function thirdPartyNotices(root: string): string | null {
 	const manifest = resolve(root, 'package.json');
@@ -217,7 +222,7 @@ export function thirdPartyNotices(root: string): string | null {
 	const { dependencies = {}, devDependencies = {} } = JSON.parse(readFileSync(manifest, 'utf8'));
 	const require = createRequire(manifest);
 	const names = Object.keys({ ...dependencies, ...devDependencies })
-		.filter((name) => name.startsWith('@null3d/'))
+		.filter((name) => name.startsWith('@null3d/') && !TOOL_PACKAGES.has(name))
 		.sort(
 			(a, b) => Number(b === '@null3d/engine') - Number(a === '@null3d/engine') || (a < b ? -1 : 1),
 		);
@@ -275,14 +280,6 @@ const PACKAGE_MODULE = /\/node_modules\//;
 /** A file's path from the project's root, as messages name it. */
 function projectPath(root: string, file: string): string {
 	return relative(root, file).split(sep).join('/');
-}
-
-/**
- * A compiled shader as the JavaScript value that takes its source's place, with the key of its hot
- * updates on the dev server.
- */
-function shaderValue(shader: CompiledWgsl, key?: string): string {
-	return `(${JSON.stringify(key === undefined ? shader : { ...shader, hot: key })})`;
 }
 
 /** Shows WGSL that did not compile in Vite's overlay on the dev server's pages, and in the terminal. */
@@ -351,6 +348,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
+	/** Custom materials' builds that skin, which load on first use from modules of their own. */
+	const skinBuilds = new SkinBuilds();
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -429,9 +428,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			filter: { id: [HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS, /^@null3d\/engine$/] },
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
+				if (SKIN_BUILDS_ADDRESS.test(source))
+					return source.startsWith('\0') ? source : `\0${source}`;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -463,9 +464,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		load: {
-			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
+			filter: {
+				id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS] },
+			},
 			async handler(id) {
 				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				if (SKIN_BUILDS_ADDRESS.test(id))
+					return (
+						skinBuilds.module(id) ??
+						this.error(
+							`null3D has no skin builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
+						)
+					);
 				// Another plugin's virtual module whose name ends like a WGSL file.
 				if (id.startsWith('\0')) return;
 				if (OPTIMIZED_MODEL.test(id)) {
@@ -512,8 +522,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						);
 					}
 				}
+				const pack = new ShaderPack();
 				return {
-					code: `export default ${shaderValue(compiled.shader, key)};\n`,
+					code: `export default ${skinBuilds.value(pack, compiled.shader, key)};\n${pack.unpacker()}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -532,12 +543,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 					const tagged = await compileTaggedWgsl(code, file, path, compiler);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
+					const pack = new ShaderPack();
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, shaderValue(shader, key));
+						out.overwrite(start, end, skinBuilds.value(pack, shader, key));
 					}
+					if (out && !pack.empty) out.append(pack.unpacker());
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
 						hot.scripts.set(file, code);
 				}

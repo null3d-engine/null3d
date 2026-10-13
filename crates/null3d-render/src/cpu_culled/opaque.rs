@@ -3,7 +3,8 @@
 //! in a uniform block: the start of its bucket's slice of the index list, its material and its
 //! data texture. The draws of one pipeline and one vertex page sit next to each other, so one
 //! multi-draw call draws a whole run of them where the device has `WEBGL_multi_draw`, and the
-//! shader reads the record of `gl_DrawID`. Without the extension, each draw binds its own record.
+//! shader reads the record of `gl_DrawID`, from a texture copy of the block that the WebGL2 backend
+//! makes. Without the extension, each draw binds its own record.
 //!
 //! Each view has a ring of frame uniforms and a ring of draw records, whose slots move on only
 //! when the frame writes new data, as the index list textures' slots do. A frame uniform's slot
@@ -38,6 +39,9 @@ use crate::view::{ViewFrame, ViewId};
 /// The first binding of the instance group's row values textures, after the textures of
 /// skinned and morphed meshes: the resident rows', then the streamed rows'.
 const ROW_VALUES_BINDING: u32 = 8;
+/// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
+/// declare it.
+const OBJECT_RANGES_BINDING: u32 = 8;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
@@ -52,13 +56,15 @@ const TEXTURES_GROUP: u32 = 3;
 
 /// The textures that a camera view's frame groups bind for the surfaces they light: the shadow
 /// map of the main directional light, the shadow atlas of point and spot lights, the texture of
-/// ambient occlusion, and the environment's cube texture, or the blank one.
+/// ambient occlusion, the environment's cube texture, or the blank one, and the first light data
+/// texture of the ring that the groups bind, one per ring slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LitTextures {
     pub(super) shadow_map: u32,
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    pub(super) lights: u32,
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
     pub(super) transmission: u32,
@@ -184,11 +190,13 @@ fn for_each_call(
 }
 
 /// The visible instances of each draw, by its place in `draws`: the entries of its bucket's slice
-/// of the index list, where the slice of bucket `b` starts at `starts[b]`.
+/// of the index list, where the slice of bucket `b` starts at `starts[b]`, two words each in a
+/// fade bucket.
 fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32 + 'a {
     move |d| {
         let b = draws[d].bucket as usize;
-        starts[b + 1] - starts[b]
+        let words = starts[b + 1] - starts[b];
+        if draws[d].pairs { words / 2 } else { words }
     }
 }
 
@@ -255,11 +263,12 @@ impl Opaque {
     /// offsets and the material table's texture, which also holds three.js's table of the
     /// split-sum terms of specular light. A camera's view has one group for each slot of the light
     /// textures' ring. Each also binds the shadow map of `lit` with the comparison sampler and the
-    /// cascades' uniform block that read it, the slot's light data texture, the shadow atlas of
-    /// `lit` with the tiles' uniform block, the texture of ambient occlusion, the environment's
-    /// cube texture of `lit` with its sampler, and the copy of the opaque color of `lit`, which
-    /// the environment's sampler reads too. A shadow cascade's or a shadow tile's
-    /// view has one group, which binds no shadow map, so no pass reads the texture it draws into.
+    /// cascades' uniform block that read it, the slot's texture of `lit`'s ring of light data
+    /// textures, the shadow atlas of `lit` with the tiles' uniform block, the texture of ambient
+    /// occlusion, the environment's cube texture of `lit` with its sampler, and the copy of the
+    /// opaque color of `lit`, which the environment's sampler reads too. A shadow cascade's or a
+    /// shadow tile's view has one group, which binds no shadow map, so no pass reads the texture
+    /// it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -284,6 +293,11 @@ impl Opaque {
             ids::MATERIALS,
             0,
             0,
+            OBJECT_RANGES_BINDING,
+            resource_kind::BUFFER,
+            ids::OBJECT_RANGES,
+            0,
+            sizes::OBJECT_RANGE_BYTES,
         ];
         let group = ids::frame_group(view);
         let Some(LitTextures {
@@ -291,18 +305,19 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            lights,
             transmission: copy,
         }) = lit
         else {
-            let mut words = [0; 18];
-            words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 3]);
+            let mut words = [0; 23];
+            words[..3].copy_from_slice(&[group, bind_layout::DEPTH, 4]);
             words[3..].copy_from_slice(&common);
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 58 + environment::ENTRY_WORDS];
-        words[3..18].copy_from_slice(&common);
-        words[18..43].copy_from_slice(&[
+        let mut words = [0; 63 + environment::ENTRY_WORDS];
+        words[3..23].copy_from_slice(&common);
+        words[23..48].copy_from_slice(&[
             4,
             resource_kind::TEXTURE,
             map,
@@ -330,23 +345,17 @@ impl Opaque {
             sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 13]);
-            words[43..48].copy_from_slice(&[
-                7,
-                resource_kind::TEXTURE,
-                ids::LIGHT_DATA + slot,
-                0,
-                0,
-            ]);
-            words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[53..58].copy_from_slice(&[
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
+            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
+            words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[58..63].copy_from_slice(&[
                 transmission::BINDING,
                 resource_kind::TEXTURE,
                 copy,
                 0,
                 0,
             ]);
-            words[58..]
+            words[63..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }
@@ -566,15 +575,10 @@ impl Opaque {
     ) -> Result<(), RecordError> {
         let slots = self.views[self.slot(view)].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
-        let counted = visible_in(draws, starts);
-        let visible = |d: usize| {
-            let textures = draws[d].textures;
-            if textures != 0 && hidden(textures) {
-                0
-            } else {
-                counted(d)
-            }
-        };
+        // The calls follow the draw records that `upload` wrote, call by call, so a call whose
+        // maps' group is hidden keeps its place and draws nothing. Every draw of a run shares its
+        // maps' group, so a call is hidden whole.
+        let visible = visible_in(draws, starts);
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
@@ -596,7 +600,7 @@ impl Opaque {
             } else {
                 first.pipeline
             };
-            if id == 0 {
+            if id == 0 || (first.textures != 0 && hidden(first.textures)) {
                 return Ok(());
             }
             if call.run != run {
@@ -661,6 +665,7 @@ impl Opaque {
 
 #[cfg(test)]
 mod tests {
+    use super::super::layout::Bucket;
     use super::*;
 
     /// A draw of pipeline `pipeline` from vertex page `page`.
@@ -673,6 +678,7 @@ mod tests {
             bucket: 0,
             index_count: 36,
             first_index: 0,
+            pairs: false,
         }
     }
 
@@ -701,6 +707,69 @@ mod tests {
             vec![(0, 0, 0, 1, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
         assert!(calls(&draws, &[0; 5], true).is_empty());
+    }
+
+    /// The dynamic offsets of the draw records that a recorded pass binds, and its draw calls.
+    fn recorded(list: &DrawList) -> (Vec<u32>, usize) {
+        let (mut offsets, mut draws) = (Vec::new(), 0);
+        for command in null3d_gpu::drawlist::decode(list.words()) {
+            let command = command.unwrap();
+            match command.op {
+                Op::SetBindGroup if command.operands[0] == 1 => {
+                    offsets.push(command.operands[3]);
+                }
+                Op::DrawIndexed | Op::MultiDrawIndexed => draws += 1,
+                _ => {}
+            }
+        }
+        (offsets, draws)
+    }
+
+    #[test]
+    fn a_hidden_call_keeps_its_place_among_the_draw_records() {
+        // A run whose maps show the view's own target, then a run without maps. The draw records
+        // hold one record per call, the hidden call's first, as `upload` writes them.
+        for multi_draw in [false, true] {
+            let mut opaque = Opaque::new(ViewId::CAMERA, multi_draw);
+            opaque.views.push(ViewDraws::default());
+            let mut layout = Layout::default();
+            for bucket in 0..2 {
+                layout.buckets.push(Bucket {
+                    material: 1,
+                    group: 0,
+                    shift: 0,
+                });
+                layout.draws.push(Draw {
+                    textures: if bucket == 0 { 9 } else { 0 },
+                    bucket,
+                    ..draw(1 + bucket, 0)
+                });
+            }
+            let mut list = DrawList::with_capacity(256);
+            let mut arena = UploadArena::default();
+            arena.reset(256);
+            let shading = Shading::Lit { light_slot: 0 };
+            let (meshes, starts) = (MeshBuffers::new(100), [0, 3, 5]);
+            let hidden = |group: u32| group == 9;
+            opaque
+                .record(
+                    &mut list,
+                    &mut arena,
+                    ViewId::CAMERA,
+                    &starts,
+                    &layout,
+                    &meshes,
+                    shading,
+                    &hidden,
+                )
+                .unwrap();
+            let stride = record_stride(multi_draw);
+            assert_eq!(
+                recorded(&list),
+                (vec![stride], 1),
+                "multi-draw {multi_draw}"
+            );
+        }
     }
 
     #[test]

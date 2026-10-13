@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
+import { glslProgramsOf, wgslModulesOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -23,7 +24,9 @@ import {
 	checksPlan,
 	depthPlan,
 	depthSummary,
+	expectedSeconds,
 	itemsNeeded,
+	itemsTogether,
 	judge,
 	MEMORY_MAXIMUMS_MIB,
 	memoryPlan,
@@ -34,6 +37,7 @@ import {
 	PLANS,
 	parityPlan,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PARTS,
 	SHADERS_PAGE_SECONDS,
 	STARTUP_RUNS,
 	startupPlan,
@@ -50,6 +54,7 @@ import {
 	handovers,
 	type ItemResult,
 	inLanes,
+	moduleNote,
 	PAGES_PER_TAB,
 	type Plan,
 	type PlanItem,
@@ -62,6 +67,7 @@ import {
 	runName,
 	shardItems,
 	turnBatches,
+	unloadedModule,
 	waitForRunners,
 	writePlan,
 	writeRunnerFile,
@@ -151,6 +157,33 @@ describe('waitForRunners', () => {
 			expect(quiet).toEqual([['quiet-phone', 'a']]);
 		}));
 
+	it("keeps waiting on a runner page whose heartbeat goes on past its page's quiet time", () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'slow-ipad', 'device', {});
+			const beats = setInterval(
+				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a' }),
+				20,
+			);
+			setTimeout(() => {
+				clearInterval(beats);
+				writeRunnerFile(plan.run, 'slow-ipad', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'slow-ipad', 'done', {});
+			}, 300);
+			const quiet: string[] = [];
+			const finished = await waitForRunners(plan, ['slow-ipad'], {
+				quietMs: () => 80,
+				onQuiet: (runner) => quiet.push(runner) < 0,
+			});
+			clearInterval(beats);
+			expect(quiet).toEqual([]);
+			expect(finished).toEqual(['slow-ipad']);
+		}));
+
+	it('gives the whole plan the most time that each page may get', () => {
+		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
+		expect(batchTimeoutMs(plan)).toBeGreaterThanOrEqual((220 + 30) * MOST_TIME_SHARE * 1000);
+	});
+
 	it('waits again for a runner whose quiet page the caller replaced', () =>
 		withRun(['a', 'b'], async (plan) => {
 			writeRunnerFile(plan.run, 'mac-safari', 'device', {});
@@ -225,6 +258,7 @@ describe('waitForRunners', () => {
 			'E1302: the render worker lost its GPU: the WebGL2 context was lost, in hold mode',
 			'the browser did not get back the memory of engines in removed frames: it had room for 10 shared memories before 43 starts in frames, and for 7 after',
 			'RangeError: Out of memory',
+			'WebGL2 context lost after 2240 of 2844 programs: the browser took the GPU context away, so the page cannot check the rest',
 		])
 			expect(rerunsInNewTab('Safari', ['another problem', problem])).toBe(true);
 		expect(rerunsInNewTab('Safari', ['the image differs from its reference in 812 pixels'])).toBe(
@@ -232,6 +266,36 @@ describe('waitForRunners', () => {
 		);
 		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('names a sketch module that did not load, with what the test server sends for it now', async () => {
+		const body = 'x'.repeat(250_000);
+		const server = Bun.serve({
+			port: 0,
+			fetch: (request) =>
+				new URL(request.url).pathname === '/sketch.ts'
+					? new Response(body)
+					: new Response('gone', { status: 404 }),
+		});
+		try {
+			const url = `http://localhost:${server.port}/sketch.ts`;
+			const failure = `E1410: the sketch module ${url} did not load: Importing a module script failed. Pass the sketch as new URL('./sketch.ts', import.meta.url)`;
+			expect(unloadedModule(['another problem', failure])).toBe(url);
+			expect(unloadedModule(['E1302: the render worker lost its GPU'])).toBeUndefined();
+			expect(await moduleNote(url)).toMatch(
+				new RegExp(
+					`^module import failed: ${url}\\. The test server now answers 200 with 0\\.25 MB in \\d+ ms$`,
+				),
+			);
+			expect(await moduleNote(`http://localhost:${server.port}/missing.ts`)).toContain(
+				'answers 404',
+			);
+		} finally {
+			server.stop(true);
+		}
+		expect(await moduleNote('http://localhost:1/sketch.ts')).toContain(
+			'The test server does not send it now either',
+		);
 	});
 
 	it('ends the turn of a runner whose handover found no new runner page', () =>
@@ -371,8 +435,12 @@ describe('shardItems', () => {
 		check: needs,
 	});
 	const needsOf = (planItem: { check: string[] }) => planItem.check;
-	const shardIds = (plan: ReturnType<typeof item>[], index: number, count: number) =>
-		shardItems(plan, { index, count }, needsOf).map(({ id }) => id);
+	const shardIds = (
+		plan: ReturnType<typeof item>[],
+		index: number,
+		count: number,
+		seconds: (planItem: { id: string }) => number = () => 1,
+	) => shardItems(plan, { index, count }, needsOf, seconds).map(({ id }) => id);
 
 	it('reads a shard written as <i>/<n>', () => {
 		expect(readShard('2/3')).toEqual({ index: 2, count: 3 });
@@ -404,6 +472,19 @@ describe('shardItems', () => {
 		const joined = [item('a'), item('b'), item('c'), item('d', ['a', 'b'])];
 		expect(shardIds(joined, 1, 2)).toEqual(['a', 'b', 'd']);
 		expect(shardIds(joined, 2, 2)).toEqual(['c']);
+	});
+
+	it('gives the longest groups out first, each to the shard with the fewest seconds so far', () => {
+		// a and e are slow; by count, both would fall in the first shard.
+		const slow = new Set(['a', 'e']);
+		const seconds = ({ id }: { id: string }) => (slow.has(id) ? 10 : 1);
+		const plan = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => item(id));
+		expect(shardIds(plan, 1, 2, seconds)).toEqual(['a', 'b', 'd']);
+		expect(shardIds(plan, 2, 2, seconds)).toEqual(['c', 'e', 'f']);
+		// A group counts with the seconds of all its items.
+		const grouped = [item('a'), item('b'), item('c', ['b']), item('d', ['c'])];
+		expect(shardIds(grouped, 1, 2, () => 1)).toEqual(['b', 'c', 'd']);
+		expect(shardIds(grouped, 2, 2, () => 1)).toEqual(['a']);
 	});
 });
 
@@ -663,6 +744,9 @@ describe('the checks plan', () => {
 			},
 		};
 		expect(judge(check, good, NONE_MISSING)).toEqual([]);
+		// A screen with a fractional pixel ratio snaps the overlay's edges to its device pixels.
+		const snapped = { ...good, overlay: { ...good.overlay, offset: [0.43, -0.38] } };
+		expect(judge(check, snapped, NONE_MISSING)).toEqual([]);
 		const { sketch: _sketch, jobs: _jobs, gpu: _gpu, ...fewer } = good.overlay.figures;
 		const bad = {
 			...good,
@@ -751,31 +835,57 @@ describe('the checks plan', () => {
 		]);
 	});
 
+	/** The checks plan's shards in Safari, as `--shard <i>/<count>` gives each. */
+	const shardsOf = (count: number) =>
+		Array.from(
+			{ length: count },
+			(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
+		);
+	const secondsOf = (shard: { id: string }[]) =>
+		shard.reduce((sum, item) => sum + expectedSeconds(item), 0);
+
 	it('splits into shards that run each item once, each with the items its check compares with, and the capabilities page first', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
-		for (const count of [2, 3, 4]) {
-			const shards = Array.from(
-				{ length: count },
-				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
-			);
+		const shaderParts = items.filter((item) => item.check.kind === 'shaders');
+		expect(shaderParts.length).toBe(SHADER_PARTS);
+		for (const count of [2, 3, 4, 5]) {
+			const shards = shardsOf(count);
 			for (const shard of shards) expect(shard[0]?.id).toBe('capabilities');
 			const once = [shards[0] ?? [], ...shards.slice(1).map((shard) => shard.slice(1))];
 			expect(ids(once.flat())).toEqual(ids(items));
-			// The largest group is an image test in every thread mode; each later shard adds the
-			// capabilities page.
-			const sizes = shards.map((shard) => shard.length);
-			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length + 1);
+			// The longest group is the shaders page's parts; each later shard adds the capabilities
+			// page.
+			const seconds = shards.map(secondsOf);
+			expect(Math.max(...seconds) - Math.min(...seconds)).toBeLessThanOrEqual(
+				secondsOf(shaderParts) + expectedSeconds({ id: 'capabilities' }),
+			);
 			for (const shard of shards) {
 				const inShard = new Set(shard.map(({ id }) => id));
-				for (const { check } of shard)
-					for (const id of itemsNeeded(check)) expect(inShard).toContain(id);
+				for (const item of shard)
+					for (const id of itemsTogether(item)) expect(inShard).toContain(id);
 				// Each shard keeps the plan's order.
 				expect(shard).toEqual(items.filter(({ id }) => inShard.has(id)));
 			}
 		}
-		const first = planItems(parseArgs(['--shard', '1/2', 'Safari'])) ?? [];
-		expect(first[0]?.id).toBe('capabilities');
-		expect(first.at(-1)?.id).toBe('capabilities-reload');
+		// The shard with the capabilities page's second load ends with it.
+		const reloads = shardsOf(2).filter((shard) =>
+			shard.some(({ id }) => id === 'capabilities-reload'),
+		);
+		expect(reloads.map((shard) => shard.at(-1)?.id)).toEqual(['capabilities-reload']);
+	});
+
+	// CI runs the plan in each browser in the shards that its workflow names. A job should take at
+	// most about 12 minutes, and about 2 of them go to its setup, the dev server's start and the
+	// judging. .dev/devices.md says what to do when the pages need more.
+	it("keeps each of CI's shards at or under 10 minutes of pages in Safari", () => {
+		const workflow = readFileSync(
+			join(import.meta.dirname, '../../.github/workflows/ci.yml'),
+			'utf8',
+		);
+		const count = Number(/^\s+shards: \[(\d+)\]$/m.exec(workflow)?.[1]);
+		expect(count).toBeGreaterThan(0);
+		const minutes = shardsOf(count).map((shard) => secondsOf(shard) / 60);
+		expect(Math.max(...minutes)).toBeLessThanOrEqual(10);
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
@@ -890,7 +1000,7 @@ describe('the checks plan', () => {
 
 	it('skips a WebGL2 page, and the shaders page, on a browser without WebGL2 only when allowed', () => {
 		const webgl2 = items.find((item) => item.id === 'engine-webgl2-pipelined');
-		const shaders = items.find((item) => item.id === 'shaders');
+		const shaders = items.find((item) => item.id === 'shaders-1');
 		const webgpu = items.find((item) => item.id === 'image-clear-webgpu');
 		if (!webgl2 || !shaders || !webgpu) throw new Error('the plan lacks the pages');
 		const noWebGL2 = { webgpu: false, webgl2: true };
@@ -906,12 +1016,29 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
-	it('gives the shaders page more time than other pages, in proportion to its GLSL programs', async () => {
-		const shaders = items.find((item) => item.id === 'shaders');
-		const programs = glslProgramsOf(await everyShader()).length;
+	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
+		const parts = items.filter((item) => item.check.kind === 'shaders');
+		const all = await everyShader();
+		const programs = glslProgramsOf(all).length;
 		expect(programs).toBeGreaterThan(100);
-		expect(shaders?.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
-		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / 4);
+		expect(parts.length).toBe(SHADER_PARTS);
+		expect(SHADER_PARTS).toBeGreaterThan(1);
+		expect(parts.map(({ id, path }) => [id, path])).toEqual(
+			parts.map((_, i) => [
+				`shaders-${i + 1}`,
+				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
+			]),
+		);
+		// The parts together check every build, and no part compiles more than a few hundred
+		// programs in one WebGL2 context.
+		const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, SHADER_PARTS)));
+		const names = (lists: (readonly [string, unknown])[]) => new Set(lists.map(([name]) => name));
+		expect(names(shares.flatMap(glslProgramsOf))).toEqual(names(glslProgramsOf(all)));
+		expect(names(shares.flatMap(wgslModulesOf))).toEqual(names(wgslModulesOf(all)));
+		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
+		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
+		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});
 
 	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {

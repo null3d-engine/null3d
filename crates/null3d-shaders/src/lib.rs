@@ -50,8 +50,8 @@ pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
 pub use output::{
-    Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
-    Response, VariantOutput, WgslOutput,
+    Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
+    Output, Response, VariantOutput, WgslOutput,
 };
 pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
@@ -191,9 +191,6 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .filter_map(|bit| permutation::bit(bit))
         {
             output.first_use.bits.insert(bit, feature.clone());
-            if first_use.claims_shared_builds {
-                output.first_use.claiming.insert(bit);
-            }
         }
     }
     errors.or(output)

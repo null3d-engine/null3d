@@ -10,6 +10,7 @@ import {
 	createProgram,
 	declaresUniform,
 	type GlslTemplate,
+	linkLogs,
 	METAL_FAULT,
 	MIN_STAGE_TEXTURE_UNITS,
 	MIN_UNIFORM_BLOCK_SLOTS,
@@ -114,6 +115,21 @@ describe('WebGL2 slots of bind groups', () => {
 	});
 });
 
+describe('WebGL2 multi-draw vertex shaders', () => {
+	// Some Adreno drivers fail to link a program whose vertex shader reads a uniform array at the
+	// draw index, with an empty log (see .dev/driver-bugs.md), so such shaders read a texture.
+	it('read no uniform array at the draw index', () => {
+		const multiDraw = glslPrograms().filter(([, program]) =>
+			program.vertex.source.includes('gl_DrawID'),
+		);
+		expect(multiDraw.length).toBeGreaterThan(0);
+		for (const [name, program] of multiDraw) {
+			const read = program.vertex.source.match(/_group_\d+_binding_\d+_vs\.\w+\[[^\]]*\bdraw\b/);
+			expect([name, read?.[0] ?? null]).toEqual([name, null]);
+		}
+	});
+});
+
 describe('WebGL2 programs that a driver optimized', () => {
 	it('declares every uniform block and texture that a reflection names in its stage', () => {
 		for (const [name, stage] of glslStages()) {
@@ -194,24 +210,25 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 	 * A context whose links end with the logs of `links` in turn, where an empty log is a link that
 	 * succeeded. It records the sources it compiles and the objects it deletes.
 	 */
-	function fakeContext(links: readonly string[]) {
+	function fakeContext(links: readonly string[], shaderLogs: readonly string[] = []) {
 		const sources: string[] = [];
 		const deleted: unknown[] = [];
 		const logs = new Map<object, string>();
 		let count = 0;
+		let shaders = 0;
 		const gl = {
 			LINK_STATUS: 0x8b82,
 			VERTEX_SHADER: 0x8b31,
 			FRAGMENT_SHADER: 0x8b30,
 			createProgram: () => ({}),
-			createShader: () => ({}),
+			createShader: () => ({ log: shaderLogs[shaders++] ?? '' }),
 			shaderSource: (_: unknown, source: string) => sources.push(source),
 			compileShader: () => {},
 			attachShader: () => {},
 			linkProgram: (program: object) => logs.set(program, links[count++] ?? ''),
 			getProgramParameter: (program: object) => logs.get(program) === '',
 			getProgramInfoLog: (program: object) => logs.get(program) ?? '',
-			getShaderInfoLog: () => '',
+			getShaderInfoLog: (shader: { log: string }) => shader.log,
 			deleteShader: (shader: unknown) => deleted.push(shader),
 			deleteProgram: (program: unknown) => deleted.push(program),
 			detachShader: () => {},
@@ -262,5 +279,13 @@ describe("WebGL2 links that Safari's Metal translator broke", () => {
 			"a WebGL2 program failed to link: ERROR: 'colour' : undeclared identifier",
 		);
 		expect(context.links()).toBe(1);
+	});
+
+	it("names a shader's own errors, where the program's log says only that it did not compile", () => {
+		const shaderError = "ERROR: 0:356: 'vignette' : no matching overloaded function found";
+		const context = fakeContext(['Fragment shader is not compiled.'], ['', shaderError]);
+		const program = createProgram(context.gl, TEMPLATE, 0);
+		expect(linkLogs(context.gl, program)).toBe(`Fragment shader is not compiled.\n${shaderError}`);
+		expect(() => prepareProgram(context.gl, program, DEPTH_SETUPS.reversed)).toThrow(shaderError);
 	});
 });
