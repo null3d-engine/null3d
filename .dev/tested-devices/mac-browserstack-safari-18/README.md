@@ -10,3 +10,4 @@
 ## Known issues
 
 No WebGPU in Safari 18.4
+The cloud ended a smoke session early on 13 October 2026, with "invalid session id" on a status read ([20261013-122716-smoke](20261013-122716-smoke.md))
