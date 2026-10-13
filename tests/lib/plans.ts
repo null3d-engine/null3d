@@ -1109,8 +1109,13 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
  * D-119 those of the dof plan, and D-135 those of the contact plan.
  */
-export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
+export function effectPlan(
+	effect: CostedEffect,
+	calls: boolean | 'sync' = false,
+): PlanItem<Check>[] {
 	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
+	const callSwitches =
+		calls === 'sync' ? ['gltiming', 'gl-timing=sync'] : calls ? ['gltiming'] : [];
 	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
 	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
@@ -1144,6 +1149,8 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 									...(steps ? [`steps=${steps}`] : []),
 									// One pass for each effect, so a quarter of the difference is one pass.
 									...(effect === 'effects' ? ['join=off'] : []),
+									// The call profile of the thread that draws, for diagnosis (temporary).
+									...callSwitches,
 								],
 								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 							},
@@ -1727,6 +1734,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	'ao-calls': () => effectPlan('ao', true),
+	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	dof: () => effectPlan('dof'),
 	contact: () => effectPlan('contact'),
 	effects: () => effectPlan('effects'),
