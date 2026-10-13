@@ -538,11 +538,17 @@ export interface GltfData {
 	notes: string[];
 	/** True when the file holds Draco data, which development builds warn about. */
 	draco?: true;
+	/**
+	 * The shader list that the asset tool recorded with the file (`asset.extras.NULL3D_shaders`):
+	 * the permutation bits and the first-use shader files that its draws need. The loader asks for
+	 * the files while the textures decode. A file from another tool has none.
+	 */
+	shaders?: { permutations: string[]; features: string[] };
 }
 
 /** The parts of a glTF file's JSON that the parser reads. */
 interface Json {
-	asset?: { version?: unknown };
+	asset?: { version?: unknown; extras?: unknown };
 	extensionsRequired?: unknown;
 	extensions?: { KHR_lights_punctual?: { lights?: unknown } };
 	scene?: unknown;
@@ -1114,7 +1120,32 @@ export function parseGltf(
 	const data: GltfData = { nodes, meshes, materials, textures: textureUses, images, lights, notes };
 	if (animation) data.animation = animation;
 	if (draco) data.draco = true;
+	const shaders = parseShaders(json);
+	if (shaders) data.shaders = shaders;
 	return data;
+}
+
+/**
+ * The shader list that the asset tool recorded with the file, under
+ * `asset.extras.NULL3D_shaders`: the permutation bits and the first-use shader files that the
+ * file's draws need. Names that are not text are left out, and an empty list counts as none. The
+ * loader checks each name against the engine's own tables; a file without the list, such as one
+ * from another tool, simply has none.
+ */
+export function parseShaders(
+	json: Json,
+): { permutations: string[]; features: string[] } | undefined {
+	const asset = (json.asset ?? {}) as Entry;
+	const extras = asset.extras as Entry | undefined;
+	const held = extras?.NULL3D_shaders as Entry | undefined;
+	if (typeof held !== 'object' || held === null) return undefined;
+	const names = (value: unknown): string[] =>
+		Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+	const permutations = names(held.permutations);
+	const features = names(held.features);
+	return permutations.length === 0 && features.length === 0
+		? undefined
+		: { permutations, features };
 }
 
 /**
