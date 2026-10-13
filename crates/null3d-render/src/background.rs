@@ -12,6 +12,12 @@
 //! - The physical sky ([`crate::physical_sky`]), from its tables, which its own pass draws and
 //!   binds. It draws once every table holds the frame's sky.
 //!
+//! A plain background color is the clear color of the view's targets, and draws nothing, apart
+//! from one case. On the 8-bit path with the vignette on, the scene shaders darken their light by
+//! the vignette before their tone mapping, and the clear would leave the color as it is. There the
+//! pass draws the color as a background too, with the cube map's pipeline and its plain color, so
+//! the vignette darkens it before the tone mapping as the final pass does on the HDR path.
+//!
 //! Each draws at the far plane in the camera's opaque pass, after the opaque objects and before
 //! the transparent ones, with the depth test on and no depth write. It shades only the pixels
 //! where no object wrote depth, so a costly background such as the sky costs nothing where objects
@@ -165,6 +171,8 @@ struct BackdropUniform {
     clouds: [f32; 4],
     /// The cloud elevation, the time, and the second sky's sun as a heading and an elevation.
     cloud_place: [f32; 4],
+    /// A plain color, exposed linear color, and 1 when the background draws it, else 0.
+    color: [f32; 4],
 }
 
 const _: () =
@@ -214,6 +222,14 @@ impl BackdropUniform {
             BackgroundSource::Texture(_) | BackgroundSource::Atmosphere(_) => {}
         }
         uniform
+    }
+
+    /// The values of a plain background color, exposed linear color.
+    fn color([r, g, b]: [f32; 3]) -> Self {
+        Self {
+            color: [r, g, b, 1.0],
+            ..Self::default()
+        }
     }
 }
 
@@ -324,16 +340,18 @@ impl BackgroundPass {
         place: Place,
     ) {
         let live = |texture| settings.textures().is_live(texture);
-        let template =
-            match settings.background().map(|b| b.source) {
-                Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
-                Some(
-                    BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture),
-                ) if live(texture) => template::BACKGROUND_CUBE,
-                Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
-                Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
-                _ => 0,
-            };
+        let template = match settings.background().map(|b| b.source) {
+            Some(BackgroundSource::Texture(texture)) if live(texture) => template::BACKGROUND,
+            Some(BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture))
+                if live(texture) =>
+            {
+                template::BACKGROUND_CUBE
+            }
+            Some(BackgroundSource::Sky(_)) => template::BACKGROUND_SKY,
+            Some(BackgroundSource::Atmosphere(_)) => template::BACKGROUND_ATMOSPHERE,
+            None if settings.vignetted_background_color().is_some() => template::BACKGROUND_CUBE,
+            _ => 0,
+        };
         self.place = place;
         self.pipeline = if template == 0 {
             0
@@ -366,10 +384,13 @@ impl BackgroundPass {
         sky_group: Option<u32>,
     ) -> Result<(), RecordError> {
         self.draw = None;
-        let Some(background) = settings.background().filter(|_| self.pipeline != 0) else {
+        if self.pipeline == 0 {
             return Ok(());
-        };
-        if let BackgroundSource::Atmosphere(_) = background.source {
+        }
+        if matches!(
+            settings.background().map(|b| b.source),
+            Some(BackgroundSource::Atmosphere(_))
+        ) {
             self.draw = sky_group.map(|group| Draw {
                 pipeline: self.pipeline,
                 shape: Shape::Physical { group },
@@ -379,22 +400,33 @@ impl BackgroundPass {
         }
         let textures = settings.textures();
         let blank = (self.ids.blank_cube, Handle::NONE);
-        let (shape, cube, levels) = match background.source {
-            BackgroundSource::Texture(texture) => {
-                let (Some(layer), Some(group)) =
-                    (textures.ready_layer(texture), textures.group_id(texture))
-                else {
-                    return Ok(());
+        let (shape, cube, uniform) = match settings.background() {
+            Some(background) => {
+                let (shape, cube, levels) = match background.source {
+                    BackgroundSource::Texture(texture) => {
+                        let (Some(layer), Some(group)) =
+                            (textures.ready_layer(texture), textures.group_id(texture))
+                        else {
+                            return Ok(());
+                        };
+                        (Shape::Texture { group, layer }, blank, 1)
+                    }
+                    BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture) => {
+                        let Some((cube, levels)) = textures.ready_cube(texture) else {
+                            return Ok(());
+                        };
+                        (Shape::Box, (cube, texture), levels)
+                    }
+                    BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_) => {
+                        (Shape::Box, blank, 1)
+                    }
                 };
-                (Shape::Texture { group, layer }, blank, 1)
+                (shape, cube, BackdropUniform::of(&background, levels))
             }
-            BackgroundSource::Environment(texture) | BackgroundSource::Cubemap(texture) => {
-                let Some((cube, levels)) = textures.ready_cube(texture) else {
-                    return Ok(());
-                };
-                (Shape::Box, (cube, texture), levels)
-            }
-            BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_) => (Shape::Box, blank, 1),
+            None => match settings.vignetted_background_color() {
+                Some(color) => (Shape::Box, blank, BackdropUniform::color(color)),
+                None => return Ok(()),
+            },
         };
         let ids = self.ids;
         if !self.created {
@@ -408,7 +440,6 @@ impl BackgroundPass {
             )?;
             self.created = true;
         }
-        let uniform = BackdropUniform::of(&background, levels);
         if self.written != Some(uniform) {
             let (at, bytes) = arena.push(bytes_of(&uniform))?;
             list.push(Op::WriteBuffer, &[ids.buffer, 0, at, bytes])?;
@@ -519,6 +550,15 @@ mod tests {
         assert_eq!(uniform.rotation[0], [-1.0, 0.0, 0.0, 0.0]);
         assert_eq!(uniform.rotation[1], [0.0, 1.0, 0.0, 0.0]);
         assert_eq!(uniform.rotation[2], [0.0, 0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn a_plain_color_draws_its_exposed_color_and_nothing_else() {
+        let uniform = BackdropUniform::color([0.25, 0.5, 2.0]);
+        assert_eq!(uniform.color, [0.25, 0.5, 2.0, 1.0]);
+        assert_eq!(uniform.params, [0.0; 4]);
+        let cube = BackdropUniform::of(&background(BackgroundSource::Cubemap(Handle::NONE)), 1);
+        assert_eq!(cube.color[3], 0.0, "a cube map reads its texture");
     }
 
     #[test]

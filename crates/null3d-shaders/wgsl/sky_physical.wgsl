@@ -158,5 +158,11 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         }
     }
     let scale = values.view.z * frame.output.exposure;
-    return null3d::tonemap::finish(color * scale, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(
+        color * scale,
+        in.clip.xy,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }

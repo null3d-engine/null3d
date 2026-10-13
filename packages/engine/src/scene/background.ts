@@ -349,7 +349,7 @@ export class SceneBackground implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the view of the block, which the next write makes again. */
+	/** Forgets the view of the block, which the next write makes again. */
 	dropViews(): void {
 		this.values = undefined;
 	}

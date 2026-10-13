@@ -865,6 +865,7 @@ pub fn typescript() -> String {
                 ("AGX", ToneMapping::Agx.code()),
                 ("NEUTRAL", ToneMapping::Neutral.code()),
                 ("NONE", ToneMapping::None.code()),
+                ("AGX_PUNCHY", ToneMapping::AgxPunchy.code()),
             ],
         ),
         // The layout of a particle system's records and values in engine memory.

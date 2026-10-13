@@ -267,7 +267,7 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_INDEX_STRIDE = 16;
-export const SIZE_FRAME_UNIFORM_BYTES = 800;
+export const SIZE_FRAME_UNIFORM_BYTES = 816;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
@@ -291,7 +291,7 @@ export const SIZE_CULL_OCCLUSION_BYTES = 96;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
-export const SIZE_BACKGROUND_UNIFORM_BYTES = 128;
+export const SIZE_BACKGROUND_UNIFORM_BYTES = 144;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
 export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16];
