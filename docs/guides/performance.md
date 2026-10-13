@@ -189,8 +189,9 @@ Animated characters also cost skinning work and memory:
 - On WebGPU, the skinning pass skins morphed characters once per frame instead, and each one draws on its own. It skips a character whose pose did not change since its last skin, such as one that stands still or whose clips are paused.
 - Each copy that the skinning pass skins keeps its own skinned vertices in GPU memory, even when copies share a mesh. A knight of the S5 benchmark takes 20 bytes per vertex, with normals in 8 bits per component. Count this memory against the preset's GPU memory on phones.
 - The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
+- The job workers sample and blend each character's clips in every frame. Give a far character more frames between its updates with [`animator.setUpdateInterval`](../api/animation.md#crowds), and hold the ones near the camera at 1. The `farAnimationInterval` quality setting gives the interval for far characters, and the governor raises it when frames take too long.
 
-For a large crowd, use models with fewer vertices, and fewer shadow cascades on phones.
+For a large crowd, use models with fewer vertices, give far characters a longer update interval, and draw fewer shadow cascades on phones.
 
 ## See-through objects
 
