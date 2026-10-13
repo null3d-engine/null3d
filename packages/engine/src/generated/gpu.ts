@@ -134,6 +134,9 @@ export const LAYOUT_FINAL_EFFECTS_DEPTH_MS = 24;
 export const LAYOUT_VIEW_COPY = 25;
 export const LAYOUT_DOF_COMPOSITE = 27;
 export const LAYOUT_DOF_COMPOSITE_MS = 28;
+export const LAYOUT_PARTICLE = 32;
+export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
+export const LAYOUT_PARTICLE_DEPTH_MS = 35;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -237,6 +240,10 @@ export const TEMPLATE_DOF_FILTER = 44;
 export const TEMPLATE_DOF_COMPOSITE = 45;
 export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_TRANSMISSION_COPY = 47;
+export const TEMPLATE_PARTICLE = 53;
+export const TEMPLATE_PARTICLE_MAP = 54;
+export const TEMPLATE_PARTICLE_DEPTH = 55;
+export const TEMPLATE_PARTICLE_DEPTH_MS = 56;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
