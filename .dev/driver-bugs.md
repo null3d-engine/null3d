@@ -56,7 +56,7 @@ What happens: a fragment shader that keeps a float in a struct reads it back at 
 - a stage's inputs gathered into a struct;
 - a uniform block's struct copied into a local.
 
-Whole numbers in a struct keep only their low 16 bits, also as `highp uvec4` members. The shader library page's write probe passes its whole numbers through a struct, so it read 0x0000cdef for 0x89abcdef. A clear of the same target kept every bit.
+Whole numbers in a struct keep only their low 16 bits, also as `highp uvec4` members. The shader library page's write probe passes its whole numbers through a struct, so it read 0x0000cdef for 0x89abcdef. The struct probe, which multiplies its whole numbers by a uniform 1, read 0xffffcdef: the high half took the sign of the low half. A clear of the same target kept every bit.
 
 Plain locals, plain arrays, function results that are not structs, and values passed between the stages keep all 32 bits. So does a uniform block's struct read in place. In the vertex stage, a struct in `main` kept all 32 bits, but a struct that a function returned did not. The sky's scattering coefficients per metre, about 1e-5, read as zero, except blue's Rayleigh coefficient. Red and green light then divided zero by zero, and the sky drew yellow-white.
 
