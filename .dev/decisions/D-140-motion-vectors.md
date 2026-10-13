@@ -112,7 +112,14 @@ A held frame is the first frame that the thread that draws draws, so it has no l
 
 ## Cost
 
-To come from the branch: the motion pass per preset with the Creek's grass, S1's moving boxes and a skinned crowd; GPU time with motion off against main (`bun run bench:gpu-check`); the allocation check with the motion view on; and the download size.
+Download size, after Brotli, measured with `bun run build:check-size` against main on 13 October:
+
+- The largest start, pipelined WebGPU, grows by 0.6 KB to 135.1 KB of its 140 KB budget. The start keeps the motion frame layout, the new format, the device check, the debug view and hold mode's frame before. Each WebGPU start file grows by about 2.2%.
+- The core's WebAssembly files grow by 2.4%, about 9 KB each: the motion pass in both frame builders, with its layouts, culling, last-frame copies and debug view.
+- The motion shaders load on first use: 7.8 KB for each WebGL2 file and 6.7 KB for the WebGPU one. A page that never reads the motion never downloads them.
+- Loading the WebGPU motion pipelines on first use too made the start 0.1 KB bigger, not smaller (135.2 KB against 135.1 KB). The moved code is small, and the loader cost more than it saved, so they stay in the start code.
+
+GPU time with motion off, and the motion pass's own cost on each path, follow from the timing run.
 
 ## Decision
 
@@ -123,3 +130,11 @@ Option B: a motion pass of the moving objects, into a two-channel half float tar
 - Code: `crates/null3d-render/src/motion.rs` (the uniform, the reprojection and the debug view's step), the motion layout and view in both frame builders, the culling shader's motion build, `motion.wgsl` and the motion builds of `lit.wgsl`, the new format, and both backends' templates.
 - Docs: the debug view in `api/debug`, the motion pass in `concepts/render-graph` and `concepts/post-processing`.
 - Later: temporal anti-aliasing (D-129's retry), motion blur, and a function that lets custom effects read the motion.
+
+## Tables while the motion pipelines load
+
+On 13 October 2026, the cost page stopped when it enabled motion on WebGPU and compatibility mode. The drawing worker named buffer 402, which did not exist. This was the motion layout's bucket table.
+
+The layout rebuilt while the motion pipelines loaded, but its tables uploaded only while the motion view could draw. Once the pipelines finished, no scene change asked for another upload. The first motion frame therefore read a table that had never been made.
+
+The builder now uploads those tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion. A mock-backend test covers motion requested at the start and enabled after ordinary frames.

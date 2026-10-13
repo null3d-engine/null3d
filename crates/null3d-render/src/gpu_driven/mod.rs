@@ -1351,6 +1351,11 @@ impl GpuDrivenRenderer {
             }
             (false, false)
         };
+        // Build the motion tables when their layout changes, even while its pipelines load.
+        // Once the view can draw, the scene may no longer need a layout upload.
+        if motion && upload_everything {
+            self.moving.apply(list, arena, binding_bytes)?;
+        }
         // The motion view draws while a pass reads the motion and the device draws its target. Its
         // bundles and culling groups name the copies of the last frame's data, which can grow.
         let motion_on = motion && self.graph.motion_draws();
@@ -1361,9 +1366,7 @@ impl GpuDrivenRenderer {
                 self.motion_made = true;
                 motion_new = true;
             }
-            if upload_everything {
-                self.moving.apply(list, arena, binding_bytes)?;
-            } else {
+            if !upload_everything {
                 self.moving.update_membership(list, arena, input, parity)?;
             }
             self.motion.reserve(input.snapshot.uploads().len() + 1)?;

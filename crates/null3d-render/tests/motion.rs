@@ -27,7 +27,9 @@ fn motion_draws(commands: &Commands, motion: &mut Vec<u32>) -> usize {
             }
             Op::SetPipeline => drawing = motion.contains(&operands[0]),
             Op::EndRenderPass => drawing = false,
-            Op::DrawIndexed | Op::MultiDrawIndexed if drawing => draws += 1,
+            Op::DrawIndexed | Op::MultiDrawIndexed | Op::DrawIndexedIndirect if drawing => {
+                draws += 1
+            }
             _ => {}
         }
     }
@@ -79,4 +81,32 @@ fn a_moved_scene_object_draws_its_motion_in_the_next_frame() {
 #[test]
 fn a_moved_scene_object_draws_its_motion_in_hold_mode() {
     check(true);
+}
+
+#[test]
+fn webgpu_motion_tables_exist_when_the_first_use_pipelines_finish() {
+    for late in [false, true] {
+        let mut world = World::new();
+        let mut mock = MockBackend::with_capabilities(Capabilities::MSAA_FLOAT16);
+        world.renderer.allow_motion(true, true);
+        if late {
+            for frame in 0..4 {
+                world.step(&mut mock, frame == 0);
+            }
+        }
+        world
+            .renderer
+            .settings_mut()
+            .set_debug_view(DebugView::Motion);
+        let mut pipelines = Vec::new();
+        let mut draws = 0;
+        for frame in 0..8 {
+            let commands = world.step(&mut mock, !late && frame == 0);
+            draws += motion_draws(&commands, &mut pipelines);
+        }
+        assert!(
+            draws > 0,
+            "motion must draw after its pipelines finish, late={late}"
+        );
+    }
 }
