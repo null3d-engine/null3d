@@ -10,3 +10,4 @@
 ## Known issues
 
 Edge ignores the session's certificate capability, so the runner clicks the warning page's link ([#297](https://github.com/null3d-engine/null3d/pull/297))
+On 13 October 2026, a smoke session opened the runner page and the browser gave it no animation frames, and the session could not bring the tab to the front. That run is [20261013-072446-smoke](20261013-072446-smoke.md). Test this browser in BrowserStack Live, where a person holds the device, or run it again for a new session.
