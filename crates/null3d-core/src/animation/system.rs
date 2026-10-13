@@ -445,6 +445,8 @@ impl Animations {
         let layer_masks = grown(&self.layer_masks, layers, 0)?;
         let blend_values = grown(&self.blend_values, layers, 0.0)?;
         let pose_steps = grown(&self.pose_steps, n, FRESH)?;
+        let sampled_steps = grown(&self.sampled_steps, n, FRESH)?;
+        let update_intervals = grown(&self.update_intervals, n, 1)?;
         let objects = grown(&self.objects, n, u32::MAX)?;
         let new_overrides = grown(&self.overrides, overrides, 0.0)?;
         let look_targets = grown(&self.look_targets, looks, 0.0)?;
@@ -470,6 +472,8 @@ impl Animations {
         self.layer_masks = layer_masks;
         self.blend_values = blend_values;
         self.pose_steps = pose_steps;
+        self.sampled_steps = sampled_steps;
+        self.update_intervals = update_intervals;
         self.objects = objects;
         self.overrides = new_overrides;
         self.look_targets = look_targets;
