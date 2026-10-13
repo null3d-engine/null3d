@@ -116,9 +116,9 @@ A held frame is the first frame that the thread that draws draws, so it has no l
 
 Download size, after Brotli, measured with `bun run build:check-size` against main on 14 October:
 
-- The largest start, pipelined WebGPU, grows by 0.8 KB to 139.9 KB of its 140 KB budget. The page's WebGL2 shader combos file holds most of that: it grew 10.8%.
-- The core's WebAssembly files grow by 2.3%: 393,201 to 402,262 bytes in the threaded file and 392,054 to 401,198 in the single-threaded one. They hold the motion pass in both frame builders, with its layouts, its culling, the copies of the last frame's data and the debug view.
-- The motion shaders load on first use. Each file holds the motion builds beside the features that a page loads with, 3.4 to 5.9 KB for each file on WebGL2 and WebGPU. A page that never reads the motion never downloads them.
+- The largest start, pipelined WebGPU, is 0.8 KB above main's, at 144,177 bytes after Brotli. Main sits at the 140 KB budget, so the motion's words put the start 817 bytes over it, and the raise of that budget covers this feature with the others that wait on it ([D-14](D-14-js-budget.md)). The page's WebGL2 shader combos file holds most of the 0.8 KB, and it grew 10.8%.
+- The core's WebAssembly files grow by about 2% each. They hold the motion pass in both frame builders, with its layouts, its culling, the copies of the last frame's data and the debug view.
+- The motion shaders load on first use. Each file holds the motion builds beside the features that a page loads with. A page that never reads the motion never downloads them.
 - Loading the WebGPU motion pipelines on first use as well made the start bigger, not smaller, so they stay in the start code.
 
 GPU time, measured in Chrome 155 on the Mac's M5 Max at 120 Hz, in a parked window:
