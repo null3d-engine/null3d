@@ -241,6 +241,7 @@ const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, 
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
+sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
 light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
@@ -497,7 +498,7 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Contact shadows, screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({

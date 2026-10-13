@@ -1,8 +1,9 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof, ?effect=effects or ?effect=motion names it. Effects adds ?count= custom effects, 4
-// by default, to bloom's scene. Motion measures the motion vectors with their debug view, so it
-// runs in development builds only. With dof, ?taps= sets the quality setting dofSamples, the
-// gather's taps, which is otherwise the preset's.
+// ?effect=dof, ?effect=contact (the sun's contact shadows, with ?steps= steps per march, 8 by
+// default), ?effect=effects or ?effect=motion names it. Effects adds ?count= custom effects, 4 by
+// default, to bloom's scene. Motion measures the motion vectors with their debug view, so it runs
+// in development builds only. With dof, ?taps= sets the quality setting dofSamples, the gather's
+// taps, which is otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
@@ -35,6 +36,7 @@ const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
+	contact: './sketches/contact-shadows-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 	motion: './sketches/motion-cost-sketch.ts',
 } as const;
@@ -45,6 +47,7 @@ const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
+const steps = params.get('steps');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
@@ -65,7 +68,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${steps === null ? '' : `&steps=${steps}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,

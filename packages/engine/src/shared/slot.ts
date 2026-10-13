@@ -115,3 +115,9 @@ export const ReplayDelayMs = 32;
  * before, as the motion debug view does. 0 draws the frame published alone.
  */
 export const HeldFrom = 35;
+/**
+ * The address in engine memory of the job system's yield word, or 0 before the sketch thread has
+ * created the job system. While the browser measures the page's memory, the page adds one to it,
+ * so idle job workers let their threads run the measurement instead of blocking.
+ */
+export const JobsYieldAddress = 36;

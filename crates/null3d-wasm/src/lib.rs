@@ -691,10 +691,15 @@ pub fn destroy_engine() {
 }
 
 // Each doc comment below stays short: wasm-bindgen copies it into the glue.
-/// Serves the job system on job worker `index`: true when a call made it return, false at stop.
+/// Serves the job system on job worker `index` until it returns: 0 at stop, 1 for a call, 2 to
+/// yield to the thread's own tasks.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
-pub fn job_worker_loop(index: u32) -> bool {
-    JOBS.wait().worker_loop(index) == LoopExit::Called
+pub fn job_worker_loop(index: u32) -> u32 {
+    match JOBS.wait().worker_loop(index) {
+        LoopExit::Stopped => 0,
+        LoopExit::Called => 1,
+        LoopExit::Yielded => 2,
+    }
 }
 
 /// Asks job worker `index` to leave its loop to run a task.
@@ -765,6 +770,13 @@ pub fn jobs_wake_address() -> u32 {
 pub fn jobs_stop_address() -> u32 {
     JOBS.get()
         .map_or(0, |jobs| jobs.stop_words().1.as_ptr() as usize as u32)
+}
+
+/// The address of the job system's yield word, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsYieldAddress)]
+pub fn jobs_yield_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.yield_word().as_ptr() as usize as u32)
 }
 
 // --- Scene objects ---
@@ -3102,6 +3114,16 @@ pub fn set_ao_scale(thousandths: u32) -> u32 {
         e.renderer
             .settings_mut()
             .set_ao_scale(thousandths as f32 / 1000.0);
+        0
+    })
+}
+
+/// Sets the steps of each march of the main directional light's contact shadows, from the next
+/// frame on: 0 draws none.
+#[wasm_bindgen(js_name = setContactSteps)]
+pub fn set_contact_steps(steps: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_contact_steps(steps);
         0
     })
 }
