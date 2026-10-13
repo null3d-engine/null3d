@@ -370,7 +370,9 @@ export class WebGPUBackend {
 		if (bound)
 			this.bindingViews[id] = texture.createView({
 				dimension,
-				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+				// A texture that a compute step writes keeps STORAGE_BINDING too, so a bind group can
+				// bind it as a storage texture: the exposure's texel is one such.
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING | (usage & G.TEXTURE_USAGE_STORAGE_BINDING),
 			});
 		// A view of a transient texture must keep all of the texture's usage.
 		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
