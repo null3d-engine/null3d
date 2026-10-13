@@ -23,6 +23,9 @@ struct Backdrop {
     /// The sky's cloud elevation, its time in seconds, and its second sky's sun as a heading and an
     /// elevation in radians.
     cloud_place: vec4f,
+    /// A plain color in `xyz`, exposed linear color, and 1 in `w` when the background draws it in
+    /// place of the cube map, else 0.
+    color: vec4f,
 }
 
 /// A corner of the box around the camera, and the direction in the world that it stands for.

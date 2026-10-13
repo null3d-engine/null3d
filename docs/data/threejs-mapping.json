@@ -76,8 +76,8 @@
       "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Custom, Linear) / toneMappingExposure",
       "status": "changed",
       "since": "0.1",
-      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none' | curveWgsl, exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
+      "target": "post.set({ toneMapping: 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none' | curveWgsl, exposure })",
+      "notes": "The engine default is \"agx-punchy\", AgX with Filament's punchy look; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: AgXToneMapping becomes \"agx\" and ACESFilmicToneMapping \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -781,7 +781,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform. Roughness has three.js r187's floor of 0.045. Highlights on small curved shapes widen by Filament's specular anti-aliasing, where three.js adds its own term, so they are a little brighter and narrower there. A normal map that tilts a reflection below the surface fades the environment's reflection, which three.js does not.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
@@ -1639,7 +1639,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
-      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; under ACES the default falloff of 2 and roundness of 0 give a close match, and under AgX intensity stays at 1 or less with a falloff of 3. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },

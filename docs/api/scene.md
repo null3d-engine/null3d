@@ -317,7 +317,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - A scene holds up to 1,048,575 objects, the most that a handle can name. Past that, a create call throws E1102. A growth that the engine's memory cannot hold throws E1109. Each place counts toward the objects and instance rows that the GPU draws (`engine.capabilities.maxInstances`), and a growth past that limit throws E1501.
 - The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
-- The animation table holds up to 1,024 animated objects: each copy of a model with clips or skins takes one. One more throws E1102, and `instantiate` or `clone` then creates no part of the copy.
+- Each copy of a model with clips or skins takes a place in the animation table, and its joints take places too. The table starts with room for 1,024 animated objects and 65,536 joints. When a copy does not fit, it doubles what it lacks, in one short pause that copies the table. It holds up to 1,048,576 joints in all. That is the most that the joint texture holds on every WebGL2 device: about 24,000 copies of a character of 43 joints. A copy past that throws E1102, and a growth that the engine's memory cannot hold throws E1109. Either way, `instantiate` or `clone` then creates no part of the copy.
 
 ## Related pages
 

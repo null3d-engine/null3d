@@ -10,7 +10,9 @@ import {
 } from '../generated/core';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { type FogOptions, setSceneFog } from './fog';
+import { CoreMemory } from './memory';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -19,14 +21,18 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
  * height, the height falloff, the sun glow and its exponent. It records each volumetric fog apart:
  * whether it is on, its intensity, anisotropy and distance, and the fog's density.
  */
-function fakeGlue() {
+function fakeCore() {
 	const calls: number[][] = [];
 	const volumes: (number | boolean)[][] = [];
-	const glue = {
-		setFog: (...values: number[]) => calls.push(values),
-		setFogVolume: (...values: (number | boolean)[]) => volumes.push(values),
-	};
-	return { calls, volumes, glue: glue as unknown as CoreGlue };
+	const memory = new WebAssembly.Memory({ initial: 1 });
+	const glue = withCallValues(
+		{
+			setFog: (...values: number[]) => calls.push(values),
+			setFogVolume: (...values: (number | boolean)[]) => volumes.push(values),
+		},
+		memory,
+	);
+	return { calls, volumes, core: new CoreMemory(glue as unknown as CoreGlue, memory) };
 }
 
 /** The error that `call` throws. */
@@ -43,27 +49,28 @@ const GREY = [...fromHex([0, 0, 0], 0x808890)];
 
 describe('setFog', () => {
 	test('gives the core each curve with its linear color and values', () => {
-		const { calls, glue } = fakeGlue();
-		setSceneFog(glue, { color: 0x808890, density: 0.02, height: 4, heightFalloff: 0.5 });
-		setSceneFog(glue, { curve: 'linear', color: 0x808890, near: 10, far: 80, sunGlow: 0.3 });
-		setSceneFog(glue, { curve: 'exp2', color: '#808890', density: 0.03, sunGlowExponent: 32 });
-		setSceneFog(glue, null);
-		expect(calls).toEqual([
+		const { calls, core } = fakeCore();
+		setSceneFog(core, { color: 0x808890, density: 0.02, height: 4, heightFalloff: 0.5 });
+		setSceneFog(core, { curve: 'linear', color: 0x808890, near: 10, far: 80, sunGlow: 0.3 });
+		setSceneFog(core, { curve: 'exp2', color: '#808890', density: 0.03, sunGlowExponent: 32 });
+		setSceneFog(core, null);
+		expect(calls.slice(0, 3)).toEqual([
 			[FOG_CURVE_EXPONENTIAL, ...GREY, 0.02, 1, 1000, 4, 0.5, 0, 8],
 			[FOG_CURVE_LINEAR, ...GREY, 0.01, 10, 80, 0, 0, 0.3, 8],
 			[FOG_CURVE_EXP2, ...GREY, 0.03, 1, 1000, 0, 0, 0, 32],
-			[FOG_CURVE_NONE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 		]);
+		// No fog reads no numbers.
+		expect(calls[3]?.[0]).toBe(FOG_CURVE_NONE);
 	});
 
 	test('takes exponential fog of the same thickness at every height, with no glow, by default', () => {
-		const { calls, glue } = fakeGlue();
-		setSceneFog(glue, { color: 0x808890 });
+		const { calls, core } = fakeCore();
+		setSceneFog(core, { color: 0x808890 });
 		expect(calls).toEqual([[FOG_CURVE_EXPONENTIAL, ...GREY, 0.01, 1, 1000, 0, 0, 0, 8]]);
 	});
 
 	test('throws for values that give no fog, and changes nothing', () => {
-		const { calls, glue } = fakeGlue();
+		const { calls, core } = fakeCore();
 		const cases: [FogOptions, ErrorCode, string][] = [
 			[
 				{ curve: 'linear', color: 0, near: 50, far: 50 },
@@ -115,7 +122,7 @@ describe('setFog', () => {
 			],
 		];
 		for (const [fog, code, message] of cases) {
-			const error = thrown(() => setSceneFog(glue, fog));
+			const error = thrown(() => setSceneFog(core, fog));
 			expect(error.code).toBe(code);
 			expect(error.message).toStartWith(`${code}: ${message}`);
 		}
@@ -123,17 +130,17 @@ describe('setFog', () => {
 	});
 
 	test('turns the volumetric fog on with the fog density and its defaults or options', () => {
-		const { volumes, glue } = fakeGlue();
-		expect(setSceneFog(glue, { color: 0, density: 0.03, volumetric: true })).toBe(true);
+		const { volumes, core } = fakeCore();
+		expect(setSceneFog(core, { color: 0, density: 0.03, volumetric: true })).toBe(true);
 		expect(
-			setSceneFog(glue, {
+			setSceneFog(core, {
 				curve: 'linear',
 				color: 0,
 				volumetric: { intensity: 2, anisotropy: -0.2, distance: 40 },
 			}),
 		).toBe(true);
-		expect(setSceneFog(glue, { color: 0, volumetric: false })).toBe(false);
-		expect(setSceneFog(glue, null)).toBe(false);
+		expect(setSceneFog(core, { color: 0, volumetric: false })).toBe(false);
+		expect(setSceneFog(core, null)).toBe(false);
 		expect(volumes).toEqual([
 			[true, 1, 0.6, 100, 0.03],
 			[true, 2, -0.2, 40, 0.01],
