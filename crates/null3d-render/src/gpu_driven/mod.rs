@@ -257,14 +257,13 @@ mod ids {
     /// The casters' bucket table and bucket records, which the shadow cascades' culling reads.
     pub const CASTER_BUCKETS: u32 = LINES + 1;
     pub const CASTER_RECORDS: u32 = LINES + 2;
-    /// The cascades' uniform block, which receivers read beside the shadow map.
+    /// The frame's shadow settings, which receivers read beside the shadow map and the atlas: the
+    /// sun's cascades, then the atlas's tiles (D-146).
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
-    /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
-    const SORTED: u32 = SHADOW_TILES + 1;
+    const SORTED: u32 = FINAL_SETTINGS + 1;
 
     pub const fn sorted(view: ViewId) -> u32 {
         SORTED + view.index() as u32
@@ -1448,7 +1447,8 @@ impl GpuDrivenRenderer {
             list.push(Op::WriteBuffer, &[ids::SHADOWS, 0, at, bytes])?;
         }
         self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
-        self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+        self.tiles
+            .upload(list, arena, ids::SHADOWS, sizes::SHADOW_UNIFORM_BYTES)?;
         let shadow_detail = self.settings.shadow_level_view(input.canvas);
         for tile in 0..tiles {
             let view = ViewId::tile(tile);
@@ -1656,7 +1656,7 @@ impl GpuDrivenRenderer {
 
     /// Records the creation of the material table, the data texture of materials' custom values,
     /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
-    /// uniform block and sampler.
+    /// settings block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(
             list,
@@ -1664,7 +1664,6 @@ impl GpuDrivenRenderer {
             ids::SHADOW_SAMPLER,
             Some(ids::SHADOW_TEXEL_SAMPLER),
         )?;
-        ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,

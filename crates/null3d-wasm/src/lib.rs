@@ -2439,6 +2439,7 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
             texture_option::MEMORY_BUDGET_KIB => {
                 textures.set_memory_budget(u64::from(value) * 1024)
             }
+            texture_option::KEEP_COPIES => textures.set_keep_copies(value != 0),
             _ => textures.upload_all_next_frame(),
         }
         0
@@ -3843,6 +3844,7 @@ pub fn animation_arrays(field: u32) -> u32 {
             animation_field::SLOT_TIMES => address(&animations.slots().time),
             animation_field::SLOT_WEIGHTS => address(&animations.slots().weight),
             animation_field::TIME_SCALES => address(animations.time_scales()),
+            animation_field::UPDATE_INTERVALS => address(animations.update_intervals()),
             animation_field::LAYER_WEIGHTS => address(animations.layer_weights()),
             animation_field::EVENTS => address(animations.event_buffer()),
             animation_field::EVENT_TOTALS => address(animations.event_totals()),
