@@ -1,6 +1,6 @@
 # Pull requests and parallel work
 
-Since 13 October 2026, work lands on main by direct push, without pull requests ([D-157](decisions/D-157-direct-pushes-to-main.md)): merge `origin/main` into the branch, run the local checks that D-157 lists, push the branch's commits to main, and fix a red main first. Where this guide says "pull request" below, read "branch": the trailers, records and checks are the same.
+Since 13 October 2026, work lands on main by direct push, without pull requests ([D-157](decisions/D-157-direct-pushes-to-main.md)): merge `origin/main` into the branch, run the local checks that D-157 lists, push the branch's commits to main without waiting for main's CI, and fix main at once if your push turned it red. Where this guide says "pull request" below, read "branch": the trailers, records and checks are the same.
 
 This guide covers generated files, how to merge main into a branch, and how a pull request merges. It also covers what CI runs on each event and why its jobs are split as they are. Last, it covers several copies of the repository on one machine. [AGENTS.md](../AGENTS.md) holds the commit gates and the rules of merging.
 
