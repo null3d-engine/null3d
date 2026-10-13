@@ -116,6 +116,16 @@ export type {
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
+	ParticleBuffer,
+	ParticleBufferOptions,
+	ParticleFacing,
+	ParticleFlipbook,
+	ParticleGroundMode,
+	ParticleLook,
+	ParticleMotion,
+	ParticleValues,
+} from './scene/particles';
+export type {
 	ObjectEventHandler,
 	ObjectEventType,
 	ObjectPointerEvent,
@@ -142,9 +152,11 @@ export type {
 	RaycastOptions,
 } from './scene/queries';
 export type {
+	FullscreenPassOptions,
+	PassInput,
+	PassScale,
 	ReflectionPassOptions,
 	ReflectionPlane,
-	ReflectionScale,
 	Render,
 	RenderPass,
 	RenderPassOptions,

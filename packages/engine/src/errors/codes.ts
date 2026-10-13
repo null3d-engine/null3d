@@ -147,7 +147,7 @@ const DOCS = {
 		title: 'Invalid setting',
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
-		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
 	E1214: {
@@ -198,7 +198,7 @@ const DOCS = {
 	E1220: {
 		title: 'Invalid render pass',
 		cause:
-			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, or a texture name or pass name that another pass has. Or the sketch added more scene passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled() or render.removePass() got something that is not a render pass.',
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform() or render.removePass() got something that is not a render pass, or render.setPassUniform() got a pass that is not a full-screen pass.',
 		example:
 			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
 		since: '0.2',

@@ -312,6 +312,13 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return floats(vec4f(n[0], 0.0), vec4f(n[1], 0.0), vec4f(n[2], 0.0), vec4f(0.0));
         }
 #endif
+#ifdef COLOR
+        case 106u: { return triple(null3d::color::tone_map_agx_punchy(f[0].xyz)); }
+#endif
+#ifdef LIGHTING
+        case 107u: { return scalar(null3d::lighting::horizon_occlusion(f[0].xyz, f[1].xyz, f[2].xyz)); }
+        case 108u: { return scalar(null3d::lighting::specular_aa_kernel(f[0].xyz, f[1].xyz)); }
+#endif
         // Any other number gives back its first input texel. The page's probe draws such a row,
         // so whole numbers take the same way to the target as the library's results.
         default: { return whole(u[0]); }

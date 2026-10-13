@@ -35,6 +35,7 @@ describe('the shader modules', () => {
 	it('are the main module and the device modules beside it', () => {
 		expect(isShaderModule('shaders.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.js')).toBe(true);
+		expect(isShaderModule('shaders-wgsl-combos.ts')).toBe(true);
 		expect(isShaderModule('shaders-glsl-draw-index.ts')).toBe(false);
 		expect(isShaderModule('shader-features.ts')).toBe(true);
 		expect(isShaderModule('shaders-environment-wgsl.ts')).toBe(true);

@@ -67,8 +67,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { type Browser, chromium } from '@playwright/test';
-import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
+import type { Browser } from '@playwright/test';
+import {
+	launchChromium,
+	SWIFTSHADER_ARGS,
+	WEBGPU_DEVELOPER_FEATURES,
+} from '../packages/cli/src/browser.js';
 import { RUNS } from '../packages/cli/src/protocol.js';
 import { displayRateCheck, launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
@@ -298,7 +302,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
  */
 function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
 	if (name === 'chromium')
-		return chromium.launch({
+		return launchChromium({
 			headless: true,
 			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
 		});
