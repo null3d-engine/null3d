@@ -656,12 +656,12 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
 const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
 
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
+	// Only the null3D page takes the scene's own switches; the twin ignores them.
+	const sceneSwitch = isNull3dPage(kind) ? SCENE_HOLD_SWITCHES[scene] : undefined;
 	return pagePath(
 		scene,
 		kind,
-		['hold', REFERENCE_PRESET_SWITCH, SCENE_HOLD_SWITCHES[scene], switches]
-			.filter(Boolean)
-			.join('&'),
+		[sceneSwitch, 'hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
 	);
 }
 
