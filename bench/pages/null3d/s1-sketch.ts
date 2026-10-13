@@ -46,8 +46,16 @@
 // every row a color and values that change every frame, read by a custom material that sways and
 // tints each box, for the allocation sample of the row values' uploads. The `levels` switch gives
 // the boxes levels of detail, for the allocation sample of the rows' choice of a level and of the
-// fading bands between levels.
-import { defineSketch, type Environment, type SketchContext, type Texture } from '@null3d/engine';
+// fading bands between levels. The `setters` switch calls, in every frame, each setter that a
+// sketch may call per frame, with fractions and colors: the lights', a line batch's, the camera's
+// field of view, the fog and the background color. A material's `set` is called once, at setup.
+import {
+	defineSketch,
+	type Environment,
+	type PerspectiveCamera,
+	type SketchContext,
+	type Texture,
+} from '@null3d/engine';
 import { createParticles, type ParticleSystem, particleTextures } from '@null3d/particles';
 import { GRADING_LUTS } from '../../scenes/grading';
 import { BACKGROUND, S1_BOB_HEIGHT, S1_EXTENT, s1Camera, VIEW_LIGHTS } from '../../scenes/spec';
@@ -59,10 +67,8 @@ import { createLineSwarm, createSpriteSwarm, createSwarm } from './swarm';
 export default defineSketch(async (context) => {
 	const { time } = context;
 	const cascades = readShadows(import.meta.url);
-	const moveCamera = followPath(
-		setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades }),
-		s1Camera,
-	);
+	const camera = setUpView(context, VIEW_LIGHTS, BACKGROUND, { cascades });
+	const moveCamera = followPath(camera, s1Camera);
 	const switches = new URL(import.meta.url).searchParams;
 	const count = readCount(import.meta.url);
 	const poseSwarm = switches.has('sprites')
@@ -150,7 +156,9 @@ export default defineSketch(async (context) => {
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			room = loaded;
 		});
-	const hemispheres = switches.has('hemisphere') ? createHemispheres(context) : undefined;
+	const now = new Float64Array(1);
+	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
+	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
 		moveCamera(t);
@@ -161,10 +169,9 @@ export default defineSketch(async (context) => {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
 		}
-		if (hemispheres) {
-			hemispheres[0].setIntensity(0.3 + 0.1 * Math.sin(t));
-			hemispheres[1].setIntensity(0.2 + 0.1 * Math.cos(t));
-		}
+		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
+		// number crosses a call that the browser may not inline.
+		now[0] = t;
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -210,7 +217,12 @@ export default defineSketch(async (context) => {
 			pose(time.now);
 			if (frames) Atomics.add(frames, 0, 1);
 		},
+		// The setters' steps run in their own small callback, apart from the large `pose`: the
+		// browser then inlines each step and the setters it calls, so a fraction that a step computes
+		// stays in a register instead of becoming an object.
 		onLateUpdate() {
+			poseHemispheres?.();
+			setValues?.();
 			for (let k = 0; k < particles.length; k++) particles[k]?.update();
 		},
 	};
@@ -317,16 +329,97 @@ fn effect(input: EffectInput) -> vec4f {
  * Two hemisphere lights for the `hemisphere` switch: a blue sky over brown ground, upright, and a
  * warm one tilted an eighth of a turn about X.
  */
-function createHemispheres({ scene }: SketchContext) {
+/**
+ * The `hemisphere` switch: two hemisphere lights, one tilted. Returns the frame's step, which
+ * changes their intensities. The calls sit in a step of their own, as a game's update function
+ * does, so the browser inlines them and no fraction crosses a call as an object of its own.
+ */
+function createHemispheres({ scene }: SketchContext, now: Float64Array): () => void {
 	const tilt = Math.sin(Math.PI / 8);
-	return [
-		scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' }),
-		scene.createHemisphereLight({
-			skyColor: '#ffd9a8',
-			groundColor: '#202830',
-			rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
-		}),
-	] as const;
+	const sky = scene.createHemisphereLight({ skyColor: '#9cc8ff', groundColor: '#806040' });
+	const warm = scene.createHemisphereLight({
+		skyColor: '#ffd9a8',
+		groundColor: '#202830',
+		rotation: [tilt, 0, 0, Math.cos(Math.PI / 8)],
+	});
+	return () => {
+		const t = now[0] as number;
+		sky.setIntensity(0.3 + 0.1 * Math.sin(t));
+		warm.setIntensity(0.2 + 0.1 * Math.cos(t));
+	};
+}
+
+/** A custom material with a color uniform and a number uniform, for the `setters` switch. */
+const TINTED = /* wgsl */ `
+struct Uniforms { tint: vec3f, strength: f32 }
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = mix(s.baseColor, material.tint, material.strength);
+    return s;
+}
+`;
+
+/**
+ * The `setters` switch: a point light, a spot light, a hemisphere light, a line batch, a standard
+ * material and a custom one. Returns the frame's step, which calls the per-frame setters of the
+ * lights, the camera's field of view, the line's width and dashes, the fog and the background color
+ * with fractions and colors. The colors are an array changed in place, a hex number and a hex
+ * string. The calls sit in a small step of their own, as in a game's update function, so the
+ * browser inlines them and no number crosses a call as an object of its own. A material's `set`
+ * reads each number from the options object it is given, and the browser boxes such a read, so the
+ * two materials are set once, before the frame.
+ */
+async function createSetters(
+	{ scene, materials }: SketchContext,
+	camera: PerspectiveCamera,
+	now: Float64Array,
+): Promise<() => void> {
+	const point = scene.createPointLight({ position: [0, 6, 0], intensity: 0.01, range: 10 });
+	const spot = scene.createSpotLight({ position: [0, 9, 0], intensity: 0.01, range: 12 });
+	const hemisphere = scene.createHemisphereLight({ skyColor: '#9cc8ff', intensity: 0.01 });
+	const lines = await scene.createLines({
+		positions: new Float32Array([0, 1, 0, 0, 2, 0]),
+		mode: 'segments',
+		width: 2,
+		dashed: true,
+	});
+	const paint = materials.standard({ color: '#808080' });
+	const custom = materials.shader({ wgsl: TINTED, uniforms: { tint: [1, 1, 1], strength: 0.5 } });
+	const fov = camera.fov;
+	// Every options object and color is made once and changed in place.
+	const color: [number, number, number] = [1, 1, 1];
+	const paintValues = { color, roughness: 0.5, metalness: 0.5, emissiveIntensity: 1 };
+	const customValues = { tint: color, strength: 0.5, roughness: 0.5 };
+	const lineValues = { color, dashOffset: 0.5 };
+	const fog = { color, density: 0.001 };
+	// A material's `set` reads each number from the options object it is given, and the browser
+	// boxes such a read, so a material is set once here and not in every frame.
+	paint.set(paintValues);
+	custom.set(customValues);
+	return () => {
+		const t = now[0] as number;
+		const s = Math.sin(t);
+		const c = Math.cos(t);
+		color[0] = 0.75 + 0.25 * s;
+		color[2] = 0.75 + 0.25 * c;
+		point.setIntensity(0.01 + 0.005 * s);
+		point.setRange(10 + s);
+		point.setDecay(2 + 0.5 * c);
+		point.setColor(color);
+		spot.setIntensity(0.01 + 0.005 * c);
+		spot.setAngle(0.5 + 0.1 * s);
+		spot.setPenumbra(0.25 + 0.1 * c);
+		spot.setColor(s > 0 ? 0xffd9a8 : '#9cc8ff');
+		hemisphere.setGroundColor(color);
+		camera.setFov(fov + 0.5 * s);
+		lines.setWidth(2 + s);
+		lineValues.dashOffset = 0.5 + 0.5 * s;
+		lines.material.set(lineValues);
+		fog.density = 0.001 + 0.0005 * s;
+		scene.setFog(fog);
+		scene.setBackground(color);
+	};
 }
 
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
