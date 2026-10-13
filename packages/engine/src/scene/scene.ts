@@ -1923,7 +1923,7 @@ export class InstanceBatch implements ViewHolder {
 		scene.core.holdViews(this);
 	}
 
-	/** @internal Forgets the row arrays, which the next read makes again. */
+	/** Forgets the row arrays, which the next read makes again. */
 	dropViews(): void {
 		if (this.generation === -1) return;
 		this.generation = -1;
@@ -2453,7 +2453,7 @@ export class Scene implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the views of the scene's arrays and of the morph weights. */
+	/** Forgets the views of the scene's arrays and of the morph weights. */
 	dropViews(): void {
 		this.currentViews = undefined;
 		this.morphGeneration = -1;

@@ -1377,9 +1377,10 @@ pub mod sizes {
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read,
-    /// and the physical sky's aerial perspective's six vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 800;
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read, the
+    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
+    /// fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 816;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1467,9 +1468,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
-    /// Bytes of the background's uniform block: eight vectors, which the cube map and the sky
-    /// read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 128;
+    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
+    /// plain color read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
