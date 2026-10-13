@@ -241,6 +241,7 @@ export const TEMPLATE_FOG_LIGHT = 57;
 export const TEMPLATE_FOG_SUM = 58;
 export const TEMPLATE_FOG_APPLY = 59;
 export const TEMPLATE_FOG_APPLY_MS = 60;
+export const TEMPLATE_FOG_BLOCK = 69;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;

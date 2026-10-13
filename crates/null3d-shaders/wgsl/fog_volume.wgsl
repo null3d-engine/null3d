@@ -1,11 +1,17 @@
-// The volumetric fog's sum and apply steps, each one triangle over its target.
+// The volumetric fog's block, sum and apply steps, each one triangle over its target.
 //
-// - `sum` draws over a texture of the grid's size (null3d::fog_volume). Each cell sums the cells in
-//   front of it along its view ray, from the camera out, with the exact integral over each slice:
-//   a slice of density s and length l passes exp(-s × l) of the light behind it, and adds its
-//   scattered light times (1 - exp(-s × l)) / s, so a thick slice keeps its light right (Hillaire,
-//   "Physically Based and Unified Volumetric Rendering in Frostbite", 2015). It writes the light
-//   scattered toward the camera up to the cell's far edge, and the share of light that passes.
+// - `block_sum` draws over a texture of the grid's size (null3d::fog_volume). The slices fall into
+//   blocks of a row of tiles each. Each cell sums the cells of its block from the block's first
+//   slice to its own, along its view ray, with the exact integral over each slice: a slice of
+//   density s and length l passes exp(-s × l) of the light behind it, and adds its scattered light
+//   times (1 - exp(-s × l)) / s, so a thick slice keeps its light right (Hillaire, "Physically
+//   Based and Unified Volumetric Rendering in Frostbite", 2015). It writes the light scattered
+//   toward the camera across that part of the block, and the share of light that passes.
+// - `sum` draws over a second texture of the grid's size. Each cell joins the sums of the whole
+//   blocks in front of its own, front to back, then its own block's sum up to it. It writes the
+//   light scattered toward the camera up to the cell's far edge, and the share of light that
+//   passes. A cell reads at most a block's slices in the first step and a read per block in the
+//   second, so the work grows with the slices, not with their square.
 // - `apply` draws at the render size. Each pixel finds its distance from the scene's depth and adds
 //   the summed grid's light there to the scene's color. Past the grid's reach it adds the sun's
 //   light that the fog scatters, without shadows, in closed form: with every bit of fog scattering
@@ -13,8 +19,9 @@
 //   the drop in the share of light that passes. So no edge shows where the grid ends. The
 //   background takes the grid's light alone, as it takes none of the scene's fog.
 //
-// The steps bind as depth of field's do: the sum as a step of bloom (settings, a texture and a
-// sampler), and the apply step as depth of field's composite, with the summed grid at binding 4.
+// The steps bind as depth of field's do: the block step and the sum as steps of bloom (settings, a
+// texture and a sampler), and the apply step as depth of field's composite, with the summed grid at
+// binding 4.
 // The MULTISAMPLED builds read sample 0 of a multisampled depth, on WebGPU.
 #import null3d::fog::{fog_height_ratio}
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_cell_uv, fog_edge_distance, fog_phase, fog_ray, fog_screen_place, fog_volume_blend, fog_volume_place}
@@ -41,31 +48,53 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return vec4f(x, y, 0.5, 1.0);
 }
 
-@fragment
-fn sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let grid = settings.grid;
-    let size = vec2u(grid.cells.xy);
-    let texel = vec2u(position.xy);
+/// A cell's place in the grid's texture: its column and row in the slice, and its slice.
+struct GridCell {
+    cell: vec2u,
+    slice: u32,
+}
+
+/// The cell of the grid's texture at `texel`.
+fn grid_cell(texel: vec2u) -> GridCell {
+    let size = vec2u(settings.grid.cells.xy);
     let tile = texel / size;
-    let slice = tile.y * SLICES_PER_ROW + tile.x;
-    let slices = u32(grid.cells.z);
-    if slice >= slices {
+    return GridCell(texel % size, tile.y * SLICES_PER_ROW + tile.x);
+}
+
+/// The texel of `cell` in slice `slice` of the grid's texture.
+fn grid_texel(cell: vec2u, slice: u32) -> vec2u {
+    let size = vec2u(settings.grid.cells.xy);
+    return vec2u(slice % SLICES_PER_ROW, slice / SLICES_PER_ROW) * size + cell;
+}
+
+/// Joins `back`, the light and the share of light that passes of the fog behind `front`, to
+/// `front`, front to back.
+fn join(front: vec4f, back: vec4f) -> vec4f {
+    return vec4f(front.rgb + back.rgb * front.a, front.a * back.a);
+}
+
+@fragment
+fn block_sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let grid = settings.grid;
+    let at = grid_cell(vec2u(position.xy));
+    if at.slice >= u32(grid.cells.z) {
         return vec4f(0.0, 0.0, 0.0, 1.0);
     }
-    let cell = texel % size;
     // A view ray's length per unit along the view.
-    let screen = (vec2f(cell) + 0.5) / grid.cells.xy;
+    let screen = (vec2f(at.cell) + 0.5) / grid.cells.xy;
     let stretch = length(fog_ray(settings, screen));
+    let first = at.slice - at.slice % SLICES_PER_ROW;
     var light = vec3f(0.0);
     var passes = 1.0;
-    var start = 0.0;
-    // Every cell runs one pass per slice, and its own slice only picks the passes that add: drivers
-    // that run a loop wrongly when its count differs within a work group then see one count.
-    for (var k = 0u; k < slices; k++) {
-        if k <= slice {
-            let at = vec2u(k % SLICES_PER_ROW, k / SLICES_PER_ROW) * size + cell;
-            let value = textureLoad(source, at, 0);
-            let end = fog_edge_distance(grid, f32(k + 1u));
+    var start = fog_edge_distance(grid, f32(first));
+    // Every cell runs one pass per slice of a block, and its own slice only picks the passes that
+    // add: drivers that run a loop wrongly when its count differs within a work group then see one
+    // count.
+    for (var k = 0u; k < SLICES_PER_ROW; k++) {
+        let slice = first + k;
+        if slice <= at.slice {
+            let value = textureLoad(source, grid_texel(at.cell, slice), 0);
+            let end = fog_edge_distance(grid, f32(slice + 1u));
             let span = (end - start) * stretch;
             start = end;
             let depth = value.a * span;
@@ -76,6 +105,26 @@ fn sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
         }
     }
     return vec4f(light, passes);
+}
+
+@fragment
+fn sum(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let slices = u32(settings.grid.cells.z);
+    let at = grid_cell(vec2u(position.xy));
+    if at.slice >= slices {
+        return vec4f(0.0, 0.0, 0.0, 1.0);
+    }
+    let own = at.slice / SLICES_PER_ROW;
+    var result = vec4f(0.0, 0.0, 0.0, 1.0);
+    // Each whole block in front adds the sum of its last slice, as the block step wrote it. Every
+    // cell runs one pass per block, as the block step runs one per slice.
+    for (var b = 0u; b < (slices + SLICES_PER_ROW - 1u) / SLICES_PER_ROW; b++) {
+        if b < own {
+            let last = min(b * SLICES_PER_ROW + SLICES_PER_ROW - 1u, slices - 1u);
+            result = join(result, textureLoad(source, grid_texel(at.cell, last), 0));
+        }
+    }
+    return join(result, textureLoad(source, grid_texel(at.cell, at.slice), 0));
 }
 
 /// The depth value of the scene's texel `texel`: of a multisampled depth, its first sample. Fog

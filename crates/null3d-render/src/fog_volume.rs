@@ -1,7 +1,7 @@
 //! Volumetric fog: the light of the sun and the point and spot lights that the scene's fog scatters
 //! toward the camera, through their shadows. Sun rays fall through gaps in the trees, and lamps
 //! glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as
-//! Frostbite and Unreal Engine do, in three steps of the render graph (see [`crate::frame_graph`]):
+//! Frostbite and Unreal Engine do, in four steps of the render graph (see [`crate::frame_graph`]):
 //!
 //! 1. The light step draws one triangle over the grid's texture, whose texels are the cells. Each
 //!    cell takes a point, moved by the frame's offset, and the fog's density there. It adds the
@@ -10,9 +10,13 @@
 //!    result with the last frame's grid at the same place in the world. The step binds the
 //!    camera's frame group, which the frame builder records, so it reads the scene's shadows and
 //!    clustered lights with no binding of its own for them.
-//! 2. The sum step sums the cells in front of each cell, front to back, with the exact integral
-//!    over each slice, into a second texture of the grid's size.
-//! 3. The apply step adds the summed light at each pixel's depth to the scene's color, at the
+//! 2. The block step sums, for each cell, the cells from the first slice of its block, a row of
+//!    tiles, to its own, front to back, with the exact integral over each slice, into a second
+//!    texture of the grid's size.
+//! 3. The sum step joins, for each cell, the sums of the whole blocks in front of it and its own
+//!    block's sum, into a third texture of the grid's size. A cell reads at most a block's slices
+//!    and then one texel per block, so the steps' work grows with the slices, not their square.
+//! 4. The apply step adds the summed light at each pixel's depth to the scene's color, at the
 //!    render size, and past the grid's reach the sun's light that the fog scatters there without
 //!    shadows. It runs after the transparent passes and before the custom effects.
 //!
@@ -61,12 +65,12 @@ const NEAREST_LAMP: f32 = 0.25;
 /// The frames of the cells' offsets before they repeat.
 const OFFSETS: u32 = 16;
 
-/// The steps: the light step, the sum and the apply step.
-pub(crate) const STEPS: usize = 3;
+/// The steps: the light step, the block step, the sum and the apply step.
+pub(crate) const STEPS: usize = 4;
 
-/// The bind groups: the light step's and the sum's for each of the two light textures, then the
-/// apply step's.
-pub const GROUPS: u32 = 5;
+/// The bind groups: the light step's and the block step's for each of the two light textures,
+/// then the sum's and the apply step's.
+pub const GROUPS: u32 = 6;
 
 /// Bytes of the uniform buffer, a multiple of the offset alignment that bind groups need.
 const BUFFER_BYTES: usize = 512;
@@ -172,11 +176,12 @@ pub(crate) struct FogVolumeIds {
     pub(crate) first_group: u32,
 }
 
-/// The textures that the steps read: the two light textures, the summed grid, and the scene's
-/// color and depth.
+/// The textures that the steps read: the two light textures, the blocks' sums, the summed grid,
+/// and the scene's color and depth.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FogVolumeSources {
     pub(crate) lit: [u32; 2],
+    pub(crate) blocks: u32,
     pub(crate) summed: u32,
     pub(crate) color: u32,
     pub(crate) depth: u32,
@@ -186,7 +191,8 @@ pub(crate) struct FogVolumeSources {
 const fn pipeline(step: usize, multisampled: bool) -> PipelineKey {
     let template = match step {
         0 => template::FOG_LIGHT,
-        1 => template::FOG_SUM,
+        1 => template::FOG_BLOCK,
+        2 => template::FOG_SUM,
         _ if multisampled => template::FOG_APPLY_MS,
         _ => template::FOG_APPLY,
     };
@@ -493,7 +499,7 @@ impl FogVolumePass {
     }
 
     /// Records the bind groups: the light step's of each light texture, which reads the other one,
-    /// the sum's of each light texture, and the apply step's.
+    /// the block step's of each light texture, the sum's, and the apply step's.
     fn bind(&self, list: &mut DrawList, sources: FogVolumeSources) -> Result<(), RecordError> {
         let ids = self.ids;
         let block = [
@@ -520,6 +526,10 @@ impl FogVolumePass {
                 2 | 3 => (
                     bind_layout::BLOOM,
                     &[block, texture(1, sources.lit[group as usize - 2]), sampler],
+                ),
+                4 => (
+                    bind_layout::BLOOM,
+                    &[block, texture(1, sources.blocks), sampler],
                 ),
                 _ => (
                     apply_layout,
@@ -558,14 +568,15 @@ impl FogVolumePass {
         Ok(())
     }
 
-    /// Records the sum (`step` 1) or the apply step (`step` 2) inside the render pass that the
-    /// render graph began into its target.
+    /// Records the block step (`step` 1), the sum (`step` 2) or the apply step (`step` 3) inside
+    /// the render pass that the render graph began into its target.
     pub(crate) fn record(&self, list: &mut DrawList, step: usize) -> Result<(), RecordError> {
         let pipeline = self.pipelines[step].expect("the steps ask for their pipelines first");
         list.push(Op::SetPipeline, &[pipeline])?;
         let group = match step {
             1 => 2 + self.parity() as u32,
-            _ => 4,
+            2 => 4,
+            _ => 5,
         };
         list.push(Op::SetBindGroup, &[0, self.ids.first_group + group, 0])?;
         self.draw(list)
@@ -699,6 +710,7 @@ mod tests {
         let mut arena = UploadArena::default();
         let sources = FogVolumeSources {
             lit: [10, 11],
+            blocks: 15,
             summed: 12,
             color: 13,
             depth: 14,
