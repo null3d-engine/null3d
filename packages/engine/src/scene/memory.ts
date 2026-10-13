@@ -77,7 +77,7 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 	}
 
 	/**
-	 * @internal Forgets the views of the core's own words and those of the glue, which their next
+	 * Forgets the views of the core's own words and those of the glue, which their next
 	 * use makes again.
 	 */
 	dropViews(): void {

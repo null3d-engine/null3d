@@ -628,10 +628,11 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		};
 		try {
 			const file = await server.transformRequest('/src/tint.wgsl');
-			// The key of the hot updates follows the shader's packed records.
-			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl"\)/);
+			// The key of the hot updates follows the shader's packed records. A material's WebGPU
+			// skin builds load on first use, so a later argument may follow the key.
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl"[,)]/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0"\)/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0"[,)]/);
 
 			const brighter = surface.replace('return', 'var s = defaultSurface(input);\n    return');
 			const [update] = await change('src/tint.wgsl', brighter);
