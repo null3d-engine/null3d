@@ -2,7 +2,17 @@
 // memory's size after each step while the sketch waits. Reports the sizes, and leaves the engine
 // running, so the test can count the buffer objects that each thread holds.
 import { createEngine } from '@null3d/engine';
+import { measurePageMemory } from '@null3d/engine/stats';
 import { progress, run } from './lib/result';
+
+declare global {
+	interface Window {
+		/** Measures the browser's memory while every engine thread can answer. */
+		__measureMemoryViews?: typeof measurePageMemory;
+	}
+}
+
+window.__measureMemoryViews = measurePageMemory;
 
 run('memory-views', async () => {
 	const canvas = document.querySelector('canvas');

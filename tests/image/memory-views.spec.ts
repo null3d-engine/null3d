@@ -4,8 +4,7 @@
 // object per memory (hard rule 20, .dev/implementation-notes.md "Views of the shared memory"). The
 // test counts them in heap snapshots of the page and of the sketch and render workers. It then
 // checks Chrome's memory figure of each of those workers against the memory's size and the
-// worker's own heap. Job workers wait in `Atomics.wait` between jobs and never answer, so Chrome's
-// measurement waits about a minute for them and leaves them out.
+// worker's own heap. The page's measurement releases idle job workers so they can answer.
 import { expect, test } from '@playwright/test';
 import { type HeapSnapshot, retainerChains, takeHeapSnapshot } from '../lib/heap-retainers.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -65,15 +64,12 @@ test('each thread holds one buffer object of the shared memory after it grew in 
 	}
 	expect(problems).toEqual([]);
 
-	const measured = await page.evaluate(() =>
-		(
-			performance as unknown as {
-				measureUserAgentSpecificMemory(): Promise<{
-					breakdown: { bytes: number; attribution: { url?: string }[] }[];
-				}>;
-			}
-		).measureUserAgentSpecificMemory(),
-	);
+	// SwiftShader's headless browser has heap snapshots but offers no page memory measurement.
+	if (test.info().project.name.startsWith('chromium-swiftshader')) return;
+	const measured = (await page.evaluate('window.__measureMemoryViews?.()')) as
+		| { breakdown: { bytes: number; attribution: { url?: string }[] }[] }
+		| undefined;
+	if (!measured) throw new Error('the browser offers no page memory measurement');
 	for (const name of WORKERS) {
 		const counted = measured.breakdown
 			.filter((entry) => entry.attribution.some((place) => place.url?.includes(name)))
