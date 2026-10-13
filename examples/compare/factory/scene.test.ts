@@ -379,13 +379,17 @@ describe('surfaces, grade and effects', () => {
 	});
 
 	test('effects read and write as address text', () => {
-		expect(effectsToText(effectsFromText(null))).toBe('shadows,fog,bloom,ao,grade');
+		expect(effectsToText(effectsFromText(null))).toBe(
+			'shadows,fog,bloom,ao,grade,reflections,particles',
+		);
 		expect(effectsFromText('fog,bloom')).toEqual({
 			shadows: false,
 			fog: true,
 			bloom: true,
 			ao: false,
 			grade: false,
+			reflections: false,
+			particles: false,
 		});
 		expect(() => effectsFromText('glow')).toThrow('"glow" is not an effect');
 	});

@@ -107,6 +107,7 @@ function post(
 			},
 		},
 		check: (result: number) => result,
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	const shaders = { need: (feature: string) => needs.push(feature) } as unknown as ShaderPreloads;
 	return {
@@ -369,6 +370,15 @@ describe('post.set', () => {
 		output.set({ exposure: 1.25 });
 		output.set({ lutIntensity: 0.5, vignette: { size: 1.5 } });
 		expect(reads()).toBe(1);
+	});
+
+	it('reads each number setting by its own name, so a call that runs every frame allocates nothing', async () => {
+		// A read by a key from a list goes through the browser's generic lookup, which copies each
+		// fraction into a new number object: 11 to 14 bytes per frame for ambient occlusion's
+		// intensity in `bench:allocation --ao`.
+		const source = await Bun.file(new URL('./post.ts', import.meta.url)).text();
+		expect(source).not.toMatch(/as Record<string, unknown>\)\[/);
+		expect(source).not.toMatch(/\[keys\[/);
 	});
 
 	it('refuses an unknown setting or tone mapping, and a value out of range, with E1213', () => {
