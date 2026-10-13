@@ -568,12 +568,6 @@ const LIGHT_NUMBERS = [
 ] as const;
 
 /**
- * The value in the light table that means `'auto'`: the shadow distance follows the farthest
- * visible receiver. It matches `SHADOW_DISTANCE_AUTO` in `crates/null3d-core/src/lights.rs`.
- */
-const SHADOW_DISTANCE_AUTO = 0;
-
-/**
  * Each light number's name, lowest and highest value, and its range in words, by its code, for the
  * development checks.
  */
@@ -1722,18 +1716,19 @@ export class Light extends Object3D {
 		for (const [key, which] of SHADOW_NUMBERS) {
 			const value = (shadow as DirectionalShadowOptions)[key];
 			if (value === undefined) continue;
-			if (key === 'distance') {
-				if (value === 'auto') {
-					this.write(call, which, SHADOW_DISTANCE_AUTO);
-					continue;
-				}
-				if (DEV && Number.isFinite(value) && !(value > 0))
-					throw new EngineError(
-						'E1108',
-						`${call}() got the shadow distance ${value} on ${this.describe()}, which must be above 0 or 'auto'.`,
-					);
-			}
-			this.write(call, which, value as number);
+			// The light table's 0 means 'auto', the automatic distance.
+			if (
+				DEV &&
+				key === 'distance' &&
+				typeof value === 'number' &&
+				Number.isFinite(value) &&
+				!(value > 0)
+			)
+				throw new EngineError(
+					'E1108',
+					`${call}() got the shadow distance ${value} on ${this.describe()}, which must be above 0 or 'auto'.`,
+				);
+			this.write(call, which, value === 'auto' ? 0 : value);
 		}
 	}
 
@@ -1754,7 +1749,7 @@ export class Light extends Object3D {
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// The shadow distance 0 is 'auto', and it stands in for the default.
-			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === SHADOW_DISTANCE_AUTO;
+			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
 			// Cascades are whole, and map sizes are powers of two.
 			const number = value as number;
 			const whole =
