@@ -120,6 +120,7 @@ Drawing:
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
+| Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |

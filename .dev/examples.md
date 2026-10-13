@@ -549,7 +549,7 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
-| Scale | galaxy, instances, far-from-origin, large-world |
+| Scale | terrain, galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
 
 - Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.
