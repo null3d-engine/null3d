@@ -27,10 +27,10 @@ use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
-use crate::ao::{self, Ao};
+use crate::ao::{self, Ao, Contact};
 use crate::background::{Background, BackgroundSource};
 use crate::bloom::{Bloom, ChainFrame};
-use crate::camera::{Lens, Mat4};
+use crate::camera::{Lens, Mat4, multiply};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
@@ -696,6 +696,9 @@ pub struct SceneSettings {
     /// The size of ambient occlusion's targets, as a share of the render size each way, which the
     /// quality settings set: 0 draws none.
     ao_scale: f32,
+    /// The steps of each march of the main directional light's contact shadows, which the quality
+    /// settings set: 0 draws none.
+    contact_steps: u32,
     /// Depth of field's settings while the sketch turns it on.
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
@@ -804,6 +807,7 @@ impl SceneSettings {
             morph_cap: u32::MAX,
             ao: None,
             ao_scale: ao::MAX_SCALE,
+            contact_steps: 0,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
             lut: None,
@@ -1081,6 +1085,53 @@ impl SceneSettings {
     /// same targets, so it makes no GPU object.
     pub fn set_ao_scale(&mut self, scale: f32) {
         self.ao_scale = scale.clamp(0.0, ao::MAX_SCALE);
+    }
+
+    /// The size of the targets of ambient occlusion's steps, as a share of the render size each
+    /// way: ambient occlusion's scale, or the largest when that is 0 and only contact shadows
+    /// draw.
+    pub fn screen_scale(&self) -> f32 {
+        if self.ao_scale > 0.0 {
+            self.ao_scale
+        } else {
+            ao::MAX_SCALE
+        }
+    }
+
+    /// Sets the steps of each march of the main directional light's contact shadows, from 0,
+    /// which draws none, from the next recorded frame on. A new count above 0 changes only the
+    /// steps' settings, so it makes no GPU object.
+    pub fn set_contact_steps(&mut self, steps: u32) {
+        self.contact_steps = steps.min(ao::MAX_CONTACT_STEPS);
+    }
+
+    /// How far the main directional light's contact shadows reach, in meters, while they draw:
+    /// while the light casts shadows with a reach above 0, the quality settings give each march
+    /// steps, and no debug view draws.
+    fn contact_reach(&self) -> Option<f32> {
+        let reach = self.lighting.sun_shadow?.contact;
+        (reach > 0.0 && self.contact_steps > 0 && !self.debug_view.is_debug()).then_some(reach)
+    }
+
+    /// The main directional light's contact shadows for a frame whose camera view has the values
+    /// `camera`, on a canvas of `canvas` pixels, or `None` while they draw nothing.
+    pub fn contact(&self, camera: Option<&ViewFrame>, canvas: (u32, u32)) -> Option<Contact> {
+        let distance = self.contact_reach()?;
+        let (_, inverse) = self.camera_projection(canvas)?;
+        // The camera's view-projection matrix for positions relative to it is its projection after
+        // its turn, so the inverse projection leaves the turn, which takes the direction toward
+        // the light into view space.
+        let turn = multiply(&inverse, &camera?.uniform.view_proj);
+        let [x, y, z, _] = self.lighting.sun_direction;
+        let toward = [-x, -y, -z];
+        let view: [f32; 3] =
+            std::array::from_fn(|row| (0..3).map(|k| turn[k * 4 + row] * toward[k]).sum());
+        let length = view.iter().map(|c| c * c).sum::<f32>().sqrt();
+        (length > 0.0).then(|| Contact {
+            to_light: view.map(|c| c / length),
+            distance,
+            steps: self.contact_steps,
+        })
     }
 
     /// Depth of field's settings while it draws: while the sketch turns it on, its gather has taps,
@@ -2207,11 +2258,12 @@ impl SceneSettings {
                 2.0 * pixel_ratio / pixels.0.max(1) as f32,
                 2.0 * pixel_ratio / pixels.1.max(1) as f32,
             ],
-            occlusion: match self.ao() {
-                Some(ao) if view_id == ViewId::CAMERA => {
-                    ao::frame_values(ao, canvas, scale, self.ao_scale)
-                }
-                _ => [0.0; 4],
+            occlusion: if view_id == ViewId::CAMERA
+                && (self.ao().is_some() || self.contact_reach().is_some())
+            {
+                ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            } else {
+                [0.0; 4]
             },
             ..FrameUniform::default()
         };
