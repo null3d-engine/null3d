@@ -130,6 +130,7 @@ use null3d_gpu::drawlist::{
     DrawList, MAX_WORDS, Op, buffer_usage as usage, format, sizes, texture_usage, view,
 };
 
+use crate::accumulate::AccumulateIds;
 use crate::ao::{self, AoIds};
 use crate::background::{BackgroundIds, BackgroundPass, Place};
 use crate::bloom::BloomIds;
@@ -326,8 +327,11 @@ mod ids {
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
+    /// The still-camera accumulation's value buffers: the blend step's, then the store step's.
+    pub const ACCUMULATE_BLEND: u32 = FULLSCREEN + 1;
+    pub const ACCUMULATE_STORE: u32 = FULLSCREEN + 2;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FULLSCREEN + 1;
+    pub const PAGES: u32 = ACCUMULATE_STORE + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -367,8 +371,11 @@ mod ids {
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
     pub const SKIN_FIRSTS: u32 = BLANK_PASS_DEPTH + 1;
+    /// The blank texel that the still-camera accumulation's store step binds in place of the
+    /// history.
+    pub const BLANK_ACCUMULATION: u32 = SKIN_FIRSTS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = SKIN_FIRSTS + 1;
+    pub const TARGETS: u32 = BLANK_ACCUMULATION + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -458,8 +465,11 @@ mod ids {
     pub const PARTICLE_DEPTH_COPY_GROUP: u32 = PARTICLE_DEPTH_GROUPS + MAX_VIEWS as u32;
     /// The bind group of each full-screen pass, by its view's place, after the particles'.
     pub const FULLSCREEN_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The bind groups of the still-camera accumulation's steps: the blend step's, then the store
+    /// step's.
+    pub const ACCUMULATE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
     /// The bind groups of materials' maps, after the full-screen passes'.
-    pub const TEXTURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    pub const TEXTURE_GROUPS: u32 = ACCUMULATE_GROUPS + 2;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -642,6 +652,12 @@ impl GpuDrivenRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        accumulate: AccumulateIds {
+                            blend: ids::ACCUMULATE_BLEND,
+                            store: ids::ACCUMULATE_STORE,
+                            first_group: ids::ACCUMULATE_GROUPS,
+                            blank: ids::BLANK_ACCUMULATION,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
@@ -980,6 +996,7 @@ impl GpuDrivenRenderer {
         self.graph.set_grading(self.settings.grades());
         self.graph
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
+        self.graph.set_still(self.settings.still());
         self.graph.set_transmission(self.sorted.transmits());
         self.graph
             .set_soft_particles(self.settings.particles().wants_depth());
@@ -1747,11 +1764,15 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
         self.settings.set_still(self.lists.still());
-        let settled = settled(input);
+        let settled = settled(input, self.settings.still_enabled());
         let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
         self.lists
             .restore(input.frame, list, arena, settled, result)
+    }
+
+    fn still(&self) -> crate::still::Still {
+        self.lists.still()
     }
 
     fn casts_tile_shadows(&self) -> bool {

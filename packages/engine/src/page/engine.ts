@@ -1306,6 +1306,9 @@ async function startEngine(
 	const { slots } = views;
 	if (switches.replayDelay !== undefined)
 		Atomics.store(slots, Slot.ReplayDelayMs, switches.replayDelay);
+	// Hold mode and the image tests draw each frame as it is: a still view there must not accumulate
+	// or rest, so a captured frame is the frame the sketch drew once.
+	if (!switches.still || holding) Atomics.store(slots, Slot.StillOff, 1);
 	const statsSwitch = new StatsSwitch(() => ({
 		canvas: options.canvas,
 		metrics,

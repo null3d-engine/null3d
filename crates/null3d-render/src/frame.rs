@@ -259,17 +259,18 @@ impl FrameInput<'_> {
 }
 
 /// True while the accumulation's passes are declared: a still view may then accumulate frames and
-/// its meshes jitter by each sample. The passes arrive with the accumulation step of M2-F11; until
-/// then a still scene must not jitter, because nothing would average the samples and the image
-/// would shimmer.
-const ACCUMULATION_WIRED: bool = false;
+/// its meshes jitter by each sample. While false no frame reads as settled, so nothing draws
+/// differently.
+const ACCUMULATION_WIRED: bool = true;
 
 /// True when nothing outside the frame's draw list and upload arena changed: no object transform, no
 /// path through the scene's structure and no instance batch row. The still-camera accumulation then
 /// compares the list and the arena to decide whether the frame changed at all (see
-/// [`crate::still`]). While [`ACCUMULATION_WIRED`] is false no frame reads as settled.
-pub(crate) fn settled(input: &FrameInput<'_>) -> bool {
+/// [`crate::still`]). `enabled` is false where the page turns the accumulation off, such as in hold
+/// mode and the image tests, and while [`ACCUMULATION_WIRED`] is false no frame reads as settled.
+pub(crate) fn settled(input: &FrameInput<'_>, enabled: bool) -> bool {
     ACCUMULATION_WIRED
+        && enabled
         && !input.structure_changed
         && !input.scene.changed().any()
         && !input.batches.changed()
@@ -377,6 +378,11 @@ pub trait FrameBuilder {
     fn set_canvas_output(&mut self, scene_color: SceneColor, antialias: Antialias);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
+    /// How still the camera's view is: the frames it has accumulated, from 0 while it moves. The
+    /// thread that draws rests once it has accumulated enough (see [`crate::still`]).
+    fn still(&self) -> crate::still::Still {
+        crate::still::Still::default()
+    }
     /// Declares the render graph's passes for the views as they are now, and compiles the graph
     /// outside a frame, so a new pass fails at once when it does not fit. The next frame makes the
     /// plan's textures.
@@ -820,6 +826,9 @@ pub struct SceneSettings {
     /// scene's meshes draw each frame of a still view with the jitter of its sample, so the frames
     /// average to a sharper image (see [`crate::still`]).
     still: crate::still::Still,
+    /// True while the page lets a still view accumulate its frames, which the image tests and hold
+    /// mode turn off.
+    still_enabled: bool,
 }
 
 /// How objects and batches pick their meshes' levels of detail.
@@ -883,6 +892,7 @@ impl SceneSettings {
             bloom_chain: ChainFrame::default(),
             morph_cap: u32::MAX,
             still: crate::still::Still::default(),
+            still_enabled: true,
             ao: None,
             ao_scale: ao::MAX_SCALE,
             contact_steps: 0,
@@ -1467,6 +1477,22 @@ impl SceneSettings {
     /// The scene's meshes then draw each frame of a still view with the jitter of its sample.
     pub fn set_still(&mut self, still: crate::still::Still) {
         self.still = still;
+    }
+
+    /// How still the camera's view is, as [`SceneSettings::set_still`] set it.
+    pub fn still(&self) -> crate::still::Still {
+        self.still
+    }
+
+    /// True while the page lets a still view accumulate its frames. The image tests and hold mode
+    /// turn it off, so a captured frame is the frame the sketch drew once.
+    pub fn set_still_enabled(&mut self, enabled: bool) {
+        self.still_enabled = enabled;
+    }
+
+    /// True while the page lets a still view accumulate its frames.
+    pub fn still_enabled(&self) -> bool {
+        self.still_enabled
     }
 
     /// True when the buckets of meshes with levels get fade buckets: some mesh has levels, and the

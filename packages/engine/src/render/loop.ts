@@ -403,6 +403,13 @@ export class Presenter {
 	 */
 	draw(frame: number, timestamp: number): void {
 		if (this.stale(frame)) return;
+		// A still view that has accumulated enough frames submits no draw work: the callers take the
+		// frame anyway, so the sketch keeps stepping and can see the change that ends the rest, and
+		// the canvas keeps the converged image.
+		if (Atomics.load(this.slots, Slot.FrameRest0 + (frame & 1)) !== 0) {
+			this.drew = false;
+			return;
+		}
 		const start = performance.now();
 		this.drew = true;
 		this.record.begin(frame);

@@ -17,6 +17,7 @@ import {
 	TEMPLATE_AO,
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
+	TEMPLATE_ACCUMULATE,
 	TEMPLATE_BACKGROUND,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
@@ -265,6 +266,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	templates[TEMPLATE_ACCUMULATE] = { shader: shaders.accumulate, pipeline: 'main' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

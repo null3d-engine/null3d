@@ -127,6 +127,7 @@ use std::borrow::Cow;
 
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
+use crate::accumulate::{self, AccumulateIds, AccumulateInputs, AccumulatePass, BLEND, STORE_STEP};
 use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
@@ -161,6 +162,8 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
+    /// The still-camera accumulation's buffers, bind groups and blank texel.
+    pub(crate) accumulate: AccumulateIds,
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
@@ -185,6 +188,12 @@ const LIGHT_GRID: &str = "lightGrid";
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
+/// The still-camera accumulation's blended target: the frame's scene color mixed into the history
+/// of a still view, which the final pass draws while the view is still.
+const ACCUM_COLOR: &str = "accumColor";
+/// The still-camera accumulation's history: the mean of a still view's frames, kept from frame to
+/// frame.
+const ACCUM_HISTORY: &str = "accumHistory";
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
 const SHADOW_MAP: &str = "shadowMap";
 /// The buffer of skinned vertices, which the skinning pass writes and the passes that draw skinned
@@ -377,6 +386,10 @@ pub(crate) enum Role {
     /// Copies the camera's opaque depth into the target that soft particles read. The graph
     /// records it itself.
     ParticleDepthCopy,
+    /// A step of still-camera accumulation, by its place: the blend that mixes the scene color into
+    /// a still view's history, then the store that copies the average into the kept history. The
+    /// graph records it itself.
+    Accumulate(u8),
     /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
@@ -384,13 +397,17 @@ pub(crate) enum Role {
     FinalBloom,
 }
 
-/// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
-/// declarations by whether they read bloom's levels and then the outline mask. Only the HDR path
-/// declares the ones with bloom.
+/// The passes that can take the scene color to the canvas: the resolve pass, the final pass's
+/// declarations by whether they read bloom's levels and then the outline mask, and the still-camera
+/// accumulation's build, which reads the blended history instead. Only the HDR path declares the
+/// ones with bloom or the still build.
 #[derive(Clone, Copy, Debug)]
 struct Outputs {
     resolve: PassId,
     finals: [[Option<PassId>; 2]; 2],
+    /// The final pass's build that reads the still-camera accumulation's blended target, at
+    /// [`ACCUM_COLOR`].
+    still: Option<PassId>,
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
@@ -506,6 +523,18 @@ pub(crate) struct FrameGraph {
     /// The texture that each of bloom's steps reads, and the base level's, found once for each
     /// compile of the graph, which the count says.
     bloom_textures: Option<(u32, [u32; STEPS], u32)>,
+    /// The still-camera accumulation's steps' GPU objects.
+    accumulate: AccumulatePass,
+    /// The accumulation's two passes, once declared: the blend, then the store.
+    accumulate_passes: Vec<PassId>,
+    /// True while the accumulation's passes run: the camera's view is still, the scene color holds
+    /// HDR color, and no bloom, outline or folded effect reads the color in between.
+    accumulate_on: bool,
+    /// The weight of the frame being recorded in the still view's average.
+    accumulate_weight: f32,
+    /// What the accumulation's steps read, and the compile of the graph that found it, by its
+    /// count.
+    accumulate_textures: Option<(u32, AccumulateInputs)>,
     /// The custom effects' passes and their GPU objects, on the HDR path.
     effect_pass: Option<EffectPass>,
     /// The GPU objects that the effects take.
@@ -689,6 +718,11 @@ impl FrameGraph {
             ao_built: false,
             bloom_chain: ChainFrame::default(),
             bloom_textures: None,
+            accumulate: AccumulatePass::new(ids.accumulate),
+            accumulate_passes: Vec::new(),
+            accumulate_on: false,
+            accumulate_weight: 1.0,
+            accumulate_textures: None,
             effect_pass: scene_color
                 .is_hdr()
                 .then(|| EffectPass::new(ids.effects, gpu_culling && antialias.samples() > 1)),
@@ -1005,7 +1039,7 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + fullscreen
+        FinalPass::UPLOAD_BYTES + accumulate::UPLOAD_BYTES + bloom + ao + effects + dof + fullscreen
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1045,17 +1079,32 @@ impl FrameGraph {
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
         let outlines = self.outline_draws();
-        if let Some(Outputs { resolve, finals }) = self.outputs {
+        let still = self.accumulate_on;
+        if let Some(Outputs {
+            resolve,
+            finals,
+            still: still_pass,
+        }) = self.outputs
+        {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
             for (bloom, passes) in finals.into_iter().enumerate() {
                 for (outline, pass) in passes.into_iter().enumerate() {
                     if let Some(pass) = pass {
-                        let on = final_runs && blooms == (bloom == 1) && outlines == (outline == 1);
+                        let on = final_runs
+                            && !still
+                            && blooms == (bloom == 1)
+                            && outlines == (outline == 1);
                         self.graph.set_enabled(pass, on);
                     }
                 }
             }
+            if let Some(pass) = still_pass {
+                self.graph.set_enabled(pass, final_runs && still);
+            }
+        }
+        for &pass in &self.accumulate_passes {
+            self.graph.set_enabled(pass, still);
         }
         for &pass in &self.bloom_passes {
             self.graph.set_enabled(pass, blooms);
@@ -1726,6 +1775,7 @@ impl FrameGraph {
         if self.dof_declared {
             self.declare_dof();
         }
+        self.declare_accumulate();
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -1749,7 +1799,20 @@ impl FrameGraph {
                 Some(self.add(final_bloom_outline, Role::FinalBloom)),
             ];
         }
-        self.outputs = Some(Outputs { resolve, finals });
+        // The still build of the final pass reads the accumulation's blended target in place of the
+        // scene color, and draws no outline and no bloom: the accumulation carries neither.
+        let still = self.scene_color.is_hdr().then(|| {
+            let pass = Pass::new("FinalStill", PassKind::Fullscreen)
+                .size(Size::Canvas)
+                .reads(ACCUM_COLOR)
+                .writes(CANVAS);
+            self.add(pass, Role::Final)
+        });
+        self.outputs = Some(Outputs {
+            resolve,
+            finals,
+            still,
+        });
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
@@ -1958,6 +2021,56 @@ impl FrameGraph {
     /// each later one from the level above as the steps before it leave it, then a step up into
     /// each level but the last, which reads the level below and blends into its own. Returns the
     /// declaration of the final pass with bloom, which reads the base level.
+    /// Keeps the still-camera accumulation's history and declares its two steps: the blend, which
+    /// reads the frame's color and the history and writes their average into [`ACCUM_COLOR`], and
+    /// the store, which copies that average into the history. Both are switched off until a frame
+    /// is still. The 8-bit path declares neither: its color holds display color, which the final
+    /// pass does not tone map.
+    fn declare_accumulate(&mut self) {
+        self.accumulate_passes.clear();
+        if !self.scene_color.is_hdr() {
+            return;
+        }
+        let target = Target::color(format::RGBA16_FLOAT);
+        self.graph.keep(ACCUM_HISTORY, target, Size::Full);
+        let blend = Pass::new("Accumulate", PassKind::Fullscreen)
+            .optional()
+            .reads(self.color_output())
+            .reads(ACCUM_HISTORY)
+            .creates(ACCUM_COLOR, target);
+        let pass = self.add(blend, Role::Accumulate(BLEND as u8));
+        self.accumulate_passes.push(pass);
+        let store = Pass::new("AccumulateStore", PassKind::Fullscreen)
+            .optional()
+            .reads(ACCUM_COLOR)
+            .writes(ACCUM_HISTORY);
+        let pass = self.add(store, Role::Accumulate(STORE_STEP as u8));
+        self.accumulate_passes.push(pass);
+    }
+
+    /// Keeps the history from the last still view, so the next still view starts from it, and says
+    /// whether the accumulation's steps run this frame. A frame is still only while the scene color
+    /// holds HDR color, the final pass takes the color to the canvas, and no bloom, outline or
+    /// folded effect draws over it. The frame's weight in the average is the current one.
+    pub(crate) fn set_still(&mut self, still: crate::still::Still) {
+        self.accumulate_weight = still.weight();
+        let on = still.accumulating()
+            && self.scene_color.is_hdr()
+            && self.final_runs()
+            && !self.bloom_draws()
+            && !self.outline_draws()
+            && self.folded.is_none();
+        if on != self.accumulate_on {
+            self.accumulate_on = on;
+            self.enable_outputs();
+        }
+    }
+
+    /// The format of the accumulation's blended target, which its pipeline draws into.
+    pub(crate) fn accumulate_format() -> u32 {
+        format::RGBA16_FLOAT
+    }
+
     fn declare_bloom(&mut self) -> Pass {
         let target = Target::color(bloom::FORMAT);
         let size = self.bloom_chain.size;
@@ -2088,6 +2201,10 @@ impl FrameGraph {
     ) {
         let wanted = self.bloom_wanted();
         let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        if self.accumulate_on && self.scene_color.is_hdr() {
+            self.accumulate
+                .request_pipeline(pipelines, Self::accumulate_format());
+        }
         if let Some(pass) = self.effect_pass.as_mut() {
             pass.request_pipelines(
                 pipelines,
@@ -2241,14 +2358,22 @@ impl FrameGraph {
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
         self.upload_dof(list, arena)?;
+        self.upload_accumulate(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
         self.bind_particle_depth(list)?;
         if !self.final_runs() {
             return Ok(());
         }
+        // While a still view accumulates, the final pass draws the accumulated target, not the
+        // scene color the steps read: the accumulation holds the view's mean.
+        let source = if self.accumulate_on {
+            ACCUM_COLOR
+        } else {
+            self.color_output()
+        };
         let scene_color = self
-            .sampled_id(self.color_output())
+            .sampled_id(source)
             .expect("the final pass samples the scene color");
         let render_size = Size::Full.viewport(self.canvas, self.scale);
         let bloom = if self.bloom_draws() {
@@ -2302,6 +2427,45 @@ impl FrameGraph {
             grading,
             outline,
             fold,
+            self.textures_made,
+        )
+    }
+
+    /// Records the accumulation's steps' objects and binds them to the textures they read, while a
+    /// still view accumulates.
+    fn upload_accumulate(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if !self.accumulate_on || !self.scene_color.is_hdr() {
+            return Ok(());
+        }
+        let compiles = self.graph.compiles();
+        let inputs = match self.accumulate_textures {
+            Some((at, inputs)) if at == compiles => inputs,
+            _ => {
+                let color_name = self.color_output();
+                let inputs = AccumulateInputs {
+                    color: self
+                        .sampled_id(color_name)
+                        .expect("the accumulation reads a planned texture"),
+                    history: self
+                        .sampled_id(ACCUM_HISTORY)
+                        .expect("the accumulation reads a planned texture"),
+                    blended: self
+                        .sampled_id(ACCUM_COLOR)
+                        .expect("the accumulation reads a planned texture"),
+                };
+                self.accumulate_textures = Some((compiles, inputs));
+                inputs
+            }
+        };
+        self.accumulate.prepare(
+            list,
+            arena,
+            inputs,
+            self.accumulate_weight,
             self.textures_made,
         )
     }
@@ -2719,6 +2883,9 @@ impl FrameGraph {
                         match self.roles[pass.index()] {
                             Role::Final => self.final_pass.record(list, false)?,
                             Role::FinalBloom => self.final_pass.record(list, true)?,
+                            Role::Accumulate(step) => {
+                                self.accumulate.record(list, usize::from(step))?;
+                            }
                             Role::Bloom(step) => self
                                 .bloom_pass
                                 .as_ref()
@@ -2945,6 +3112,7 @@ impl FrameGraph {
         self.made_views = 0;
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
+        self.accumulate.reset_gpu();
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
         }
@@ -3340,6 +3508,12 @@ mod tests {
             lut_sampler: 9,
             blank_outline: 901,
         },
+        accumulate: AccumulateIds {
+            blend: 9,
+            store: 9,
+            first_group: 9,
+            blank: 902,
+        },
         bloom: BloomIds {
             buffer: 10,
             sampler: 10,
@@ -3519,7 +3693,10 @@ mod tests {
                 } else {
                     BloomPass::UPLOAD_BYTES
                 };
-                assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES + bloom);
+                assert_eq!(
+                    frames.upload_bound(),
+                    FinalPass::UPLOAD_BYTES + crate::accumulate::UPLOAD_BYTES + bloom
+                );
             }
         }
     }
