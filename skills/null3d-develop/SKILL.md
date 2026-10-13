@@ -118,7 +118,8 @@ Drawing:
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
-| Camera-facing quads and simple particles | `scene.createSprites` (0.2) | `api/sprites` |
+| Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
+| Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
@@ -208,7 +209,7 @@ The full table and the debugging tools are in `references/testing-and-debugging.
 Read these when the task needs them:
 
 - `references/api-quickref.md`: the API by area, with the roadmap step that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
-- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
+- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds and particle effects.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a full troubleshooting table.
