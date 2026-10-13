@@ -3,8 +3,8 @@
 Status: decided, 2026-10-13. Date: 2026-10-13. Task: M2-C10.
 
 Summary: An inertial transition ("dead blending") switches what a layer plays by sampling only the
-new clip: the pose the layer leaves keeps moving at its own velocity and eases into the new clip
-over the fade. It costs 20 floats per joint for as long as a transition runs, nothing when none
+new clip. The pose that the layer leaves keeps moving at its own velocity, and it eases into the
+new clip over the fade. It costs 20 floats per joint for as long as a transition runs, nothing when none
 runs, and it allocates nothing. It is opt-in as `play(name, { transition: 'inertial' })`;
 `crossFade` stays the weighted blend that three.js's `crossFadeTo` maps to. The default for a new
 scene's `play` with a fade flips to inertial when prototype A4 passes and the owner picks it by eye.
@@ -25,8 +25,8 @@ How should `play` switch what a layer plays with a fade? The animator cross-fade
 
 ### What the reference stores and computes
 
-Holden's `deadblending.c` (Spring-It-On, MIT, S-21) at a switch stores the source pose and its
-velocity and resets one timer, then each step extrapolates the source pose at its velocity and
+Holden's `deadblending.c` (Spring-It-On, MIT, S-21) stores the source pose and its velocity at a
+switch, and resets one timer. Each step then extrapolates the source pose at its velocity, and
 cross-fades to the input pose with `smoothstep(t / blendtime)`:
 
 ```c
@@ -35,30 +35,30 @@ float alpha = smoothstep(ext_t / blendtime);
 out_x = lerp(ext_x, in_x, alpha);
 ```
 
-The Motion-Matching `dead_blending` branch keeps the same idea per joint with a velocity that
-decays: position (3), velocity (3), rotation (4), angular velocity (3) and a slerp-direction
-quaternion (4), 13 to 17 floats. null3D stores the outgoing pose (10 floats: translation 3,
-rotation 4, scale 3) and its velocity (9 used of the 10 allocated): 20 floats per joint, for one
-layer of one instance, while a transition runs.
+The Motion-Matching `dead_blending` branch keeps the same idea per joint, with a velocity that
+decays. It holds the position (3), velocity (3), rotation (4), angular velocity (3) and a
+slerp-direction quaternion (4), 13 to 17 floats. null3D stores the outgoing pose (10 floats:
+translation 3, rotation 4, scale 3) and its velocity. That is 20 floats per joint, for one layer of
+one instance, while a transition runs.
 
 ### What null3D does
 
-At the switch, `play` samples the layer's outgoing base clips at their current times and once more
-`step` seconds earlier, blends each into the layer's pose, and stores those two poses. Their
-difference over `step` is the outgoing velocity. The outgoing clips then leave their slots at once,
-so the frame step samples only the new clip. Each step, the outgoing pose moves at its velocity
-and the layer's pose eases from it toward the new pose by `smoothstep(t / fade)`.
+At the switch, `play` samples the layer's outgoing base clips at their current times. It samples
+them once more `step` seconds earlier, blends each into the layer's pose, and stores the two poses.
+Their difference over `step` is the outgoing velocity. The outgoing clips then leave their slots at
+once, so the frame step samples only the new clip. Each step, the outgoing pose moves at its
+velocity. The layer's pose eases from it toward the new pose by `smoothstep(t / fade)`.
 
-The buffers are made on the first inertial play, as the joint-override table is: [`MAX_LAYERS`]
-poses of the largest skeleton and their velocities per instance, and one timer per layer. A scene
-that never asks for an inertial transition keeps empty buffers and the frame step skips the work
-with one read.
+The buffers are made on the first inertial play, as the joint-override table is. They hold
+[`MAX_LAYERS`] poses of the largest skeleton and their velocities per instance, and one timer per
+layer. A scene that never asks for an inertial transition keeps empty buffers, and the frame step
+skips the work with one read.
 
 ### Why opt-in, and the default
 
 The owner ruled on 4 October 2026 (technique analysis, decision 18) that inertial transitions
 become the default fade for switching what a layer plays, after prototype A4. A4 compares inertial
-against cross-fade on S5's walk-to-run switches on the owner's iPad and records frames for the
+against cross-fade on S5's walk-to-run switches on the owner's iPad. It records frames for the
 owner's pick. Until that pick, the default stays `'blend'`, so no existing scene changes how it
 looks. The flip is one line in `Animator.playOptions`.
 
