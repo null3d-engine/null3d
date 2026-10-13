@@ -508,6 +508,15 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
 	},
+	// A shadow-catcher plane against three.js's ShadowMaterial: both show the directional light's
+	// shadow in the material's color and nothing where the light reaches the plane. The shadow edges
+	// differ as the other shadow scenes' do, so they take the same limit.
+	{
+		test: 'shadow-catcher',
+		twin: `${TWINS}/shadow-catcher.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
 	// Skinning against three.js's SkinnedMesh.
 	{
 		test: 'skinning',

@@ -79,6 +79,7 @@ export type Three = Pick<
 	| 'RepeatWrapping'
 	| 'RingGeometry'
 	| 'Scene'
+	| 'ShadowMaterial'
 	| 'Skeleton'
 	| 'SkinnedMesh'
 	| 'SphereGeometry'

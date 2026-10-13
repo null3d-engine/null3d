@@ -902,6 +902,7 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("SHADOW_CATCHER", feature::SHADOW_CATCHER),
             ],
         ),
         // The debug views that `setDebugView` takes.
