@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { timeOfDay } from '@null3d/engine';
 import { mergeMeshes, placed, triangleCount } from '../../lib/compare-scene';
 import { createSpriteRows, glowAtlas, puffAtlas, rainAtlas } from '../../lib/particles';
@@ -126,6 +127,15 @@ describe('Night town', () => {
 		for (const v of values) {
 			expect(v).toBeGreaterThanOrEqual(0);
 			expect(v).toBeLessThan(1);
+		}
+	});
+
+	test('every shader takes its randomness from the integer hash, which every GPU works out alike', () => {
+		// A hash from the fraction of a large sine depends on each GPU's sine. CI's software GPU and
+		// Safari on CI's Macs drew other ripples, clouds and stars from it (.dev/image-tests.md).
+		for (const file of ['shaders.ts', 'three-shaders.ts']) {
+			const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+			expect(source).not.toMatch(/fract\(\s*sin\(/);
 		}
 	});
 
