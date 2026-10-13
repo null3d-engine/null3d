@@ -60,42 +60,39 @@ pub struct Output {
 }
 
 /// The features whose builds load on first use: the feature of each shader whose builds all belong
-/// to one, and the feature of each permutation bit whose builds belong to one.
+/// to one, and the feature of each permutation bit whose builds belong to one. A build that needs
+/// one feature loads with that feature's files. A build that needs several, such as a skinned build
+/// of the alpha hash, loads with files of its own, which a page loads only once it uses each of
+/// those features. So no feature's files hold builds that only pages with another feature draw
+/// with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FirstUseFeatures {
     /// Features by shader name.
     pub shaders: BTreeMap<String, String>,
     /// Features by permutation bit, in bit order.
     pub bits: BTreeMap<u32, String>,
-    /// The bits whose features take the builds that they share with other features' bits.
-    pub claiming: BTreeSet<u32>,
 }
 
-impl FirstUseFeatures {
-    /// The feature that a build of `shader` with the permutation word `permutation` belongs to:
-    /// the shader's, or else that of the first bit of the word in [`Self::bit_order`]. None for a
-    /// build that loads at the start.
-    pub fn feature_of(&self, shader: &str, permutation: u32) -> Option<&str> {
-        self.shaders
-            .get(shader)
-            .or_else(|| {
-                self.bit_order()
-                    .find(|&(bit, _)| permutation & bit != 0)
-                    .map(|(_, feature)| feature)
-            })
-            .map(String::as_str)
-    }
+/// The character that joins the names of the features that a build needs, in the key of its files.
+pub const FEATURE_JOIN: char = '+';
 
-    /// The bits that features name, in the order in which they take builds: the bits of features
-    /// that claim shared builds, lowest first, then the others, lowest first.
-    pub fn bit_order(&self) -> impl Iterator<Item = (u32, &String)> {
-        let claiming = |claims: bool| {
-            self.bits
-                .iter()
-                .filter(move |(bit, _)| self.claiming.contains(bit) == claims)
-                .map(|(&bit, feature)| (bit, feature))
-        };
-        claiming(true).chain(claiming(false))
+impl FirstUseFeatures {
+    /// The key of the files that hold a build of `shader` with the permutation word `permutation`:
+    /// the names of the features that it needs, its shader's and those of its bits, sorted and
+    /// joined by [`FEATURE_JOIN`]. None for a build that loads at the start.
+    pub fn file_of(&self, shader: &str, permutation: u32) -> Option<String> {
+        let mut features: BTreeSet<&str> = self
+            .bits
+            .iter()
+            .filter(|&(&bit, _)| permutation & bit != 0)
+            .map(|(_, feature)| feature.as_str())
+            .collect();
+        features.extend(self.shaders.get(shader).map(String::as_str));
+        if features.is_empty() {
+            return None;
+        }
+        let names: Vec<&str> = features.into_iter().collect();
+        Some(names.join(&FEATURE_JOIN.to_string()))
     }
 }
 
@@ -174,33 +171,40 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, BLOOM, FXAA, MORPH};
+    use null3d_gpu::drawlist::permutation::{
+        ALPHA_COVERAGE, ALPHA_HASH, BLOOM, FXAA, MORPH, SAMPLE_MASK,
+    };
 
     use super::*;
 
     #[test]
-    fn a_build_belongs_to_its_shaders_feature_or_else_to_that_of_its_lowest_feature_bit() {
+    fn a_build_that_needs_several_features_has_files_of_its_own() {
         let mut first_use = FirstUseFeatures::default();
         first_use
             .shaders
             .insert("sprite".to_owned(), "sprites".to_owned());
         first_use.bits.insert(BLOOM, "bloom".to_owned());
         first_use.bits.insert(MORPH, "morph".to_owned());
-        assert_eq!(first_use.feature_of("sprite", BLOOM), Some("sprites"));
-        assert_eq!(first_use.feature_of("final", FXAA | BLOOM), Some("bloom"));
-        assert_eq!(first_use.feature_of("lit", MORPH | BLOOM), Some("morph"));
-        assert_eq!(first_use.feature_of("lit", FXAA), None);
-        // A feature that claims shared builds takes them from features of lower bits.
-        first_use.bits.insert(ALPHA_HASH, "alpha_hash".to_owned());
+        first_use.bits.insert(ALPHA_HASH, "hash".to_owned());
+        first_use.bits.insert(ALPHA_COVERAGE, "coverage".to_owned());
+        first_use.bits.insert(SAMPLE_MASK, "coverage".to_owned());
+        let file = |shader, permutation| first_use.file_of(shader, permutation);
+        assert_eq!(file("lit", FXAA), None, "a build of the start");
+        assert_eq!(file("sprite", 0).as_deref(), Some("sprites"));
+        assert_eq!(file("final", FXAA | BLOOM).as_deref(), Some("bloom"));
         assert_eq!(
-            first_use.feature_of("lit", MORPH | ALPHA_HASH),
-            Some("morph")
+            file("lit", MORPH | ALPHA_HASH).as_deref(),
+            Some("hash+morph")
         );
-        first_use.claiming.insert(ALPHA_HASH);
+        assert_eq!(file("sprite", ALPHA_HASH).as_deref(), Some("hash+sprites"));
         assert_eq!(
-            first_use.feature_of("lit", MORPH | ALPHA_HASH),
-            Some("alpha_hash")
+            file("lit", MORPH | ALPHA_HASH | BLOOM).as_deref(),
+            Some("bloom+hash+morph")
         );
-        assert_eq!(first_use.feature_of("lit", MORPH), Some("morph"));
+        assert_eq!(
+            file("lit", ALPHA_COVERAGE | SAMPLE_MASK).as_deref(),
+            Some("coverage"),
+            "two bits of one feature"
+        );
     }
 }

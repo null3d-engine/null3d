@@ -13,6 +13,7 @@
 import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
 import { type CoreGlue, JOB_LOOP_STOPPED, JOB_LOOP_YIELDED } from '../shared/core';
+import { MemoryViews } from '../shared/memory-views';
 import {
 	type JobWorkerInit,
 	replyToPage,
@@ -31,6 +32,7 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		const glue = (await startWorkerCore(message, step)).glue;
 		core = glue;
 		const { index } = message;
+		const views = message.memory ? new MemoryViews(message.memory) : undefined;
 		const tasks = serveTasks(message.taskPort, () => glue.jobWorkerCallDone(index));
 		replyToPage({
 			type: 'ready',
@@ -55,7 +57,7 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 				for (;;) {
 					const exit = glue.jobWorkerLoop(index);
 					if (exit === JOB_LOOP_STOPPED) break;
-					if (exit === JOB_LOOP_YIELDED) await nextFrameJob(message.memory, glue.jobsWakeAddress());
+					if (exit === JOB_LOOP_YIELDED) await nextFrameJob(views, glue.jobsWakeAddress());
 					else await tasks.whenIdle(() => glue.jobWorkerCalls(index) === 0);
 				}
 			} finally {
@@ -91,14 +93,12 @@ const YIELD_WAIT_MS = 4;
  * Waits, without blocking the thread, until the job system's wake word changes or a moment has
  * passed. The thread runs its tasks meanwhile, the browser's measurement among them.
  */
-async function nextFrameJob(memory: WebAssembly.Memory | undefined, wake: number): Promise<void> {
-	if (!memory || wake === 0 || typeof Atomics.waitAsync !== 'function') {
-		await new Promise((resolve) => setTimeout(resolve, YIELD_WAIT_MS));
-		return;
+function nextFrameJob(views: MemoryViews | undefined, wake: number): Promise<unknown> {
+	if (!views || wake === 0 || typeof Atomics.waitAsync !== 'function') {
+		return new Promise((resolve) => setTimeout(resolve, YIELD_WAIT_MS));
 	}
-	// A view for this wait only, since the memory may grow while the worker waits.
-	const words = new Int32Array(memory.buffer);
-	const index = wake / Int32Array.BYTES_PER_ELEMENT;
-	const wait = Atomics.waitAsync(words, index, Atomics.load(words, index), YIELD_WAIT_MS);
-	if (wait.async) await wait.value;
+	// Return the wait itself, so no suspended function keeps this view across a memory growth.
+	const words = views.i32(wake, 1);
+	const wait = Atomics.waitAsync(words, 0, Atomics.load(words, 0), YIELD_WAIT_MS);
+	return wait.async ? wait.value : Promise.resolve();
 }

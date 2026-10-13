@@ -1,6 +1,6 @@
 //! The capacities a scene can pass, on both frame builders: the draw list, which grows as a frame
-//! needs; the all-or-nothing frame, which publishes no commands when it fails; and WebGPU
-//! skinning, which spreads its dispatches and its skinned vertices by the device's limits and
+//! needs; the all-or-nothing frame, which publishes no commands when it fails; and WebGPU's
+//! skinning pass, which spreads its dispatches and its skinned vertices by the device's limits and
 //! names the cap a scene passes. Each test records through the mock backend, which rejects what a
 //! real GPU would, and decodes the lists.
 
@@ -20,6 +20,7 @@ use null3d_render::frame::{FrameBuilder, RecordError};
 use null3d_render::geometry::box_geometry;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::materials::Shading;
+use null3d_render::skinning::SkinningMode;
 
 /// Threads per workgroup of the skinning pass.
 const SKIN_WORKGROUP: u32 = 64;
@@ -176,11 +177,12 @@ fn a_frame_that_fails_part_way_draws_nothing_and_a_new_gpu_records_again() {
 }
 
 /// A crowd of `n` skinned columns of `around` vertices per ring, one mesh between them, on the
-/// WebGPU frame builder with storage bindings of `binding` bytes, in a grid that the camera sees
-/// whole.
+/// WebGPU frame builder with storage bindings of `binding` bytes, which skins them in the skinning
+/// pass, in a grid that the camera sees whole.
 fn crowd(n: u32, around: u32, binding: u32) -> (World, Vec<Handle>) {
     let renderer = GpuDrivenRenderer::new(RendererConfig {
         storage_binding_bytes: binding,
+        skinning: SkinningMode::LEAN,
         ..RendererConfig::default()
     });
     let mut world = World::build_sized(renderer, n + 64);
@@ -296,6 +298,7 @@ fn skinned_meshes_past_the_passs_mesh_pages_fail_with_their_cap() {
     // At a 1 MiB binding a mesh page holds two of these columns, so 66 of them fill 33 pages.
     let renderer = GpuDrivenRenderer::new(RendererConfig {
         storage_binding_bytes: MIB,
+        skinning: SkinningMode::LEAN,
         ..RendererConfig::default()
     });
     let mut world = World::build_sized(renderer, 128);

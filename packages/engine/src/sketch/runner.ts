@@ -59,6 +59,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
 	type PreloadSender,
@@ -100,6 +101,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Sends a shader's builds that load on first use to the thread that draws. */
+	sendBuilds: BuildsSender;
+	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
+	onAskBuilds(handler: (template: number) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -447,10 +452,15 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				wasmBytes: () => this.core.memory.buffer.byteLength,
+				wasmBytes: () => this.core.bytes,
 			},
 		};
-		const templates = new ShaderTemplates(sketch.sendShader);
+		const templates = new ShaderTemplates(
+			sketch.sendShader,
+			device.webgl2 ? 'glsl' : 'wgsl',
+			sketch.sendBuilds,
+		);
+		sketch.onAskBuilds((template) => templates.answer(template));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -789,7 +799,8 @@ export class SketchRunner {
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
-			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
+			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
