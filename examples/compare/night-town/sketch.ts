@@ -37,6 +37,7 @@ import {
 	type TextureData,
 } from '../../lib/compare-scene';
 import { null3dSprites } from '../../lib/particles-null3d';
+import { SIGNATURE_MESSAGE } from '../scene-signature';
 import {
 	awningPlace,
 	CAR_PAINTS,
@@ -770,10 +771,17 @@ export default defineSketch(
 		scene.setActiveCamera(camera);
 
 		page.onMessage((type, value) => {
-			if (type !== COUNT_MESSAGE) return;
-			const next = Math.min(capacity, nightBlocks(value as number));
-			setActiveBlocks(town, next);
-			blocks.show(next);
+			if (type === COUNT_MESSAGE) {
+				const next = Math.min(capacity, nightBlocks(value as number));
+				setActiveBlocks(town, next);
+				blocks.show(next);
+			} else if (type === SIGNATURE_MESSAGE) {
+				// The ramp's browser test asks where the camera is now: a frozen scene answers the same.
+				page.post(SIGNATURE_MESSAGE, {
+					token: value,
+					camera: [cameraPosition[0], cameraPosition[2]],
+				});
+			}
 		});
 
 		const cameraPosition = new Float64Array(3);
