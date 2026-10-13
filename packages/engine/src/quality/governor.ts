@@ -1,8 +1,9 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
 // how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale. When the frames have time to spare again, it raises them in the reverse order.
-// It never changes a setting that is fixed while a preset runs.
+// occlusion's scale, then the steps of the sun's contact shadows. When the frames have time to
+// spare again, it raises them in the reverse order. It never changes a setting that is fixed while
+// a preset runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
@@ -17,8 +18,9 @@
 // The render scale is a part of the canvas's width and height, in whole thousandths, which the core
 // turns into an exact size in pixels. Scene passes draw into that corner of targets the size of the
 // canvas, and the final pass scales it up to the canvas, so a new scale makes no GPU object. The
-// shadow steps are numbers in a uniform and a schedule, and bloom's base and ambient occlusion's
-// scale corners of the same targets, so they make none either.
+// shadow steps are numbers in a uniform and a schedule, bloom's base and ambient occlusion's
+// scale corners of the same targets, and the contact shadows' steps a number in a uniform, so they
+// make none either.
 //
 // The governor judges the frames in windows of a quarter second. It takes a step down when the
 // frames of the last second, on average, missed the line at which the benchmark reports count a
@@ -35,7 +37,9 @@
 // turns instead, a longer interval would leave moving shadows further behind their casters. A bloom step happens only while
 // the sketch has bloom on, above the smallest base: it halves the base, and the chain drops its
 // narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
-// draws at half the render size: it draws at a quarter.
+// draws at half the render size: it draws at a quarter. The contact shadows' step happens only while
+// the main directional light casts shadows and their march takes more than the fewest steps: it
+// takes the fewest.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it. Unoptimized code makes a number object for
@@ -94,6 +98,9 @@ export const SMALLEST_BLOOM_SIZE = QUALITY_SETTINGS.bloomSize.values[0];
 
 /** The smallest scale of ambient occlusion's targets above none, in thousandths of the render size. */
 export const LOWEST_AO_SCALE = thousandths(QUALITY_SETTINGS.aoScale.values[1]);
+
+/** The fewest steps above none that a march of contact shadows takes, which their step lowers to. */
+export const FEWEST_CONTACT_STEPS = QUALITY_SETTINGS.contactShadowSteps.values[1];
 
 /**
  * The governor's steps of the far cascades' interval from `interval` on: each step doubles it, up to
@@ -185,7 +192,7 @@ const STATE_SIZE = 6;
  * past the scale.
  */
 const LEVELS =
-	FULL_SCALE / SCALE_STEP + 1 + BUDGET_STEPS + DETAIL_STEPS + farIntervalSteps(1) + 1 + 1 + 1;
+	FULL_SCALE / SCALE_STEP + 1 + BUDGET_STEPS + DETAIL_STEPS + farIntervalSteps(1) + 1 + 1 + 1 + 1;
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -219,9 +226,11 @@ export class Governor {
 	 * the lowest above none after a step.
 	 */
 	aoScale = 0;
+	/** The steps of each march of contact shadows: the setting's, or the fewest after a step. */
+	contactSteps = 0;
 	/**
-	 * Counts each change of `detailFactor`, `farInterval`, `filter`, `bloomHalvings` or `aoScale`,
-	 * so the frame loop applies them.
+	 * Counts each change of `detailFactor`, `farInterval`, `filter`, `bloomHalvings`, `aoScale` or
+	 * `contactSteps`, so the frame loop applies them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -250,6 +259,8 @@ export class Governor {
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
 	private ao = false;
+	/** The steps of contact shadows that their step starts from. */
+	private contactSetting = 0;
 	/** True while the scene draws a mesh with levels of detail, which the detail steps need. */
 	private levels = false;
 	/** The steps that the sketch's budgets allow: those to the lowest of their floors. */
@@ -317,6 +328,13 @@ export class Governor {
 		this.applySteps();
 	}
 
+	/** Sets the steps of each march of contact shadows that their step starts from. */
+	setContact(steps: number): void {
+		if (steps === this.contactSetting) return;
+		this.contactSetting = steps;
+		this.applySteps();
+	}
+
 	/**
 	 * Sets whether the scene draws a mesh with levels of detail, and the threshold of the levels is
 	 * above 0, which the detail steps need.
@@ -351,7 +369,7 @@ export class Governor {
 
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
-	 * occlusion and the settings allow.
+	 * occlusion, contact shadows and the settings allow.
 	 */
 	get maxSteps(): number {
 		return (
@@ -359,7 +377,8 @@ export class Governor {
 			this.intervalSteps() +
 			this.filterSteps() +
 			this.bloomSteps() +
-			this.aoSteps()
+			this.aoSteps() +
+			this.contactStepCount()
 		);
 	}
 
@@ -571,30 +590,44 @@ export class Governor {
 	}
 
 	/**
+	 * The contact shadows' step while the main directional light casts shadows and their march
+	 * takes more than the fewest steps: to the fewest.
+	 */
+	private contactStepCount(): number {
+		return this.cascades > 0 && this.contactSetting > FEWEST_CONTACT_STEPS ? 1 : 0;
+	}
+
+	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the threshold of the levels of detail doubles with each of its steps,
 	 * then the far cascades' interval doubles with each of its steps, the filter takes the lightest
-	 * after them, then bloom's base halves, and last ambient occlusion takes its lowest scale.
+	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, and last
+	 * contact shadows take their fewest steps.
 	 */
 	private applySteps(): void {
 		const detailSteps = this.detailSteps();
 		const intervalSteps = this.intervalSteps();
 		const shadowSteps = detailSteps + intervalSteps + this.filterSteps();
 		const bloomSteps = this.bloomSteps();
-		this.steps = Math.min(this.steps, shadowSteps + bloomSteps + this.aoSteps());
+		const aoSteps = this.aoSteps();
+		const before = shadowSteps + bloomSteps + aoSteps;
+		this.steps = Math.min(this.steps, before + this.contactStepCount());
 		const detailFactor = 1 << Math.min(this.steps, detailSteps);
 		const shadowStepsTaken = Math.max(0, this.steps - detailSteps);
 		const doublings = Math.min(shadowStepsTaken, intervalSteps);
 		const farInterval = Math.min(LONGEST_FAR_INTERVAL, this.intervalSetting << doublings);
 		const filter = shadowStepsTaken > intervalSteps ? LIGHTEST_FILTER : this.filterSetting;
 		const bloomHalvings = Math.min(bloomSteps, Math.max(0, this.steps - shadowSteps));
-		const aoScale = this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		const aoScale =
+			aoSteps > 0 && this.steps > shadowSteps + bloomSteps ? LOWEST_AO_SCALE : this.aoSetting;
+		const contactSteps = this.steps > before ? FEWEST_CONTACT_STEPS : this.contactSetting;
 		if (
 			detailFactor === this.detailFactor &&
 			farInterval === this.farInterval &&
 			filter === this.filter &&
 			bloomHalvings === this.bloomHalvings &&
-			aoScale === this.aoScale
+			aoScale === this.aoScale &&
+			contactSteps === this.contactSteps
 		)
 			return;
 		this.detailFactor = detailFactor;
@@ -602,6 +635,7 @@ export class Governor {
 		this.filter = filter;
 		this.bloomHalvings = bloomHalvings;
 		this.aoScale = aoScale;
+		this.contactSteps = contactSteps;
 		this.stepChanges++;
 	}
 }

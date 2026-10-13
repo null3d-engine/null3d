@@ -31,6 +31,7 @@ function sceneEnvironment() {
 				return texture === 99 ? 1 : 0;
 			},
 		},
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	return { environment: new SceneEnvironment(core), calls, views: () => views };
 }

@@ -1050,6 +1050,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'dof',
+	'contact',
 	'effects',
 	'effects-joined',
 	'occlusion',

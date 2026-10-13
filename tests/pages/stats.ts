@@ -14,6 +14,7 @@
 // `showPageStats(request)`, which asks the page, `readOverlay()`, `gpuCalls()` and `stopEngine()`.
 import { createEngine, type StatsOverlayOptions } from '@null3d/engine';
 import {
+	BOX_TRIANGLES,
 	gpuTimerFeature,
 	instanceFloors,
 	type OverlayBoxes,
@@ -177,9 +178,11 @@ run('stats', async (): Promise<StatsResult> => {
 			tenths(shown['gpu-textures']) >= Math.floor((floors.textures * 10) / 2 ** 20)
 		);
 	};
+	// Full-screen steps count their triangles at once, while the GPU's culled draws count theirs
+	// only once read back. So a window can hold a few triangles before it holds the box's.
 	const ready = (figures: StatsFigures) =>
 		figures.frames > 0 &&
-		figures.triangles > 0 &&
+		figures.triangles >= BOX_TRIANGLES &&
 		figures.meshBytes > 0 &&
 		figures.gpuTextureBytes > 0 &&
 		figures.gpuBufferBytes > 0 &&
