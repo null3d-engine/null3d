@@ -18,6 +18,7 @@
 mod composition;
 mod effect;
 mod features;
+mod flatten;
 mod glsl;
 mod half;
 mod library;
