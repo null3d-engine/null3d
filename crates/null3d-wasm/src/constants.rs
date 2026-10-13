@@ -334,6 +334,9 @@ pub mod texture_option {
     pub const UPLOAD_ALL: u32 = 2;
     /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
     pub const MEMORY_BUDGET_KIB: u32 = 3;
+    /// Any value makes the store keep each texture's texels after its upload, so that a new GPU
+    /// device uploads them again; 0 frees them once the upload is done (D-164).
+    pub const KEEP_COPIES: u32 = 4;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -1149,6 +1152,7 @@ pub fn typescript() -> String {
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
                 ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
+                ("KEEP_COPIES", texture_option::KEEP_COPIES),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],

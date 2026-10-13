@@ -26,6 +26,7 @@ import {
 	TEXTURE_FORMAT_SHARED_EXPONENT,
 	TEXTURE_FORMAT_SRGB,
 	TEXTURE_MAX_DEPTH,
+	TEXTURE_OPTION_KEEP_COPIES,
 	TEXTURE_OPTION_MAX_ANISOTROPY,
 	TEXTURE_OPTION_MEMORY_BUDGET_KIB,
 	TEXTURE_OPTION_UPLOAD_BUDGET,
@@ -955,6 +956,15 @@ export class Textures {
 	setMemoryBudget(bytes: number): void {
 		this.core.glue.setTextureOption(TEXTURE_OPTION_MEMORY_BUDGET_KIB, Math.ceil(bytes / 1024));
 		this.ownMemory();
+	}
+
+	/**
+	 * @internal Keeps each texture's texels after their upload (`keep`), so that a new GPU device
+	 * uploads them again, or frees them once no list can read them. The page decides it once, from
+	 * the device, and the setting does not change while the engine runs.
+	 */
+	setKeepCopies(keep: boolean): void {
+		this.core.glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, keep ? 1 : 0);
 	}
 
 	/** @internal The texel bytes that one frame may upload, as the core holds it. */

@@ -245,6 +245,15 @@ export interface EngineOptions {
 	 */
 	textureMemoryMiB?: number;
 	/**
+	 * True keeps the engine's copy of each texture's texels after their upload, so a texture that
+	 * maps an image draws with its map again after the browser takes the GPU away. It costs about
+	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
+	 * a texture draws with its color alone until the sketch gives it texels again. Without this
+	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
+	 * is likeliest to lose its GPU. Another value fails with E1213.
+	 */
+	keepTextureCopies?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -1198,6 +1207,18 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
+	if (options.keepTextureCopies !== undefined && typeof options.keepTextureCopies !== 'boolean')
+		throw new EngineError(
+			'E1213',
+			`createEngine() got keepTextureCopies ${String(options.keepTextureCopies)}, which is not true or false.`,
+		);
+	/**
+	 * The engine keeps a copy of each texture's texels after their upload where the device is a
+	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
+	 * otherwise (D-164).
+	 */
+	const keepTextureCopies =
+		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,
@@ -1605,6 +1626,7 @@ async function startEngine(
 			),
 			options: tierSettings,
 			textureCapMiB,
+			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
 		};
