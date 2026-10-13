@@ -19,6 +19,7 @@ const MAKERS = new Set([
 	'createShapeMesh',
 	'createMaterial',
 	'addPass',
+	'addFullscreenPass',
 	'createClip',
 	'createClipLater',
 ]);
