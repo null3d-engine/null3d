@@ -165,7 +165,7 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the arrays' views, which the next point makes again. */
+	/** Forgets the arrays' views, which the next point makes again. */
 	dropViews(): void {
 		this.generation = -1;
 		this.positions = new Float64Array(0);

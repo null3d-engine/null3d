@@ -394,7 +394,8 @@ describe('debug drawing', () => {
 
 	test('a directional light draws a square that faces it and an arrow in its direction', () => {
 		const { draw, frames, matrices } = fakeCore();
-		const scene = { core: { glue: { setLightColor: () => 0 } } } as unknown as Scene;
+		const core = { glue: { setLightColor: () => 0 }, callValues: () => new Float64Array(3) };
+		const scene = { core } as unknown as Scene;
 		const sun = new DirectionalLight(scene, 7, 'sun');
 		sun.paint('setColor', C.LIGHT_COLOR_MAIN, '#ff8800');
 		// Turned a quarter back about X, so its -Z axis points down, and scaled by 3.

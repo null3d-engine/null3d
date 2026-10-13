@@ -254,6 +254,8 @@ export type Check =
 	| { kind: 'gpu-occlusion' }
 	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
 	| { kind: 'jitter'; tier: Tier }
+	/** The specular shimmer page: highlight flicker against a supersampled row of the same frames. */
+	| { kind: 'shimmer'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -1712,6 +1714,36 @@ export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * How long the shimmer page may take: two rows of camera steps, one of them at sixteen times the
+ * pixels, which a phone's GPU draws slowly.
+ */
+const SHIMMER_TIMEOUT_SECONDS = 300;
+
+/**
+ * The shimmer page's scenes that a device run measures: small low-poly shapes, smooth spheres, and
+ * spheres a few pixels across. The bump-mapped scene is left out, because specular anti-aliasing
+ * never sees a normal map's detail.
+ */
+const SHIMMER_SCENES = ['small', 'smooth', 'tiny'] as const;
+
+/**
+ * How much the highlights of shiny shapes flicker in each scene on each GPU path, against a
+ * supersampled row of the same frames. D-79 records the results.
+ */
+export function shimmerPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		SHIMMER_SCENES.map((scene) =>
+			pageItem(
+				`shimmer-${scene}-${tier}`,
+				'specular-shimmer',
+				{ kind: 'shimmer', tier },
+				{ switches: [`gpu=${tier}`, `scene=${scene}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+			),
+		),
+	);
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	smoke: smokePlan,
@@ -1740,6 +1772,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'gpu-occlusion': gpuOcclusionPlan,
 	'occlusion-s6': occlusionS6Plan,
 	jitter: jitterPlan,
+	shimmer: shimmerPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -2497,6 +2530,10 @@ export function judge(
 			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
 			if (problems.length === 0) context?.note?.(line);
 			return problems;
+		}
+		case 'shimmer': {
+			const shimmer = result as ItemResult & { shimmer?: number };
+			return typeof shimmer.shimmer === 'number' ? [] : ['the page measured no shimmer'];
 		}
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {

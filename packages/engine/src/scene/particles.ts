@@ -331,7 +331,7 @@ export class ParticleBuffer implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the record and value arrays, which the next read makes again. */
+	/** Forgets the record and value arrays, which the next read makes again. */
 	dropViews(): void {
 		if (this.generation === -1) return;
 		this.generation = -1;

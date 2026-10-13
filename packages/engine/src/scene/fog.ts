@@ -10,8 +10,8 @@ import {
 	FOG_CURVE_LINEAR,
 	FOG_CURVE_NONE,
 } from '../generated/core';
-import type { CoreGlue } from '../shared/core';
-import { type ColorInput, linearColor } from './color';
+import { type ColorInput, writeLinearColor } from './color';
+import type { CoreMemory } from './memory';
 
 /**
  * How fog thickens with distance. Exponential fog, `'exponential'`, follows light through an even
@@ -80,9 +80,9 @@ const CURVES: Readonly<Record<FogCurve, number>> = {
 	linear: FOG_CURVE_LINEAR,
 };
 
-/** The fog's numbers in the order that the core takes them, after the curve and the color. */
-type FogValues = readonly [number, number, number, number, number, number, number];
-/** The option that gives each of the fog's numbers. */
+/** The place of the fog's first number in the core's call values, after the color. */
+const FIRST = 3;
+/** The option that gives each of the fog's numbers, in the order that the core takes them. */
 const VALUE_NAMES = [
 	'density',
 	'near',
@@ -107,7 +107,7 @@ function checkNotNegative(name: string, value: number): void {
  * far distance that is not beyond the near one, or a value below its range, and E1203 for a value
  * that is not finite. Call it inside `if (DEV)`.
  */
-function checkFog(fog: FogOptions, values: FogValues): void {
+function checkFog(fog: FogOptions, values: Float64Array): void {
 	if ('type' in fog)
 		throw new EngineError(
 			'E1108',
@@ -118,8 +118,14 @@ function checkFog(fog: FogOptions, values: FogValues): void {
 			'E1108',
 			`${CALL}() got the curve ${JSON.stringify(fog.curve)}. It takes 'exponential', 'exp2' or 'linear'.`,
 		);
-	for (const [k, name] of VALUE_NAMES.entries()) checkNumber(CALL, name, values[k] as number, FOG);
-	const [density, near, far, , heightFalloff, sunGlow, sunGlowExponent] = values;
+	const value = (k: number) => values[FIRST + k] as number;
+	for (const [k, name] of VALUE_NAMES.entries()) checkNumber(CALL, name, value(k), FOG);
+	const density = value(0);
+	const near = value(1);
+	const far = value(2);
+	const heightFalloff = value(4);
+	const sunGlow = value(5);
+	const sunGlowExponent = value(6);
 	if (!(far > near))
 		throw new EngineError(
 			'E1108',
@@ -135,22 +141,24 @@ function checkFog(fog: FogOptions, values: FogValues): void {
 		);
 }
 
-/** Gives the scene `fog`, or no fog for null. Converting the color allocates. */
-export function setSceneFog(glue: CoreGlue, fog: FogOptions | null): void {
+/**
+ * Gives the scene `fog`, or no fog for null. The linear color and the numbers go to the core
+ * through its call values, so the call allocates nothing.
+ */
+export function setSceneFog(core: CoreMemory, fog: FogOptions | null): void {
 	if (fog === null) {
-		glue.setFog(FOG_CURVE_NONE, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		core.glue.setFog(FOG_CURVE_NONE);
 		return;
 	}
-	const values: FogValues = [
-		fog.density ?? DEFAULT_DENSITY,
-		fog.near ?? DEFAULT_NEAR,
-		fog.far ?? DEFAULT_FAR,
-		fog.height ?? 0,
-		fog.heightFalloff ?? 0,
-		fog.sunGlow ?? 0,
-		fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT,
-	];
+	const values = core.callValues();
+	values[FIRST] = fog.density ?? DEFAULT_DENSITY;
+	values[FIRST + 1] = fog.near ?? DEFAULT_NEAR;
+	values[FIRST + 2] = fog.far ?? DEFAULT_FAR;
+	values[FIRST + 3] = fog.height ?? 0;
+	values[FIRST + 4] = fog.heightFalloff ?? 0;
+	values[FIRST + 5] = fog.sunGlow ?? 0;
+	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
 	if (DEV) checkFog(fog, values);
-	const [r, g, b] = linearColor(fog.color, CALL);
-	glue.setFog(CURVES[fog.curve ?? 'exponential'], r, g, b, ...values);
+	writeLinearColor(values, fog.color, CALL);
+	core.glue.setFog(CURVES[fog.curve ?? 'exponential']);
 }

@@ -20,10 +20,10 @@ const WHITE = 250;
 /** How far from the sphere's center bloom's glow must reach, in pixels. */
 const GLOW_RADIUS = 40;
 /**
- * The darkest channel that a pixel within the glow's radius may have, out of 255. CI's software
- * GPU draws at least 150 there, and a frame without bloom draws 0 to 5.
+ * The darkest channel that a pixel within the glow's radius may have, out of 255. Under the
+ * default curve, CI's software GPU draws at least 70 there, and a frame without bloom draws 0 to 5.
  */
-const GLOW_FLOOR = 80;
+const GLOW_FLOOR = 40;
 
 type Point = readonly [number, number];
 
