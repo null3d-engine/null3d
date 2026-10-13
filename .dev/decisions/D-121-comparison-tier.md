@@ -213,6 +213,8 @@ three.js builds its shaders again for each count of lights, and takes a long tim
 
 The first tests held 300 lights, 25 blocks, and 48 lights on SwiftShader. On 11 October 2026, with the Mac's load near 20, WebGPURenderer gave no frame within 180 s at 300 lights on the Mac's GPU, and none at 48 lights on SwiftShader in one of four tests. So the tests now hold 96 lights, 8 blocks, and 24 lights, 2 blocks, on SwiftShader, in both engines' tests. They wait up to 180 s. The SwiftShader references show that smaller town.
 
+On 13 October 2026, CI's first run of the landed tests failed every Night town and Busy page test on SwiftShader, and some in Firefox and Safari. The shaders' sine hashes drew other ripples, clouds and stars on other machines, so the shaders now use the integer hash. Firefox on Linux filters the facades' textures another way, so it keeps references of its own. [Image tests](../image-tests.md#ci) gives the figures.
+
 ### The test page's 404
 
 The first runs logged one "404 (Not Found)" on the first page of each browser. The comparison test page named no icon, so the browser asked the server for `/favicon.ico`. The page now names an empty icon, as the examples page does. The fault was in every comparison's test page, Battle's too.
