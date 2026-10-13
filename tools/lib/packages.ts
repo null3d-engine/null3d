@@ -93,6 +93,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,
 		shaders: false,

@@ -360,7 +360,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws no sky. Its texture clears to the pass's `clearColor`, which is the scene's background color by default.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
 
 ## Related pages
 

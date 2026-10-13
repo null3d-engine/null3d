@@ -88,6 +88,11 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
 			loadedBy: drawing,
 		},
 		{ name: `${prefix}-effect-joiner.js`, module: 'gpu/effect-joiner.ts', loadedBy: shared },
+		...(['wgsl', 'glsl'] as const).map((target) => ({
+			name: `${prefix}-shaders-${target}-combos.js`,
+			module: `generated/shaders-${target}-combos.ts`,
+			loadedBy: drawing,
+		})),
 	];
 }
 
@@ -114,12 +119,15 @@ function drawingParts(prefix: string, drawing: string): EnginePart[] {
  * that runs the sketch at the first call of `debug.frameStats`. No download counts them either.
  * The loop that moves label elements loads on the page with the first `engine.labels.bind`.
  * The WebGL call timing of benchmark pages loads in the thread that draws, only with ?gl-timing.
+ * Each GPU path's table of the shader files of builds that need several features that load on
+ * first use loads in the thread that draws, the first time a pipeline or a preload needs one.
  * The reader of the counts of the draws that the GPU culls loads in the thread that draws on WebGPU,
  * at the first frame that samples, such as with the stats overlay shown.
  * The built-in environments' numbers load in the thread that runs the sketch with the first one,
  * and the texture generators that make their maps on the GPU load in the thread that draws. The
  * code that joins custom effects into fewer passes loads in the thread that draws with the first
- * effects that join.
+ * effects that join. The area lights' tables' code loads in the thread that runs the sketch with
+ * the first rectangle or tube light, which starts the tables' download.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'early-core.js', module: 'page/early-core.ts' },
@@ -146,6 +154,17 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page-panorama.js', module: 'scene/panorama.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-sprites.js', module: 'scene/sprites.ts', loadedBy: 'page-sketch-runner.js' },
 	{ name: 'page-lines.js', module: 'scene/lines.ts', loadedBy: 'page-sketch-runner.js' },
+	{ name: 'page-particles.js', module: 'scene/particles.ts', loadedBy: 'page-sketch-runner.js' },
+	{
+		name: 'page-area-light-tables.js',
+		module: 'scene/area-light-tables.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
+	{
+		name: 'page-light-images.js',
+		module: 'scene/light-images.ts',
+		loadedBy: 'page-sketch-runner.js',
+	},
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -192,6 +211,21 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker-sprites.js', module: 'scene/sprites.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'sketch-worker-lines.js', module: 'scene/lines.ts', loadedBy: 'sketch-worker.js' },
+	{
+		name: 'sketch-worker-particles.js',
+		module: 'scene/particles.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-area-light-tables.js',
+		module: 'scene/area-light-tables.ts',
+		loadedBy: 'sketch-worker.js',
+	},
+	{
+		name: 'sketch-worker-light-images.js',
+		module: 'scene/light-images.ts',
+		loadedBy: 'sketch-worker.js',
+	},
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',

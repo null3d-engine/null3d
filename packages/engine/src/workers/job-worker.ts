@@ -4,13 +4,16 @@
 // blocking where the browser has Atomics.waitAsync. Then it serves the job system until the engine
 // stops, and reports that it has stopped. Serving blocks this worker's thread, which a job worker
 // may do; the sketch worker never blocks. When the loader sends it a task, the core lets it leave
-// the job system between frame jobs. It runs its tasks, then serves the job system again. A failure
+// the job system between frame jobs. It runs its tasks, then serves the job system again. While
+// the page measures its memory, the core lets an idle worker leave too: the worker waits for the
+// next frame job without blocking, so its thread runs the browser's measurement. A failure
 // after the start ends the worker's part in the job system and reaches the page as a failure of
 // the running engine.
 
 import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
-import type { CoreGlue } from '../shared/core';
+import { type CoreGlue, JOB_LOOP_STOPPED, JOB_LOOP_YIELDED } from '../shared/core';
+import { MemoryViews } from '../shared/memory-views';
 import {
 	type JobWorkerInit,
 	replyToPage,
@@ -29,6 +32,7 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		const glue = (await startWorkerCore(message, step)).glue;
 		core = glue;
 		const { index } = message;
+		const views = message.memory ? new MemoryViews(message.memory) : undefined;
 		const tasks = serveTasks(message.taskPort, () => glue.jobWorkerCallDone(index));
 		replyToPage({
 			type: 'ready',
@@ -50,8 +54,12 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		if (Atomics.load(slots, Slot.Running) !== 0) {
 			Atomics.add(slots, Slot.JobsServing, 1);
 			try {
-				while (glue.jobWorkerLoop(index))
-					await tasks.whenIdle(() => glue.jobWorkerCalls(index) === 0);
+				for (;;) {
+					const exit = glue.jobWorkerLoop(index);
+					if (exit === JOB_LOOP_STOPPED) break;
+					if (exit === JOB_LOOP_YIELDED) await nextFrameJob(views, glue.jobsWakeAddress());
+					else await tasks.whenIdle(() => glue.jobWorkerCalls(index) === 0);
+				}
 			} finally {
 				Atomics.sub(slots, Slot.JobsServing, 1);
 			}
@@ -73,3 +81,24 @@ startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 		replyToPage({ type: 'fault', role: 'job', index: message.index, message: messageOf(e) });
 	}
 });
+
+/**
+ * The longest that a job worker that left the job system for the page's measurement waits for the
+ * next frame job before it looks again. A frame job wakes it sooner wherever another job worker
+ * sleeps, and the sketch thread runs every chunk that no worker takes, so no frame waits for it.
+ */
+const YIELD_WAIT_MS = 4;
+
+/**
+ * Waits, without blocking the thread, until the job system's wake word changes or a moment has
+ * passed. The thread runs its tasks meanwhile, the browser's measurement among them.
+ */
+function nextFrameJob(views: MemoryViews | undefined, wake: number): Promise<unknown> {
+	if (!views || wake === 0 || typeof Atomics.waitAsync !== 'function') {
+		return new Promise((resolve) => setTimeout(resolve, YIELD_WAIT_MS));
+	}
+	// Return the wait itself, so no suspended function keeps this view across a memory growth.
+	const words = views.i32(wake, 1);
+	const wait = Atomics.waitAsync(words, 0, Atomics.load(words, 0), YIELD_WAIT_MS);
+	return wait.async ? wait.value : Promise.resolve();
+}

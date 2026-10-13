@@ -35,7 +35,7 @@ import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
-import { AreaLightTables, isAreaLight } from './area-lights';
+import type { AreaLightTables } from './area-light-tables';
 import {
 	type BackgroundOptions,
 	type BackgroundSource,
@@ -72,9 +72,10 @@ import {
 	orthographicView,
 	setViewHeight,
 } from './lens';
-import { LIGHT_IMAGE_HALVES, type LightImagePixels, prepareLightImage } from './light-images';
+import type { LightImagePixels } from './light-images';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
+import type { ParticleBuffer, ParticleBufferOptions } from './particles';
 import {
 	type ObjectEventHandler,
 	type ObjectEventType,
@@ -412,6 +413,13 @@ export interface DirectionalShadowOptions {
 	 * default is 200.
 	 */
 	distance?: number;
+	/**
+	 * How far contact shadows reach from each surface toward the light, in meters, at least 0. They
+	 * are short shadows found in the camera's depth, which show where small objects touch the
+	 * ground: stones, feet, wheels, crates. 0 turns them off for this light. The quality preset's
+	 * `contactShadowSteps` decides whether they draw. The default is 0.3.
+	 */
+	contactDistance?: number;
 }
 
 /**
@@ -648,6 +656,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		Number.MAX_VALUE,
 		'above 0',
 	],
+	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
 	[C.LIGHT_VALUE_WIDTH]: ['width or length', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_HEIGHT]: ['height', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
 	[C.LIGHT_VALUE_RADIUS]: ['radius', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
@@ -660,6 +669,7 @@ const SHADOW_NUMBERS = [
 	['bias', C.LIGHT_VALUE_SHADOW_BIAS],
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
+	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -681,8 +691,8 @@ function splitPosition(rest: Float32Array, cells: Int32Array, i: number, value: 
 	rest[i] = value - cell * C.CELL_SIZE;
 }
 
-/** Views of the per-slot arrays and the command ring. */
-class SceneViews {
+/** Views of the per-slot arrays and the command ring, which the scene keeps until the memory grows. */
+interface SceneViews {
 	/** Positions, 3 per slot: in large-world mode, the part that `positionCells` leaves. */
 	readonly positions: Float32Array;
 	/**
@@ -700,26 +710,27 @@ class SceneViews {
 	readonly writeIndex: Uint32Array;
 	readonly readIndex: Uint32Array;
 	readonly ringCapacity: number;
+}
 
-	constructor(core: CoreMemory) {
-		const { glue } = core;
-		const rows = glue.sceneCapacity() + 1;
-		this.positions = core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3);
-		const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
-		this.positionCells = cells ? core.i32(cells, rows * 3) : undefined;
-		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
-		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
-		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
-		this.centers = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3);
-		this.dirty = core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32));
-		this.ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
-		this.records = core.u32(
-			glue.commandRing(C.RING_FIELD_RECORDS),
-			this.ringCapacity * C.COMMAND_WORDS,
-		);
-		this.writeIndex = core.u32(glue.commandRing(C.RING_FIELD_WRITE_INDEX), 1);
-		this.readIndex = core.u32(glue.commandRing(C.RING_FIELD_READ_INDEX), 1);
-	}
+/** The views of the per-slot arrays and the command ring, as the memory is now. */
+function sceneViews(core: CoreMemory): SceneViews {
+	const { glue } = core;
+	const rows = glue.sceneCapacity() + 1;
+	const cells = glue.sceneArrays(C.SCENE_FIELD_POSITION_CELLS);
+	const ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
+	return {
+		positions: core.f32(glue.sceneArrays(C.SCENE_FIELD_POSITIONS), rows * 3),
+		positionCells: cells ? core.i32(cells, rows * 3) : undefined,
+		rotations: core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4),
+		scales: core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3),
+		radii: core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows),
+		centers: core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3),
+		dirty: core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32)),
+		ringCapacity,
+		records: core.u32(glue.commandRing(C.RING_FIELD_RECORDS), ringCapacity * C.COMMAND_WORDS),
+		writeIndex: core.u32(glue.commandRing(C.RING_FIELD_WRITE_INDEX), 1),
+		readIndex: core.u32(glue.commandRing(C.RING_FIELD_READ_INDEX), 1),
+	};
 }
 
 /**
@@ -1975,16 +1986,30 @@ export class RectAreaLight extends Light {
 	setImage(image: LightImagePixels | null): void {
 		const call = 'setImage';
 		if (DEV) checkLive(call, this);
-		const { core } = this.scene;
+		const { scene } = this;
+		const { core } = scene;
 		if (image === null) {
+			this.pendingImage = null;
 			core.check(core.glue.removeAreaLightImage(this.id), call, this.label, true);
 			return;
 		}
 		if (DEV) checkLightImage(call, image, this);
-		const at = core.check(core.glue.areaLightImage(this.id), call, this.label);
-		prepareLightImage(image, new Uint16Array(core.memory.buffer, at, LIGHT_IMAGE_HALVES));
-		core.check(core.glue.finishAreaLightImage(this.id), call, this.label, true);
+		// The resampler loads on first use, so a page that sets no picture downloads none of it.
+		// The light keeps the pixels; a task writes them, which `imagesSettled` waits for.
+		this.pendingImage = image;
+		const id = this.id;
+		scene.queueImage(
+			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
+				if (this.id !== id || this.pendingImage !== image) return;
+				const at = core.check(core.glue.areaLightImage(id), call, this.label);
+				prepareLightImage(image, new Uint16Array(core.memory.buffer, at, LIGHT_IMAGE_HALVES));
+				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
+			}),
+		);
 	}
+
+	/** The picture that `setImage` set and that is not written yet, if any. */
+	private pendingImage: LightImagePixels | null = null;
 
 	/** @internal A copy starts without the picture, which `setImage` gives it. */
 	override twin(handle: number): Object3D {
@@ -1995,6 +2020,7 @@ export class RectAreaLight extends Light {
 
 	/** Removes the light at the next frame, and frees its picture's place. */
 	override destroy(): void {
+		this.pendingImage = null;
 		if (this.id !== 0) this.scene.core.glue.removeAreaLightImage(this.id);
 		super.destroy();
 	}
@@ -2042,7 +2068,7 @@ export class TubeLight extends Light {
  *
  * @category api/scene
  */
-export class InstanceBatch {
+export class InstanceBatch implements ViewHolder {
 	private generation = -1;
 	private rows!: {
 		positions: Float32Array;
@@ -2076,6 +2102,14 @@ export class InstanceBatch {
 		readonly uses: BatchUses = NO_USES,
 	) {
 		this.activeRows = count;
+		scene.core.holdViews(this);
+	}
+
+	/** @internal Forgets the row arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.rows = NO_ROWS;
 	}
 
 	/** @internal The batch, as error messages name it. */
@@ -2282,6 +2316,18 @@ export interface BatchUses {
 
 const NO_USES: BatchUses = { meshes: [], materials: [] };
 
+/** A view of no floats, which objects keep in place of views that they dropped. */
+const NO_FLOATS = new Float32Array(0);
+
+/** The row arrays of a batch that dropped its views, until its next read makes them again. */
+const NO_ROWS = {
+	positions: NO_FLOATS,
+	rotations: NO_FLOATS,
+	scales: NO_FLOATS,
+	colors: undefined,
+	values: undefined,
+};
+
 /** The row fields of an instance batch, which the check of unmarked row writes hashes. */
 const MESH_ROW_FIELDS: readonly RowField[] = [
 	[C.BATCH_FIELD_POSITIONS, 3],
@@ -2321,6 +2367,18 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 		throw new EngineError(
 			'E1406',
 			`the sprite code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
+/** Imports the particle code, which a page downloads with its first particle buffer, or throws E1406. */
+async function loadParticles(call: string): Promise<typeof import('./particles')> {
+	try {
+		return await import('./particles');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the particle code did not download for ${call}(): ${reasonOf(error)}.`,
 		);
 	}
 }
@@ -2484,16 +2542,74 @@ export type SceneChecks = typeof SCENE_CHECKS;
  *
  * @category api/scene
  */
-export class Scene {
+export class Scene implements ViewHolder {
 	/** @internal The scene API's checks and errors, for code that loads on first use. */
 	readonly checks: SceneChecks = SCENE_CHECKS;
 	private viewsGeneration = -1;
-	private currentViews!: SceneViews;
+	private currentViews: SceneViews | undefined;
 	private activeCamera: Camera | undefined;
 	/** The camera that fits the shadow cascades in place of the active camera, for debugging. */
 	private shadowCamera: Camera | undefined;
 	/** @internal The area lights' tables, which load with the first rectangle or tube light. */
-	readonly areaTables: AreaLightTables;
+	private areaTables: AreaLightTables | undefined;
+	/** @internal The load of the area lights' tables' code and their download, once started. */
+	private areaTablesLoad: Promise<AreaLightTables> | undefined;
+	/** @internal The area lights' tables' failure before the code arrived, once: the frame loop reports it. */
+	private areaTablesFailure: EngineError | undefined;
+	/** @internal The tasks that write the pictures that `RectAreaLight.setImage` set. */
+	private readonly imageTasks = new Set<Promise<void>>();
+	/** @internal The picture that failed to write, once: the frame loop reports it. */
+	private imageFailure: unknown;
+
+	/** @internal Starts the area lights' tables' load, once, which loads their code on first use. */
+	private loadAreaTables(): void {
+		this.areaTablesLoad ??= import('./area-light-tables').then(({ AreaLightTables }) => {
+			const tables = new AreaLightTables(this.core);
+			this.areaTables = tables;
+			tables.load();
+			return tables;
+		});
+	}
+
+	/** @internal Settles when the area lights' tables have loaded, or at once when none started. */
+	async areaTablesSettled(): Promise<void> {
+		const load = this.areaTablesLoad;
+		if (!load) return;
+		const tables = await load.catch((error: unknown) => {
+			this.areaTablesFailure =
+				error instanceof EngineError ? error : new EngineError('E1431', String(error));
+			return undefined;
+		});
+		await tables?.settled();
+	}
+
+	/** @internal The area lights' tables' failure, once: the frame loop reports it. */
+	takeAreaTablesFailure(): EngineError | undefined {
+		const failure = this.areaTablesFailure ?? this.areaTables?.takeFailure();
+		this.areaTablesFailure = undefined;
+		return failure;
+	}
+
+	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */
+	async imagesSettled(): Promise<void> {
+		while (this.imageTasks.size > 0) await Promise.all(this.imageTasks);
+	}
+
+	/** @internal Queues a picture's write, which loads its resampler on first use. */
+	queueImage(task: Promise<void>): void {
+		const settled = task.catch((error: unknown) => {
+			this.imageFailure = error;
+		});
+		this.imageTasks.add(settled);
+		void settled.finally(() => this.imageTasks.delete(settled));
+	}
+
+	/** @internal The picture that failed to write, once: the frame loop reports it. */
+	takeImageFailure(): unknown {
+		const failure = this.imageFailure;
+		this.imageFailure = undefined;
+		return failure;
+	}
 	/**
 	 * The camera of each scene pass's view, by the view's place, with the pass's own layers, or
 	 * undefined to follow the camera's.
@@ -2523,6 +2639,10 @@ export class Scene {
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
 	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
+	/** @internal The particle buffers in the scene. */
+	particleBuffers = 0;
+	/** The one triangle that particle buffers' objects draw with, made with the first buffer. */
+	private particleMesh: MeshGeometry | undefined;
 	/** The segment mesh of line batches, which every line batch shares, made with the first. */
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
@@ -2550,7 +2670,7 @@ export class Scene {
 	/** @internal True once an object has morph weights, so each frame's animation step runs. */
 	morphed = false;
 	/** The core's table of morph weights, made again after the engine's memory grew. */
-	private morphTable: Float32Array = new Float32Array(0);
+	private morphTable: Float32Array = NO_FLOATS;
 	private morphGeneration = -1;
 
 	/** @internal */
@@ -2570,11 +2690,18 @@ export class Scene {
 		/** The input reader, whose pointer events reach objects' handlers. */
 		private readonly pointerInput?: PointerInput,
 	) {
-		this.areaTables = new AreaLightTables(core);
 		if (DEV) {
 			this.unmarkedWrites = new UnmarkedWrites(this);
 			this.unmarkedRows = new UnmarkedRows(core);
 		}
+		core.holdViews(this);
+	}
+
+	/** @internal Forgets the views of the scene's arrays and of the morph weights. */
+	dropViews(): void {
+		this.currentViews = undefined;
+		this.morphGeneration = -1;
+		this.morphTable = NO_FLOATS;
 	}
 
 	/** @internal The cameras of the last frames, for `screenToRay` and `worldToScreen`. */
@@ -2636,8 +2763,8 @@ export class Scene {
 
 	/** @internal */
 	get views(): SceneViews {
-		if (this.viewsGeneration !== this.core.generation) {
-			this.currentViews = new SceneViews(this.core);
+		if (this.viewsGeneration !== this.core.generation || !this.currentViews) {
+			this.currentViews = sceneViews(this.core);
 			this.viewsGeneration = this.core.generation;
 		}
 		return this.currentViews;
@@ -3512,6 +3639,64 @@ export class Scene {
 	}
 
 	/**
+	 * A particle buffer: a scene object that draws a quad for each live particle, which the GPU
+	 * moves and colors at the particle's age in closed form. The `@null3d/particles` add-on's
+	 * emitters fill it; use the add-on rather than this call. The first call downloads the particle
+	 * code. Throws E1108 for a capacity that is not a whole number from 1 to 4,194,304, or when the
+	 * scene holds 256 particle buffers already, and E1406 when the particle code does not download.
+	 */
+	async createParticleBuffer(options: ParticleBufferOptions): Promise<ParticleBuffer> {
+		const call = 'createParticleBuffer';
+		const { core, makers } = this;
+		const { capacity, layers } = options;
+		if (!Number.isInteger(capacity) || capacity < 1 || capacity > C.PARTICLE_MAX_RECORDS)
+			throw new EngineError(
+				'E1108',
+				`${call}() got the capacity ${capacity}. A particle buffer holds from 1 to ${C.PARTICLE_MAX_RECORDS} whole particles.`,
+			);
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		if (this.particleBuffers >= C.PARTICLE_MAX_SYSTEMS)
+			throw new EngineError(
+				'E1108',
+				`${call}() found ${C.PARTICLE_MAX_SYSTEMS} particle buffers in the scene, the most it holds. Destroy one first.`,
+			);
+		makers.materials.shaders.need('particles');
+		const particles = await loadParticles(call);
+		const additive = options.blending !== 'normal';
+		const material = makers.materials.create(
+			C.SHADING_PARTICLE,
+			{
+				alphaMode: 'blend',
+				blending: additive ? 'additive' : 'normal',
+				depthWrite: false,
+				doubleSided: true,
+				forceSinglePass: true,
+				map: options.map,
+			},
+			`${call}.material`,
+		);
+		this.particleMesh ??= makers.geometry.fromArrays({
+			positions: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+			normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+			indices: [0, 1, 2],
+		});
+		const object = this.createMesh({ mesh: this.particleMesh, material, layers });
+		let id: number;
+		try {
+			id = core.checkGrowth(core.glue.createParticles(object.slot, capacity), call);
+		} catch (error) {
+			object.destroy();
+			throw error;
+		}
+		this.particleBuffers++;
+		const linear = (color: ColorInput) => linearColor(color, call);
+		const buffer = new particles.ParticleBuffer(core, id, capacity, object, additive, linear);
+		buffer.reset(options);
+		return buffer;
+	}
+
+	/**
 	 * Lines of any width in one batch, like three.js's `Line2` and `LineSegments2` with a
 	 * `LineMaterial`, and its `Line`, `LineSegments` and `LineLoop`. Each segment between two points
 	 * draws as a quad with round ends that faces the camera, `width` CSS pixels wide, or world units
@@ -3644,9 +3829,9 @@ export class Scene {
 		}
 		light.unitScale = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
-		const area = isAreaLight(type);
+		const area = type === C.LIGHT_KIND_RECT || type === C.LIGHT_KIND_TUBE;
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT || area;
-		if (area) this.areaTables.load();
+		if (area) this.loadAreaTables();
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {

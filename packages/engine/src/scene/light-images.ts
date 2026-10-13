@@ -4,7 +4,6 @@
 // shaders read a sharp image in a mirror-like reflection and a blurred one in a rough surface.
 // This module turns the sketch's sRGB pixels into those texels.
 
-import { srgbToLinear } from '../math/color';
 import { toHalfFloat } from './half-float';
 
 /** Texels along each side of a light's image. */
@@ -29,8 +28,12 @@ export interface LightImagePixels {
 	data: Uint8Array | Uint8ClampedArray;
 }
 
-/** The linear value of each sRGB byte. */
-const LINEAR = Float32Array.from({ length: 256 }, (_, k) => srgbToLinear(k / 255));
+/** The linear value of each sRGB byte, as three.js's `SRGBToLinear`. Kept local, so this module
+ * imports nothing that a page's start already holds. */
+const LINEAR = Float32Array.from({ length: 256 }, (_, k) => {
+	const c = k / 255;
+	return c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4;
+});
 
 /**
  * Writes `pixels` into `out` as a light's image: level 0 resampled to 128 x 128 texels with a box

@@ -59,6 +59,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
 	type PreloadSender,
@@ -100,6 +101,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Sends a shader's builds that load on first use to the thread that draws. */
+	sendBuilds: BuildsSender;
+	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
+	onAskBuilds(handler: (template: number) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -137,10 +142,12 @@ const JOB_WINDOW = 30;
  */
 const JOB_GROW_US = 200;
 /**
- * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
- * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ * Seconds of sketch time that the sketch thread leaves its parallel loops untimed after a window
+ * with too little work, before it times them again. Each timing reads the browser's clock, which
+ * allocates a number. It is a time, so a slow frame rate holds the job workers back no longer than
+ * a fast one does.
  */
-const JOB_PAUSE = 270;
+const JOB_PAUSE_SECONDS = 4.5;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -239,8 +246,8 @@ export class SketchRunner {
 	 */
 	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
-	/** The frames left before the sketch thread times its parallel loops again. */
-	private jobPause = 0;
+	/** The sketch time at which the sketch thread times its parallel loops again, while they pause. */
+	private jobPauseUntil = -1;
 	/** Whether the core times the parallel loops that the sketch thread hands out. */
 	private timingHanded = true;
 	private readonly core: CoreMemory;
@@ -353,9 +360,11 @@ export class SketchRunner {
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
-			// The page ends the job workers' loops through these words when the engine stops.
+			// The page ends the job workers' loops through these words when the engine stops, and
+			// lets them run the browser's measurement of its memory through the yield word.
 			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
 			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
+			Atomics.store(slots, Slot.JobsYieldAddress, glue.jobsYieldAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
@@ -416,6 +425,9 @@ export class SketchRunner {
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
 				},
+				get contactShadowSteps() {
+					return governor.contactSteps;
+				},
 			},
 			textures.memory,
 		);
@@ -430,10 +442,15 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				wasmBytes: () => this.core.memory.buffer.byteLength,
+				wasmBytes: () => this.core.bytes,
 			},
 		};
-		const templates = new ShaderTemplates(sketch.sendShader);
+		const templates = new ShaderTemplates(
+			sketch.sendShader,
+			device.webgl2 ? 'glsl' : 'wgsl',
+			sketch.sendBuilds,
+		);
+		sketch.onAskBuilds((template) => templates.answer(template));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -454,7 +471,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 		);
-		this.render = new Render(this.core, scene, materials.shaders, textures.maxSize);
+		this.render = new Render(this.core, scene, materials.shaders, templates, textures.maxSize);
 		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
 		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
@@ -698,8 +715,10 @@ export class SketchRunner {
 			this.timeHandedLoops(glue, false);
 			return;
 		}
-		if (this.jobPause > 0) {
-			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+		if (this.jobPauseUntil >= 0) {
+			if (this.clock.now < this.jobPauseUntil) return;
+			this.jobPauseUntil = -1;
+			this.timeHandedLoops(glue, true);
 			return;
 		}
 		this.jobWindowUs += glue.takeHandedUs();
@@ -710,7 +729,7 @@ export class SketchRunner {
 		if (enough) {
 			this.sketch.wantJobs(Math.max(2, asked * 2));
 		} else {
-			this.jobPause = JOB_PAUSE;
+			this.jobPauseUntil = this.clock.now + JOB_PAUSE_SECONDS;
 			this.timeHandedLoops(glue, false);
 		}
 	}
@@ -756,6 +775,7 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		governor.setContact(settings.contactShadowSteps);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -763,11 +783,13 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
-			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
+			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -809,7 +831,8 @@ export class SketchRunner {
 			this.setLevelQuality() !== 0 ||
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
-			glue.setAoScale(governor.aoScale) !== 0
+			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -920,7 +943,8 @@ export class SketchRunner {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
 				if (step === steps) {
-					await this.context.scene.areaTables.settled();
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
@@ -1030,8 +1054,10 @@ export class SketchRunner {
 			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
-			const tablesFailure = this.context.scene.areaTables.takeFailure();
+			const tablesFailure = this.context.scene.takeAreaTablesFailure();
 			if (tablesFailure) this.report(tablesFailure);
+			const imageFailure = this.context.scene.takeImageFailure();
+			if (imageFailure) this.report(imageFailure);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {

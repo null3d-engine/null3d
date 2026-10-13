@@ -3,9 +3,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use null3d_gpu::drawlist::permutation;
 use serde::Serialize;
 
 use crate::{BuildError, Pipeline, Problem};
+
+/// The bits whose value names a feature that another template also names ([`permutation::SHARED`],
+/// decision record D-156). Such a value counts only for a template that lists its name.
+pub fn shared_bits() -> u32 {
+    permutation::SHARED
+        .iter()
+        .filter_map(|&(name, _)| permutation::bit(name))
+        .fold(0, |mask, bit| mask | bit)
+}
 
 /// A result as the WebAssembly module returns it: `{"ok": true, "output": ...}` on success, and
 /// `{"ok": false, "problems": [...]}` otherwise, each with `"warnings": [...]` when the build
@@ -60,47 +70,47 @@ pub struct Output {
 }
 
 /// The features whose builds load on first use: the feature of each shader whose builds all belong
-/// to one, and the feature of each permutation bit whose builds belong to one.
+/// to one, and the feature of each permutation bit whose builds belong to one. A build that needs
+/// one feature loads with that feature's files. A build that needs several, such as a skinned build
+/// of the alpha hash, loads with files of its own, which a page loads only once it uses each of
+/// those features. So no feature's files hold builds that only pages with another feature draw
+/// with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FirstUseFeatures {
     /// Features by shader name.
     pub shaders: BTreeMap<String, String>,
     /// Features by permutation bit, in bit order.
     pub bits: BTreeMap<u32, String>,
-    /// The bits whose features take the builds that they share with other features' bits.
-    pub claiming: BTreeSet<u32>,
-    /// By shader name, the bits of [`Self::bits`] whose names the shader's variants list. A bit's
-    /// value can name another feature in another shader (decision record D-156), so a bit takes
-    /// only the builds of the shaders that list its name.
+    /// By shader name, the shared-value bits of [`Self::bits`] whose names the shader's variants
+    /// list: a value that names a feature another template names too counts only for a template
+    /// that lists its name ([`shared_bits`], decision record D-156). An unshared bit counts for
+    /// every template.
     pub listed: BTreeMap<String, u32>,
 }
 
-impl FirstUseFeatures {
-    /// The feature that a build of `shader` with the permutation word `permutation` belongs to:
-    /// the shader's, or else that of the first bit of the word, among the bits whose names the
-    /// shader lists, in [`Self::bit_order`]. None for a build that loads at the start.
-    pub fn feature_of(&self, shader: &str, permutation: u32) -> Option<&str> {
-        let permutation = permutation & self.listed.get(shader).copied().unwrap_or(0);
-        self.shaders
-            .get(shader)
-            .or_else(|| {
-                self.bit_order()
-                    .find(|&(bit, _)| permutation & bit != 0)
-                    .map(|(_, feature)| feature)
-            })
-            .map(String::as_str)
-    }
+/// The character that joins the names of the features that a build needs, in the key of its files.
+pub const FEATURE_JOIN: char = '+';
 
-    /// The bits that features name, in the order in which they take builds: the bits of features
-    /// that claim shared builds, lowest first, then the others, lowest first.
-    pub fn bit_order(&self) -> impl Iterator<Item = (u32, &String)> {
-        let claiming = |claims: bool| {
-            self.bits
-                .iter()
-                .filter(move |(bit, _)| self.claiming.contains(bit) == claims)
-                .map(|(&bit, feature)| (bit, feature))
-        };
-        claiming(true).chain(claiming(false))
+impl FirstUseFeatures {
+    /// The key of the files that hold a build of `shader` with the permutation word `permutation`:
+    /// the names of the features that it needs, its shader's and those of its bits, sorted and
+    /// joined by [`FEATURE_JOIN`]. None for a build that loads at the start. A value that names a
+    /// feature another template names too counts only for a template that lists its name, because
+    /// a shared value names a different feature in each template (decision record D-156).
+    pub fn file_of(&self, shader: &str, permutation: u32) -> Option<String> {
+        let allowed = self.listed.get(shader).copied().unwrap_or(0) | !shared_bits();
+        let mut features: BTreeSet<&str> = self
+            .bits
+            .iter()
+            .filter(|&(&bit, _)| permutation & allowed & bit != 0)
+            .map(|(_, feature)| feature.as_str())
+            .collect();
+        features.extend(self.shaders.get(shader).map(String::as_str));
+        if features.is_empty() {
+            return None;
+        }
+        let names: Vec<&str> = features.into_iter().collect();
+        Some(names.join(&FEATURE_JOIN.to_string()))
     }
 }
 
@@ -179,12 +189,14 @@ pub struct GlslTexture {
 
 #[cfg(test)]
 mod tests {
-    use null3d_gpu::drawlist::permutation::{ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH};
+    use null3d_gpu::drawlist::permutation::{
+        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, SAMPLE_MASK,
+    };
 
     use super::*;
 
     #[test]
-    fn a_build_belongs_to_its_shaders_feature_or_else_to_that_of_its_lowest_listed_feature_bit() {
+    fn a_build_that_needs_several_features_has_files_of_its_own() {
         let mut first_use = FirstUseFeatures::default();
         first_use
             .shaders
@@ -192,31 +204,36 @@ mod tests {
         first_use.bits.insert(BLOOM, "bloom".to_owned());
         first_use.bits.insert(MORPH, "morph".to_owned());
         first_use.bits.insert(AREA_LIGHTS, "area_lights".to_owned());
-        first_use.bits.insert(ALPHA_HASH, "alpha_hash".to_owned());
+        first_use.bits.insert(ALPHA_HASH, "hash".to_owned());
+        first_use.bits.insert(ALPHA_COVERAGE, "coverage".to_owned());
+        first_use.bits.insert(SAMPLE_MASK, "coverage".to_owned());
+        // A bit takes only the builds of the shaders whose variants list its name, because a value
+        // can name another feature in another shader (decision record D-156).
         first_use.listed.insert("final".to_owned(), BLOOM);
-        first_use
-            .listed
-            .insert("lit".to_owned(), BLOOM | MORPH | AREA_LIGHTS | ALPHA_HASH);
-        assert_eq!(first_use.feature_of("sprite", BLOOM), Some("sprites"));
-        assert_eq!(first_use.feature_of("final", FXAA | BLOOM), Some("bloom"));
-        assert_eq!(first_use.feature_of("lit", MORPH | BLOOM), Some("morph"));
-        // A value that names another feature in another shader takes only its own shaders' builds.
-        assert_eq!(first_use.feature_of("final", FXAA), None);
-        assert_eq!(
-            first_use.feature_of("lit", AREA_LIGHTS),
-            Some("area_lights")
+        first_use.listed.insert(
+            "lit".to_owned(),
+            BLOOM | MORPH | AREA_LIGHTS | ALPHA_HASH | ALPHA_COVERAGE | SAMPLE_MASK,
         );
-        assert_eq!(first_use.feature_of("unlit", MORPH), None);
-        // A feature that claims shared builds takes them from features of lower bits.
+        first_use.listed.insert("sprite".to_owned(), ALPHA_HASH);
+        let file = |shader, permutation| first_use.file_of(shader, permutation);
+        assert_eq!(file("sprite", 0).as_deref(), Some("sprites"));
+        assert_eq!(file("final", FXAA | BLOOM).as_deref(), Some("bloom"));
+        // A shared value names the area lights for the lit templates and FXAA for the final pass.
+        assert_eq!(file("lit", AREA_LIGHTS).as_deref(), Some("area_lights"));
+        assert_eq!(file("final", FXAA), None);
         assert_eq!(
-            first_use.feature_of("lit", MORPH | ALPHA_HASH),
-            Some("morph")
+            file("lit", MORPH | ALPHA_HASH).as_deref(),
+            Some("hash+morph")
         );
-        first_use.claiming.insert(ALPHA_HASH);
+        assert_eq!(file("sprite", ALPHA_HASH).as_deref(), Some("hash+sprites"));
         assert_eq!(
-            first_use.feature_of("lit", MORPH | ALPHA_HASH),
-            Some("alpha_hash")
+            file("lit", MORPH | ALPHA_HASH | BLOOM).as_deref(),
+            Some("bloom+hash+morph")
         );
-        assert_eq!(first_use.feature_of("lit", MORPH), Some("morph"));
+        assert_eq!(
+            file("lit", ALPHA_COVERAGE | SAMPLE_MASK).as_deref(),
+            Some("coverage"),
+            "two bits of one feature"
+        );
     }
 }

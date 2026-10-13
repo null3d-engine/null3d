@@ -196,12 +196,10 @@ describe('the manifest', () => {
 				readFileSync(join(REPO_ROOT, 'examples', 'compare', name, half), 'utf8'),
 			);
 		for (const comparison of COMPARISONS) {
-			const null3d = loads(comparison.name, 'sketch.ts');
+			const scene = comparison.sameSceneAs ?? comparison.name;
+			const null3d = loads(scene, 'sketch.ts');
 			expect([comparison.name, null3d]).toEqual([comparison.name, comparison.assets !== undefined]);
-			expect([comparison.name, loads(comparison.name, 'three.ts')]).toEqual([
-				comparison.name,
-				null3d,
-			]);
+			expect([comparison.name, loads(scene, 'three.ts')]).toEqual([comparison.name, null3d]);
 		}
 	});
 

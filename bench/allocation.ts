@@ -50,9 +50,13 @@
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
-// view into in every frame. `--transmission` puts clear water that lets light through under S1,
+// view into in every frame. `--particles` adds two particle systems to S1, whose emitters write
+// births every frame, one of them soft, so the frame copies the opaque depth for it.
+// `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--prepass` turns the depth prepass on, in any scene.
+// frame. `--passes` adds a full-screen pass that reads S1's color at half the render size, whose
+// texture a custom effect adds as a glow, and changes the pass's uniform every frame. `--prepass`
+// turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -98,9 +102,15 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --particles --gpu webgl2
+//   bun run bench:allocation --passes --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium, type Page } from '@playwright/test';
-import { defaultEnvironment, SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
+import type { Page } from '@playwright/test';
+import {
+	defaultEnvironment,
+	launchChromium,
+	SWIFTSHADER_ARGS,
+} from '../packages/cli/src/browser.js';
 import { launchInWindow, newParkedPage } from '../tests/lib/app-window.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
@@ -291,6 +301,17 @@ const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
 const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
 
 /**
+ * What the sun's contact shadows add to the WebGPU replay's budget, in scenes whose sun casts
+ * shadows (S4, and S1 with `--batch-shadows`): the encoders of the render passes that they add with
+ * ambient occlusion off, the depth prepass's own pass, the depth copy, the horizon step that
+ * marches them and the denoise that blurs them. The Mac draws these scenes at High, where contact
+ * shadows draw. On the Mac, S4's replay allocated 310 to 330 bytes more per frame than main's at
+ * the same load, so the allowance takes five passes at bloom's allowance per pass. With `--ao`
+ * they add no pass: ambient occlusion runs the same steps already.
+ */
+const CONTACT_REPLAY_BUDGET = 5 * 64;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
  * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
  * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
@@ -324,6 +345,20 @@ const REFLECTION_REPLAY_BUDGET = 3 * 64;
  * allowance per pass.
  */
 const TRANSMISSION_REPLAY_BUDGET = 64;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--particles`:
+ * the encoder of the render pass that copies the opaque depth for the soft particles, at bloom's
+ * allowance per pass.
+ */
+const PARTICLES_REPLAY_BUDGET = 64;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--passes`:
+ * the encoders of the full-screen pass's render pass and the effect's, at bloom's allowance per
+ * pass.
+ */
+const PASSES_REPLAY_BUDGET = 2 * 64;
 
 /**
  * The bytes per frame that the WebGPU backend's mip levels may allocate with `--transmission`: the
@@ -469,7 +504,7 @@ async function main(): Promise<void> {
 		...(jsFlags.length > 0 ? [`--js-flags=${jsFlags.join(' ')}`] : []),
 	];
 	const browser = swiftShader
-		? await chromium.launch({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
+		? await launchChromium({ headless: true, args: [...SWIFTSHADER_ARGS, ...browserArgs] })
 		: await launchInWindow({ channel: 'chrome', args: browserArgs });
 	try {
 		const page = await newParkedPage(browser, { viewport: { width: 1400, height: 800 } });
@@ -527,13 +562,17 @@ async function main(): Promise<void> {
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
+		const particles = args.includes('--particles') ? '&particles' : '';
+		if (particles && scene !== 's1') throw new Error('--particles adds particles to S1 only');
+		const passes = args.includes('--passes') ? '&passes' : '';
+		if (passes && scene !== 's1') throw new Error('--passes adds a full-screen pass to S1 only');
 		const statsCollapsed = args.includes('--stats-collapsed');
 		const stats = args.includes('--stats');
 		const statsQuery = stats ? '&stats' : statsCollapsed ? '&stats=collapsed' : '';
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${effects}${sky}${reflection}${transmission}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -673,11 +712,14 @@ async function main(): Promise<void> {
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && batchShadows ? BATCH_SHADOWS_REPLAY_BYTES : 0) +
+					(replay && (batchShadows || scene === 's4') ? CONTACT_REPLAY_BUDGET : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(replay && particles ? PARTICLES_REPLAY_BUDGET : 0) +
+					(replay && passes ? PASSES_REPLAY_BUDGET : 0) +
 					(name === 'generateMipmaps webgpu/backend.ts' && transmission
 						? TRANSMISSION_MIPS_BUDGET
 						: 0) +
