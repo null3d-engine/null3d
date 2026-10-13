@@ -146,7 +146,7 @@ The preset sets these groups of settings. The `concepts/quality-presets` page ha
 The table marks its other rows as planned, such as the light caps. A light's own `cascades` and `mapSize`, in its `shadow` options, replace the preset's. The `concepts/quality-presets` page gives the GPU memory that each preset's shadow map and shadow atlas take.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. Only `quality.setPreset` changes it during play, and it waits for the new preset's pipelines. Call it from a menu or a loading screen.
-- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, contactShadowSteps, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass` and `gpuOcclusion`.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, contactShadowSteps, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion, governor })` changes the live settings during play, for example from a settings menu. Other settings throw E1213. `createEngine` options set the ones fixed at the start, such as `antialias`, `shadowCascades`, `depthPrepass`, `gpuOcclusion` and `keepTextureCopies`.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 ### The governor
@@ -206,7 +206,7 @@ Apply these habits to `onUpdate` and everything it calls.
 - Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
 - Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
 - Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
-- Animate a light with `setIntensity` and `setDirection`, which allocate nothing. `setColor` converts the color and allocates.
+- A light's, the camera's, a line's and the background's setters allocate nothing, a color included: call them from a small function of their own, as a game's update does. A material's `set` and a line material's `set` read the options object that you pass, which the browser boxes where the call has seen objects of a few shapes, so set their values up front.
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.
 
 ## 9. Objects during play
