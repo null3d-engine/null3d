@@ -14,12 +14,15 @@ use std::ops::Range;
 use null3d_core::alloc::reserve_keeping;
 use null3d_core::animation::Animations;
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
-use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
+use null3d_core::culling::{CULL_CHUNK, CullRun, Frustum, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::levels::{FADE_BAND, LevelRule};
-use null3d_core::lights::{LightShadow, LightTable, LightView, SunShadow, VisibleLight};
+use null3d_core::lights::{
+    AUTO_FALLBACK, LightShadow, LightTable, LightView, SunShadow, VisibleLight,
+    farthest_receiver_distance, ladder_distance,
+};
 use null3d_core::morph::MorphWeights;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
@@ -638,6 +641,9 @@ struct Lighting {
     hemisphere: [[f32; 4]; 3],
     /// The main directional light's shadows, or `None` when it casts none.
     sun_shadow: Option<SunShadow>,
+    /// The shadow distance held by the automatic ladder while the sun names none, in meters, or 0
+    /// before the first frame that resolved it.
+    auto_shadow_distance: f32,
     shadow_quality: ShadowQuality,
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
@@ -796,6 +802,7 @@ impl SceneSettings {
                 ambient: [0.0; 4],
                 hemisphere: [[0.0; 4]; 3],
                 sun_shadow: None,
+                auto_shadow_distance: 0.0,
                 shadow_quality: ShadowQuality::default(),
                 background: None,
                 fog: None,
@@ -1974,20 +1981,44 @@ impl SceneSettings {
             .unwrap_or((slot, lens));
         let world = scene.world(parity).matrix(fitter as usize);
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        // A light that names no distance follows the farthest visible receiver. The render worker
+        // computes it from the camera that places the cascades, so the cascades always fit the
+        // distance of the view they draw. The ladder holds the distance for one step, so a raw
+        // distance that moves across a ladder step does not make the shadows flicker.
+        let fitter_position = scene.cell_position(fitter, parity);
+        let mut distance = shadow.distance;
+        if shadow.auto {
+            let view = LightView {
+                camera: fitter_position,
+                frustum: Frustum::from_view_projection(&lens.view_projection(world, aspect)),
+                layers: self.views[ViewId::CAMERA.index()].layers(),
+            };
+            let raw = farthest_receiver_distance(scene, parity, &view);
+            let previous = self.lighting.auto_shadow_distance;
+            let held = if raw > 0.0 {
+                ladder_distance(previous, raw)
+            } else if previous > 0.0 {
+                previous
+            } else {
+                AUTO_FALLBACK
+            };
+            self.lighting.auto_shadow_distance = held;
+            distance = held;
+        }
         let quality = self.lighting.shadow_quality;
         let settings = ShadowSettings {
             cascades: shadow.cascades,
             map_size: shadow.map_size,
             bias: shadow.bias,
             normal_bias: shadow.normal_bias,
-            distance: shadow.distance,
+            distance,
             filter: quality.filter,
             blend: quality.blend,
         };
         let [x, y, z, _] = self.lighting.sun_direction;
         let position = scene.cell_position(slot, parity);
         let absolute = position.absolute();
-        let fitted = scene.cell_position(fitter, parity).absolute();
+        let fitted = fitter_position.absolute();
         let mut cascades = fit_cascades(world, fitted, &lens, aspect, [x, y, z], &settings);
         if fitter != slot {
             cascades.seen_from(fitted, absolute, shadow.map_size);

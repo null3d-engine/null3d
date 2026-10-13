@@ -254,6 +254,7 @@ light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, u
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
 light.setCastShadows(true);                  // directional, spot and point lights
 sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
+sun.setShadow({ distance: 'auto' });          // follow the farthest visible receiver (the default)
 spot.setShadow({ bias: 1 });                  // spot and point lights take bias and normalBias alone
 light.setVisible(false); light.destroy();    // lights are objects: section 4
 ```
