@@ -130,6 +130,23 @@
 			.choice button:hover { background: var(--pick); }
 			.choice button[aria-pressed='true'] { background: var(--pick); border-color: var(--link); }
 			.compare { max-height: calc(100% - 1.5rem); overflow-y: auto; }
+			.hud {
+				position: absolute;
+				right: 0.75rem;
+				bottom: 3.4rem;
+				display: flex;
+				flex-direction: column;
+				gap: 0.15rem;
+				padding: 0.35rem 0.6rem;
+				font-size: 12px;
+				text-align: right;
+				background: rgb(13 17 23 / 0.66);
+				border-radius: 6px;
+				pointer-events: none;
+			}
+			.hud[hidden] { display: none; }
+			.hud-row { display: flex; gap: 0.5rem; justify-content: flex-end; }
+			.hud-key { min-width: 1.1rem; font-weight: 600; color: #f2c14e; }
 			.compare .switch { display: flex; gap: 0.25rem; }
 			.compare .switch a { padding: 0.15rem 0.6rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
 			.compare .switch a[aria-current="page"] { background: var(--pick); border-color: var(--link); color: var(--text); }
