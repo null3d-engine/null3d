@@ -1261,3 +1261,30 @@ describe('stored trees and blockers', () => {
 		expect(refusal(past.glb())[1]).toContain('blocker has the index 3, past its 3 corners');
 	});
 });
+
+describe("the asset tool's shader list", () => {
+	test('reads the recorded bits and files, and leaves out a name that is not text', () => {
+		const builder = shipBuilder();
+		builder.json.asset.extras = {
+			NULL3D_shaders: {
+				permutations: ['ALPHA_MASK', 7],
+				features: ['cutout', 'skinning'],
+			},
+			other: true,
+		};
+		expect(parse(builder.glb()).shaders).toEqual({
+			permutations: ['ALPHA_MASK'],
+			features: ['cutout', 'skinning'],
+		});
+	});
+
+	test('gives no list for a file without one, or one that holds nothing', () => {
+		expect(parse(shipBuilder().glb()).shaders).toBeUndefined();
+		const empty = shipBuilder();
+		empty.json.asset.extras = { NULL3D_shaders: { permutations: [], features: [] } };
+		expect(parse(empty.glb()).shaders).toBeUndefined();
+		const wrong = shipBuilder();
+		wrong.json.asset.extras = { NULL3D_shaders: 'skinning' };
+		expect(parse(wrong.glb()).shaders).toBeUndefined();
+	});
+});

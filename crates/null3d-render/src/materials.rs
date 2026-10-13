@@ -209,6 +209,12 @@ impl Shading {
         }
     }
 
+    /// True when its shader is a whole shader of the sketch's, not built from the standard
+    /// material's template. Such a shader has no builds that skin in the vertex shader.
+    pub const fn is_full_shader(self) -> bool {
+        matches!(self, Shading::Custom(custom) if !custom.row_values)
+    }
+
     /// True when its shadows draw with its own caster builds, which move each vertex by its
     /// vertex offset: a custom material's whose WGSL has one.
     pub const fn casts_its_own_way(self) -> bool {
