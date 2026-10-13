@@ -70,13 +70,13 @@ export interface Null3dPageOptions {
  * makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
- * hemisphere lights to S1, `decals` puts a ground with a batch of decals under S1, and `decals=off`
- * the ground alone, `sides` draws S2's boxes see-through and double-sided: `two` draws each one's
- * back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's boxes
- * with the alpha hash, and `still` makes that share of S5's knights stand still in one pose, as
- * waiting characters do, and `frames` makes S1 count the frames it steps, which the page publishes
- * for the allocation check. A switch missing here never reaches the sketch, which then runs without
- * it, so a unit test checks that every switch a sketch reads is listed.
+ * hemisphere lights to S1, `setters` calls each per-frame setter in S1, colors included, `decals`
+ * puts a ground with a batch of decals under S1, and `decals=off` the ground alone, `sides` draws S2's boxes see-through and double-sided: `two` draws each
+ * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
+ * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
+ * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
+ * publishes for the allocation check. A switch missing here never reaches the sketch, which then
+ * runs without it, so a unit test checks that every switch a sketch reads is listed.
  */
 const SKETCH_SWITCHES = [
 	'blend',
@@ -109,6 +109,7 @@ const SKETCH_SWITCHES = [
 	'levels',
 	'hemisphere',
 	'decals',
+	'setters',
 	'frames',
 ] as const;
 
