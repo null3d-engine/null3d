@@ -26,6 +26,7 @@ use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
+use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
@@ -186,6 +187,9 @@ struct Engine {
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// Matrix buffers that a growth of the animation table replaced, each with the frame from
+    /// which no frame's draw list reads them.
+    retired_matrices: Vec<(u32, [Box<[f32]>; 2])>,
     /// The morph weights of morphed objects, which TypeScript writes.
     morphs: MorphWeights,
     /// The ids of meshes that `destroyMeshes` removed, counting from 1, which the next frame
@@ -560,6 +564,7 @@ pub fn init_engine(
         play_args: [0.0; play_arg::COUNT],
         lines: LineStore::default(),
         animations: None,
+        retired_matrices: Vec::new(),
         morphs: MorphWeights::new(),
         removed_meshes: Vec::new(),
         clip_jobs: Vec::new(),
@@ -952,6 +957,10 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         grow_ahead(e);
+        if !e.retired_matrices.is_empty() {
+            e.retired_matrices
+                .retain(|(free_at, _)| frame_after(*free_at, frame));
+        }
         e.structure_changed |= e.scene.take_structure_changed();
         if !e.removed_meshes.is_empty() {
             release_mesh_ids(e);
@@ -3752,14 +3761,43 @@ pub fn destroy_skeleton(skeleton: u32) -> u32 {
 /// id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
 pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
-    with_animations(|animations, _| {
+    value_with_engine(|e| {
+        let Some(animations) = e.animations.as_mut() else {
+            return Err(fail(codes::NOT_READY, [2, 0]));
+        };
+        let skeleton = skeleton.wrapping_sub(1);
+        // A full table doubles what it lacks, up to the joints that the joint texture holds. The
+        // old matrix buffers stay until no frame that a thread may still replay reads them.
+        if let Some((instances, joints)) =
+            animations.growth_for(skeleton, skinning::MAX_TABLE_JOINTS)
+        {
+            e.retired_matrices
+                .try_reserve(1)
+                .map_err(|_| out_of_memory(size_of::<(u32, [Box<[f32]>; 2])>() as u64))?;
+            let old = animations
+                .try_grow(instances, joints)
+                .map_err(animation_failure)?;
+            let free_at = next_frame(next_frame(e.scene.frame()));
+            e.retired_matrices.push((free_at, old));
+        }
         let instance = animations
-            .add_instance(skeleton.wrapping_sub(1))
+            .add_instance(skeleton)
             .map_err(animation_failure)?;
         animations
             .set_object(instance, object)
             .map_err(animation_failure)?;
         Ok(instance + 1)
+    })
+}
+
+/// The most animated instances that the animation table holds now, or 0 before it exists. The
+/// table grows as instances need it, which moves its arrays.
+#[wasm_bindgen(js_name = animationCapacity)]
+pub fn animation_capacity() -> u32 {
+    value_with_engine(|e| {
+        Ok(e.animations
+            .as_ref()
+            .map_or(0, Animations::instance_capacity))
     })
 }
 
