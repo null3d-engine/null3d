@@ -173,6 +173,7 @@ import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import {
 	type AppWindow,
 	appWindow,
+	displayRateProblem,
 	frontApp,
 	giveFocusBack,
 	PARKED_APPS,
@@ -712,6 +713,12 @@ function reportQuiet(name: string, seconds: number, at?: PlanPlace): false {
 	return false;
 }
 
+/** Names a prompt on a cloud device's own screen as the cause, when one held the runner page. */
+function reportHold(name: string, cloud: CloudSessions | undefined): void {
+	const held = cloud?.heldBy(name);
+	if (held) console.log(`${name}: the likely cause: ${held}`);
+}
+
 /** How many new runner pages the runner tool opens for one runner in one run. */
 const MAX_REOPENS = 2;
 
@@ -1024,8 +1031,6 @@ export function noFramesTodo(runner: string, launch: Launch | undefined): string
 
 /** The display refresh rate that the device checklist asks for, in hertz. */
 export const EXPECTED_REFRESH_HZ = 60;
-/** The lowest refresh rate at which a run's timing figures still compare with other runs', in hertz. */
-export const LOWEST_REFRESH_HZ = 55;
 /** How far the refresh rate may change through one run, as a share of its highest reading. */
 export const REFRESH_SPREAD = 0.1;
 
@@ -1045,6 +1050,7 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'environment',
 	'ao',
 	'dof',
+	'contact',
 	'effects',
 	'effects-joined',
 	'occlusion',
@@ -1065,8 +1071,8 @@ export function refreshProblem(rates: readonly number[]): string | undefined {
 	if (rates.length === 0) return undefined;
 	const low = Math.min(...rates);
 	const high = Math.max(...rates);
-	if (low < LOWEST_REFRESH_HZ)
-		return `the display ran at ${low} Hz (expected ${EXPECTED_REFRESH_HZ})`;
+	const slow = displayRateProblem(low, EXPECTED_REFRESH_HZ);
+	if (slow) return slow;
 	if (high - low > REFRESH_SPREAD * high)
 		return `the display's rate changed between ${low} and ${high} Hz through the run`;
 	return undefined;
@@ -1349,13 +1355,18 @@ async function runPlan(
 		try {
 			await waitForRunners(plan, await openRunners([name], launches, run, local.url, cloud), {
 				onFinish: (runner) => console.log(`${runner}: finished`),
-				onQuiet: recovery.onQuiet,
+				onQuiet: (runner, seconds, at) => {
+					reportHold(runner, cloud);
+					return recovery.onQuiet(runner, seconds, at);
+				},
 				onHandover: recovery.onHandover,
 				endTurn: (runner) => guard.endTurn(runner) || cloud?.lost(runner) === true,
 				...(remote && {
 					startMs: CLOUD_START_MS,
-					onNoStart: (runner: string, seconds: number) =>
-						console.log(`${runner}: its runner page did not start within ${seconds} s`),
+					onNoStart: (runner: string, seconds: number) => {
+						console.log(`${runner}: its runner page did not start within ${seconds} s`);
+						reportHold(runner, cloud);
+					},
 				}),
 			});
 		} finally {

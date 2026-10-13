@@ -73,6 +73,7 @@ import {
 } from './lens';
 import type { LineBatch, LineChecks, LineMode, LineOptions, LineValues } from './lines';
 import type { CoreMemory, ViewHolder } from './memory';
+import type { ParticleBuffer, ParticleBufferOptions } from './particles';
 import {
 	type ObjectEventHandler,
 	type ObjectEventType,
@@ -410,6 +411,13 @@ export interface DirectionalShadowOptions {
 	 * default is 200.
 	 */
 	distance?: number;
+	/**
+	 * How far contact shadows reach from each surface toward the light, in meters, at least 0. They
+	 * are short shadows found in the camera's depth, which show where small objects touch the
+	 * ground: stones, feet, wheels, crates. 0 turns them off for this light. The quality preset's
+	 * `contactShadowSteps` decides whether they draw. The default is 0.3.
+	 */
+	contactDistance?: number;
 }
 
 /**
@@ -581,6 +589,7 @@ const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = 
 		Number.MAX_VALUE,
 		'above 0',
 	],
+	[C.LIGHT_VALUE_SHADOW_CONTACT]: ['contact shadow distance', 0, Number.MAX_VALUE, 'at least 0'],
 };
 
 /** The options of a directional light's shadows, and their codes in the light table. */
@@ -590,6 +599,7 @@ const SHADOW_NUMBERS = [
 	['bias', C.LIGHT_VALUE_SHADOW_BIAS],
 	['normalBias', C.LIGHT_VALUE_SHADOW_NORMAL_BIAS],
 	['distance', C.LIGHT_VALUE_SHADOW_DISTANCE],
+	['contactDistance', C.LIGHT_VALUE_SHADOW_CONTACT],
 ] as const;
 
 /** The direction a new directional or spot light points: straight down. */
@@ -2176,6 +2186,18 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 	}
 }
 
+/** Imports the particle code, which a page downloads with its first particle buffer, or throws E1406. */
+async function loadParticles(call: string): Promise<typeof import('./particles')> {
+	try {
+		return await import('./particles');
+	} catch (error) {
+		throw new EngineError(
+			'E1406',
+			`the particle code did not download for ${call}(): ${reasonOf(error)}.`,
+		);
+	}
+}
+
 /** Imports the line code, which a page downloads with its first line batch, or throws E1406. */
 async function loadLines(call: string): Promise<typeof import('./lines')> {
 	try {
@@ -2372,6 +2394,10 @@ export class Scene implements ViewHolder {
 	private readonly batchSlots: (InstanceBatch | undefined)[] = [];
 	/** The quad meshes of sprite batches, by their center, which batches with one center share. */
 	private readonly spriteQuads = new Map<string, MeshGeometry>();
+	/** @internal The particle buffers in the scene. */
+	particleBuffers = 0;
+	/** The one triangle that particle buffers' objects draw with, made with the first buffer. */
+	private particleMesh: MeshGeometry | undefined;
 	/** The segment mesh of line batches, which every line batch shares, made with the first. */
 	private lineMesh: MeshGeometry | undefined;
 	/** Raycasts and overlap queries, made on the first query. */
@@ -3365,6 +3391,64 @@ export class Scene implements ViewHolder {
 		instances.face = batch;
 		if (layers !== undefined) batch.setLayers(layers);
 		return [sprites, batch, instances];
+	}
+
+	/**
+	 * A particle buffer: a scene object that draws a quad for each live particle, which the GPU
+	 * moves and colors at the particle's age in closed form. The `@null3d/particles` add-on's
+	 * emitters fill it; use the add-on rather than this call. The first call downloads the particle
+	 * code. Throws E1108 for a capacity that is not a whole number from 1 to 4,194,304, or when the
+	 * scene holds 256 particle buffers already, and E1406 when the particle code does not download.
+	 */
+	async createParticleBuffer(options: ParticleBufferOptions): Promise<ParticleBuffer> {
+		const call = 'createParticleBuffer';
+		const { core, makers } = this;
+		const { capacity, layers } = options;
+		if (!Number.isInteger(capacity) || capacity < 1 || capacity > C.PARTICLE_MAX_RECORDS)
+			throw new EngineError(
+				'E1108',
+				`${call}() got the capacity ${capacity}. A particle buffer holds from 1 to ${C.PARTICLE_MAX_RECORDS} whole particles.`,
+			);
+		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		if (this.particleBuffers >= C.PARTICLE_MAX_SYSTEMS)
+			throw new EngineError(
+				'E1108',
+				`${call}() found ${C.PARTICLE_MAX_SYSTEMS} particle buffers in the scene, the most it holds. Destroy one first.`,
+			);
+		makers.materials.shaders.need('particles');
+		const particles = await loadParticles(call);
+		const additive = options.blending !== 'normal';
+		const material = makers.materials.create(
+			C.SHADING_PARTICLE,
+			{
+				alphaMode: 'blend',
+				blending: additive ? 'additive' : 'normal',
+				depthWrite: false,
+				doubleSided: true,
+				forceSinglePass: true,
+				map: options.map,
+			},
+			`${call}.material`,
+		);
+		this.particleMesh ??= makers.geometry.fromArrays({
+			positions: new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+			normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+			indices: [0, 1, 2],
+		});
+		const object = this.createMesh({ mesh: this.particleMesh, material, layers });
+		let id: number;
+		try {
+			id = core.checkGrowth(core.glue.createParticles(object.slot, capacity), call);
+		} catch (error) {
+			object.destroy();
+			throw error;
+		}
+		this.particleBuffers++;
+		const linear = (color: ColorInput) => linearColor(color, call);
+		const buffer = new particles.ParticleBuffer(core, id, capacity, object, additive, linear);
+		buffer.reset(options);
+		return buffer;
 	}
 
 	/**

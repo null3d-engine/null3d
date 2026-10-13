@@ -26,6 +26,10 @@
 // Node and Bun, never in a page, so they have no size budget. Every mode first builds the shader modules
 // when they are missing or out of date, because git does not keep them.
 //
+// Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
+// dev server or a browser run of the same checkout can read the files while a build runs, as the
+// GPU check's first step builds beside a running test, and a half-written core fails its page.
+//
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
 // target/ with that commit's own build script. It keeps the sizes of each base commit it built and
@@ -53,6 +57,7 @@ import { memoryImportLimits } from '../packages/engine/src/shared/wasm-limits';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { keptCommits } from './hooks/check-trailers';
+import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
 import { ensureShaderModules } from './lib/shader-modules';
 import {
@@ -367,14 +372,15 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
 		],
 		{ RUSTFLAGS: variant.rustflags },
 	);
-	const outDir = `${OUT_DIR}/${variant.name}`;
-	rmSync(join(root, outDir), { recursive: true, force: true });
+	// The files take shape in the build folder, and go in place whole once every step and check passed.
+	const staged = `${targetDir}/out`;
+	rmSync(join(root, staged), { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
-	run(bindgen, ['--target', 'web', '--out-dir', outDir, '--out-name', 'null3d', linked]);
-	const glue = join(root, outDir, 'null3d.js');
+	run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
+	const glue = join(root, staged, 'null3d.js');
 	const text = readFileSync(glue, 'utf8');
 	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
-	const wasm = `${outDir}/null3d_bg.wasm`;
+	const wasm = `${staged}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
 		// wasm-opt drops the name section unless it keeps debug information.
@@ -386,6 +392,7 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
 	]);
 	if (variant.reclaimsHeap)
 		checkHeapStart(readFileSync(join(root, linked)), readFileSync(join(root, wasm)));
+	replaceFolder(join(root, staged), join(root, OUT_DIR, variant.name));
 }
 
 /**
@@ -412,8 +419,7 @@ function buildToolModules(): void {
 	);
 	for (const { crate, path } of TOOL_MODULES) {
 		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-		mkdirSync(dirname(path), { recursive: true });
-		copyFileSync(join(root, built), path);
+		copyInPlace(join(root, built), path);
 	}
 }
 
@@ -660,7 +666,7 @@ async function main(): Promise<void> {
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of each feature that loads on first use, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
 	);
 	for (const [part, size] of parts)
 		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);

@@ -738,6 +738,16 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
+    /// block of the view that draws, at a dynamic offset.
+    pub const PARTICLE: u32 = 32;
+    /// Group 2 of the particle templates: the view's copy of its opaque depth, which soft particles
+    /// read with `textureLoad` as unfilterable floats, or one texel at the far plane.
+    pub const PARTICLE_SCENE_DEPTH: u32 = 33;
+    /// The copy of the camera's opaque depth for soft particles from a multisampled depth, whose
+    /// first sample it reads with `textureLoad`. Only WebGPU has it: the one-sample copy binds as
+    /// [`VIEW_COPY`] does.
+    pub const PARTICLE_DEPTH_MS: u32 = 35;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1409,7 +1419,8 @@ pub mod sizes {
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
-    /// Draw records one multi-draw call reads: a 4 KiB uniform block.
+    /// Draw records one multi-draw call reads: a 4 KiB uniform block, which WebGL2's multi-draw
+    /// vertex shaders read through a texture copy, one texel per record.
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
@@ -1582,6 +1593,22 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
+    /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
+    /// bind group of index 0 is the frame's, 1 the system's of layout
+    /// [`PARTICLE`](super::layout::PARTICLE), and 2 the view's depth copy of layout
+    /// [`PARTICLE_SCENE_DEPTH`](super::layout::PARTICLE_SCENE_DEPTH). Each particle is a soft dot.
+    pub const PARTICLE: u32 = 53;
+    /// [`PARTICLE`] with a flipbook atlas: the bind group of index 3 is the map's, as for
+    /// [`SPRITE_MAP`] on WebGL2.
+    pub const PARTICLE_MAP: u32 = 54;
+    /// The copy of the camera's opaque depth that soft particles read: one triangle over a target
+    /// of 32-bit floats, which reads the depth one texel per pixel, with the layout
+    /// [`VIEW_COPY`](super::layout::VIEW_COPY).
+    pub const PARTICLE_DEPTH: u32 = 55;
+    /// [`PARTICLE_DEPTH`] from a multisampled depth, whose first sample it reads, with the layout
+    /// [`PARTICLE_DEPTH_MS`](super::layout::PARTICLE_DEPTH_MS). Only WebGPU has it.
+    pub const PARTICLE_DEPTH_MS: u32 = 56;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1871,6 +1898,9 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("PARTICLE", layout::PARTICLE),
+                ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
+                ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1964,6 +1994,10 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("PARTICLE", template::PARTICLE),
+                ("PARTICLE_MAP", template::PARTICLE_MAP),
+                ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
+                ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -2145,7 +2179,6 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.
             format!(
                 "textureLoad(materials, vec2u({}u, id), 0)",

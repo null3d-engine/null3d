@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cloudRuns, parseCloudArgs, pickDevices, runnerArgs } from '../devices-cloud.ts';
+import { cloudRuns, parseCloudArgs, pickDevices, runnerArgs, runRunner } from '../devices-cloud.ts';
 import { parseArgs } from '../real-browsers.ts';
 import {
 	ACCEPT_SSL_SCRIPT,
@@ -399,6 +399,25 @@ describe('devices:cloud', () => {
 			cloudBuild: 'b 1',
 			only: ['capabilities'],
 		});
+	});
+
+	it('passes a stop signal on to the device runner, so a stop sent to the command alone ends the sessions', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'null3d-cloud-stop-'));
+		const ready = join(dir, 'ready');
+		// A stand-in device runner: it exits with its own code when a stop reaches it.
+		const runner = `process.on('SIGTERM', () => process.exit(7)); require('node:fs').writeFileSync(${JSON.stringify(ready)}, ''); setInterval(() => {}, 1000);`;
+		let stops = 0;
+		const before = process.listenerCount('SIGTERM');
+		const code = runRunner(['-e', runner], () => stops++, process.execPath);
+		try {
+			for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(25);
+			process.emit('SIGTERM', 'SIGTERM');
+			expect(await code).toBe(7);
+			expect(stops).toBe(1);
+			expect(process.listenerCount('SIGTERM')).toBe(before);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it('refuses a cloud runner that the list lacks, and the scale search', () => {

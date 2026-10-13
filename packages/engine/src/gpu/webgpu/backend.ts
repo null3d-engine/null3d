@@ -692,17 +692,19 @@ export class WebGPUBackend {
 	}
 
 	/**
-	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
-	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * Prepares the shaders of `module`, a module that the page or the sketch preloaded, whose builds
+	 * need `features`: it creates each build's shader module, which the features' pipelines then
+	 * share, and builds the compute pipelines of skinning and occlusion culling, whose layouts are
+	 * fixed, from the module of that one feature. A render
 	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
 	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's file holds the SKIN
 	 * builds, which skin in the vertex shader, and the skinning pass, which morphs and skins what
 	 * they cannot. It builds the pass's pipelines in every mode, and prepares the SKIN builds only
 	 * while the vertex shaders skin.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		const compute = PRECOMPILED[feature];
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		const [feature, ...others] = features;
+		const compute = feature !== undefined && others.length === 0 ? PRECOMPILED[feature] : undefined;
 		if (!compute || (feature === 'skinning' && this.skinsInVertexShaders))
 			for (const [name, builds] of Object.entries(module))
 				for (const build of Object.values(builds))

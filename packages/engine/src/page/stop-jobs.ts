@@ -5,6 +5,12 @@
 // engine stops, and when the page leaves without stopping the engine, as a page in a frame does
 // when its frame goes away. A page that leaves also waits a moment for the woken workers to leave
 // their loops, because the browser stops them as soon as the page has gone.
+//
+// A job worker that blocks never runs its thread's tasks either. Chrome's measurement of the page's
+// memory waits until every worker has run it as a task, and while it waits for a blocked job worker
+// the whole page can stop answering, for minutes. So while a measurement is in flight, the page
+// writes the job system's yield word, and idle job workers let their threads run tasks between
+// frame jobs instead of blocking.
 
 import { Slot } from '../shared/control';
 import { MemoryViews } from '../shared/memory-views';
@@ -59,4 +65,27 @@ export function waitForJobWorkersToLeave(slots: Int32Array, ms = LEAVE_WAIT_MS):
 	const deadline = performance.now() + ms;
 	while (Atomics.load(slots, Slot.JobsServing) > 0) if (performance.now() > deadline) return false;
 	return true;
+}
+
+/**
+ * Asks the job workers to let their threads run tasks, as a measurement of the page's memory
+ * starts, and returns the call that ends the request as the measurement ends. It adds one to the
+ * job system's yield word: while the word is not zero, each idle job worker leaves the loop to run
+ * its thread's tasks, then comes back for the frame jobs. It wakes every job worker that waits for
+ * work, so a sleeping worker leaves at once. Before the sketch thread has created the job system,
+ * it asks nothing, and the returned call does nothing.
+ */
+export function yieldJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): () => void {
+	const wake = Atomics.load(slots, Slot.JobsWakeAddress);
+	const word = Atomics.load(slots, Slot.JobsYieldAddress);
+	if (wake === 0 || word === 0) return () => {};
+	// Each step makes its own view and keeps none, since the memory may grow meanwhile.
+	const views = new MemoryViews(memory);
+	Atomics.add(views.i32(word, 1), 0, 1);
+	const woken = views.i32(wake, 1);
+	Atomics.add(woken, 0, 1);
+	Atomics.notify(woken, 0);
+	return () => {
+		Atomics.sub(views.i32(word, 1), 0, 1);
+	};
 }

@@ -109,3 +109,9 @@ export const JoinFailed = 31;
  * reads the engine memory that the list points at.
  */
 export const ReplayDelayMs = 32;
+/**
+ * The address in engine memory of the job system's yield word, or 0 before the sketch thread has
+ * created the job system. While the browser measures the page's memory, the page adds one to it,
+ * so idle job workers let their threads run the measurement instead of blocking.
+ */
+export const JobsYieldAddress = 36;

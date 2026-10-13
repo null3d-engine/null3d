@@ -5,8 +5,10 @@
 // window, and its trail notes each worker's replies. The page that holds the frame can read the
 // engine's control slots, to learn which thread a start that never ends waits for, and it hears how
 // many job workers were still inside the job loop when the frame's page left. ?sketch=busy runs a
-// scene whose parallel work starts job workers.
+// scene whose parallel work starts job workers. `__measurePageMemory` measures the whole page's
+// memory once, as the stats overlay does, and gives the bytes and the milliseconds it took.
 import { createEngine, EngineError } from '@null3d/engine';
+import { measurePageMemory } from '@null3d/engine/stats';
 import * as Slot from '../../packages/engine/src/shared/slot';
 import { progress } from './lib/result';
 
@@ -17,6 +19,8 @@ declare global {
 		__engineFrameSlots?: () => string;
 		/** The job workers inside the job loop as each frame's page left, on the holding page. */
 		__jobsServingAtLeave?: number[];
+		/** Measures the page's memory once: its bytes and the time it took, or why it failed. */
+		__measurePageMemory?: () => Promise<{ bytes?: number; ms: number; error?: string }>;
 	}
 }
 
@@ -34,6 +38,18 @@ window.__engineFrameSlots = () => {
 	return Object.entries(Slot)
 		.map(([name, slot]) => `${name} ${Atomics.load(slots, slot)}`)
 		.join(', ');
+};
+
+window.__measurePageMemory = async () => {
+	const started = performance.now();
+	const pending = measurePageMemory();
+	if (!pending) return { ms: 0, error: 'the browser offers no measurement' };
+	try {
+		const { bytes } = await pending;
+		return { bytes, ms: performance.now() - started };
+	} catch (e) {
+		return { ms: performance.now() - started, error: (e as Error).message };
+	}
 };
 
 /** The message that the frame sends the page that holds it. */
