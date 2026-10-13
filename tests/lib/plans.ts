@@ -113,6 +113,7 @@ import {
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
+import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
@@ -202,6 +203,8 @@ export type Check =
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
+	/** The first-draw page: a device's first pass of indirect draws, bare and after the engine's. */
+	| { kind: 'first-draw'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -477,6 +480,14 @@ const SHADER_PLAN_SETS: Readonly<Record<ShaderPlan, readonly ShaderSet[]>> = {
 };
 
 /**
+ * The parts of every build of the shaders page: enough that each holds about that many programs. A
+ * build that several device modules hold counts in each part that downloads one of them, so a part
+ * may hold somewhat more. Each set's parts of the checks plan number by its own programs, as
+ * [`partsOf`] gives, so this counts only the builds of the shaders page in one module.
+ */
+export const SHADER_PARTS = Math.ceil(ALL_PROGRAMS.length / SHADER_PROGRAMS_PER_PART);
+
+/**
  * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
  * more shader variants never make it time out. A slower device gets more: after each batch, the page
  * tells the runner page when it expects to end, from its own pace, and the runner page waits that
@@ -556,6 +567,14 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 				`skin-pass-${path}`,
 				'skin-pass',
 				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`first-draw-${path}`,
+				'first-draw',
+				{ kind: 'first-draw', tier: 'webgpu' },
 				{ switches: [`gpu=${path}`] },
 			),
 		),
@@ -749,6 +768,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'stats',
 	'ktx2',
 	'skin-pass',
+	'first-draw',
 	'environment-generator',
 ]);
 
@@ -1861,9 +1881,12 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
  * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
  * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
- * counts at their mean. The WebGPU pages of the same names skip there.
+ * counts at their mean. A part with a set's own share of the programs counts by that share: the
+ * sampled coat page compiles about 190 programs, half a base part's 380. The WebGPU pages of the
+ * same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
+	[/^shaders-coat-sample-/, 24],
 	[/^shaders-/, 48],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
@@ -2384,6 +2407,11 @@ export function judge(
 			const skin = result as unknown as SkinPassResult;
 			context?.note?.(skinPassNote(skin));
 			return skinPassProblems(skin);
+		}
+		case 'first-draw': {
+			const first = result as unknown as FirstDrawResult;
+			context?.note?.(firstDrawNote(first));
+			return firstDrawProblems(first);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
