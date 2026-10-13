@@ -39,7 +39,7 @@ The measurements are not taken yet. Each figure below names what it must decide.
 | The frames to converge and the frames to rest | `MAX_SAMPLES`, and the sharpness against the time to rest |
 
 How the data will be produced: an image test of a still scene, its reference taken from the
-converged frame; `bun run bench:bench` with the switch on and off; `bun run bench:gpu-check`.
+converged frame; `bun run bench:run` with the switch on and off; `bun run bench:gpu-check`.
 
 ## Decision
 

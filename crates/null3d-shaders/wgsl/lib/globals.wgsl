@@ -71,12 +71,12 @@ struct Frame {
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
-/// added: a still view shifts by a fraction of a pixel, so its accumulated samples spread over the
-/// pixel. Use this in place of `view_proj * vec4f(relative_position, 1.0)` in a scene's vertex
-/// shaders.
-fn clip_with_jitter(view_proj: mat4x4f, relative_position: vec3f) -> vec4f {
+/// `jitter` added: a still view shifts by a fraction of a pixel, so its accumulated samples spread
+/// over the pixel. Use this in place of `view_proj * vec4f(relative_position, 1.0)` in a scene's
+/// vertex shaders, which read the jitter from the frame's values.
+fn clip_with_jitter(view_proj: mat4x4f, jitter: vec2f, relative_position: vec3f) -> vec4f {
     let clip = view_proj * vec4f(relative_position, 1.0);
-    return clip + vec4f(frame.jitter.xy * clip.w, 0.0, 0.0);
+    return clip + vec4f(jitter * clip.w, 0.0, 0.0);
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

@@ -616,7 +616,7 @@ fn clip_of(found: Instance, relative: vec3f) -> vec4f {
     if !found.drawn {
         return OUTSIDE_CLIP;
     }
-    return clip_with_jitter(frame.view_proj, relative);
+    return clip_with_jitter(frame.view_proj, frame.jitter.xy, relative);
 }
 
 /// A position from the mesh into the world, relative to the camera.
