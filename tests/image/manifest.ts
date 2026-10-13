@@ -2077,6 +2077,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
+				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
 			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
 			// its test shares that comparison's references, in the scene graph mode only.
