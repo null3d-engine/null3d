@@ -143,8 +143,9 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 	 * own, so a setter that a sketch may call in every frame passes its numbers here.
 	 */
 	callValues(): Float64Array {
+		this.grown();
 		let view = this.callValuesView;
-		if (view === undefined || view.buffer !== this.memory.buffer) {
+		if (view === undefined) {
 			view = this.f64(this.glue.callValues(), CALL_VALUE_COUNT);
 			this.callValuesView = view;
 		}
