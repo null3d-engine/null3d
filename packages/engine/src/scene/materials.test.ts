@@ -870,7 +870,7 @@ describe('custom material textures', () => {
 		for (const [textures, message] of [
 			[
 				{ detial: layered(5) },
-				"got the texture detial, which the material's WGSL does not declare. Its textures: detail, noise.",
+				'got the texture detial, which the WGSL does not declare. Its textures: detail, noise.',
 			],
 			[
 				{ detail: 5 as unknown as Texture },

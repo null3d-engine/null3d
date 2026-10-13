@@ -12,10 +12,11 @@ import { execFileSync } from 'node:child_process';
 import {
 	type Browser,
 	type BrowserContextOptions,
-	chromium,
 	type LaunchOptions,
 	type Page,
 } from '@playwright/test';
+import { launchChromium } from '../../packages/cli/src/browser.js';
+import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 
 /** How the runner tool opens a browser app's window on a Mac. */
 export interface AppWindow {
@@ -239,7 +240,7 @@ function mainDisplaySwitch(): string[] {
  */
 export function launchInWindow(options: LaunchOptions = {}): Promise<Browser> {
 	return keepingFocus(() =>
-		chromium.launch({
+		launchChromium({
 			...options,
 			headless: false,
 			args: [...(options.args ?? []), ...KEEP_DRAWING_ARGS, ...mainDisplaySwitch()],
@@ -275,6 +276,59 @@ export async function parkChromeWindow(call: DevToolsCall, targetId?: string): P
 			console.warn(`Chrome's window stays where Chrome put it: ${(e as Error).message}`);
 		chromeUnparked = true;
 	}
+}
+
+/**
+ * The main display's highest refresh rate in hertz, where parked windows draw, or undefined on other
+ * machines, in CI, or when macOS does not say. Reading it needs no permission.
+ */
+export function mainDisplayHz(): number | undefined {
+	if (!personsMac()) return undefined;
+	try {
+		const hz = Number(
+			jxa(
+				'ObjC.import("AppKit"); String($.NSScreen.screens.objectAtIndex(0).maximumFramesPerSecond)',
+			),
+		);
+		return hz > 0 ? hz : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The share of the expected refresh rate below which a reading's timing figures do not compare with
+ * other readings': 55 Hz on a 60 Hz display, 110 Hz on a 120 Hz one.
+ */
+export const LOWEST_RATE_SHARE = 11 / 12;
+
+/**
+ * What was wrong with the refresh rate that a page measured, against the rate expected of its
+ * display, or undefined when it held. A page that got no frames to measure counts as wrong too.
+ */
+export function displayRateProblem(
+	measuredHz: number | null,
+	expectedHz: number,
+): string | undefined {
+	if (measuredHz === null) return 'the page got no animation frames to measure the display rate';
+	if (measuredHz < expectedHz * LOWEST_RATE_SHARE)
+		return `the display ran at ${measuredHz} Hz (expected ${expectedHz})`;
+	return undefined;
+}
+
+/**
+ * Measures the refresh rate that a timing tool's page draws at, before it opens the page to time,
+ * and says what was wrong with it against the main display's highest rate. Headless Chrome reports
+ * 60 Hz on a 120 Hz Mac, and the Mac's screen lowers its own rate while little changes on it, so
+ * the engine would aim for too low a rate and no figure could pass it. The page's background changes
+ * by one shade on each frame, near white, so the measurement keeps the screen at its full rate
+ * unseen. Elsewhere and in CI, the display's rate is not known, and this measures nothing.
+ */
+export async function displayRateCheck(page: Page): Promise<string | undefined> {
+	const expectedHz = mainDisplayHz();
+	if (expectedHz === undefined) return undefined;
+	const measuredHz = await page.evaluate(refreshRate, { ...REFRESH_MEASURE, shade: '#fefefe' });
+	return displayRateProblem(measuredHz, expectedHz);
 }
 
 /**

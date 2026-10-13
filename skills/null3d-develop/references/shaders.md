@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and scene and reflection passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. So are textures, per-instance data, custom post effects and tone curves, and custom passes: scene, reflection and full-screen passes (0.2). A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Do not ship code that uses a part until its docs page says it is built.
 
 ## Contents
 
@@ -273,7 +273,8 @@ post.removeEffect(vignette);
   - `time`: the sketch time in seconds.
 - Other pixels: `effectColor(uv)` reads with a linear filter, and `effectPixel(vec2i)` reads one pixel exactly. Both clamp to the image's edge.
 - Depth: `effectDepth(uv)` (1 near, 0 far, 0 where nothing drew), `effectViewPosition(uv)` (z negative in front) and `effectDistance(uv)` (world units along the view). Calling one makes the effect read depth, on all three GPU paths.
-- Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct. Effects take no textures.
+- Uniforms: `struct Uniforms`, read as `uniforms.name`, with the types and the 32-number limit of section 4. TypeScript types `uniforms` and `setEffectUniform` from the struct.
+- Textures: `var name: texture_2d<f32>;` with the `textures` option, sampled as `textureSampleLevel(name, nameSampler, uv, 0.0)`. Each takes one uniform number, at most 6. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. An effect with textures draws in a pass of its own.
 - Library imports work: `#import null3d::noise::{random2}`. Do not declare `uniforms`, or names that start with `effect`.
 - `order` sets the run order, lowest first; ties run in the order added. At most 8 effects; a ninth throws E1213.
 - A full-screen pass reads and writes 8 bytes per pixel. An effect that reads only its own pixel joins the pass of the effect before it. With bloom and FXAA off, the last pass folds into the final pass. An effect that calls `effectPixel` or `effectColor` starts a pass of its own, so put neighbor reads first in a chain. Add effects before the first frame. On WebGL2 in Chrome on Android, which cannot compile shaders in the background, effects added later draw a pass each.
@@ -306,7 +307,7 @@ const screen = materials.unlit({ map: textures.fromPass(map) });   // or a custo
 - The texture holds linear color after the exposure, upright with v = 0 at its bottom row, as three.js's render target texture.
 - A pass runs only while a texture shows it. It never draws objects that show its own texture, or a texture of a pass that it does not name in `reads`.
 - The graph checks every change at once: a missing `reads` name throws E1502, and a pass that reads its own texture E1504. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
-- Full-screen passes of your own WGSL are (0.2, not built yet). Until then, write full-screen WGSL as a custom effect (section 6). Docs: `api/render`, `guides/custom-passes`.
+- A full-screen pass (0.2) runs an effect's WGSL (`fn effect`) over a texture of its own: `render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, input, textures, uniforms })`. `input.uv`, `pixel` and `size` are the pass's own. `input: 'sceneColor'` or `'outlineMask'` gives `input.color`, `effectColor` and `effectPixel` an image. `effectInputSize()` gives that image's size. `render.setPassUniform` changes a uniform. Use a pass for blur steps, mask edges and GPU-painted textures that materials or effects read. Docs: `api/render`, `guides/custom-passes`.
 
 A reflection pass (0.2) draws the camera's view mirrored across a plane, for water and polished floors. A surface function reads it where the surface shows on the screen:
 

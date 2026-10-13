@@ -34,7 +34,7 @@ use crate::camera::{Lens, Mat4};
 use crate::debug_lines::DebugLines;
 use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
-use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
+use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -940,6 +940,42 @@ impl SceneSettings {
         }
     }
 
+    /// Finds the bind group of the textures that each custom effect and each full-screen pass
+    /// samples, and writes each texture's layer into its last values, -1 while its image is not on
+    /// the GPU. A full-screen pass reads the targets of the views that its textures show. A builder
+    /// calls it each frame before it gives the graph the effects and syncs the graph with the
+    /// views, and before the texture store records, which makes a new group. It allocates nothing
+    /// once each group exists.
+    pub(crate) fn prepare_effect_maps(&mut self) {
+        let textures = &mut self.textures;
+        for effect in &mut self.effects {
+            resolve_maps(textures, &mut effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            let Some(pass) = view.fullscreen_pass_mut() else {
+                continue;
+            };
+            resolve_maps(textures, &mut pass.maps, &mut pass.values);
+            let reads = pass.maps.views;
+            view.target_mut().reads = reads;
+        }
+    }
+
+    /// Writes the layer of each texture that the custom effects and full-screen passes sample into
+    /// their values again, once the frame's texture work has given the passes' targets their
+    /// textures and finished uploads, so a texture samples in the frame that makes it ready.
+    pub(crate) fn update_post_layers(&mut self) {
+        let textures = &self.textures;
+        for effect in &mut self.effects {
+            write_layers(textures, &effect.maps, &mut effect.values);
+        }
+        for view in &mut self.views {
+            if let Some(pass) = view.fullscreen_pass_mut() {
+                write_layers(textures, &pass.maps, &mut pass.values);
+            }
+        }
+    }
+
     /// How the sketch joins its effects.
     pub(crate) fn effect_joins(&self) -> &EffectJoins {
         &self.effect_joins
@@ -1711,14 +1747,34 @@ impl SceneSettings {
         }
     }
 
-    /// True when a view draws the scene's background behind its objects: the camera's view, and
-    /// each mirror view, whose image shows the sky as a mirror does.
+    /// True when a view draws the scene's background behind its objects: the camera's view, each
+    /// mirror view, whose image shows the sky as a mirror does, and each other view of a scene
+    /// that clears to the camera's color, as a three.js render target shows the scene's
+    /// background. A view with a clear color of its own shows that color instead.
     pub(crate) fn draws_background(&self, view: ViewId) -> bool {
         view == ViewId::CAMERA
-            || self
-                .views
-                .get(view.index())
-                .is_some_and(|view| view.mirrored().is_some())
+            || self.views.get(view.index()).is_some_and(|view| {
+                view.mirrored().is_some()
+                    || (view.fullscreen_pass().is_none() && view.target().clear.is_none())
+            })
+    }
+
+    /// Gives the full-screen pass of a view new values and textures, from the next frame on. A view
+    /// of a scene, or a removed one, keeps what it has.
+    pub fn set_fullscreen_values(
+        &mut self,
+        view: ViewId,
+        values: &[f32; EFFECT_FLOATS],
+        textures: &[Handle; MAX_TEXTURES],
+    ) {
+        if let Some(pass) = self
+            .views
+            .get_mut(view.index())
+            .and_then(View::fullscreen_pass_mut)
+        {
+            pass.values = *values;
+            pass.maps.textures = *textures;
+        }
     }
 
     /// Switches a view other than the camera's on or off. A view switched off keeps the last
@@ -1730,12 +1786,21 @@ impl SceneSettings {
     }
 
     /// Marks each view's target shown while a live texture shows it, so the camera's passes read
-    /// it. A builder calls it before it syncs its graph with the views.
+    /// it. A full-screen pass that reads what the camera's view draws runs after the camera's
+    /// passes, so they show its image of the frame before. A builder calls it before it syncs its
+    /// graph with the views.
     pub(crate) fn mark_shown_views(&mut self) {
         let shown = self.textures.shown_views();
         for (index, view) in self.views.iter_mut().enumerate().skip(1) {
             view.target_mut().shown = shown & (1 << index) != 0;
         }
+    }
+
+    /// The views whose targets the custom effects' textures show, as a mask of view places.
+    pub(crate) fn effect_views(&self) -> u32 {
+        self.effects
+            .iter()
+            .fold(0, |mask, effect| mask | effect.maps.views)
     }
 
     /// Gives the textures that show views' targets the GPU id of each target, by `target_of`, once
@@ -1753,8 +1818,8 @@ impl SceneSettings {
     }
 
     /// True when a view may draw in the next frame: the camera's view, and any other view that is
-    /// switched on while a texture shows its target or another view reads it. The render graph
-    /// culls the rest, so a builder need not cull them.
+    /// switched on while a texture shows its target, or another view or a custom effect reads it.
+    /// The render graph culls the rest, so a builder need not cull them.
     pub fn view_draws(&self, view: ViewId) -> bool {
         if view == ViewId::CAMERA {
             return true;
@@ -1763,10 +1828,11 @@ impl SceneSettings {
             return false;
         };
         let bit = 1 << view.index();
-        let read = self
-            .views
-            .iter()
-            .any(|other| !other.is_removed() && other.target().reads & bit != 0);
+        let read = self.effect_views() & bit != 0
+            || self
+                .views
+                .iter()
+                .any(|other| !other.is_removed() && other.target().reads & bit != 0);
         !drawn.is_removed()
             && drawn.target().draws()
             && (self.textures.shown_views() & bit != 0 || read)
@@ -2209,6 +2275,36 @@ impl SceneSettings {
             camera.depth,
             view.layers(),
         ))
+    }
+}
+
+/// Finds the bind group of the textures of `maps`, and the views whose targets they show, and
+/// writes each texture's layer into its float of `values`, -1 while its image is not on the GPU.
+/// A slot without a texture leaves its float alone: the sketch's thread writes -1 there for a
+/// texture that the WGSL declares and the sketch left out, and the float of a slot past the
+/// declared textures holds a uniform. WGSL without textures keeps group 0.
+fn resolve_maps(textures: &mut TextureStore, maps: &mut EffectMaps, values: &mut [f32]) {
+    if !maps.any() {
+        maps.group = 0;
+        maps.views = 0;
+        return;
+    }
+    let mut slots = [Handle::NONE; MAP_SLOTS];
+    slots[..maps.textures.len()].copy_from_slice(&maps.textures);
+    maps.group = textures.map_set_group(&slots).unwrap_or(0);
+    maps.views = textures.group_pass_views(maps.group);
+    write_layers(textures, maps, values);
+}
+
+/// Writes the layer of each texture of `maps` into its float of `values`, -1 while its image is
+/// not on the GPU. A slot without a texture leaves its float alone.
+fn write_layers(textures: &TextureStore, maps: &EffectMaps, values: &mut [f32]) {
+    for (slot, &texture) in maps.textures.iter().enumerate() {
+        if !texture.is_none() {
+            values[EffectMaps::layer_float(slot)] = textures
+                .ready_layer(texture)
+                .map_or(-1.0, |layer| layer as f32);
+        }
     }
 }
 

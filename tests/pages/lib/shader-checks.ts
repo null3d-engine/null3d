@@ -10,7 +10,8 @@ import {
 	METAL_FAULT,
 	RELINK_TAIL,
 } from '@null3d/engine/internal';
-import { progress } from './result';
+import { expectEnd, progress } from './result';
+import { expectedEndSeconds } from './runner-rules';
 
 /** A shader that the browser rejected, with the stage and the browser's log. */
 export interface ShaderFailure {
@@ -164,6 +165,9 @@ function checkProgram(
  */
 const BATCH = 32;
 
+/** The seconds that the page expects for its WGSL modules, after its GLSL programs. */
+const AFTER_GLSL_SECONDS = 30;
+
 /**
  * Compiles and links GLSL programs, each with its name, a batch at a time. Programs that read the
  * draw index are skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and
@@ -192,6 +196,7 @@ export async function checkGlslPrograms(
 		return false;
 	});
 	const relinked: ShaderFailure[] = [];
+	const start = performance.now();
 	for (let first = 0; first < compiled.length; first += BATCH) {
 		checkContext(gl, first, compiled.length);
 		const pending = compiled
@@ -215,8 +220,12 @@ export async function checkGlslPrograms(
 			checkProgram(gl, p, failures, removed);
 			release(gl, p);
 		}
+		const checked = first + pending.length;
 		progress(
-			`GLSL: ${first + pending.length} of ${compiled.length} programs checked, ${relinked.length} linked again`,
+			`GLSL: ${checked} of ${compiled.length} programs checked, ${failures.length} failed, ${relinked.length} linked again`,
+		);
+		expectEnd(
+			expectedEndSeconds(performance.now(), start, checked, compiled.length, AFTER_GLSL_SECONDS),
 		);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	}

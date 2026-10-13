@@ -905,8 +905,9 @@ export class Pipelines {
 	 * Adds a template of the sketch's compiled WGSL. A custom material's is the standard material's
 	 * template with the material's WGSL, in the shader variants that the plugin built, which also
 	 * read the first texture coordinates. A material with textures binds them in the slots of the
-	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and so does a
-	 * group of joined effects. A custom tone curve's binds as the final pass or its bloom build does,
+	 * maps' layout. A custom effect's draws one triangle with the effect's layout, and its own
+	 * textures in a second group of the maps' layout, and a group of joined effects draws as an
+	 * effect without textures does. A custom tone curve's binds as the final pass or its bloom build does,
 	 * and the final pass with effects folded into it binds their buffer and the depth too.
 	 */
 	defineCustom(id: number, shader: CustomShader): void {
@@ -922,12 +923,14 @@ export class Pipelines {
 							undefined,
 							`custom tone curve ${id}`,
 						];
+			// An effect's own textures bind in a second group of the maps' layout.
+			const maps = shader.textures > 0 ? [LAYOUT_MATERIAL_MAPS] : [];
 			this.defineTemplate(id, {
 				label,
 				shader: shader.variants,
 				pipeline: 'main',
-				layouts: [layout],
-				multisampledLayouts: multisampled === undefined ? undefined : [multisampled],
+				layouts: [layout, ...maps],
+				multisampledLayouts: multisampled === undefined ? undefined : [multisampled, ...maps],
 				vertexBuffers: [],
 			});
 			return;
