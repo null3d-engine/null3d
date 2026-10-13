@@ -104,6 +104,17 @@
         "@null3d/engine": "workspace:*",
       },
     },
+    "packages/impostors": {
+      "name": "@null3d/impostors",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+      "peerDependencies": {
+        "@null3d/engine": "workspace:*",
+      },
+    },
     "packages/particles": {
       "name": "@null3d/particles",
       "version": "0.0.0",
@@ -229,6 +240,8 @@
     "@null3d/examples": ["@null3d/examples@workspace:examples"],
 
     "@null3d/geometry": ["@null3d/geometry@workspace:packages/geometry"],
+
+    "@null3d/impostors": ["@null3d/impostors@workspace:packages/impostors"],
 
     "@null3d/particles": ["@null3d/particles@workspace:packages/particles"],
 
