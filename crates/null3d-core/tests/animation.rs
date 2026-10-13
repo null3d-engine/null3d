@@ -12,7 +12,7 @@ use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, BakedKeys, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS,
     Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS,
-    Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, resample,
+    Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, joints, resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -494,6 +494,59 @@ fn a_clip_weight_below_one_blends_with_the_rest_pose() {
     };
     assert!(difference(none, rest) < 1e-6);
     assert!(difference(full, rest) > 0.1);
+}
+
+#[test]
+fn a_table_that_grows_poses_as_one_made_large_enough() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(8);
+    let pose = |animations: &mut Animations, grow: bool| {
+        let id = animations.add_skeleton(skeleton.clone()).unwrap();
+        let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+        let mut added = Vec::new();
+        for i in 0..9u32 {
+            if grow && let Some((instances, joints)) = animations.growth_for(id, 1 << 20) {
+                let old = animations.try_grow(instances, joints).unwrap();
+                assert_eq!(old[0].len(), old[1].len());
+            }
+            let instance = animations.add_instance(id).unwrap();
+            animations.set_sample(instance, 0, clip, i as f32 * 0.1, 1.0);
+            added.push(instance);
+            animations.update(&jobs, 1.0 / 60.0);
+        }
+        animations.remove_instance(added[3]).unwrap();
+        animations.add_instance(id).unwrap();
+        animations.update(&jobs, 1.0 / 60.0);
+        animations.matrices()[..animations.joints() as usize * MATRIX_FLOATS].to_vec()
+    };
+    let mut small = Animations::new(&jobs, 2, 12).unwrap();
+    let grown = pose(&mut small, true);
+    assert_eq!(small.instance_capacity(), 16);
+    assert_eq!(small.joint_capacity(), 96);
+    let mut large = Animations::new(&jobs, 16, 96).unwrap();
+    assert_eq!(grown, pose(&mut large, false));
+    assert!(grown.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn growth_stops_at_the_most_joints_and_never_shrinks() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, _) = character(8);
+    let mut animations = Animations::new(&jobs, 1, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    assert_eq!(
+        animations.growth_for(id, 64),
+        None,
+        "the first instance fits"
+    );
+    animations.add_instance(id).unwrap();
+    assert_eq!(animations.growth_for(id, 64), Some((2, 16)));
+    assert_eq!(animations.growth_for(id, 12), None, "past the most joints");
+    animations.try_grow(1, 4).unwrap();
+    assert_eq!(
+        (animations.instance_capacity(), animations.joint_capacity()),
+        (1, 8)
+    );
 }
 
 #[test]
@@ -1891,4 +1944,153 @@ fn a_pose_step_changes_only_when_the_instances_matrices_do() {
     assert_eq!(animations.pose_step(again), Some(animations.changed_step()));
     assert_eq!(animations.pose_step(walking), held.0);
     assert_eq!(animations.pose_step(99), None);
+}
+
+/// Writes a rotation override into slot `slot` of instance `instance`'s block.
+fn override_joint(
+    animations: &mut Animations,
+    instance: u32,
+    slot: usize,
+    joint: u32,
+    mode: u32,
+    weight: f32,
+    rotation: [f32; 4],
+) {
+    let at = instance as usize * joints::BLOCK_FLOATS + slot * joints::OVERRIDE_FLOATS;
+    let block = &mut animations.joint_overrides_mut()[at..at + joints::OVERRIDE_FLOATS];
+    block[joints::place::JOINT] = joint as f32 + 1.0;
+    block[joints::place::MODE] = mode as f32;
+    block[joints::place::WEIGHT] = weight;
+    block[joints::place::ROTATION..joints::place::ROTATION + 4].copy_from_slice(&rotation);
+}
+
+#[test]
+fn joint_overrides_turn_only_their_joints_and_those_below() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(8);
+    let mut animations = Animations::new(&jobs, 3, 24).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let instances: Vec<u32> = (0..3)
+        .map(|_| animations.add_instance(id).unwrap())
+        .collect();
+    let [plain, turned, idle] = [instances[0], instances[1], instances[2]];
+    for &i in &instances {
+        animations.set_sample(i, 0, clip, 0.4, 1.0);
+    }
+    animations.update(&jobs, 0.0);
+    let before = animations.instance_matrices(plain).to_vec();
+    assert!(animations.joint_overrides().is_empty());
+    animations.enable_joint_overrides().unwrap();
+    assert_eq!(animations.joint_overrides().len(), 3 * joints::BLOCK_FLOATS);
+    // Joint 6 hangs below joint 1; joint 7 below joint 2.
+    let turn = axis_angle([0.0, 1.0, 0.0], 0.8);
+    override_joint(&mut animations, turned, 0, 6, joints::mode::ADD, 1.0, turn);
+    override_joint(&mut animations, idle, 0, 6, joints::mode::SET, 0.0, turn);
+    animations.update(&jobs, 0.0);
+    let m = |a: &Animations, i: u32| a.instance_matrices(i).to_vec();
+    assert_eq!(m(&animations, plain), before);
+    assert_eq!(m(&animations, idle), before);
+    let after = m(&animations, turned);
+    let joint = |v: &[f32], j: usize| v[j * MATRIX_FLOATS..(j + 1) * MATRIX_FLOATS].to_vec();
+    for j in [0, 1, 2, 3, 4, 5, 7] {
+        assert_eq!(joint(&after, j), joint(&before, j), "joint {j}");
+    }
+    assert_ne!(joint(&after, 6), joint(&before, 6));
+    // A removed instance's overrides go with it: the next instance in its place has none.
+    animations.remove_instance(turned).unwrap();
+    let again = animations.add_instance(id).unwrap();
+    assert_eq!(again, turned);
+    animations.set_sample(again, 0, clip, 0.4, 1.0);
+    animations.update(&jobs, 0.0);
+    assert_eq!(m(&animations, again), before);
+}
+
+/// A chain of four joints, each 1 above its parent along +Y, with the inverse bind matrices of
+/// that rest pose.
+fn upright_chain() -> Skeleton {
+    let parents = [NO_PARENT, 0, 1, 2];
+    let rest = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0].repeat(4);
+    let mut rest = rest;
+    rest[1] = 0.0;
+    let binds: Vec<f32> = (0..4)
+        .flat_map(|j| {
+            let mut m = null3d_core::math::IDENTITY;
+            m[7] = -(j as f32);
+            m
+        })
+        .collect();
+    Skeleton::new(&parents, &rest, &binds).unwrap()
+}
+
+#[test]
+fn a_look_at_aims_from_the_objects_place_in_the_world() {
+    let jobs = JobSystem::new(0);
+    let mut animations = Animations::new(&jobs, 3, 12).unwrap();
+    let id = animations.add_skeleton(upright_chain()).unwrap();
+    let home = animations.add_instance(id).unwrap();
+    let away = animations.add_instance(id).unwrap();
+    let lost = animations.add_instance(id).unwrap();
+    animations.enable_joint_overrides().unwrap();
+    for (instance, object) in [(home, 0), (away, 1), (lost, 2)] {
+        animations.set_object(instance, object).unwrap();
+        let at = instance as usize * joints::BLOCK_FLOATS;
+        let block = &mut animations.joint_overrides_mut()[at..at + joints::BLOCK_FLOATS];
+        block[joints::place::LOOK_WEIGHT] = 1.0;
+        block[joints::place::LOOK_COUNT] = 3.0;
+        for k in 0..3 {
+            let j = joints::place::LOOK_JOINTS + k * joints::place::LOOK_JOINT_FLOATS;
+            block[j..j + 3].copy_from_slice(&[k as f32 + 1.0, 1.0, 3.0]);
+        }
+    }
+    // The second object is turned a quarter about Y and moved; the third no longer exists.
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let quarter = null3d_core::math::compose([10.0f64, 0.0, -5.0], [0.0, s, 0.0, s], [1.0; 3]);
+    let world = |object: u32| match object {
+        0 => Some(null3d_core::math::IDENTITY64),
+        1 => Some(quarter),
+        _ => None,
+    };
+    let local = [4.0f64, 3.0, 0.0];
+    let placed: [f64; 3] = std::array::from_fn(|r| {
+        quarter[4 * r] * local[0]
+            + quarter[4 * r + 1] * local[1]
+            + quarter[4 * r + 2] * local[2]
+            + quarter[4 * r + 3]
+    });
+    let targets = animations.look_targets_mut();
+    targets[..3].copy_from_slice(&local);
+    targets[3..6].copy_from_slice(&placed);
+    targets[6..9].copy_from_slice(&local);
+    animations.resolve_look_targets(world);
+    animations.update(&jobs, 0.0);
+    let a = animations.instance_matrices(home).to_vec();
+    let b = animations.instance_matrices(away).to_vec();
+    let difference = largest_difference(
+        a.iter().map(|&v| f64::from(v)),
+        &b.iter().map(|&v| f64::from(v)).collect::<Vec<_>>(),
+    );
+    assert!(difference < 1e-4, "{difference}");
+    // The last joint's +Z, its forward at bind, points from it at the target. Its skinning matrix
+    // times its bind matrix (a move up by 3) is its matrix in the object's space.
+    let end = &a[3 * MATRIX_FLOATS..4 * MATRIX_FLOATS];
+    let from = [
+        end[3] + 3.0 * end[1],
+        end[7] + 3.0 * end[5],
+        end[11] + 3.0 * end[9],
+    ];
+    let forward = [end[2], end[6], end[10]];
+    let wanted = [4.0 - from[0], 3.0 - from[1], -from[2]];
+    let length = (wanted.iter().map(|v| v * v).sum::<f32>()).sqrt();
+    let cos = forward.iter().zip(&wanted).map(|(f, w)| f * w).sum::<f32>() / length;
+    assert!(cos > 0.9999, "{cos}");
+    // An object that no longer exists leaves its chain as the clips pose it.
+    let rest = animations.instance_matrices(lost).to_vec();
+    let identity = null3d_core::math::IDENTITY.repeat(4);
+    assert!(
+        largest_difference(
+            rest.iter().map(|&v| f64::from(v)),
+            &identity.iter().map(|&v| f64::from(v)).collect::<Vec<_>>()
+        ) < 1e-6
+    );
 }

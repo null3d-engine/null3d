@@ -5,6 +5,7 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::actions::{Action, Advance, EventSink, flag};
+use super::joints::{self, BLOCK_FLOATS};
 use super::pose::{
     add_additive, add_weights, apply_additive, blend, clear_additive, layer_shares, local_matrices,
     rest_shares, start_weights,
@@ -12,7 +13,7 @@ use super::pose::{
 use super::{AnimationError, Clip, NO_PARENT, POSE_FIELDS, Skeleton, filled, out_of_memory};
 use crate::error::{CoreError, Resource};
 use crate::jobs::{JobSystem, WorkerId};
-use crate::math::{Affine, mul};
+use crate::math::{Affine, Affine64, invert64, mul};
 use crate::shared::SharedMut;
 use crate::world::MATRIX_FLOATS;
 
@@ -49,8 +50,8 @@ const FRESH: u32 = u32::MAX;
 /// The sample slots of every instance: slot `k` of instance `i` sits at `i * MAX_BLEND + k`. Each
 /// frame, every slot with a weight above 0 samples its clip at its time, and the instance's pose
 /// is the blend of those samples. A slot whose clip belongs to another skeleton, or whose weight
-/// is not a positive number, is skipped. The arrays never move, so another thread's view of them
-/// stays valid. A slot that [`Animations::play`] fills also advances its time and fades its
+/// is not a positive number, is skipped. The arrays move only when the table grows, so another
+/// thread's view of them stays valid until then. A slot that [`Animations::play`] fills also advances its time and fades its
 /// weight in each frame step.
 #[derive(Debug)]
 pub struct SampleSlots {
@@ -159,6 +160,8 @@ struct Scratch {
     shares: Box<[f32]>,
     /// The joints' local matrices, then their matrices in the skeleton's space.
     matrices: Box<[Affine]>,
+    /// A look-at's path of joints, from a root down to the chain's last joint.
+    path: Box<[u32]>,
 }
 
 /// A thread's [`Scratch`], which only that thread's chunks touch.
@@ -177,6 +180,13 @@ fn boxed<T: Clone>(len: usize, value: T) -> Result<Box<[T]>, AnimationError> {
 #[inline]
 pub(super) fn counts(weight: f32) -> bool {
     weight > 0.0
+}
+
+/// A copy of `old` lengthened to `len` with copies of `value`.
+fn grown<T: Clone>(old: &[T], len: usize, value: T) -> Result<Box<[T]>, AnimationError> {
+    let mut v = filled(len, value)?;
+    v[..old.len()].clone_from_slice(old);
+    Ok(v.into_boxed_slice())
 }
 
 /// An empty vector with room for `len` values, so pushes up to that many allocate nothing.
@@ -210,8 +220,8 @@ struct Entry {
     additive: bool,
 }
 
-/// Skeletons, clips and animated instances, with fixed capacities for instances and their joints.
-/// See [`crate::animation`].
+/// Skeletons, clips and animated instances, with capacities for instances and their joints that
+/// grow on request ([`Animations::try_grow`]). See [`crate::animation`].
 pub struct Animations {
     skeletons: Vec<Skeleton>,
     pub(super) clips: Vec<Clip>,
@@ -279,11 +289,22 @@ pub struct Animations {
     scratch: Box<[ThreadScratch]>,
     /// The lanes the scratch memory holds.
     scratch_lanes: u32,
+    /// The object that each instance animates, as the caller names it, for a look-at's target.
+    objects: Box<[u32]>,
+    /// The joint overrides of every instance, [`BLOCK_FLOATS`] per instance, which TypeScript
+    /// writes ([`joints`]). Empty until [`Animations::enable_joint_overrides`].
+    overrides: Box<[f32]>,
+    /// Each instance's look-at target in the world, 3 per instance, which TypeScript writes.
+    look_targets: Box<[f64]>,
+    /// Each instance's look-at target in its object's space, which
+    /// [`Animations::resolve_look_targets`] writes for the frame step.
+    look_local: Box<[f32]>,
 }
 
 impl Animations {
     /// A table for up to `instances` animated instances with `joints` joints between them, whose
-    /// frame step runs on `jobs`. The capacities fix the arrays that other threads view.
+    /// frame step runs on `jobs`. The capacities fix the arrays that other threads view until the
+    /// table grows.
     pub fn new(jobs: &JobSystem, instances: u32, joints: u32) -> Result<Self, AnimationError> {
         let n = instances as usize;
         let slots = n * MAX_BLEND;
@@ -336,7 +357,186 @@ impl Animations {
             ones: Box::default(),
             scratch: scratch.into_boxed_slice(),
             scratch_lanes: 0,
+            objects: boxed(n, u32::MAX)?,
+            overrides: Box::default(),
+            look_targets: Box::default(),
+            look_local: Box::default(),
         })
+    }
+
+    /// The most instances that the table holds now.
+    pub fn instance_capacity(&self) -> u32 {
+        self.instance_skeletons.len() as u32
+    }
+
+    /// The capacities, instances and joints, that the table needs for one more instance of
+    /// `skeleton`: each doubles from its current one until the instance fits, and the joints stop
+    /// at `max_joints`. `None` when the instance fits as the table is, or when its joints cannot
+    /// fit within `max_joints`.
+    pub fn growth_for(&self, skeleton: u32, max_joints: u32) -> Option<(u32, u32)> {
+        let joints = self.skeleton(skeleton)?.joints();
+        let instances = self.instance_capacity();
+        let room_for_instance = !self.free_instances.is_empty() || self.instances < instances;
+        let free_run = self.free_joints.iter().any(|&(_, len)| len >= joints);
+        let needed = self.joints.saturating_add(joints);
+        let room_for_joints = free_run || needed <= self.joint_capacity();
+        if room_for_instance && room_for_joints {
+            return None;
+        }
+        if !room_for_joints && needed > max_joints {
+            return None;
+        }
+        let instances = if room_for_instance {
+            instances
+        } else {
+            instances.saturating_mul(2).max(1)
+        };
+        let mut capacity = self.joint_capacity().max(1);
+        while !room_for_joints && capacity < needed {
+            capacity = capacity.saturating_mul(2).min(max_joints);
+        }
+        Some((instances, capacity))
+    }
+
+    /// Grows the table to hold `instances` instances and `joints` joints, keeping every instance,
+    /// its plays and its last pose. Each array moves to new memory, so views of the old arrays
+    /// must be made again. Returns the old matrix buffers, which a frame's draw list that a
+    /// thread still replays may read: the caller keeps them until no such list remains. A
+    /// capacity no larger than the current one stays as it is. On failure the table is unchanged.
+    pub fn try_grow(
+        &mut self,
+        instances: u32,
+        joints: u32,
+    ) -> Result<[Box<[f32]>; 2], AnimationError> {
+        let n = (instances as usize).max(self.instance_skeletons.len());
+        let joint_floats = (joints as usize * MATRIX_FLOATS).max(self.matrices[0].len());
+        let slots = n * MAX_BLEND;
+        let layers = n * MAX_LAYERS;
+        let overrides = if self.overrides.is_empty() {
+            0
+        } else {
+            n * BLOCK_FLOATS
+        };
+        let looks = if self.overrides.is_empty() { 0 } else { n * 3 };
+        // Every allocation comes first, so a failure leaves each array as it was.
+        let mut free_instances = reserved(n)?;
+        free_instances.extend_from_slice(&self.free_instances);
+        let mut free_joints = reserved(n)?;
+        free_joints.extend_from_slice(&self.free_joints);
+        let instance_skeletons = grown(&self.instance_skeletons, n, REMOVED)?;
+        let first_joints = grown(&self.first_joints, n, 0)?;
+        let slot_clip = grown(&self.slots.clip, slots, 0)?;
+        let slot_time = grown(&self.slots.time, slots, 0.0)?;
+        let slot_weight = grown(&self.slots.weight, slots, 0.0)?;
+        let slot_source = grown(&self.slots.source, slots, NO_SOURCE)?;
+        let actions = grown(&self.actions, slots, Action::default())?;
+        let time_scales = grown(&self.time_scales, n, 1.0)?;
+        let layer_weights = grown(&self.layer_weights, layers, 1.0)?;
+        let layer_masks = grown(&self.layer_masks, layers, 0)?;
+        let blend_values = grown(&self.blend_values, layers, 0.0)?;
+        let pose_steps = grown(&self.pose_steps, n, FRESH)?;
+        let objects = grown(&self.objects, n, u32::MAX)?;
+        let new_overrides = grown(&self.overrides, overrides, 0.0)?;
+        let look_targets = grown(&self.look_targets, looks, 0.0)?;
+        let look_local = grown(&self.look_local, looks, f32::NAN)?;
+        let matrices = [
+            grown(&self.matrices[0], joint_floats, 0.0)?,
+            grown(&self.matrices[1], joint_floats, 0.0)?,
+        ];
+
+        self.free_instances = free_instances;
+        self.free_joints = free_joints;
+        self.instance_skeletons = instance_skeletons;
+        self.first_joints = first_joints;
+        self.slots = SampleSlots {
+            clip: slot_clip,
+            time: slot_time,
+            weight: slot_weight,
+            source: slot_source,
+        };
+        self.actions = actions;
+        self.time_scales = time_scales;
+        self.layer_weights = layer_weights;
+        self.layer_masks = layer_masks;
+        self.blend_values = blend_values;
+        self.pose_steps = pose_steps;
+        self.objects = objects;
+        self.overrides = new_overrides;
+        self.look_targets = look_targets;
+        self.look_local = look_local;
+        Ok(std::mem::replace(&mut self.matrices, matrices))
+    }
+
+    /// Makes the table of joint overrides, once: [`BLOCK_FLOATS`] floats per instance, all 0, and
+    /// 3 look-at target numbers per instance. Until then, the frame step does no override work.
+    pub fn enable_joint_overrides(&mut self) -> Result<(), AnimationError> {
+        if !self.overrides.is_empty() {
+            return Ok(());
+        }
+        let n = self.instance_skeletons.len();
+        let look_targets = boxed(n * 3, 0.0f64)?;
+        let look_local = boxed(n * 3, f32::NAN)?;
+        self.overrides = boxed(n * BLOCK_FLOATS, 0.0)?;
+        self.look_targets = look_targets;
+        self.look_local = look_local;
+        Ok(())
+    }
+
+    /// The joint overrides of every instance, [`BLOCK_FLOATS`] floats each, laid out as
+    /// [`joints::place`] says; empty until [`Animations::enable_joint_overrides`]. The array never
+    /// moves once made.
+    pub fn joint_overrides(&self) -> &[f32] {
+        &self.overrides
+    }
+
+    /// The joint overrides of every instance, to change.
+    pub fn joint_overrides_mut(&mut self) -> &mut [f32] {
+        &mut self.overrides
+    }
+
+    /// Each instance's look-at target in the world, 3 numbers per instance.
+    pub fn look_targets(&self) -> &[f64] {
+        &self.look_targets
+    }
+
+    /// Each instance's look-at target in the world, to change.
+    pub fn look_targets_mut(&mut self) -> &mut [f64] {
+        &mut self.look_targets
+    }
+
+    /// Names the object that instance `instance` animates, which [`Self::resolve_look_targets`]
+    /// passes to its `world` function.
+    pub fn set_object(&mut self, instance: u32, object: u32) -> Result<(), AnimationError> {
+        self.live_skeleton(instance)?;
+        self.objects[instance as usize] = object;
+        Ok(())
+    }
+
+    /// Carries each live look-at's target from the world into the space of its instance's object,
+    /// for the next frame step. `world` gives an object's world matrix, or `None` for an object
+    /// that no longer exists, whose look-at then turns nothing. It runs on this thread, does work
+    /// only for instances whose look-at has a weight, and allocates nothing.
+    pub fn resolve_look_targets(&mut self, world: impl Fn(u32) -> Option<Affine64>) {
+        if self.overrides.is_empty() {
+            return;
+        }
+        for i in 0..self.instances as usize {
+            let local = &mut self.look_local[i * 3..i * 3 + 3];
+            let block = &self.overrides[i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS];
+            if self.instance_skeletons[i] == REMOVED || !joints::looks(block) {
+                continue;
+            }
+            let t = &self.look_targets[i * 3..i * 3 + 3];
+            match world(self.objects[i]).as_ref().and_then(invert64) {
+                Some(m) => {
+                    for (r, value) in local.iter_mut().enumerate() {
+                        let row = &m[4 * r..4 * r + 4];
+                        *value = (row[0] * t[0] + row[1] * t[1] + row[2] * t[2] + row[3]) as f32;
+                    }
+                }
+                None => local.fill(f32::NAN),
+            }
+        }
     }
 
     /// Adds a skeleton and returns its id: a removed skeleton's, or a new one.
@@ -368,6 +568,7 @@ impl Animations {
                 weights: boxed(3 * lanes as usize, 0.0)?,
                 shares: boxed(3 * lanes as usize, 0.0)?,
                 matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
+                path: boxed(lanes as usize, 0)?,
             };
         }
         self.ones = boxed(lanes as usize, 1.0)?;
@@ -687,6 +888,8 @@ impl Animations {
         self.layer_weights[layers.clone()].fill(1.0);
         self.layer_masks[layers.clone()].fill(0);
         self.blend_values[layers].fill(0.0);
+        self.objects[instance] = u32::MAX;
+        self.clear_overrides(instance);
         Ok(instance as u32)
     }
 
@@ -704,7 +907,18 @@ impl Animations {
         let slots = i * MAX_BLEND..(i + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
         self.slots.source[slots].fill(NO_SOURCE);
+        self.clear_overrides(i);
         Ok(())
+    }
+
+    /// Empties the joint overrides and the look-at of instance `i`, when the table exists.
+    fn clear_overrides(&mut self, i: usize) {
+        if let Some(block) = self
+            .overrides
+            .get_mut(i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS)
+        {
+            block.fill(0.0);
+        }
     }
 
     /// Gives back `len` joints from joint `first`: merges them with the free runs that touch
@@ -791,8 +1005,8 @@ impl Animations {
     }
 
     /// The skinning matrices of every instance, [`MATRIX_FLOATS`] floats per joint, from the last
-    /// frame step. The two buffers never move, and the steps take turns between them, so the
-    /// address changes with each step.
+    /// frame step. The two buffers move only when the table grows, and the steps take turns
+    /// between them, so the address changes with each step.
     pub fn matrices(&self) -> &[f32] {
         &self.matrices[self.written]
     }
@@ -941,6 +1155,9 @@ impl Animations {
                         };
                         this.advance(&mut advance, dt * this.time_scales[i]);
                         this.pose_instance(i, skeleton, scratch, &advance);
+                        if !this.overrides.is_empty() {
+                            this.override_joints(i, skeleton, scratch);
+                        }
                         this.compose(skeleton, scratch, matrices);
                         // The step before wrote the other buffer, which no thread writes now.
                         let before = &this.matrices[1 - this.written][first..first + len];
@@ -1081,6 +1298,26 @@ impl Animations {
         }
         if added {
             apply_additive(pose, &scratch.add[..len], lanes);
+        }
+    }
+
+    /// Applies instance `i`'s rotation overrides, then its look-at, to the pose in its scratch
+    /// memory.
+    fn override_joints(&self, i: usize, skeleton: &Skeleton, scratch: &mut Scratch) {
+        let block = &self.overrides[i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS];
+        let len = POSE_FIELDS * skeleton.lanes() as usize;
+        let pose = &mut scratch.pose[..len];
+        joints::apply_overrides(block, skeleton, pose);
+        if joints::looks(block) {
+            let t = &self.look_local[i * 3..i * 3 + 3];
+            joints::look_at(
+                block,
+                [t[0], t[1], t[2]],
+                skeleton,
+                pose,
+                &mut scratch.path,
+                &mut scratch.matrices,
+            );
         }
     }
 

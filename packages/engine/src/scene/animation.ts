@@ -14,9 +14,10 @@
 
 import type { Described } from '../errors/checks';
 import * as C from '../generated/core';
+import type { QuatLike, Vec3Like } from '../math/types';
 import { DEV } from '../shared/dev';
 import type { RigClip, RigData, RigJoint, RigTrack } from './gltf-animation';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { Mesh, Object3D, Scene, SceneChecks } from './scene';
 
 export type { RigClip, RigData, RigJoint, RigTrack };
@@ -114,6 +115,36 @@ export interface StopOptions {
 }
 
 /**
+ * How `Animator.lookAt` turns a chain of joints toward a point. A look-at reads a frozen object
+ * once, so a game that keeps its options in frozen constants aims without allocating.
+ *
+ * @category api/animation
+ */
+export interface LookAtOptions {
+	/**
+	 * The joints that turn, parents first, up to 4, such as `['Spine', 'Neck', 'Head']`. The last
+	 * one aims at the point. Each joint must be below the joint before it.
+	 */
+	joints: string | readonly string[];
+	/**
+	 * The most that each joint turns away from its animated pose, in radians: one number for every
+	 * joint, or one per joint. The default is π / 3, a sixth of a turn.
+	 */
+	limit?: number | readonly number[];
+	/**
+	 * How the turn splits between the joints, one number per joint. Each joint takes its share of
+	 * the turn that the joints before it left, so the last joint finishes the aim. The default
+	 * gives every joint the same share.
+	 */
+	shares?: readonly number[];
+	/**
+	 * The direction that the last joint aims, in the object's space when the model was bound, as
+	 * `[x, y, z]`. The default, `[0, 0, 1]`, is where glTF models face.
+	 */
+	forward?: Vec3Like;
+}
+
+/**
  * An event that a playing clip reached, which `Animator.onEvent` handlers get. The animator passes
  * the same object to every handler of every event, so copy what you keep.
  *
@@ -198,9 +229,26 @@ const blendRecords = new WeakMap<BlendOptions, ReadOptions>();
 const pointRecords = new WeakMap<Readonly<Record<string, number>>, ReadPoints>();
 /** The record of a play without options. */
 const NO_OPTIONS = new ReadOptions();
+
+/** Views of nothing, which the animation table keeps in place of the views that it dropped. */
+const NO_FLOATS: Float32Array<ArrayBufferLike> = new Float32Array(0);
+const NO_WORDS: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
+const NO_DOUBLES: Float64Array<ArrayBufferLike> = new Float64Array(0);
 /** The records that plays fill again from objects that are not frozen. */
 const sharedOptions = new ReadOptions();
 const sharedPoints = new ReadPoints();
+
+/**
+ * What a look-at reads from its options: the floats of the look-at record from its joint count
+ * on, which it copies into engine memory with one array copy.
+ */
+class ReadLook {
+	readonly floats = new Float32Array(C.JOINT_OVERRIDE_BLOCK - C.JOINT_OVERRIDE_LOOK_COUNT);
+}
+const sharedLook = new ReadLook();
+
+/** The default limit of each joint of a look-at, in radians. */
+const LOOK_LIMIT = Math.PI / 3;
 
 /** A new record for a frozen `object`, which its play keeps, or else the shared one. */
 function recordFor<T>(object: object, shared: T, make: new () => T): T {
@@ -212,6 +260,13 @@ export class AnimationRig {
 	/** The joint masks made so far, by their joint names. */
 	readonly masks = new Map<string, number>();
 	readonly jointNames: readonly string[];
+	/** Each joint's index by its name; the first joint of a name, when names repeat. */
+	readonly jointIndex = new Map<string, number>();
+	/**
+	 * What look-ats read from each frozen options object, for this skeleton: the records hold joint
+	 * indices, which differ between skeletons.
+	 */
+	readonly lookRecords = new WeakMap<LookAtOptions, ReadLook>();
 	readonly parents: readonly number[];
 	/** True for each joint of a skin, which `debug.skeleton` draws. */
 	readonly bones: readonly boolean[];
@@ -229,6 +284,8 @@ export class AnimationRig {
 		joints: readonly RigJoint[],
 	) {
 		this.jointNames = joints.map((j) => j.name);
+		for (let j = joints.length - 1; j >= 0; j--)
+			this.jointIndex.set((joints[j] as RigJoint).name, j);
 		this.parents = joints.map((j) => j.parent);
 		this.bones = joints.map((j) => j.bone === true);
 		this.bindPlaces = new Float64Array(joints.length * 3);
@@ -271,18 +328,20 @@ function listed(names: Iterable<string>): string {
  * The scene's animated objects: the animation table in the engine core, the arrays of it that
  * calls write, and the events of each frame step. The first rig creates it.
  */
-export class SceneAnimations {
+export class SceneAnimations implements ViewHolder {
 	private generation = -1;
-	private scales!: Float32Array;
-	private weights!: Float32Array;
-	private sources!: Uint32Array;
-	private clipWeights!: Float32Array;
-	private blends!: Float32Array;
-	private words!: Uint32Array;
-	private floats!: Float32Array;
-	private args!: Float32Array;
-	private records!: Uint32Array;
-	private totals!: Uint32Array;
+	private scales = NO_FLOATS;
+	private weights = NO_FLOATS;
+	private sources = NO_WORDS;
+	private clipWeights = NO_FLOATS;
+	private blends = NO_FLOATS;
+	private args = NO_FLOATS;
+	private records = NO_WORDS;
+	private totals = NO_WORDS;
+	/** True once the core holds the table of joint overrides. */
+	private overridesMade = false;
+	private overrides = NO_FLOATS;
+	private targets = NO_DOUBLES;
 	/** The animator of each object, by its instance id in the core. */
 	readonly animators: (Animator | undefined)[] = [];
 	/** Each clip's name, by its id in the core. */
@@ -301,6 +360,16 @@ export class SceneAnimations {
 			undefined,
 			true,
 		);
+		core.holdViews(this);
+	}
+
+	/** Forgets the arrays of the animation table, which the next read makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
+		this.overrides = NO_FLOATS;
+		this.sources = this.records = this.totals = NO_WORDS;
+		this.targets = NO_DOUBLES;
 	}
 
 	/** The id of event name `name`, which it gives a new name. */
@@ -338,15 +407,44 @@ export class SceneAnimations {
 		const slots = ANIMATED_OBJECTS * C.ANIMATION_MAX_BLEND;
 		this.sources = core.u32(at(C.ANIMATION_FIELD_SLOT_SOURCES), slots);
 		this.clipWeights = core.f32(at(C.ANIMATION_FIELD_SLOT_WEIGHTS), slots);
-		this.words = new Uint32Array(core.memory.buffer);
-		this.floats = new Float32Array(core.memory.buffer);
 		this.args = core.f32(at(C.ANIMATION_FIELD_PLAY_ARGS), C.ANIMATION_ARGS);
 		this.records = core.u32(
 			at(C.ANIMATION_FIELD_EVENTS),
 			C.ANIMATION_EVENT_CAPACITY * C.ANIMATION_EVENT_WORDS,
 		);
 		this.totals = core.u32(at(C.ANIMATION_FIELD_EVENT_TOTALS), 2);
+		if (this.overridesMade) {
+			this.overrides = core.f32(
+				at(C.ANIMATION_FIELD_JOINT_OVERRIDES),
+				ANIMATED_OBJECTS * C.JOINT_OVERRIDE_BLOCK,
+			);
+			this.targets = core.f64(at(C.ANIMATION_FIELD_LOOK_TARGETS), ANIMATED_OBJECTS * 3);
+		}
 		this.generation = core.generation;
+	}
+
+	/**
+	 * The joint overrides of every instance, `JOINT_OVERRIDE_BLOCK` floats per instance. The first
+	 * call makes the table in the core, which can grow the engine's memory, so a scene that never
+	 * overrides a joint pays for none of it.
+	 */
+	jointOverrides(call: string): Float32Array {
+		if (!this.overridesMade) this.makeOverrides(call);
+		this.views();
+		return this.overrides;
+	}
+
+	/** The look-at target of every instance in the world, 3 numbers per instance. */
+	lookTargets(): Float64Array {
+		this.views();
+		return this.targets;
+	}
+
+	private makeOverrides(call: string): void {
+		const { core } = this;
+		core.checkGrowth(core.glue.enableJointOverrides(), call, undefined, true);
+		this.overridesMade = true;
+		this.makeViews();
 	}
 
 	/**
@@ -385,14 +483,12 @@ export class SceneAnimations {
 
 	/** The whole engine memory as 32-bit words, for staging words without a view of their own. */
 	memoryWords(): Uint32Array {
-		this.views();
-		return this.words;
+		return this.core.heap(Uint32Array);
 	}
 
 	/** The whole engine memory as 32-bit floats. */
 	memoryFloats(): Float32Array {
-		this.views();
-		return this.floats;
+		return this.core.heap(Float32Array);
 	}
 
 	/** The blend value of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
@@ -467,6 +563,8 @@ export class Animator implements Described {
 	readonly skinned: Mesh[] = [];
 	/** @internal The meshes whose morph weights the object's clips animate. */
 	readonly morphed: Mesh[] = [];
+	/** The record of the last look-at's options, whose chain engine memory holds. */
+	private looking: ReadLook | undefined;
 
 	/** @internal */
 	constructor(
@@ -636,6 +734,91 @@ export class Animator implements Described {
 			checks.checkNumber('setTimeScale', 'scale', scale, this);
 		}
 		this.system.timeScales()[this.instance - 1] = scale;
+	}
+
+	/**
+	 * The index of the joint named `name`, which the joint calls take in place of its name. Look it
+	 * up once and keep it: an index skips the name lookup in each call.
+	 */
+	joint(name: string): number {
+		const joint = this.rig.jointIndex.get(name);
+		if (joint === undefined)
+			refuse(
+				`joint() got "${name}", which names no joint of ${this.describe()}. Its joints are ${listed(this.rig.jointNames)}.`,
+			);
+		return joint;
+	}
+
+	/**
+	 * Sets a joint's rotation relative to its parent, as a quaternion `[x, y, z, w]`, on top of
+	 * the clips. The joint turns from its animated rotation toward this one by `weight`, from 0 to
+	 * 1. At 1 it takes the rotation, as three.js's `bone.quaternion.copy` does after the mixer's
+	 * update. The joints below it follow. The rotation holds in every frame until `clearJoint`, so
+	 * call it again only to change it. It writes engine memory, so calling it every frame costs
+	 * nothing.
+	 */
+	setJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
+		const call = 'setJointRotation';
+		if (DEV) this.checkUnit(call, weight);
+		const slot = this.override(call, joint, C.JOINT_OVERRIDE_SET, rotation);
+		this.system.jointOverrides(call)[slot + C.JOINT_OVERRIDE_WEIGHT] = weight;
+	}
+
+	/**
+	 * Turns a joint by a rotation, a quaternion `[x, y, z, w]`, on top of its animated rotation, in
+	 * the joint's own frame, as three.js's `bone.quaternion.multiply` does after the mixer's
+	 * update. `weight`, from 0 to 1, scales the turn. A walking soldier then twists or leans while
+	 * the clips move it. The turn holds in every frame until `clearJoint`, and calling it every
+	 * frame costs nothing.
+	 */
+	addJointRotation(joint: number | string, rotation: QuatLike, weight = 1): void {
+		const call = 'addJointRotation';
+		if (DEV) this.checkUnit(call, weight);
+		const slot = this.override(call, joint, C.JOINT_OVERRIDE_ADD, rotation);
+		this.system.jointOverrides(call)[slot + C.JOINT_OVERRIDE_WEIGHT] = weight;
+	}
+
+	/** Removes the rotations that `setJointRotation` and `addJointRotation` gave a joint. */
+	clearJoint(joint: number | string): void {
+		const call = 'clearJoint';
+		if (DEV) checks.checkLive(call, this.object);
+		const index = this.jointAt(call, joint) + 1;
+		const table = this.system.jointOverrides(call);
+		const first = (this.instance - 1) * C.JOINT_OVERRIDE_BLOCK;
+		for (let k = 0; k < C.JOINT_OVERRIDE_SLOTS; k++) {
+			const at = first + k * C.JOINT_OVERRIDE_FLOATS + C.JOINT_OVERRIDE_JOINT;
+			if (table[at] === index) table[at] = 0;
+		}
+	}
+
+	/**
+	 * Turns a chain of joints, such as the spine, neck and head, so that the last one aims at
+	 * `target`, a point in the world. The engine aims again in each frame from the pose that the
+	 * clips and the joint rotations give, until `lookAt(null)` stops it. So a soldier keeps its
+	 * rifle on a target while it walks. `weight`, from 0 to 1, blends the turn with the animated
+	 * pose. Call it every frame to follow a moving point. The options hold until a call gives
+	 * others, and a frozen options object is read once, so the call allocates nothing.
+	 */
+	lookAt(target: Vec3Like | null, options?: LookAtOptions, weight = 1): void {
+		const call = 'lookAt';
+		if (DEV) checks.checkLive(call, this.object);
+		const first = (this.instance - 1) * C.JOINT_OVERRIDE_BLOCK;
+		if (target === null) {
+			this.system.jointOverrides(call)[first + C.JOINT_OVERRIDE_LOOK_WEIGHT] = 0;
+			return;
+		}
+		if (DEV) {
+			for (let k = 0; k < 3; k++) checks.checkNumber(call, 'target', target[k] as number, this);
+			this.checkUnit(call, weight);
+		}
+		if (options !== undefined || this.looking === undefined) this.useLook(call, options, first);
+		const table = this.system.jointOverrides(call);
+		const targets = this.system.lookTargets();
+		const at = (this.instance - 1) * 3;
+		targets[at] = target[0] as number;
+		targets[at + 1] = target[1] as number;
+		targets[at + 2] = target[2] as number;
+		table[first + C.JOINT_OVERRIDE_LOOK_WEIGHT] = weight;
 	}
 
 	/**
@@ -832,6 +1015,139 @@ export class Animator implements Described {
 		}
 		if (read !== sharedPoints) pointRecords.set(points, read);
 		return read;
+	}
+
+	/**
+	 * Writes a rotation override of `mode` for `joint` into the slot that holds one of the same
+	 * joint and mode, or else into the first empty slot, and returns the slot. The caller writes
+	 * the weight itself, because a fraction passed to a call that the browser does not inline is
+	 * boxed.
+	 */
+	private override(call: string, joint: number | string, mode: number, rotation: QuatLike): number {
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			for (let k = 0; k < 4; k++) checks.checkNumber(call, 'rotation', rotation[k] as number, this);
+		}
+		const index = this.jointAt(call, joint) + 1;
+		const table = this.system.jointOverrides(call);
+		const first = (this.instance - 1) * C.JOINT_OVERRIDE_BLOCK;
+		let slot = -1;
+		for (let k = 0; k < C.JOINT_OVERRIDE_SLOTS; k++) {
+			const at = first + k * C.JOINT_OVERRIDE_FLOATS;
+			const held = table[at + C.JOINT_OVERRIDE_JOINT];
+			if (held === index && table[at + C.JOINT_OVERRIDE_MODE] === mode) {
+				slot = at;
+				break;
+			}
+			if (held === 0 && slot < 0) slot = at;
+		}
+		if (slot < 0)
+			refuse(
+				`${call}() got a rotation for a joint on ${this.describe()}, which holds ${C.JOINT_OVERRIDE_SLOTS} already, the most an object takes. Remove one with clearJoint first.`,
+			);
+		const r = slot + C.JOINT_OVERRIDE_ROTATION;
+		table[r] = rotation[0] as number;
+		table[r + 1] = rotation[1] as number;
+		table[r + 2] = rotation[2] as number;
+		table[r + 3] = rotation[3] as number;
+		table[slot + C.JOINT_OVERRIDE_MODE] = mode;
+		table[slot + C.JOINT_OVERRIDE_JOINT] = index;
+		return slot;
+	}
+
+	/**
+	 * Copies the chain of a look-at's `options` into engine memory, or refuses a first look-at
+	 * without options. Options read before need no copy again, since engine memory keeps the
+	 * chain. The shared record holds whichever options were not frozen last, so it is copied each
+	 * time.
+	 */
+	private useLook(call: string, options: LookAtOptions | undefined, first: number): void {
+		if (options === undefined)
+			refuse(
+				`${call}() got no options on ${this.describe()}, which looks at nothing yet. Name the joints that turn in the first call, for example lookAt(target, { joints: ['Neck', 'Head'] }).`,
+			);
+		const read = this.lookOptions(call, options);
+		if (read === this.looking && read !== sharedLook) return;
+		this.looking = read;
+		this.system.jointOverrides(call).set(read.floats, first + C.JOINT_OVERRIDE_LOOK_COUNT);
+	}
+
+	/** The index of `joint`, a name or an index, which it checks in every build. */
+	private jointAt(call: string, joint: number | string): number {
+		if (typeof joint === 'string') {
+			const index = this.rig.jointIndex.get(joint);
+			if (index === undefined)
+				refuse(`${call}() got "${joint}", which names no joint of ${this.describe()}.`);
+			return index;
+		}
+		const count = this.rig.jointNames.length;
+		if (joint >>> 0 !== joint || joint >= count)
+			refuse(
+				`${call}() got the joint ${joint} on ${this.describe()}; it takes a joint's name, or an index from 0 to ${count - 1} as joint() returns it.`,
+			);
+		return joint;
+	}
+
+	/** What a look-at reads from `options`, which it checks. */
+	private lookOptions(call: string, options: LookAtOptions): ReadLook {
+		const known = this.rig.lookRecords.get(options);
+		if (known !== undefined) return known;
+		const names = typeof options.joints === 'string' ? [options.joints] : options.joints;
+		const count = names.length;
+		if (count === 0 || count > C.JOINT_OVERRIDE_MAX_LOOK_JOINTS)
+			refuse(
+				`${call}() got ${count} joints on ${this.describe()}; a look-at turns 1 to ${C.JOINT_OVERRIDE_MAX_LOOK_JOINTS}.`,
+			);
+		const joints = names.map((name) => this.jointAt(call, name));
+		for (let k = 1; k < count; k++) {
+			let up = this.rig.parents[joints[k] as number] as number;
+			while (up >= 0 && up !== joints[k - 1]) up = this.rig.parents[up] as number;
+			if (up < 0)
+				refuse(
+					`${call}() got "${names[k]}" after "${names[k - 1]}" on ${this.describe()}, but it is not below it. List the joints parents first, along one chain.`,
+				);
+		}
+		const { limit, shares, forward } = options;
+		const limits = typeof limit === 'object' ? limit : undefined;
+		for (const [what, list] of [
+			['limits', limits],
+			['shares', shares],
+		] as const)
+			if (list !== undefined && list.length !== count)
+				refuse(`${call}() got ${list.length} ${what} for ${count} joints on ${this.describe()}.`);
+		const read = recordFor(options, sharedLook, ReadLook);
+		const { floats } = read;
+		floats.fill(0);
+		const place = (at: number) => at - C.JOINT_OVERRIDE_LOOK_COUNT;
+		floats[place(C.JOINT_OVERRIDE_LOOK_COUNT)] = count;
+		for (let k = 0; forward !== undefined && k < 3; k++) {
+			const v = forward[k] as number;
+			checks.checkNumber(call, 'forward', v, this);
+			floats[place(C.JOINT_OVERRIDE_LOOK_FORWARD) + k] = v;
+		}
+		for (let k = 0; k < count; k++) {
+			const jointLimit = typeof limit === 'number' ? limit : (limits?.[k] ?? LOOK_LIMIT);
+			const share = shares === undefined ? 1 : (shares[k] as number);
+			checks.checkNumber(call, 'limit', jointLimit, this);
+			checks.checkNumber(call, 'share', share, this);
+			if (jointLimit < 0 || share < 0)
+				refuse(
+					`${call}() got a negative limit or share on ${this.describe()}; they take 0 or more.`,
+				);
+			const at = place(C.JOINT_OVERRIDE_LOOK_JOINTS) + k * C.JOINT_OVERRIDE_LOOK_JOINT_FLOATS;
+			floats[at] = joints[k] as number;
+			floats[at + 1] = share;
+			floats[at + 2] = jointLimit;
+		}
+		if (read !== sharedLook) this.rig.lookRecords.set(options, read);
+		return read;
+	}
+
+	/** Checks a weight from 0 to 1. */
+	private checkUnit(call: string, weight: number): void {
+		checks.checkNumber(call, 'weight', weight, this);
+		if (weight < 0 || weight > 1)
+			refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 to 1.`);
 	}
 
 	/**
@@ -1149,7 +1465,7 @@ export function animateObject(object: Object3D, rig: AnimationRig): Animator {
 	const animations = animationsOf(object.scene);
 	const { core } = animations;
 	const instance = core.checkGrowth(
-		core.glue.createAnimatedInstance(rig.skeleton),
+		core.glue.createAnimatedInstance(rig.skeleton, object.handle),
 		'animateObject',
 		object.label,
 	);

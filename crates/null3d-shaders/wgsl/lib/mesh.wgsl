@@ -47,8 +47,8 @@ enable draw_index;
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
-// multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
-// draw.
+// multi-draw call and read each draw's record by `gl_DrawID`, from a texture copy of the call's
+// records; the other builds get one record per draw.
 //
 // The SKIN builds skin each vertex in the vertex shader: `skin_of` blends the skinning matrices of
 // the vertex's four joints by their weights, from the joint texture, which holds each animated
@@ -99,19 +99,12 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
-#ifdef DRAW_INDEX
-/// Draw records one multi-draw call reads.
-const DRAW_RECORDS: u32 = 256u;
-#else
-const DRAW_RECORDS: u32 = 1u;
-#endif
-
 /// One draw each: the start of its slice of the index list, its material, the data texture its
 /// instances come from (0 for the resident one, 1 for the streamed one), and its instances per
 /// list entry as a shift: 0 when each entry names a row of the data texture, more when each
 /// names a cluster of rows, which the cluster texture lists.
 struct DrawTable {
-    items: array<vec4u, DRAW_RECORDS>,
+    items: array<vec4u, 1>,
 }
 
 /// The offset from the camera to the center of each grid cell, by cell index.
@@ -120,7 +113,15 @@ struct CellOffsets {
 }
 
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
+#ifdef DRAW_INDEX
+/// The draw records of a multi-draw call, one texel each, read at the draw index. The renderer
+/// binds the call's block of records here as a uniform buffer, as it binds one record in the other
+/// builds, and the WebGL2 backend copies the block into a texture. Some Adreno drivers fail to link
+/// a program whose vertex shader reads a uniform array at the draw index.
+@group(1) @binding(0) var draws: texture_2d<u32>;
+#else
 @group(1) @binding(0) var<uniform> draws: DrawTable;
+#endif
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
@@ -543,14 +544,21 @@ fn instance_by_index(source: u32) -> Instance {
 }
 #endif
 
+#ifdef WEBGL2
+/// The record of the draw that a vertex shader invocation belongs to.
+fn draw_record(i: InstanceIn) -> vec4u {
+#ifdef DRAW_INDEX
+    return textureLoad(draws, vec2u(i.draw, 0u), 0);
+#else
+    return draws.items[0];
+#endif
+}
+#endif
+
 /// The instance that a vertex shader invocation draws.
 fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
-#ifdef DRAW_INDEX
-    return instance_of(draws.items[i.draw], i.instance);
-#else
-    return instance_of(draws.items[0], i.instance);
-#endif
+    return instance_of(draw_record(i), i.instance);
 #else ifdef INSTANCE_INDEX
     return instance_by_index(i.source);
 #else
@@ -565,11 +573,7 @@ fn find_instance(i: InstanceIn) -> Instance {
 /// WebGL2 it follows the instance's entry in the index list.
 fn instance_fade(i: InstanceIn) -> f32 {
 #ifdef WEBGL2
-#ifdef DRAW_INDEX
-    let record = draws.items[i.draw];
-#else
-    let record = draws.items[0];
-#endif
+    let record = draw_record(i);
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let slot = record.x + i.instance * 2u + 1u;
     return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
@@ -654,7 +658,13 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 /// The color a fragment writes for exposed linear color `c`, such as light from the frame's lights,
 /// at framebuffer position `pixel`, as `finish` writes it.
 fn finish_exposed(c: vec3f, pixel: vec2f) -> vec4f {
-    return null3d::tonemap::finish(c, pixel, frame.output);
+    return null3d::tonemap::finish(
+        c,
+        pixel,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.

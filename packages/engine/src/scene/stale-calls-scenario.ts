@@ -6,6 +6,7 @@
 
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { MemoryViews } from '../shared/memory-views';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -120,7 +121,7 @@ function fakeCore() {
 		},
 		createBatch: () => {
 			batchGeneration++;
-			new Float32Array(memory.buffer, AT.batch, 64).fill(0);
+			new MemoryViews(memory).view(Float32Array, AT.batch, 64).fill(0);
 			batch = (batchGeneration << SLOT_BITS) | 1;
 			return batch;
 		},
@@ -140,9 +141,7 @@ function fakeCore() {
 	const reuseSlot = (handle: number) => {
 		reused = (((handle >>> SLOT_BITS) + 1) << SLOT_BITS) | (handle & SLOT_MASK);
 	};
-	const position = (handle: number) => [
-		...new Float32Array(memory.buffer, AT.positions + (handle & SLOT_MASK) * 12, 3),
-	];
+	const position = (handle: number) => [...core.f32(AT.positions + (handle & SLOT_MASK) * 12, 3)];
 	return { core, rows, reuseSlot, position };
 }
 

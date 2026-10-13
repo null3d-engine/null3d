@@ -54,5 +54,11 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         color += second_sky_weight * sky_light(direction, second, settings, backdrop.sun.w);
     }
     let scale = backdrop.params.x * frame.output.exposure;
-    return null3d::tonemap::finish(color * scale, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(
+        color * scale,
+        in.clip.xy,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
