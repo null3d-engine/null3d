@@ -2,7 +2,7 @@
 
 Status: accepted. Built under the owner's ruling 2 of 8 October 2026 (vertex-shader skinning is the WebGPU default). Date: 2026-10-13. Task: M2-C6.
 
-Summary: A far character's pose updates once every 1, 2 or 4 frames, by the `farAnimationInterval` quality setting, and a sketch gives each character that interval with `animator.setUpdateInterval`. On the frames between two updates the engine samples, blends and composes nothing for that instance, holds its last matrices, and leaves its pose step unchanged, so the skinning pass skips the held pose too. The clips keep their real speed: each update covers the frames it skipped. The governor doubles the interval after every other live step. The task's shared-pose idea is met by the vertex-shader default, which draws a crowd of one model in one instanced draw per part and shares the clip data; the compute path's skin-region sharing belongs to the pose stamp of M2-C8.
+Summary: A far character's pose updates once every 1, 2 or 4 frames. A sketch gives each character that interval with `animator.setUpdateInterval`, and the `farAnimationInterval` quality setting gives the value for far ones. On the frames between two updates the engine samples, blends and composes nothing for that instance. It holds the last matrices and leaves the pose step unchanged, so the skinning pass skips the held pose too. Each update covers the frames its clips skipped, so they keep their real speed. The governor doubles the interval after every other live step. The task's shared-pose idea is met by the vertex-shader default. A crowd of one model draws in one instanced draw per part, and it shares the clip data. The compute path's skin-region sharing belongs to the pose stamp of M2-C8.
 
 ## Question
 
@@ -71,12 +71,12 @@ task's shared-pose wording is met by the vertex-shader default and M2-C8's pose 
   instance for the step that last posed it.
 - On a frame that skips an instance, the engine copies its matrices from the previous frame's
   buffer into this one, 48 bytes per joint. That is a memcpy against a full sample, blend and
-  compose of the same joints, so the frame is much cheaper; and it keeps the draw list reading one
+  compose of the same joints, so the frame is much cheaper. It also keeps the draw list reading one
   buffer.
-- The Rust test `a_slow_instance_poses_on_its_interval_alone` shows the schedule: an instance at
-  interval 4 poses once in four frames, its matrices carry over on the others, and its pose after
-  five frames matches an instance that posed in every one. So its sampling work is a quarter of the
-  crowd's, and its clips stay at their speed.
+- The Rust test `a_slow_instance_poses_on_its_interval_alone` shows the schedule. An instance at
+  interval 4 poses once in four frames, and its matrices carry over on the others. Its pose after
+  five frames matches an instance that posed in every one, so its sampling work is a quarter of the
+  crowd's. Its clips stay at their speed.
 
 ## Consequences
 
@@ -95,5 +95,5 @@ task's shared-pose wording is met by the vertex-shader default and M2-C8's pose 
 
 1. Stagger the updates of a crowd so one frame does not carry all of it, if a profile shows the
    burst. Today the instances of a crowd created together pose on the same frames.
-2. Let a sketch say that a character is off screen, so the engine skips its sampling until it
-   returns, which the task's "off-screen characters skip sampling" asks for.
+2. Let a sketch say that a character is off screen. The engine then skips its sampling until the
+   character returns, which the task's "off-screen characters skip sampling" asks for.

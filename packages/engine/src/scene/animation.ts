@@ -751,22 +751,22 @@ export class Animator implements Described {
 	}
 
 	/**
-	 * The frames between two updates of the object's pose: 1, the default, updates it in every
-	 * frame, and a larger number samples and composes it once every that many frames, holding the
-	 * last pose in between. A far crowd then costs less on the job workers, and, where the
-	 * skinning pass skips a held pose, on the GPU too. The object's clips keep their real speed:
-	 * each update covers the frames that it skipped.
+	 * The frames between two updates of the object's pose. The value 1, the default, updates it in
+	 * every frame. A larger number samples and composes it once every that many frames, and holds
+	 * the last pose in between. A far crowd then costs less on the job workers, and, where the
+	 * skinning pass skips a held pose, on the GPU too. The object's clips keep their real speed.
+	 * Each update covers the frames that it skipped.
 	 */
 	get updateInterval(): number {
 		return this.system.updateIntervals()[this.instance - 1] ?? 1;
 	}
 
 	/**
-	 * Sets the frames between two updates of the object's pose, a whole number from 1 to 64. 1,
-	 * the default, updates the pose in every frame, which a character near the camera needs.
-	 * Larger values leave a character the camera sees from far in the pose of its last update for
-	 * longer, which steps, so give a crowd's near characters 1 and its far ones more. It writes
-	 * engine memory, so calling it every frame costs nothing.
+	 * Sets the frames between two updates of the object's pose, a whole number from 1 to 64. The
+	 * value 1, the default, updates the pose in every frame, which a character near the camera
+	 * needs. A larger value leaves a far character in the pose of its last update for longer, which
+	 * steps. Give a crowd's near characters 1 and its far ones more. It writes engine memory, so
+	 * calling it every frame costs nothing.
 	 */
 	setUpdateInterval(frames: number): void {
 		const call = 'setUpdateInterval';

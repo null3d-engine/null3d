@@ -332,9 +332,9 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 
 ## Crowds
 
-A crowd of copies of one model draws in one instanced draw per part, so its cost is the work of its animation and its vertices. `animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose: 1, the default, updates it in every frame, and a larger number, up to 64, samples and composes it once every that many frames and holds the last pose in between. `animator.updateInterval` reads the value back.
+A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices. `animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose. The value 1, the default, updates it in every frame. A larger number, up to 64, samples and composes it once every that many frames. It holds the last pose in between. `animator.updateInterval` reads the value back.
 
-Give a character that the camera sees from far more frames between its updates, and hold the ones near the camera at 1 so they never step. The `farAnimationInterval` quality setting, which the [governor](quality.md#the-frame-budget-governor) may raise, gives the interval for far characters:
+Give a character the camera sees from far more frames between its updates. Hold the ones near the camera at 1, so they never step. The `farAnimationInterval` quality setting, which the [governor](quality.md#the-frame-budget-governor) may raise, gives the interval for far characters:
 
 ```ts
 return {
@@ -346,7 +346,7 @@ return {
 };
 ```
 
-The clips keep their real speed: each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little, and its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still costs nothing even at 1: the skinning pass skips a pose that did not change.
+The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still costs nothing even at 1: the skinning pass skips a pose that did not change.
 
 ### Limits of skinning
 

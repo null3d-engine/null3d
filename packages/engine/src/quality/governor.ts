@@ -369,8 +369,8 @@ export class Governor {
 	}
 
 	/**
-	 * Sets the frames between two updates of a far character's pose that the step starts from,
-	 * which the sketch reads and gives to its far characters.
+	 * Sets the frames between two updates of a far character's pose that the step starts from. A
+	 * sketch reads the result and gives it to its far characters.
 	 */
 	setAnimation(interval: number): void {
 		if (interval === this.animationSetting) return;
