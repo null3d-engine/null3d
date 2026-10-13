@@ -15,6 +15,7 @@
 import { measurePageMemory } from '@null3d/engine/stats';
 import { dressStage } from '../../examples/compare/busy-page/page';
 import { COMPARISONS } from '../../examples/compare/comparisons';
+import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
 import { run, toBase64 } from './lib/result';
@@ -114,10 +115,17 @@ run('compare', async () => {
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
 	const step = Number(params.get('step') ?? 1);
+	// `?probe=1` asks the sketch for its scene signature at each ramp step, which the ramp's tests
+	// read to check that the scene keeps moving.
+	const probing = params.has('probe');
+	const signatures: Promise<SceneSignature | null>[] = [];
+	const onStep = probing
+		? () => signatures.push(started.sceneSignature?.() ?? Promise.resolve(null))
+		: undefined;
 	const ramp = await rampComparison(
 		started,
 		full
-			? { warmupSeconds: warmup }
+			? { warmupSeconds: warmup, onStep }
 			: {
 					// A run with a limit below the short ramp's top, such as three.js's light limit on
 					// WebGLRenderer, stops there.
@@ -125,9 +133,11 @@ run('compare', async () => {
 					warmupSeconds: warmup ?? 1,
 					stepSeconds: step,
 					settleSeconds: step * 0.4,
+					onStep,
 				},
 	);
 	await started.destroy();
 	dressed?.stop();
+	if (probing) return { ...report, ramp, signatures: await Promise.all(signatures) };
 	return { ...report, ramp };
 });

@@ -9,12 +9,7 @@
 // since a page that fills the window draws fewer pixels in a small one.
 
 import { execFileSync } from 'node:child_process';
-import {
-	type Browser,
-	type BrowserContextOptions,
-	type LaunchOptions,
-	type Page,
-} from '@playwright/test';
+import type { Browser, BrowserContextOptions, LaunchOptions, Page } from '@playwright/test';
 import { launchChromium } from '../../packages/cli/src/browser.js';
 import { REFRESH_MEASURE, refreshRate } from '../pages/lib/refresh-rate.ts';
 
