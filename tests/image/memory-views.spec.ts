@@ -30,8 +30,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * machine slows the run without failing it, while a stuck growth still fails.
  */
 const STALL_MS = 30_000;
-/** The most time the run may take in all, far more than it takes alone. */
-const RUN_LIMIT_MS = 5 * 60_000;
+/** The most time the run may take in all, as it always had. */
+const RUN_LIMIT_MS = 4 * 60_000;
 
 /** Why a thread fails: each memory store that it views through more than one buffer object. */
 function extraBuffers(thread: string, heap: HeapSnapshot): string | undefined {
