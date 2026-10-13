@@ -27,7 +27,7 @@ flowchart LR
 
 Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors, its intensity, and for point and spot lights their range, decay and cone.
 
-Setters change the engine's memory at once, and they allocate nothing except those that convert a color. Each frame, after the engine updates transforms, it reads every light:
+Setters change the engine's memory at once. They write their numbers into a block of the engine's memory, and they call the core with whole numbers only. So a setter allocates nothing, a color included. Call a per-frame setter from a small function of its own, so the browser inlines it. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
 2. Standard materials reflect the first directional light created that remains, the sum of the ambient and hemisphere lights, and the scene's environment.

@@ -75,7 +75,7 @@ import {
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
 import type { WgslUpdate } from '../shared/wgsl-updates';
-import { type ColorInput, linearColor } from './color';
+import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { CoreMemory } from './memory';
 import {
 	arraysProblem,
@@ -1381,83 +1381,175 @@ function checkValues(values: AnyValues, call: string): void {
 /**
  * Writes the numbers of `values` that are set, and the linear colors that are given, into the
  * core's row of material `id`. Every value was checked and every color converted before, so a
- * call that throws changes nothing.
+ * call that throws changes nothing. Each option is read once, by its name, and goes to the core
+ * through its call values: a fraction read by a key that changes, or passed as an argument, would
+ * each make a number object in a call that the browser does not inline.
  */
 function writeValues(
 	core: CoreMemory,
 	id: number,
 	call: string,
 	values: AnyValues,
-	color: readonly number[] | undefined,
-	emissive: readonly number[] | undefined,
-	specular: readonly number[] | undefined,
-	attenuation: readonly number[] | undefined,
+	color: Float64Array | undefined,
+	emissive: Float64Array | undefined,
+	specular: Float64Array | undefined,
+	attenuation: Float64Array | undefined,
 ): void {
-	const write = (param: number, x: number, y: number, z: number) =>
-		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
-	if (color)
-		write(MATERIAL_PARAM_COLOR, color[0] as number, color[1] as number, color[2] as number);
-	if (emissive)
-		write(
-			MATERIAL_PARAM_EMISSIVE,
-			emissive[0] as number,
-			emissive[1] as number,
-			emissive[2] as number,
-		);
-	if (specular)
-		write(
-			MATERIAL_PARAM_SPECULAR_COLOR,
-			specular[0] as number,
-			specular[1] as number,
-			specular[2] as number,
-		);
-	if (attenuation)
-		write(
-			MATERIAL_PARAM_ATTENUATION_COLOR,
-			attenuation[0] as number,
-			attenuation[1] as number,
-			attenuation[2] as number,
-		);
-	for (const [key, param] of RANGED) {
-		const value = values[key];
-		if (value !== undefined) write(param, value, 0, 0);
+	if (color) sendColor(core, id, MATERIAL_PARAM_COLOR, color, call);
+	if (emissive) sendColor(core, id, MATERIAL_PARAM_EMISSIVE, emissive, call);
+	if (specular) sendColor(core, id, MATERIAL_PARAM_SPECULAR_COLOR, specular, call);
+	if (attenuation) sendColor(core, id, MATERIAL_PARAM_ATTENUATION_COLOR, attenuation, call);
+	const {
+		opacity,
+		alphaCutoff,
+		metalness,
+		roughness,
+		emissiveIntensity,
+		aoMapIntensity,
+		lightMapIntensity,
+		specularIntensity,
+		envIntensity,
+		transmission,
+		thickness,
+		normalScale,
+		uvTransform,
+		ior,
+		attenuationDistance: distance,
+	} = values;
+	const numbers = core.callValues();
+	if (opacity !== undefined) {
+		numbers[0] = opacity;
+		sendValue(core, id, MATERIAL_PARAM_OPACITY, call);
 	}
-	const { normalScale, uvTransform, ior, attenuationDistance: distance } = values;
+	if (alphaCutoff !== undefined) {
+		numbers[0] = alphaCutoff;
+		sendValue(core, id, MATERIAL_PARAM_ALPHA_CUTOFF, call);
+	}
+	if (metalness !== undefined) {
+		numbers[0] = metalness;
+		sendValue(core, id, MATERIAL_PARAM_METALNESS, call);
+	}
+	if (roughness !== undefined) {
+		numbers[0] = roughness;
+		sendValue(core, id, MATERIAL_PARAM_ROUGHNESS, call);
+	}
+	if (emissiveIntensity !== undefined) {
+		numbers[0] = emissiveIntensity;
+		sendValue(core, id, MATERIAL_PARAM_EMISSIVE_INTENSITY, call);
+	}
+	if (aoMapIntensity !== undefined) {
+		numbers[0] = aoMapIntensity;
+		sendValue(core, id, MATERIAL_PARAM_OCCLUSION_STRENGTH, call);
+	}
+	if (lightMapIntensity !== undefined) {
+		numbers[0] = lightMapIntensity;
+		sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_INTENSITY, call);
+	}
+	if (specularIntensity !== undefined) {
+		numbers[0] = specularIntensity;
+		sendValue(core, id, MATERIAL_PARAM_SPECULAR_INTENSITY, call);
+	}
+	if (envIntensity !== undefined) {
+		numbers[0] = envIntensity;
+		sendValue(core, id, MATERIAL_PARAM_ENV_INTENSITY, call);
+	}
+	if (transmission !== undefined) {
+		numbers[0] = transmission;
+		sendValue(core, id, MATERIAL_PARAM_TRANSMISSION, call);
+	}
+	if (thickness !== undefined) {
+		numbers[0] = thickness;
+		sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
+	}
 	if (ior !== undefined) {
-		write(MATERIAL_PARAM_REFLECTANCE, reflectance(ior), 0, 0);
-		write(MATERIAL_PARAM_IOR, ior, 0, 0);
+		numbers[0] = reflectance(ior);
+		sendValue(core, id, MATERIAL_PARAM_REFLECTANCE, call);
+		numbers[0] = ior;
+		sendValue(core, id, MATERIAL_PARAM_IOR, call);
 	}
 	// The core keeps 0 for a volume that absorbs nothing.
-	if (distance !== undefined)
-		write(MATERIAL_PARAM_ATTENUATION_DISTANCE, distance < Infinity ? distance : 0, 0, 0);
-	if (normalScale) write(MATERIAL_PARAM_NORMAL_SCALE, normalScale[0], normalScale[1], 0);
+	if (distance !== undefined) {
+		numbers[0] = distance < Infinity ? distance : 0;
+		sendValue(core, id, MATERIAL_PARAM_ATTENUATION_DISTANCE, call);
+	}
+	if (normalScale) {
+		numbers[0] = normalScale[0];
+		numbers[1] = normalScale[1];
+		sendValue(core, id, MATERIAL_PARAM_NORMAL_SCALE, call);
+	}
 	if (uvTransform) {
 		// three.js's texture matrix with its center at the origin, by rows.
-		const [x, y] = uvTransform.offset ?? [0, 0];
-		const [u, v] = uvTransform.repeat ?? [1, 1];
-		const angle = uvTransform.rotation ?? 0;
-		const [c, s] = [Math.cos(angle), Math.sin(angle)];
-		write(MATERIAL_PARAM_UV_U, u * c, u * s, x);
-		write(MATERIAL_PARAM_UV_V, -v * s, v * c, y);
+		const { offset, repeat, rotation = 0 } = uvTransform;
+		const u = repeat ? repeat[0] : 1;
+		const v = repeat ? repeat[1] : 1;
+		const c = Math.cos(rotation);
+		const s = Math.sin(rotation);
+		numbers[0] = u * c;
+		numbers[1] = u * s;
+		numbers[2] = offset ? offset[0] : 0;
+		sendValue(core, id, MATERIAL_PARAM_UV_U, call);
+		numbers[0] = -v * s;
+		numbers[1] = v * c;
+		numbers[2] = offset ? offset[1] : 0;
+		sendValue(core, id, MATERIAL_PARAM_UV_V, call);
 	}
 }
 
-/** The linear value of a color option, or none when it is not set. */
-function linearOrNone(color: ColorInput | undefined, call: string): readonly number[] | undefined {
-	return color === undefined ? undefined : linearColor(color, call);
+/** Sets material `id`'s value `param` to the core's call values. */
+function sendValue(core: CoreMemory, id: number, param: number, call: string): void {
+	core.check(core.glue.setMaterialValue(id, param), call, undefined, true);
+}
+
+/** Sets material `id`'s color `param` to a linear color. */
+function sendColor(
+	core: CoreMemory,
+	id: number,
+	param: number,
+	color: Float64Array,
+	call: string,
+): void {
+	core.callValues().set(color);
+	sendValue(core, id, param, call);
 }
 
 /**
- * The linear value of a specular color option, or none when it is not set. Its three linear
- * components may exceed 1, as glTF's specular color factor may.
+ * The arrays that a material's color options convert into: the color, the emissive color, the
+ * specular color and the attenuation color, then a uniform's color while it is checked. Each call
+ * converts its colors before it writes any, and nothing reads them after the call, so the calls
+ * share them and converting a color allocates nothing.
  */
-function specularOrNone(
+const COLOR = new Float64Array(3);
+const EMISSIVE = new Float64Array(3);
+const SPECULAR = new Float64Array(3);
+const ATTENUATION = new Float64Array(3);
+const UNIFORM_COLOR = new Float64Array(3);
+
+/** The linear value of a color option in `out`, or none when it is not set. */
+function linearOrNone(
 	color: ColorInput | undefined,
 	call: string,
-): readonly number[] | undefined {
-	if (Array.isArray(color) && color.length === 3 && color.every((c) => c >= 0 && c < Infinity))
-		return color;
-	return linearOrNone(color, call);
+	out: Float64Array,
+): Float64Array | undefined {
+	return color === undefined ? undefined : writeLinearColor(out, color, call);
+}
+
+/**
+ * The linear value of a specular color option in `out`, or none when it is not set. Its three
+ * linear components may exceed 1, as glTF's specular color factor may.
+ */
+function specularOrNone(color: ColorInput | undefined, call: string): Float64Array | undefined {
+	if (Array.isArray(color) && color.length === 3) {
+		const r = color[0];
+		const g = color[1];
+		const b = color[2];
+		if (r >= 0 && r < Infinity && g >= 0 && g < Infinity && b >= 0 && b < Infinity) {
+			SPECULAR[0] = r;
+			SPECULAR[1] = g;
+			SPECULAR[2] = b;
+			return SPECULAR;
+		}
+	}
+	return linearOrNone(color, call, SPECULAR);
 }
 
 /**
@@ -1552,53 +1644,60 @@ const STANDARD_VALUES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The numbers of a uniform's value, or throws E1216 for a value of another kind. A `vec3f` takes
- * an sRGB color too, converted to linear.
+ * Throws E1216 for a value of another kind than `uniform` takes: a number, a whole number for an
+ * integer, or an array of as many numbers as the type holds. A `vec3f` takes an sRGB color too,
+ * which converts to linear. It allocates nothing.
  */
-function uniformNumbers(uniform: CompiledUniform, value: UniformValue, call: string): number[] {
-	const count = UNIFORM_FLOATS[uniform.type];
-	const numbers =
-		uniform.type === 'vec3f' && !Array.isArray(value)
-			? [...linearColor(value as ColorInput, call)]
-			: Array.isArray(value)
-				? [...value]
-				: [value];
-	const fits =
-		numbers.length === count &&
-		numbers.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
-		(uniform.type === 'f32' || uniform.type.startsWith('vec') || Number.isInteger(numbers[0]));
-	if (!fits) {
-		const takes =
-			count === 1
-				? uniform.type === 'f32'
-					? 'a number'
-					: 'a whole number'
-				: `an array of ${count} numbers${count === 3 ? ', or a color' : ''}`;
-		throw new EngineError(
-			'E1216',
-			`${call}() got ${JSON.stringify(value)} for the ${uniform.type} uniform ${uniform.name}; it takes ${takes}.`,
-		);
+function checkUniform(uniform: CompiledUniform, value: UniformValue, call: string): void {
+	const { type } = uniform;
+	if (type === 'vec3f' && !Array.isArray(value)) {
+		writeLinearColor(UNIFORM_COLOR, value as ColorInput, call);
+		return;
 	}
-	return numbers;
+	const count = UNIFORM_FLOATS[type];
+	let fits: boolean;
+	let first: unknown = value;
+	if (Array.isArray(value)) {
+		first = value[0];
+		fits = value.length === count;
+		for (let k = 0; fits && k < count; k++) fits = isFiniteNumber(value[k]);
+	} else fits = count === 1 && isFiniteNumber(value);
+	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
+	const takes =
+		count === 1
+			? type === 'f32'
+				? 'a number'
+				: 'a whole number'
+			: `an array of ${count} numbers${count === 3 ? ', or a color' : ''}`;
+	throw new EngineError(
+		'E1216',
+		`${call}() got ${JSON.stringify(value)} for the ${type} uniform ${uniform.name}; it takes ${takes}.`,
+	);
 }
 
-/** A uniform and the numbers of its new value. */
-type UniformWrite = readonly [CompiledUniform, readonly number[]];
+/** True for a finite number. */
+function isFiniteNumber(value: unknown): boolean {
+	return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** True for a standard value that `set` writes itself, which the uniform writes skip. */
+function isStandard(name: string, call: string): boolean {
+	return STANDARD_VALUES.has(name) && call.endsWith('.set');
+}
 
 /**
- * The uniforms of `values` with their numbers, each checked, so a caller can check every value
- * before it writes any. `set` calls skip the standard values, which `set` writes itself. Throws
- * E1216 for a name that is not a uniform.
+ * Checks each uniform of `values`, so a caller can check every value before it writes any. `set`
+ * calls skip the standard values, which `set` writes itself. Throws E1216 for a name that is not
+ * a uniform, and for a value of another kind.
  */
-function uniformWrites(
+function checkUniforms(
 	uniforms: ReadonlyMap<string, CompiledUniform>,
 	values: Readonly<Record<string, UniformValue | undefined>>,
 	call: string,
-): UniformWrite[] {
-	const writes: UniformWrite[] = [];
+): void {
 	for (const name in values) {
 		const value = values[name];
-		if (value === undefined || (STANDARD_VALUES.has(name) && call.endsWith('.set'))) continue;
+		if (value === undefined || isStandard(name, call)) continue;
 		const uniform = uniforms.get(name);
 		if (!uniform) {
 			const names = [...uniforms.keys()].join(', ') || 'none';
@@ -1607,9 +1706,33 @@ function uniformWrites(
 				`${call}() got ${name}, which is not a uniform of the material's WGSL. Its uniforms: ${names}.`,
 			);
 		}
-		writes.push([uniform, uniformNumbers(uniform, value, call)]);
+		checkUniform(uniform, value, call);
 	}
-	return writes;
+}
+
+/**
+ * Writes the uniforms of `values`, which `checkUniforms` checked, into material `id`'s row of
+ * custom values, through the core's call values. It allocates nothing: a color converts into the
+ * call values too.
+ */
+function writeUniforms(
+	core: CoreMemory,
+	id: number,
+	uniforms: ReadonlyMap<string, CompiledUniform>,
+	values: Readonly<Record<string, UniformValue | undefined>>,
+	call: string,
+): void {
+	for (const name in values) {
+		const value = values[name];
+		if (value === undefined || isStandard(name, call)) continue;
+		const uniform = uniforms.get(name) as CompiledUniform;
+		const count = UNIFORM_FLOATS[uniform.type];
+		const numbers = core.callValues();
+		if (typeof value === 'number') numbers[0] = value;
+		else if (Array.isArray(value)) for (let k = 0; k < count; k++) numbers[k] = value[k] as number;
+		else writeLinearColor(numbers, value as ColorInput, call);
+		core.check(core.glue.setMaterialValues(id, uniform.offset, count), call, undefined, true);
+	}
 }
 
 /**
@@ -1681,18 +1804,18 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 
 	/**
 	 * Changes the values that it gets and keeps the others. Every object that uses the material
-	 * changes with it. Converting a new color allocates. Throws E1101 once the material is
-	 * destroyed.
+	 * changes with it. It allocates nothing, so a sketch can change a value or a color in every
+	 * frame. Throws E1101 once the material is destroyed.
 	 */
 	set(options: Values): void {
 		const { core, call } = this;
 		const values = options as AnyValues;
 		const id = this.id;
 		if (DEV) checkValues(values, call);
-		const color = linearOrNone(values.color, call);
-		const emissive = linearOrNone(values.emissive, call);
+		const color = linearOrNone(values.color, call, COLOR);
+		const emissive = linearOrNone(values.emissive, call, EMISSIVE);
 		const specular = specularOrNone(values.specularColor, call);
-		const attenuation = linearOrNone(values.attenuationColor, call);
+		const attenuation = linearOrNone(values.attenuationColor, call, ATTENUATION);
 		writeValues(core, id, call, values, color, emissive, specular, attenuation);
 	}
 
@@ -1726,22 +1849,14 @@ class ShaderMaterial extends Material<ShaderValues> {
 
 	/**
 	 * Changes the standard values and the uniforms that it gets, and keeps the others. It checks
-	 * every value before it changes any. Converting a color or an array allocates.
+	 * every value before it changes any. It allocates nothing, so a sketch can change a uniform in
+	 * every frame.
 	 */
 	override set(options: ShaderValues): void {
-		const writes = uniformWrites(this.uniforms, options, this.call);
+		const { uniforms, call } = this;
+		checkUniforms(uniforms, options, call);
 		super.set(options);
-		this.write(writes);
-	}
-
-	/** Writes checked uniforms into the material's row of custom values. */
-	write(writes: readonly UniformWrite[]): void {
-		const { core } = this;
-		for (const [uniform, [x = 0, y = 0, z = 0, w = 0]] of writes) {
-			const count = UNIFORM_FLOATS[uniform.type];
-			const status = core.glue.setMaterialValues(this.id, uniform.offset, count, x, y, z, w);
-			core.check(status, this.call, undefined, true);
-		}
+		writeUniforms(this.core, this.id, uniforms, options, call);
 	}
 }
 
@@ -1777,9 +1892,9 @@ export class Materials {
 	/** Creates a material in the engine core, with its standard options, and returns its id. */
 	private createId(shading: number, options: StandardOptions, call: string): number {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
-		const emissive = linearOrNone(options.emissive, call);
+		const emissive = linearOrNone(options.emissive, call, EMISSIVE);
 		const specular = specularOrNone(options.specularColor, call);
-		const attenuation = linearOrNone(options.attenuationColor, call);
+		const attenuation = linearOrNone(options.attenuationColor, call, ATTENUATION);
 		if (DEV) {
 			checkValues(options, call);
 			checkFeatures(options, call);
@@ -1868,7 +1983,8 @@ export class Materials {
 					'E1216',
 					`${call}() got WGSL whose uniform ${name} has the name of a standard value. Rename the field of struct Uniforms.`,
 				);
-		const writes = uniformWrites(uniforms, options.uniforms ?? {}, call);
+		const uniformValues = options.uniforms ?? {};
+		checkUniforms(uniforms, uniformValues, call);
 		const declared = compiled.textures;
 		const textures = textureSlots(declared, options.textures ?? {}, call);
 		const shading =
@@ -1882,8 +1998,8 @@ export class Materials {
 			(compiled.objectIds ? SHADING_CUSTOM_OBJECT_IDS : 0);
 		const id = this.createId(shading, { ...options, alphaToCoverage: false }, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
-		material.write(writes);
 		const { core } = this;
+		writeUniforms(core, id, uniforms, uniformValues, call);
 		textures.forEach((texture, slot) => {
 			if (!texture) return;
 			core.checkGrowth(

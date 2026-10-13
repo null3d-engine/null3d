@@ -6,6 +6,7 @@
 
 import * as C from '../generated/core';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { Scene } from './scene';
@@ -135,7 +136,7 @@ function fakeCore() {
 		lastErrorCode: () => failure,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	/** Gives the next object the slot of `handle`, with the next generation. */
 	const reuseSlot = (handle: number) => {
 		reused = (((handle >>> SLOT_BITS) + 1) << SLOT_BITS) | (handle & SLOT_MASK);

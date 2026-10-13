@@ -338,6 +338,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
 			shadowTileSize,
@@ -350,8 +351,11 @@ export class SketchRunner {
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		// Directional lights that name no cascades or map size take the preset's.
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
+		const values = this.core.callValues();
+		values[0] = shadowCascades;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
+		values[0] = shadowMapSize;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops.
 			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
@@ -359,7 +363,6 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(
@@ -659,7 +662,8 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
-		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
+		this.core.callValues()[0] = viewport.pixelRatio;
+		this.sketch.glue.setPixelRatio();
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -764,7 +768,7 @@ export class SketchRunner {
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
-			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
+			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)
@@ -777,8 +781,16 @@ export class SketchRunner {
 	 * them.
 	 */
 	private setLevelQuality(): number {
-		const threshold = this.lodThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(threshold, this.lodShadowFactor, this.lodFade);
+		const values = this.core.callValues();
+		values[0] = this.lodThreshold * this.governor.detailFactor;
+		values[1] = this.lodShadowFactor;
+		return this.sketch.glue.setLevelQuality(this.lodFade);
+	}
+
+	/** Gives the core the share of the render size that reflection targets take by default. */
+	private setReflectionScale(scale: number): number {
+		this.core.callValues()[0] = scale;
+		return this.sketch.glue.setReflectionScale();
 	}
 
 	/**
@@ -788,11 +800,11 @@ export class SketchRunner {
 	 */
 	private setShadowQuality(): number {
 		const { governor } = this;
+		this.core.callValues()[0] = this.cascadeBlend;
 		return this.sketch.glue.setShadowQuality(
 			governor.filter,
 			governor.farInterval,
 			this.followMovers,
-			this.cascadeBlend,
 		);
 	}
 

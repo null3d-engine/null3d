@@ -44,7 +44,10 @@
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
-// one of them tilted, and changes their intensities every frame. `--sky` draws three.js's sky behind S1, and
+// one of them tilted, and changes their intensities every frame. `--setters` calls, every frame,
+// each setter that a sketch may call per frame, with fractions and colors: the lights', a standard
+// and a custom material's, a line batch's, the camera's field of view, the fog and the background
+// color. Run it after a change of any setter, on both GPU paths. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--reflection`
 // puts rippled water under S1, which a reflection pass mirrors the swarm and the orbiting camera's
@@ -89,6 +92,7 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --hemisphere --gpu webgl2
+//   bun run bench:allocation --setters --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
 //   bun run bench:allocation --stats --gpu webgl2
 //   bun run bench:allocation --sky --gpu webgl2
@@ -251,6 +255,29 @@ export const STATS_BUDGETS: Record<(typeof WORKERS)[number], Record<string, numb
 export const SKY_ENVIRONMENT_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {},
 	'render-worker': { 'draw webgpu/environment.ts': 20, 'stage webgl2/environment.ts': 20 },
+};
+
+/**
+ * Places that allocate with `--setters` and `--hemisphere` on top of `BUDGETS`: the browser's
+ * boxing of a number that a step of S1's frame computes and passes to a setter that it does not
+ * inline. The step runs in the sketch's own frame code, where the browser also inlines the large
+ * `pose`; its inlining budget can then run out before the setter, and the number becomes an object
+ * of its own. The same boxing is why S1's camera step, `(anonymous) null3d/sketch-common.ts`, has a
+ * budget of 48. A run of the same switch that passes whole numbers in place of the fractions
+ * allocates nothing, so no setter call of its own is the cause. The engine's setters write their
+ * numbers into the core's call values (see `CoreMemory.callValues`), so no fraction reaches the core
+ * as an argument.
+ */
+export const SETTER_BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
+	'sketch-worker': {
+		'(anonymous) null3d/s1-sketch.ts': 48,
+		'pose null3d/s1-sketch.ts': 40,
+	},
+	'render-worker': {
+		// A line batch that the switch makes dashed draws a pass of its own, so the WebGL2 backend
+		// begins one more pass each frame and the browser makes its per-pass object, about 23 bytes.
+		'beginPass webgl2/backend.ts': 32,
+	},
 };
 
 /**
@@ -513,6 +540,8 @@ async function main(): Promise<void> {
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
 		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
+		const setters = args.includes('--setters') ? '&setters' : '';
+		if (setters && scene !== 's1') throw new Error("--setters calls S1's setters only");
 		const effects = args.includes('--effects') ? '&effects' : '';
 		if (effects && scene !== 's1') throw new Error('--effects adds custom effects to S1 only');
 		const skyLight = args.includes('--sky-environment');
@@ -528,7 +557,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${setters}${effects}${sky}${reflection}${transmission}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -661,6 +690,8 @@ async function main(): Promise<void> {
 			const skyBudgets = skyLight
 				? SKY_ENVIRONMENT_BUDGETS[worker as (typeof WORKERS)[number]]
 				: {};
+			const setterBudgets =
+				setters || hemisphere ? SETTER_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
@@ -678,6 +709,7 @@ async function main(): Promise<void> {
 						: 0) +
 					(statsBudgets[name] ?? 0) +
 					(skyBudgets[name] ?? 0) +
+					(setterBudgets[name] ?? 0) +
 					(sceneBudgets[name] ?? 0);
 				const budget = (budgets[name] ?? OTHER_BUDGET) + extra;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
