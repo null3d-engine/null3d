@@ -32,7 +32,10 @@ export default defineSketch(async ({ scene, materials, geometry, assets, post, p
 	});
 	(async () => {
 		for (let step = 1; step <= STEPS; step++) {
-			const rows = scene.createInstances(box, ROWS, { material });
+			// The growth batches stay off the camera's layers. They still exist, and the memory
+			// still grows with each one, which is what the test checks. Drawing hundreds of
+			// thousands of boxes on the CI software GPU cost minutes and made the run time out.
+			const rows = scene.createInstances(box, ROWS, { material, layers: 1 << 1 });
 			for (let k = 0; k < ROWS; k++)
 				rows.positions.set([(k % 128) * 0.3 - 19, step * 0.3, Math.floor(k / 128) * -0.3], k * 3);
 			await frame();
