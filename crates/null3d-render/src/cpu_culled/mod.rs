@@ -113,6 +113,7 @@ use crate::frame::{
     SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
@@ -180,8 +181,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = MOTION_BLOCK + 1;
+    /// The uniform buffer of the full-screen passes' blocks.
+    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = FULLSCREEN + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -230,8 +233,12 @@ mod ids {
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = BLANK_EFFECT_DEPTH + 1;
+    /// The texel that a full-screen pass without an input image reads, and the one that it binds
+    /// in place of the scene's depth when it reads none.
+    pub const BLANK_PASS_COLOR: u32 = BLANK_TRANSMISSION + 1;
+    pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The row values of instance batches at the resident texture's rows, two texels per row.
-    pub const RESIDENT_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
     /// The texture of one texel that the motion debug view reads in place of the motion target
@@ -274,8 +281,10 @@ mod ids {
     pub const DOF_SAMPLER: u32 = 6;
     /// The sampler of the motion debug view's step.
     pub const MOTION_SAMPLER: u32 = 7;
+    /// The linear sampler of the full-screen passes.
+    pub const FULLSCREEN_SAMPLER: u32 = 8;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 8;
+    pub const SAMPLERS: u32 = 9;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -309,8 +318,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind group of the motion debug view's step, after the copy's.
-    pub const MOTION_VIEW_GROUP: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the copy's.
+    pub const FULLSCREEN_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of the motion debug view's step, after the full-screen passes'.
+    pub const MOTION_VIEW_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
     /// The motion pass's frame group for each frame parity and each slot of the streamed ring,
     /// whose slot before it holds the last frame's dynamic rows.
     const MOTION_FRAME_GROUPS: u32 = MOTION_VIEW_GROUP + 1;
@@ -514,6 +525,13 @@ impl CpuCulledRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
+                        fullscreen: FullscreenIds {
+                            buffer: ids::FULLSCREEN,
+                            sampler: ids::FULLSCREEN_SAMPLER,
+                            first_group: ids::FULLSCREEN_GROUPS,
+                            blank_color: ids::BLANK_PASS_COLOR,
+                            blank_depth: ids::BLANK_PASS_DEPTH,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -1172,6 +1190,7 @@ impl CpuCulledRenderer {
             self.settings
                 .dof_frame(input.scene, input.parity(), input.canvas),
         );
+        self.settings.prepare_effect_maps();
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1196,6 +1215,8 @@ impl CpuCulledRenderer {
         self.graph.set_motion(motion, motion_frame);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
+        self.graph
+            .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
@@ -1290,6 +1311,11 @@ impl CpuCulledRenderer {
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings.record_materials(input, list, arena, table)?;
+        // The frame's texture work made the passes' targets and uploads ready, so the textures
+        // of the effects and the full-screen passes sample from this frame on.
+        self.settings.update_post_layers();
+        self.graph
+            .set_post_values(self.settings.effects(), self.settings.views());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, uniform) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
@@ -1868,12 +1894,14 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn check_graph(&mut self) -> Result<(), GraphError> {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .check(self.settings.views(), self.settings.view_names())
     }
 
     fn graph_dot(&mut self) -> String {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());

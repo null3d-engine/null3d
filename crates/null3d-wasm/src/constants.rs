@@ -126,10 +126,30 @@ pub mod map_slot {
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
-/// The flags of an effect that `setEffect` takes.
+/// The flags of an effect that `setEffect` takes, and of a full-screen pass that `addPass` takes.
 pub mod effect_flag {
-    /// The effect reads the scene's depth.
+    /// The effect or the pass reads the scene's depth.
     pub const DEPTH: u32 = 1;
+}
+
+/// The kinds of pass that `addPass` adds.
+pub mod pass_kind {
+    /// A scene pass: the scene from a camera of the sketch.
+    pub const SCENE: u32 = 0;
+    /// A reflection pass: the camera's view mirrored across a plane.
+    pub const REFLECTION: u32 = 1;
+    /// A full-screen pass of the sketch's WGSL.
+    pub const FULLSCREEN: u32 = 2;
+}
+
+/// The input image of a full-screen pass that `addPass` takes.
+pub mod pass_source {
+    /// None: the pass reads a blank texel.
+    pub const NONE: u32 = 0;
+    /// The scene color as the camera's passes leave it.
+    pub const SCENE_COLOR: u32 = 1;
+    /// The outline mask.
+    pub const OUTLINE_MASK: u32 = 2;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -937,7 +957,25 @@ pub fn typescript() -> String {
             &[
                 ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("TEXTURES", null3d_render::effects::MAX_TEXTURES as u32),
                 ("DEPTH", effect_flag::DEPTH),
+            ],
+        ),
+        // The kinds of pass that `addPass` adds, and the input images of a full-screen pass.
+        (
+            "PASS_KIND",
+            &[
+                ("SCENE", pass_kind::SCENE),
+                ("REFLECTION", pass_kind::REFLECTION),
+                ("FULLSCREEN", pass_kind::FULLSCREEN),
+            ],
+        ),
+        (
+            "PASS_SOURCE",
+            &[
+                ("NONE", pass_source::NONE),
+                ("SCENE_COLOR", pass_source::SCENE_COLOR),
+                ("OUTLINE_MASK", pass_source::OUTLINE_MASK),
             ],
         ),
         // The most scene passes that draw at once: every view but the camera's.

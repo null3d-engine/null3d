@@ -3,7 +3,8 @@
 //! in a uniform block: the start of its bucket's slice of the index list, its material and its
 //! data texture. The draws of one pipeline and one vertex page sit next to each other, so one
 //! multi-draw call draws a whole run of them where the device has `WEBGL_multi_draw`, and the
-//! shader reads the record of `gl_DrawID`. Without the extension, each draw binds its own record.
+//! shader reads the record of `gl_DrawID`, from a texture copy of the block that the WebGL2 backend
+//! makes. Without the extension, each draw binds its own record.
 //!
 //! Each view has a ring of frame uniforms and a ring of draw records, whose slots move on only
 //! when the frame writes new data, as the index list textures' slots do. A frame uniform's slot

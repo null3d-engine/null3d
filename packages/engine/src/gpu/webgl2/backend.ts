@@ -96,6 +96,20 @@ export interface CanvasTarget {
 interface GlBuffer {
 	buffer: WebGLBuffer;
 	size: number;
+	/** Counts the writes into the buffer, each of which leaves its texture copies out of date. */
+	writes: number;
+	/** Texture copies of ranges of the buffer (see `copyOfBlock`). */
+	copies: BlockCopy[] | null;
+}
+
+/** A texture that holds a uniform buffer range, one `RGBA32UI` texel per 16 bytes, in one row. */
+interface BlockCopy {
+	texture: WebGLTexture;
+	/** The range's start in the buffer. */
+	offset: number;
+	width: number;
+	/** The buffer's write count when the texture last took the range's bytes. */
+	writes: number;
 }
 
 /** How GL stores a texture format, and how texels of it upload. */
@@ -492,7 +506,7 @@ export class WebGL2Backend {
 	 * borrowed changed since the program's units were set.
 	 */
 	private unitsChanged = true;
-	private readonly blockBuffers: (WebGLBuffer | null | undefined)[] = [];
+	private readonly blockBuffers: (GlBuffer | null | undefined)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
 	/** The faces that GL culls: `BACK` or `FRONT`, or 0 while culling is off. */
@@ -861,11 +875,14 @@ export class WebGL2Backend {
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
 				case G.OP_WRITE_BUFFER: {
-					const buffer = this.need(this.buffers, words[a] as number, 'buffer').buffer;
+					const record = this.need(this.buffers, words[a] as number, 'buffer');
 					const offset = words[a + 1] as number;
 					const source = words[a + 2] as number;
 					const bytes = words[a + 3] as number;
-					gl.bindBuffer(gl.COPY_WRITE_BUFFER, buffer);
+					record.writes++;
+					// Units that read a texture copy of the buffer copy it again before they draw.
+					if (record.copies) this.unitsChanged = true;
+					gl.bindBuffer(gl.COPY_WRITE_BUFFER, record.buffer);
 					this.writeBytes(gl.COPY_WRITE_BUFFER, offset, source, bytes);
 					this.counts.uploadBytes += bytes;
 					break;
@@ -1262,7 +1279,7 @@ export class WebGL2Backend {
 		this.useVertexArray(null);
 		gl.bindBuffer(target, buffer);
 		gl.bufferData(target, size, gl.DYNAMIC_DRAW);
-		this.buffers[id] = { buffer, size };
+		this.buffers[id] = { buffer, size, writes: 0, copies: null };
 		this.gpuMemory.addBuffers(size);
 	}
 
@@ -1271,9 +1288,14 @@ export class WebGL2Backend {
 		if (!old) return;
 		this.gl.deleteBuffer(old.buffer);
 		this.gpuMemory.addBuffers(-old.size);
+		if (old.copies)
+			for (const copy of old.copies) {
+				this.gl.deleteTexture(copy.texture);
+				this.gpuMemory.addTextures(-copy.width * 16);
+			}
 		this.buffers[id] = undefined;
 		for (let slot = 0; slot < this.blockBuffers.length; slot++)
-			if (this.blockBuffers[slot] === old.buffer) this.blockBuffers[slot] = null;
+			if (this.blockBuffers[slot] === old) this.blockBuffers[slot] = null;
 	}
 
 	private format(code: number): GlFormat {
@@ -2347,14 +2369,17 @@ export class WebGL2Backend {
 				dynamic++;
 				const size = entry.size || buffer.size - offset;
 				if (
-					this.blockBuffers[slot] !== buffer.buffer ||
+					this.blockBuffers[slot] !== buffer ||
 					this.blockOffsets[slot] !== offset ||
 					this.blockSizes[slot] !== size
 				) {
 					gl.bindBufferRange(gl.UNIFORM_BUFFER, slot, buffer.buffer, offset, size);
-					this.blockBuffers[slot] = buffer.buffer;
+					this.blockBuffers[slot] = buffer;
 					this.blockOffsets[slot] = offset;
 					this.blockSizes[slot] = size;
+					// A program that reads the slot as a texture reads a copy of the range.
+					this.slotTextures[slot] = null;
+					this.unitsChanged = true;
 				}
 			} else if (entry.kind === G.RESOURCE_TEXTURE) {
 				const texture = this.textureOf(entry.resource);
@@ -2363,6 +2388,9 @@ export class WebGL2Backend {
 					this.slotTargets[slot] = texture.target;
 					this.unitsChanged = true;
 				}
+				// The slot's texture replaces a buffer range that a program read through a copy, so
+				// the range binds again when a bind group next leaves it there.
+				this.blockBuffers[slot] = undefined;
 			} else if (entry.kind === G.RESOURCE_SAMPLER) {
 				const sampler = this.need(this.samplers, entry.resource, 'sampler');
 				if (this.slotSamplers[slot] !== sampler) {
@@ -2496,11 +2524,64 @@ export class WebGL2Backend {
 			const unit = units[k] as number;
 			const slot = units[k + 1] as number;
 			const sampler = units[k + 2] as number;
-			const texture = this.slotTextures[slot] ?? null;
+			const texture = this.slotTextures[slot];
 			if (texture) this.bindTexture(unit, this.slotTargets[slot] as number, texture);
+			else if (this.blockBuffers[slot])
+				this.bindTexture(unit, this.gl.TEXTURE_2D, this.copyOfBlock(slot));
 			this.bindUnitSampler(unit, sampler < 0 ? null : (this.slotSamplers[sampler] ?? null));
 		}
 		this.unitsChanged = false;
+	}
+
+	/**
+	 * The texture copy of the uniform buffer range that a bind group left at a slot, for a shader
+	 * that reads the slot as a texture: one texel of four unsigned integers per 16 bytes, in one
+	 * row. The multi-draw vertex shaders read their draw records so, since some Adreno drivers fail
+	 * to link a program whose vertex shader reads a uniform array at the draw index. The copy runs on
+	 * the GPU, from the buffer, and again only after a write into the buffer.
+	 */
+	private copyOfBlock(slot: number): WebGLTexture {
+		const gl = this.gl;
+		const buffer = this.blockBuffers[slot] as GlBuffer;
+		const offset = this.blockOffsets[slot] as number;
+		const width = (this.blockSizes[slot] as number) >> 4;
+		buffer.copies ??= [];
+		const copies = buffer.copies;
+		let copy: BlockCopy | undefined;
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const known = copies[k] as BlockCopy;
+			if (known.offset === offset && known.width === width) copy = known;
+		}
+		// A copy that no draw has read since the buffer's last write takes the new range, so the
+		// textures stay as many as the ranges that draws read between two writes. Ranges move each
+		// frame with the ring's slots, so the copies are taken over in place, which allocates nothing.
+		for (let k = 0; k < copies.length && !copy; k++) {
+			const stale = copies[k] as BlockCopy;
+			if (stale.writes !== buffer.writes && stale.width === width) {
+				stale.offset = offset;
+				stale.writes = -1;
+				copy = stale;
+			}
+		}
+		if (!copy) {
+			const texture = gl.createTexture();
+			if (!texture) throw new Error('WebGL2 could not create a texture');
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, texture);
+			gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, width, 1);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			this.gpuMemory.addTextures(width * 16);
+			copy = { texture, offset, width, writes: -1 };
+			copies.push(copy);
+		}
+		if (copy.writes !== buffer.writes) {
+			this.editTexture(UPLOAD_UNIT, gl.TEXTURE_2D, copy.texture);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer.buffer);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, offset);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			copy.writes = buffer.writes;
+		}
+		return copy.texture;
 	}
 
 	/** Binds a sampler to a texture unit, or none. */

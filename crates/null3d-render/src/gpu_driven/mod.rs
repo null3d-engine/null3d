@@ -156,6 +156,7 @@ use crate::frame::{
     SceneSettings, UploadArena,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
+use crate::fullscreen::FullscreenIds;
 use crate::graph::{GraphError, RenderGraph};
 use crate::light_grid::{LightGrid, LightGrids, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
@@ -357,8 +358,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = LAST_SKINNED + 2 * super::skin::MAX_SKINNED_BUFFERS;
+    /// The uniform buffer of the full-screen passes' blocks.
+    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = OBJECT_RANGES + 1;
+    pub const PAGES: u32 = FULLSCREEN + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -389,8 +392,12 @@ mod ids {
     /// The row values of instance batches, two texels per source, which the vertex shaders of rows
     /// with row values read.
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
+    /// The texel that a full-screen pass without an input image reads, and the one that it binds
+    /// in place of the scene's depth when it reads none.
+    pub const BLANK_PASS_COLOR: u32 = ROW_VALUES + 1;
+    pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The two copies of the last frame's joint texture, one for each frame parity.
-    const LAST_JOINTS: u32 = ROW_VALUES + 1;
+    const LAST_JOINTS: u32 = BLANK_PASS_DEPTH + 1;
 
     pub const fn last_joints(copy: usize) -> u32 {
         LAST_JOINTS + copy as u32
@@ -424,8 +431,10 @@ mod ids {
     pub const DOF_SAMPLER: u32 = 7;
     /// The sampler of the motion view's blank map and of the motion debug view's step.
     pub const MOTION_SAMPLER: u32 = 8;
+    /// The linear sampler of the full-screen passes.
+    pub const FULLSCREEN_SAMPLER: u32 = 9;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 9;
+    pub const SAMPLERS: u32 = 10;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -489,8 +498,11 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The bind group of the motion debug view's step, and of the blank map of the motion view.
-    pub const MOTION_VIEW_GROUP: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the copy's.
+    pub const FULLSCREEN_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind group of the motion debug view's step, and of the blank map of the motion view,
+    /// after the full-screen passes'.
+    pub const MOTION_VIEW_GROUP: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
     pub const BLANK_MAP_GROUP: u32 = MOTION_VIEW_GROUP + 1;
     /// The motion view's frame group for each frame parity.
     const MOTION_FRAME_GROUPS: u32 = BLANK_MAP_GROUP + 1;
@@ -714,6 +726,13 @@ impl GpuDrivenRenderer {
                             sampler: ids::EFFECT_SAMPLER,
                             first_group: ids::EFFECT_GROUPS,
                             blank_depth: ids::BLANK_EFFECT_DEPTH,
+                        },
+                        fullscreen: FullscreenIds {
+                            buffer: ids::FULLSCREEN,
+                            sampler: ids::FULLSCREEN_SAMPLER,
+                            first_group: ids::FULLSCREEN_GROUPS,
+                            blank_color: ids::BLANK_PASS_COLOR,
+                            blank_depth: ids::BLANK_PASS_DEPTH,
                         },
                         dof: DofIds {
                             buffer: ids::DOF,
@@ -1039,6 +1058,7 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_bloom(self.settings.bloom(), self.settings.bloom_chain());
+        self.settings.prepare_effect_maps();
         self.graph.set_effects(
             self.settings.effects(),
             self.settings.effect_joins(),
@@ -1064,6 +1084,8 @@ impl GpuDrivenRenderer {
         self.graph.set_motion(motion, motion_frame);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
+        self.graph
+            .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
         self.background.request_pipeline(
             &self.settings,
             &mut self.pipelines,
@@ -1272,6 +1294,11 @@ impl GpuDrivenRenderer {
             values: ids::CUSTOM_VALUES,
         };
         let groups_remade = self.settings.record_materials(input, list, arena, table)?;
+        // The frame's texture work made the passes' targets and uploads ready, so the textures
+        // of the effects and the full-screen passes sample from this frame on.
+        self.settings.update_post_layers();
+        self.graph
+            .set_post_values(self.settings.effects(), self.settings.views());
         // The environment's map may have finished its upload, or gone, with this frame's texture
         // work, so the views read it from here on.
         let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
@@ -1956,12 +1983,14 @@ impl FrameBuilder for GpuDrivenRenderer {
     }
 
     fn check_graph(&mut self) -> Result<(), GraphError> {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .check(self.settings.views(), self.settings.view_names())
     }
 
     fn graph_dot(&mut self) -> String {
+        self.settings.prepare_effect_maps();
         self.settings.mark_shown_views();
         self.graph
             .sync_views(self.settings.views(), self.settings.view_names());
