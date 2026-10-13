@@ -40,6 +40,7 @@ const engine = await createEngine({
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
+  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -68,7 +69,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback, keepTextureCopies }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 //   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
@@ -247,7 +248,7 @@ scene.createDirectionalLight(day.light);  // the sun by day, the moon after suns
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
-light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
+light.setIntensity(v); light.setColor(c);   // every light; call from a small step so the browser inlines it
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
@@ -313,7 +314,7 @@ const paint = materials.standard({
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
-paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
+paint.set({ roughness: 0.4 });  // changes only the options you pass; set values up front, not every frame
 
 const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
   map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
@@ -431,6 +432,8 @@ anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every 
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
 anim.play('breathe', { layer: 2, additive: true });      // adds its change from its first frame
 anim.setTimeScale(0.5);                 // 0 pauses the object's clips
+anim.setUpdateInterval(4);              // a far crowd: sample this copy's pose once in 4 frames; 1 is every frame
+anim.updateInterval;                    // reads it back
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
