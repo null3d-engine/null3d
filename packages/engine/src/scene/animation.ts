@@ -684,7 +684,9 @@ export class Animator implements Described {
 			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 		}
-		this.done(this.system.core.glue.animatorStop(this.instance, clip, fade), call);
+		const { system } = this;
+		system.playArgs()[C.ANIMATION_ARG_FADE] = fade;
+		this.done(system.core.glue.animatorStop(this.instance, clip), call);
 	}
 
 	/**

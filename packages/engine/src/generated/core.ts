@@ -272,6 +272,8 @@ export const POST_VALUE_DOF_FOCUS_POINT = 46;
 export const POST_VALUE_DOF_FOCUS_ON_POINT = 49;
 export const POST_VALUE_COUNT = 50;
 
+export const CALL_VALUE_COUNT = 10;
+
 export const ENVIRONMENT_VALUE_INTENSITY = 0;
 export const ENVIRONMENT_VALUE_ROTATION = 1;
 export const ENVIRONMENT_VALUE_SH = 4;
