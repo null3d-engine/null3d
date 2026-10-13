@@ -250,7 +250,7 @@ export interface EngineOptions {
 	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
 	 * a texture draws with its color alone until the sketch gives it texels again. Without this
 	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
-	 * is likeliest to lose its GPU. Another value fails with E1213.
+	 * is likeliest to lose its GPU.
 	 */
 	keepTextureCopies?: boolean;
 	/**
@@ -1213,11 +1213,6 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
-	if (options.keepTextureCopies !== undefined && typeof options.keepTextureCopies !== 'boolean')
-		throw new EngineError(
-			'E1213',
-			`createEngine() got keepTextureCopies ${String(options.keepTextureCopies)}, which is not true or false.`,
-		);
 	/**
 	 * The engine keeps a copy of each texture's texels after their upload where the device is a
 	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
