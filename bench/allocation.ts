@@ -295,6 +295,17 @@ const TILE_SHADOWS_REPLAY_BYTES = 2 * 17 * 12;
 const BATCH_SHADOWS_REPLAY_BYTES = 2 * 17 * 3;
 
 /**
+ * What the sun's contact shadows add to the WebGPU replay's budget, in scenes whose sun casts
+ * shadows (S4, and S1 with `--batch-shadows`): the encoders of the render passes that they add with
+ * ambient occlusion off, the depth prepass's own pass, the depth copy, the horizon step that
+ * marches them and the denoise that blurs them. The Mac draws these scenes at High, where contact
+ * shadows draw. On the Mac, S4's replay allocated 310 to 330 bytes more per frame than main's at
+ * the same load, so the allowance takes five passes at bloom's allowance per pass. With `--ao`
+ * they add no pass: ambient occlusion runs the same steps already.
+ */
+const CONTACT_REPLAY_BUDGET = 5 * 64;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--bloom`: the
  * encoders of bloom's render passes, which the browser returns for each pass. The default bloom
  * draws 15 passes, and with them the replay allocated about 56 bytes more per pass, 836 per frame
@@ -684,6 +695,7 @@ async function main(): Promise<void> {
 				const extra =
 					(replay && tileShadows ? TILE_SHADOWS_REPLAY_BYTES : 0) +
 					(replay && batchShadows ? BATCH_SHADOWS_REPLAY_BYTES : 0) +
+					(replay && (batchShadows || scene === 's4') ? CONTACT_REPLAY_BUDGET : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
