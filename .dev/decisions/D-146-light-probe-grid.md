@@ -34,6 +34,10 @@ The coordinator chose the following on 13 October 2026, under D-142's ruling.
 
 **Rejected.** L2 SH, because seven trilinear reads per pixel is a phone cost that the showcase scenes do not need. An ambient cube, because it cannot hold the direction of a bright patch and D-142 wants coloured bounce. Baking only offline, because the showcase scenes are built in code and must bake in the browser. A GPU bake through six cube captures per probe (three.js's path) is the better long-term bake. It waits for the shared capture that M2-EX32 (reflection probes) adds. The ray-cast bake here is the first cut.
 
+## Figures
+
+The frame group's binding layout change frees binding 10 for the grid. It moved no measured page. `bun run bench:gpu-check` compared the branch with main at 120 Hz, with no run dropped. GPU time per frame changed by -1.1% in S4 at Medium and by +4.5% in S6 at Medium. It changed by +1.2% in S4 at High and by -1.1% in S6 at High. Each change is well inside its rule's limits.
+
 ## Consequences
 
 - **Storage and memory:** 24 bytes per probe. A 24 x 8 x 24 grid (one probe per metre over a 24 m hall, 4,608 probes) takes 110 KB.
