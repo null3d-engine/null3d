@@ -282,6 +282,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'particles',
+		group: 'Light, materials and effects',
+		sketch: new URL('./particles/sketch.ts', import.meta.url),
+		code: 'particles/',
+		title: 'Particles',
+		scene: 'Campfire glade',
+		summary:
+			'A campfire in an autumn glade at dusk: flames from a flipbook made in code, rising embers, thin smoke lit from below, leaves that tumble from a birch and settle, and blinking fireflies. The GPU moves every particle, and the sketch writes only the births.',
+		controls: `${CAMERA} Move the mouse, or tap, to either side of the fire to turn the wind.`,
+		hold: 4,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'security-camera',
 		group: 'Light, materials and effects',
 		sketch: new URL('./security-camera/sketch.ts', import.meta.url),
