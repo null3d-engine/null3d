@@ -80,13 +80,12 @@ export function yieldJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): 
 	const word = Atomics.load(slots, Slot.JobsYieldAddress);
 	if (wake === 0 || word === 0) return () => {};
 	// Each step makes its own view and keeps none, since the memory may grow meanwhile.
-	const words = () => new Int32Array(memory.buffer);
-	const at = (address: number) => address / Int32Array.BYTES_PER_ELEMENT;
-	Atomics.add(words(), at(word), 1);
-	const woken = words();
-	Atomics.add(woken, at(wake), 1);
-	Atomics.notify(woken, at(wake));
+	const views = new MemoryViews(memory);
+	Atomics.add(views.i32(word, 1), 0, 1);
+	const woken = views.i32(wake, 1);
+	Atomics.add(woken, 0, 1);
+	Atomics.notify(woken, 0);
 	return () => {
-		Atomics.sub(words(), at(word), 1);
+		Atomics.sub(views.i32(word, 1), 0, 1);
 	};
 }
