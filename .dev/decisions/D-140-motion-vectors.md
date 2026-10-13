@@ -1,6 +1,6 @@
 # D-140: Per-object motion vectors
 
-Status: proposed on 11 October 2026 by the helper of M2-EX25, for the owner's review. The figures in "Cost" follow when the branch is built and measured. Date: 2026-10-11. Task: M2-EX25.
+Status: decided. The owner moved per-object motion vectors before 1.0 on 11 October 2026, and the feature landed on main on 14 October 2026. Date: 2026-10-11. Task: M2-EX25.
 
 Summary: The engine records how far each pixel's surface moved on the screen since the last frame, for the passes that need it: temporal anti-aliasing after the fixes that [D-129](D-129-temporal-anti-aliasing.md) lists, motion blur, and screen-space reflections that reuse the last frame. A separate motion pass draws only the objects that moved, into a target of two 16-bit floats per pixel, tested against the scene's depth. It stores each surface's own motion beyond what the camera's move explains, so still pixels need no draw: a reader adds the camera's part from the depth. Batches, skins, morph targets and vertex offsets keep the last frame's data on the GPU while a reader asks for motion. Nothing runs, downloads or takes memory while no pass reads the motion.
 
@@ -114,14 +114,17 @@ A held frame is the first frame that the thread that draws draws, so it has no l
 
 ## Cost
 
-Download size, after Brotli, measured with `bun run build:check-size` against main on 13 October:
+Download size, after Brotli, measured with `bun run build:check-size` against main on 14 October:
 
-- The largest start, pipelined WebGPU, grows by 0.6 KB to 135.1 KB of its 140 KB budget. The start keeps the motion frame layout, the new format, the device check, the debug view and hold mode's frame before. Each WebGPU start file grows by about 2.2%.
-- The core's WebAssembly files grow by 2.4%, about 9 KB each: the motion pass in both frame builders, with its layouts, culling, last-frame copies and debug view.
-- The motion shaders load on first use: 7.8 KB for each WebGL2 file and 6.7 KB for the WebGPU one. A page that never reads the motion never downloads them.
-- Loading the WebGPU motion pipelines on first use too made the start 0.1 KB bigger, not smaller (135.2 KB against 135.1 KB). The moved code is small, and the loader cost more than it saved, so they stay in the start code.
+- The largest start, pipelined WebGPU, grows by 0.8 KB to 139.9 KB of its 140 KB budget. The page's WebGL2 shader combos file holds most of that: it grew 10.8%.
+- The core's WebAssembly files grow by 2.3%: 393,201 to 402,262 bytes in the threaded file and 392,054 to 401,198 in the single-threaded one. They hold the motion pass in both frame builders, with its layouts, its culling, the copies of the last frame's data and the debug view.
+- The motion shaders load on first use. Each file holds the motion builds beside the features that a page loads with, 3.4 to 5.9 KB for each file on WebGL2 and WebGPU. A page that never reads the motion never downloads them.
+- Loading the WebGPU motion pipelines on first use as well made the start bigger, not smaller, so they stay in the start code.
 
-GPU time with motion off, and the motion pass's own cost on each path, follow from the timing run.
+GPU time, measured in Chrome 155 on the Mac's M5 Max at 120 Hz, in a parked window:
+
+- The GPU check follows the rule of [D-109](D-109-gpu-time-guard.md) and passed. On S4 and S6, whose scenes read no motion, this build against main's merge base: S4 medium 3.98 to 4.04 ms, S6 medium 4.61 to 4.60 ms, S4 high 4.31 to 4.26 ms, S6 high 4.82 to 4.79 ms. Every page is within its rule's noise, so nothing reads the motion and the engine pays nothing.
+- The motion pass's own cost, from the cost page at render scales 1 and 0.5, with the effect off and then on: WebGPU 1.33 to 1.34 ms and 1.71 to 1.83 ms; compatibility mode 1.28 to 1.45 ms and 1.14 to 1.26 ms; WebGL2 2.70 to 4.53 ms and 2.77 to 4.14 ms. The WebGPU paths draw the moving objects once more in a pass with few bindings, so it stays under 0.2 ms. WebGL2 replays the camera's draws, which costs more.
 
 ## Decision
 
@@ -139,4 +142,4 @@ On 13 October 2026, the cost page stopped when it enabled motion on WebGPU and c
 
 The layout rebuilt while the motion pipelines loaded, but its tables uploaded only while the motion view could draw. Once the pipelines finished, no scene change asked for another upload. The first motion frame therefore read a table that had never been made.
 
-The builder now uploads those tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion. A mock-backend test covers motion requested at the start and enabled after ordinary frames.
+The builder now uploads those tables when it rebuilds the requested motion layout. It still waits for the pipelines before drawing motion. A mock-backend test covers motion requested at the start and enabled after ordinary frames. The WebGPU and compatibility mode pages of the cost check measure again after the fix.
