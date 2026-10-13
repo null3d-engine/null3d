@@ -363,7 +363,7 @@ export class SceneAnimations implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the arrays of the animation table, which the next read makes again. */
+	/** Forgets the arrays of the animation table, which the next read makes again. */
 	dropViews(): void {
 		this.generation = -1;
 		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
@@ -693,7 +693,9 @@ export class Animator implements Described {
 			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 		}
-		this.done(this.system.core.glue.animatorStop(this.instance, clip, fade), call);
+		const { system } = this;
+		system.playArgs()[C.ANIMATION_ARG_FADE] = fade;
+		this.done(system.core.glue.animatorStop(this.instance, clip), call);
 	}
 
 	/**

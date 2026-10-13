@@ -13,7 +13,7 @@
 import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import type { ColorInput } from './color';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { Mesh } from './scene';
 import type { Texture } from './textures';
 
@@ -288,6 +288,10 @@ function isOneColor(colors: ColorInput | readonly [ColorInput, ColorInput]): col
 	return typeof colors !== 'object' || colors.length === 3;
 }
 
+/** An empty view that a dropped view takes, so it holds none of the engine's memory. */
+const NO_FLOAT32 = new Float32Array(0);
+const NO_UINT32 = new Uint32Array(0);
+
 /**
  * A particle buffer: a scene object that draws a quad for each live particle record. The
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
@@ -298,7 +302,7 @@ function isOneColor(colors: ColorInput | readonly [ColorInput, ColorInput]): col
  *
  * @category api/particles
  */
-export class ParticleBuffer {
+export class ParticleBuffer implements ViewHolder {
 	private generation = -1;
 	private floats!: Float32Array;
 	private words!: Uint32Array;
@@ -323,7 +327,19 @@ export class ParticleBuffer {
 		readonly object: Mesh,
 		private readonly additive: boolean,
 		private readonly linear: LinearColor,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the record and value arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.floats = NO_FLOAT32;
+		this.words = NO_UINT32;
+		this.block = NO_FLOAT32;
+		this.frameValues = NO_FLOAT32;
+	}
 
 	/** The record and value arrays, made again after the engine's memory grew. */
 	private views(): void {
