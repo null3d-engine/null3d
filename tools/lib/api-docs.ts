@@ -23,6 +23,7 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
 	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
+	{ entry: 'packages/particles/src/index.ts', source: 'packages/particles/src' },
 	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';

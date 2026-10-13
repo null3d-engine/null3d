@@ -1915,6 +1915,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Particles of the particles add-on: soft dots that bounce, smoke from a flipbook made in code,
+	// sparks along their velocity, and tumbling leaves, each moved by the GPU in closed form.
+	{
+		name: 'particles',
+		sketch: 'tests/pages/sketches/particles-sketch.ts',
+		hold: 2,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2077,6 +2084,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 				...(comparison.swiftShaderHoldCount !== undefined && {
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
+				...(comparison.imageDevices && { devices: comparison.imageDevices }),
 			};
 			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
 			// its test shares that comparison's references, in the scene graph mode only.
