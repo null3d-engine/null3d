@@ -90,3 +90,9 @@ Option A for the motion, the soft particles' depth copy for soft particles, and 
 - The add-on `@null3d/particles`: `createParticles(ctx, options)` and `system.update()`, which reads the frame's step from the sketch's clock, as the camera controls read `ctx`. Emitters, bursts, sub-emitters, the follow mode for trails, culling bounds, and textures made in code.
 - Docs: `api/particles`, the three.js mapping's particles entry, and the develop skill's quick reference and recipe.
 - Limits: a system does not sort its own particles, cast shadows or take light. Views other than the camera's draw particles without the soft fade.
+
+## Shared template data
+
+The particle record layout adds data to the shared GPU modules of the page, sketch worker and render worker. Built-in template tables read this layout when a GPU path starts. Particle shader text and the particle add-on still load on first use.
+
+On 13 October 2026, the page module grew from 3,406 to 3,476 bytes after Brotli compression, a 70-byte increase. The branch already records the same cause for the two worker modules. Deferring all built-in template definitions would require a separate engine change.
