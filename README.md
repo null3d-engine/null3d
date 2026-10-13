@@ -323,7 +323,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 
 Requirements:
 
-- [Bun](https://bun.sh/) 1.3.14 or newer
+- [Bun](https://bun.sh/) 1.4.3 or newer
 - The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
 - Node.js 24 or newer, which runs the browser tests
 - Google Chrome, which the browser tests drive on your real GPU

@@ -50,6 +50,7 @@ export const LIGHT_VALUE_SHADOW_NORMAL_BIAS = 6;
 export const LIGHT_VALUE_SHADOW_CASCADES = 7;
 export const LIGHT_VALUE_SHADOW_MAP_SIZE = 8;
 export const LIGHT_VALUE_SHADOW_DISTANCE = 9;
+export const LIGHT_VALUE_SHADOW_CONTACT = 10;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
@@ -159,6 +160,12 @@ export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;
 export const TONE_MAPPING_NONE = 3;
 
+export const PARTICLE_RECORD_BYTES = 32;
+export const PARTICLE_PARAM_FLOATS = 128;
+export const PARTICLE_FRAME_FLOATS = 4;
+export const PARTICLE_MAX_SYSTEMS = 256;
+export const PARTICLE_MAX_RECORDS = 4194304;
+
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
@@ -166,6 +173,7 @@ export const SHADING_UNLIT_MAP = 3;
 export const SHADING_SPRITE = 4;
 export const SHADING_LINE = 5;
 export const SHADING_LINE_LIT = 7;
+export const SHADING_PARTICLE = 8;
 export const SHADING_CUSTOM_FIRST = 128;
 export const SHADING_CUSTOM_ATTRIBUTE_SHIFT = 16;
 export const SHADING_CUSTOM_BASE_COLOR = 16777216;
@@ -235,7 +243,16 @@ export const MATERIAL_PARAM_ATTENUATION_DISTANCE = 43;
 
 export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
+export const EFFECT_TEXTURES = 6;
 export const EFFECT_DEPTH = 1;
+
+export const PASS_KIND_SCENE = 0;
+export const PASS_KIND_REFLECTION = 1;
+export const PASS_KIND_FULLSCREEN = 2;
+
+export const PASS_SOURCE_NONE = 0;
+export const PASS_SOURCE_SCENE_COLOR = 1;
+export const PASS_SOURCE_OUTLINE_MASK = 2;
 
 export const SCENE_PASS_MAX = 31;
 

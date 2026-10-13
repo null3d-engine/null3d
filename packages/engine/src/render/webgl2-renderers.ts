@@ -164,7 +164,7 @@ class WebGL2SceneRenderer implements Renderer {
 			device.transparent,
 		);
 		this.backend.moreShaders = shaders;
-		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
+		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);

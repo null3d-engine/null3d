@@ -23,28 +23,13 @@ const FOAM = { x: 30, z: 6.5, width: 1024, height: 224 } as const;
 const REFLECT_EVERY: Record<QualityPreset, number> = { low: 2, medium: 2, high: 1, ultra: 1 };
 
 const wgsl = /* wgsl */ `
+#import null3d::noise::{value2}
 #import null3d::reflection::{reflection_uv}
 
 struct Uniforms { flow: f32, ripple: f32, caustics: vec3f }
 
 var mirror: texture_2d<f32>;
 var foamMap: texture_2d<f32>;
-
-fn hash2(p: vec2f) -> f32 {
-    return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
-}
-
-/// Value noise from 0 to 1, for the foam's breakup.
-fn foamNoise(p: vec2f) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
-    let a = hash2(i);
-    let b = hash2(i + vec2f(1.0, 0.0));
-    let c = hash2(i + vec2f(0.0, 1.0));
-    let d = hash2(i + vec2f(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
 
 /// Caustics: bright, thin ridges where the ripples focus the light, which drift with the current.
 fn caustics(p: vec2f, t: f32) -> f32 {
@@ -54,7 +39,7 @@ fn caustics(p: vec2f, t: f32) -> f32 {
     let c = sin((q.x + q.y) * 2.6 + t * 0.9 + sin(q.x * 1.3 - q.y * 0.7));
     let v = (a + b + c) / 3.0;
     // Patches of brighter and fainter light keep the net from looking even.
-    return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * foamNoise(p * 0.8 + vec2f(t * 0.1, 0.0)));
+    return pow(1.0 - abs(v), 14.0) * (0.35 + 0.65 * value2(p * 0.8 + vec2f(t * 0.1, 0.0)));
 }
 
 /// The water's height at a point, and its slopes along x and z: long waves that the current carries
@@ -112,7 +97,7 @@ fn surface(input: SurfaceInput) -> Surface {
     // The map covers x from -30 to 30 m and z from -6.5 to 6.5 m.
     let near = textureSampleLevel(foamMap, foamMapSampler, vec2f((p.x + 30.0) / 60.0, (p.y + 6.5) / 13.0), 0.0).r;
     let drift = p * vec2f(5.0, 9.0) - vec2f(material.flow * frame.time * 6.0, 0.0);
-    let flecks = 0.6 * foamNoise(drift) + 0.4 * foamNoise(drift * 2.3 + 7.0);
+    let flecks = 0.6 * value2(drift) + 0.4 * value2(drift * 2.3 + 7.0);
     let stoneFoam = 0.85 * smoothstep(0.45, 0.95, near * (0.3 + 1.0 * flecks));
     let foam = max(edgeFoam, stoneFoam);
     // The caustics show on the bed, under clear water that is not too deep, and not under foam.
