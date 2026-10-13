@@ -2425,6 +2425,7 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
             texture_option::MEMORY_BUDGET_KIB => {
                 textures.set_memory_budget(u64::from(value) * 1024)
             }
+            texture_option::KEEP_COPIES => textures.set_keep_copies(value != 0),
             _ => textures.upload_all_next_frame(),
         }
         0

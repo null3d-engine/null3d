@@ -204,7 +204,7 @@ WebGPU and WebGL2 store, upload and sample textures the same way, and make the s
 
 ## When the browser takes the GPU away
 
-The engine keeps no copy of an image or of data once its upload is done, which saves memory. When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. Any other texture whose texels the engine released draws without its map until the texture gets an update.
+When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. On a phone or a tablet the engine also keeps its copy of an image or of data after their upload, so the texture draws with its map again. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where the engine keeps no copy, a texture whose texels it released draws without its map until the texture gets an update.
 
 ## API reference
 
