@@ -40,7 +40,9 @@ import { URL_SWITCHES } from '../shared/dev';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
+import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
@@ -100,7 +102,12 @@ import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
 import { StatsSwitch } from './stats-switch';
-import { STOP_TIMEOUT_MS, stopJobWorkers, waitForJobWorkersToLeave } from './stop-jobs';
+import {
+	STOP_TIMEOUT_MS,
+	stopJobWorkers,
+	waitForJobWorkersToLeave,
+	yieldJobWorkers,
+} from './stop-jobs';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -327,7 +334,8 @@ export interface EngineOptions {
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
-	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
+	 * need together, such as a skinned mesh's with the alpha hash, download with them. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
 	 */
@@ -1278,7 +1286,7 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
-			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
+			wasmBytes: () => memoryBytes(wasmMemory) ?? 0,
 		},
 		sharedMemory: threaded,
 		maxTargetFps: maxTarget,
@@ -1358,6 +1366,11 @@ async function startEngine(
 	let rendererHost: EngineWorker | undefined;
 	/** The job workers that got the core, which a stop waits for. */
 	let jobsWithCore: readonly EngineWorker[] = [];
+	// While the browser measures the page's memory, this engine's idle job workers run their
+	// threads' tasks, so the measurement never waits on a blocked thread.
+	const removeMeasurementRelease = addMeasurementRelease(() =>
+		coreMemory ? yieldJobWorkers(coreMemory, slots) : () => {},
+	);
 	/** The sketch worker and the render worker once they got the core, which a stop asks to stop. */
 	const withCore = new Set<EngineWorker>();
 	/** The worker that holds the canvas, or will once the start moves it there. */
@@ -1419,6 +1432,7 @@ async function startEngine(
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.store(slots, Slot.Paused, 2);
 			stopJobs();
+			removeMeasurementRelease();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
 			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
@@ -2011,7 +2025,7 @@ async function startEngine(
 				return {
 					seconds: (performance.now() - started) / 1000,
 					...summarizeFrames(reader.records, threadRoles(mode)),
-					memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+					memory: { wasmBytes: memoryBytes(wasmMemory) ?? null, ...heap.stop() },
 					load: {
 						engineStartMs,
 						probeMs,

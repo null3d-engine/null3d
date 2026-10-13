@@ -1,6 +1,6 @@
 // Writes the area lights' tables that the engine's package ships, packages/engine/vendor/ltc/
 // area-light-tables.bin, from three.js's copy of Heitz's fit (RectAreaLightTexturesLib), as the
-// half floats that three.js uploads. packages/engine/src/scene/area-lights.ts says how the file is
+// half floats that three.js uploads. packages/engine/src/scene/area-light-tables.ts says how the file is
 // laid out and decodes it. Run it after the engine's three.js version changes:
 //
 //   bun tools/area-light-tables.ts           writes the file
@@ -14,7 +14,7 @@ import {
 	AREA_TABLE_HALVES,
 	AREA_TABLE_SIZE,
 	decodeAreaTables,
-} from '../packages/engine/src/scene/area-lights';
+} from '../packages/engine/src/scene/area-light-tables';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** Where the engine's package keeps the file. */
@@ -37,7 +37,7 @@ export async function threeTables(): Promise<Uint16Array> {
 	return out;
 }
 
-/** The file's bytes before gzip, from the core's layers: see the layout in area-lights.ts. */
+/** The file's bytes before gzip, from the core's layers: see the layout in area-light-tables.ts. */
 export function encodeAreaTables(layers: Uint16Array): Uint8Array {
 	const size = AREA_TABLE_SIZE;
 	const plane = size * size;

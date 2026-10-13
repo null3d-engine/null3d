@@ -122,23 +122,27 @@ pub mod value {
     /// The distance in meters from the camera, along its view, out to which a directional light's
     /// shadows fall. The default is 200.
     pub const SHADOW_DISTANCE: u32 = 9;
+    /// How far a directional light's contact shadows reach from each surface toward the light, in
+    /// meters: short shadows found in the camera's depth, which close the lit gap that the
+    /// cascades leave where small objects meet the ground. 0 draws none. The default is 0.3.
+    pub const SHADOW_CONTACT: u32 = 10;
     /// The width in meters of a rectangle light, along its X axis, or the length of a tube light.
     /// The default is 1.
-    pub const WIDTH: u32 = 10;
+    pub const WIDTH: u32 = 11;
     /// The height in meters of a rectangle light, along its Y axis. The default is 1.
-    pub const HEIGHT: u32 = 11;
+    pub const HEIGHT: u32 = 12;
     /// The radius in meters of a tube light. The default is 0.025.
-    pub const RADIUS: u32 = 12;
+    pub const RADIUS: u32 = 13;
     /// The layer of a rectangle light's image in the frame builder's light tables, plus one, or 0
     /// for a light without an image. The engine sets it when it places the image.
-    pub const IMAGE: u32 = 13;
+    pub const IMAGE: u32 = 14;
     /// The last number.
     pub const LAST: u32 = IMAGE;
 }
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
-    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0, 1.0, 1.0, 0.025, 0.0,
+    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0, 0.3, 1.0, 1.0, 0.025, 0.0,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -301,6 +305,9 @@ pub struct SunShadow {
     pub normal_bias: f32,
     /// The distance along the camera's view out to which its shadows fall.
     pub distance: f32,
+    /// How far its contact shadows reach toward the light from each surface, in meters: 0 for
+    /// none.
+    pub contact: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
 }
@@ -315,6 +322,7 @@ impl SunShadow {
             bias: values[value::SHADOW_BIAS as usize],
             normal_bias: values[value::SHADOW_NORMAL_BIAS as usize],
             distance: values[value::SHADOW_DISTANCE as usize],
+            contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
         }
     }
@@ -954,10 +962,10 @@ mod tests {
             Err(CoreError::OutOfRange { value: 0, limit: 7 })
         );
         assert_eq!(
-            table.set_value(light, 14, 1.0),
+            table.set_value(light, value::LAST + 1, 1.0),
             Err(CoreError::OutOfRange {
-                value: 14,
-                limit: 13
+                value: value::LAST + 1,
+                limit: value::LAST
             })
         );
         assert_eq!(

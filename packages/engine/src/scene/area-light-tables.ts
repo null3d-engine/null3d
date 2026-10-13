@@ -1,17 +1,16 @@
-// The tables of area lights, which load the first time a sketch makes one. Rectangle and tube
-// lights shade with linearly transformed cosines, which read two fitted tables of 64 x 64 entries
-// (decision record D-145). The engine's package ships them in a gzip file, which this module
-// downloads, unpacks with the browser's DecompressionStream, decodes and writes into engine
-// memory for the core to upload. tools/area-light-tables.ts writes the file.
+// The area lights' fitted tables, which load with the first rectangle or tube light (decision
+// record D-145). This is first-use code: a page that makes no area light downloads none of it.
 //
-// The file holds six planes of 64 x 64 half floats, one per channel: the four values of the
-// inverse matrix, then the scale and the bias of the Fresnel term. Each entry is stored as its
-// difference from the prediction left + up - upper left of its plane, as 16-bit integers that
-// wrap around, with the low bytes of every entry first and the high bytes after them. Smooth
-// tables predict well, so the differences are small and compress to less than half.
+// The tables of 64 x 64 entries ship in a gzip file, which this module downloads, unpacks with the
+// browser's DecompressionStream, decodes and writes into engine memory for the core to upload.
+// tools/area-light-tables.ts writes the file. The file holds six planes of 64 x 64 half floats, one
+// per channel: the four values of the inverse matrix, then the scale and the bias of the Fresnel
+// term. Each entry is stored as its difference from the prediction left + up - upper left of its
+// plane, as 16-bit integers that wrap around, with the low bytes of every entry first and the high
+// bytes after them. Smooth tables predict well, so the differences are small and compress to less
+// than half.
 
 import { EngineError } from '../errors/engine-error';
-import * as C from '../generated/core';
 import type { CoreMemory } from './memory';
 
 /** Entries along each side of each table. */
@@ -97,9 +96,4 @@ export class AreaLightTables {
 		decodeAreaTables(bytes, new Uint16Array(core.memory.buffer, at, AREA_TABLE_HALVES));
 		core.check(core.glue.finishAreaLightTables(), 'createRectAreaLight', undefined, true);
 	}
-}
-
-/** True for the kinds of light that need the tables. */
-export function isAreaLight(kind: number): boolean {
-	return kind === C.LIGHT_KIND_RECT || kind === C.LIGHT_KIND_TUBE;
 }

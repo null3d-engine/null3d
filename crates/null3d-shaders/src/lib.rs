@@ -50,8 +50,8 @@ pub use literals::literals_safari_refuses;
 pub use manifest::{Pipeline, Target, Variant};
 pub use material::{MaterialOutput, MaterialSource, MaterialTemplate, Share};
 pub use output::{
-    Binding, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output,
-    Response, VariantOutput, WgslOutput,
+    Binding, FEATURE_JOIN, FirstUseFeatures, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock,
+    Output, Response, VariantOutput, WgslOutput,
 };
 pub use pieces::{GlslPiece, PieceOutput, WgslPiece};
 pub use position::Position;
@@ -191,14 +191,16 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .filter_map(|bit| permutation::bit(bit))
         {
             output.first_use.bits.insert(bit, feature.clone());
-            if first_use.claims_shared_builds {
-                output.first_use.claiming.insert(bit);
-            }
         }
         for name in &first_use.bits {
             let Some(bit) = permutation::bit(name) else {
                 continue;
             };
+            // Only a value that names another feature too needs a per-shader mask: an unshared bit
+            // counts for every template ([`output::shared_bits`], decision record D-156).
+            if output::shared_bits() & bit == 0 {
+                continue;
+            }
             for (shader_name, shader) in &manifest.shaders {
                 if shader
                     .variants

@@ -1060,6 +1060,7 @@ fn cell_culling_lists_exactly_the_casters_that_each_cascade_lists_without_it() {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 300.0,
+        contact: 0.0,
         layers: DEFAULT_LAYERS,
     };
     let [mut on, mut off] = [true, false].map(|cell_culling| {

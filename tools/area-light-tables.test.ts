@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { gunzipSync } from 'node:zlib';
-import { AREA_TABLE_HALVES, decodeAreaTables } from '../packages/engine/src/scene/area-lights';
+import {
+	AREA_TABLE_HALVES,
+	decodeAreaTables,
+} from '../packages/engine/src/scene/area-light-tables';
 import { encodeAreaTables, TABLES_FILE, tablesFile, threeTables } from './area-light-tables';
 
 describe('the area lights tables file', () => {

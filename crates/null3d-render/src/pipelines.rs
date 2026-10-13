@@ -256,6 +256,8 @@ impl DrawKey {
                     | template::SPRITE_MAP
                     | template::LINE
                     | template::LINE_LIT
+                    | template::PARTICLE
+                    | template::PARTICLE_MAP
                     | template::DEBUG_VIEW
             )
     }
@@ -997,6 +999,8 @@ mod tests {
             template::SPRITE_MAP,
             template::LINE,
             template::LINE_LIT,
+            template::PARTICLE,
+            template::PARTICLE_MAP,
         ] {
             let quad = DrawKey {
                 template: faces_camera,
