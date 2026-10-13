@@ -268,6 +268,37 @@ describe('waitForRunners', () => {
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
 	});
 
+	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
+		// Chromium on iOS names itself Chrome, but its memory is WebKit's.
+		const iphone = {
+			userAgent:
+				'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1',
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], iphone)).toBe(true);
+		// iPad Safari gives a Mac's user agent; only the touch screen tells the two apart.
+		const ipad = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], ipad)).toBe(true);
+		// Desktop and Android browsers draw with Blink, so their failures are not explained by it.
+		const mac = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+			maxTouchPoints: 0,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], mac)).toBe(false);
+		const android = {
+			userAgent:
+				'Mozilla/5.0 (Linux; Android 14; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], android)).toBe(false);
+		// The rerun needs a held-memory failure, whatever the device is.
+		expect(rerunsInNewTab('Chrome', ['the image differs from its reference'], iphone)).toBe(false);
+	});
+
 	it('names a sketch module that did not load, with what the test server sends for it now', async () => {
 		const body = 'x'.repeat(250_000);
 		const server = Bun.serve({

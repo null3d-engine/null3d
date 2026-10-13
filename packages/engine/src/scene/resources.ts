@@ -1311,28 +1311,33 @@ type Ranged =
 	| 'thickness';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
-const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
-	['opacity', MATERIAL_PARAM_OPACITY, 1, 'opacity'],
-	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1, 'alpha cutoff'],
-	['metalness', MATERIAL_PARAM_METALNESS, 1, 'metalness'],
-	['roughness', MATERIAL_PARAM_ROUGHNESS, 1, 'roughness'],
-	[
-		'emissiveIntensity',
-		MATERIAL_PARAM_EMISSIVE_INTENSITY,
-		Number.POSITIVE_INFINITY,
-		'emissive intensity',
-	],
-	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1, 'aoMapIntensity'],
-	[
-		'lightMapIntensity',
-		MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
-		Number.POSITIVE_INFINITY,
-		'lightMapIntensity',
-	],
-	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
-	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
-	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
-	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
+const RANGED: readonly (readonly [Ranged, number, number])[] = [
+	['opacity', MATERIAL_PARAM_OPACITY, 1],
+	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1],
+	['metalness', MATERIAL_PARAM_METALNESS, 1],
+	['roughness', MATERIAL_PARAM_ROUGHNESS, 1],
+	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY, Number.POSITIVE_INFINITY],
+	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
+	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY, Number.POSITIVE_INFINITY],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY],
+	['transmission', MATERIAL_PARAM_TRANSMISSION, 1],
+	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY],
+];
+
+/** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
+const RANGED_NAMES: readonly string[] = [
+	'opacity',
+	'alpha cutoff',
+	'metalness',
+	'roughness',
+	'emissive intensity',
+	'aoMapIntensity',
+	'lightMapIntensity',
+	'specularIntensity',
+	'envIntensity',
+	'transmission',
+	'thickness',
 ];
 
 /** The core's slot of each map option. */
@@ -1374,16 +1379,19 @@ function checkValues(values: AnyValues, call: string): void {
 			'E1108',
 			`${call}() got the attenuationDistance ${distance}; it takes more than 0, or Infinity.`,
 		);
-	for (const [key, , most, name] of RANGED) {
+	for (let k = 0; k < RANGED.length; k++) {
+		const [key, , most] = RANGED[k] as readonly [Ranged, number, number];
 		const value = values[key];
 		if (value === undefined) continue;
-		if (!(value >= 0 && value <= most))
+		if (!(value >= 0 && value <= most)) {
+			const name = RANGED_NAMES[k] as string;
 			throw new EngineError(
 				'E1108',
 				most === 1
 					? `${call}() got the ${name} ${value}, outside 0 to 1.`
 					: `${call}() got the ${name} ${value}; it takes 0 or more.`,
 			);
+		}
 	}
 }
 
@@ -1408,67 +1416,13 @@ function writeValues(
 	if (emissive) sendColor(core, id, MATERIAL_PARAM_EMISSIVE, emissive, call);
 	if (specular) sendColor(core, id, MATERIAL_PARAM_SPECULAR_COLOR, specular, call);
 	if (attenuation) sendColor(core, id, MATERIAL_PARAM_ATTENUATION_COLOR, attenuation, call);
-	const {
-		opacity,
-		alphaCutoff,
-		metalness,
-		roughness,
-		emissiveIntensity,
-		aoMapIntensity,
-		lightMapIntensity,
-		specularIntensity,
-		envIntensity,
-		transmission,
-		thickness,
-		normalScale,
-		uvTransform,
-		ior,
-		attenuationDistance: distance,
-	} = values;
 	const numbers = core.callValues();
-	if (opacity !== undefined) {
-		numbers[0] = opacity;
-		sendValue(core, id, MATERIAL_PARAM_OPACITY, call);
-	}
-	if (alphaCutoff !== undefined) {
-		numbers[0] = alphaCutoff;
-		sendValue(core, id, MATERIAL_PARAM_ALPHA_CUTOFF, call);
-	}
-	if (metalness !== undefined) {
-		numbers[0] = metalness;
-		sendValue(core, id, MATERIAL_PARAM_METALNESS, call);
-	}
-	if (roughness !== undefined) {
-		numbers[0] = roughness;
-		sendValue(core, id, MATERIAL_PARAM_ROUGHNESS, call);
-	}
-	if (emissiveIntensity !== undefined) {
-		numbers[0] = emissiveIntensity;
-		sendValue(core, id, MATERIAL_PARAM_EMISSIVE_INTENSITY, call);
-	}
-	if (aoMapIntensity !== undefined) {
-		numbers[0] = aoMapIntensity;
-		sendValue(core, id, MATERIAL_PARAM_OCCLUSION_STRENGTH, call);
-	}
-	if (lightMapIntensity !== undefined) {
-		numbers[0] = lightMapIntensity;
-		sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_INTENSITY, call);
-	}
-	if (specularIntensity !== undefined) {
-		numbers[0] = specularIntensity;
-		sendValue(core, id, MATERIAL_PARAM_SPECULAR_INTENSITY, call);
-	}
-	if (envIntensity !== undefined) {
-		numbers[0] = envIntensity;
-		sendValue(core, id, MATERIAL_PARAM_ENV_INTENSITY, call);
-	}
-	if (transmission !== undefined) {
-		numbers[0] = transmission;
-		sendValue(core, id, MATERIAL_PARAM_TRANSMISSION, call);
-	}
-	if (thickness !== undefined) {
-		numbers[0] = thickness;
-		sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
+	const { normalScale, uvTransform, ior, attenuationDistance: distance } = values;
+	for (const [key, param] of RANGED) {
+		const value = values[key];
+		if (value === undefined) continue;
+		numbers[0] = value;
+		sendValue(core, id, param, call);
 	}
 	if (ior !== undefined) {
 		numbers[0] = reflectance(ior);
@@ -1669,8 +1623,11 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 	if (Array.isArray(value)) {
 		first = value[0];
 		fits = value.length === count;
-		for (let k = 0; fits && k < count; k++) fits = isFiniteNumber(value[k]);
-	} else fits = count === 1 && isFiniteNumber(value);
+		for (let k = 0; fits && k < count; k++) {
+			const number = value[k];
+			fits = typeof number === 'number' && Number.isFinite(number);
+		}
+	} else fits = count === 1 && typeof value === 'number' && Number.isFinite(value);
 	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
 	const takes =
 		count === 1
@@ -1682,11 +1639,6 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 		'E1216',
 		`${call}() got ${JSON.stringify(value)} for the ${type} uniform ${uniform.name}; it takes ${takes}.`,
 	);
-}
-
-/** True for a finite number. */
-function isFiniteNumber(value: unknown): boolean {
-	return typeof value === 'number' && Number.isFinite(value);
 }
 
 /** True for a standard value that `set` writes itself, which the uniform writes skip. */
@@ -1731,12 +1683,12 @@ function writeUniforms(
 	values: Readonly<Record<string, UniformValue | undefined>>,
 	call: string,
 ): void {
+	const numbers = core.callValues();
 	for (const name in values) {
 		const value = values[name];
 		if (value === undefined || isStandard(name, call)) continue;
 		const uniform = uniforms.get(name) as CompiledUniform;
 		const count = UNIFORM_FLOATS[uniform.type];
-		const numbers = core.callValues();
 		if (typeof value === 'number') numbers[0] = value;
 		else if (Array.isArray(value)) for (let k = 0; k < count; k++) numbers[k] = value[k] as number;
 		else writeLinearColor(numbers, value as ColorInput, call);
