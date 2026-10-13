@@ -1,7 +1,7 @@
 enable f16;
 #define_import_path null3d::half
 #import null3d::color::{ACES_INPUT, ACES_OUTPUT, AGX_INSET, AGX_MAX_EV, AGX_MIN_EV, AGX_OUTSET}
-#import null3d::color::{agx_contrast}
+#import null3d::color::{AGX_PUNCHY_POWER, AGX_PUNCHY_SATURATION, agx_contrast, luminance}
 #import null3d::color::{LINEAR_REC2020_TO_LINEAR_SRGB, LINEAR_SRGB_TO_LINEAR_REC2020}
 #import null3d::lighting::{PbrMaterial, Reflected}
 
@@ -139,6 +139,20 @@ fn tone_map_agx(c: vec3f) -> vec3f {
     // The contrast curve runs at full precision: its large terms cancel, and 16-bit floats lose
     // enough of their digits to move a color by several steps of an 8-bit target.
     let curved = vec3h(agx_contrast(vec3f(x)));
+    let rec2020 = pow(max(mat3x3h(AGX_OUTSET) * curved, vec3h(0.0h)), vec3h(2.2h));
+    return vec3f(saturate(mat3x3h(LINEAR_REC2020_TO_LINEAR_SRGB) * rec2020));
+}
+
+/// AgX tone mapping with the punchy look, as `null3d::color::tone_map_agx_punchy` gives it.
+fn tone_map_agx_punchy(c: vec3f) -> vec3f {
+    let inset = mat3x3h(AGX_INSET) * (mat3x3h(LINEAR_SRGB_TO_LINEAR_REC2020) * tone_input(c));
+    let min_ev = f16(AGX_MIN_EV);
+    let range = f16(AGX_MAX_EV) - min_ev;
+    let x = saturate((log2(max(inset, vec3h(1e-4h))) - min_ev) / range);
+    // The curve and the look run at full precision, for the reason that tone_map_agx gives.
+    let looked = pow(max(agx_contrast(vec3f(x)), vec3f(0.0)), vec3f(AGX_PUNCHY_POWER));
+    let luma = luminance(looked);
+    let curved = vec3h(luma + AGX_PUNCHY_SATURATION * (looked - luma));
     let rec2020 = pow(max(mat3x3h(AGX_OUTSET) * curved, vec3h(0.0h)), vec3h(2.2h));
     return vec3f(saturate(mat3x3h(LINEAR_REC2020_TO_LINEAR_SRGB) * rec2020));
 }

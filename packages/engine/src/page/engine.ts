@@ -1515,6 +1515,13 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			// A channel's ports keep the engine's closures alive while they stay open: a port with a
+			// listener is a pending activity, which the page never collects. The engine has stopped, so
+			// close both ends and let go of the channels.
+			for (const { port1, port2 } of channels) {
+				port1.close();
+				port2.close();
+			}
 			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
