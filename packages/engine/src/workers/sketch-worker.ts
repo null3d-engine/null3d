@@ -100,6 +100,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					wantJobs,
 					sendLabelSlot: (id, slot, generation) =>
 						replyToPage({ type: 'label', id, slot, generation }),
+					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
 				},
 				message.hold,
 			);
