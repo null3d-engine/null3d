@@ -364,6 +364,18 @@ The particles demo's scenery lives in `examples/particles/glade.ts`, beside the 
 - Sphere crowns with flat shading read as faceted low-poly balls, not foliage. Each birch's crown is now five bumpy lumps, built from arrays. Each lump is a ball with bumps of two sizes and smooth normals. Its vertex colors darken the hollows and vary at random in brightness and hue, as clustered leaves do. Three such lumps, turned and tinted in four autumn colors, give every tree a different crown.
 - A firelight with the physical fall-off lit only the stones. The firelight now fades more slowly than real light (`decay` 1.2), reaches 16 m and is warmer, so the ground round the fire and the nearest birch trunks take its glow. Its flicker is soft: about a fifth up or down, from three slow waves that never fall in step.
 
+## The stone garden's scenery (12 October 2026)
+
+The owner asked for a richer contact shadows demo (`contact-shadows`, Stone garden) on 12 October 2026. Its scenery now lives in `examples/contact-shadows/garden.ts`, beside the sketch, and all of it is made in code.
+
+- Sand raked in rings around each rock, and in straight furrows between them. A normal map from the same rake gives the low sun a light relief. A stronger relief drew dark stripes that hid the cast shadows.
+- Granite rocks: polyhedra from `@null3d/geometry` with bumps, flat underneath, each with its own shape and warmth. One granite texture made from value noise covers the rocks, the stepping stones, the curb and the lantern. Moss covers the rocks' tops through their vertex colors.
+- Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, and a plaster wall with a tiled cap.
+- Beyond the wall, a bamboo grove and pines of seven ragged tiers that droop at their tips. Their greens hold little red. A green with more red turned khaki in the orange light of the low sun.
+- The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stood higher than the hour's, the sky was too bright for the low sun's light, and the long shadows hardly showed. The sky's environment lights the scene, so the demo has no ambient light.
+- The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. The first left wall stood 1.2 m high and shaded half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
+- The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.
