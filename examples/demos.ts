@@ -224,12 +224,26 @@ export const DEMOS: readonly Demo[] = [
 		name: 'atmosphere',
 		group: 'Light, materials and effects',
 		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),
+		code: 'atmosphere/',
 		title: 'Atmosphere',
 		scene: 'Valley of ridges',
 		summary:
 			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
 		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
 		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'contact-shadows',
+		group: 'Light, materials and effects',
+		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
+		code: 'contact-shadows/',
+		title: 'Contact shadows',
+		scene: 'Stone garden',
+		summary:
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
+		hold: 1,
 		timeoutSeconds: 60,
 	},
 	{

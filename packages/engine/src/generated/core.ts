@@ -50,6 +50,7 @@ export const LIGHT_VALUE_SHADOW_NORMAL_BIAS = 6;
 export const LIGHT_VALUE_SHADOW_CASCADES = 7;
 export const LIGHT_VALUE_SHADOW_MAP_SIZE = 8;
 export const LIGHT_VALUE_SHADOW_DISTANCE = 9;
+export const LIGHT_VALUE_SHADOW_CONTACT = 10;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
@@ -235,7 +236,16 @@ export const MATERIAL_PARAM_ATTENUATION_DISTANCE = 43;
 
 export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
+export const EFFECT_TEXTURES = 6;
 export const EFFECT_DEPTH = 1;
+
+export const PASS_KIND_SCENE = 0;
+export const PASS_KIND_REFLECTION = 1;
+export const PASS_KIND_FULLSCREEN = 2;
+
+export const PASS_SOURCE_NONE = 0;
+export const PASS_SOURCE_SCENE_COLOR = 1;
+export const PASS_SOURCE_OUTLINE_MASK = 2;
 
 export const SCENE_PASS_MAX = 31;
 

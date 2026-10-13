@@ -1,7 +1,7 @@
 // Pines made in code at four levels of detail, and the rolling hills they stand on, for the forest
 // demo and the test page that measures what the levels save. A pine is a trunk and four tiers of
 // needles, each a curved cone whose edge waves three times around it, in vertex colors, darker
-// toward each tier's base.
+// toward each tier's base. The stone garden builds its own pines with the same grid of quads.
 import { type Geometry, type InstanceBatch, type MeshGeometry, math } from '@null3d/engine';
 
 /**
