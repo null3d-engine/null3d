@@ -7,7 +7,9 @@
 // spec checks the pixels that the fault changes, and the light that the units give a rough surface,
 // so it fails even before a test has references.
 import { expect, type Page, test } from '@playwright/test';
+import { linearToSrgb } from '../../packages/engine/src/math/color.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { agx } from '../pages/lib/shader-library-cases.ts';
 import { IMAGE_RUNS } from './manifest.ts';
 
 test.describe.configure({ mode: 'parallel' });
@@ -26,10 +28,11 @@ const WHITE = 250;
 const GLOW_RADIUS = 15;
 /**
  * The darkest channel that a pixel within the glow's radius may have, out of 255. The black floor
- * around the highlight shows only the glow there. With the exposure at the end, the glow came from
- * the highlight held at 65,472 before the exposure, about 39,000 times too faint to show.
+ * around the highlight shows only the glow there, which the default curve draws at about 40. With
+ * the exposure at the end, the glow came from the highlight held at 65,472 before the exposure,
+ * about 39,000 times too faint to show.
  */
-const GLOW_FLOOR = 60;
+const GLOW_FLOOR = 20;
 /**
  * The box's top in linear color before the tone curve: white paper under 100,000 lux at 63.4° from
  * the vertical, 100,000 × cos(63.4°) / π nits, times the exposure of EV100 15, 1 / (1.2 × 2^15).
@@ -82,16 +85,9 @@ function green(image: Image, [x, y]: Point): number {
 	return image.pixels[4 * (y * image.width + x) + 1] ?? 0;
 }
 
-/** Linear color from 0 up after three.js's ACES curve, encoded as sRGB out of 255, for gray. */
-function acesSrgb(linear: number): number {
-	// three.js's ACESFilmicToneMapping for a gray input: its fit of RRT and ODT on each channel, after
-	// the input and output matrices, whose rows each add up to 1 for gray, and its 1 / 0.6 scale.
-	const v = linear / 0.6;
-	const a = v * (v + 0.0245786) - 0.000090537;
-	const b = v * (0.983729 * v + 0.432951) + 0.238081;
-	const mapped = Math.min(Math.max(a / b, 0), 1);
-	const srgb = mapped <= 0.0031308 ? mapped * 12.92 : 1.055 * mapped ** (1 / 2.4) - 0.055;
-	return srgb * 255;
+/** Linear gray after the engine's default curve, punchy AgX, encoded as sRGB out of 255. */
+function defaultCurveSrgb(linear: number): number {
+	return linearToSrgb(agx([linear, linear, linear], true)[1]) * 255;
 }
 
 for (const name of ['real-units', 'real-units-exposure'])
@@ -116,7 +112,7 @@ for (const name of ['real-units', 'real-units-exposure'])
 				.soft(glow.value, `${run.id}: the glow at ${glow.at}`)
 				.toBeGreaterThanOrEqual(GLOW_FLOOR);
 			const top = green(image, BOX_TOP);
-			const expected = acesSrgb(BOX_TOP_LINEAR);
+			const expected = defaultCurveSrgb(BOX_TOP_LINEAR);
 			expect
 				.soft(Math.abs(top - expected), `${run.id}: the box's sunlit top, ${top} for ${expected}`)
 				.toBeLessThanOrEqual(BOX_TOLERANCE);

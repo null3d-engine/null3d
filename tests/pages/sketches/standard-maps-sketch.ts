@@ -1,5 +1,7 @@
 // The texture maps scene (bench/scenes/material-maps.ts), which the parity test also draws with
-// three.js: each map of the standard material, and an unlit map, each made in code.
+// three.js: each map of the standard material, and an unlit map, each made in code. ?tone=none
+// turns off the engine's default curve, as the parity test asks: the three.js twin draws with no
+// tone mapping, three.js's default.
 import { defineSketch, type Material, type MeshGeometry, type Texture } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -20,7 +22,10 @@ import {
 	SUN,
 } from '../../../bench/scenes/material-maps';
 
-export default defineSketch(({ scene, materials, geometry, textures }) => {
+const params = new URL(import.meta.url).searchParams;
+
+export default defineSketch(({ scene, materials, geometry, textures, post }) => {
+	if (params.get('tone') === 'none') post.set({ toneMapping: 'none' });
 	scene.setBackground(MAPS_BACKGROUND);
 	scene.setActiveCamera(scene.createPerspectiveCamera(MAPS_CAMERA));
 	scene.createDirectionalLight(SUN);

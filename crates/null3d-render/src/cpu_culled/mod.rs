@@ -108,8 +108,8 @@ use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows, joined_rows,
+    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
+    RecordError, SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -381,6 +381,8 @@ pub struct CpuCulledRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
+    /// The layouts' scratch for rebuilds, which they share.
+    key_counts: KeyCounts,
     /// The shadow passes of the frame that the layouts were built for.
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
@@ -531,6 +533,7 @@ impl CpuCulledRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
+            key_counts: KeyCounts::new(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             layout_prepass: false,
@@ -695,7 +698,16 @@ impl CpuCulledRenderer {
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
+            settings,
+            pipelines,
+            skins,
+            targets,
+            input,
+            limit,
+            multi_draw,
+            shadows,
+            prepass,
+            &mut self.key_counts,
         )?;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
@@ -710,6 +722,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.casters.clear();
@@ -728,6 +741,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.outlined.clear();
@@ -754,6 +768,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
+                &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
         self.skins.asked();
