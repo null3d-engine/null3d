@@ -18,6 +18,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
@@ -322,6 +323,16 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
 		]);
+	});
+
+	test('makes a shadow catcher a lit material that blends, with its own feature', () => {
+		const { features, shadings, table, materials } = fakeCore();
+		const catcher = materials.shadowCatcher({ color: '#ffffff', opacity: 0.5 });
+		expect(shadings).toEqual([SHADING_LIT]);
+		expect(features).toEqual([MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_SHADOW_CATCHER]);
+		expect(table[0]?.slice(0, 4)).toEqual([1, 1, 1, 0.5]);
+		catcher.set({ opacity: 0.25 });
+		expect(table[0]?.[MATERIAL_PARAM_OPACITY]).toBe(0.25);
 	});
 
 	test('maps go into their slots, on the coordinates of their texture', () => {

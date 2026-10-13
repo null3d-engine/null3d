@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, and transmission. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, and the shadow catcher. The API is experimental, so it can still change between versions. `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -38,8 +38,28 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
 | `materials.shader(options)` | A standard material whose WGSL changes its look before the engine lights it, or moves its vertices |
+| `materials.shadowCatcher(options)` | Only the shadows that fall on it, as three.js's `ShadowMaterial` |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
+
+## Shadow catchers
+
+`materials.shadowCatcher({ color, opacity })` draws a surface that shows only the shadows that fall on it, as three.js's `ShadowMaterial`: its `color` where the main directional light's shadow falls, and nothing at all where the light reaches it. The shadows of point and spot lights do not show on it. The mesh must receive shadows with `setReceiveShadows(true)`, as three.js's `receiveShadow` must be set.
+
+The default color is black and the default opacity is 1. The material blends, so it draws in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It takes no texture maps. Its shadows are the main directional light's, so a scene needs a directional light that casts shadows.
+
+```ts
+const FLAT = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const;
+const ground = scene.createMesh({
+  mesh: geometry.plane({ width: 20, height: 20 }),
+  material: materials.shadowCatcher({ opacity: 0.6 }),
+  position: [0, 0.01, 0],
+  rotation: FLAT,
+});
+ground.setReceiveShadows(true);
+```
+
+Put the catcher a little above the surface it lies on, so its shadows show over that surface. [Shadows](../concepts/shadows.md) explains the light's shadow settings.
 
 ## Standard values
 
