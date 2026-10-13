@@ -1679,9 +1679,8 @@ export class Light extends Object3D {
 
 	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = intensity * (this.unitScale[0] as number);
-		this.writeNumber('setIntensity', C.LIGHT_VALUE_INTENSITY);
+		this.scene.core.callValues()[0] = intensity * (this.unitScale[0] as number);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1717,47 +1716,34 @@ export class Light extends Object3D {
 	}
 
 	/**
-	 * @internal Sets one of the light's numbers, by its code in the light table, to `value`. Used
-	 * where a light is made or its shadow settings change, which is not in a frame, so it takes the
-	 * number itself. A per-frame setter writes its number into the call values in its own small
-	 * body and calls `writeNumber` instead, so no fraction crosses a call that the browser may not
-	 * inline.
+	 * @internal Sets one of the light's numbers, by its code in the light table. A per-frame setter
+	 * writes the number into the call values in its own small body and calls this with no number,
+	 * so no fraction crosses a call that the browser may not inline. Making a light, and its shadow
+	 * settings, pass the number itself.
 	 */
-	write(call: string, which: number, value: number | undefined): void {
-		if (DEV) this.checkLightNumber(call, which, value);
+	write(call: string, which: number, value?: number): void {
 		const { core } = this.scene;
-		core.callValues()[0] = value as number;
+		// A per-frame setter writes the call value itself and passes no number; a light's creation
+		// and its shadow settings pass the number, which may be undefined for a required setting.
+		if (arguments.length < 3) value = core.callValues()[0] as number;
+		else core.callValues()[0] = value as number;
+		if (DEV) {
+			checkLive(call, this);
+			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
+			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			// Cascades are whole, and map sizes are powers of two.
+			const number = value as number;
+			const whole =
+				which === C.LIGHT_VALUE_SHADOW_CASCADES
+					? Number.isInteger(number)
+					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
+			if (!(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
+				throw new EngineError(
+					'E1108',
+					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
+				);
+		}
 		core.glue.setLightValue(this.id, which);
-	}
-
-	/**
-	 * @internal Sets one of the light's numbers to the first call value, which the caller wrote in
-	 * its own small body. A development build reads that value back to check it; a release build
-	 * reads nothing, so no number crosses the call.
-	 */
-	writeNumber(call: string, which: number): void {
-		const { core } = this.scene;
-		if (DEV) this.checkLightNumber(call, which, core.callValues()[0] as number);
-		core.glue.setLightValue(this.id, which);
-	}
-
-	/** @internal The development checks for one of the light's numbers. */
-	private checkLightNumber(call: string, which: number, value: number | undefined): void {
-		if (!DEV) return;
-		checkLive(call, this);
-		const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
-		if (typeof value === 'number') checkNumber(call, limits[0], value, this);
-		// Cascades are whole, and map sizes are powers of two.
-		const number = value as number;
-		const whole =
-			which === C.LIGHT_VALUE_SHADOW_CASCADES
-				? Number.isInteger(number)
-				: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
-		if (!(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
-			throw new EngineError(
-				'E1108',
-				`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
-			);
 	}
 
 	/**
@@ -1822,16 +1808,14 @@ export class DirectionalLight extends Light {
 export class PointLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = range;
-		this.writeNumber('setRange', C.LIGHT_VALUE_RANGE);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = decay;
-		this.writeNumber('setDecay', C.LIGHT_VALUE_DECAY);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/**
@@ -1857,30 +1841,26 @@ export class PointLight extends Light {
 export class SpotLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = range;
-		this.writeNumber('setRange', C.LIGHT_VALUE_RANGE);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = decay;
-		this.writeNumber('setDecay', C.LIGHT_VALUE_DECAY);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/** Sets the angle in radians from the light's direction to the edge of its cone: up to π/2. */
 	setAngle(angle: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = angle;
-		this.writeNumber('setAngle', C.LIGHT_VALUE_ANGLE);
+		this.scene.core.callValues()[0] = angle;
+		this.write('setAngle', C.LIGHT_VALUE_ANGLE);
 	}
 
 	/** Sets the part of the cone, from 0 to 1, over which the light fades out toward the edge. */
 	setPenumbra(penumbra: number): void {
-		const { core } = this.scene;
-		core.callValues()[0] = penumbra;
-		this.writeNumber('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
+		this.scene.core.callValues()[0] = penumbra;
+		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
 	}
 
 	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
