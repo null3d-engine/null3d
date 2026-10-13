@@ -3138,6 +3138,16 @@ pub fn set_ao_scale(thousandths: u32) -> u32 {
     })
 }
 
+/// Sets the steps of each march of the main directional light's contact shadows, from the next
+/// frame on: 0 draws none.
+#[wasm_bindgen(js_name = setContactSteps)]
+pub fn set_contact_steps(steps: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_contact_steps(steps);
+        0
+    })
+}
+
 /// Grades the canvas color with the color grading table in 3D texture `texture`, or with none
 /// when `texture` is 0, from the next frame on. The post-processing values give its intensity, the
 /// share of the graded color, and its domain, the colors that the table's first and last texels

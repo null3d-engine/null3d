@@ -423,6 +423,9 @@ export class SketchRunner {
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
 				},
+				get contactShadowSteps() {
+					return governor.contactSteps;
+				},
 			},
 			textures.memory,
 		);
@@ -765,6 +768,7 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		governor.setContact(settings.contactShadowSteps);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -772,6 +776,7 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setSubsurfaceTaps(settings.subsurfaceSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
@@ -818,7 +823,8 @@ export class SketchRunner {
 			this.setLevelQuality() !== 0 ||
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
-			glue.setAoScale(governor.aoScale) !== 0
+			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();

@@ -237,6 +237,7 @@ describe('SketchQuality.lower', () => {
 			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
+			contactShadowSteps: low.contactShadowSteps,
 			dofSamples: low.dofSamples,
 			subsurfaceSamples: low.subsurfaceSamples,
 			reflectionScale: low.reflectionScale,
@@ -302,13 +303,14 @@ describe('SketchQuality.setPreset', () => {
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
 		// Every preset has the same highest render scale, following of moving casters, cascade blend,
-		// software occlusion culling and governor, and Low and Medium the same ambient occlusion scale
-		// and subsurface blur.
+		// software occlusion culling and governor, and Low and Medium on WebGPU the same ambient
+		// occlusion scale, contact shadow steps and subsurface blur.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
 			'shadowCascadeBlend',
 			'aoScale',
+			'contactShadowSteps',
 			'subsurfaceSamples',
 			'softwareOcclusion',
 			'governor',
