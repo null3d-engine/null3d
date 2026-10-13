@@ -161,6 +161,9 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 pub(crate) struct GraphIds {
     pub(crate) first_texture: u32,
     pub(crate) final_pass: FinalIds,
+    /// The GPU objects of the first step of the two-step pass, which shares the final pass's blank
+    /// tables and sampler and takes settings and a bind group of its own.
+    pub(crate) output_pass: FinalIds,
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
@@ -183,6 +186,9 @@ const LIGHTS: &str = "lights";
 const LIGHT_GRID: &str = "lightGrid";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
+/// The first step of the two-step pass's target: the scene's display color at the render size,
+/// which the second step scales up to the canvas.
+const OUTPUT_COLOR: &str = "outputColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
 /// The shadow map: a depth texture array with one layer per cascade, kept between frames.
@@ -382,6 +388,12 @@ pub(crate) enum Role {
     /// Tone maps the HDR scene color into the canvas, with bloom's levels added. The graph records
     /// it itself.
     FinalBloom,
+    /// Draws the first step of the two-step pass: the scene's display color at the render size,
+    /// into [`OUTPUT_COLOR`]. The graph records it itself.
+    Output,
+    /// Draws the first step of the two-step pass, with bloom's base level added. The graph records
+    /// it itself.
+    OutputBloom,
 }
 
 /// The passes that can take the scene color to the canvas: the resolve pass, and the final pass's
@@ -391,6 +403,10 @@ pub(crate) enum Role {
 struct Outputs {
     resolve: PassId,
     finals: [[Option<PassId>; 2]; 2],
+    /// The first step of the two-step pass, by whether bloom draws: it draws the scene's display
+    /// color at the render size into [`OUTPUT_COLOR`]. The plain final pass is then the second
+    /// step, which scales that up to the canvas with the grading and the outline.
+    output: [Option<PassId>; 2],
 }
 
 /// A name for a view's pass or resource: `camera` for the camera's view, and `other` followed by
@@ -626,6 +642,8 @@ pub(crate) struct FrameGraph {
     /// The views of layers that the draw lists made.
     made_views: u32,
     final_pass: FinalPass,
+    /// The first step of the two-step pass below the whole canvas's render scale.
+    output_pass: FinalPass,
 }
 
 impl FrameGraph {
@@ -749,6 +767,7 @@ impl FrameGraph {
             tiles: None,
             declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
+            output_pass: FinalPass::new(ids.output_pass, scene_color, antialias).resolve(),
         }
     }
 
@@ -766,6 +785,7 @@ impl FrameGraph {
         self.samples = antialias.samples();
         self.resolves = !scene_color.is_hdr() && antialias == Antialias::Msaa;
         self.final_pass.set_mode(scene_color, antialias);
+        self.output_pass.set_mode(scene_color, antialias);
         self.make_bloom_pass();
         // Effects run on HDR color only, and read the depth's samples, which the new mode may
         // change.
@@ -1005,7 +1025,17 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + fullscreen
+        FinalPass::UPLOAD_BYTES
+            + if self.scales {
+                FinalPass::UPLOAD_BYTES
+            } else {
+                0
+            }
+            + bloom
+            + ao
+            + effects
+            + dof
+            + fullscreen
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1026,7 +1056,19 @@ impl FrameGraph {
     /// resolve into the canvas, that switches the final pass on in place of the resolve pass, and
     /// the graph compiles again.
     pub(crate) fn set_scaling(&mut self, scales: bool) {
-        self.scales = scales;
+        if scales != self.scales {
+            // The declarations hold the two-step pass only while the render scale can drop below
+            // the whole canvas, so the passes are declared again now, before this frame's plan
+            // compiles.
+            self.scales = scales;
+            if self.declared_views.is_empty() {
+                self.declared = false;
+            } else {
+                let views = self.declared_views.clone();
+                let names = self.declared_names.clone();
+                self.declare(&views, &names);
+            }
+        }
         self.enable_outputs();
     }
 
@@ -1045,15 +1087,35 @@ impl FrameGraph {
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
         let outlines = self.outline_draws();
-        if let Some(Outputs { resolve, finals }) = self.outputs {
+        let two_step = self.scales;
+        if let Some(Outputs {
+            resolve,
+            finals,
+            output,
+        }) = self.outputs
+        {
             let final_runs = self.final_runs();
             self.graph.set_enabled(resolve, !final_runs);
             for (bloom, passes) in finals.into_iter().enumerate() {
                 for (outline, pass) in passes.into_iter().enumerate() {
                     if let Some(pass) = pass {
-                        let on = final_runs && blooms == (bloom == 1) && outlines == (outline == 1);
+                        // With the two-step pass the plain final pass draws the second step, which
+                        // reads the first step's display color; bloom draws in the first step then.
+                        let on = final_runs
+                            && if two_step {
+                                bloom == 0 && outlines == (outline == 1)
+                            } else {
+                                blooms == (bloom == 1) && outlines == (outline == 1)
+                            };
                         self.graph.set_enabled(pass, on);
                     }
+                }
+            }
+            // The first step draws the scene's display color at the render size, with the bloom.
+            for (bloom, pass) in output.into_iter().enumerate() {
+                if let Some(pass) = pass {
+                    self.graph
+                        .set_enabled(pass, final_runs && two_step && blooms == (bloom == 1));
                 }
             }
         }
@@ -1243,6 +1305,8 @@ impl FrameGraph {
         !self.bloom_wanted()
             && self.dof.is_none()
             && !self.final_pass.fxaa()
+            // The two-step pass reads display color in its second step, so the effects do not fold.
+            && !self.scales
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
 
@@ -1730,9 +1794,26 @@ impl FrameGraph {
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let resolve = self.add(resolve, Role::Resolve);
+        // Below the whole canvas's render scale the final pass draws in two steps: the first step
+        // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
+        // pass then scales that up to the canvas.
+        let two_step = self.scales;
+        let output = if two_step {
+            [
+                Some(self.declare_output(false)),
+                Some(self.declare_output(true)),
+            ]
+        } else {
+            [None, None]
+        };
+        let source = if two_step {
+            OUTPUT_COLOR
+        } else {
+            self.color_output()
+        };
         let mut final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
-            .reads(self.color_output())
+            .reads(source)
             .writes(CANVAS);
         if self.folded.is_some_and(|first| self.folded_depth(first)) {
             final_pass = final_pass.reads(SCENE_DEPTH);
@@ -1749,7 +1830,11 @@ impl FrameGraph {
                 Some(self.add(final_bloom_outline, Role::FinalBloom)),
             ];
         }
-        self.outputs = Some(Outputs { resolve, finals });
+        self.outputs = Some(Outputs {
+            resolve,
+            finals,
+            output,
+        });
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
@@ -1954,6 +2039,30 @@ impl FrameGraph {
             .get_or_insert_with(|| AoPass::new(self.ao_ids, samples))
     }
 
+    /// Declares the first step of the two-step pass: one triangle over the render size, which draws
+    /// the scene's display color into [`OUTPUT_COLOR`], with bloom's base level added when `bloom`.
+    /// It draws at [`Size::Full`], so it fills the render size and its `whole` test holds.
+    fn declare_output(&mut self, bloom: bool) -> PassId {
+        let mut pass = Pass::new(
+            if bloom { "OutputBloom" } else { "Output" },
+            PassKind::Fullscreen,
+        )
+        .size(Size::Full)
+        .reads(self.color_output())
+        .creates(OUTPUT_COLOR, Target::color(format::CANVAS));
+        if bloom {
+            pass = pass.reads(BLOOM_LEVELS[0]);
+        }
+        self.add(
+            pass,
+            if bloom {
+                Role::OutputBloom
+            } else {
+                Role::Output
+            },
+        )
+    }
+
     /// Declares bloom's steps: a step down into each level, the first from the scene color and
     /// each later one from the level above as the steps before it leave it, then a step up into
     /// each level but the last, which reads the level below and blends into its own. Returns the
@@ -2087,7 +2196,12 @@ impl FrameGraph {
         pipelines_built: u32,
     ) {
         let wanted = self.bloom_wanted();
-        let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
+        let two_step = self.scales;
+        let final_bloom = self
+            .final_pass
+            .request_pipeline(pipelines, wanted, two_step);
+        // The first step draws the same builds as the final pass, so it asks for them too.
+        self.output_pass.request_pipeline(pipelines, wanted, false);
         if let Some(pass) = self.effect_pass.as_mut() {
             pass.request_pipelines(
                 pipelines,
@@ -2292,6 +2406,49 @@ impl FrameGraph {
             }),
             None => None,
         };
+        if self.scales {
+            // Two steps: the first draws the display color at the render size, with the bloom, and
+            // the second scales it up to the canvas, with the grading and the outline. The vignette
+            // darkens high dynamic range color in the first step and display color in the second.
+            let hdr = self.scene_color.is_hdr();
+            let output_color = self
+                .sampled_id(OUTPUT_COLOR)
+                .expect("the two-step pass reads the first step's target");
+            let first_grading = Grading {
+                vignette: if hdr { grading.vignette } else { None },
+                lut: None,
+            };
+            let second_grading = Grading {
+                vignette: if hdr { None } else { grading.vignette },
+                lut: grading.lut,
+            };
+            self.output_pass.prepare(
+                list,
+                arena,
+                output.tone_mapping,
+                render_size,
+                scene_color,
+                bloom,
+                first_grading,
+                None,
+                None,
+                self.textures_made,
+                false,
+            )?;
+            return self.final_pass.prepare(
+                list,
+                arena,
+                output.tone_mapping,
+                render_size,
+                output_color,
+                None,
+                second_grading,
+                outline,
+                None,
+                self.textures_made,
+                true,
+            );
+        }
         self.final_pass.prepare(
             list,
             arena,
@@ -2303,6 +2460,7 @@ impl FrameGraph {
             outline,
             fold,
             self.textures_made,
+            false,
         )
     }
 
@@ -2717,8 +2875,16 @@ impl FrameGraph {
                     self.set_render_area(list, size)?;
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
-                            Role::Final => self.final_pass.record(list, false)?,
+                            Role::Final => {
+                                if self.scales {
+                                    self.final_pass.record_present(list)?
+                                } else {
+                                    self.final_pass.record(list, false)?
+                                }
+                            }
                             Role::FinalBloom => self.final_pass.record(list, true)?,
+                            Role::Output => self.output_pass.record(list, false)?,
+                            Role::OutputBloom => self.output_pass.record(list, true)?,
                             Role::Bloom(step) => self
                                 .bloom_pass
                                 .as_ref()
@@ -2945,6 +3111,7 @@ impl FrameGraph {
         self.made_views = 0;
         self.canvas = (0, 0);
         self.final_pass.reset_gpu();
+        self.output_pass.reset_gpu();
         if let Some(bloom) = self.bloom_pass.as_mut() {
             bloom.reset_gpu();
         }
@@ -3336,6 +3503,13 @@ mod tests {
         final_pass: FinalIds {
             settings: 9,
             group: 9,
+            blank_lut: 900,
+            lut_sampler: 9,
+            blank_outline: 901,
+        },
+        output_pass: FinalIds {
+            settings: 907,
+            group: 907,
             blank_lut: 900,
             lut_sampler: 9,
             blank_outline: 901,
@@ -3950,8 +4124,9 @@ mod tests {
         assert_eq!(viewports[0][2..4], [960, 540]);
         assert_eq!(viewports[1][2..4], [910, 512]);
         assert_eq!(viewports[8][2..4], [8, 4]);
-        assert_eq!(viewports.last().unwrap()[2..4], [910, 512]);
-        assert_eq!(viewports.len(), 1 + 15);
+        // The two-step pass draws the first step's whole render size, after bloom's levels.
+        assert_eq!(viewports.last().unwrap()[2..4], [960, 540]);
+        assert_eq!(viewports.len(), 2 + 15);
 
         // The governor's halving draws each level into a corner of half its target, and drops the
         // last level's two steps.
@@ -3982,7 +4157,8 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         let plan = frames.graph().plan().unwrap();
-        assert_eq!(plan.textures().len(), without + LEVELS - 1);
+        // The chain's levels, and the two-step pass's own target.
+        assert_eq!(plan.textures().len(), without + LEVELS - 1 + 1);
         assert!(frames.graph().find_pass(BLOOM_DOWN[LEVELS - 1]).is_none());
 
         // Off again, the steps and their targets are gone.
@@ -3991,7 +4167,7 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
-        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without + 1);
     }
 
     #[test]

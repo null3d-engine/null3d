@@ -259,8 +259,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
+    pub const SHADOW_TILES: u32 = OUTPUT_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
     const SORTED: u32 = SHADOW_TILES + 1;
 
@@ -419,6 +421,8 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's view copies.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
     /// Each camera view's group of its light clustering dispatches, after the final pass's group.
     pub const fn light_group(view: ViewId) -> u32 {
         FINAL_GROUP + 1 + view.index() as u32
@@ -428,7 +432,7 @@ mod ids {
         FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -639,6 +643,13 @@ impl GpuDrivenRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                            blank_lut: ids::BLANK_LUT,
+                            lut_sampler: ids::LUT_SAMPLER,
+                            blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,

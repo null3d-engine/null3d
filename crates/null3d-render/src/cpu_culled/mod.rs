@@ -162,8 +162,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
+    pub const SHADOW_TILES: u32 = OUTPUT_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     pub const BLOOM: u32 = SHADOW_TILES + 1;
     /// The uniform buffer of ambient occlusion's steps.
@@ -267,6 +269,8 @@ mod ids {
     const GROUPS_PER_VIEW: u32 = RING + 1 + RING * RING;
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1;
 
     /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
     /// it.
@@ -282,7 +286,7 @@ mod ids {
         draws_group(view) + 1
     }
     /// The bind group of each step of bloom, after the final pass's group.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
@@ -474,6 +478,13 @@ impl CpuCulledRenderer {
                         final_pass: FinalIds {
                             settings: ids::FINAL_SETTINGS,
                             group: ids::FINAL_GROUP,
+                            blank_lut: ids::BLANK_LUT,
+                            lut_sampler: ids::LUT_SAMPLER,
+                            blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
