@@ -77,7 +77,7 @@ use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::scene::{NO_PARENT, SceneStorage, flags};
-use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
+use null3d_gpu::drawlist::sizes::{SHADOW_SETTINGS_BYTES, SHADOW_UNIFORM_BYTES};
 use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
@@ -926,6 +926,8 @@ impl CasterPasses {
 /// of the shadow atlas under `sampler`, and of the sampler that reads four texels of the shadow
 /// map at once under `texels`, where the frame builder's shaders have such reads. Every scene
 /// view's frame group binds them.
+/// Records the creation of the shadow settings' uniform block, which holds the cascades and the
+/// tiles, and of the sampler: linear comparisons, clamped at the edges.
 pub(crate) fn create_objects(
     list: &mut DrawList,
     uniform: u32,
@@ -936,7 +938,7 @@ pub(crate) fn create_objects(
         Op::CreateBuffer,
         &[
             uniform,
-            SHADOW_UNIFORM_BYTES,
+            SHADOW_SETTINGS_BYTES,
             buffer_usage::UNIFORM | buffer_usage::COPY_DST,
         ],
     )?;
