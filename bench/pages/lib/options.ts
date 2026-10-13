@@ -12,6 +12,11 @@ export interface RunOptions {
 	hold: number | null;
 	/** `?demo`: run the scene until the page closes, with no measurement. */
 	demo: boolean;
+	/**
+	 * `?keep`: run the scene as a timed run does, without the demo's controls, until the page closes,
+	 * with no measurement.
+	 */
+	keep: boolean;
 	/** `?n=`: the instance count, or null to use the scene's default. */
 	count: number | null;
 	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
@@ -95,10 +100,12 @@ function readNumber(
 	return value;
 }
 
-/** The name a page publishes its result under: `hold`, `demo`, `soak` or `bench`. */
+/**
+ * The name a page publishes its result under: `hold`, `demo` (also for `?keep`), `soak` or `bench`.
+ */
 export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 'bench' {
 	if (params.has('hold')) return 'hold';
-	if (params.has('demo')) return 'demo';
+	if (params.has('demo') || params.has('keep')) return 'demo';
 	return params.has('soak') ? 'soak' : 'bench';
 }
 
@@ -106,8 +113,8 @@ export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'soak' | 
 const whole = (v: number) => Number.isSafeInteger(v) && v > 0;
 
 /**
- * Reads `?hold`, `?demo`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`, the shadow
- * quality settings, `?antialias=` and `?maxPixelRatio=`.
+ * Reads `?hold`, `?demo`, `?keep`, `?n=`, `?seconds=`, `?soak=`, `?shadows=`, `?far=`, `?governor=`,
+ * the shadow quality settings, `?antialias=` and `?maxPixelRatio=`.
  */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
@@ -121,6 +128,7 @@ export function readRunOptions(params: URLSearchParams): RunOptions {
 						'a scene time in seconds, 0 or more',
 					),
 		demo: params.has('demo'),
+		keep: params.has('keep'),
 		count: readNumber(
 			params,
 			'n',

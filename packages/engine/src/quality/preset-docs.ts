@@ -80,6 +80,10 @@ export const SETTING_DOCS: {
 		print: (value) =>
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
+	contactShadowSteps: {
+		label: 'Contact shadows',
+		print: (value) => (Number(value) > 0 ? `${value} steps at half resolution` : 'off'),
+	},
 	dofSamples: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
@@ -103,6 +107,7 @@ export const SETTING_DOCS: {
 	morphTargets: { label: 'Morph targets per object on WebGL2' },
 	softwareOcclusion: { label: 'Software occlusion culling (WebGL2)', print: yesNo },
 	parallax: { label: 'Parallax occlusion mapping', print: yesNo },
+	softParticles: { label: 'Soft particles', print: yesNo },
 	maxAnisotropy: { label: 'Anisotropic filtering cap', print: (value) => `${value}x` },
 	uploadBytesPerFrame: {
 		label: 'Texture uploads per frame',

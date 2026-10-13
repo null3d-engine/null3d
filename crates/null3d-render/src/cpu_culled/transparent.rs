@@ -17,7 +17,9 @@ use null3d_gpu::drawlist::{DrawList, Op, index_format, sizes};
 
 use super::layout::{MULTI_DRAW_BLOCK_BYTES, RESIDENT};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, put_u32};
+use crate::particles::ParticlePass;
 use crate::sorted::{SortedLayout, SortedView};
+use crate::view::ViewId;
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
 const TEXTURES_GROUP: u32 = 3;
@@ -48,6 +50,9 @@ struct Call {
     /// pipeline: a run's front faces after its back faces. It writes no records of its own, and no
     /// later draw joins it.
     repeat: bool,
+    /// The id of the particle system that the call draws, with its own records and groups, or 0
+    /// for a call of mesh parts.
+    particles: u32,
 }
 
 /// A view's draws of the frame.
@@ -142,6 +147,19 @@ impl Transparent {
         let mut records = 0;
         for run in sorted.draws() {
             let bucket = layout.buckets[run.bucket as usize];
+            if let Some(system) = bucket.particle_system() {
+                state.calls.push(Call {
+                    pipeline: bucket.pipeline,
+                    textures: bucket.textures,
+                    page: u32::MAX,
+                    first: state.parts.len() as u32,
+                    count: 0,
+                    records,
+                    repeat: false,
+                    particles: system,
+                });
+                continue;
+            }
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
@@ -159,6 +177,7 @@ impl Transparent {
                     && state.calls.last().is_some_and(|call| {
                         call.pipeline == pipeline
                             && !call.repeat
+                            && call.particles == 0
                             && call.textures == bucket.textures
                             && call.page == part.page
                             && call.count < per_call
@@ -182,6 +201,7 @@ impl Transparent {
                         count: 1,
                         records,
                         repeat: false,
+                        particles: 0,
                     });
                 }
                 state.parts.push(PartDraw {
@@ -253,8 +273,9 @@ impl Transparent {
         draws_group: u32,
         records_at: u32,
         meshes: &MeshBuffers,
-        groups: impl FnOnce(&mut DrawList) -> Result<(), RecordError>,
+        groups: impl Fn(&mut DrawList) -> Result<(), RecordError>,
         hidden: &dyn Fn(u32) -> bool,
+        particles: &ParticlePass,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
         if state.calls.is_empty() {
@@ -264,6 +285,16 @@ impl Transparent {
         let (mut pipeline, mut textures, mut page) = (None, 0, None);
         for call in &state.calls {
             if call.textures != 0 && hidden(call.textures) {
+                continue;
+            }
+            // A particle system draws its records with its own groups, so the calls after it set
+            // the frame's, the instances' and their own groups again.
+            if call.particles != 0 {
+                let id = ViewId::from_index(view);
+                if particles.record(list, id, call.particles, call.pipeline, call.textures)? {
+                    groups(list)?;
+                    (pipeline, textures, page) = (None, 0, None);
+                }
                 continue;
             }
             if pipeline != Some(call.pipeline) {
