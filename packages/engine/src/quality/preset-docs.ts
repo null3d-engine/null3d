@@ -67,6 +67,7 @@ export const SETTING_DOCS: {
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	followMovingCasters: { label: 'Far cascades follow moving casters', print: yesNo },
+	farAnimationInterval: { label: 'Far-animation updates', print: everyNth },
 	shadowCascadeBlend: {
 		label: 'Blend between shadow cascades',
 		print: (value) => `${Math.round(Number(value) * 100)}% of each cascade`,
