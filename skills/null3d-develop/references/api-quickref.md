@@ -247,7 +247,7 @@ scene.createDirectionalLight(day.light);  // the sun by day, the moon after suns
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
 sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
-light.setIntensity(v); light.setColor(c);   // every light; setColor allocates, so animate the intensity
+light.setIntensity(v); light.setColor(c);   // every light; call from a small step so the browser inlines it
 light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
@@ -313,7 +313,7 @@ const paint = materials.standard({
   depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
-paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
+paint.set({ roughness: 0.4 });  // changes only the options you pass; set values up front, not every frame
 
 const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
   map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
