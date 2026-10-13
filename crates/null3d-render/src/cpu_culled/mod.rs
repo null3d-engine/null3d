@@ -108,8 +108,8 @@ use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows, joined_rows,
+    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
+    RecordError, SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -158,14 +158,13 @@ mod ids {
     }
     /// The vertices of the debug lines.
     pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEW_IDS as u32;
-    /// The cascades' uniform block, which receivers read beside the shadow map.
+    /// The frame's shadow settings, which receivers read beside the shadow map and the atlas: the
+    /// sun's cascades, then the atlas's tiles (D-146).
     pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
-    /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = SHADOW_TILES + 1;
+    pub const BLOOM: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
@@ -380,6 +379,8 @@ pub struct CpuCulledRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
+    /// The layouts' scratch for rebuilds, which they share.
+    key_counts: KeyCounts,
     /// The shadow passes of the frame that the layouts were built for.
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
@@ -523,6 +524,7 @@ impl CpuCulledRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
+            key_counts: KeyCounts::new(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             layout_prepass: false,
@@ -687,7 +689,16 @@ impl CpuCulledRenderer {
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
+            settings,
+            pipelines,
+            skins,
+            targets,
+            input,
+            limit,
+            multi_draw,
+            shadows,
+            prepass,
+            &mut self.key_counts,
         )?;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
@@ -702,6 +713,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.casters.clear();
@@ -720,6 +732,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.outlined.clear();
@@ -746,6 +759,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
+                &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
         self.skins.asked();
@@ -884,11 +898,10 @@ impl CpuCulledRenderer {
 
     /// Records the creation of the material table, a data texture with one row of texels for each
     /// material it holds and one for each material's custom values, and three.js's table of
-    /// specular terms in the columns after them, and of the shadows' uniform block and comparison
+    /// specular terms in the columns after them, and of the shadows' settings block and comparison
     /// sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
-        ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         list.push(
             Op::CreateTexture,
             &[
@@ -1366,7 +1379,8 @@ impl CpuCulledRenderer {
                 list.push(Op::WriteBuffer, &[ids::SHADOWS, 0, at, bytes])?;
             }
             self.cascades_held = self.shadow.is_some() || (self.cascades_held && !shadowed);
-            self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+            self.tiles
+                .upload(list, arena, ids::SHADOWS, sizes::SHADOW_UNIFORM_BYTES)?;
             upload_views(
                 list,
                 arena,
