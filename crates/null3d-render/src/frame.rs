@@ -1305,11 +1305,28 @@ impl SceneSettings {
         self.outline = outline;
     }
 
-    /// True while the sketch sets a color grading table or the vignette, outside a debug view,
-    /// whose colors reach the canvas as its shader writes them. The final pass then runs on every
-    /// path.
+    /// True while the sketch sets a color grading table, or the vignette on the HDR path, outside
+    /// a debug view, whose colors reach the canvas as its shader writes them. The final pass then
+    /// runs on every path. On the 8-bit path the scene shaders apply the vignette.
     pub(crate) fn grades(&self) -> bool {
-        (self.lut.is_some() || self.vignette.is_some()) && !self.debug_view.is_debug()
+        (self.lut.is_some() || self.final_vignette().is_some()) && !self.debug_view.is_debug()
+    }
+
+    /// The vignette that the final pass applies: the sketch's on the HDR path, none on the 8-bit
+    /// path.
+    fn final_vignette(&self) -> Option<Vignette> {
+        self.vignette.filter(|_| self.canvas.scene_color.is_hdr())
+    }
+
+    /// The vignette's values that the scene shaders apply before their tone mapping: the sketch's
+    /// on the 8-bit path outside a debug view, else zeros, which apply none.
+    pub(crate) fn scene_vignette(&self) -> [f32; 4] {
+        match self.vignette {
+            Some(vignette) if !self.canvas.scene_color.is_hdr() && !self.debug_view.is_debug() => {
+                vignette.uniform()
+            }
+            _ => [0.0; 4],
+        }
     }
 
     /// What the final pass grades the frame with: the table once its texels are on the GPU, and
@@ -1325,7 +1342,7 @@ impl SceneSettings {
         });
         Grading {
             lut,
-            vignette: self.vignette,
+            vignette: self.final_vignette(),
         }
     }
 
@@ -1499,6 +1516,18 @@ impl SceneSettings {
     /// as in every debug view.
     pub fn background(&self) -> Option<Background> {
         self.background.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// The exposed background color that the camera's view draws as a background on the 8-bit
+    /// path while the vignette is on, or none. There the scene shaders darken their light by the
+    /// vignette before their tone mapping, and a clear alone would leave the color as it is. Without
+    /// a background color the clear is black, which the vignette leaves black.
+    pub(crate) fn vignetted_background_color(&self) -> Option<[f32; 3]> {
+        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
+            return None;
+        }
+        let color = self.lighting.background?;
+        Some(self.drawn_output().expose(color))
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
@@ -2316,6 +2345,11 @@ impl SceneSettings {
             } else {
                 [0.0; 4]
             },
+            vignette: if view_id == ViewId::CAMERA {
+                self.scene_vignette()
+            } else {
+                [0.0; 4]
+            },
             ..FrameUniform::default()
         };
         Some(ViewFrame::new(
@@ -2366,19 +2400,28 @@ fn sways(materials: &MaterialTable, material: u32) -> bool {
             .is_ok_and(Shading::casts_its_own_way)
 }
 
+/// What makes a bucket of a layout, the same key that [`crate::levels`] names, so both frame
+/// builders share one sort and one type.
+pub(crate) type BucketKey = crate::levels::BucketKey;
+
+/// Scratch for layout rebuilds: every bucket key with its source count, sorted and merged into one
+/// entry per bucket. It holds an entry for every scene slot while it sorts, so a frame builder
+/// keeps one for all its layouts, which rebuild one after another and read it only while they do.
+pub(crate) type KeyCounts = Vec<(BucketKey, u32)>;
+
 /// Collects the bucket key of every scene slot, shown or hidden, with a count of one, and of every
 /// batch, with its row capacity. Sorted, equal keys merge into one entry per bucket, in key order.
 /// A slot or batch without a key draws nowhere. Reuses `out`, which grows only with the scene.
-pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
-    out: &mut Vec<(K, u32)>,
+pub(crate) fn collect_bucket_keys(
+    out: &mut KeyCounts,
     scene: &SceneStorage,
     batches: &BatchTable,
-    scene_key: impl Fn(usize) -> Option<K>,
-    batch_key: impl Fn(usize, &InstanceBatch) -> Option<K>,
+    scene_key: impl Fn(usize) -> Option<BucketKey>,
+    batch_key: impl Fn(usize, &InstanceBatch) -> Option<BucketKey>,
 ) {
     let scene_rows = (scene.capacity() + 1) as usize;
     out.clear();
-    out.reserve(scene_rows + batches.len() as usize);
+    out.reserve_exact(scene_rows + batches.len() as usize);
     for slot in 0..scene_rows {
         if let Some(key) = scene_key(slot) {
             out.push((key, 1));
@@ -2400,7 +2443,7 @@ pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
 }
 
 /// The bucket of a key in a table that [`collect_bucket_keys`] made, or `None` for no key.
-pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Option<u32> {
+pub(crate) fn bucket_of(table: &[(BucketKey, u32)], key: Option<BucketKey>) -> Option<u32> {
     let key = key?;
     table
         .binary_search_by_key(&key, |&(k, _)| k)
