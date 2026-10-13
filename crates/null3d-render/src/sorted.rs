@@ -39,7 +39,7 @@ use null3d_core::world::SphereArrays;
 use null3d_gpu::drawlist::state_flags;
 
 use crate::frame::{
-    CellOffsets, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
+    CellOffsets, KeyCounts, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
 };
 use crate::materials::feature;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
@@ -49,7 +49,7 @@ use null3d_gpu::drawlist::template;
 /// What makes a sorted bucket: what the mesh and material ask of their pipeline, the bind group of
 /// the material's map, the vertex page of the mesh's first part, the engine mesh and material ids,
 /// and the data texture of the rows, which only the WebGL2 builder tells apart.
-type SortedKey = (DrawKey, u32, u32, u32, u32, u32);
+type SortedKey = crate::frame::BucketKey;
 
 /// A sentinel for a scene slot or batch that the transparent pass does not draw.
 const NOT_SORTED: u32 = u32::MAX;
@@ -197,8 +197,6 @@ pub(crate) struct SortedLayout {
     scene_slots: Vec<u32>,
     scene_buckets: Vec<u32>,
     batches: Vec<SortedBatch>,
-    /// Scratch for rebuilds: every sorted key with its source count, sorted and merged.
-    key_counts: Vec<(SortedKey, u32)>,
     /// The pipelines of the skinned objects that the layout leaves out until they are built.
     waiting: Vec<u32>,
     /// The rows that can draw: blended scene objects, and blended batches' capacities.
@@ -287,6 +285,7 @@ impl SortedLayout {
         resident: u32,
         shadows: bool,
         skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
         let key_of = |pipeline: Option<DrawKey>,
@@ -346,7 +345,7 @@ impl SortedLayout {
                 batch.shadows(),
             )
         };
-        collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
+        collect_bucket_keys(key_counts, scene, batches, scene_key, batch_key);
 
         // A double-sided material that blends draws its back faces, then its front faces.
         let faces = |pipeline: DrawKey, material: u32| {
@@ -371,12 +370,11 @@ impl SortedLayout {
         }
 
         self.buckets.clear();
-        self.transmits = self
-            .key_counts
+        self.transmits = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| pipeline.transmits());
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
-        for &((pipeline, textures, _, mesh, material, group), count) in &self.key_counts {
+        for &((pipeline, textures, _, mesh, material, group), count) in key_counts.iter() {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (back, front) = match faces(pipeline, material) {
                 Some((back, front)) => (pipelines.id(back.in_pass(targets)), front),
@@ -405,7 +403,7 @@ impl SortedLayout {
             largest = largest.max(count);
         }
 
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of = |key: Option<SortedKey>| bucket_of(counts, key).unwrap_or(NOT_SORTED);
         let scene_rows = scene.capacity() as usize + 1;
         self.scene_slots.clear();
