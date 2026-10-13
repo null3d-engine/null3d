@@ -58,6 +58,7 @@ import {
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import type { CustomShader } from '../shared/images';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
 import { ShaderPreloads } from './shader-preloads';
@@ -166,7 +167,7 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const memory = new WebAssembly.Memory({ initial: 1 });
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	return {
 		core,
 		table,
