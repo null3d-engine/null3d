@@ -127,7 +127,7 @@ use std::borrow::Cow;
 
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
-use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
+use crate::ao::{self, Ao, AoIds, AoPass, Contact, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
@@ -521,7 +521,8 @@ pub(crate) struct FrameGraph {
     bloom: Option<Bloom>,
     /// True once bloom's pipelines draw: built, after the frame whose list created them.
     bloom_built: bool,
-    /// True once ambient occlusion's pipelines draw: built, after the frame whose list created them.
+    /// True once the pipelines of ambient occlusion's steps that run draw: built, after the frame
+    /// whose list created them.
     ao_built: bool,
     /// The size of bloom's base and the governor's halvings of it.
     bloom_chain: ChainFrame,
@@ -577,9 +578,12 @@ pub(crate) struct FrameGraph {
     ao_ids: AoIds,
     /// Ambient occlusion's settings while it draws.
     ao: Option<Ao>,
+    /// The main directional light's contact shadows while they draw, which ambient occlusion's
+    /// steps march.
+    contact: Option<Contact>,
     /// The size of ambient occlusion's targets as a share of the render size.
     ao_scale: f32,
-    /// The camera's projection and its inverse, while ambient occlusion draws.
+    /// The camera's projection and its inverse, while ambient occlusion's steps run.
     projection: (Mat4, Mat4),
     /// Screen-space reflections' steps and their GPU objects, once they first draw.
     ssr_pass: Option<SsrPass>,
@@ -741,6 +745,7 @@ impl FrameGraph {
             ao_pass: None,
             ao_ids: ids.ao,
             ao: None,
+            contact: None,
             ao_scale: ao::MAX_SCALE,
             projection: ([0.0; 16], [0.0; 16]),
             ssr_pass: None,
@@ -866,37 +871,57 @@ impl FrameGraph {
     }
 
     /// True when each view has a depth prepass: from the builder's start, or while ambient
-    /// occlusion or screen-space reflections draw, as they read the prepass's depth.
+    /// occlusion's steps run or screen-space reflections draw, as they read the prepass's depth.
     pub(crate) fn depth_prepass(&self) -> bool {
-        self.prepass || self.ao.is_some() || self.ssr.is_some()
+        self.prepass || self.screen_steps() || self.ssr.is_some()
     }
 
-    /// Turns ambient occlusion on with its settings, the camera's projection and its inverse, and
-    /// the size of its targets as a share of the render size, or off with `None`, for the next
-    /// frames. The passes are declared again only when it turns on or off.
-    pub(crate) fn set_ao(&mut self, ao: Option<(Ao, (Mat4, Mat4))>, scale: f32) {
-        if ao.is_some() != self.ao.is_some() {
+    /// True while ambient occlusion's steps run: while ambient occlusion or contact shadows draw.
+    fn screen_steps(&self) -> bool {
+        self.ao.is_some() || self.contact.is_some()
+    }
+
+    /// Sets ambient occlusion's settings and the main directional light's contact shadows for the
+    /// next frames, each `None` while it draws nothing, with the camera's projection and its
+    /// inverse in `lens`, and the size of ambient occlusion's targets as a share of the render
+    /// size. Contact shadows run ambient occlusion's steps. The passes are declared again only
+    /// when the steps start or stop.
+    pub(crate) fn set_ao(
+        &mut self,
+        ao: Option<Ao>,
+        contact: Option<Contact>,
+        lens: Option<(Mat4, Mat4)>,
+        scale: f32,
+    ) {
+        let (ao, contact) = match lens {
+            Some(projection) => {
+                self.projection = projection;
+                (ao, contact)
+            }
+            None => (None, None),
+        };
+        let was = self.screen_steps();
+        self.ao = ao;
+        self.contact = contact;
+        if self.screen_steps() != was {
             self.declared = false;
-        }
-        self.ao = ao.map(|(settings, _)| settings);
-        if let Some((_, projection)) = ao {
-            self.projection = projection;
         }
         self.ao_scale = scale;
     }
 
     /// The draw list's id of the screen texture that the camera's opaque pass reads ambient
-    /// occlusion and screen-space reflections from: ambient occlusion's last target while it
-    /// draws, else the trace's target while reflections draw, else `None`. Valid once the frame's
+    /// occlusion, contact shadows and screen-space reflections from: the last target of ambient
+    /// occlusion's steps while they draw, else the trace's target while reflections draw, else
+    /// `None`. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn ao_texture(&self) -> Option<u32> {
         self.screen_target().and_then(|name| self.sampled_id(name))
     }
 
     /// The name of the screen texture's last target, which the camera's opaque pass reads, or
-    /// `None` while neither ambient occlusion nor screen-space reflections draw.
+    /// `None` while neither ambient occlusion's steps nor screen-space reflections draw.
     fn screen_target(&self) -> Option<&'static str> {
-        if self.ao_draws() {
+        if self.screen_draws() {
             Some(AO_TARGETS[ao::STEPS - 1])
         } else if self.ssr_draws() {
             Some(SSR_TARGETS[ssr::STEPS - 1])
@@ -908,7 +933,11 @@ impl FrameGraph {
     /// The screen texture's grid as a share of the render size: the largest scale of the features
     /// that draw on it.
     fn screen_scale(&self) -> f32 {
-        let ao = if self.ao_draws() { self.ao_scale } else { 0.0 };
+        let ao = if self.screen_draws() {
+            self.ao_scale
+        } else {
+            0.0
+        };
         let ssr = if self.ssr_draws() {
             self.ssr_scale
         } else {
@@ -948,8 +977,8 @@ impl FrameGraph {
     /// `eye` is this frame's camera position in the world. It then keeps this frame's view, whose
     /// copy the next frame reads. Call it once a frame, after [`FrameGraph::prepare`].
     pub(crate) fn write_screen_values(&mut self, uniform: &mut FrameUniform, eye: [f64; 3]) {
-        if self.ao_draws() || self.ssr_draws() {
-            let strength = if self.ao_draws() {
+        if self.screen_draws() || self.ssr_draws() {
+            let strength = if self.screen_draws() {
                 uniform.occlusion[0]
             } else {
                 0.0
@@ -985,11 +1014,11 @@ impl FrameGraph {
             .copied()
     }
 
-    /// True while ambient occlusion draws: the sketch turned it on, and its pipelines are built.
-    /// Until then the prepass runs, so its pipelines build too, and the opaque pass reads no
-    /// ambient occlusion.
-    pub(crate) fn ao_draws(&self) -> bool {
-        self.ao.is_some() && self.ao_built
+    /// True while ambient occlusion's steps draw: the sketch turned ambient occlusion or the
+    /// sun's contact shadows on, and the pipelines of the steps that run are built. Until then the
+    /// prepass runs, so its pipelines build too, and the opaque pass reads neither.
+    pub(crate) fn screen_draws(&self) -> bool {
+        self.screen_steps() && self.ao_built
     }
 
     /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
@@ -1077,7 +1106,7 @@ impl FrameGraph {
         } else {
             0
         };
-        let ao = if self.ao_draws() || self.ssr_draws() {
+        let ao = if self.screen_draws() || self.ssr_draws() {
             AoPass::UPLOAD_BYTES
         } else {
             0
@@ -2005,8 +2034,8 @@ impl FrameGraph {
     /// Declares the steps of the screen texture: ambient occlusion's depth copy, which reads the
     /// scene depth as the prepass leaves it, then while screen-space reflections draw the levels
     /// of their depth pyramid and their trace, each from the copy and the levels before it, then
-    /// while ambient occlusion draws its horizon search, which reads the copy, and its denoise,
-    /// which reads the copy, the search and the trace.
+    /// while ambient occlusion or contact shadows draw the horizon search, which reads the copy,
+    /// and the denoise, which reads the copy, the search and the trace.
     fn declare_screen(&mut self) {
         self.ao_steps();
         let depth = Pass::new(AO_PASSES[0], PassKind::Fullscreen)
@@ -2035,7 +2064,7 @@ impl FrameGraph {
             let trace = trace.creates(SSR_TARGETS[ssr::LEVELS], Target::color(ssr::TRACE_FORMAT));
             self.add(trace, Role::Ssr(ssr::LEVELS as u8));
         }
-        if !self.ao_draws() {
+        if !self.screen_draws() {
             return;
         }
         for step in 1..ao::STEPS {
@@ -2232,7 +2261,7 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
-        let ao_built = (self.ao.is_some() || self.ssr.is_some()) && {
+        let steps_built = (self.screen_steps() || self.ssr.is_some()) && {
             let steps = self.ao_steps();
             steps.request_pipelines(pipelines);
             pipelines.all_built(steps.pipeline_ids(), pipelines_built)
@@ -2243,12 +2272,12 @@ impl FrameGraph {
                 steps.request_pipelines(pipelines);
                 pipelines.all_built(steps.pipeline_ids(), pipelines_built)
             }
-            && ao_built;
-        let ao_built = ao_built && self.ao.is_some();
+            && steps_built;
+        let ao_built = steps_built && self.screen_steps();
         if ao_built != self.ao_built {
-            let was = self.ao_draws();
+            let was = self.screen_draws();
             self.ao_built = ao_built;
-            if self.ao_draws() != was {
+            if self.screen_draws() != was {
                 self.declared = false;
             }
         }
@@ -2650,18 +2679,25 @@ impl FrameGraph {
         Ok(())
     }
 
-    /// Records ambient occlusion's objects and settings while the screen texture's steps draw, and
-    /// binds each step to the textures it reads. While only screen-space reflections draw, the
-    /// depth step alone runs, and the other steps' groups bind the depth copy.
+    /// Records the objects and settings of ambient occlusion's steps while the screen texture's
+    /// steps draw, and binds each step to the textures it reads. While only screen-space
+    /// reflections draw, the depth step alone runs, and the other steps' groups bind the depth
+    /// copy.
     fn upload_ao(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        let (settings, projection) = match (self.ao_draws(), self.ssr.filter(|_| self.ssr_built)) {
-            (true, _) => (self.ao.unwrap_or_default(), self.projection),
-            (false, Some(frame)) => (Ao::default(), frame.projection),
+        let screen = self.screen_draws();
+        let projection = match (screen, self.ssr.filter(|_| self.ssr_built)) {
+            (true, _) => self.projection,
+            (false, Some(frame)) => frame.projection,
             (false, None) => return Ok(()),
+        };
+        let (ao, contact) = if screen {
+            (self.ao, self.contact)
+        } else {
+            (None, None)
         };
         let id = |name: &str| {
             self.sampled_id(name)
@@ -2669,7 +2705,7 @@ impl FrameGraph {
         };
         let depth = id(AO_TARGETS[0]);
         let reflects = self.ssr_draws();
-        let sources: StepSources = if self.ao_draws() {
+        let sources: StepSources = if screen {
             let horizon = id(AO_TARGETS[1]);
             let trace = if reflects {
                 id(SSR_TARGETS[ssr::LEVELS])
@@ -2691,7 +2727,7 @@ impl FrameGraph {
             .as_mut()
             .expect("ambient occlusion's steps exist once it is declared");
         pass.prepare(
-            list, arena, settings, projection, canvas, scale, grid, &sources, reflects, made,
+            list, arena, ao, contact, projection, canvas, scale, grid, &sources, reflects, made,
         )
     }
 
@@ -4667,7 +4703,7 @@ mod tests {
             let without = frames.graph().plan().unwrap().textures().len();
             assert!(!frames.depth_prepass());
 
-            frames.set_ao(Some((Ao::default(), lens)), 0.5);
+            frames.set_ao(Some(Ao::default()), None, Some(lens), 0.5);
             assert!(
                 frames.depth_prepass(),
                 "ambient occlusion needs the prepass's depth"
@@ -4741,7 +4777,7 @@ mod tests {
                 .upload(&mut list, &mut arena, Output::default(), Grading::default())
                 .unwrap();
             list.clear();
-            frames.set_ao(Some((Ao::default(), lens)), 0.25);
+            frames.set_ao(Some(Ao::default()), None, Some(lens), 0.25);
             frames
                 .prepare(&mut list, (320, 180), RenderScale::FULL)
                 .unwrap();
@@ -4754,7 +4790,7 @@ mod tests {
             assert!(viewports.iter().any(|v| v[2..4] == [80, 45]));
 
             // Off again, the steps and their targets are gone, and the prepass with them.
-            frames.set_ao(None, 0.5);
+            frames.set_ao(None, None, None, 0.5);
             assert!(!frames.depth_prepass());
             frames.sync(&[View::default(), shown()]);
             frames
@@ -4896,40 +4932,50 @@ mod tests {
                 assert!(viewports.iter().any(|v| v[2..4] == size), "{size:?}");
             }
 
-            // With ambient occlusion too, its search and denoise follow the trace, and the denoise
-            // copies the trace's ray lengths into the screen texture that the opaque pass reads.
-            frames.set_ao(Some((Ao::default(), ([1.0; 16], [1.0; 16]))), 0.5);
+            // With contact shadows or ambient occlusion too, the search and denoise follow the
+            // trace, and the denoise copies the trace's ray lengths into the screen texture that
+            // the opaque pass reads.
+            let contact = Contact {
+                to_light: [0.0, 1.0, 0.0],
+                distance: 0.3,
+                steps: 8,
+            };
             pipelines.create_new(&mut list, 3).unwrap();
-            frames.request_pipelines(&mut pipelines, 3);
-            frames.sync(&[View::default(), shown()]);
-            frames
-                .prepare(&mut list, canvas, RenderScale::FULL)
-                .unwrap();
-            let names = steps(&frames);
-            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
-            let trace = at("SsrTrace").unwrap();
-            assert_eq!(at("AoHorizon"), Some(trace + 1));
-            assert_eq!(at("AoDenoise"), Some(trace + 2));
-            assert_eq!(at("Opaque"), Some(trace + 3));
-            assert_eq!(
-                frames.ao_texture(),
-                frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
-            );
-            arena.reset(frames.upload_bound());
-            list.clear();
-            frames
-                .upload(&mut list, &mut arena, Output::default(), Grading::default())
-                .unwrap();
-            let trace_texture = frames.sampled_id(SSR_TARGETS[ssr::LEVELS]).unwrap();
-            assert!(
-                operands(&list, Op::CreateBindGroup)
-                    .iter()
-                    .any(|group| group[1] == bind_layout::AO && group[3..].contains(&trace_texture)),
-                "the denoise binds the trace's target"
-            );
+            for (ao, contact) in [(None, Some(contact)), (Some(Ao::default()), None)] {
+                frames.set_ao(ao, contact, Some(([1.0; 16], [1.0; 16])), 0.5);
+                frames.request_pipelines(&mut pipelines, 3);
+                frames.sync(&[View::default(), shown()]);
+                frames
+                    .prepare(&mut list, canvas, RenderScale::FULL)
+                    .unwrap();
+                let names = steps(&frames);
+                let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+                let trace = at("SsrTrace").unwrap();
+                assert_eq!(at("AoHorizon"), Some(trace + 1));
+                assert_eq!(at("AoDenoise"), Some(trace + 2));
+                assert_eq!(at("Opaque"), Some(trace + 3));
+                assert_eq!(
+                    frames.ao_texture(),
+                    frames.sampled_id(AO_TARGETS[ao::STEPS - 1])
+                );
+                arena.reset(frames.upload_bound());
+                list.clear();
+                frames
+                    .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                    .unwrap();
+                if contact.is_some() {
+                    let trace_texture = frames.sampled_id(SSR_TARGETS[ssr::LEVELS]).unwrap();
+                    assert!(
+                        operands(&list, Op::CreateBindGroup).iter().any(|group| {
+                            group[1] == bind_layout::AO && group[3..].contains(&trace_texture)
+                        }),
+                        "the denoise binds the trace's target"
+                    );
+                }
+            }
 
             // Off again, the steps, their targets and the copy are gone.
-            frames.set_ao(None, 0.5);
+            frames.set_ao(None, None, None, 0.5);
             frames.set_ssr(None, 0.5);
             assert!(!frames.depth_prepass());
             frames.sync(&[View::default(), shown()]);
@@ -4942,6 +4988,93 @@ mod tests {
             let mut uniform = FrameUniform::default();
             frames.write_screen_values(&mut uniform, [0.0; 3]);
             assert_eq!(uniform.reflection, [0.0; 4]);
+        }
+    }
+
+    #[test]
+    fn contact_shadows_alone_run_the_steps_of_ambient_occlusion() {
+        let lens = ([1.0; 16], [1.0; 16]);
+        let contact = Contact {
+            to_light: [0.0, 1.0, 0.0],
+            distance: 0.3,
+            steps: 8,
+        };
+        for (format, antialias, gpu_culling) in [
+            (format::RGBA16_FLOAT, Antialias::Msaa, true),
+            (format::CANVAS, Antialias::Msaa, false),
+        ] {
+            let mut frames = frame_graph(format, antialias, gpu_culling, true);
+            let mut list = DrawList::with_capacity(4096);
+            let mut pipelines = PipelineCache::default();
+            let mut frame = |frames: &mut FrameGraph, list: &mut DrawList| {
+                frames.request_pipelines(&mut pipelines, 0);
+                frames.sync(&[View::default(), shown()]);
+                frames.prepare(list, (320, 180), RenderScale::FULL).unwrap();
+            };
+            frame(&mut frames, &mut list);
+            let without = frames.graph().plan().unwrap().textures().len();
+
+            frames.set_ao(None, Some(contact), Some(lens), 0.5);
+            assert!(
+                frames.depth_prepass(),
+                "contact shadows need the prepass's depth"
+            );
+            frame(&mut frames, &mut list);
+            let names = steps(&frames);
+            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+            let prepass = at("DepthPrepass").unwrap();
+            assert_eq!(
+                [
+                    at("AoDepth"),
+                    at("AoHorizon"),
+                    at("AoDenoise"),
+                    at("Opaque")
+                ],
+                [
+                    Some(prepass + 1),
+                    Some(prepass + 2),
+                    Some(prepass + 3),
+                    Some(prepass + 4)
+                ],
+                "the horizon step marches them and the denoise blurs them"
+            );
+            let plan = frames.graph().plan().unwrap();
+            assert!(frames.graph().find_resource(AO_TARGETS[1]).is_some());
+            assert!(plan.textures().len() > without);
+            assert!(frames.ao_texture().is_some());
+
+            // Ambient occlusion as well runs the same steps.
+            frames.set_ao(Some(Ao::default()), Some(contact), Some(lens), 0.5);
+            frame(&mut frames, &mut list);
+            let names = steps(&frames);
+            let at = |name: &str| names.iter().position(|step| step.iter().any(|p| p == name));
+            assert!(at("AoHorizon").is_some());
+            assert!(frames.ao_texture().is_some());
+
+            // A new reach or a new direction only uploads the steps' settings.
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            frames
+                .upload(&mut list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            let turned = Contact {
+                to_light: [1.0, 0.0, 0.0],
+                ..contact
+            };
+            frames.set_ao(Some(Ao::default()), Some(turned), Some(lens), 0.5);
+            list.clear();
+            frames
+                .prepare(&mut list, (320, 180), RenderScale::FULL)
+                .unwrap();
+            assert!(list.is_empty(), "a new direction makes no texture");
+
+            // Both off, the steps and the prepass are gone.
+            frames.set_ao(None, None, Some(lens), 0.5);
+            assert!(!frames.depth_prepass());
+            frame(&mut frames, &mut list);
+            assert!(frames.graph().find_pass("AoDepth").is_none());
+            assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
+            assert_eq!(frames.ao_texture(), None);
         }
     }
 

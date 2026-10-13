@@ -1,5 +1,4 @@
 #define_import_path null3d::ssr
-#import null3d::gtao::{gtao_map}
 #import null3d::ibl::{environment_sampler}
 #import null3d::mesh::{frame}
 #import null3d::refraction::{transmission_map}
@@ -21,74 +20,28 @@
 // frame's drawn corner of the copy in pixels in xy, and in z the pixels that one world unit spans at
 // a distance of one unit in last frame's view, along y.
 
-/// The share of a texel's weight that its depth keeps, from 1 for the pixel's own depth down to 0
-/// at this far, as a fraction of the pixel's depth.
-const DEPTH_TOLERANCE: f32 = 0.03;
-
 /// The radius of a roughness's cone at one unit along the ray, per unit of the squared roughness.
 const CONE: f32 = 0.6;
-
-/// The length of the reflected ray at `pixel`, a fragment position whose depth value is `pixel.z`,
-/// and the share of the nearby texels of the screen texture that hit, each weighted by how close
-/// its depth lies to the pixel's own. The length averages the hits only.
-fn reflection_hit(pixel: vec3f) -> vec2f {
-    let values = frame.occlusion;
-    let size = vec2i(textureDimensions(gtao_map));
-    var from_top = pixel.xy;
-#ifdef WEBGL2
-    from_top.y = values.y - pixel.y;
-#endif
-    let corner = max(vec2i(round(frame.target_size.xy * values.zw)), vec2i(1));
-    let at = from_top * values.zw - 0.5;
-    let base = vec2i(floor(at));
-    let blend = at - floor(at);
-    var hits = 0.0;
-    var reach = 0.0;
-    var total = 0.0;
-    for (var k = 0; k < 4; k++) {
-        let offset = vec2i(k & 1, k >> 1u);
-        var texel = clamp(base + offset, vec2i(0), corner - 1);
-#ifdef WEBGL2
-        texel.y = size.y - 1 - texel.y;
-#endif
-        let held = textureLoad(gtao_map, texel, 0);
-        let along = mix(1.0 - blend, blend, vec2f(offset));
-        let gap = abs(held.y - pixel.z);
-        let weight = along.x * along.y * max(0.0, 1.0 - gap / (DEPTH_TOLERANCE * pixel.z));
-        let hit = select(0.0, weight, held.z > 0.0);
-        hits += hit;
-        reach += hit * held.z;
-        total += weight;
-    }
-    if hits <= 1e-4 {
-        return vec2f(0.0);
-    }
-    return vec2f(reach / hits, hits / total);
-}
 
 /// The light that a surface at `relative`, a position relative to the camera, of unit `normal`
 /// and perceptual `roughness`, reflects from what the screen showed along its mirror direction, in
 /// `rgb`, and the share of the environment's reflection that it takes, from 0 to 1, in `a`.
-/// `to_view` points from the surface toward the camera, and `pixel` is the fragment's position.
-/// Blended surfaces take none: the screen texture describes the opaque surfaces behind them.
+/// `to_view` points from the surface toward the camera, and `hit` is what the trace found around
+/// the pixel (`ScreenRead.hit`): blended surfaces read no hit, as the screen texture describes the
+/// opaque surfaces behind them.
 fn screen_reflection(
-    pixel: vec4f,
+    hit: vec2f,
     relative: vec3f,
     normal: vec3f,
     to_view: vec3f,
     roughness: f32,
-    blended: bool,
 ) -> vec4f {
     let settings = frame.reflection;
-    if settings.x <= 0.0 || blended {
+    if settings.x <= 0.0 || hit.y <= 0.0 {
         return vec4f(0.0);
     }
     let smooth_enough = 1.0 - smoothstep(settings.y * 0.7, settings.y, roughness);
     if smooth_enough <= 0.0 {
-        return vec4f(0.0);
-    }
-    let hit = reflection_hit(pixel.xyz);
-    if hit.y <= 0.0 {
         return vec4f(0.0);
     }
     let direction = reflect(-to_view, normal);

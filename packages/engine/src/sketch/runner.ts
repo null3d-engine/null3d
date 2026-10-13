@@ -363,9 +363,11 @@ export class SketchRunner {
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
-			// The page ends the job workers' loops through these words when the engine stops.
+			// The page ends the job workers' loops through these words when the engine stops, and
+			// lets them run the browser's measurement of its memory through the yield word.
 			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
 			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
+			Atomics.store(slots, Slot.JobsYieldAddress, glue.jobsYieldAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
@@ -428,6 +430,9 @@ export class SketchRunner {
 				},
 				get ssrScale() {
 					return governor.ssrScale / FULL_SCALE;
+				},
+				get contactShadowSteps() {
+					return governor.contactSteps;
 				},
 			},
 			textures.memory,
@@ -774,6 +779,7 @@ export class SketchRunner {
 		this.ssrSetting = Math.round(settings.ssrScale * FULL_SCALE);
 		this.ssrStepSetting = settings.ssrSteps;
 		governor.setSsr(this.ssrOn, this.ssrSetting);
+		governor.setContact(settings.contactShadowSteps);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -782,6 +788,7 @@ export class SketchRunner {
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
@@ -828,7 +835,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
-			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0
+			glue.setSsrQuality(governor.ssrScale, this.ssrStepSetting) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();

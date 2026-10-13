@@ -53,7 +53,9 @@ The screen texture of ambient occlusion, at binding 11 of the frame group, holds
 | z | The reflected ray's length, 0 for no hit | The reflections' trace |
 | w | Contact shadows | Contact shadows (D-135) |
 
-The trace runs first. It writes z, and leaves x, y and w neutral: no occlusion, the pixel's depth, and no contact shadow. The last step, ambient occlusion's denoise or the contact shadows' step, writes x, y and w, and copies z through. When both are off, the trace is the last writer. All the features draw on one grid: the largest of their scales. So the lit shader reads them from one texture, and the frame group needs no new binding. The coordinator gave the last free texture of the opaque pass to lit fog. Both features then draw on one grid: the larger of `aoScale` and `ssrScale`.
+The trace runs first. It writes z, and leaves x, y and w neutral: no occlusion, the pixel's depth, and no contact shadow. Ambient occlusion's denoise runs last while ambient occlusion or contact shadows draw. It writes x, y and w, and copies z through. When both are off, the trace is the last writer. All the features draw on one grid, at the largest of their scales. So the lit shader reads them from one texture, and the frame group needs no new binding. The coordinator gave the last free texture of the opaque pass to lit fog.
+
+The opaque pass reads the four channels in one pass over the four texels around each pixel (`screen_read` in the shaders' `gtao` library). Each texel's weight falls as its depth differs from the pixel's. The occlusion, depth and contact shadows take the weighted mean. The reflections take the share of the weight whose rays hit, and the mean length over those texels alone, as a miss holds no length. Contact shadows landed first, so this branch folded both reads into one, as the coordinator ruled on 11 October 2026: the branch that lands second does so.
 
 The lit shader mixes the reflection into the environment's specular radiance, as planar reflections do, before the split-sum terms weigh it. So the material's Fresnel, metalness and specular values apply. The order is the environment, then the screen-space reflection by its confidence, then a planar reflection by its share. A planar reflection with a share of 1 replaces the other two. Blended surfaces and surfaces that let light through take none, as they take no ambient occlusion: the screen texture describes the opaque surfaces behind them.
 
@@ -106,7 +108,7 @@ Option D: a depth pyramid and a trace at the screen texture's size run before th
 
 - Rust: `crates/null3d-render/src/ssr.rs` holds the steps, their blocks, the frame's values and the reprojection. `frame_graph.rs` places the steps between the depth copy and ambient occlusion's search. It also holds the shared grid, the color copy as a kept target and the last view. In `ao.rs` the denoise copies z. `frame.rs` and both builders set the steps. `crates/null3d-wasm/src/lib.rs` adds `setSsr`, `setSsrQuality` and `readsLastFrame`.
 - Shaders: `ssr.wgsl`, `lib/ssr.wgsl`, `lit.wgsl`, `ao.wgsl` and the frame's values in `globals.wgsl`.
-- TypeScript: `packages/engine/src/scene/post.ts` (`ssr`), the preset table's `ssrScale` and `ssrSteps`, the governor's last step, and hold mode's second frame (`HeldFrom`).
+- TypeScript: `packages/engine/src/scene/post.ts` (`ssr`), the preset table's `ssrScale` and `ssrSteps`, the governor's step after ambient occlusion's, and hold mode's second frame (`HeldFrom`).
 - Hold mode: when the last frame reads the frame before, the sketch thread records it twice and the thread that draws draws both. Temporal anti-aliasing would need the same, so it is a general rule, not one for reflections.
 - Docs: `api/post` (Screen-space reflections), `concepts/post-processing`, `porting/threejs-postprocessing`, the quality preset tables, and the mapping entry `ssr`.
 - Skills: the develop skill's task table and quick reference, and the port skill's post-processing table.

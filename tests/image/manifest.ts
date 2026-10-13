@@ -1257,6 +1257,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
+	// Contact shadows: pebbles, a thin pole, a crate and an upright tyre under a low sun, with a
+	// coarse shadow map. The march runs in the step after the depth copy alone, in ambient
+	// occlusion's last step with it on, and with 4 steps. Off, the cascades draw alone.
+	...(
+		[
+			['contact-shadows', ''],
+			['contact-shadows-ao', '?ao'],
+			['contact-shadows-steps-4', '?steps=4'],
+			['contact-shadows-off', '?off'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/contact-shadows-sketch.ts${query}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.
@@ -2094,6 +2114,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
 			};
+			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
+			// its test shares that comparison's references, in the scene graph mode only.
+			if (comparison.sameSceneAs)
+				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
 			return [
 				test,
 				{

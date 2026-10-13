@@ -52,8 +52,11 @@ export interface CoreGlue extends CoreErrors {
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
-	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
-	jobWorkerLoop(index: number): boolean;
+	/**
+	 * Serves the job system on a job worker until it returns: `JOB_LOOP_STOPPED` at stop,
+	 * `JOB_LOOP_CALLED` for a task call, `JOB_LOOP_YIELDED` to let the thread run its own tasks.
+	 */
+	jobWorkerLoop(index: number): number;
 	/** Asks a job worker to leave the job loop for one more task. */
 	callJobWorker(index: number): void;
 	/** Ends one task call of a job worker. */
@@ -70,6 +73,8 @@ export interface CoreGlue extends CoreErrors {
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
 	jobsStopAddress(): number;
+	/** The address of the job system's yield word, or 0 before it exists. */
+	jobsYieldAddress(): number;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
 	/**
@@ -583,6 +588,11 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/**
+	 * The steps of each march of the main directional light's contact shadows, from the next frame
+	 * on: 0 draws none.
+	 */
+	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
 	/** Turns screen-space reflections on with the post-processing values' settings, or off. */
@@ -844,6 +854,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'timeHandedLoops',
 	'jobsWakeAddress',
 	'jobsStopAddress',
+	'jobsYieldAddress',
 	'destroyEngine',
 	'sceneCapacity',
 	'arraysMovedAddress',
@@ -944,6 +955,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setContactSteps',
 	'setDof',
 	'setDofTaps',
 	'setSsr',
@@ -1003,6 +1015,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
+
+/** What `jobWorkerLoop` returns after the job system stopped. */
+export const JOB_LOOP_STOPPED = 0;
+/** What `jobWorkerLoop` returns when a task call took the worker out of the job system. */
+export const JOB_LOOP_CALLED = 1;
+/** What `jobWorkerLoop` returns while the page asks idle job workers to run their own tasks. */
+export const JOB_LOOP_YIELDED = 2;
 
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */

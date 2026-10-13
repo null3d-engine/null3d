@@ -80,7 +80,7 @@ enable draw_index;
 #endif
 #import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
-#import null3d::gtao::{screen_occlusion}
+#import null3d::gtao::{screen_occlusion, screen_read}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #import null3d::lighting::{indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
@@ -748,7 +748,8 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// the material's factor of it. The environment's light adds to the ambient and hemisphere lights,
 /// as three.js adds it, and neither its intensity nor the material's factor scales them.
 /// `occlusion` darkens the ambient and hemisphere lights and the environment's diffuse light, and
-/// its specular light as three.js's `computeSpecularOcclusion` does. `relative` is the surface's
+/// its specular light as three.js's `computeSpecularOcclusion` does. `contact` is the share of the
+/// sun's light that the sun's contact shadows let through. `relative` is the surface's
 /// position relative to the camera, `to_view` points from the surface toward the camera, and
 /// `dfg` holds the split-sum terms at the surface's roughness and view angle. `reflection` holds
 /// light from the mirror direction and its share, from screen-space reflections and a custom
@@ -762,16 +763,18 @@ fn light_surface(
     dfg: vec2f,
     extra: vec3f,
     occlusion: f32,
+    contact: f32,
     reflection: vec4f,
 ) -> vec3f {
     let compensation = multiscatter_compensation(m.specular_blended, dfg);
     var sun_color = engine_frame.sun_color.rgb;
 #ifdef RECEIVE_SHADOWS
     // A surface that faces away from the sun gets none of its light whatever the shadow map
-    // holds, so it skips the lookup and the filter's reads.
+    // holds, so it skips the lookup and the filter's reads. Contact shadows add the short shadows
+    // that the map's texels are too coarse to hold.
     let to_sun = -engine_frame.sun_direction.xyz;
     if dot(normal, to_sun) > 0.0 {
-        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun);
+        sun_color *= sun_shadow(relative + engine_frame.shadow_origin.xyz, normal, to_sun) * contact;
     }
 #endif
     let sun = direct_light(
@@ -810,8 +813,9 @@ fn light_surface(
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
 /// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
-/// the frame's ambient occlusion. That darkens the indirect light, with the surface's own
-/// occlusion.
+/// the frame's screen texture. Its ambient occlusion darkens the indirect light, with the surface's
+/// own occlusion, and its contact shadows darken the sun's light where the surface receives
+/// shadows.
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
@@ -836,24 +840,24 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
-    // What the screen showed along the mirror direction, then a planar reflection over it: the
-    // planar reflection's share wins on its plane.
-    let screen = screen_reflection(
-        pixel,
+    // The screen texture's values, then what the screen showed along the mirror direction, with a
+    // planar reflection over it: the planar reflection's share wins on its plane.
+    let screen = screen_read(pixel.xyz, blended);
+    let mirrored = screen_reflection(
+        screen.hit,
         input.relativePosition,
         normal,
         input.viewDirection,
         pbr.roughness,
-        blended,
     );
 #ifdef CUSTOM
     let planar = saturate(s.reflection.a);
-    let screen_share = screen.a * (1.0 - planar);
+    let screen_share = mirrored.a * (1.0 - planar);
     let mirror_share = planar + screen_share;
-    let mirror = (s.reflection.rgb * planar + screen.rgb * screen_share) / max(mirror_share, 1e-6);
+    let mirror = (s.reflection.rgb * planar + mirrored.rgb * screen_share) / max(mirror_share, 1e-6);
     let reflection = vec4f(mirror, mirror_share);
 #else
-    let reflection = screen;
+    let reflection = mirrored;
 #endif
     let reflected = light_surface(
         pbr,
@@ -862,7 +866,8 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
         input.viewDirection,
         dfg,
         s.irradiance * engine_frame.output.exposure,
-        s.occlusion * screen_occlusion(pixel.xyz, blended),
+        s.occlusion * screen_occlusion(screen.values),
+        screen.values.w,
         reflection,
     );
 #ifdef TRANSMISSION

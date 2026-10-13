@@ -94,14 +94,20 @@ export interface QualityGovernor {
 	readonly bloomSize: number;
 	/**
 	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
-	 * governor's step while ambient occlusion draws.
+	 * governor's step that follows bloom's while ambient occlusion draws.
 	 */
 	readonly aoScale: number;
 	/**
 	 * The size of screen-space reflections' grid now: `settings.ssrScale`, or a quarter of the
-	 * render size after the governor's last step while reflections draw.
+	 * render size after the governor's step that follows ambient occlusion's while reflections
+	 * draw.
 	 */
 	readonly ssrScale: number;
+	/**
+	 * The steps of each search for the sun's contact shadows now: `settings.contactShadowSteps`, or
+	 * the fewest after the governor's last step.
+	 */
+	readonly contactShadowSteps: number;
 }
 
 /**
@@ -395,6 +401,9 @@ export class SketchQuality implements Quality {
 			},
 			get ssrScale() {
 				return settings.ssrScale;
+			},
+			get contactShadowSteps() {
+				return settings.contactShadowSteps;
 			},
 		};
 	}

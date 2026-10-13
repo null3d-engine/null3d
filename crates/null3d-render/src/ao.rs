@@ -6,9 +6,15 @@
 //! 1. The depth step copies one texel of the prepass's depth per pixel: sample 0 of a multisampled
 //!    target. The opaque pass draws the same depth, so the occlusion lines up with its surfaces.
 //! 2. The horizon step is three.js's GTAO: it rebuilds each surface's normal from the depth around
-//!    it, and searches a few slices around the view for the horizons that hide the sky.
+//!    it, and searches a few slices around the view for the horizons that hide the sky. It also
+//!    marches the sun's contact shadows through the depth copy.
 //! 3. The denoise step is three.js's Poisson denoise: it blurs the occlusion over a disk of taps
-//!    that keeps to the pixel's own surface, and writes it beside the depth.
+//!    that keeps to the pixel's own surface, and writes it beside the depth. The same taps blur the
+//!    contact shadows into the fourth channel, which smooths the noise of each march's start.
+//!
+//! The sun's contact shadows use the same steps, as they read the same depth copy. When they draw
+//! without ambient occlusion, the horizon step skips its search and the denoise writes no
+//! occlusion.
 //!
 //! The opaque pass then reads the four texels around each pixel, weighted by how close their depth
 //! lies to the pixel's own (`null3d::gtao`). It darkens only the ambient light, the light that
@@ -34,8 +40,26 @@ use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 /// The steps before the opaque pass: the depth copy, the horizon search and the denoise.
 pub(crate) const STEPS: usize = 3;
 
+/// The most steps that one march of contact shadows takes.
+pub const MAX_CONTACT_STEPS: u32 = 32;
+
+/// How thick the march of contact shadows takes each surface of the depth copy to be, as a share
+/// of their reach. A ray that passes further behind a surface goes behind it, not into it.
+const CONTACT_THICKNESS: f32 = 0.5;
+
+/// The main directional light's contact shadows, as the horizon step marches them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Contact {
+    /// The unit direction toward the light, in the camera's view space.
+    pub to_light: [f32; 3],
+    /// How far they reach from each surface toward the light, in meters.
+    pub distance: f32,
+    /// The steps of each march.
+    pub steps: u32,
+}
+
 /// The format of each step's target: the depth copy in one float, then the occlusion with the
-/// normal, then the occlusion with the depth.
+/// normal and the contact shadows, then the occlusion with the depth and the contact shadows.
 pub(crate) const FORMATS: [u32; STEPS] = [
     format::R32_FLOAT,
     format::RGBA16_FLOAT,
@@ -105,6 +129,8 @@ struct Block {
     horizon: [f32; 4],
     shape: [f32; 4],
     denoise: [f32; 4],
+    contact: [f32; 4],
+    march: [f32; 4],
 }
 
 /// Bytes of the uniform buffer.
@@ -119,16 +145,21 @@ pub(crate) fn corner(canvas: (u32, u32), scale: RenderScale, ao_scale: f32) -> (
     (side(width), side(height))
 }
 
-/// The frame uniform's occlusion values for the camera's view: the strength, the scene target's
-/// height, and the steps' texels per scene pixel across and down.
+/// The frame uniform's occlusion values for the camera's view: the strength, 0 without ambient
+/// occlusion, the scene target's height, and the steps' texels per scene pixel across and down.
 pub(crate) fn frame_values(
-    ao: Ao,
+    ao: Option<Ao>,
     canvas: (u32, u32),
     scale: RenderScale,
     ao_scale: f32,
 ) -> [f32; 4] {
     let [height, across, down] = grid_values(canvas, scale, ao_scale);
-    [ao.intensity.max(f32::MIN_POSITIVE), height, across, down]
+    [
+        ao.map_or(0.0, |ao| ao.intensity.max(f32::MIN_POSITIVE)),
+        height,
+        across,
+        down,
+    ]
 }
 
 /// The frame uniform's values of the screen texture's grid, at `grid_scale` of the render size:
@@ -208,12 +239,12 @@ impl AoPass {
     /// Bytes a frame may copy into its arena: the whole uniform buffer.
     pub(crate) const UPLOAD_BYTES: usize = BLOCK_BYTES;
 
-    /// Asks `pipelines` for the steps' pipelines, once.
-    /// The ids of the steps' pipelines that the pass asked for.
+    /// The ids of the steps' pipelines, once the pass asked for them.
     pub(crate) fn pipeline_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.pipelines.iter().flatten().copied()
     }
 
+    /// Asks `pipelines` for the steps' pipelines, once.
     pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
         for (step, slot) in self.pipelines.iter_mut().enumerate() {
             if slot.is_none() {
@@ -224,14 +255,17 @@ impl AoPass {
 
     /// Makes the buffer when the GPU lacks it, uploads the settings when they changed, and binds
     /// each step to its `sources` when its group is new or the frame made the plan's textures
-    /// again. `projection` is the camera's projection matrix and `inverse` its inverse. The denoise
-    /// copies screen-space reflections' ray lengths from the third source while `reflections`.
+    /// again. `ao` is ambient occlusion's settings while it draws, `contact` the contact
+    /// shadows' while they draw, `projection` the camera's projection matrix and `inverse` its
+    /// inverse. The denoise copies screen-space reflections' ray lengths from the third source
+    /// while `reflections`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        ao: Ao,
+        ao: Option<Ao>,
+        contact: Option<Contact>,
         (projection, inverse): (Mat4, Mat4),
         canvas: (u32, u32),
         scale: RenderScale,
@@ -254,8 +288,8 @@ impl AoPass {
         }
         self.staged = block(
             ao,
-            projection,
-            inverse,
+            contact,
+            (projection, inverse),
             canvas,
             scale,
             ao_scale,
@@ -336,9 +370,17 @@ impl AoPass {
     }
 }
 
-/// Records the creation of the texture that frame groups bind in place of ambient occlusion's
-/// while it draws no frame: one texel, which no shader reads, as the frame's strength is 0 then.
+/// Bytes of the blank texture's one texel: four half floats.
+pub(crate) const BLANK_BYTES: usize = 8;
+
+/// The blank texture's texel, in half floats: no occlusion, no depth, no reflected ray, and the
+/// sun's light in full past contact shadows.
+const BLANK_TEXEL: [u16; 4] = [0x3c00, 0, 0, 0x3c00];
+
+/// Records the creation of the texture that frame groups bind in place of the steps' result while
+/// they draw no frame: one texel, which [`upload_blank`] fills with values that change no light.
 pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordError> {
+    use null3d_gpu::drawlist::texture_usage;
     list.push(
         Op::CreateTexture,
         &[
@@ -347,7 +389,7 @@ pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordErr
             1,
             1,
             FORMATS[STEPS - 1],
-            null3d_gpu::drawlist::texture_usage::TEXTURE_BINDING,
+            texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
             1,
             1,
             null3d_gpu::drawlist::view::D2,
@@ -356,11 +398,28 @@ pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordErr
     Ok(())
 }
 
-/// The steps' block for a canvas of `canvas` pixels at render scale `scale`.
+/// Records the upload of the blank texture's texel, which [`create_blank`] made. A frame may read
+/// it before the steps' pipelines are built, so it must leave every light as it is.
+pub(crate) fn upload_blank(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    id: u32,
+) -> Result<(), RecordError> {
+    let mut texel = [0u8; BLANK_BYTES];
+    for (bytes, half) in texel.as_chunks_mut::<2>().0.iter_mut().zip(BLANK_TEXEL) {
+        *bytes = half.to_le_bytes();
+    }
+    let (at, bytes) = arena.push(&texel)?;
+    list.push(Op::WriteTexture, &[id, 0, 0, 0, 0, 1, 1, 1, at, bytes])?;
+    Ok(())
+}
+
+/// The steps' block for a canvas of `canvas` pixels at render scale `scale`, with ambient
+/// occlusion's settings `ao` while it draws, and contact shadows' `contact` while they draw.
 fn block(
-    ao: Ao,
-    projection: Mat4,
-    inverse: Mat4,
+    ao: Option<Ao>,
+    contact: Option<Contact>,
+    (projection, inverse): (Mat4, Mat4),
     canvas: (u32, u32),
     scale: RenderScale,
     ao_scale: f32,
@@ -369,8 +428,17 @@ fn block(
     let render = Size::Full.viewport(canvas, scale);
     let drawn = corner(canvas, scale, ao_scale);
     let extent = SIZE.extent(canvas);
+    let occlusion = ao.is_some();
+    let ao = ao.unwrap_or_default();
     let (slices, steps) = ao.slices_and_steps();
     let [luma, depth, normal, radius] = DENOISE;
+    let (contact, march) = match contact {
+        Some(c) => (
+            [c.to_light[0], c.to_light[1], c.to_light[2], c.distance],
+            [c.steps as f32, c.distance * CONTACT_THICKNESS],
+        ),
+        None => ([0.0; 4], [0.0; 2]),
+    };
     Block {
         projection,
         inverse_projection: inverse,
@@ -405,6 +473,8 @@ fn block(
             normal,
             radius * drawn.0 as f32 / render.0.max(1) as f32,
         ],
+        contact,
+        march: [march[0], march[1], f32::from(u8::from(occlusion)), 0.0],
     }
 }
 
@@ -440,7 +510,7 @@ mod tests {
             let drawn = corner(canvas, RenderScale::from_thousandths(thousandths), 0.5);
             assert!(drawn.0 <= extent.0 && drawn.1 <= extent.1);
         }
-        let values = frame_values(Ao::default(), canvas, RenderScale::FULL, 0.5);
+        let values = frame_values(Some(Ao::default()), canvas, RenderScale::FULL, 0.5);
         assert_eq!(values, [1.0, 181.0, 0.5, 91.0 / 181.0]);
     }
 
@@ -463,7 +533,8 @@ mod tests {
             pass.prepare(
                 list,
                 &mut arena,
-                Ao::default(),
+                Some(Ao::default()),
+                None,
                 lens,
                 (320, 180),
                 scale,
@@ -511,6 +582,8 @@ mod tests {
             "horizon: vec4f,",
             "shape: vec4f,",
             "denoise: vec4f,",
+            "contact: vec4f,",
+            "march: vec4f,",
         ];
         let mut at = 0;
         for field in fields {
@@ -518,6 +591,6 @@ mod tests {
             assert!(found.is_some(), "ao.wgsl lacks {field} in order");
             at = found.unwrap();
         }
-        assert_eq!(BLOCK_BYTES, 208);
+        assert_eq!(BLOCK_BYTES, 240);
     }
 }

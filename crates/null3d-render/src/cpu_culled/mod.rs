@@ -837,8 +837,9 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2
+            + dfg::BYTES
+            + ao::BLANK_BYTES;
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
                 + layout.draws_slot_bytes as usize
@@ -1227,6 +1228,7 @@ impl CpuCulledRenderer {
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::MATERIALS, MATERIAL_TEXELS)?;
+            ao::upload_blank(list, arena, ids::BLANK_AO)?;
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
@@ -1571,15 +1573,17 @@ impl FrameBuilder for CpuCulledRenderer {
                 .then(|| self.with_draw_index(shadow_tiles::TARGETS)),
         };
         let outlines = self.settings.outline().is_some();
-        // Ambient occlusion reads the depth prepass's depth, so turning it on or off can switch
-        // the prepass, whose pipelines the layout holds.
-        let ao = self
-            .settings
-            .ao()
-            .zip(self.settings.camera_projection(canvas));
-        self.graph.set_ao(ao, self.settings.ao_scale());
+        // Ambient occlusion and the sun's contact shadows read the depth prepass's depth, so
+        // turning them on or off can switch the prepass, whose pipelines the layout holds.
+        let settings = &self.settings;
+        self.graph.set_ao(
+            settings.ao(),
+            settings.contact(camera.as_ref(), canvas),
+            settings.camera_projection(canvas),
+            settings.screen_scale(),
+        );
         self.graph
-            .set_ssr(self.settings.ssr_frame(canvas), self.settings.ssr_scale());
+            .set_ssr(settings.ssr_frame(canvas), settings.ssr_scale());
         let prepass_changed = self.graph.depth_prepass() != self.layout_prepass;
         let waiting = (self.layout.waiting().iter())
             .chain(self.casters.waiting())
