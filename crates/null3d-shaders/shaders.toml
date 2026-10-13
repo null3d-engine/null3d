@@ -204,6 +204,44 @@ variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["DRAW_INDEX", "TON
 [first_use.sprites]
 shaders = ["sprite", "sprite_map"]
 
+# Particles of the particles add-on: a quad for each 32-byte record, which the vertex shader moves
+# in closed form to the particle's age, and colours by its curves over life. The plain builds draw
+# a soft round dot; the MAP builds read a frame of a flipbook atlas from the material's map.
+[shaders.particle]
+file = "particle.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# Particles with a flipbook atlas, from the same file.
+[shaders.particle_map]
+file = "particle.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAP"], permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAP"], permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# The copy of the camera's opaque depth that soft particles read, into a target of 32-bit floats.
+# The MULTISAMPLED build reads a multisampled depth's first sample; WebGL2's backend hands its build
+# a one-sample copy.
+[shaders.particle_depth]
+file = "particle_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+[shaders.particle_depth_ms]
+file = "particle_depth.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MULTISAMPLED"], targets = ["wgsl"] }
+
+# A page downloads the particle templates and the depth copy with its first particle system.
+[first_use.particles]
+shaders = ["particle", "particle_map", "particle_depth", "particle_depth_ms"]
+
 # Wide lines, like three.js's Line2 and LineSegments2 with a LineMaterial: a quad with round ends
 # for each segment of a line batch's rows, in the material's color times the segment's colors,
 # with widths in CSS pixels or world units and dashes.

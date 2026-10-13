@@ -110,7 +110,7 @@ The rules:
 - Hold mode draws the same frame. No input reaches a held frame, and the helper then moves nothing. The controls turn the camera toward their target as they start, so the helper puts the camera back where the sketch had it. The controls' update runs only after the hand-over, or while they turn the camera by themselves. A weight of 0 gives the scripted value bit for bit. `examples/lib/interact.test.ts` checks these points, and the demos' image tests check the held frames.
 - The user can look at a demo from any side. So a flat or open surface that the camera can get behind or below draws both faces, with `doubleSided: true`. These are the flat generator shapes and the island of the mesh arrays demo. They are also the grounds of the character, security camera, objects, render layers, hold mode, input and far-from-origin demos. A pan can take the camera under a ground even when the orbit limits keep it above the target.
 - No two faces that point the same way share a plane, or they flicker as the view moves. A wall stands on its floor, not beside its edge, and a back wall fits between its side walls. The render layers demo's walls and the post effects demo's side wall had such faces, and the owner saw them shimmer on 8 October 2026.
-- A demo imports only the engine, `@null3d/controls`, `../lib/interact` and `../lib/samples`. Scripted motion reads `time.now`, as [Image tests](image-tests.md#the-feature-demos) asks. A camera that follows a moving object moves in `onLateUpdate`.
+- A demo imports only the engine, `@null3d/controls`, `../lib/interact`, `../lib/samples` and files in its own folder. The particles demo also imports `@null3d/particles`, the add-on that it shows. Scripted motion reads `time.now`, as [Image tests](image-tests.md#the-feature-demos) asks. A camera that follows a moving object moves in `onLateUpdate`.
 
 What the pointer steers in each demo:
 
@@ -264,6 +264,8 @@ Time comparisons in the Mac's installed Chrome, the browser that people run. On 
 
 The display rate that a ramp judges against must be the display's. The page measures it from its own animation frames. But Chrome can slow those frames while null3D draws from its workers at the full rate. On 12 October 2026, Night town's instanced null3D ramp on a 120 Hz Mac measured 30 Hz. It then "held" all 1,020 lights, though its frame rate fell to 104 at 124 lights. So the ramp also measures the engine's frame rate at the start count for a second. An engine cannot draw faster than the display. So when it draws more than 5% faster than the page's rate, its rate, rounded to the nearest common refresh rate, becomes the display rate (`displayRate` in `examples/lib/ramp.ts`, with a unit test). Every ramp result names the display rate it judged against. Check it before using a figure.
 
+The page's measurement takes the median interval of 40 of its frames, or of those that come within a second. On 13 October 2026, three.js drew Battle on CI's SwiftShader at one frame every 5 to 11 seconds. The page's own frames came 2.5 to 6 seconds apart meanwhile. The measurement waited for 40 of them, so the page gave no result within the test's 200 seconds. Now it ends after two such frames. CI's test of Battle's three.js ramp on WebGPU would fail again if it waited that long.
+
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
 
 Night town's and Busy page's ramps count lights, 12 to a block. They start at 60, 48 and 36 lights and top out at 1,020, 720 and 480 on desktops, tablets and phones. Each stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
@@ -356,6 +358,13 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
 - The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
+
+## The campfire glade's scenery (12 October 2026)
+
+The particles demo's scenery lives in `examples/particles/glade.ts`, beside the sketch. Two points came from the look review:
+
+- Sphere crowns with flat shading read as faceted low-poly balls, not foliage. Each birch's crown is now five bumpy lumps, built from arrays. Each lump is a ball with bumps of two sizes and smooth normals. Its vertex colors darken the hollows and vary at random in brightness and hue, as clustered leaves do. Three such lumps, turned and tinted in four autumn colors, give every tree a different crown.
+- A firelight with the physical fall-off lit only the stones. The firelight now fades more slowly than real light (`decay` 1.2), reaches 16 m and is warmer, so the ground round the fire and the nearest birch trunks take its glow. Its flicker is soft: about a fifth up or down, from three slow waves that never fall in step.
 
 ## The stone garden's scenery (12 October 2026)
 
