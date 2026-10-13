@@ -2064,7 +2064,6 @@ pub fn typescript_constants() -> String {
                     "SHADOW_TILES_UNIFORM_BYTES",
                     sizes::SHADOW_TILES_UNIFORM_BYTES,
                 ),
-                ("SHADOW_SETTINGS_BYTES", sizes::SHADOW_SETTINGS_BYTES),
                 ("BACKGROUND_UNIFORM_BYTES", sizes::BACKGROUND_UNIFORM_BYTES),
             ],
         ),

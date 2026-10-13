@@ -133,7 +133,12 @@ run('replay', async () => {
 		[12, 4, U.STORAGE | U.COPY_DST, -1],
 		// The shadow settings' uniform, the cascades then the tiles, which the frame group binds;
 		// no light casts shadows here.
-		[13, G.SIZE_SHADOW_SETTINGS_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		[
+			13,
+			G.SIZE_SHADOW_UNIFORM_BYTES + G.SIZE_SHADOW_TILES_UNIFORM_BYTES,
+			U.UNIFORM | U.COPY_DST,
+			-1,
+		],
 		// The light grid and the light list, which the frame group binds and the shader skips.
 		[14, 16, U.STORAGE, -1],
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
