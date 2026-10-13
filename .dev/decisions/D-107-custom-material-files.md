@@ -161,4 +161,17 @@ The modules, uncompressed / gzip / Brotli:
 
 Every set of these modules stays within the limits of one first-use shader file: 1,536 KB uncompressed, 320 KB after gzip and 32 KB after Brotli. The largest is Battle's WebGL2 set with tone mapping, 345.6 / 32.8 / 20.8.
 
-FIGURES_TIMING
+### First-use delay
+
+The first frame waits for a custom material's pipelines, as it did before, so a set adds no wait of its own. The sketch imports its device's set as the material's first shader arrives, and the pipelines build once it is there. The wait to measure is one where a material appears later, such as Creek's water or a battle soldier. The probe page times the page's message to the frame after `scene.warmUp()`. It runs in a parked Chrome window on this Mac: 3 rounds per case, after one warm-up round.
+
+The table gives the median of the three rounds, in ms. "Before" is the battle demo's branch (43f8c9d03), the point this work starts from. "After" is this branch.
+
+| Material appears | Path | Before | After |
+| --- | --- | --- | --- |
+| Creek's water | WebGPU | 128 | 129 |
+| Creek's water | WebGL2 | 208 | 67 |
+| Battle skin | WebGPU | 54 | 54 |
+| Battle skin | WebGL2 | 34 | 42 |
+
+The engine's start to its first frame was 897 to 1,071 ms before and 881 to 1,051 ms after. On WebGL2, a set is far smaller than the whole path's builds of the old shader message. So the water's first use takes about a third of the time. A skinned mesh's set is one more import on WebGL2, about 8 ms. On WebGPU the builds that skin were already a set of their own (M2-EX41), so they do not change.
