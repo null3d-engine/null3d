@@ -4,11 +4,12 @@
 // corner, and the object that draws it stands there, so its bounds stay small and it culls well.
 import type { Heightfield } from './heightfield';
 
-/** The arrays of one block: 32-bit float positions and 32-bit indices. */
+/** The arrays of one block: 32-bit float positions, normals and texture coordinates, and indices. */
 export interface ChunkArrays {
 	positions: Float32Array;
+	normals: Float32Array;
+	uvs: Float32Array;
 	indices: Uint32Array;
-	computeNormals: true;
 }
 
 /**
@@ -37,6 +38,9 @@ export function chunkArrays(
 	const skirtStart = grid;
 
 	const positions = new Float32Array((grid + ringCount) * 3);
+	const normals = new Float32Array((grid + ringCount) * 3);
+	const uvs = new Float32Array((grid + ringCount) * 2);
+	const normal = [0, 0, 0];
 	for (let row = 0; row <= quads; row++)
 		for (let col = 0; col <= quads; col++) {
 			const i = row * side + col;
@@ -45,6 +49,16 @@ export function chunkArrays(
 			positions[i * 3] = x;
 			positions[i * 3 + 1] = field.heightAt(originX + x, originZ + z);
 			positions[i * 3 + 2] = z;
+			// The normal comes from the height field itself, so two blocks that meet at an edge
+			// give that edge's vertices the same normal, and no shadow line shows along the seam.
+			field.normalAt(originX + x, originZ + z, normal);
+			normals[i * 3] = normal[0] as number;
+			normals[i * 3 + 1] = normal[1] as number;
+			normals[i * 3 + 2] = normal[2] as number;
+			// The block's own coordinates, 0 to 1. The surface reads the world position for its
+			// tiling, but the engine's vertex stage draws a mesh with texture coordinates.
+			uvs[i * 2] = col / quads;
+			uvs[i * 2 + 1] = row / quads;
 		}
 	// The skirt: a copy of each ring vertex, dropped by the skirt's depth.
 	for (let k = 0; k < ringCount; k++) {
@@ -53,6 +67,12 @@ export function chunkArrays(
 		positions[target] = positions[source] as number;
 		positions[target + 1] = (positions[source + 1] as number) - skirt;
 		positions[target + 2] = positions[source + 2] as number;
+		normals[target] = normals[source] as number;
+		normals[target + 1] = normals[source + 1] as number;
+		normals[target + 2] = normals[source + 2] as number;
+		const uvSource = (ring[k] as number) * 2;
+		uvs[skirtStart * 2 + k * 2] = uvs[uvSource] as number;
+		uvs[skirtStart * 2 + k * 2 + 1] = uvs[uvSource + 1] as number;
 	}
 
 	const indices = new Uint32Array(quads * quads * 6 + ringCount * 6);
@@ -80,5 +100,5 @@ export function chunkArrays(
 		indices[at++] = bLow;
 		indices[at++] = aLow;
 	}
-	return { positions, indices, computeNormals: true };
+	return { positions, normals, uvs, indices };
 }

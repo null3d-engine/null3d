@@ -7,12 +7,19 @@ describe('chunk arrays', () => {
 		const field = createHeightfield({ size: 16, resolution: 17, height: () => 2 });
 		const quads = 4;
 		const skirt = 3;
-		const { positions, indices, computeNormals } = chunkArrays(field, 16, -8, -8, quads, skirt);
-		expect(computeNormals).toBe(true);
+		const { positions, normals, uvs, indices } = chunkArrays(field, 16, -8, -8, quads, skirt);
 		const side = quads + 1;
 		const ring = quads * 4;
 		expect(positions.length).toBe((side * side + ring) * 3);
+		expect(normals.length).toBe((side * side + ring) * 3);
+		expect(uvs.length).toBe((side * side + ring) * 2);
 		expect(indices?.length).toBe(quads * quads * 6 + ring * 6);
+		// On flat ground every normal points straight up, from the grid and the skirt alike.
+		for (let v = 0; v < side * side + ring; v++) {
+			expect(normals[v * 3]).toBeCloseTo(0, 6);
+			expect(normals[v * 3 + 1]).toBeCloseTo(1, 6);
+			expect(normals[v * 3 + 2]).toBeCloseTo(0, 6);
+		}
 		// Every index names a vertex.
 		for (const index of indices as Uint32Array) expect(index).toBeLessThan(side * side + ring);
 		// The grid sits on the ground, and the skirt hangs below it.
