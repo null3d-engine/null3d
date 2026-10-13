@@ -178,7 +178,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
  *   inlined and the tracker's `afterSubmit` not, and counts the object there. Also the clock
- *   readings at each frame's submit and completion, and at each check of the frames still in flight;
+ *   readings at each frame's submit and completion, and at each check of the frames still in flight,
+ *   including `giveUpStalled`, which reads the clock at each frame while frames stall;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
@@ -222,6 +223,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
+		'giveUpStalled gpu/completion.ts': 16,
 	},
 };
 /**
@@ -656,6 +658,7 @@ async function main(): Promise<void> {
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
 		);
 		const over: string[] = [];
+		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
 			const budgets = {
 				...BUDGETS[worker as (typeof WORKERS)[number]],
@@ -667,6 +670,9 @@ async function main(): Promise<void> {
 				: {};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
+			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
+			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
+			if (!bytes.get(worker)) unsampled.push(worker);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
@@ -690,8 +696,12 @@ async function main(): Promise<void> {
 				);
 			}
 		}
-		console.log(over.length === 0 ? 'pass' : `FAIL: over budget: ${over.join('; ')}`);
-		process.exitCode = over.length === 0 ? 0 : 1;
+		if (unsampled.length > 0)
+			console.log(`FAIL: the profiler sampled nothing in ${unsampled.join(' and ')}`);
+		if (over.length > 0) console.log(`FAIL: over budget: ${over.join('; ')}`);
+		const passed = over.length === 0 && unsampled.length === 0;
+		if (passed) console.log('pass');
+		process.exitCode = passed ? 0 : 1;
 	} finally {
 		// A browser that does not close must not hide the error that ended the check.
 		await within(browser.close(), STEP_MS, 'closing the browser').catch((e: Error) =>
