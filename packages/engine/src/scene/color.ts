@@ -49,17 +49,7 @@ export function writeLinearColor<T extends { [index: number]: number }>(
 	const g = color[1];
 	const b = color[2];
 	// A component is a number from 0 to 1, a range that NaN and the infinities fall outside.
-	const components =
-		typeof r === 'number' &&
-		typeof g === 'number' &&
-		typeof b === 'number' &&
-		r >= 0 &&
-		r <= 1 &&
-		g >= 0 &&
-		g <= 1 &&
-		b >= 0 &&
-		b <= 1;
-	if (!components) throw invalidColor(color, call);
+	if (!(r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1)) throw invalidColor(color, call);
 	out[at] = r;
 	out[at + 1] = g;
 	out[at + 2] = b;
