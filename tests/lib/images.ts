@@ -66,9 +66,13 @@ export const DEVICE_TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.005
 
 /**
  * The GPU tiers of each device that lacks some, by the device's name in its runners' names. A device
- * draws only these tiers, so it keeps references only on them. The Galaxy S24+ has no WebGPU.
+ * draws only these tiers, so it keeps references only on them. The Galaxy S24+ has no WebGPU, and
+ * neither has Firefox on CI's Linux machines.
  */
-const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = { 'sm-s926b': ['webgl2'] };
+const DEVICE_TIERS: Readonly<Record<string, readonly Tier[]>> = {
+	'sm-s926b': ['webgl2'],
+	linux: ['webgl2'],
+};
 
 /**
  * Devices whose GPU draws as another device's does, so they compare with that device's references
