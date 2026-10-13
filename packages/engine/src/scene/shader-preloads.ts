@@ -4,7 +4,7 @@
 // batch is made, when bloom or ambient occlusion turns on. The thread that draws then downloads
 // the file while the sketch builds the objects, so they wait less for their pipelines.
 
-import type { ShaderFeature } from '../generated/shader-features';
+import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { GENERATORS_PRELOAD, type PreloadSender } from '../shared/images';
 
 /** Asks the thread that draws for the shader files of the features that the sketch will use. */
@@ -39,5 +39,15 @@ export class ShaderPreloads {
 	 */
 	needAll(features: Iterable<ShaderFeature>): void {
 		for (const feature of features) this.need(feature);
+	}
+
+	/**
+	 * Asks for the shader files of the features that `names` lists, once each, and leaves out a
+	 * name that this engine does not know. A file that the asset tool wrote records its list as
+	 * plain names, so a file from a newer tool gives its own extra names here.
+	 */
+	needListed(names: Iterable<string>): void {
+		for (const name of names)
+			if ((SHADER_FEATURES as readonly string[]).includes(name)) this.need(name as ShaderFeature);
 	}
 }
