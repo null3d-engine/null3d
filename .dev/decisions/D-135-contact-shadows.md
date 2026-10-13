@@ -174,3 +174,11 @@ three.js draws no contact shadows. Ports get them on High and Ultra with no chan
 - The frame graph's unit tests check that contact shadows alone run ambient occlusion's three steps.
 - The governor's unit tests check its step that lowers the steps.
 - `cargo test --workspace`: 1,195 pass, 0 fail. `bun run test`: all pass once the Mac's load allowed the timed tests to finish.
+
+### Checks before landing on 13 October 2026
+
+The branch merged main through `8055ac743`. Its build, size check, lint and type check passed. Unit tests passed 2,823 cases and skipped 33.
+
+The affected image tests passed all 71 cases on the Mac's GPU and all 71 on SwiftShader. This includes every changed reference and S5. S5's Mac references still matched, so only its SwiftShader reference changed.
+
+The quality and stats browser tests passed 76 cases on the Mac's GPU. SwiftShader passed 73 and skipped three pipeline warm-up cases. The stats checks included the production build.
