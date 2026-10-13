@@ -105,6 +105,17 @@ Smallest known case: a new device, an index buffer and a vertex buffer, five `dr
 
 Workaround in the engine: before a device's first frame, the WebGPU scene renderer draws one point into a 1x1 target (`gpu/webgpu/first-pass.ts`). Its pipeline builds in the background with the frame's own pipelines, and the first frame waits for it. The engine writes the arguments of its indirect draws from the CPU each frame, and culling then adds the counts on the GPU. So without the pass, the first frame after each device start could lose its indirect draws on such a device. An image test cannot see this, because a capture draws the frame a second time ([Image tests](image-tests.md#other-browsers-and-devices)).
 
+The pass makes the first frame no later. On 13 October 2026, `bun run bench:startup` loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155), with and without the pass, in turns. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
+
+| GPU path | Load | With the pass, ms | Without it, ms |
+| --- | --- | --- | --- |
+| WebGPU | cold | 552 | 620 |
+| WebGPU | warm | 439 | 625 |
+| Compatibility mode | cold | 630 | 662 |
+| Compatibility mode | warm | 636 | 655 |
+
+The GPU check found no change in the frame time of scenes S4 and S6.
+
 To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>Dawn), with the first-draw page.
 
 ## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
