@@ -113,6 +113,21 @@ export function transient(views: MemoryViews): number {
 		]);
 	});
 
+	test('finds a class that marks a needed dropViews as internal', () => {
+		const problems = problemsOf(`
+import { MemoryViews, type ViewHolder } from '../shared/memory-views';
+export class Holds implements ViewHolder {
+	private rows = new Float32Array(0);
+	constructor(private readonly views: MemoryViews) {
+		views.holdViews(this);
+	}
+	/** @internal Forgets the rows. */
+	dropViews(): void {}
+}
+`);
+		expect(problems).toEqual(['scene/code.ts:9 ViewHolder']);
+	});
+
 	test('leaves the accessor module and test files alone', () => {
 		expect(problemsOf('export const nothing = 0;')).toEqual([]);
 	});

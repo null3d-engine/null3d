@@ -223,6 +223,16 @@ pub mod post_value {
     pub const COUNT: u32 = 59;
 }
 
+/// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
+/// setter call that takes numbers, such as `setLightValue`, from place 0 on, in the order that the
+/// call's comment gives. Wherever the browser does not inline a call into the core, it makes an
+/// object of each fraction that the call takes as an argument. So a setter that a sketch may call
+/// in every frame takes its numbers this way, and only whole numbers as arguments.
+pub mod call_value {
+    /// The numbers in the block: as many as the setter with the most numbers takes.
+    pub const COUNT: u32 = 10;
+}
+
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
 /// floats that TypeScript writes before it calls `setEnvironment`, as the post-processing values
 /// come.
@@ -1069,6 +1079,7 @@ pub fn typescript() -> String {
                 ("COUNT", post_value::COUNT),
             ],
         ),
+        ("CALL_VALUE", &[("COUNT", call_value::COUNT)]),
         (
             "ENVIRONMENT_VALUE",
             &[
