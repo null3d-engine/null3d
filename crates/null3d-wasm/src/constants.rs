@@ -692,6 +692,7 @@ pub fn typescript() -> String {
                 ("SHADOW_CASCADES", light_value::SHADOW_CASCADES),
                 ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
                 ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
+                ("SHADOW_CONTACT", light_value::SHADOW_CONTACT),
             ],
         ),
         (
