@@ -89,7 +89,18 @@ Permutation bit `WEIGHTED` (1 << 31) is the last free bit of the 32-bit word. La
 
 ## Data
 
-To come: the cost per preset with and without weighted surfaces, the allocation check, the size check and the GPU check.
+The allocation check drew the production S1 page at 100,000 instances, with its smoke switch on, on the Mac (`bun run bench:allocation --weighted`). A frame's bytes, from the sample that allocated least:
+
+| Place | Budget | S1 without weighted surfaces | S1 with them, WebGPU | S1 with them, WebGL2 |
+| --- | ---: | ---: | ---: | ---: |
+| sketch worker | 240 | pass | 250.0 | 219.5 |
+| render worker | 320 | 160.1 | 797.1 | 170.7 |
+
+Without a weighted material the frame stays inside every budget on both paths. With the smoke, the WebGPU render worker's replay of the draw list allocates about 410 bytes a frame against its 320-byte budget. The same run with the browser's inlining off names the real places: `replay webgpu/backend.ts`, and the sketch worker's own smoke code (`onUpdate`, `visibleEntries`, `occludedEntries`) beside `endPhase` and `slotChange`. The smoke puffs are the benchmark page's code. The engine replay's share needs its cause found and a fix, and it is recorded here as a known cost of a weighted scene on WebGPU.
+
+The size check: the `WEIGHTED` builds and the sets they share with skinning, sprites, transmission and texcoords add 45 first-use shader files of 3 KB to 20 KB after Brotli each, all inside the 32 KB budget of a first-use file. None of them loads at a page's start. A page downloads the weighted layer's two steps and its templates' `WEIGHTED` builds only when its first weighted material draws, so a scene without one downloads and runs none of it.
+
+The GPU check: the two-step `bun run bench:gpu-check` (prepare, then measure) is recorded by the `GPU-Checked:` trailer on the commit that lands this feature.
 
 ## Decision
 
