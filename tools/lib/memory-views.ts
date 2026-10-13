@@ -21,6 +21,8 @@ const VIEW_METHODS = new Set(['view', 'heap', 'f32', 'f64', 'u32', 'i32']);
 const VIEW_CLASSES = new Set(['MemoryViews', 'CoreMemory']);
 /** The interface of an object that keeps views and drops them when the memory grows. */
 const HOLDER = 'ViewHolder';
+/** The method of the holder interface that drops the views. */
+const DROP = 'dropViews';
 /** The call that registers a holder with its memory. */
 const REGISTER = 'holdViews';
 /** The operators that store a value on a property. */
@@ -97,6 +99,26 @@ function isHolder(node: ts.ClassLikeDeclaration): boolean {
 	return implementsHolder && registers;
 }
 
+/** True when the member's own doc comment holds the `@internal` tag. */
+function isInternal(member: ts.Node): boolean {
+	const file = member.getSourceFile();
+	const ranges = ts.getLeadingCommentRanges(file.text, member.getFullStart()) ?? [];
+	return ranges.some((range) => /@internal\b/.test(file.text.slice(range.pos, range.end)));
+}
+
+/**
+ * The `dropViews` method of a class that marks it `@internal`, or undefined. The package build
+ * strips such members, so the built declarations would keep the `implements` clause without the
+ * method, and a consumer's type check would fail.
+ */
+function dropViewsMarkedInternal(node: ts.ClassLikeDeclaration): ts.MethodDeclaration | undefined {
+	const drop = node.members.find(
+		(member): member is ts.MethodDeclaration =>
+			ts.isMethodDeclaration(member) && member.name.getText() === DROP,
+	);
+	return drop !== undefined && isInternal(drop) ? drop : undefined;
+}
+
 /** The problems of one source file. */
 function problemsOf(file: ts.SourceFile, checker: ts.TypeChecker, accessor: boolean) {
 	const problems: MemoryViewProblem[] = [];
@@ -109,7 +131,18 @@ function problemsOf(file: ts.SourceFile, checker: ts.TypeChecker, accessor: bool
 	const holders: boolean[] = [];
 	const visit = (node: ts.Node): void => {
 		const isClass = ts.isClassLike(node);
-		if (isClass) holders.push(isHolder(node));
+		if (isClass) {
+			const holder = isHolder(node);
+			holders.push(holder);
+			if (holder) {
+				const drop = dropViewsMarkedInternal(node);
+				if (drop !== undefined)
+					add(
+						drop,
+						`${HOLDER} needs a public ${DROP}: remove its @internal tag, or the built declarations break a consumer's type check`,
+					);
+			}
+		}
 		if (!accessor) {
 			const named =
 				(ts.isPropertyAccessExpression(node) && node.name.text === 'buffer') ||

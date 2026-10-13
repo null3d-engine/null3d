@@ -63,6 +63,9 @@ struct Frame {
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
     /// plane and 0 at the far plane. Zero in the views of lights.
     projection: mat4x4f,
+    /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
+    /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
+    vignette: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every
