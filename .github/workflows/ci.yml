@@ -29,7 +29,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
-  BUN_VERSION: "1.3.14"
+  # Bun before 1.4.3 closes Playwright's pipe to Chrome at random, which hangs browser steps
+  # (.dev/releases.md). tests/lib/bun-version.test.ts holds every pin to package.json's.
+  BUN_VERSION: "1.4.3"
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
   # Only main's runs save caches, and every run restores main's. A pull request's or a merge queue
