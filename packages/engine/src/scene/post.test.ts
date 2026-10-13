@@ -107,6 +107,7 @@ function post(
 			},
 		},
 		check: (result: number) => result,
+		holdViews: () => {},
 	} as unknown as CoreMemory;
 	const shaders = { need: (feature: string) => needs.push(feature) } as unknown as ShaderPreloads;
 	return {

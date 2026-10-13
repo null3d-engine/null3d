@@ -90,6 +90,7 @@ pub mod occlusion;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
+pub mod particles;
 pub mod physical_sky;
 pub mod physical_sky_light;
 pub mod pipelines;

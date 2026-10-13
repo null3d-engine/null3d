@@ -119,6 +119,7 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
+use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
@@ -143,6 +144,7 @@ mod ids {
     use crate::bloom::STEPS;
     use crate::dof::STEPS as DOF_STEPS;
     use crate::effects::EffectPass;
+    use crate::particles::ParticleIds;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
 
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
@@ -173,9 +175,11 @@ mod ids {
     pub const EFFECTS: u32 = BACKGROUND + 1;
     /// The uniform buffer of depth of field's steps.
     pub const DOF: u32 = EFFECTS + 1;
+    /// The particle systems' buffers, three for each system from here.
+    pub const PARTICLE_BUFFERS: u32 = DOF + 1;
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
-    pub const OBJECT_RANGES: u32 = DOF + 1;
+    pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
     /// The uniform buffer of the physical sky's values.
     pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
@@ -238,8 +242,10 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
+    /// The texel that particle systems bind in place of a view's depth copy.
+    pub const BLANK_PARTICLE_DEPTH: u32 = STREAMED_VALUES + RING;
     /// The physical sky's tables and panorama.
-    pub const SKY_TABLES: u32 = STREAMED_VALUES + RING;
+    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The texture arrays of materials' maps, after every id the render graph can take.
@@ -295,8 +301,14 @@ mod ids {
     pub const DOF_GROUPS: u32 = EFFECT_GROUPS + EffectPass::GROUPS;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// The physical sky's bind groups, after the copy's.
-    pub const SKY_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// Each particle system's bind group, after the copy's.
+    pub const PARTICLE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// Each camera view's group of its depth copy for soft particles, after the systems'.
+    pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
+    /// The bind group of the copy of the camera's opaque depth that soft particles read.
+    pub const PARTICLE_DEPTH_COPY_GROUP: u32 = PARTICLE_DEPTH_GROUPS + MAX_VIEWS as u32;
+    /// The physical sky's bind groups, after the particles'.
+    pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind groups of materials' maps, after the full-screen passes'.
@@ -407,6 +419,8 @@ pub struct CpuCulledRenderer {
     sorted: SortedLayout,
     transparent: Transparent,
     background: BackgroundPass,
+    /// The particle systems' GPU objects and draws.
+    particles: ParticlePass,
     /// The physical sky's tables.
     physical_sky: PhysicalSkyPass,
     /// The vertex pages' vertex and index buffers.
@@ -507,6 +521,7 @@ impl CpuCulledRenderer {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
                         },
+                        particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                     },
                 );
                 graph.bind_shadow_map(config.cascade_depth);
@@ -541,6 +556,12 @@ impl CpuCulledRenderer {
                 group: ids::BACKGROUND_GROUP,
                 blank_cube: ids::BLANK_ENVIRONMENT,
                 sampler: ids::ENVIRONMENT_SAMPLER,
+            }),
+            particles: ParticlePass::new(ParticleIds {
+                buffers: ids::PARTICLE_BUFFERS,
+                groups: ids::PARTICLE_GROUPS,
+                depth_groups: ids::PARTICLE_DEPTH_GROUPS,
+                blank_depth: ids::BLANK_PARTICLE_DEPTH,
             }),
             physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
                 buffer: ids::PHYSICAL_SKY,
@@ -869,6 +890,9 @@ impl CpuCulledRenderer {
             + self.skins.upload_bound(self.settings.meshes())
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + self
+                .particles
+                .upload_bound(self.settings.particles(), views)
             + PhysicalSkyPass::UPLOAD_BYTES
             + sizes::OBJECT_RANGE_BYTES as usize
     }
@@ -1146,6 +1170,8 @@ impl CpuCulledRenderer {
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_transmission(self.sorted.transmits());
         self.graph
+            .set_soft_particles(self.settings.particles().wants_depth());
+        self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph
             .request_fullscreen_pipelines(&mut self.pipelines, self.settings.views());
@@ -1291,6 +1317,22 @@ impl CpuCulledRenderer {
         )?;
         self.background
             .prepare(list, arena, &self.settings, self.physical_sky.group())?;
+        let culling = &self.culling;
+        self.particles.prepare(
+            list,
+            arena,
+            &self.settings,
+            self.settings.particles(),
+            input.scene,
+            input.parity(),
+            views,
+            &|k| culling.frame(ViewId::from_index(k)),
+            (
+                self.graph.particle_depth_texture(),
+                self.graph.textures_made(),
+            ),
+        )?;
+        self.settings.particles_mut().clear_marks();
         let new_views = first_new < views
             || first_new_cascade < cascades
             || first_new_tile < tiles
@@ -1402,6 +1444,7 @@ impl CpuCulledRenderer {
         let (layout, casters, meshes) = (&self.layout, &self.casters, &self.meshes);
         let outlined = &self.outlined;
         let (transparent, background) = (&self.transparent, &self.background);
+        let particles = &self.particles;
         let light_textures = &self.light_textures;
         // A view leaves out the objects whose maps show a target that it does not read.
         let settings = &self.settings;
@@ -1481,7 +1524,9 @@ impl CpuCulledRenderer {
                     let bind = |list: &mut DrawList| opaque.bind_view(list, view, light_slot);
                     let hidden = hidden_in(view);
                     let index = view.index();
-                    transparent.record(list, arena, index, draws, at, meshes, bind, &hidden)
+                    transparent.record(
+                        list, arena, index, draws, at, meshes, bind, &hidden, particles,
+                    )
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
@@ -1613,7 +1658,9 @@ impl FrameBuilder for CpuCulledRenderer {
         let skinned_appear =
             self.skins
                 .open_when_built(&self.pipelines, waiting, input.pipelines_built);
-        if input.structure_changed
+        let particles_changed = self.settings.particles_mut().take_changed();
+        if particles_changed
+            || input.structure_changed
             || !self.layout.built
             || shadows != self.layouts_shadowed
             || outlines != self.layouts_outlined
@@ -1777,6 +1824,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.background.reset_gpu();
+        self.particles.reset_gpu();
         self.physical_sky.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();

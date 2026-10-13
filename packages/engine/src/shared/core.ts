@@ -83,6 +83,13 @@ export interface CoreGlue extends CoreErrors {
 	 * the page keeps that instance for the next engine.
 	 */
 	releaseInstance?(): void;
+	/**
+	 * Forgets the views of the shared memory that the threaded build's glue keeps for passing
+	 * strings and arrays, which it makes again at its next use. Without it, a view made before the
+	 * memory grew keeps the old buffer object. The single-threaded build lacks it: its memory is
+	 * not shared, and a growth empties the old views.
+	 */
+	dropMemoryViews?(): void;
 	sceneCapacity(): number;
 	/**
 	 * The address of a 32-bit count that grows each time arrays that views read move without the
@@ -599,6 +606,23 @@ export interface CoreGlue extends CoreErrors {
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
+	 * returns its id, or 0 when the scene holds the most systems already.
+	 */
+	createParticles(slot: number, capacity: number): number;
+	/** Forgets a particle system and frees its records. */
+	destroyParticles(id: number): number;
+	/** The address of a particle system's records in engine memory, or 0 for no such system. */
+	particleRecords(id: number): number;
+	/** The address of a particle system's values, then its frame's values, or 0 for none. */
+	particleValues(id: number): number;
+	/** Marks `count` records of a particle system from `start` on for the next frame's upload. */
+	markParticleRecords(id: number, start: number, count: number): number;
+	/** Marks a particle system's values for the next frame's upload. */
+	markParticleValues(id: number): number;
+	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
+	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -949,6 +973,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'createParticles',
+	'destroyParticles',
+	'particleRecords',
+	'particleValues',
+	'markParticleRecords',
+	'markParticleValues',
+	'setSoftParticles',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',
