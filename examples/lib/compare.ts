@@ -150,15 +150,21 @@ export interface ComparisonRun {
 	destroy(): Promise<void>;
 }
 
-/** Measures the display's refresh rate over about half a second: the median interval of frames. */
-export function measureDisplayHz(frames = 40): Promise<number> {
+/**
+ * Measures the display's refresh rate: the median interval of the page's next `frames` frames, or
+ * of those that come within `limitMs`. A busy software GPU can hold the page's frames seconds apart
+ * while an engine draws; the measurement then ends after two of them, not after minutes.
+ */
+export function measureDisplayHz(frames = 40, limitMs = 1000): Promise<number> {
 	return new Promise((resolve) => {
 		const intervals: number[] = [];
+		let first = -1;
 		let last = -1;
 		const tick = (time: number) => {
 			if (last >= 0) intervals.push(time - last);
+			else first = time;
 			last = time;
-			if (intervals.length < frames) {
+			if (intervals.length < frames && (intervals.length === 0 || time - first < limitMs)) {
 				requestAnimationFrame(tick);
 				return;
 			}

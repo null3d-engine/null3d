@@ -78,6 +78,46 @@ Workaround in the engine: the frame graph makes its multisampled targets again w
 
 To report: as above, after a standalone page confirms the three steps.
 
+## Adreno 619: the first pass on a device that draws gets nothing from indirect draws
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152.0.7977.54, WebGPU and WebGPU compatibility mode. Both fail the same way, so the fault is not in one of Chrome's two GPU backends alone.
+- Seen in: the skinning pass page (`tests/pages/skin-pass.ts`). Its first case, the first draw on its device, read back none of its 120 points. Every later case was right. Main showed the same in run `20261012-074025-smoke`.
+
+What happens: on a new device, take the first render pass that draws anything. Its indexed or plain indirect draws draw nothing when the CPU wrote their arguments. The pass clears its target, and no point lands. Every later pass on the device draws right. No WebGPU error is reported. A new device fails again.
+
+These made no difference (run `20261012-183358-smoke`, a probe of 15 forms, each on a new device):
+
+- a render bundle, plain indirect draws instead of indexed ones, and draws with one vertex buffer only;
+- arguments written with `writeBuffer` or mapped at creation, and a wait for the queue after the writes;
+- a pipeline built with `createRenderPipelineAsync`;
+- an earlier render pass that only clears, and an earlier compute pass.
+
+These drew right:
+
+- direct draws, indexed or plain, as the first pass;
+- the same indirect draws after an earlier pass that drew one point, by a direct or an indirect draw;
+- arguments that a compute pass wrote in the same command encoder before the render pass.
+
+Smallest known case: a new device, an index buffer and a vertex buffer, five `drawIndexedIndirect` calls whose arguments came from `writeBuffer`, in the device's first render pass. The first-draw page (`tests/pages/first-draw.ts`) draws it and reads it back.
+
+Workaround in the engine: before a device's first frame, the WebGPU scene renderer draws one point into a 1x1 target (`gpu/webgpu/first-pass.ts`). Its pipeline builds in the background with the frame's own pipelines, and the first frame waits for it. The engine writes the arguments of its indirect draws from the CPU each frame, and culling then adds the counts on the GPU. So without the pass, the first frame after each device start could lose its indirect draws on such a device. An image test cannot see this, because a capture draws the frame a second time ([Image tests](image-tests.md#other-browsers-and-devices)).
+
+The pass makes the first frame no later. On 13 October 2026, `bun run bench:startup` loaded the engine test page 8 times per case on the Mac (Apple M5 Max, Chrome 155), with and without the pass, in turns. Each figure is the median time from navigation until the GPU finished the first frame. Single loads spread by up to 400 ms.
+
+| GPU path | Load | With the pass, ms | Without it, ms |
+| --- | --- | --- | --- |
+| WebGPU | cold | 552 | 620 |
+| WebGPU | warm | 439 | 625 |
+| Compatibility mode | cold | 630 | 662 |
+| Compatibility mode | warm | 636 | 655 |
+
+The GPU check found no change in the frame time of scenes S4 and S6.
+
+To report: Qualcomm, through Chromium's issue tracker (component Internals>GPU>Dawn), with the first-draw page.
+
 ## Firefox: freeing a moved MessagePort's old object drops the unread messages that its new owner sent
 
 Status: not reported yet. Found 7 October 2026.
