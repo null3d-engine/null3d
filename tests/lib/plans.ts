@@ -1915,11 +1915,12 @@ export function itemsTogether(item: PlanItem<Check>): string[] {
  * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
  * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
  * counts at their mean. A part with a set's own share of the programs counts by that share: the
- * sampled coat page compiles about 190 programs, half a base part's 380. The WebGPU pages of the
+ * sampled coat page compiles about 190 programs against a base part's 380, and it runs after the
+ * base parts, so it counts at about 15 seconds, half a later part's time. The WebGPU pages of the
  * same names skip there.
  */
 const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
-	[/^shaders-coat-sample-/, 24],
+	[/^shaders-coat-sample-/, 15],
 	[/^shaders-/, 48],
 	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
 	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],

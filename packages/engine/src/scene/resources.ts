@@ -1432,9 +1432,6 @@ const LAYER_MAPS = [
 	'sheenRoughnessMap',
 ] as const;
 
-/** The maps whose slots a layered material's maps take. */
-const DISPLACED_MAPS = ['lightMap', 'specularIntensityMap', 'specularColorMap'] as const;
-
 /**
  * True for a map that a layered material leaves out, which development builds refuse with E1217:
  * a map whose slot the layers' maps take, and the second map of a pair that is not the texture of
@@ -1442,7 +1439,8 @@ const DISPLACED_MAPS = ['lightMap', 'specularIntensityMap', 'specularColorMap'] 
  * read it as a layer's.
  */
 function skipsMap(options: StandardOptions, key: keyof StandardMaps): boolean {
-	if ((DISPLACED_MAPS as readonly string[]).includes(key)) return true;
+	if (key === 'lightMap' || key === 'specularIntensityMap' || key === 'specularColorMap')
+		return true;
 	if (key === 'clearcoatRoughnessMap')
 		return !!options.clearcoatMap && options.clearcoatMap !== options.clearcoatRoughnessMap;
 	if (key === 'sheenRoughnessMap')
@@ -1522,83 +1520,19 @@ function writeValues(
 	if (specular) sendColor(core, id, MATERIAL_PARAM_SPECULAR_COLOR, specular, call);
 	if (attenuation) sendColor(core, id, MATERIAL_PARAM_ATTENUATION_COLOR, attenuation, call);
 	if (sheen) sendColor(core, id, MATERIAL_PARAM_SHEEN_COLOR, sheen, call);
+	const numbers = core.callValues();
 	const {
-		opacity,
-		alphaCutoff,
-		metalness,
-		roughness,
-		clearcoat,
-		clearcoatRoughness,
-		sheenRoughness,
-		emissiveIntensity,
-		aoMapIntensity,
-		lightMapIntensity,
-		specularIntensity,
-		envIntensity,
-		transmission,
-		thickness,
 		normalScale,
 		clearcoatNormalScale,
 		uvTransform,
 		ior,
 		attenuationDistance: distance,
 	} = values;
-	const numbers = core.callValues();
-	if (opacity !== undefined) {
-		numbers[0] = opacity;
-		sendValue(core, id, MATERIAL_PARAM_OPACITY, call);
-	}
-	if (alphaCutoff !== undefined) {
-		numbers[0] = alphaCutoff;
-		sendValue(core, id, MATERIAL_PARAM_ALPHA_CUTOFF, call);
-	}
-	if (metalness !== undefined) {
-		numbers[0] = metalness;
-		sendValue(core, id, MATERIAL_PARAM_METALNESS, call);
-	}
-	if (roughness !== undefined) {
-		numbers[0] = roughness;
-		sendValue(core, id, MATERIAL_PARAM_ROUGHNESS, call);
-	}
-	if (clearcoat !== undefined) {
-		numbers[0] = clearcoat;
-		sendValue(core, id, MATERIAL_PARAM_CLEARCOAT, call);
-	}
-	if (clearcoatRoughness !== undefined) {
-		numbers[0] = clearcoatRoughness;
-		sendValue(core, id, MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, call);
-	}
-	if (sheenRoughness !== undefined) {
-		numbers[0] = sheenRoughness;
-		sendValue(core, id, MATERIAL_PARAM_SHEEN_ROUGHNESS, call);
-	}
-	if (emissiveIntensity !== undefined) {
-		numbers[0] = emissiveIntensity;
-		sendValue(core, id, MATERIAL_PARAM_EMISSIVE_INTENSITY, call);
-	}
-	if (aoMapIntensity !== undefined) {
-		numbers[0] = aoMapIntensity;
-		sendValue(core, id, MATERIAL_PARAM_OCCLUSION_STRENGTH, call);
-	}
-	if (lightMapIntensity !== undefined) {
-		numbers[0] = lightMapIntensity;
-		sendValue(core, id, MATERIAL_PARAM_LIGHT_MAP_INTENSITY, call);
-	}
-	if (specularIntensity !== undefined) {
-		numbers[0] = specularIntensity;
-		sendValue(core, id, MATERIAL_PARAM_SPECULAR_INTENSITY, call);
-	}
-	if (envIntensity !== undefined) {
-		numbers[0] = envIntensity;
-		sendValue(core, id, MATERIAL_PARAM_ENV_INTENSITY, call);
-	}
-	if (transmission !== undefined) {
-		numbers[0] = transmission;
-		sendValue(core, id, MATERIAL_PARAM_TRANSMISSION, call);
-	}
-	if (thickness !== undefined) {
-		numbers[0] = thickness;
-		sendValue(core, id, MATERIAL_PARAM_THICKNESS, call);
+	for (const [key, param] of RANGED) {
+		const value = values[key];
+		if (value === undefined) continue;
+		numbers[0] = value;
+		sendValue(core, id, param, call);
 	}
 	if (ior !== undefined) {
 		numbers[0] = reflectance(ior);
@@ -1754,7 +1688,14 @@ function checkFeatures(options: StandardOptions, call: string): void {
  * layer maps that glTF packs into one texture but that are two. Call it inside `if (DEV)`.
  */
 function checkLayerMaps(options: StandardOptions, call: string): void {
-	const displaced = DISPLACED_MAPS.find((key) => options[key] !== undefined);
+	const displaced =
+		options.lightMap !== undefined
+			? 'lightMap'
+			: options.specularIntensityMap !== undefined
+				? 'specularIntensityMap'
+				: options.specularColorMap !== undefined
+					? 'specularColorMap'
+					: undefined;
 	if (displaced)
 		throw new EngineError(
 			'E1217',
@@ -1834,8 +1775,11 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 	if (Array.isArray(value)) {
 		first = value[0];
 		fits = value.length === count;
-		for (let k = 0; fits && k < count; k++) fits = isFiniteNumber(value[k]);
-	} else fits = count === 1 && isFiniteNumber(value);
+		for (let k = 0; fits && k < count; k++) {
+			const number = value[k];
+			fits = typeof number === 'number' && Number.isFinite(number);
+		}
+	} else fits = count === 1 && typeof value === 'number' && Number.isFinite(value);
 	if (fits && (type === 'f32' || type.startsWith('vec') || Number.isInteger(first))) return;
 	const takes =
 		count === 1
@@ -1847,11 +1791,6 @@ function checkUniform(uniform: CompiledUniform, value: UniformValue, call: strin
 		'E1216',
 		`${call}() got ${JSON.stringify(value)} for the ${type} uniform ${uniform.name}; it takes ${takes}.`,
 	);
-}
-
-/** True for a finite number. */
-function isFiniteNumber(value: unknown): boolean {
-	return typeof value === 'number' && Number.isFinite(value);
 }
 
 /** True for a standard value that `set` writes itself, which the uniform writes skip. */
@@ -1896,12 +1835,12 @@ function writeUniforms(
 	values: Readonly<Record<string, UniformValue | undefined>>,
 	call: string,
 ): void {
+	const numbers = core.callValues();
 	for (const name in values) {
 		const value = values[name];
 		if (value === undefined || isStandard(name, call)) continue;
 		const uniform = uniforms.get(name) as CompiledUniform;
 		const count = UNIFORM_FLOATS[uniform.type];
-		const numbers = core.callValues();
 		if (typeof value === 'number') numbers[0] = value;
 		else if (Array.isArray(value)) for (let k = 0; k < count; k++) numbers[k] = value[k] as number;
 		else writeLinearColor(numbers, value as ColorInput, call);
