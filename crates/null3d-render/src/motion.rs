@@ -37,19 +37,30 @@ pub(crate) const IDENTITY: Mat4 = [
 ];
 
 /// The motion pass's values of a frame, as `null3d::motion`'s `MotionBlock` lays them out: the last
-/// frame's view-projection matrix for positions relative to this frame's camera, and the last
-/// frame's clock as the frame uniform holds it.
+/// frame's view-projection matrix for positions relative to this frame's camera, the last frame's
+/// clock as the frame uniform holds it, and the texel row where the WebGL2 builder's copy of the
+/// last frame's joints holds its morph weights, padded to a whole `vec4`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MotionBlock {
     pub last_view_proj: Mat4,
     pub last_clock: [f32; 4],
+    pub last_weights_row: u32,
+    pad: [u32; 3],
 }
 
 /// Bytes of the motion block.
 pub(crate) const BLOCK_BYTES: u32 = std::mem::size_of::<MotionBlock>() as u32;
 
 impl MotionBlock {
+    /// The block with `row` as the first texel row of the last frame's morph weights.
+    pub(crate) fn with_weights_row(self, row: u32) -> Self {
+        Self {
+            last_weights_row: row,
+            ..self
+        }
+    }
+
     /// The block as bytes, for an upload.
     pub(crate) fn as_bytes(&self) -> &[u8] {
         bytes_of(self)
@@ -105,6 +116,8 @@ impl CameraHistory {
             block: MotionBlock {
                 last_view_proj,
                 last_clock: last.clock,
+                last_weights_row: 0,
+                pad: [0; 3],
             },
             reproject: reprojection(view_proj, &last_view_proj),
         }

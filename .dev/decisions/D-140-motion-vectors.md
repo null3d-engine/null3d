@@ -70,6 +70,8 @@ The core keeps two world buffers, one per frame parity, but the sketch worker ma
 | Joints of meshes skinned in the vertex shader | Copies of the joint texture | The same |
 | Meshes that the skinning pass skins or morphs | Copies of the skinned vertex buffers, which the motion pipelines read as a second vertex buffer | The vertex shader morphs, so copies of the morph weights texture |
 
+On WebGL2 the copies of the joints also hold the morph weights, in the rows after the joints. The motion block gives the first row of the weights. In its vertex stage, a skinned and morphed draw that reads its draw records from a texture reads 12 textures, the last frame's joints, resident rows and streamed rows among them. A separate texture for the last weights made 13, above the 12 that each stage may take: 16, less 4 kept for later features. The shared texture costs no extra copy.
+
 Each kind of data has two copies, one for each frame parity. A frame reads the copy of the parity before its own. After its last pass it copies its own data into its own parity's copy, for the next frame. A capture draws the last frame again from its recorded commands, so a frame must leave the copy that it reads as it found it: with one copy, a capture would read the frame's own data and draw no motion.
 
 The copy of a parity last took the frame before the last one. So a frame copies the matrix rows that it or the last frame uploaded, which the renderer tracks as byte ranges in memory reserved up front, and the joints, weights and skinned vertices whole. A frame copies after its passes, not before them: WebGPU's buffer writes reach the queue before the commands of their own submission, so a copy at the start of a frame would already see that frame's uploads.

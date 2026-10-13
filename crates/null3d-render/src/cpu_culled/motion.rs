@@ -6,12 +6,14 @@
 //! meshes and swaying custom materials do. A call that it draws draws its still instances too,
 //! whose motion is 0.
 //!
-//! The builder keeps two copies of the last frame's resident texture, joint texture and morph
-//! weights, one for each frame parity, as the WebGPU builder keeps its own (see
-//! `gpu_driven::motion`). The streamed ring keeps the last frame's dynamic rows in the slot before
-//! its current one. A frame reads the copies of the parity before its own, and after its passes
-//! copies its own data into its parity's copy: the resident rows that it or the last frame
-//! uploaded, and the joints and weights whole.
+//! The builder keeps two copies of the last frame's resident texture, and two of its joint texture
+//! with its morph weights in the rows after the joints, one for each frame parity, as the WebGPU
+//! builder keeps its own (see `gpu_driven::motion`). Joints and weights share a texture, as the
+//! vertex stage of a skinned and morphed draw has no texture unit to spare for a second. The
+//! streamed ring keeps the last frame's dynamic rows in the slot before its current one. A frame
+//! reads the copies of the parity before its own, and after its passes copies its own data into
+//! its parity's copy: the resident rows that it or the last frame uploaded, and the joints and
+//! weights whole.
 
 use null3d_core::culling::NO_BUCKET;
 use null3d_core::snapshot::SCENE_TARGET;
@@ -35,6 +37,12 @@ use crate::view::{ViewFrame, ViewId};
 const RESIDENT_WIDTH: u32 = sizes::MATRICES_PER_TEXTURE_ROW * sizes::MATRIX_TEXELS;
 /// The width of the joint texture in texels.
 const JOINTS_WIDTH: u32 = JOINTS_PER_ROW * TEXELS_PER_JOINT;
+/// The width of the copies of the joints and morph weights in texels, the wider of the two.
+const SKINS_WIDTH: u32 = if JOINTS_WIDTH > MORPH_WIDTH {
+    JOINTS_WIDTH
+} else {
+    MORPH_WIDTH
+};
 
 /// The motion pass's state across frames.
 #[derive(Debug, Default)]
@@ -44,8 +52,8 @@ pub(super) struct Motion {
     made: bool,
     /// The resident rows that this frame and the last uploaded, in rows of matrices.
     resident: ChangedRanges,
-    /// Texel rows of each copy of the resident texture, the joint texture and the morph weights,
-    /// 0 before they exist.
+    /// Texel rows of each copy of the resident texture, and of the joints and the morph weights in
+    /// each copy of the joints, 0 before they exist.
     resident_rows: u32,
     joint_rows: u32,
     weight_rows: u32,
@@ -67,9 +75,9 @@ impl Motion {
     }
 
     /// Starts the frame of the motion pass: makes the GPU objects that it lacks, the copies of the
-    /// last frame's data as large as the resident texture's `resident_rows`, the joint texture and
-    /// the morph weights, and the frame groups that bind them. A frame that `rebuilt` the layout,
-    /// or that makes a copy, fills both copies and draws no object's motion.
+    /// last frame's data as large as the resident texture's `resident_rows` and as the joint
+    /// texture and the morph weights together, and the frame groups that bind them. A frame that
+    /// `rebuilt` the layout, or that makes a copy, fills both copies and draws no object's motion.
     pub(super) fn prepare(
         &mut self,
         list: &mut DrawList,
@@ -91,28 +99,27 @@ impl Motion {
             self.made = true;
             remade = true;
         }
-        let sizes = [
-            (
-                resident_rows,
-                RESIDENT_WIDTH,
-                ids::last_resident as fn(usize) -> u32,
-            ),
-            (skins.joints().rows(), JOINTS_WIDTH, ids::last_joints),
-            (skins.morph().weight_rows(), MORPH_WIDTH, ids::last_weights),
-        ];
-        let made = [
-            &mut self.resident_rows,
-            &mut self.joint_rows,
-            &mut self.weight_rows,
-        ];
-        for ((rows, width, id), made) in sizes.into_iter().zip(made) {
-            if rows > *made {
-                *made = rows;
-                for copy in 0..2 {
-                    create(list, id(copy), width, rows)?;
-                }
-                remade = true;
+        if resident_rows > self.resident_rows {
+            self.resident_rows = resident_rows;
+            for copy in 0..2 {
+                create(
+                    list,
+                    ids::last_resident(copy),
+                    RESIDENT_WIDTH,
+                    resident_rows,
+                )?;
             }
+            remade = true;
+        }
+        let (joint_rows, weight_rows) = (skins.joints().rows(), skins.morph().weight_rows());
+        if joint_rows > self.joint_rows || weight_rows > self.weight_rows {
+            self.joint_rows = self.joint_rows.max(joint_rows);
+            self.weight_rows = self.weight_rows.max(weight_rows);
+            for copy in 0..2 {
+                let rows = self.joint_rows + self.weight_rows;
+                create(list, ids::last_skins(copy), SKINS_WIDTH, rows)?;
+            }
+            remade = true;
         }
         let rows = (self.resident_rows, self.joint_rows, self.weight_rows);
         if self.groups != Some(rows) {
@@ -196,14 +203,15 @@ impl Motion {
         self.kept && !self.filling
     }
 
-    /// Uploads the motion block.
+    /// Uploads the motion block, with the row of the morph weights in the copies of the joints.
     pub(super) fn upload(
         &self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         frame: &MotionFrame,
     ) -> Result<(), RecordError> {
-        let (at, bytes) = arena.push(frame.block.as_bytes())?;
+        let block = frame.block.with_weights_row(self.joint_rows);
+        let (at, bytes) = arena.push(block.as_bytes())?;
         list.push(Op::WriteBuffer, &[ids::MOTION_BLOCK, 0, at, bytes])?;
         Ok(())
     }
@@ -233,6 +241,7 @@ impl Motion {
                     last,
                     RESIDENT_WIDTH,
                     0,
+                    0,
                     self.resident_rows,
                 )?;
             } else {
@@ -244,26 +253,41 @@ impl Motion {
                     span = match span {
                         Some((from, to)) if first <= to => Some((from, to.max(end))),
                         Some((from, to)) => {
-                            copy_rows(list, ids::RESIDENT, last, RESIDENT_WIDTH, from, to - from)?;
+                            copy_rows(
+                                list,
+                                ids::RESIDENT,
+                                last,
+                                RESIDENT_WIDTH,
+                                from,
+                                from,
+                                to - from,
+                            )?;
                             Some((first, end))
                         }
                         None => Some((first, end)),
                     };
                 }
                 if let Some((from, to)) = span {
-                    copy_rows(list, ids::RESIDENT, last, RESIDENT_WIDTH, from, to - from)?;
+                    copy_rows(
+                        list,
+                        ids::RESIDENT,
+                        last,
+                        RESIDENT_WIDTH,
+                        from,
+                        from,
+                        to - from,
+                    )?;
                 }
             }
+            let to = ids::last_skins(parity);
             if skins.joints().exists() {
                 let rows = skins.joints().rows().min(self.joint_rows);
-                let to = ids::last_joints(parity);
-                copy_rows(list, skins.joints().id(), to, JOINTS_WIDTH, 0, rows)?;
+                copy_rows(list, skins.joints().id(), to, JOINTS_WIDTH, 0, 0, rows)?;
             }
             if skins.morph().exists() {
                 let rows = skins.morph().weight_rows().min(self.weight_rows);
                 let [_, weights] = skins.morph().ids();
-                let to = ids::last_weights(parity);
-                copy_rows(list, weights, to, MORPH_WIDTH, 0, rows)?;
+                copy_rows(list, weights, to, MORPH_WIDTH, 0, self.joint_rows, rows)?;
             }
         }
         self.kept = true;
@@ -281,7 +305,8 @@ impl Motion {
     /// Records the creation of the motion pass's frame group for a frame parity and a slot of the
     /// streamed ring: the camera view's frame uniform and cell offsets, which take the dynamic
     /// offset of its ring slot, the material table, the motion block, and the copies of the last
-    /// frame's joints, morph weights and resident rows that the parity reads, the other parity's,
+    /// frame's joints and morph weights and of its resident rows that the parity reads, the other
+    /// parity's,
     /// with the streamed ring's slot before `streamed`, and the table of object ranges.
     fn bind_frame(
         &self,
@@ -312,14 +337,7 @@ impl Motion {
             [
                 5,
                 resource_kind::TEXTURE,
-                or_blank(self.joint_rows, ids::last_joints(read)),
-                0,
-                0,
-            ],
-            [
-                6,
-                resource_kind::TEXTURE,
-                or_blank(self.weight_rows, ids::last_weights(read)),
+                or_blank(self.joint_rows + self.weight_rows, ids::last_skins(read)),
                 0,
                 0,
             ],
@@ -345,7 +363,7 @@ impl Motion {
                 sizes::OBJECT_RANGE_BYTES,
             ],
         ];
-        let mut words = [0u32; 3 + 5 * 9];
+        let mut words = [0u32; 3 + 5 * 8];
         words[..3].copy_from_slice(&[
             ids::motion_frame_group(parity, streamed),
             bind_layout::MOTION_FRAME,
@@ -382,14 +400,15 @@ fn create(list: &mut DrawList, id: u32, width: u32, rows: u32) -> Result<(), Rec
     Ok(())
 }
 
-/// Records the copy of `rows` whole texel rows of `width` texels, from row `first` on, from
-/// texture `from` into texture `to`.
+/// Records the copy of `rows` whole texel rows of `width` texels, from row `first` on of texture
+/// `from` into texture `to` from row `at` on.
 fn copy_rows(
     list: &mut DrawList,
     from: u32,
     to: u32,
     width: u32,
     first: u32,
+    at: u32,
     rows: u32,
 ) -> Result<(), RecordError> {
     if rows == 0 {
@@ -397,7 +416,7 @@ fn copy_rows(
     }
     list.push(
         Op::CopyTextureToTexture,
-        &[from, 0, 0, first, 0, to, 0, 0, first, 0, width, rows, 1],
+        &[from, 0, 0, first, 0, to, 0, 0, at, 0, width, rows, 1],
     )?;
     Ok(())
 }

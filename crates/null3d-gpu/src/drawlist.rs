@@ -744,9 +744,9 @@ pub mod layout {
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
     /// Group 0 of the motion pass's pipelines: [`DEPTH`]'s bindings, then the motion block at
-    /// binding 4 and the last frame's joint texture at 5. On WebGL2 the group also holds the last
-    /// frame's morph weights at 6 and the last frame's matrix rows at 7 and 9, resident and
-    /// streamed.
+    /// binding 4 and the last frame's joint texture at 5. On WebGL2 the texture at 5 also holds
+    /// the last frame's morph weights after its joints, and the group holds the last frame's
+    /// matrix rows at 7 and 9, resident and streamed.
     pub const MOTION_FRAME: u32 = 38;
 }
 

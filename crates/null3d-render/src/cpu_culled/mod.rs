@@ -244,25 +244,21 @@ mod ids {
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
     pub const BLANK_MOTION: u32 = STREAMED_VALUES + RING;
-    /// The two copies of the last frame's resident texture, joint texture and morph weights, one
-    /// for each frame parity.
+    /// The two copies of the last frame's resident texture, and of its joint texture with its
+    /// morph weights after it, one for each frame parity.
     const LAST_RESIDENT: u32 = BLANK_MOTION + 1;
-    const LAST_JOINTS: u32 = LAST_RESIDENT + 2;
-    const LAST_WEIGHTS: u32 = LAST_JOINTS + 2;
+    const LAST_SKINS: u32 = LAST_RESIDENT + 2;
 
     pub const fn last_resident(copy: usize) -> u32 {
         LAST_RESIDENT + copy as u32
     }
-    pub const fn last_joints(copy: usize) -> u32 {
-        LAST_JOINTS + copy as u32
-    }
-    pub const fn last_weights(copy: usize) -> u32 {
-        LAST_WEIGHTS + copy as u32
+    pub const fn last_skins(copy: usize) -> u32 {
+        LAST_SKINS + copy as u32
     }
 
-    /// The texel that the motion view's frame groups bind in place of the last frame's joints or
-    /// morph weights before the scene has them.
-    pub const BLANK_LAST: u32 = LAST_WEIGHTS + 2;
+    /// The texel that the motion view's frame groups bind in place of the last frame's resident
+    /// rows, joints and morph weights before the scene has them.
+    pub const BLANK_LAST: u32 = LAST_SKINS + 2;
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = BLANK_LAST + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.

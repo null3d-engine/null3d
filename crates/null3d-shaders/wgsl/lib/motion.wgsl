@@ -28,25 +28,28 @@
 // row from the one that its draw names.
 
 /// The motion pass's values of the frame: the last frame's view-projection matrix for positions
-/// relative to this frame's camera, and the last frame's clock, as `frame.clock` holds this one's:
-/// its time, its step and its number's bits.
+/// relative to this frame's camera, the last frame's clock, as `frame.clock` holds this one's: its
+/// time, its step and its number's bits, and on WebGL2 the texel row of the last frame's morph
+/// weights in the texture of its joints.
 struct MotionBlock {
     last_view_proj: mat4x4f,
     last_clock: vec4f,
+    last_weights_row: u32,
 }
 
 @group(0) @binding(4) var<uniform> motion_block: MotionBlock;
 
-#ifdef SKIN
+#ifdef WEBGL2
+/// The last frame's skinning matrices, laid out as the joint texture's, then from the block's row
+/// on its morph weights, laid out as the weights texture's. One texture holds both, as the vertex
+/// stage of a skinned and morphed draw has no texture unit to spare for a second.
+@group(0) @binding(5) var last_joint_matrices: texture_2d<f32>;
+#else ifdef SKIN
 /// The last frame's skinning matrices, laid out as the joint texture's.
 @group(0) @binding(5) var last_joint_matrices: texture_2d<f32>;
 #endif
 
 #ifdef WEBGL2
-#ifdef MORPH
-/// The last frame's morph weights, laid out as the weights texture's.
-@group(0) @binding(6) var last_morph_weights: texture_2d<f32>;
-#endif
 /// The last frame's matrix rows of the resident data texture and of the streamed one.
 @group(0) @binding(7) var last_resident_rows: texture_2d<f32>;
 @group(0) @binding(9) var last_streamed_rows: texture_2d<f32>;
@@ -148,8 +151,9 @@ fn last_morphed_position(found: Instance, range: vec2f, position: vec3f) -> vec3
         let entry = morph_texel(first + k * stride);
         let t = u32(entry.w);
         let texel = found.morph_weights + t / 4u;
-        let at = vec2u(texel % MORPH_TEXELS_PER_ROW, texel / MORPH_TEXELS_PER_ROW);
-        out += textureLoad(last_morph_weights, at, 0)[t % 4u] * entry.xyz;
+        let row = motion_block.last_weights_row + texel / MORPH_TEXELS_PER_ROW;
+        let at = vec2u(texel % MORPH_TEXELS_PER_ROW, row);
+        out += textureLoad(last_joint_matrices, at, 0)[t % 4u] * entry.xyz;
     }
     return out;
 }
