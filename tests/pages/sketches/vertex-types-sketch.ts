@@ -131,6 +131,9 @@ export default defineSketch(({ scene, materials, geometry, textures }) => {
 		color: '#ffffff',
 		intensity: 2,
 		castShadows: true,
+		// Contact shadows march through the depth, where the integer and float twins differ by a
+		// rounding of their positions, so a jittered step can land on either side of a surface.
+		shadow: { contactDistance: 0 },
 	});
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
 

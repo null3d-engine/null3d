@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
+import { glslProgramsOf, wgslModulesOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -155,6 +156,33 @@ describe('waitForRunners', () => {
 			expect(finished).toEqual(['done-phone']);
 			expect(quiet).toEqual([['quiet-phone', 'a']]);
 		}));
+
+	it("keeps waiting on a runner page whose heartbeat goes on past its page's quiet time", () =>
+		withRun(['a'], async (plan) => {
+			writeRunnerFile(plan.run, 'slow-ipad', 'device', {});
+			const beats = setInterval(
+				() => writeRunnerFile(plan.run, 'slow-ipad', HEARTBEAT_NAME, { item: 'a' }),
+				20,
+			);
+			setTimeout(() => {
+				clearInterval(beats);
+				writeRunnerFile(plan.run, 'slow-ipad', 'a', { ok: true });
+				writeRunnerFile(plan.run, 'slow-ipad', 'done', {});
+			}, 300);
+			const quiet: string[] = [];
+			const finished = await waitForRunners(plan, ['slow-ipad'], {
+				quietMs: () => 80,
+				onQuiet: (runner) => quiet.push(runner) < 0,
+			});
+			clearInterval(beats);
+			expect(quiet).toEqual([]);
+			expect(finished).toEqual(['slow-ipad']);
+		}));
+
+	it('gives the whole plan the most time that each page may get', () => {
+		const plan = { run: 'r', createdAt: '', items: [item('a', 220), item('b', 30)] };
+		expect(batchTimeoutMs(plan)).toBeGreaterThanOrEqual((220 + 30) * MOST_TIME_SHARE * 1000);
+	});
 
 	it('waits again for a runner whose quiet page the caller replaced', () =>
 		withRun(['a', 'b'], async (plan) => {
@@ -990,7 +1018,8 @@ describe('the checks plan', () => {
 
 	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
 		const parts = items.filter((item) => item.check.kind === 'shaders');
-		const programs = glslProgramsOf(await everyShader()).length;
+		const all = await everyShader();
+		const programs = glslProgramsOf(all).length;
 		expect(programs).toBeGreaterThan(100);
 		expect(parts.length).toBe(SHADER_PARTS);
 		expect(SHADER_PARTS).toBeGreaterThan(1);
@@ -1000,8 +1029,14 @@ describe('the checks plan', () => {
 				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
 			]),
 		);
-		// No part compiles more than a few hundred programs in one WebGL2 context.
+		// The parts together check every build, and no part compiles more than a few hundred
+		// programs in one WebGL2 context.
+		const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, SHADER_PARTS)));
+		const names = (lists: (readonly [string, unknown])[]) => new Set(lists.map(([name]) => name));
+		expect(names(shares.flatMap(glslProgramsOf))).toEqual(names(glslProgramsOf(all)));
+		expect(names(shares.flatMap(wgslModulesOf))).toEqual(names(wgslModulesOf(all)));
 		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
 		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});

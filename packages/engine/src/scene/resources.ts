@@ -1623,11 +1623,11 @@ function uniformWrites(
 }
 
 /**
- * The texture of each slot that a custom material's WGSL declares, from its `textures` option, with
- * none where the option gives none. Throws E1216 for a name that the WGSL does not declare, and for
- * a value that is not a texture of one layer.
+ * The texture of each slot that a custom material's or effect's WGSL declares, from its `textures`
+ * option, with none where the option gives none. Throws E1216 for a name that the WGSL does not
+ * declare, and for a value that is not a texture of one layer.
  */
-function textureSlots(
+export function textureSlots(
 	declared: readonly { readonly name: string }[],
 	given: Readonly<Record<string, unknown>>,
 	call: string,
@@ -1641,7 +1641,7 @@ function textureSlots(
 			const names = declared.map((texture) => texture.name).join(', ') || 'none';
 			throw new EngineError(
 				'E1216',
-				`${call}() got the texture ${name}, which the material's WGSL does not declare. Its textures: ${names}.`,
+				`${call}() got the texture ${name}, which the WGSL does not declare. Its textures: ${names}.`,
 			);
 		}
 		if (!(value instanceof Texture) || value.depth !== 1)
