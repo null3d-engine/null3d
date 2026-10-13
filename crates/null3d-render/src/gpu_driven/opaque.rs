@@ -101,11 +101,12 @@ pub(super) fn bind_frame(
         ),
     ];
     let listed = 5 * entries.len();
+    // One spare entry, so an extra binding does not change the array's size.
     let mut words = [0u32; 3 + 5 * 16 + environment::ENTRY_WORDS];
     let count = (entries.len() + environment::ENTRY_WORDS / 5) as u32;
     words[..3].copy_from_slice(&[ids::frame_group(view), bind_layout::FRAME, count]);
     words[3..3 + listed].copy_from_slice(entries.as_flattened());
-    words[3 + listed..]
+    words[3 + listed..3 + listed + environment::ENTRY_WORDS]
         .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
     list.push(Op::CreateBindGroup, &words)?;
     Ok(())
