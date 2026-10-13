@@ -110,7 +110,7 @@ The rules:
 - Hold mode draws the same frame. No input reaches a held frame, and the helper then moves nothing. The controls turn the camera toward their target as they start, so the helper puts the camera back where the sketch had it. The controls' update runs only after the hand-over, or while they turn the camera by themselves. A weight of 0 gives the scripted value bit for bit. `examples/lib/interact.test.ts` checks these points, and the demos' image tests check the held frames.
 - The user can look at a demo from any side. So a flat or open surface that the camera can get behind or below draws both faces, with `doubleSided: true`. These are the flat generator shapes and the island of the mesh arrays demo. They are also the grounds of the character, security camera, objects, render layers, hold mode, input and far-from-origin demos. A pan can take the camera under a ground even when the orbit limits keep it above the target.
 - No two faces that point the same way share a plane, or they flicker as the view moves. A wall stands on its floor, not beside its edge, and a back wall fits between its side walls. The render layers demo's walls and the post effects demo's side wall had such faces, and the owner saw them shimmer on 8 October 2026.
-- A demo imports only the engine, `@null3d/controls`, `../lib/interact` and `../lib/samples`. Scripted motion reads `time.now`, as [Image tests](image-tests.md#the-feature-demos) asks. A camera that follows a moving object moves in `onLateUpdate`.
+- A demo imports only the engine, `@null3d/controls`, `../lib/interact`, `../lib/samples` and files in its own folder. The particles demo also imports `@null3d/particles`, the add-on that it shows. Scripted motion reads `time.now`, as [Image tests](image-tests.md#the-feature-demos) asks. A camera that follows a moving object moves in `onLateUpdate`.
 
 What the pointer steers in each demo:
 
@@ -264,6 +264,8 @@ Time comparisons in the Mac's installed Chrome, the browser that people run. On 
 
 The display rate that a ramp judges against must be the display's. The page measures it from its own animation frames. But Chrome can slow those frames while null3D draws from its workers at the full rate. On 12 October 2026, Night town's instanced null3D ramp on a 120 Hz Mac measured 30 Hz. It then "held" all 1,020 lights, though its frame rate fell to 104 at 124 lights. So the ramp also measures the engine's frame rate at the start count for a second. An engine cannot draw faster than the display. So when it draws more than 5% faster than the page's rate, its rate, rounded to the nearest common refresh rate, becomes the display rate (`displayRate` in `examples/lib/ramp.ts`, with a unit test). Every ramp result names the display rate it judged against. Check it before using a figure.
 
+The page's measurement takes the median interval of 40 of its frames, or of those that come within a second. On 13 October 2026, three.js drew Battle on CI's SwiftShader at one frame every 5 to 11 seconds. The page's own frames came 2.5 to 6 seconds apart meanwhile. The measurement waited for 40 of them, so the page gave no result within the test's 200 seconds. Now it ends after two such frames. CI's test of Battle's three.js ramp on WebGPU would fail again if it waited that long.
+
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
 
 Night town's and Busy page's ramps count lights, 12 to a block. They start at 60, 48 and 36 lights and top out at 1,020, 720 and 480 on desktops, tablets and phones. Each stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
@@ -296,7 +298,7 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
 - The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
 - The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
-- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). The particles add-on is on main now, so a scene that moves to it changes only the null3D side.
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
@@ -357,6 +359,13 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
 - The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
 
+## The campfire glade's scenery (12 October 2026)
+
+The particles demo's scenery lives in `examples/particles/glade.ts`, beside the sketch. Two points came from the look review:
+
+- Sphere crowns with flat shading read as faceted low-poly balls, not foliage. Each birch's crown is now five bumpy lumps, built from arrays. Each lump is a ball with bumps of two sizes and smooth normals. Its vertex colors darken the hollows and vary at random in brightness and hue, as clustered leaves do. Three such lumps, turned and tinted in four autumn colors, give every tree a different crown.
+- A firelight with the physical fall-off lit only the stones. The firelight now fades more slowly than real light (`decay` 1.2), reaches 16 m and is warmer, so the ground round the fire and the nearest birch trunks take its glow. Its flicker is soft: about a fifth up or down, from three slow waves that never fall in step.
+
 ## The stone garden's scenery (12 October 2026)
 
 The owner asked for a richer contact shadows demo (`contact-shadows`, Stone garden) on 12 October 2026. Its scenery now lives in `examples/contact-shadows/garden.ts`, beside the sketch, and all of it is made in code.
@@ -416,7 +425,18 @@ Each feature gets a decision record of its own when it is built.
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
 | Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 
-Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+The particles demo uses the particles add-on. The showcase and comparison scenes still draw their particles with sprites behind a small interface of their own. Their look pass moves them to the add-on. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+### The order the demos take the features
+
+A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
+
+- **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
+- **Night town** and the **Busy page** take screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
+- **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
+
+The owner reviews each scene's look before its references are remade. Every scene holds the display rate at its preset, as the other demos do.
 
 ### Creek
 

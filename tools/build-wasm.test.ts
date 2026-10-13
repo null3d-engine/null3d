@@ -94,16 +94,20 @@ describe('addReleaseInstance', () => {
 		'',
 	].join('\n');
 
-	it('adds a function that drops the instance and every view of its memory', () => {
+	it('adds functions that drop every view of its memory, and the instance with them', () => {
 		const released = addReleaseInstance(glue);
 		expect(released.startsWith(glue)).toBe(true);
 		expect(released.slice(glue.length)).toBe(
 			[
 				'',
-				'export function releaseInstance() {',
-				'    wasmModule = wasmInstance = wasm = undefined;',
+				'export function dropMemoryViews() {',
 				'    cachedFloat64ArrayMemory0 = null;',
 				'    cachedUint8ArrayMemory0 = null;',
+				'}',
+				'',
+				'export function releaseInstance() {',
+				'    wasmModule = wasmInstance = wasm = undefined;',
+				'    dropMemoryViews();',
 				'}',
 				'',
 			].join('\n'),

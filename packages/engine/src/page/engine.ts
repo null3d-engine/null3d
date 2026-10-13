@@ -40,6 +40,7 @@ import { URL_SWITCHES } from '../shared/dev';
 import { encodeFrame } from '../shared/frame-image';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
+import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
@@ -342,7 +343,8 @@ export interface EngineOptions {
 	 * marks while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
-	 * shaders, so the start waits only for the largest. Loading a glTF file with skins or morph
+	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
+	 * need together, such as a skinned mesh's with the alpha hash, download with them. Loading a glTF file with skins or morph
 	 * targets, or making a batch, also starts its feature's download at once, before the objects
 	 * draw. Throws E1421 for a name it does not know.
 	 */
@@ -1312,7 +1314,7 @@ async function startEngine(
 			tier,
 			preset: () => mode.preset,
 			renderScaleThousandths: () => Atomics.load(slots, Slot.RenderScale),
-			wasmBytes: () => wasmMemory?.buffer.byteLength ?? 0,
+			wasmBytes: () => memoryBytes(wasmMemory) ?? 0,
 		},
 		sharedMemory: threaded,
 		maxTargetFps: maxTarget,
@@ -2056,7 +2058,7 @@ async function startEngine(
 				return {
 					seconds: (performance.now() - started) / 1000,
 					...summarizeFrames(reader.records, threadRoles(mode)),
-					memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+					memory: { wasmBytes: memoryBytes(wasmMemory) ?? null, ...heap.stop() },
 					load: {
 						engineStartMs,
 						probeMs,

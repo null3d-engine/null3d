@@ -188,11 +188,14 @@ export const VARIANTS: Variant[] = [
 const INSTANCE_VARIABLES = 'let wasmModule, wasmInstance, wasm;';
 
 /**
- * Adds `releaseInstance` to the glue. wasm-bindgen's glue keeps the instance that its thread
- * started, with views of the instance's memory, and initSync returns that instance on each later
- * call. Each threaded engine has a shared memory of its own, so a page that runs the sketch calls
- * `releaseInstance` once the engine has stopped. The browser can then free the engine's memory, and
- * the next initSync starts a new instance in the memory of the next engine.
+ * Adds `releaseInstance` and `dropMemoryViews` to the glue. wasm-bindgen's glue keeps the instance
+ * that its thread started, with views of the instance's memory, and initSync returns that instance
+ * on each later call. Each threaded engine has a shared memory of its own, so a page that runs the
+ * sketch calls `releaseInstance` once the engine has stopped. The browser can then free the
+ * engine's memory, and the next initSync starts a new instance in the memory of the next engine.
+ * The glue makes its views again only when it next passes a string or an array, so a view made
+ * before the shared memory grew would keep the old buffer object. `dropMemoryViews` forgets them,
+ * and the thread's memory views call it at each growth.
  */
 export function addReleaseInstance(glue: string): string {
 	const views = [...glue.matchAll(/^let (cached\w*Memory0) = null;$/gm)].map((match) => match[1]);
@@ -201,7 +204,7 @@ export function addReleaseInstance(glue: string): string {
 			'the glue no longer holds its instance as this build expects: update addReleaseInstance for this wasm-bindgen version',
 		);
 	const clears = views.map((view) => `    ${view} = null;\n`).join('');
-	return `${glue}\nexport function releaseInstance() {\n    wasmModule = wasmInstance = wasm = undefined;\n${clears}}\n`;
+	return `${glue}\nexport function dropMemoryViews() {\n${clears}}\n\nexport function releaseInstance() {\n    wasmModule = wasmInstance = wasm = undefined;\n    dropMemoryViews();\n}\n`;
 }
 /**
  * Checks that wasm-bindgen added exactly one page to the memory that the linker laid out, for its
@@ -663,7 +666,7 @@ async function main(): Promise<void> {
 	for (const [part, size] of later) printSize(`js/${part}`, size, LATER_BUDGET);
 	printSize('after the start, total', totalSize(later.values()));
 	console.log(
-		`\nthe shader builds of each feature that loads on first use, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
+		`\nthe shader builds of each feature that loads on first use, and of each set of such features that builds need together, one file for each GPU path and each value of the bits a device fixes (${budgetNote(FIRST_USE_SHADER_BUDGET)} for each file; no start counts them)`,
 	);
 	for (const [part, size] of parts)
 		if (isFirstUseShaderPart(part)) printSize(`js/${part}`, size, FIRST_USE_SHADER_BUDGET);

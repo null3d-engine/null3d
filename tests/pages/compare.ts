@@ -7,7 +7,8 @@
 // runs the device class's whole ramp instead, and `?renderer=webgpu` puts three.js on
 // WebGPURenderer on a WebGPU device, or `?renderer=webgl` on WebGLRenderer. `?measure=<count>`
 // runs at that count in place of a ramp, and measures the frames over `?seconds=` (5 by default)
-// and then the whole page's memory. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
+// and then the whole page's memory, which `?memory=off` leaves out, as the browser can take a
+// minute or more to measure it. `?size=` sets the canvas's size in CSS pixels. `?max=` sets the
 // most the count reaches, in place of the device class's ramp maximum. `?warmup=` sets the seconds
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
@@ -108,8 +109,9 @@ run('compare', async () => {
 		started.collapseStats(true);
 		await new Promise((resolve) => setTimeout(resolve, (warmup ?? 2) * 1000));
 		const frames = await started.measure(Number(params.get('seconds') ?? 5));
-		const memory = await started.measureMemory();
-		const parts = await memoryParts();
+		const skipMemory = params.get('memory') === 'off';
+		const memory = skipMemory ? null : await started.measureMemory();
+		const parts = skipMemory ? null : await memoryParts();
 		await started.destroy();
 		dressed?.stop();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
