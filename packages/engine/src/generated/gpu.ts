@@ -288,6 +288,7 @@ export const SIZE_CULL_OCCLUSION_BYTES = 96;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 export const SIZE_SHADOW_UNIFORM_BYTES = 368;
 export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
+export const SIZE_SHADOW_SETTINGS_BYTES = 2304;
 export const SIZE_BACKGROUND_UNIFORM_BYTES = 128;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
