@@ -6,6 +6,7 @@
 // page again, and the ramp does too: it runs on the engine that runs, keeps the result for the
 // session, loads the page with the other engine, runs there, and shows both results.
 
+import { dressStage } from './compare/busy-page/page';
 import type { Comparison } from './compare/comparisons';
 import {
 	type ComparisonRun,
@@ -21,7 +22,6 @@ import {
 import {
 	COMPARE_MODES,
 	type CompareMode,
-	EFFECT_NAMES,
 	type Effects,
 	effectsFromText,
 	effectsToText,
@@ -29,6 +29,7 @@ import {
 } from './lib/compare-scene';
 import {
 	countToSlider,
+	noFrameText,
 	type RampResult,
 	SLIDER_STEPS,
 	sliderToCount,
@@ -84,7 +85,12 @@ function rampLine(comparison: Comparison, ramps: KeptRamp[]): string {
 		})
 		.filter(Boolean);
 	const hz = ramps[0]?.result.displayHz;
-	return `${parts.join(', ')} ${comparison.countUnit} at ${hz} fps on this device.`;
+	const failures = ramps.map((ramp) =>
+		noFrameText(ENGINE_TITLES[ramp.engine], ramp.result, comparison.countUnit),
+	);
+	return [`${parts.join(', ')} ${comparison.countUnit} at ${hz} fps on this device.`, ...failures]
+		.filter(Boolean)
+		.join(' ');
 }
 
 /** Runs a comparison in the page's panel, with its controls in a caption at the top left. */
@@ -146,7 +152,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	// The effect switches load the page again with the new set.
 	const switches = element('p');
 	switches.className = 'effects';
-	for (const name of EFFECT_NAMES) {
+	for (const name of comparison.effects) {
 		const box = element('input');
 		box.type = 'checkbox';
 		box.checked = effects[name];
@@ -185,6 +191,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	links.append(code);
 	caption.append(links);
 	stage.append(canvas, caption);
+	dressStage(comparison, stage, canvas);
 
 	const kept = keptRamps(comparison, mode);
 	if (kept.length > 0) result.textContent = rampLine(comparison, kept);

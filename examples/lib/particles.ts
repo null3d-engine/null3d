@@ -6,7 +6,7 @@
 // keep the simulation out of both engines, so a layer can move to the particles add-on by
 // replacing only the null3D side.
 
-import { clamp, hash01, lerp, type TextureData } from './compare-scene';
+import { byte, clamp, hash01, lerp, type TextureData, tiledNoise } from './compare-scene';
 
 /** How a layer of sprites draws. */
 export interface SpriteLayer {
@@ -115,7 +115,6 @@ function atlas(
 	const width = columns * frameSize;
 	const height = rows * frameSize;
 	const data = new Uint8Array(width * height * 4);
-	const byte = (v: number) => Math.round(clamp(v, 0, 1) * 255);
 	for (let row = 0; row < rows; row++)
 		for (let column = 0; column < columns; column++) {
 			const frame = row * columns + column;
@@ -194,4 +193,47 @@ export function smokeAtlas(frameSize = 96): SpriteLayer['atlas'] {
 		return [shade, shade, shade, density * (0.55 + 0.45 * n)];
 	});
 	return { columns: 2, rows: 2, texture };
+}
+
+// One-frame atlases of white pictures that each sprite's color tints.
+
+/** One picture as an atlas of one frame. */
+function single(size: number, alpha: (u: number, v: number, x: number, y: number) => number) {
+	const data = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const at = (y * size + x) * 4;
+			data[at] = 255;
+			data[at + 1] = 255;
+			data[at + 2] = 255;
+			data[at + 3] = byte(alpha((x + 0.5) / size - 0.5, (y + 0.5) / size - 0.5, x, y));
+		}
+	const texture: TextureData = { size, data, colorSpace: 'srgb' };
+	return { columns: 1, rows: 1, texture } satisfies SpriteLayer['atlas'];
+}
+
+/** A raindrop's streak: a thin line down the middle of the square, brightest at its center. */
+export function rainAtlas(size = 32): SpriteLayer['atlas'] {
+	return single(size, (u, v) => {
+		const across = Math.abs(u) * size;
+		const along = Math.abs(v) * 2;
+		return clamp(1 - across / 1.2, 0, 1) * clamp((1 - along) * 1.6, 0, 1);
+	});
+}
+
+/** A puff of steam or smoke: a soft round cloud with a ragged edge. */
+export function puffAtlas(size = 64, seed = 5): SpriteLayer['atlas'] {
+	return single(size, (u, v, x, y) => {
+		const r = Math.hypot(u, v) * 2;
+		const ragged = 0.55 * tiledNoise(u * 6 + 3, v * 6 + 3, 64, seed) + 0.45 * hash01(seed, x, y);
+		return clamp(1 - r, 0, 1) ** 1.6 * (0.55 + 0.45 * ragged);
+	});
+}
+
+/** A glow around a light in fog: a bright core that falls away smoothly to the edge. */
+export function glowAtlas(size = 64): SpriteLayer['atlas'] {
+	return single(size, (u, v) => {
+		const falloff = clamp(1 - Math.hypot(u, v) * 2, 0, 1);
+		return falloff * falloff * (0.35 + 0.65 * falloff * falloff);
+	});
 }
