@@ -26,6 +26,9 @@ import {
 	LAYOUT_JOINTS,
 	LAYOUT_LIGHT_CLUSTERS,
 	LAYOUT_MATERIAL_MAPS,
+	LAYOUT_PARTICLE,
+	LAYOUT_PARTICLE_DEPTH_MS,
+	LAYOUT_PARTICLE_SCENE_DEPTH,
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
@@ -85,6 +88,10 @@ import {
 	TEMPLATE_OCCLUSION_EARLY,
 	TEMPLATE_OCCLUSION_LATE,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_PARTICLE,
+	TEMPLATE_PARTICLE_DEPTH,
+	TEMPLATE_PARTICLE_DEPTH_MS,
+	TEMPLATE_PARTICLE_MAP,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -113,6 +120,7 @@ import {
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
+import { PARTICLE_RECORDS } from '../particle-records';
 import { variantFor } from '../variants';
 import {
 	plainScale,
@@ -523,8 +531,9 @@ export class Pipelines {
 		const compute = GPUShaderStage.COMPUTE;
 		// The culling pipelines' parameters, the scene's tables, the compacted instances and indirect
 		// draws, then the depth pyramid of occlusion culling, whose first word counts the frame's
-		// occluders. Their history shares the buffer of the indirect draws, as eight storage buffers
-		// is all that every device allows a shader stage.
+		// occluders, the cell offsets, and the first joint of each skinned source. Their history
+		// shares the buffer of the indirect draws, as eight storage buffers is all that every device
+		// allows a shader stage.
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
@@ -536,6 +545,7 @@ export class Pipelines {
 			{ binding: 7, visibility: compute, buffer: { type: 'read-only-storage' } },
 			{ binding: 8, visibility: compute, buffer: { type: 'storage' } },
 			{ binding: 9, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 10, visibility: compute, texture: { sampleType: 'uint' } },
 		]);
 		// A batch's parameters at a dynamic offset, the pyramid, and the occluders' depth, read with
 		// textureLoad as a float texture: compatibility mode forbids depth textures in textureLoad.
@@ -677,6 +687,50 @@ export class Pipelines {
 			...foldEntries,
 			unfiltered(5, true),
 		]);
+		// A particle system's values, then the block of the view that draws, at a dynamic offset;
+		// then the view's copy of its opaque depth, which soft particles read with textureLoad.
+		const vertexAndFragment = GPUShaderStage.VERTEX | fragment;
+		this.defineLayout(LAYOUT_PARTICLE, 'particle', [
+			{ binding: 0, visibility: vertexAndFragment, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: vertexAndFragment,
+				buffer: { type: 'uniform', hasDynamicOffset: true },
+			},
+		]);
+		this.defineLayout(LAYOUT_PARTICLE_SCENE_DEPTH, 'particle scene depth', [unfiltered(0)]);
+		// The copy of the opaque depth for soft particles reads a multisampled depth's first sample;
+		// the one-sample copy binds as a view's copy does.
+		this.defineLayout(LAYOUT_PARTICLE_DEPTH_MS, 'particle depth ms', [unfiltered(0, true)]);
+		for (const [id, label, shader, layout] of [
+			[TEMPLATE_PARTICLE_DEPTH, 'particle depth', shaders.particle_depth, LAYOUT_VIEW_COPY],
+			[
+				TEMPLATE_PARTICLE_DEPTH_MS,
+				'particle depth ms',
+				shaders.particle_depth_ms,
+				LAYOUT_PARTICLE_DEPTH_MS,
+			],
+		] as const)
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: [layout],
+				vertexBuffers: [],
+			});
+		for (const [id, label, shader, map] of [
+			[TEMPLATE_PARTICLE, 'particles', shaders.particle, false],
+			[TEMPLATE_PARTICLE_MAP, 'particles map', shaders.particle_map, true],
+		] as const) {
+			const layouts = [LAYOUT_FRAME, LAYOUT_PARTICLE, LAYOUT_PARTICLE_SCENE_DEPTH];
+			this.defineTemplate(id, {
+				label,
+				shader,
+				pipeline: 'main',
+				layouts: map ? [...layouts, LAYOUT_TEXTURES] : layouts,
+				vertexBuffers: [PARTICLE_RECORDS],
+			});
+		}
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],

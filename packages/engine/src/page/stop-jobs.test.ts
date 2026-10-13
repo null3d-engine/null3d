@@ -92,6 +92,14 @@ describe('yieldJobWorkers', () => {
 		expect(wake()).toBe(2);
 	});
 
+	it('ends a yield after the shared memory grows', () => {
+		const { memory, slots, yielding } = engine(true);
+		const end = yieldJobWorkers(memory, slots);
+		memory.grow(1);
+		end();
+		expect(yielding()).toBe(0);
+	});
+
 	it('does nothing before the job system exists, and nor does its end', () => {
 		const { memory, slots, wake, yielding } = engine(false);
 		const end = yieldJobWorkers(memory, slots);

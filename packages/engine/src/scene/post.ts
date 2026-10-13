@@ -16,7 +16,7 @@ import type { Vec3Like } from '../math/types';
 import { type ColorInput, isComponent } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
 import { Lut } from './lut';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
@@ -405,7 +405,7 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  *
  * @category api/post
  */
-export class Post {
+export class Post implements ViewHolder {
 	private toneMapping = C.TONE_MAPPING_AGX_PUNCHY;
 	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
 	private exposure = 1;
@@ -451,6 +451,12 @@ export class Post {
 		joinEffects = true,
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
+		core.holdViews(this);
+	}
+
+	/** @internal Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
 	}
 
 	/**
