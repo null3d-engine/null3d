@@ -41,5 +41,11 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
 fn fs(in: VertexOut) -> @location(0) vec4f {
     let texel = textureSample(layers, layer_sampler, in.uv, in.layer);
     let light = backdrop.params.x * frame.output.exposure;
-    return null3d::tonemap::finish(texel.rgb * light, in.clip.xy, frame.output);
+    return null3d::tonemap::finish(
+        texel.rgb * light,
+        in.clip.xy,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
 }
