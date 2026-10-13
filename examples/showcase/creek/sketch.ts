@@ -9,6 +9,7 @@
 // depth of field, which focuses on the point that the camera orbits. For held frames, the sketch's
 // address takes them too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
+import { createCinematic, type Shot } from '../../lib/cinematic';
 import { interact } from '../../lib/interact';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
@@ -45,11 +46,34 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 };
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
+/**
+ * The pose that the image tests hold at, from the route's own first frame: the held frame's camera
+ * stays exactly where the scripted drift left it, so the scene's references do not change.
+ */
+const HOLD_A = -2.6 + 0.18 * Math.sin(4 * 0.06);
+const HOLD_POSE: readonly [number, number, number] = [
+	TARGET[0] + 10.5 * Math.cos(HOLD_A),
+	WATER + 1.9 + 0.2 * Math.sin(4 * 0.05),
+	TARGET[2] - 10.5 * Math.sin(HOLD_A),
+];
+const HOLD_LOOK: readonly [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
+/**
+ * The cinematic route: low along the near bank toward the water and the far trees, up over the
+ * valley, then down the stream past the cave, and back. Its first shot holds still.
+ */
+const SHOTS: readonly Shot[] = [
+	{ position: HOLD_POSE, target: HOLD_LOOK, seconds: 5, move: 'hold' },
+	{ position: [-13, 6.5, 11], target: [1.5, 0.6, -0.4], seconds: 8 },
+	{ position: [21, 2.6, 1.5], target: [6, 0.8, -2], seconds: 8 },
+	{ position: [4, 8.5, -15], target: [4, 3, -3], seconds: 7 },
+	{ position: [-16, 4, -9], target: [1.5, 1, -0.4], seconds: 7 },
+	{ position: HOLD_POSE, target: HOLD_LOOK, seconds: 7 },
+];
 
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time } = ctx;
+	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
@@ -67,8 +91,9 @@ export default defineSketch(async (ctx) => {
 		layers: 1 | UNREFLECTED_LAYER,
 	});
 	scene.setActiveCamera(camera);
+	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	const view = interact(ctx, camera, {
-		target: [...TARGET],
+		target,
 		minDistance: 1.5,
 		maxDistance: 40,
 		maxPolarAngle: 1.5,
@@ -120,7 +145,7 @@ export default defineSketch(async (ctx) => {
 	choose(isMood(start) ? start : 'Afternoon');
 	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera orbits in
 	// every frame. Off, the camera keeps its wider view and everything stays sharp.
-	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: view.controls.target } };
+	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
 	let dslr = false;
 	const setLens = (on: boolean) => {
 		dslr = on;
@@ -129,6 +154,11 @@ export default defineSketch(async (ctx) => {
 		post.set(on ? lens : { dof: false });
 	};
 	if (params.has('dslr')) setLens(true);
+	const film = createCinematic(ctx, camera, view, {
+		shots: SHOTS,
+		target,
+		rows: () => [{ key: 'D', text: `lens: ${dslr ? 'on' : 'off'}` }],
+	});
 	page.onMessage((name, value) => {
 		if (name === 'mood' && isMood(value)) choose(value);
 		if (name === 'dslr') setLens(value === 'On');
@@ -137,17 +167,12 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (!view.userCamera) {
-				// A slow drift along the near bank, low over the water.
-				const a = -2.6 + 0.18 * Math.sin(t * 0.06);
-				camera.setPosition(
-					TARGET[0] + 10.5 * Math.cos(a),
-					WATER + 1.9 + 0.2 * Math.sin(t * 0.05),
-					TARGET[2] - 10.5 * Math.sin(a),
-				);
-				camera.lookAt(TARGET[0], TARGET[1], TARGET[2]);
+			if (input.wasPressed('KeyD')) {
+				setLens(!dslr);
+				film.refresh();
 			}
-			view.update(dt);
+			film.update(dt);
+			if (film.mode === 'manual') view.update(dt);
 			if (dslr) post.set(lens);
 			flora.update(t);
 			air.update(t);

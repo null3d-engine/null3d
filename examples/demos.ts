@@ -99,7 +99,28 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
-		controls: `${CAMERA} Pick a time of day, and turn on the DSLR lens to focus on the middle of the view.`,
+		controls: `${CAMERA} Press C for the cinematic camera or your own, D for the DSLR lens, and H to hide the keys. Pick a time of day.`,
+		hold: 4,
+		timeoutSeconds: 60,
+		choices: [
+			{
+				name: 'mood',
+				label: 'Time of day',
+				options: ['Afternoon', 'Golden', 'Blue', 'Night', 'Studio'],
+			},
+			{ name: 'dslr', label: 'DSLR', options: ['Off', 'On'] },
+		],
+	},
+	{
+		name: 'night-town',
+		group: 'Showcase',
+		sketch: new URL('./showcase/night-town/sketch.ts', import.meta.url),
+		code: 'showcase/night-town/',
+		title: 'Night town',
+		scene: 'A snowy town square under the moon',
+		summary:
+			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
+		controls: `${CAMERA} Press C for the cinematic camera or your own, D for the DSLR lens, and H to hide the keys. Pick a time of day.`,
 		hold: 4,
 		timeoutSeconds: 60,
 		choices: [

@@ -33,6 +33,11 @@ export interface StartOptions {
 	 * that has some. Without it, the demo runs with its own first options.
 	 */
 	choices?: HTMLElement;
+	/**
+	 * The element that holds the demo's on-screen help, which a showcase scene posts: its keys and
+	 * the camera mode. Without it, the demo shows no help. A held frame has none.
+	 */
+	hud?: HTMLElement;
 }
 
 /** Starts the demo's sketch on the canvas, and resolves to its engine once it runs. */
@@ -42,6 +47,7 @@ export async function startDemo({
 	labels,
 	stats = true,
 	choices,
+	hud,
 }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
@@ -55,6 +61,7 @@ export async function startDemo({
 	});
 	if (labels) showLabels(engine, labels);
 	if (choices) showChoices(engine, demo, choices);
+	if (hud) showHud(engine, hud);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
@@ -108,5 +115,38 @@ function showLabels(engine: Engine, layer: HTMLElement): void {
 		}
 		tag.textContent = text;
 		tag.classList.toggle('active', active);
+	});
+}
+
+/** The message that a showcase scene posts to show or hide its help. */
+interface HudMessage {
+	/** A line for each key: the key, and what it does with its state. */
+	rows: readonly { key: string; text: string }[];
+	/** False hides the help, from the `h` key. */
+	visible: boolean;
+}
+
+/**
+ * Shows the help that a showcase scene posts: one line for each key, with the camera's mode. The `h`
+ * key hides it; the scene says so. A held frame posts none.
+ */
+function showHud(engine: Engine, element: HTMLElement): void {
+	engine.onSketchMessage((type, data) => {
+		if (type !== 'hud') return;
+		const { rows, visible } = data as HudMessage;
+		element.hidden = !visible;
+		element.replaceChildren(
+			...rows.map((row) => {
+				const line = document.createElement('div');
+				line.className = 'hud-row';
+				const key = document.createElement('span');
+				key.className = 'hud-key';
+				key.textContent = row.key;
+				const text = document.createElement('span');
+				text.textContent = row.text;
+				line.append(key, text);
+				return line;
+			}),
+		);
 	});
 }
