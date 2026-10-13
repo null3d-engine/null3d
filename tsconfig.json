@@ -31,6 +31,7 @@
 		"packages/engine/**",
 		"packages/controls/**",
 		"packages/geometry/**",
-		"packages/particles/**"
+		"packages/particles/**",
+		"packages/terrain/**"
 	]
 }
