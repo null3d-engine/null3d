@@ -210,6 +210,52 @@ function dofTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the automatic exposure tests: boxes and a lamp under a sun. */
+const EXPOSURE_SKETCH = 'tests/pages/sketches/exposure-sketch.ts';
+
+/** The automatic exposure tests' image size. */
+const EXPOSURE_SIZE = [320, 180] as const;
+
+/**
+ * Automatic exposure in hold mode, which meters the held frame and takes its stops at once, on
+ * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
+ * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
+ * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
+ * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
+ * keeps the camera's exposure.
+ */
+function exposureTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EXPOSURE_SKETCH}${query}`,
+		hold: 1,
+		size: EXPOSURE_SIZE,
+	});
+	return [
+		test('exposure-off', '?light=dark'),
+		test('exposure-dark', '?light=dark&auto'),
+		test('exposure-bright', '?light=bright&auto'),
+		test('exposure-mean', '?light=dark&auto&metering=mean'),
+		test('exposure-center', '?light=dark&auto&center=1'),
+		test('exposure-compensation', '?light=dark&auto&comp=1'),
+		test('exposure-range', '?light=dark&auto&min=-2'),
+		test('exposure-bloom', '?light=dark&auto&bloom'),
+		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
+		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
+		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-8-bit', '?light=dark&auto'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'exposure-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the custom effects' tests. */
 const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
 
@@ -1002,6 +1048,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...exposureTests(),
+
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),

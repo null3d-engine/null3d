@@ -124,6 +124,9 @@ export interface SketchCore {
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/** Each meter of automatic exposure, by its code in the core. */
+const EXPOSURE_METERS = { downsample: 0, histogram: 1 } as const;
+
 /**
  * While a reader shows the frame figures, the first frame that samples publishes the memory
  * figures, and then one frame in every this many.
@@ -756,6 +759,7 @@ export class SketchRunner {
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
 		)

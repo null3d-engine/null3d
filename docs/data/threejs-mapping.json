@@ -1567,6 +1567,17 @@
       "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
     },
     {
+      "id": "auto-exposure",
+      "category": "Post-processing",
+      "three": "None built in; pmndrs ToneMappingEffect with ToneMappingMode.REINHARD2_ADAPTIVE (adaptationRate, middleGrey), AdaptiveLuminancePass, AdaptiveToneMappingPass",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ autoExposure: { metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv, compensation } })",
+      "notes": "three.js has no automatic exposure; renderer.toneMappingExposure stays post.set({ exposure }), and the eye adapts from it. pmndrs's adaptive tone mapping becomes autoExposure with metering: 'mean'. Its adaptationRate becomes about speedUp and speedDown, and its middleGrey the compensation, log2(middleGrey / 0.18) stops. Its Reinhard curve becomes a custom tone curve. The meter runs on the GPU in the same frame: a histogram on WebGPU, or 16 x 16 cells on WebGL2 and the Low preset (quality setting exposureMeter). It weights the center, adapts at its own speeds for brighter and darker scenes, and stays within minEv and maxEv, in stops from the camera's exposure. Hold mode settles at once, so image tests stay the same. It needs HDR color, as bloom does.",
+      "docs": "api/post",
+      "detect": "\\bREINHARD2_ADAPTIVE\\b|\\bAdaptive(Luminance|ToneMapping)Pass\\b|\\badaptationRate\\b"
+    },
+    {
       "id": "shader-pass",
       "category": "Post-processing",
       "three": "ShaderPass (custom full-screen GLSL)",

@@ -154,7 +154,21 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'auto-exposure',
+		group: 'Light, materials and effects',
+		sketch: new URL('./auto-exposure/sketch.ts', import.meta.url),
+		code: 'auto-exposure/',
+		title: 'Automatic exposure',
+		scene: 'Courtyard and hall',
+		summary:
+			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
+		controls: `${CAMERA} Press E to turn automatic exposure off and on.`,
+		hold: 6,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'gltf-model',
+
 		group: 'Light, materials and effects',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),
 		title: 'glTF models',

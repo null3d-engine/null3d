@@ -181,8 +181,20 @@ pub mod post_value {
     /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
     pub const DOF_FOCUS_POINT: u32 = 46;
     pub const DOF_FOCUS_ON_POINT: u32 = 49;
+    /// The automatic exposure's metering (0 the mean, 1 the percentile mean), its two percentiles,
+    /// its center weight, its speeds while the scene grows brighter and darker in stops per
+    /// second, the darkest and the brightest scene it adapts to in stops, and its compensation in
+    /// stops, in this order.
+    pub const AUTO_EXPOSURE_METERING: u32 = 50;
+    pub const AUTO_EXPOSURE_PERCENTILES: u32 = 51;
+    pub const AUTO_EXPOSURE_CENTER_WEIGHT: u32 = 53;
+    pub const AUTO_EXPOSURE_SPEED_UP: u32 = 54;
+    pub const AUTO_EXPOSURE_SPEED_DOWN: u32 = 55;
+    pub const AUTO_EXPOSURE_MIN_EV: u32 = 56;
+    pub const AUTO_EXPOSURE_MAX_EV: u32 = 57;
+    pub const AUTO_EXPOSURE_COMPENSATION: u32 = 58;
     /// The values in the block.
-    pub const COUNT: u32 = 50;
+    pub const COUNT: u32 = 59;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
@@ -942,6 +954,26 @@ pub fn typescript() -> String {
                 ("DOF_BLADES", post_value::DOF_BLADES),
                 ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
                 ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
+                ("AUTO_EXPOSURE_METERING", post_value::AUTO_EXPOSURE_METERING),
+                (
+                    "AUTO_EXPOSURE_PERCENTILES",
+                    post_value::AUTO_EXPOSURE_PERCENTILES,
+                ),
+                (
+                    "AUTO_EXPOSURE_CENTER_WEIGHT",
+                    post_value::AUTO_EXPOSURE_CENTER_WEIGHT,
+                ),
+                ("AUTO_EXPOSURE_SPEED_UP", post_value::AUTO_EXPOSURE_SPEED_UP),
+                (
+                    "AUTO_EXPOSURE_SPEED_DOWN",
+                    post_value::AUTO_EXPOSURE_SPEED_DOWN,
+                ),
+                ("AUTO_EXPOSURE_MIN_EV", post_value::AUTO_EXPOSURE_MIN_EV),
+                ("AUTO_EXPOSURE_MAX_EV", post_value::AUTO_EXPOSURE_MAX_EV),
+                (
+                    "AUTO_EXPOSURE_COMPENSATION",
+                    post_value::AUTO_EXPOSURE_COMPENSATION,
+                ),
                 ("COUNT", post_value::COUNT),
             ],
         ),

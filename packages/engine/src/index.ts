@@ -121,9 +121,11 @@ export type {
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	AutoExposureSettings,
 	BloomBlend,
 	BloomSettings,
 	DofSettings,
+	ExposureMetering,
 	OutlineSettings,
 	Post,
 	PostSettings,

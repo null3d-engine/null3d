@@ -27,6 +27,8 @@ import {
 	TEMPLATE_DOF_COMPOSITE,
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_INSTANCED_LIT,
@@ -248,6 +250,10 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// The automatic exposure meters with its downsample on WebGL2, which has no compute shaders.
+	templates[TEMPLATE_EXPOSURE_LUMINANCE] = { shader: shaders.exposure, pipeline: 'downsample' };
+	templates[TEMPLATE_EXPOSURE_ADAPT] = { shader: shaders.exposure, pipeline: 'adapt' };
+
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

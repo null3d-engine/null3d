@@ -316,6 +316,16 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The automatic exposure demo (M2-EX31, 11 October 2026)
+
+`auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
+
+- The demo's sketch stays under 150 lines, and its scenery lives in `hall.ts` beside it, as the coordinator's ruling of 11 October 2026 allows. Its entry's `code` field names the folder.
+- The camera's exposure suits the courtyard. The hall keeps the sun out with walls and a roof, and its own light comes from six lamps, a spotlight and a dim room environment, about five stops below the courtyard. The eye's range, -7 to +1 stops, covers both.
+- The eye adapts to the dark at 0.8 stops a second and to the light at 2.5, so the hall brightens slowly and the courtyard settles fast, as eyes do.
+- The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
+- The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
+
 ## Showcase scenes
 
 The showcase tier holds a few large scenes that show the engine at its best, as the best three.js scenes that people share do. The reference is "Cozy creek", a three.js scene shared on 8 October 2026. It has clear water over a stony bed, dense grass and plants with soft shadows, and rocks and a cave. It also has time-of-day presets and a depth-of-field switch.

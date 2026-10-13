@@ -164,6 +164,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 16, 22, 43, 71],
 	},
+	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
+	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
+	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
+	// takes the downsample. Low takes it everywhere, as the cheaper path for phones. A change makes
+	// no GPU object it has not made before (D-148).
+	exposureMeter: {
+		presets: ['downsample', 'histogram', 'histogram', 'histogram'],
+		changes: 'live',
+		values: ['downsample', 'histogram'],
+	},
 	// The size of the textures of reflection passes whose `scale` option names none, as a share of
 	// the render size each way. A reflection draws the scene a second time, so its cost follows its
 	// pixels: half the size each way draws a quarter of them. A change makes the texture again on
@@ -372,6 +382,14 @@ export interface QualitySettings {
 	 * changes during play.
 	 */
 	dofSamples: 0 | 16 | 22 | 43 | 71;
+	/**
+	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
+	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
+	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
+	 * downsample costs less, with a coarser meter. It changes during play.
+	 */
+	exposureMeter: 'downsample' | 'histogram';
+
 	/**
 	 * The size of a reflection pass's texture, as a share of the render size each way: 1, 0.5 or
 	 * 0.25, for each reflection whose `scale` option names none. A reflection draws the scene again,

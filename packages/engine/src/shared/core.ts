@@ -539,6 +539,10 @@ export interface CoreGlue extends CoreErrors {
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** Turns automatic exposure on with the post-processing values' settings, or off. */
+	setAutoExposure(on: boolean): number;
+	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
+	setExposureMeter(meter: number): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -859,6 +863,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setAoScale',
 	'setDof',
 	'setDofTaps',
+	'setAutoExposure',
+	'setExposureMeter',
+
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',

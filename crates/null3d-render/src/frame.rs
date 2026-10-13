@@ -35,6 +35,7 @@ use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{Effect, EffectJoins, MAX_EFFECTS};
 use crate::environment::{Environment, EnvironmentUniform};
+use crate::exposure::{AutoExposure, ExposureFrame, Meter};
 use crate::fog::{self, Fog};
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::grading::{Grading, Lut, Vignette};
@@ -668,6 +669,10 @@ pub struct SceneSettings {
     dof: Option<Dof>,
     /// The taps of depth of field's gather, which the quality settings set.
     dof_taps: u32,
+    /// The automatic exposure's settings while the sketch turns it on.
+    auto_exposure: Option<AutoExposure>,
+    /// The meter of automatic exposure, which the quality settings set.
+    exposure_meter: Meter,
     /// The color grading table while the sketch sets one.
     lut: Option<Lut>,
     /// The vignette while the sketch turns it on.
@@ -744,6 +749,8 @@ impl SceneSettings {
             ao_scale: ao::MAX_SCALE,
             dof: None,
             dof_taps: dof::TAP_COUNTS[1],
+            auto_exposure: None,
+            exposure_meter: Meter::default(),
             lut: None,
             vignette: None,
             environment: None,
@@ -993,6 +1000,33 @@ impl SceneSettings {
     /// on.
     pub fn set_dof(&mut self, dof: Option<Dof>) {
         self.dof = dof;
+    }
+
+    /// The automatic exposure's settings while it adapts: while the sketch turns it on and no debug
+    /// view draws.
+    pub fn auto_exposure(&self) -> Option<AutoExposure> {
+        self.auto_exposure.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns automatic exposure on with its settings, or off with `None`, from the next recorded
+    /// frame on.
+    pub fn set_auto_exposure(&mut self, auto_exposure: Option<AutoExposure>) {
+        self.auto_exposure = auto_exposure;
+    }
+
+    /// Sets the meter of automatic exposure, which the quality settings set, from the next
+    /// recorded frame on.
+    pub fn set_exposure_meter(&mut self, meter: Meter) {
+        self.exposure_meter = meter;
+    }
+
+    /// What the meter of automatic exposure draws with in the frame, or `None` while it is off.
+    pub(crate) fn exposure_frame(&self) -> Option<ExposureFrame> {
+        Some(ExposureFrame {
+            settings: self.auto_exposure()?,
+            meter: self.exposure_meter,
+            seconds: self.clock[1],
+        })
     }
 
     /// Sets the taps of depth of field's gather, one of [`dof::TAP_COUNTS`] or 0, which draws none,

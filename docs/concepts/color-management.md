@@ -90,6 +90,8 @@ export default defineSketch(({ post }) => {
 
 The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it. The engine uses three.js's formulas for each curve, so a scene looks the same in both engines with the same settings.
 
+Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. The scene still draws at the exposure that `exposure` and `ev100` set. A meter on the GPU then reads each frame, and the final pass multiplies the HDR color by the adapted exposure before the tone mapping. [The post-processing chain](post-processing.md#automatic-exposure) explains the meter.
+
 ## The background
 
 The background color is part of the scene. Exposure and tone mapping change it as they change the objects, as in three.js's WebGPURenderer. ACES, for example, makes dark colors darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.

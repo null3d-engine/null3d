@@ -13,7 +13,9 @@
 //! the built-in curves: the pass then draws with the curve's templates, the curve's builds of the
 //! pass. Custom effects can fold into the pass (see [`crate::effects`]): it then draws with the
 //! fold's template, a build of the pass that runs the effects on each texel it reads, before the
-//! vignette, and binds the effects' uniform buffer and the scene's depth too. Each frame builder
+//! vignette, and binds the effects' uniform buffer and the scene's depth too. With automatic
+//! exposure (see [`crate::exposure`]), the pass multiplies the HDR color by the meter's texel,
+//! which every build binds: a blank texel while the flag is clear. Each frame builder
 //! owns one, with GPU object ids from its own ranges, and its pipelines come from the builder's
 //! pipeline cache like every other.
 
@@ -37,6 +39,8 @@ const LUT_BINDING: u32 = 9;
 const LUT_SAMPLER_BINDING: u32 = 10;
 /// The binding of the outline mask in the final pass's group. The table's sampler reads it.
 const OUTLINE_BINDING: u32 = 11;
+/// The binding of the automatic exposure's texel in the final pass's group.
+const EXPOSURE_BINDING: u32 = 12;
 /// The bindings of the effects' uniform buffer and of the scene's depth in the fold's group.
 const EFFECTS_BINDING: u32 = 4;
 const EFFECT_DEPTH_BINDING: u32 = 5;
@@ -187,6 +191,7 @@ struct Bound {
     lut: u32,
     mask: u32,
     fold: Option<FoldInputs>,
+    exposure: u32,
 }
 
 impl FinalPass {
@@ -287,8 +292,8 @@ impl FinalPass {
     /// Makes the pass's own GPU objects when the GPU lacks them, uploads the settings for
     /// `tone_mapping`, the scene's size in pixels, `render_size`, `grading` and `outline` when they
     /// changed, and binds the scene color texture `scene_color`, with `bloom`'s inputs for the bloom
-    /// build, the color grading table, the outline mask and the inputs of the effects that `fold`
-    /// into the pass, when they are new. The frame's list made the plan's textures again when
+    /// build, the color grading table, the outline mask, the inputs of the effects that `fold` into
+    /// the pass and the automatic exposure's texel `exposure`, when they are new. The frame's list made the plan's textures again when
     /// `textures_made`, which leaves an older bind group reading a texture that is gone.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
@@ -302,6 +307,7 @@ impl FinalPass {
         grading: Grading,
         outline: Option<OutlineInputs>,
         fold: Option<FoldInputs>,
+        exposure: Option<u32>,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
@@ -343,6 +349,13 @@ impl FinalPass {
             }
             None => ids.blank_outline,
         };
+        let exposure = match exposure {
+            Some(texel) => {
+                settings.output.flags |= OutputUniform::AUTO_EXPOSURE;
+                texel
+            }
+            None => ids.blank_outline,
+        };
         if self.uploaded != Some(settings) {
             let (at, bytes) = arena.push(settings.as_bytes())?;
             list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
@@ -354,6 +367,7 @@ impl FinalPass {
             lut,
             mask,
             fold,
+            exposure,
         };
         if textures_made || self.bound != Some(inputs) {
             let mut words = [0u32; 3 + 5 * 12];
@@ -373,6 +387,7 @@ impl FinalPass {
                 0,
             );
             entry(OUTLINE_BINDING, resource_kind::TEXTURE, mask, 0, 0);
+            entry(EXPOSURE_BINDING, resource_kind::TEXTURE, exposure, 0, 0);
             let layout = match (bloom, fold) {
                 (Some(bloom), _) => {
                     entry(2, resource_kind::BUFFER, bloom.buffer, FINAL_OFFSET, 0);
@@ -532,6 +547,7 @@ mod tests {
             5,
             None,
             grading,
+            None,
             None,
             None,
             true,
