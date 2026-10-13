@@ -736,22 +736,13 @@ export class Post implements ViewHolder {
 	private setAutoExposure(settings: AutoExposureSettings | false, values: Float32Array): void {
 		this.autoExposure = settings !== false;
 		if (settings) {
-			const {
-				metering,
-				percentiles,
-				centerWeight,
-				speedUp,
-				speedDown,
-				minEv,
-				maxEv,
-				compensation,
-			} = settings;
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_CENTER_WEIGHT, centerWeight);
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_UP, speedUp);
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_DOWN, speedDown);
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MIN_EV, minEv);
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MAX_EV, maxEv);
-			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_COMPENSATION, compensation);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_CENTER_WEIGHT, settings.centerWeight);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_UP, settings.speedUp);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_SPEED_DOWN, settings.speedDown);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MIN_EV, settings.minEv);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_MAX_EV, settings.maxEv);
+			writeNumber(values, C.POST_VALUE_AUTO_EXPOSURE_COMPENSATION, settings.compensation);
+			const { metering, percentiles } = settings;
 			if (metering !== undefined && Object.hasOwn(METERINGS, metering))
 				values[C.POST_VALUE_AUTO_EXPOSURE_METERING] = METERINGS[metering];
 			if (percentiles !== undefined) {
