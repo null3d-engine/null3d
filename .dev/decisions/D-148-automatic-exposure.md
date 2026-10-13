@@ -1,6 +1,6 @@
 # D-148: Automatic exposure
 
-Status: proposed, 2026-10-11. Date: 2026-10-11. Task: M2-EX31.
+Status: decided, 2026-10-11. Date: 2026-10-11. Task: M2-EX31.
 
 Summary: `post.set({ autoExposure })` adapts the picture to the scene's brightness, as an eye or a camera does. A meter on the GPU reads the frame's linear color in the same frame, as a compute histogram on WebGPU and as a small downsample on WebGL2 and the Low preset. The final pass multiplies the color by the adapted factor before the vignette and the tone curve. The meter takes the mean or a trimmed mean, weights the center, adapts up and down at its own speeds, stays between two exposure limits, and takes a compensation. Hold mode settles at once, so image tests stay the same from run to run. It costs nothing while it is off.
 
@@ -87,11 +87,17 @@ post.set({
 
 ## Data
 
-To come: the cost per preset on the Mac with WebGPU and WebGL2, on and off; the allocation check; the download sizes; the image tests.
+The twelve automatic-exposure image tests and the demo's draw on WebGPU, compatibility mode and WebGL2, in both reference sets (`chrome-real-gpu` and `chromium-swiftshader`). A dark hall and a sunny street both adapt toward middle gray: the difference between the two images is what the meter removes. The percentile and the mean meters, a center weight, a compensation and an eye range each move the image. The eye adapts with bloom and AgX, and at half the render scale. Turning it on during play draws the image of turning it on at the start, since the meter's first frame settles at once. The downsample meter draws its own image, and a device with no HDR target keeps the camera's exposure.
+
+The engine downloads the meter's shaders on the first `post.set({ autoExposure })`: `js/shaders-exposure-glsl.js` is 2,532 bytes after Brotli, and `js/shaders-exposure-wgsl.js` is 2,767 bytes. The WebAssembly grew 2.8%, from 391,494 to 402,578 bytes after Brotli on the threaded build and from 390,306 to 401,154 on the single build.
+
+The GPU check of the benchmark scenes S4 and S6, which keep automatic exposure off, measured the median GPU time per frame moving from 3.98 to 3.99 ms on S4 at Medium (+0.2%), from 4.89 to 5.08 ms on S6 at Medium (+4.6%), from 4.96 to 4.78 ms on S4 at High (-2.4%) and from 6.08 to 6.94 ms on S6 at High (+12.1%), all within the check's limits. The feature costs about nothing while it is off.
+
+The allocation check (`bun run bench:allocation --exposure`) passes on WebGPU and WebGL2: the meter adds no allocation of its own, only the browser's own per-frame objects, within budget.
 
 ## Decision
 
-To come with the data.
+Chosen: option C, where the meter runs after the scene in the same frame and the final pass multiplies the HDR color by the factor, with the histogram where the GPU has compute and the downsample plus its own small histogram elsewhere. Hold mode settles at once, so its images are deterministic. The feature costs nothing while it is off, and one API and one look serve WebGPU, compatibility mode and WebGL2.
 
 ## Consequences
 
