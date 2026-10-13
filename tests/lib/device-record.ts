@@ -239,6 +239,22 @@ export function deviceText({
 }
 
 /**
+ * Whether the device draws with WebKit on iOS. Every browser on iOS draws with WebKit, whatever its
+ * own name, so memory that WebKit kept from an earlier page explains a failure there too. An iPhone
+ * names itself in the user agent. iPad Safari gives a Mac's user agent, so the touch screen tells
+ * the two apart, as `deviceText` also does.
+ */
+export function webKitOnIos({
+	userAgent = '',
+	maxTouchPoints,
+}: Pick<DeviceFacts, 'userAgent' | 'maxTouchPoints'> = {}): boolean {
+	return (
+		/\biPhone\b|\biPad\b|\biPod\b/.test(userAgent) ||
+		(/\bMacintosh\b/.test(userAgent) && (maxTouchPoints ?? 0) > 1)
+	);
+}
+
+/**
  * The Windows release that a client hint's platform version names. Its first number is not the
  * release: 1 to 10 are versions of Windows 10, 13 and up are Windows 11, and 0 is an older release.
  */
