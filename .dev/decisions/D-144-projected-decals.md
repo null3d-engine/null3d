@@ -52,7 +52,26 @@ Per-decal layer masks would need to know which object each pixel shows. The forw
 
 ## Data
 
-To be measured on the Mac's GPU: GPU and CPU time per frame with and without decals, per preset, on S1 with the `decals` switch; the allocation check; the size check; the GPU check.
+Measured on the Mac's GPU (Apple M5 Max), on the production build. The scene is S1 with the `decals`
+switch: the ground alone (`decals=off`), and the ground with 256 decals that turn each frame. Three
+runs of 10 seconds at each preset, on WebGPU and WebGL2, held 120 frames per second.
+
+- The decals add about 0.01 ms per frame to the busiest thread. They add one draw call: 3 to 4 on
+  WebGPU, and 5 to 6 on WebGL2.
+- On WebGPU the decal pass costs about 0.6 to 0.9 ms of GPU time per frame for 256 decals. At low it
+  runs from 3.22 to 3.79 ms, and at ultra from 3.07 to 4.00. Medium runs 3.06 to 4.00, and high
+  3.08 to 3.93. It costs less on WebGL2: 4.55 to 4.57, 4.42 to 4.54, 4.23 to 4.54, and 4.27 to 4.52.
+- Allocation. `bench:allocation --decals` passes on both paths. The sketch worker allocated 227.6
+  bytes per frame on WebGPU and 222.2 on WebGL2. The render worker allocated 612.8 and 162.5.
+- Download size. The two WebAssembly files grew about 2.4% after Brotli, to 402,309 and 401,905
+  bytes. The feature adds 24 first-use shader files, one for each GPU path, tone-map build and bits.
+  They run from 15,195 to 17,430 bytes after Brotli each. A page downloads one when it first uses a
+  decal. The combos tables of the page and of the sketch worker grew with the new key.
+- The decals do not change S4's or S6's GPU time:
+
+  ```text
+  GPU-Checked: 47cd03060..685cf4d85 not judged: s4 medium 3.98 to 4.00 ms (+1.0%); s6 medium 4.69 to 4.69 ms (+1.2%); s4 high 4.41 to 4.50 ms (+0.6%); s6 high 4.86 to 4.84 ms (-1.0%); the benchmark pages changed between the commits
+  ```
 
 ## Decision
 
