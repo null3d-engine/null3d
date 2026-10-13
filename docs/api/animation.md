@@ -337,7 +337,7 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
 - WebGL2 skins in the vertex shader, so it has neither limit.
-- The engine's animation table holds 65,536 joints in all, for every animated object.
+- The engine's animation table starts with room for 65,536 joints, for every animated object. It grows when it needs more, up to 1,048,576 joints ([Limits of the scene](scene.md#limits)). Each joint takes 96 bytes of the engine's memory and 48 bytes of GPU memory, so 1,048,576 joints take about 100 MB and 50 MB.
 
 ## Morph targets
 

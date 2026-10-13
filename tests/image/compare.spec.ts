@@ -3,7 +3,7 @@
 // and reports what it found. The held frames of both engines are image tests in the manifest.
 import { expect, test } from '@playwright/test';
 import { NIGHT_HOLD } from '../../examples/compare/night-town/scene.ts';
-import type { RampResult } from '../../examples/lib/ramp.ts';
+import { FLOOR_FPS, type RampResult } from '../../examples/lib/ramp.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 // CI's software GPU draws a few frames a second, and the scene builds its surfaces in code. The
@@ -58,7 +58,7 @@ for (const mode of ['scene-graph', 'instanced'] as const)
 				expect(result.build).toBe(mode);
 				expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
 				const { ramp } = result;
-				expect(ramp.displayHz).toBeGreaterThan(0);
+				expect(ramp.floorFps).toBe(FLOOR_FPS);
 				expect(ramp.steps.length).toBeGreaterThanOrEqual(2);
 				expect(ramp.steps.map((step) => step.count)).toEqual(
 					[100, 200, 400].slice(0, ramp.steps.length),
