@@ -275,9 +275,11 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
-	// The thread that draws downloads the skinning and morph shader files while the textures
-	// decode, so a skinned or morphed model waits less for its pipelines. A skinned mesh's morph
-	// targets draw with skinning's builds.
+	// The thread that draws downloads the shader files of the features that the asset tool
+	// recorded with the file (its `NULL3D_shaders` list), and then the skinning and morph shader
+	// files of a file without such a list, while the textures decode. So a model waits less for
+	// its pipelines. A skinned mesh's morph targets draw with skinning's builds.
+	if (data.shaders) context.materials.shaders.needListed(data.shaders.features);
 	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
 	if (data.nodes.some((n) => !n.skinned && n.mesh >= 0 && hasMorphTargets(data.meshes[n.mesh])))
 		context.materials.shaders.need('morph');

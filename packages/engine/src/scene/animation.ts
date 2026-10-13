@@ -363,7 +363,7 @@ export class SceneAnimations implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the arrays of the animation table, which the next read makes again. */
+	/** Forgets the arrays of the animation table, which the next read makes again. */
 	dropViews(): void {
 		this.generation = -1;
 		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
