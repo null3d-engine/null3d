@@ -12,6 +12,8 @@
 // the page runs before a ramp or a measurement starts, so a scene that makes its objects over many
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
 // for 0.4 of each step and measures the rest.
+import { measurePageMemory } from '@null3d/engine/stats';
+import { dressStage } from '../../examples/compare/busy-page/page';
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
 import { effectsFromText, modeFromText } from '../../examples/lib/compare-scene';
@@ -25,22 +27,8 @@ const SHORT_RAMP = { start: 100, factor: 2, max: 400 };
  * per kind of memory, as Chrome reports them. A memory that threads share shows in each of them.
  */
 async function memoryParts(): Promise<Record<string, number> | null> {
-	const measure = (
-		performance as {
-			measureUserAgentSpecificMemory?: () => Promise<{
-				breakdown: {
-					bytes: number;
-					types: string[];
-					attribution: { scope?: string; url?: string }[];
-				}[];
-			}>;
-		}
-	).measureUserAgentSpecificMemory;
-	if (!measure) return null;
 	// Chromium's headless shell throws in place of measuring, and the page then reports no parts.
-	const measured = await Promise.resolve()
-		.then(() => measure.call(performance))
-		.catch(() => null);
+	const measured = await measurePageMemory()?.catch(() => null);
 	if (!measured) return null;
 	const { breakdown } = measured;
 	const parts: Record<string, number> = {};
@@ -48,7 +36,7 @@ async function memoryParts(): Promise<Record<string, number> | null> {
 		const where =
 			attribution.map((a) => `${a.scope ?? '?'} ${a.url?.split('/').pop() ?? ''}`).join('+') ||
 			'unattributed';
-		const key = `${where} [${types.join(',')}]`;
+		const key = `${where} [${(types ?? []).join(',')}]`;
 		parts[key] = (parts[key] ?? 0) + bytes;
 	}
 	return parts;
@@ -68,6 +56,8 @@ run('compare', async () => {
 	const [width, height] = (params.get('size') ?? '').split('x').map(Number);
 	if (width && height) Object.assign(canvas.style, { width: `${width}px`, height: `${height}px` });
 	const gpu = params.get('gpu') === 'webgl2' ? 'webgl2' : 'webgpu';
+	// A comparison that dresses its stage, such as the Busy page, does so beside the canvas.
+	const dressed = dressStage(comparison, document.body, canvas, true);
 	const hold = params.has('hold') ? Number(params.get('hold')) : undefined;
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
@@ -104,11 +94,13 @@ run('compare', async () => {
 		label: started.label,
 		tier: started.gpu,
 		build: started.mode,
+		limit: started.limit ?? null,
 		mode: { hold: hold ?? null },
 	};
 	if (started.held) {
 		const { width, height, pixels } = started.held;
 		await started.destroy();
+		dressed?.stop();
 		return { ...report, width, height, pixels: toBase64(pixels) };
 	}
 	if (fixed !== undefined) {
@@ -118,6 +110,7 @@ run('compare', async () => {
 		const memory = await started.measureMemory();
 		const parts = await memoryParts();
 		await started.destroy();
+		dressed?.stop();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
 	const step = Number(params.get('step') ?? 1);
@@ -126,12 +119,15 @@ run('compare', async () => {
 		full
 			? { warmupSeconds: warmup }
 			: {
-					plan: SHORT_RAMP,
+					// A run with a limit below the short ramp's top, such as three.js's light limit on
+					// WebGLRenderer, stops there.
+					plan: { ...SHORT_RAMP, max: Math.min(SHORT_RAMP.max, started.plan.max) },
 					warmupSeconds: warmup ?? 1,
 					stepSeconds: step,
 					settleSeconds: step * 0.4,
 				},
 	);
 	await started.destroy();
+	dressed?.stop();
 	return { ...report, ramp };
 });
