@@ -49,6 +49,7 @@ const engine = await createEngine({
   expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
   onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
+  onSketchError: (error) => {},            // (0.2) each distinct error the sketch's own code threw in a frame; the engine keeps drawing
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // true for a see-through canvas, with premultiplied alpha
@@ -69,9 +70,11 @@ engine.setPaused(true);                  // the first step after resuming counts
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
 engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
+//   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
+engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine. (0.2) A new engine can start on the same canvas
 await engine.destroy({ release: true }); // (0.2) also frees the memory that the page keeps about 30 s for the next engine
