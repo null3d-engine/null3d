@@ -67,7 +67,7 @@ export default defineSketch((ctx) => {
 
 `createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a height map held as a `Float32Array`. Later reads, such as `heightAt`, interpolate between the four samples around the point.
 
-The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes within a distance of its edge, so the ground near the camera takes the finest level. `maxLevel` sets that finest level, and `split` sets the distance at which a block splits. The default `maxLevel` of 6 over a 1,200 meter ground puts the camera's own block at about a meter of detail.
+The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes close to its edge. Its `maxLevel` sets the finest level, and its `split` sets the distance at which a block splits. The default of 6 puts the camera's own block at about a meter of detail over a 1,200 meter ground.
 
 Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain rebuilds a block only when the camera moves into a new cell of the finest level. A still camera therefore costs no work at all.
 
