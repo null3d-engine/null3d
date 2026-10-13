@@ -384,6 +384,12 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
             light = mix(light, fog_color(frame.fog, in.relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
         }
     }
-    let out = null3d::tonemap::finish(light * frame.output.exposure, in.clip.xy, frame.output);
+    let out = null3d::tonemap::finish(
+        light * frame.output.exposure,
+        in.clip.xy,
+        frame.output,
+        frame.target_size.xy,
+        frame.vignette,
+    );
     return vec4f(out.rgb * alpha, alpha);
 }
