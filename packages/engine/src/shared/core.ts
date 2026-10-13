@@ -588,6 +588,11 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/**
+	 * The steps of each march of the main directional light's contact shadows, from the next frame
+	 * on: 0 draws none.
+	 */
+	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
@@ -955,6 +960,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setContactSteps',
 	'setDof',
 	'setDofTaps',
 	'createParticles',
