@@ -155,6 +155,17 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [0, 0.25, 0.5],
 	},
+	// The steps of each march of the sun's contact shadows, which ambient occlusion's last step
+	// takes at its half size. 0 draws none. Contact shadows read the depth prepass, which WebGL2
+	// draws on every preset, so its Medium takes the fewest steps. On WebGPU they would turn the
+	// prepass on, so Medium leaves them off there. The steps live in a uniform block, so a change
+	// makes no GPU object; a change to or from 0 adds or removes the steps' passes (D-135).
+	contactShadowSteps: {
+		presets: [0, 0, 8, 16],
+		webgl2: [0, 4, 8, 16],
+		changes: 'live',
+		values: [0, 4, 8, 16],
+	},
 	// The taps of depth of field's gather at half the render size: a spiral of taps over a disk
 	// around a center tap. More taps fill a wide blur more smoothly. 0 draws no depth
 	// of field even when the sketch turns it on. The taps live in a uniform block, so a change
@@ -182,6 +193,36 @@ export const QUALITY_SETTINGS = {
 		presets: [128, 256, 256, 256],
 		changes: 'live',
 		values: [128, 256, 512],
+	},
+	// Soft particles: while a particle system fades near the surfaces behind it, the camera copies
+	// its opaque depth once per frame, which splits its opaque and transparent passes. Low, which
+	// phones draw, keeps one render pass and draws particles with hard edges (D-131).
+	softParticles: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
+	// The error in pixels under which a mesh's coarser level of detail draws: Godot's rule of one
+	// pixel, and two on Low, where phones draw. The render scale counts in the pixels, so a lower
+	// scale picks coarser levels too. 0 draws every mesh's base level. D-137 gives the figures.
+	lodThreshold: {
+		presets: [2, 1, 1, 1],
+		changes: 'live',
+		values: { min: 0, max: 16, heavierBelow: true },
+	},
+	// What the shadow maps multiply the threshold by, so that casters draw a coarser level than the
+	// camera sees: shadows blur the difference, and the shadow passes draw every caster again.
+	lodShadowFactor: {
+		presets: [4, 2, 2, 2],
+		changes: 'live',
+		values: { min: 1, max: 16, heavierBelow: true },
+	},
+	// Whether two levels hand over in a short dithered band past each switch distance. Low switches
+	// at once: the dither's discard costs tile GPUs their hidden-surface removal in the band.
+	lodFade: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
 	},
 	// Software occlusion culling on WebGL2: the job workers draw the objects marked as blockers
 	// into a small depth buffer, and hide what lies wholly behind them. Off on every preset: on
@@ -378,6 +419,13 @@ export interface QualitySettings {
 	 */
 	aoScale: 0 | 0.25 | 0.5;
 	/**
+	 * The steps of each search for the sun's contact shadows: 4, 8 or 16, or 0, which draws none.
+	 * More steps find thinner contacts and cost more. Contact shadows need a directional light that
+	 * casts shadows, with a `contactDistance` above 0. They read the depth of a prepass, which they
+	 * turn on where the preset leaves it off. It changes during play.
+	 */
+	contactShadowSteps: 0 | 4 | 8 | 16;
+	/**
 	 * The taps of depth of field's gather: 16, 22, 43 or 71, or 0, which draws no depth of field
 	 * even when `post.set` turns it on. More taps fill a wide blur more smoothly and cost more. It
 	 * changes during play.
@@ -397,10 +445,31 @@ export interface QualitySettings {
 	 */
 	probeSize: 128 | 256 | 512;
 	/**
+	 * The error in pixels under which a mesh's coarser level of detail draws (see
+	 * `mesh.setLevels`). Each object and instance row draws the coarsest level whose error covers
+	 * fewer pixels than this on the screen, at the render scale. A larger number draws coarser
+	 * levels nearer the camera, which costs less. 0 draws every mesh's base level. It takes a number
+	 * from 0 to 16, and changes during play.
+	 */
+	lodThreshold: number;
+	/**
+	 * What the shadow maps multiply `lodThreshold` by, so that shadow casters draw a coarser level
+	 * than the camera sees. 1 draws the camera's level. It takes a number from 1 to 16, and changes
+	 * during play.
+	 */
+	lodShadowFactor: number;
+	/**
+	 * Whether two levels of detail hand over in a short band past each switch distance, where a
+	 * dither pattern shares the pixels between them, so a switch does not pop. False switches at
+	 * once. It changes during play.
+	 */
+	lodFade: boolean;
+	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
-	 * toward `minRenderScale`, then how often far shadow cascades draw, then the shadow filter, then
-	 * bloom's size while bloom is on, then ambient occlusion's scale while it draws. It raises them again, in the reverse order, once frames
-	 * have time to spare. `quality.governor` reports its steps. False keeps the render scale at
+	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has
+	 * levels of detail. Then it lowers how often far shadow cascades draw, the shadow filter,
+	 * bloom's size while bloom is on, and ambient occlusion's scale while it draws. It raises them
+	 * again, in the reverse order, once frames have time to spare. `quality.governor` reports its steps. False keeps the render scale at
 	 * `maxRenderScale` and the other settings as set, as benchmarks and captures need. It changes
 	 * during play.
 	 */
@@ -476,6 +545,12 @@ export interface QualitySettings {
 	 * of `createEngine` turns it on. It changes during play. WebGPU ignores it.
 	 */
 	softwareOcclusion: boolean;
+	/**
+	 * True when particle systems with `softness` fade where they near the surfaces behind them. The
+	 * camera then copies its opaque depth once per frame, while such a system draws. False draws
+	 * them with hard edges where they cut into the scene. It changes during play.
+	 */
+	softParticles: boolean;
 }
 
 /** The names of the settings in the preset table that change as `changes` says. */

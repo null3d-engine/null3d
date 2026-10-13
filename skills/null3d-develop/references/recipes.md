@@ -23,6 +23,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 17. Move a player with keys, a gamepad or touch
 18. Camera that follows a moving object
 19. Water and mirror floors with a reflection
+20. Fire, smoke and sparks with particles (0.2)
 
 ## 1. Start a new project
 
@@ -86,7 +87,7 @@ return {
 };
 ```
 
-For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`.
+For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. Clips side by side at weights you set, as three.js's `setEffectiveWeight` does, come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips, as setting `bone.quaternion` after `mixer.update` does in three.js. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
 
 The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
@@ -589,4 +590,74 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky and the sun's light and shadows, but no point or spot lights yet. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint and foam: the water recipe in `guides/custom-passes`. Docs: `api/render`, `shaders/surface-functions`.
+
+## 20. Fire, smoke and sparks with particles (0.2)
+
+```ts
+import { defineSketch } from '@null3d/engine';
+import { createParticles, particleTextures } from '@null3d/particles';
+
+export default defineSketch(async (ctx) => {
+  const { scene, geometry, materials, textures, post } = ctx;
+  post.set({ bloom: { intensity: 0.4, threshold: 1 } });
+  scene.setBackground('#10131a');
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.8, 5], target: [0, 0.8, 0] }));
+  scene.createAmbientLight({ intensity: 0.3 });
+  const ground = scene.createMesh({ mesh: geometry.plane({ width: 20, height: 20 }), material: materials.standard({ color: '#2a2622' }) });
+  ground.setRotationEuler(-Math.PI / 2, 0, 0);
+  const fire = await createParticles(ctx, {
+    ...particleTextures.flame(textures),
+    rate: 60,
+    lifetime: [0.5, 0.8],
+    shape: { type: 'cone', radius: 0.25, angle: 0.2 },
+    speed: [0.8, 1.4],
+    size: [0.5, 0.7],
+    sizeOverLife: [1, 0.7, 0.2],
+    colors: ['#ffb35c', '#ff7a2a'],
+    intensity: 4,
+    alphaOverLife: [0, 1, 0],
+    softness: 0.3,
+  });
+  const smoke = await createParticles(ctx, {
+    ...particleTextures.smoke(textures),
+    blending: 'normal',
+    position: [0, 0.8, 0],
+    rate: 10,
+    lifetime: 4,
+    shape: { type: 'disc', radius: 0.2 },
+    speed: 0.6,
+    drag: 0.5,
+    wind: [0.4, 0.5, 0],
+    turbulence: 0.3,
+    size: [0.6, 0.8],
+    sizeOverLife: [0.6, 2.5],
+    colors: ['#3a3a40', '#2c2c30'],
+    alphaOverLife: [0, 0.5, 0],
+  });
+  const sparks = await createParticles(ctx, {
+    ...particleTextures.spark(textures),
+    rate: 30,
+    lifetime: [1, 1.6],
+    shape: { type: 'cone', radius: 0.2, angle: 0.5 },
+    speed: [1.5, 3],
+    gravity: [0, -2, 0],
+    turbulence: 0.2,
+    facing: 'velocity',
+    stretch: 0.05,
+    size: [0.02, 0.03],
+    colors: ['#ffb347', '#ff8c30'],
+    intensity: 6,
+    colorOverLife: ['#ffffff', '#ff5020'],
+    alphaOverLife: [1, 0],
+  });
+  const systems = [fire, smoke, sparks];
+  return {
+    onLateUpdate() {
+      for (const system of systems) system.update();
+    },
+  };
+});
+```
+
+Additive blending (the default) suits fire, sparks and glows, which need no order. Smoke takes `blending: 'normal'`. `softness` fades particles where they meet the ground. With `follow: object`, a system emits from a moving object, and its particles stay in the world, as a torch's smoke trail does. Bursts, sub-emitters for fireworks and splashes, and the ground: `api/particles`.

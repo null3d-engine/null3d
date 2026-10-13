@@ -51,6 +51,8 @@ One probe captures per frame: first the probes that wait for a capture, then in 
 2. The chain gets its smaller levels: `half` draws on WebGPU, `generateMipmap` on WebGL2.
 3. `prefilter` fills each level of the probe's layer: GGX importance sampling with a level of the chain per sample, as the environment's filter does, from 128 directions at level 1 up to 1,024.
 
+The probe that captures, and the capture views' switch, are set at the start of each frame, before any view culls. WebGL2's job workers cull every view before the frame records, and the first build picked the probe while it paced the views, after that culling: the capture views then drew nothing on WebGL2, and the probes held black. A check that read the views' images back on WebGL2 found them cleared and empty.
+
 The array grows by doubling its layers, and a new quality size makes it again; either way every probe captures again. A new array takes the other of two pairs of texture ids, and the next frame's list destroys the old pair: a capture replays a frame's list, so a list never destroys a texture that its own bind groups name. The capture views list no probe, so a probe sees the environment alone, and no map reads itself. Hold mode, which the image tests draw, records the held frame once more while a probe waits for its capture, as screen-space reflections need the frame before (D-134). The thread that draws keeps two frames' lists, so a held frame shows up to two probes. The filter's code loads with the environment's generators, the first time a sketch makes a probe or an environment. Its draws' uniform values, views, bind groups and passes stay with the textures, so a filter allocates nothing after its first.
 
 ### How a surface reads probes

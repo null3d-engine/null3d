@@ -198,9 +198,17 @@ const DOCS = {
 	E1220: {
 		title: 'Invalid render pass',
 		cause:
-			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, or a texture name or pass name that another pass has. Or the sketch added more scene passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled() or render.removePass() got something that is not a render pass.',
+			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform() or render.removePass() got something that is not a render pass, or render.setPassUniform() got a pass that is not a full-screen pass.',
 		example:
 			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
+		since: '0.2',
+	},
+	E1221: {
+		title: 'Invalid levels of detail',
+		cause:
+			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, or its distance, must be a finite number above 0, and larger than the level's before it. A mesh takes at most 7 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. Each level draws with the base mesh's material and shading.",
+		example:
+			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
 		since: '0.2',
 	},
 	E1301: {
@@ -400,9 +408,9 @@ const DOCS = {
 	E1421: {
 		title: 'Unknown feature to preload',
 		cause:
-			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
+			"createEngine()'s preload option names a feature whose shaders the engine does not have. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, transmission and views, and instance_index and texcoords for the engine's own tests.",
 		example:
-			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
+			"E1421: createEngine() got 'skining' in preload. The features are ao, background, bloom, coverage, cutout, dof, effect_groups, hash, instance_index, lines, lod_fade, morph, occlusion, row_values, skinning, sky, sprites, texcoords, transmission, views.",
 		since: '0.2',
 	},
 	E1422: {

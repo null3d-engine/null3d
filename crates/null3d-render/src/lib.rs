@@ -31,6 +31,8 @@
 //! - `gpu_driven`: the WebGPU frame builder, with GPU culling and a prerecorded bundle per view
 //! - `graph`: the render graph, which orders declared passes and plans their render passes and
 //!   textures
+//! - `levels`: levels of detail, simpler meshes that a mesh draws in its place where its error
+//!   covers less than a threshold of pixels on the screen
 //! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
@@ -72,10 +74,12 @@ pub mod fog;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
+pub(crate) mod fullscreen;
 pub mod geometry;
 pub mod gpu_driven;
 pub mod grading;
 pub mod graph;
+pub mod levels;
 pub mod light_grid;
 pub mod materials;
 pub mod meshes;
@@ -86,6 +90,7 @@ pub mod occlusion;
 pub mod outline;
 pub mod output;
 pub mod parallel_record;
+pub mod particles;
 pub mod pipelines;
 pub mod probes;
 pub mod queries;

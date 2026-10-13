@@ -5,6 +5,7 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::actions::{Action, Advance, EventSink, flag};
+use super::joints::{self, BLOCK_FLOATS};
 use super::pose::{
     add_additive, add_weights, apply_additive, blend, clear_additive, layer_shares, local_matrices,
     rest_shares, start_weights,
@@ -12,7 +13,7 @@ use super::pose::{
 use super::{AnimationError, Clip, NO_PARENT, POSE_FIELDS, Skeleton, filled, out_of_memory};
 use crate::error::{CoreError, Resource};
 use crate::jobs::{JobSystem, WorkerId};
-use crate::math::{Affine, mul};
+use crate::math::{Affine, Affine64, invert64, mul};
 use crate::shared::SharedMut;
 use crate::world::MATRIX_FLOATS;
 
@@ -159,6 +160,8 @@ struct Scratch {
     shares: Box<[f32]>,
     /// The joints' local matrices, then their matrices in the skeleton's space.
     matrices: Box<[Affine]>,
+    /// A look-at's path of joints, from a root down to the chain's last joint.
+    path: Box<[u32]>,
 }
 
 /// A thread's [`Scratch`], which only that thread's chunks touch.
@@ -279,6 +282,16 @@ pub struct Animations {
     scratch: Box<[ThreadScratch]>,
     /// The lanes the scratch memory holds.
     scratch_lanes: u32,
+    /// The object that each instance animates, as the caller names it, for a look-at's target.
+    objects: Box<[u32]>,
+    /// The joint overrides of every instance, [`BLOCK_FLOATS`] per instance, which TypeScript
+    /// writes ([`joints`]). Empty until [`Animations::enable_joint_overrides`].
+    overrides: Box<[f32]>,
+    /// Each instance's look-at target in the world, 3 per instance, which TypeScript writes.
+    look_targets: Box<[f64]>,
+    /// Each instance's look-at target in its object's space, which
+    /// [`Animations::resolve_look_targets`] writes for the frame step.
+    look_local: Box<[f32]>,
 }
 
 impl Animations {
@@ -336,7 +349,83 @@ impl Animations {
             ones: Box::default(),
             scratch: scratch.into_boxed_slice(),
             scratch_lanes: 0,
+            objects: boxed(n, u32::MAX)?,
+            overrides: Box::default(),
+            look_targets: Box::default(),
+            look_local: Box::default(),
         })
+    }
+
+    /// Makes the table of joint overrides, once: [`BLOCK_FLOATS`] floats per instance, all 0, and
+    /// 3 look-at target numbers per instance. Until then, the frame step does no override work.
+    pub fn enable_joint_overrides(&mut self) -> Result<(), AnimationError> {
+        if !self.overrides.is_empty() {
+            return Ok(());
+        }
+        let n = self.instance_skeletons.len();
+        let look_targets = boxed(n * 3, 0.0f64)?;
+        let look_local = boxed(n * 3, f32::NAN)?;
+        self.overrides = boxed(n * BLOCK_FLOATS, 0.0)?;
+        self.look_targets = look_targets;
+        self.look_local = look_local;
+        Ok(())
+    }
+
+    /// The joint overrides of every instance, [`BLOCK_FLOATS`] floats each, laid out as
+    /// [`joints::place`] says; empty until [`Animations::enable_joint_overrides`]. The array never
+    /// moves once made.
+    pub fn joint_overrides(&self) -> &[f32] {
+        &self.overrides
+    }
+
+    /// The joint overrides of every instance, to change.
+    pub fn joint_overrides_mut(&mut self) -> &mut [f32] {
+        &mut self.overrides
+    }
+
+    /// Each instance's look-at target in the world, 3 numbers per instance.
+    pub fn look_targets(&self) -> &[f64] {
+        &self.look_targets
+    }
+
+    /// Each instance's look-at target in the world, to change.
+    pub fn look_targets_mut(&mut self) -> &mut [f64] {
+        &mut self.look_targets
+    }
+
+    /// Names the object that instance `instance` animates, which [`Self::resolve_look_targets`]
+    /// passes to its `world` function.
+    pub fn set_object(&mut self, instance: u32, object: u32) -> Result<(), AnimationError> {
+        self.live_skeleton(instance)?;
+        self.objects[instance as usize] = object;
+        Ok(())
+    }
+
+    /// Carries each live look-at's target from the world into the space of its instance's object,
+    /// for the next frame step. `world` gives an object's world matrix, or `None` for an object
+    /// that no longer exists, whose look-at then turns nothing. It runs on this thread, does work
+    /// only for instances whose look-at has a weight, and allocates nothing.
+    pub fn resolve_look_targets(&mut self, world: impl Fn(u32) -> Option<Affine64>) {
+        if self.overrides.is_empty() {
+            return;
+        }
+        for i in 0..self.instances as usize {
+            let local = &mut self.look_local[i * 3..i * 3 + 3];
+            let block = &self.overrides[i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS];
+            if self.instance_skeletons[i] == REMOVED || !joints::looks(block) {
+                continue;
+            }
+            let t = &self.look_targets[i * 3..i * 3 + 3];
+            match world(self.objects[i]).as_ref().and_then(invert64) {
+                Some(m) => {
+                    for (r, value) in local.iter_mut().enumerate() {
+                        let row = &m[4 * r..4 * r + 4];
+                        *value = (row[0] * t[0] + row[1] * t[1] + row[2] * t[2] + row[3]) as f32;
+                    }
+                }
+                None => local.fill(f32::NAN),
+            }
+        }
     }
 
     /// Adds a skeleton and returns its id: a removed skeleton's, or a new one.
@@ -368,6 +457,7 @@ impl Animations {
                 weights: boxed(3 * lanes as usize, 0.0)?,
                 shares: boxed(3 * lanes as usize, 0.0)?,
                 matrices: boxed(lanes as usize, [0.0; MATRIX_FLOATS])?,
+                path: boxed(lanes as usize, 0)?,
             };
         }
         self.ones = boxed(lanes as usize, 1.0)?;
@@ -687,6 +777,8 @@ impl Animations {
         self.layer_weights[layers.clone()].fill(1.0);
         self.layer_masks[layers.clone()].fill(0);
         self.blend_values[layers].fill(0.0);
+        self.objects[instance] = u32::MAX;
+        self.clear_overrides(instance);
         Ok(instance as u32)
     }
 
@@ -704,7 +796,18 @@ impl Animations {
         let slots = i * MAX_BLEND..(i + 1) * MAX_BLEND;
         self.slots.weight[slots.clone()].fill(0.0);
         self.slots.source[slots].fill(NO_SOURCE);
+        self.clear_overrides(i);
         Ok(())
+    }
+
+    /// Empties the joint overrides and the look-at of instance `i`, when the table exists.
+    fn clear_overrides(&mut self, i: usize) {
+        if let Some(block) = self
+            .overrides
+            .get_mut(i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS)
+        {
+            block.fill(0.0);
+        }
     }
 
     /// Gives back `len` joints from joint `first`: merges them with the free runs that touch
@@ -941,6 +1044,9 @@ impl Animations {
                         };
                         this.advance(&mut advance, dt * this.time_scales[i]);
                         this.pose_instance(i, skeleton, scratch, &advance);
+                        if !this.overrides.is_empty() {
+                            this.override_joints(i, skeleton, scratch);
+                        }
                         this.compose(skeleton, scratch, matrices);
                         // The step before wrote the other buffer, which no thread writes now.
                         let before = &this.matrices[1 - this.written][first..first + len];
@@ -1081,6 +1187,26 @@ impl Animations {
         }
         if added {
             apply_additive(pose, &scratch.add[..len], lanes);
+        }
+    }
+
+    /// Applies instance `i`'s rotation overrides, then its look-at, to the pose in its scratch
+    /// memory.
+    fn override_joints(&self, i: usize, skeleton: &Skeleton, scratch: &mut Scratch) {
+        let block = &self.overrides[i * BLOCK_FLOATS..(i + 1) * BLOCK_FLOATS];
+        let len = POSE_FIELDS * skeleton.lanes() as usize;
+        let pose = &mut scratch.pose[..len];
+        joints::apply_overrides(block, skeleton, pose);
+        if joints::looks(block) {
+            let t = &self.look_local[i * 3..i * 3 + 3];
+            joints::look_at(
+                block,
+                [t[0], t[1], t[2]],
+                skeleton,
+                pose,
+                &mut scratch.path,
+                &mut scratch.matrices,
+            );
         }
     }
 

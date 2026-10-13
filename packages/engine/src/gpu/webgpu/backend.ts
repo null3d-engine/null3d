@@ -160,6 +160,11 @@ export class WebGPUBackend {
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
 	 */
 	private readonly parkedCompute: Uint32Array[] = [];
+	/**
+	 * True when the vertex shaders skin skinned meshes, so a preload of skinning prepares the
+	 * shaders of its SKIN builds.
+	 */
+	skinsInVertexShaders = false;
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
@@ -701,7 +706,7 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
+	 * defines at its first use, with its builds that skin once they have arrived too. A group's or a fold's shader is joined then too, once its host's
 	 * file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
@@ -711,29 +716,32 @@ export class WebGPUBackend {
 				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
+		if (!this.images.buildsReady(template, permutation)) return false;
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
 	/**
-	 * Prepares the shaders of `module`, a feature's module that the page or the sketch preloaded:
-	 * it creates each build's shader module, which the feature's pipelines then share, and builds
-	 * the compute pipelines of skinning and occlusion culling, whose layouts are fixed. A render
+	 * Prepares the shaders of `module`, a module that the page or the sketch preloaded, whose builds
+	 * need `features`: it creates each build's shader module, which the features' pipelines then
+	 * share, and builds the compute pipelines of skinning and occlusion culling, whose layouts are
+	 * fixed, from the module of that one feature. A render
 	 * pipeline also needs the targets, the vertex format and the state of the objects that draw with
-	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's builds for the vertex
-	 * shader serve only the `?skinning=vertex` switch, and are left out.
+	 * it, which the scene gives, so `scene.warmUp()` builds those. Skinning's file holds the SKIN
+	 * builds, which skin in the vertex shader, and the skinning pass, which morphs and skins what
+	 * they cannot. It builds the pass's pipelines in every mode, and prepares the SKIN builds only
+	 * while the vertex shaders skin.
 	 */
-	precompile(feature: string, module: FirstUseShaders): void {
-		const compute = PRECOMPILED[feature];
-		if (compute) {
-			for (const [template, bits] of compute)
-				this.device
-					.createComputePipelineAsync(this.pipelines.compute(template, bits))
-					.catch(() => undefined);
-			return;
-		}
-		for (const [name, builds] of Object.entries(module))
-			for (const build of Object.values(builds))
-				if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+	precompile(features: readonly string[], module: FirstUseShaders): void {
+		const [feature, ...others] = features;
+		const compute = feature !== undefined && others.length === 0 ? PRECOMPILED[feature] : undefined;
+		if (!compute || (feature === 'skinning' && this.skinsInVertexShaders))
+			for (const [name, builds] of Object.entries(module))
+				for (const build of Object.values(builds))
+					if (build.wgsl) this.pipelines.prepareModule(name, build.wgsl);
+		for (const [template, bits] of compute ?? [])
+			this.device
+				.createComputePipelineAsync(this.pipelines.compute(template, bits))
+				.catch(() => undefined);
 	}
 
 	/**

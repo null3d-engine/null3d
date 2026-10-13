@@ -28,6 +28,7 @@ use null3d_core::scene::SceneStorage;
 use null3d_core::layers::DEFAULT_LAYERS;
 
 use crate::camera::{Affine, Lens, Mat4, ViewDepth};
+use crate::effects::{EFFECT_FLOATS, EffectMaps};
 use crate::frame_data::FrameUniform;
 use crate::graph::{RenderScale, Size};
 use crate::mirror::Mirror;
@@ -215,6 +216,46 @@ pub struct View {
     /// The face of a reflection probe's cube that a capture view draws, from 0, or `None` for
     /// another view.
     probe_face: Option<u8>,
+    /// What a full-screen pass draws, or `None` for a view of a scene.
+    fullscreen: Option<Fullscreen>,
+}
+
+/// What a full-screen pass draws in place of a scene: the sketch's WGSL, built as a custom
+/// effect's, over its whole target. It reads an image of the camera's view as its input, the
+/// scene's depth, and textures of its own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fullscreen {
+    /// The render pipeline template of the WGSL.
+    pub template: u32,
+    /// The image of the camera's view that it reads as its input.
+    pub source: PassSource,
+    /// True when the WGSL reads the scene's depth.
+    pub depth: bool,
+    /// Its uniforms, where the shader build placed each, and its textures' layers in the last
+    /// floats.
+    pub values: [f32; EFFECT_FLOATS],
+    /// The textures that it samples.
+    pub maps: EffectMaps,
+}
+
+impl Fullscreen {
+    /// True when it reads what the camera's view draws: then it runs after the camera's passes,
+    /// which do not read its target in the same frame.
+    pub fn reads_scene(&self) -> bool {
+        self.source != PassSource::None || self.depth
+    }
+}
+
+/// The image of the camera's view that a full-screen pass reads as its input.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PassSource {
+    /// None: the input reads a blank texel.
+    #[default]
+    None,
+    /// The scene color as the camera's passes leave it, before the custom effects and bloom.
+    SceneColor,
+    /// The outline mask, or a blank texel while no outline draws.
+    OutlineMask,
 }
 
 /// A mirror view's plane, and where its size and layers come from.
@@ -237,6 +278,7 @@ impl Default for View {
             removed: false,
             mirror: None,
             probe_face: None,
+            fullscreen: None,
         }
     }
 }
@@ -288,9 +330,31 @@ impl View {
         }
     }
 
+    /// A full-screen pass, which draws `fullscreen` over the whole of `target`: of its own size, or
+    /// of the render size halved as many times as it says.
+    pub fn fullscreen(fullscreen: Fullscreen, target: ViewTarget) -> Self {
+        Self {
+            fullscreen: Some(fullscreen),
+            target: ViewTarget {
+                whole: true,
+                ..target
+            },
+            ..Self::default()
+        }
+    }
+
     /// The face that a capture view of reflection probes draws, or `None` for another view.
     pub fn captured_face(&self) -> Option<u8> {
         self.probe_face
+    }
+
+    /// What a full-screen pass draws, or `None` for a view of a scene.
+    pub fn fullscreen_pass(&self) -> Option<&Fullscreen> {
+        self.fullscreen.as_ref()
+    }
+
+    pub(crate) fn fullscreen_pass_mut(&mut self) -> Option<&mut Fullscreen> {
+        self.fullscreen.as_mut()
     }
 
     /// The plane that a mirror view mirrors the camera's view across, or `None` for another view.
@@ -430,6 +494,15 @@ impl ViewFrame {
             depth,
             layers,
         }
+    }
+
+    /// Gives the view's uniform block the offset that its shadow lookups add: from `main`, the
+    /// camera of the camera's view, whose positions the shadow maps' matrices take, to this view's
+    /// camera. The offset to the camera's cell is computed in 64-bit floats.
+    pub(crate) fn set_shadow_origin(&mut self, main: &CellPosition) {
+        let to_cell = main.offset_to(self.camera.cell);
+        let [x, y, z] = std::array::from_fn(|k| to_cell[k] + self.camera.local[k]);
+        self.uniform.shadow_origin = [x, y, z, 0.0];
     }
 }
 

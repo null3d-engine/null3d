@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use common::{
     Rng, Workers, character, mul4, perspective, reversed_perspective, translation, wait_until,
 };
-use null3d_core::animation::{Animations, Blend, MAX_BLEND, MAX_LAYERS, Play};
+use null3d_core::animation::{Animations, Blend, MAX_BLEND, MAX_LAYERS, Play, joints};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
@@ -356,6 +356,7 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         &world.runs,
         &world.row_buckets,
         4,
+        None,
         &mut world.bucketed,
     );
 
@@ -466,6 +467,20 @@ fn crowd(jobs: &JobSystem) -> (Animations, [u32; 2]) {
         };
         animations.play(instance, ids[0], additive).unwrap();
     }
+    // Joint overrides and look-ats on half of the characters, as sketch code writes them.
+    animations.enable_joint_overrides().unwrap();
+    for i in 0..64 {
+        animations.set_object(i, i).unwrap();
+        let at = i as usize * joints::BLOCK_FLOATS;
+        let block = &mut animations.joint_overrides_mut()[at..at + joints::BLOCK_FLOATS];
+        if i % 4 == 2 {
+            block[joints::place::LOOK_COUNT] = 3.0;
+            for (k, joint) in [1.0, 6.0, 11.0].into_iter().enumerate() {
+                let j = joints::place::LOOK_JOINTS + k * joints::place::LOOK_JOINT_FLOATS;
+                block[j..j + 3].copy_from_slice(&[joint, 1.0, 0.8]);
+            }
+        }
+    }
     (animations, ids)
 }
 
@@ -512,6 +527,30 @@ fn animate(animations: &mut Animations, clips: [u32; 2], jobs: &JobSystem, frame
             _ => {}
         }
     }
+    // Sketch code turns joints and moves look-at targets: a set and an added rotation on every
+    // fourth character, and a look-at of three joints at a moving point on the next ones.
+    for i in 0..animations.instances() as usize {
+        let t = (frame as usize + i) as f32 / 60.0;
+        let at = i * joints::BLOCK_FLOATS;
+        if i % 4 == 1 {
+            let (s, c) = (0.5 * t).sin_cos();
+            for (slot, joint, mode) in [(0, 7.0, joints::mode::SET), (1, 12.0, joints::mode::ADD)] {
+                let o = at + slot * joints::OVERRIDE_FLOATS;
+                let block = &mut animations.joint_overrides_mut()[o..o + joints::OVERRIDE_FLOATS];
+                block[..7].copy_from_slice(&[joint, mode as f32, 0.7, 0.0, s, 0.0, c]);
+            }
+        } else if i % 4 == 2 {
+            animations.joint_overrides_mut()[at + joints::place::LOOK_WEIGHT] = 0.5 + 0.5 * t.sin();
+            let target = [f64::from(t.cos()) * 3.0, 1.5, f64::from(t.sin()) * 3.0];
+            animations.look_targets_mut()[i * 3..i * 3 + 3].copy_from_slice(&target);
+        }
+    }
+    animations.resolve_look_targets(|object| {
+        let mut m = null3d_core::math::IDENTITY64;
+        m[3] = f64::from(object % 8);
+        m[11] = f64::from(object / 8);
+        Some(m)
+    });
     animations.update(jobs, 1.0 / 60.0);
 }
 

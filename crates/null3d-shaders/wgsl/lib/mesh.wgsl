@@ -49,8 +49,8 @@ enable draw_index;
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
 // takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
-// multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
-// draw.
+// multi-draw call and read each draw's record by `gl_DrawID`, from a texture copy of the call's
+// records; the other builds get one record per draw.
 //
 // The SKIN builds skin each vertex in the vertex shader: `skin_of` blends the skinning matrices of
 // the vertex's four joints by their weights, from the joint texture, which holds each animated
@@ -101,19 +101,12 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
-#ifdef DRAW_INDEX
-/// Draw records one multi-draw call reads.
-const DRAW_RECORDS: u32 = 256u;
-#else
-const DRAW_RECORDS: u32 = 1u;
-#endif
-
 /// One draw each: the start of its slice of the index list, its material, the data texture its
 /// instances come from (0 for the resident one, 1 for the streamed one), and its instances per
 /// list entry as a shift: 0 when each entry names a row of the data texture, more when each
 /// names a cluster of rows, which the cluster texture lists.
 struct DrawTable {
-    items: array<vec4u, DRAW_RECORDS>,
+    items: array<vec4u, 1>,
 }
 
 /// The offset from the camera to the center of each grid cell, by cell index.
@@ -122,7 +115,15 @@ struct CellOffsets {
 }
 
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
+#ifdef DRAW_INDEX
+/// The draw records of a multi-draw call, one texel each, read at the draw index. The renderer
+/// binds the call's block of records here as a uniform buffer, as it binds one record in the other
+/// builds, and the WebGL2 backend copies the block into a texture. Some Adreno drivers fail to link
+/// a program whose vertex shader reads a uniform array at the draw index.
+@group(1) @binding(0) var draws: texture_2d<u32>;
+#else
 @group(1) @binding(0) var<uniform> draws: DrawTable;
+#endif
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
@@ -176,6 +177,9 @@ struct InstanceBucket {
     center_z: f32,
     first_joint: u32,
     indices: u32,
+    level_error: f32,
+    next_level: u32,
+    fade_bucket: u32,
 }
 
 // The group after the template's own: the frame's, then the maps' in the builds that sample maps
@@ -476,7 +480,12 @@ fn fragment_color(m: Material, color: vec3f, alpha: f32) -> vec4f {
 fn instance_of(record: vec4u, instance: u32) -> Instance {
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let shift = record.w;
+#ifdef LOD_FADE
+    // A fade bucket's entries come in pairs: the entry, then its fade value.
+    let slot = record.x + instance * 2u;
+#else
     let slot = record.x + (instance >> shift);
+#endif
     let entry = textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
     var source = entry & ((1u << CELL_SHIFT) - 1u);
     if shift != 0u {
@@ -534,20 +543,60 @@ fn instance_by_index(source: u32) -> Instance {
 }
 #endif
 
+#ifdef WEBGL2
+/// The record of the draw that a vertex shader invocation belongs to.
+fn draw_record(i: InstanceIn) -> vec4u {
+#ifdef DRAW_INDEX
+    return textureLoad(draws, vec2u(i.draw, 0u), 0);
+#else
+    return draws.items[0];
+#endif
+}
+#endif
+
 /// The instance that a vertex shader invocation draws.
 fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
-#ifdef DRAW_INDEX
-    return instance_of(draws.items[i.draw], i.instance);
-#else
-    return instance_of(draws.items[0], i.instance);
-#endif
+    return instance_of(draw_record(i), i.instance);
 #else ifdef INSTANCE_INDEX
     return instance_by_index(i.source);
 #else
     return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, i.ids.y, 0u, true, i.ids.z, false);
 #endif
 }
+
+#ifdef LOD_FADE
+/// The fade value of the instance that a vertex shader invocation draws, from a fade bucket of a
+/// level of detail: positive for the level that a band hands over to, negative for the level it
+/// hands over from. On WebGPU the culling shader writes it into the copy's fourth id, and on
+/// WebGL2 it follows the instance's entry in the index list.
+fn instance_fade(i: InstanceIn) -> f32 {
+#ifdef WEBGL2
+    let record = draw_record(i);
+    let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
+    let slot = record.x + i.instance * 2u + 1u;
+    return bitcast<f32>(textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x);
+#else
+    return bitcast<f32>(i.ids.w);
+#endif
+}
+
+/// True when the pixel at `pixel` belongs to a fading level of detail with fade value `fade`: the
+/// pixel's value in a 4 × 4 ordered dither, from 1/32 to 31/32, lies under a positive fade value,
+/// or at or over the size of a negative one. The two levels of a band take the fade value with
+/// opposite signs, so each pixel draws one of them, and a fade value of 0 keeps every pixel.
+fn lod_kept(fade: f32, pixel: vec2f) -> bool {
+    let p = vec2u(pixel) & vec2u(3u);
+    let low = p & vec2u(1u);
+    let high = p >> vec2u(1u);
+    // The 2 × 2 dither is 0, 2 on its first row and 3, 1 on its second.
+    let cell = 4u * (2u * (low.x ^ low.y) + low.y) + 2u * (high.x ^ high.y) + high.y;
+    let value = (f32(cell) + 0.5) / 16.0;
+    let new_side = fade > 0.0;
+    let kept_new = value < fade;
+    return select(value >= -fade, kept_new, new_side);
+}
+#endif
 
 /// The instance's world matrix, relative to the camera.
 fn transform_of(found: Instance) -> Transform {

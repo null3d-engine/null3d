@@ -29,7 +29,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 env:
-  BUN_VERSION: "1.3.14"
+  # Bun before 1.4.3 closes Playwright's pipe to Chrome at random, which hangs browser steps
+  # (.dev/releases.md). tests/lib/bun-version.test.ts holds every pin to package.json's.
+  BUN_VERSION: "1.4.3"
   # Anthropic's skill validator, pinned to one commit of anthropics/skills.
   SKILL_VALIDATOR_URL: https://raw.githubusercontent.com/anthropics/skills/1ed29a03dc852d30fa6ef2ca53a67dc2c2c2c563/skills/skill-creator/scripts/quick_validate.py
   # Only main's runs save caches, and every run restores main's. A pull request's or a merge queue
@@ -140,7 +142,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -168,8 +170,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The shader-build tests run much slower on some GitHub runners, so the limit leaves room above a typical run (D-99).
-    timeout-minutes: 25
+    # The job takes 5 to 9 minutes. Every CI job should take at most 15 minutes, and stops at 20.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
@@ -192,7 +194,7 @@ jobs:
     # files are the same on every platform, so each job below downloads them instead of spending
     # about 2 minutes to build them again.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -236,7 +238,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -293,7 +295,7 @@ jobs:
     needs: [build, size-base, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -332,7 +334,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -362,7 +364,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -375,7 +377,10 @@ jobs:
         with:
           name: page-wasm
       - uses: ./.github/actions/playwright-chromium
+      # The step takes 1 to 3 minutes. Its limit ends a stuck browser well before the job's, with
+      # the step named as the one that ran out of time.
       - name: The packed packages in a fresh project
+        timeout-minutes: 8
         run: bun run test:packages
 
   browser:
@@ -390,21 +395,22 @@ jobs:
     # Every run but a draft's or a docs-only pull request's, as the bench and real-browsers jobs.
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { part: shard 1 of 10, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/10 }
-          - { part: shard 2 of 10, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/10 }
-          - { part: shard 3 of 10, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/10 }
-          - { part: shard 4 of 10, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/10 }
-          - { part: shard 5 of 10, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/10 }
-          - { part: shard 6 of 10, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/10 }
-          - { part: shard 7 of 10, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/10 }
-          - { part: shard 8 of 10, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/10 }
-          - { part: shard 9 of 10, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/10 }
-          - { part: shard 10 of 10, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/10 }
+          - { part: shard 1 of 11, id: 1, tests: --grep-invert "@alone|$CITY_TESTS" --shard=1/11 }
+          - { part: shard 2 of 11, id: 2, tests: --grep-invert "@alone|$CITY_TESTS" --shard=2/11 }
+          - { part: shard 3 of 11, id: 3, tests: --grep-invert "@alone|$CITY_TESTS" --shard=3/11 }
+          - { part: shard 4 of 11, id: 4, tests: --grep-invert "@alone|$CITY_TESTS" --shard=4/11 }
+          - { part: shard 5 of 11, id: 5, tests: --grep-invert "@alone|$CITY_TESTS" --shard=5/11 }
+          - { part: shard 6 of 11, id: 6, tests: --grep-invert "@alone|$CITY_TESTS" --shard=6/11 }
+          - { part: shard 7 of 11, id: 7, tests: --grep-invert "@alone|$CITY_TESTS" --shard=7/11 }
+          - { part: shard 8 of 11, id: 8, tests: --grep-invert "@alone|$CITY_TESTS" --shard=8/11 }
+          - { part: shard 9 of 11, id: 9, tests: --grep-invert "@alone|$CITY_TESTS" --shard=9/11 }
+          - { part: shard 10 of 11, id: 10, tests: --grep-invert "@alone|$CITY_TESTS" --shard=10/11 }
+          - { part: shard 11 of 11, id: 11, tests: --grep-invert "@alone|$CITY_TESTS" --shard=11/11 }
           - { part: tests that run alone, id: alone, tests: --grep @alone --workers=1 }
     env:
       HUSKY: "0"
@@ -425,7 +431,7 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order.
-          PWTEST_SHARD_WEIGHTS: "90:213:427:181:160:121:115:174:120:244"
+          PWTEST_SHARD_WEIGHTS: "103:202:322:293:185:66:133:112:170:121:257"
         run: bun run test:browser ${{ matrix.tests }}
       # The images that differ from their references, or have none yet, with their diffs:
       # bun run images:review --ci <run> fetches them.
@@ -444,7 +450,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -468,7 +474,7 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -502,7 +508,7 @@ jobs:
     needs: [build, changes]
     if: needs.changes.outputs.sketches == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -535,19 +541,17 @@ jobs:
     # S4's and S5's pages run in order in one worker each, and both sit in shard 1: beside the
     # parity tests' setup in shard 2, S4 on WebGL2 twice measured no frame on SwiftShader. The
     # engine's limit of frames in flight failed open then (.dev/implementation-notes.md).
-    # The parity file runs its selected tests in order in one worker, so its time decides
-    # shard 2's. Shard 1 takes the glTF scenes' parity tests, which start after S4's group ends,
-    # beside S5's last minute. In main's run 38136100450 (11 October 2026), shard 1's tests took
-    # 7.9 minutes and were done with S4 at 7.1. Shard 2's took 13.7: 1.1 for page tests, then
-    # 12.5 for the parity tests in one worker, while the other worker ended at 6.5. Shard 2's
-    # jobs took 14.2 to 14.9 of their 15 minutes that day. The glTF groups took 3.3 minutes, so
-    # each shard's tests should take about 10.4. .dev/benchmarks.md holds the figures.
+    # Shard 2 takes every parity test. Each scene's tests run in order in one worker, and the
+    # scenes spread over both workers. In main's run 38176334909 (11 October 2026), the parity
+    # tests took 13.2 minutes one after another, and shard 2's other tests 3.1 minutes, so shard
+    # 2's tests should take about 8.2 minutes on two workers. Shard 1's page tests ended at 7.2.
+    # .dev/benchmarks.md holds the figures.
     name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     # Every build of the pages holds S6's, so both shards need the city's files.
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -558,7 +562,7 @@ jobs:
             select: --grep-invert
     env:
       HUSKY: "0"
-      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b|parity\.spec\.ts.*\bgltf-'
+      BENCH_SHARD_1: 'pages\.spec\.ts.*\b(s5|s4|s3|s1|s1-static|s1-cells)\b'
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -598,7 +602,7 @@ jobs:
     needs: [build, city, changes]
     if: needs.changes.outputs.allocation == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -628,23 +632,24 @@ jobs:
     # pages, each browser in shards of its own. GitHub gives few macOS machines at once, so only
     # Safari, which runs only on macOS, takes them. Firefox runs under a virtual display and draws
     # WebGL2 with a software renderer. Neither browser gets a WebGPU adapter on these machines, so
-    # a missing adapter is reported as a skip. .dev/devices.md says when to add a shard:
-    # add it to the list, and raise the count in the name and the command.
+    # a missing adapter is reported as a skip. The shards split the plan by each page's expected
+    # time in Safari, and a unit test fails when a shard's pages would pass 10 minutes there.
+    # .dev/devices.md says what to do then. To add a shard, add it to the shard list and raise the
+    # count beside it.
     # A draft pull request skips them, so that unfinished work holds no macOS machine (D-99).
-    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
     needs: [build, city, changes]
     if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.browser == 'Safari' && 'macos-15' || 'ubuntu-latest' }}
-    # A shard takes 8 to 10 minutes, and a runner page that goes quiet costs about a minute more
-    # each time the runner replaces it. The restart pages wait for Safari to give back the memory
-    # of stopped engines, and at their slowest each one takes 7 minutes; a shard holds 4 of them.
-    # The limit leaves room for all of that at once, and for a plan that grows.
-    timeout-minutes: 45
+    # Each shard should take at most about 12 minutes, setup included, which leaves room under the
+    # limit for a runner page that goes quiet: each one costs about a minute more.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5]
+        shards: [5]
     env:
       HUSKY: "0"
     steps:
@@ -661,8 +666,8 @@ jobs:
       - uses: ./.github/actions/city
         with:
           mode: download
-      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
-        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
+      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
+        run: ${{ runner.os == 'Linux' && 'xvfb-run --auto-servernum' || '' }} bun tests/real-browsers.ts --allow-no-webgpu --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:

@@ -52,8 +52,11 @@ export interface CoreGlue extends CoreErrors {
 	 * failed, so the sketch thread's wait for it ends. The worker's own thread calls it.
 	 */
 	jobWorkerFailed(index: number): void;
-	/** Serves the job system on a job worker: true when a task call made it return, false at stop. */
-	jobWorkerLoop(index: number): boolean;
+	/**
+	 * Serves the job system on a job worker until it returns: `JOB_LOOP_STOPPED` at stop,
+	 * `JOB_LOOP_CALLED` for a task call, `JOB_LOOP_YIELDED` to let the thread run its own tasks.
+	 */
+	jobWorkerLoop(index: number): number;
 	/** Asks a job worker to leave the job loop for one more task. */
 	callJobWorker(index: number): void;
 	/** Ends one task call of a job worker. */
@@ -70,6 +73,8 @@ export interface CoreGlue extends CoreErrors {
 	jobsWakeAddress(): number;
 	/** The address of the job system's stop flag, a byte, or 0 before it exists. */
 	jobsStopAddress(): number;
+	/** The address of the job system's yield word, or 0 before it exists. */
+	jobsYieldAddress(): number;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
 	/**
@@ -78,6 +83,13 @@ export interface CoreGlue extends CoreErrors {
 	 * the page keeps that instance for the next engine.
 	 */
 	releaseInstance?(): void;
+	/**
+	 * Forgets the views of the shared memory that the threaded build's glue keeps for passing
+	 * strings and arrays, which it makes again at its next use. Without it, a view made before the
+	 * memory grew keeps the old buffer object. The single-threaded build lacks it: its memory is
+	 * not shared, and a growth empties the old views.
+	 */
+	dropMemoryViews?(): void;
 	sceneCapacity(): number;
 	/**
 	 * The address of a 32-bit count that grows each time arrays that views read move without the
@@ -122,11 +134,11 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	cellsRefused(): number;
 	/**
-	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `built`
-	 * is the newest frame that the thread that draws drew with every pipeline built, as for
-	 * `recordFrame`.
+	 * Finds the frame's visible objects on the job workers, where the path culls on the CPU. `scale`
+	 * is the frame's render scale in thousandths, which picks levels of detail, and `built` the
+	 * newest frame that the thread that draws drew with every pipeline built, as for `recordFrame`.
 	 */
-	cullFrame(frame: number, width: number, height: number, built: number): number;
+	cullFrame(frame: number, width: number, height: number, scale: number, built: number): number;
 	/**
 	 * Records the frame's draw list. `built` is the newest frame that the thread that draws drew
 	 * with every pipeline built.
@@ -309,6 +321,12 @@ export interface CoreGlue extends CoreErrors {
 	 * next frame gives their ids to later meshes once no object or batch names them.
 	 */
 	destroyMeshes(count: number): number;
+	/**
+	 * Gives mesh `base` `count` lower levels of detail, whose mesh ids, then whose errors as 32-bit
+	 * floats, `meshArrays`'s words hold, from the most detailed down. `fades` lets two levels hand
+	 * over in a fading band. With `count` 0 the mesh loses its levels. 0 for success.
+	 */
+	setMeshLevels(base: number, count: number, fades: boolean): number;
 	/** The GPU bytes of every mesh: the mesh pages' buffers and the texture of morph deltas. */
 	meshMemoryBytes(): number;
 	/**
@@ -505,16 +523,18 @@ export interface CoreGlue extends CoreErrors {
 	/** Fits the main directional light's shadow cascades to the drawing camera's view again. */
 	clearShadowCamera(): number;
 	/**
-	 * Adds a pass named `pass`, which draws into a target named `target` and reads the targets
-	 * named in `reads`, one per line. With `clears`, the target clears to the exposed linear color
-	 * `r`, `g`, `b`, `a`. With `scale` below 0 it is a scene pass of a `width` x `height` target.
-	 * From 0 it is a reflection pass across the plane through the point (`px`, `py`, `pz`) with
-	 * normal (`nx`, `ny`, `nz`), whose target takes `scale` of the render size each way, or the
-	 * share that `setReflectionScale` sets for 0, and which draws the objects on `layers`, or the
-	 * camera's for -1, in one frame of every `every`. Returns the view's place from 1, or 0 on
+	 * Adds a pass of `kind` (`PASS_KIND_SCENE` or `PASS_KIND_REFLECTION`) named `pass`, which draws
+	 * into a target named `target` and reads the targets named in `reads`, one per line. With
+	 * `clears`, the target clears to the exposed linear color `r`, `g`, `b`, `a`. A scene pass has
+	 * a `width` x `height` target, or with a width of 0, one of `scale` of the render size each
+	 * way. A reflection pass mirrors across the plane through the point (`px`, `py`, `pz`) with
+	 * normal (`nx`, `ny`, `nz`), its target takes `scale` of the render size each way, or the share
+	 * that `setReflectionScale` sets for 0, and it draws the objects on `layers`, or the camera's
+	 * for -1. Either draws in one frame of every `every`. Returns the view's place from 1, or 0 on
 	 * failure: the render graph's errors (1502 to 1505), whose message `renderGraphMessage` gives.
 	 */
 	addPass(
+		kind: number,
 		pass: string,
 		target: string,
 		reads: string,
@@ -535,6 +555,30 @@ export interface CoreGlue extends CoreErrors {
 		py: number,
 		pz: number,
 	): number;
+	/**
+	 * Adds a full-screen pass named `pass`, which draws the compiled WGSL of render pipeline
+	 * template `template` over the whole of a target named `target`: of `width` x `height`
+	 * texels, or with a width of 0, of `scale` of the render size each way. It reads the input
+	 * image `source` (`PASS_SOURCE_*`), the scene's depth with the flag `EFFECT_DEPTH`, the
+	 * uniforms at `effectValues` and the textures at `effectTextures`, in one frame of every
+	 * `every`. Returns the view's place from 1, or 0 on failure, as `addPass` does.
+	 */
+	addFullscreenPass(
+		pass: string,
+		target: string,
+		width: number,
+		height: number,
+		scale: number,
+		every: number,
+		template: number,
+		flags: number,
+		source: number,
+	): number;
+	/**
+	 * Gives the full-screen pass of a view place the uniforms at `effectValues` and the textures at
+	 * `effectTextures`, from the next frame on, or fails with the render graph's error.
+	 */
+	setPassValues(place: number): number;
 	/**
 	 * Sets the share of the render size each way that the targets of reflection passes without a
 	 * scale of their own take.
@@ -587,10 +631,32 @@ export interface CoreGlue extends CoreErrors {
 	 * the next frame on: 0 draws none.
 	 */
 	setAoScale(thousandths: number): number;
+	/**
+	 * The steps of each march of the main directional light's contact shadows, from the next frame
+	 * on: 0 draws none.
+	 */
+	setContactSteps(steps: number): number;
 	/** Turns depth of field on with the post-processing values' lens, blur and focus, or off. */
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/**
+	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
+	 * returns its id, or 0 when the scene holds the most systems already.
+	 */
+	createParticles(slot: number, capacity: number): number;
+	/** Forgets a particle system and frees its records. */
+	destroyParticles(id: number): number;
+	/** The address of a particle system's records in engine memory, or 0 for no such system. */
+	particleRecords(id: number): number;
+	/** The address of a particle system's values, then its frame's values, or 0 for none. */
+	particleValues(id: number): number;
+	/** Marks `count` records of a particle system from `start` on for the next frame's upload. */
+	markParticleRecords(id: number, start: number, count: number): number;
+	/** Marks a particle system's values for the next frame's upload. */
+	markParticleValues(id: number): number;
+	/** Lets soft particles fade near the surfaces behind them, or draws them with hard edges. */
+	setSoftParticles(on: boolean): number;
 	/** Turns software occlusion culling on or off from the next frame on, where the path culls on the CPU. */
 	setSoftwareOcclusion(on: boolean): number;
 	/**
@@ -616,9 +682,14 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	effectValues(): number;
 	/**
+	 * The address of a custom effect's or full-screen pass's texture handles (`EFFECT_TEXTURES`
+	 * 32-bit words), which TypeScript writes with its uniforms.
+	 */
+	effectTextures(): number;
+	/**
 	 * Sets the custom effect at a place in the order effects run, from the next frame on: its render
-	 * pipeline template, its flags (`EFFECT_DEPTH`) and the uniforms at `effectValues`. Template 0
-	 * removes the effect at the place and every one after it.
+	 * pipeline template, its flags (`EFFECT_DEPTH`), the uniforms at `effectValues` and the textures
+	 * at `effectTextures`. Template 0 removes the effect at the place and every one after it.
 	 */
 	setEffect(index: number, template: number, flags: number): number;
 	/**
@@ -670,11 +741,19 @@ export interface CoreGlue extends CoreErrors {
 		cascadeBlend: number,
 	): number;
 	/**
+	 * How objects and batches pick their meshes' levels of detail, from the next frame on: the
+	 * error in pixels under which a coarser level draws, 0 for none, what the shadow maps' views
+	 * multiply it by, and whether two levels hand over in a fading band.
+	 */
+	setLevelQuality(threshold: number, shadowFactor: number, fades: boolean): number;
+	/**
 	 * What casts shadows in the last recorded frame: the main directional light's cascades in the
 	 * bits of `SHADOW_CASTERS_CASCADE_MASK`, and `SHADOW_CASTERS_TILES` when point or spot lights
 	 * cast shadows.
 	 */
 	shadowCasters(): number;
+	/** 1 while some mesh has levels of detail, which the governor's detail steps need, else 0. */
+	hasLevels(): number;
 	/**
 	 * The address of the block of the background's values (`BACKGROUND_VALUE_*`), 32-bit floats
 	 * that TypeScript writes before it calls `setBackgroundSource`.
@@ -747,8 +826,16 @@ export interface CoreGlue extends CoreErrors {
 	 * their frames already, as the asset tool writes them, and were copied.
 	 */
 	resampledClips(): number;
-	/** Adds an animated instance of a skeleton. */
-	createAnimatedInstance(skeleton: number): number;
+	/**
+	 * Adds an animated instance of a skeleton, which moves the object of handle `object`: a
+	 * look-at aims from that object's place. The handle 0 names no object.
+	 */
+	createAnimatedInstance(skeleton: number, object: number): number;
+	/**
+	 * Makes the table of joint overrides and look-at targets (`ANIMATION_FIELD_JOINT_OVERRIDES`
+	 * and `ANIMATION_FIELD_LOOK_TARGETS`), once. Until then, the frame step does no override work.
+	 */
+	enableJointOverrides(): number;
 	/** Removes an animated instance; later instances take its id and joints. */
 	removeAnimatedInstance(instance: number): number;
 	/** Makes a block of `count` morph weights, all 0, and returns its id plus one. */
@@ -815,6 +902,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'timeHandedLoops',
 	'jobsWakeAddress',
 	'jobsStopAddress',
+	'jobsYieldAddress',
 	'destroyEngine',
 	'sceneCapacity',
 	'arraysMovedAddress',
@@ -867,6 +955,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshFormat',
 	'updateVertices',
 	'destroyMeshes',
+	'setMeshLevels',
 	'meshMemoryBytes',
 	'createMaterial',
 	'setMaterialValue',
@@ -899,6 +988,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setOrthographicCamera',
 	'clearShadowCamera',
 	'addPass',
+	'addFullscreenPass',
+	'setPassValues',
 	'setReflectionScale',
 	'removeScenePass',
 	'setScenePassEnabled',
@@ -918,8 +1009,16 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBloomChain',
 	'setAo',
 	'setAoScale',
+	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'createParticles',
+	'destroyParticles',
+	'particleRecords',
+	'particleValues',
+	'markParticleRecords',
+	'markParticleValues',
+	'setSoftParticles',
 	'setSoftwareOcclusion',
 	'setOcclusionBuffer',
 	'setLut',
@@ -928,6 +1027,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setEnvironment',
 	'setOutline',
 	'effectValues',
+	'effectTextures',
 	'setEffect',
 	'setEffectGroup',
 	'setEffectFold',
@@ -936,7 +1036,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setRenderScaling',
 	'setPixelRatio',
 	'setShadowQuality',
+	'setLevelQuality',
 	'shadowCasters',
+	'hasLevels',
 	'backgroundValues',
 	'setBackgroundSource',
 	'setFog',
@@ -952,6 +1054,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'animatedInstanceJoints',
 	'createAnimatedInstance',
 	'removeAnimatedInstance',
+	'enableJointOverrides',
 	'createMorphWeights',
 	'destroyMorphWeights',
 	'linkMorphWeights',
@@ -970,6 +1073,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 
 /** Stack size for each engine thread. */
 export const THREAD_STACK_BYTES = 1024 * 1024;
+
+/** What `jobWorkerLoop` returns after the job system stopped. */
+export const JOB_LOOP_STOPPED = 0;
+/** What `jobWorkerLoop` returns when a task call took the worker out of the job system. */
+export const JOB_LOOP_CALLED = 1;
+/** What `jobWorkerLoop` returns while the page asks idle job workers to run their own tasks. */
+export const JOB_LOOP_YIELDED = 2;
 
 export interface CoreFiles {
 	/** The generated JavaScript that binds the core. */
