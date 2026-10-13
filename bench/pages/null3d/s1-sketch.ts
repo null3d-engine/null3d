@@ -39,6 +39,10 @@
 // and the floor's shading: the camera orbits, so the reflections move every frame. `ssr=half` and
 // `ssr=quarter` give their grid that share of the render size, `ssr=off` keeps the floor with the
 // reflections off, and the switch alone takes the preset's.
+// The `passes` switch adds a full-screen pass that reads the scene's color at half the render
+// size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
+// the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
+// block and the effect's texture.
 // The `decode` switch loads KTX2 textures and a meshopt model without end, for the frame times of
 // the decoders' work in the engine's workers.
 // The page's `shadows=<n>` gives the sun shadows in that many cascades, and the `batchShadows`
@@ -86,6 +90,7 @@ export default defineSketch(async (context) => {
 	if (switches.has('transmission')) createClearWater(context);
 	const ssr = switches.get('ssr');
 	if (ssr !== null) createPolishedFloor(context, ssr);
+	const soft = switches.has('passes') ? createSoftGlow(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
 	const vignette = { size: 1, intensity: 1 };
 	const settings = { lutIntensity: 1, vignette };
@@ -113,6 +118,9 @@ export default defineSketch(async (context) => {
 	// The effects' colors, changed in place, so a frame's calls allocate no array.
 	const warm: [number, number, number] = [1, 0.95, 0.9];
 	const mist: [number, number, number] = [0.43, 0.55, 0.69];
+	// The glow's strength in each color, changed in place: a fraction passed on its own to a call
+	// that the browser does not inline becomes a number object of its own each frame.
+	const softness: [number, number, number] = [0.3, 0.3, 0.3];
 	// The environment's options, changed in place, as the grading's settings are.
 	const turn: [number, number, number] = [0, 0, 0];
 	const lighting = { intensity: 1, rotation: turn };
@@ -191,6 +199,10 @@ export default defineSketch(async (context) => {
 			mist[0] = 0.43 + 0.05 * Math.cos(t);
 			context.post.setEffectUniform(haze, 'color', mist);
 		}
+		if (soft) {
+			softness[0] = 0.3 + 0.1 * Math.sin(t);
+			context.render.setPassUniform(soft, 'glow', softness);
+		}
 		if (!grading) return;
 		settings.lutIntensity = 0.5 + 0.5 * Math.sin(t);
 		vignette.size = 1 + 0.25 * Math.cos(t);
@@ -222,6 +234,50 @@ struct Uniforms { color: vec3f, density: f32 }
 fn effect(input: EffectInput) -> vec4f {
     let fade = 1.0 - exp(-effectDistance(input.uv) * uniforms.density);
     return vec4f(mix(input.color.rgb, uniforms.color * input.color.a, fade), input.color.a);
+}
+`;
+
+/**
+ * A full-screen pass that reads the scene's color at half the render size and softens it, with
+ * the glow's strength in each color as a uniform, and a custom effect that adds its texture to the
+ * scene.
+ */
+function createSoftGlow({ render, post, textures }: SketchContext) {
+	const pass = render.addPass({
+		kind: 'fullscreen',
+		wgsl: SOFTEN,
+		writes: 'soft',
+		scale: 0.5,
+		input: 'sceneColor',
+		uniforms: { glow: [0.3, 0.3, 0.3] },
+	});
+	post.addEffect({ wgsl: ADD_SOFT, textures: { soft: textures.fromPass(pass) } });
+	return pass;
+}
+
+/** A full-screen pass that averages its input around each pixel, scaled by `glow`. */
+const SOFTEN = /* wgsl */ `
+struct Uniforms { glow: vec3f }
+
+fn effect(input: EffectInput) -> vec4f {
+    let step = 2.0 / effectInputSize();
+    var sum = vec3f(0.0);
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            sum += effectColor(input.uv + vec2f(f32(x), f32(y)) * step).rgb;
+        }
+    }
+    return vec4f(sum / 9.0 * uniforms.glow, 1.0);
+}
+`;
+
+/** A custom effect that adds the soft pass's texture to the scene's color. */
+const ADD_SOFT = /* wgsl */ `
+var soft: texture_2d<f32>;
+
+fn effect(input: EffectInput) -> vec4f {
+    let glow = textureSampleLevel(soft, softSampler, effectPassUv(input.uv), 0.0).rgb;
+    return vec4f(input.color.rgb + glow * input.color.a, input.color.a);
 }
 `;
 
