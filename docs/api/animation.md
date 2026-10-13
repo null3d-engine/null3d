@@ -163,12 +163,12 @@ return {
 };
 ```
 
-At the switch, the animator records the pose that the layer is leaving, and the rate at which that
-pose moves. The new clip then plays alone. Each frame of the fade, the old pose carries on at that
-rate, and the layer's pose moves toward the new clip's by the ease `x²(3 - 2x)` of the fade's
-share `x`. The pose reaches the new clip exactly when the fade ends.
+At the switch, the animator records the pose that the layer is leaving. It records the rate at
+which that pose moves. The new clip then plays alone. Each frame of the fade, the old pose carries
+on at that rate. The layer's pose moves toward the new clip's by the ease `x²(3 - 2x)` of the
+fade's share `x`. The pose reaches the new clip exactly when the fade ends.
 
-An inertial transition needs a fade above 0, no `weight`, and no clip already playing on the layer.
+An inertial transition needs a fade above 0, and no `weight`. No clip may already play on the layer.
 A play that joins its layer keeps the weighted blend. So do a layer with a 1D blend and an additive
 clip. `crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
 three.js shows.
