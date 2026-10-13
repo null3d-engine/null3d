@@ -231,6 +231,18 @@ export const DEMOS: readonly Demo[] = [
 			'Road paint, a zebra crossing, puddles, cracks, moss, mud and a scorch mark on a street at dusk, with bare bricks, posters, graffiti and stains on the house fronts, each a box that projects its maps onto the surfaces inside it, lit by the low sun and the street lamps. A walker on a layer of its own crosses the puddles clean.',
 		controls: `${CAMERA} Click or tap the street to throw mud or a scorch mark there.`,
 		hold: 2,
+	},
+	{
+		name: 'contact-shadows',
+		group: 'Light, materials and effects',
+		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
+		code: 'contact-shadows/',
+		title: 'Contact shadows',
+		scene: 'Stone garden',
+		summary:
+			'A stone garden in the low evening sun, made in code: raked sand, mossy granite rocks, 640 pebbles and moss clumps in one batch, tufts of grass, a stone lantern, and a plaster wall with bamboo and pines beyond it. Contact shadows give each pebble, blade and stone the dark line where it meets the sand, which the shadow map is too coarse to hold. Every 3 seconds they turn off and on again.',
+		controls: `${CAMERA} Move the mouse across the sand, or tap, to turn the sun.`,
+		hold: 1,
 		timeoutSeconds: 60,
 	},
 	{
@@ -279,6 +291,19 @@ export const DEMOS: readonly Demo[] = [
 			'A fountain of 2,000 glowing sparks in one sprite batch at nightfall, a neon helix of wide lines in world units, and dashes that run around the rim of a pool that reflects them all.',
 		controls: `${CAMERA} Move the mouse, or tap, to move the fountain.`,
 		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'particles',
+		group: 'Light, materials and effects',
+		sketch: new URL('./particles/sketch.ts', import.meta.url),
+		code: 'particles/',
+		title: 'Particles',
+		scene: 'Campfire glade',
+		summary:
+			'A campfire in an autumn glade at dusk: flames from a flipbook made in code, rising embers, thin smoke lit from below, leaves that tumble from a birch and settle, and blinking fireflies. The GPU moves every particle, and the sketch writes only the births.',
+		controls: `${CAMERA} Move the mouse, or tap, to either side of the fire to turn the wind.`,
+		hold: 4,
 		timeoutSeconds: 60,
 	},
 	{

@@ -5,6 +5,8 @@
 import type { Effect, PerspectiveCamera, SketchContext } from '@null3d/engine';
 
 const wgsl = /* wgsl */ `
+#import null3d::noise::{random2}
+
 struct Uniforms { sun: vec2f, strength: f32, tint: vec3f }
 
 fn effect(input: EffectInput) -> vec4f {
@@ -20,7 +22,7 @@ fn effect(input: EffectInput) -> vec4f {
     let steps = clamp(i32(away * 16.0), 3, 12);
     let delta = toSun * (0.9 / f32(steps));
     // A different start in each pixel hides the steps as fine grain.
-    let jitter = fract(sin(dot(input.pixel, vec2f(12.9898, 78.233))) * 43758.5453);
+    let jitter = random2(input.pixel);
     var uv = input.uv + delta * jitter;
     var weight = 1.0;
     var total = 0.0;

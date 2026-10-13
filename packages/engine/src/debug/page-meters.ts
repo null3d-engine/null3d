@@ -9,7 +9,9 @@
 // The memory of the whole page and its workers comes from the browser's own measurement:
 // `performance.measureUserAgentSpecificMemory`, which only Chromium offers, and only on a
 // cross-origin isolated page. The browser answers once every worker has run the measurement as a
-// task, or after about a minute, so samples follow each other with a gap of a few seconds. Some
+// task, or after about a minute, so samples follow each other with a gap of a few seconds. An
+// engine's idle job workers would block and never run it, so each measurement goes through
+// `measureWithEveryThread`, which lets them run it. Some
 // browsers offer the measurement and never answer it. When the first answer has not come within
 // two minutes, the page stops asking, and the overlay hides the line that shows the figure.
 //
@@ -18,6 +20,7 @@
 // for each holder but the first. A thread holds it when its figure is at least the shared memory's
 // size, since no thread's own heap comes near the engine's memory.
 
+import { measureWithEveryThread } from '../shared/page-measurement';
 import type { StatsMainThread } from './stats-text';
 
 /**
@@ -49,8 +52,15 @@ export interface PageMemory {
 export interface MemoryMeasurement {
 	/** The memory of the whole page and its workers, in bytes. */
 	bytes: number;
-	/** Each part of the memory in bytes, with the threads that it belongs to. */
-	breakdown: { bytes: number; attribution: { url?: string; scope?: string }[] }[];
+	/**
+	 * Each part of the memory in bytes, with the threads that it belongs to, and its kinds, such as
+	 * `JavaScript` or `DOM`, where the browser names them.
+	 */
+	breakdown: {
+		bytes: number;
+		attribution: { url?: string; scope?: string }[];
+		types?: string[];
+	}[];
 }
 
 type MeasureMemory = () => Promise<MemoryMeasurement>;
@@ -88,13 +98,9 @@ const browser = {
 function requestMeasurement(measure: MeasureMemory): Promise<MemoryMeasurement> | undefined {
 	if (browser.silent) return undefined;
 	if (browser.pending) return browser.pending;
-	// Some builds of Chromium, such as its headless shell, throw at once in place of a rejection.
-	let pending: Promise<MemoryMeasurement>;
-	try {
-		pending = measure.call(performance);
-	} catch (error) {
-		pending = Promise.reject(error);
-	}
+	// Some builds of Chromium, such as its headless shell, throw at once in place of a rejection,
+	// which the call turns into one. Every engine's job workers run the measurement as it waits.
+	const pending = measureWithEveryThread(() => measure.call(performance));
 	browser.pending = pending;
 	const limit = browser.answered
 		? undefined
@@ -110,6 +116,19 @@ function requestMeasurement(measure: MeasureMemory): Promise<MemoryMeasurement> 
 		settle();
 	}, settle);
 	return pending;
+}
+
+/**
+ * One measurement of the memory of the whole page and its workers, as the browser gives it: the
+ * page's request in flight, or a new one. Like the samples, it lets every engine's job workers run
+ * the measurement. Undefined where the browser offers no measurement, or after the page stopped
+ * asking because the browser left its first request unanswered.
+ *
+ * @category api/debug
+ */
+export function measurePageMemory(): Promise<MemoryMeasurement> | undefined {
+	const measure = measureOf();
+	return measure ? requestMeasurement(measure) : undefined;
 }
 
 /** Forgets the page's requests and its first answer, as a new page starts. For tests. */

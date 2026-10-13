@@ -118,6 +118,21 @@ describe('WebGL2 slots of bind groups', () => {
 	});
 });
 
+describe('WebGL2 multi-draw vertex shaders', () => {
+	// Some Adreno drivers fail to link a program whose vertex shader reads a uniform array at the
+	// draw index, with an empty log (see .dev/driver-bugs.md), so such shaders read a texture.
+	it('read no uniform array at the draw index', () => {
+		const multiDraw = glslPrograms().filter(([, program]) =>
+			program.vertex.source.includes('gl_DrawID'),
+		);
+		expect(multiDraw.length).toBeGreaterThan(0);
+		for (const [name, program] of multiDraw) {
+			const read = program.vertex.source.match(/_group_\d+_binding_\d+_vs\.\w+\[[^\]]*\bdraw\b/);
+			expect([name, read?.[0] ?? null]).toEqual([name, null]);
+		}
+	});
+});
+
 describe('WebGL2 programs that a driver optimized', () => {
 	it('declares every uniform block and texture that a reflection names in its stage', () => {
 		for (const [name, stage] of glslStages()) {
