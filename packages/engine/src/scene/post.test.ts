@@ -142,11 +142,13 @@ describe('post.set', () => {
 		output.set({ exposure: 2 });
 		output.set({ toneMapping: 'none', exposure: 0.5 });
 		output.set({});
+		output.set({ toneMapping: 'agx-punchy' });
 		expect(calls).toEqual([
 			[C.TONE_MAPPING_AGX, 1],
 			[C.TONE_MAPPING_AGX, 2],
 			[C.TONE_MAPPING_NONE, 0.5],
 			[C.TONE_MAPPING_NONE, 0.5],
+			[C.TONE_MAPPING_AGX_PUNCHY, 0.5],
 		]);
 	});
 
@@ -175,10 +177,10 @@ describe('post.set', () => {
 		expect(bad({ outline: 3 })).toThrow('E1213');
 	});
 
-	it('starts from ACES at an exposure of 1', () => {
+	it('starts from punchy AgX at an exposure of 1', () => {
 		const { post: output, calls } = post();
 		output.set({});
-		expect(calls).toEqual([[C.TONE_MAPPING_ACES, 1]]);
+		expect(calls).toEqual([[C.TONE_MAPPING_AGX_PUNCHY, 1]]);
 	});
 
 	it('turns bloom on with its defaults and the values given, keeps them while off, and sends them only with bloom', () => {
@@ -495,7 +497,7 @@ describe('post.set', () => {
 		expect(calls.length).toBe(1);
 		// The refused EV100 is not kept.
 		output.set({ exposure: 1 });
-		expect(calls[1]).toEqual([C.TONE_MAPPING_ACES, 1]);
+		expect(calls[1]).toEqual([C.TONE_MAPPING_AGX_PUNCHY, 1]);
 	});
 
 	it('refuses a value that is not a finite number with E1203', () => {

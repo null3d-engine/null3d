@@ -159,6 +159,7 @@ export const TONE_MAPPING_ACES = 0;
 export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;
 export const TONE_MAPPING_NONE = 3;
+export const TONE_MAPPING_AGX_PUNCHY = 4;
 
 export const PARTICLE_RECORD_BYTES = 32;
 export const PARTICLE_PARAM_FLOATS = 128;
@@ -292,6 +293,8 @@ export const POST_VALUE_SSR_MAX_DISTANCE = 51;
 export const POST_VALUE_SSR_THICKNESS = 52;
 export const POST_VALUE_SSR_MAX_ROUGHNESS = 53;
 export const POST_VALUE_COUNT = 54;
+
+export const CALL_VALUE_COUNT = 10;
 
 export const ENVIRONMENT_VALUE_INTENSITY = 0;
 export const ENVIRONMENT_VALUE_ROTATION = 1;

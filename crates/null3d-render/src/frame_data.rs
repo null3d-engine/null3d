@@ -76,6 +76,10 @@ pub struct FrameUniform {
     /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
     /// spans at a distance of one unit in its view, along y, and a spare.
     pub reflection_corner: [f32; 4],
+    /// The vignette's intensity, size, falloff and roundness, which the 8-bit path's fragment
+    /// shaders apply before their tone mapping in the camera's view. Zero elsewhere, which applies
+    /// none: on the HDR path the final pass applies the vignette.
+    pub vignette: [f32; 4],
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

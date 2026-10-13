@@ -73,6 +73,9 @@ struct Frame {
     /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
     /// spans at a distance of one unit in its view, along y, and a spare.
     reflection_corner: vec4f,
+    /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
+    /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
+    vignette: vec4f,
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

@@ -1,6 +1,7 @@
 //! Color grading and the vignette on both frame builders: a table in a 3D texture of the texture
 //! store, which the final pass binds once its texels are on the GPU, and the final pass that runs
-//! in place of the resolve pass on the 8-bit path while the sketch grades. Checked through the
+//! in place of the resolve pass on the 8-bit path while the sketch sets a table. There the scene
+//! shaders apply the vignette, and a background color draws as a background while it is on. Checked through the
 //! mock backend and by decoding the lists the builders record.
 
 mod common;
@@ -137,12 +138,27 @@ fn passes(commands: &[(Op, Vec<u32>)]) -> usize {
     operands(commands, Op::BeginRenderPass).len()
 }
 
+/// The draws of a background box around the camera in a frame.
+fn background_boxes(commands: &[(Op, Vec<u32>)]) -> usize {
+    operands(commands, Op::Draw)
+        .iter()
+        .filter(|o| o[0] == 36)
+        .count()
+}
+
 fn check_eight_bit<B: FrameBuilder>(mut world: World<B>) {
     let mut mock = MockBackend::default();
     // The scene's render pass resolves straight into the canvas.
     assert_eq!(passes(&world.step(&mut mock, true)), 1);
 
-    // The vignette needs the final pass, which reads the resolved color.
+    // The scene shaders darken their light by the vignette before their tone mapping, so the
+    // vignette needs no final pass. A background color then draws as a background, so the
+    // vignette darkens it too; without the vignette, the clear shows it.
+    world
+        .renderer
+        .settings_mut()
+        .set_background([0.2, 0.4, 0.6]);
+    assert_eq!(background_boxes(&world.step(&mut mock, false)), 0);
     world.renderer.settings_mut().set_vignette(Some(Vignette {
         intensity: 1.0,
         size: 1.0,
@@ -150,15 +166,38 @@ fn check_eight_bit<B: FrameBuilder>(mut world: World<B>) {
         roundness: 0.0,
     }));
     let commands = world.step(&mut mock, false);
-    assert_eq!(passes(&commands), 2);
-    assert!(bound_table(&commands).is_some());
+    assert_eq!(passes(&commands), 1);
+    assert_eq!(background_boxes(&commands), 1);
 
+    // A table needs the final pass, which reads the resolved color.
+    let textures = world.renderer.settings_mut().textures_mut();
+    let table = textures
+        .create_volume(SIZE, SIZE, SIZE, format::RGBA8_UNORM)
+        .unwrap();
+    textures
+        .set_data(table, SIZE, SIZE)
+        .unwrap()
+        .0
+        .fill(0x80ff_4020);
+    world.renderer.settings_mut().set_lut(Some(Lut {
+        texture: table,
+        intensity: 1.0,
+        domain_min: [0.0; 3],
+        domain_max: [1.0; 3],
+    }));
+    world.step(&mut mock, false);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(passes(&commands), 2);
+
+    world.renderer.settings_mut().set_lut(None);
     world.renderer.settings_mut().set_vignette(None);
-    assert_eq!(passes(&world.step(&mut mock, false)), 1);
+    let commands = world.step(&mut mock, false);
+    assert_eq!(passes(&commands), 1);
+    assert_eq!(background_boxes(&commands), 0);
 }
 
 #[test]
-fn grading_runs_the_final_pass_on_the_8_bit_path_with_msaa() {
+fn the_8_bit_path_runs_the_final_pass_for_a_table_and_the_vignette_in_the_scene_pass() {
     let (webgpu, webgl2) = worlds(format::CANVAS);
     check_eight_bit(webgpu);
     check_eight_bit(webgl2);

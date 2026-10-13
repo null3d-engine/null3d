@@ -129,6 +129,23 @@ fn tone_map_agx(c: vec3f) -> vec3f {
     return saturate(LINEAR_REC2020_TO_LINEAR_SRGB * rec2020);
 }
 
+/// The power of AgX's punchy look, which deepens the contrast after the curve.
+const AGX_PUNCHY_POWER: f32 = 1.35;
+/// The saturation of AgX's punchy look about each color's luminance.
+const AGX_PUNCHY_SATURATION: f32 = 1.4;
+
+/// AgX tone mapping with Filament's punchy look: more contrast and more color than plain AgX,
+/// which keeps hues as plain AgX does.
+fn tone_map_agx_punchy(c: vec3f) -> vec3f {
+    let inset = AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020 * c);
+    let logged = (log2(max(inset, vec3f(1e-10))) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV);
+    let looked = pow(max(agx_contrast(saturate(logged)), vec3f(0.0)), vec3f(AGX_PUNCHY_POWER));
+    let luma = luminance(looked);
+    let curved = AGX_OUTSET * (luma + AGX_PUNCHY_SATURATION * (looked - luma));
+    let rec2020 = pow(max(curved, vec3f(0.0)), vec3f(2.2));
+    return saturate(LINEAR_REC2020_TO_LINEAR_SRGB * rec2020);
+}
+
 /// Khronos PBR Neutral tone mapping, as three.js's `NeutralToneMapping`. It keeps base colors
 /// under about 0.8 as they are, apart from a small offset.
 fn tone_map_neutral(c: vec3f) -> vec3f {
