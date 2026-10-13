@@ -12,10 +12,11 @@
 // The output transform: tone mapping, sRGB encoding and dithering. The final pass applies it to
 // the scene color, and dithers last, after its other steps. On the 8-bit path each fragment shader
 // applies it itself. The vignette darkens light before the tone mapping on both paths: in the
-// final pass on the HDR path, and in each fragment shader on the 8-bit path. The tone mapping curves come from the color module, which follows three.js's
-// formulas, so a scene looks as it does in three.js with the same curve and exposure. AgX's punchy
-// look is Filament's, which three.js does not offer. The HALF builds take the curves and the sRGB
-// encoding from the half precision module instead.
+// final pass on the HDR path, and in each fragment shader on the 8-bit path. The tone mapping
+// curves come from the color module, which follows three.js's formulas, so a scene looks as it
+// does in three.js with the same curve and exposure. AgX's punchy look is Filament's, which
+// three.js does not offer. The HALF builds take the curves and the sRGB encoding from the half
+// precision module instead.
 //
 // The scene's color is exposed color: the exposure scales each light where it starts, not the
 // scene color at the end. The core multiplies it into the frame's lights, its fog color and its
