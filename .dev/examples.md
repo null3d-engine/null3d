@@ -256,7 +256,17 @@ In the scene graph mode, each engine holds only the objects of the cells that sh
 
 The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the presented frame rate for a second. A step holds the display rate at 95% of it or more. The ramp stops after two steps in a row that miss it, or at the plan's maximum. It reports the largest count held, and the largest held at half the display rate. Both engines measure their own presented frames: null3D with `engine.measure`, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
 
+A three.js frame that draws nothing is not a frame. While WebGPURenderer cannot draw a scene, its render calls return at once with no draw, and its frames then come at the display's rate. On 12 October 2026, Night town's three.js WebGPU ramp "held" 1,020 lights at 120 frames a second with no town on the screen. So the worker counts only frames with draw calls (`DrawnFrames` in `examples/lib/three-worker.ts`). A measurement starts at the first such frame, after waiting at most its own length for it. With none, it reports no frame and a frame rate of 0. A ramp step with no frame is a count that draws nothing. When the next count draws, the ramp steps past it as a fault of the browser, as Chrome 155 drew no frame of Night town on WebGLRenderer at 60 lights and drew at 72 ([D-121](decisions/D-121-comparison-tier.md#browser-faults-met-while-timing)). Two such counts in a row, or one at the maximum, stop the ramp. The result keeps the largest count drawn, the counts stepped past, and three.js's link error where it gave one, and the page says both in plain words (`noFrameText` in `examples/lib/ramp.ts`, with unit tests). `three-worker.test.ts` checks that every frame and every measurement goes through this rule.
+
+A live three.js run starts at its first frame that draws, as a null3D run starts at its first frame. three.js can still build shaders after `compileAsync`: on 12 October 2026, Night town's WebGPURenderer drew its first frame more than 6 s after it started. The warm-up and a 6 s measurement fell inside that wait, so every fixed count gave no frame. So the worker posts `drawn` at its first frame with draws, and `startComparison` resolves only then. A three.js run that never draws never starts, and the page's time limit ends it as a failure. `three-worker.test.ts` guards this wiring too.
+
+Time comparisons in the Mac's installed Chrome, the browser that people run. On 12 October 2026, Playwright's Chromium 153 failed to build one of three.js's render-to-texture pipelines for Night town on WebGPU. Its shader compiler gave: "renderPipeline_RTT_57: An error occurred while generating Tint IR. error: swizzle view instruction still has usages after lowering". three.js then drew the town without that pass. The installed Chrome 155 built the same pipeline with no error. Chromium 153 also took about 90 s to the first frame of null3D's WebGL2 Night town at 300 lights or more, and 1 s at 120. Chrome 155 took 1 to 2 s at every count, with each effect alone and with all of them. So the timing scripts open the installed Chrome (`channel: 'chrome'`), and each record names the browser's version. Check a record's errors before using its figure.
+
+The display rate that a ramp judges against must be the display's. The page measures it from its own animation frames. But Chrome can slow those frames while null3D draws from its workers at the full rate. On 12 October 2026, Night town's instanced null3D ramp on a 120 Hz Mac measured 30 Hz. It then "held" all 1,020 lights, though its frame rate fell to 104 at 124 lights. So the ramp also measures the engine's frame rate at the start count for a second. An engine cannot draw faster than the display. So when it draws more than 5% faster than the page's rate, its rate, rounded to the nearest common refresh rate, becomes the display rate (`displayRate` in `examples/lib/ramp.ts`, with a unit test). Every ramp result names the display rate it judged against. Check it before using a figure.
+
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
+
+Night town's and Busy page's ramps count lights, 12 to a block. They start at 60, 48 and 36 lights and top out at 1,020, 720 and 480 on desktops, tablets and phones. Each stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
 
 ### Fairness rules
 
@@ -269,6 +279,7 @@ These rules show on the page's "about this comparison" panel, from `FAIRNESS_RUL
 - One engine at a time: each runs on a page of its own.
 - One memory definition: the browser's measurement of the whole page and its workers, with null3D's shared memory counted once.
 - The ramp runs with the stats panel collapsed in both engines.
+- Where a three.js add-on has a fault that changes the look, the worker fixes it without changing its math or its work. three.js 0.186.1's CSM add-on drops the standard material's highlights and reflections on WebGLRenderer, so `withCsmLightFix` puts three.js's own setup lines back ([D-121](decisions/D-121-comparison-tier.md#a-threejs-fault-csm-on-webglrenderer)). Every comparison makes CSM through it, and a unit test fails when an update of three.js fixes the add-on.
 
 ### The look
 
@@ -285,7 +296,7 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
 - The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
 - The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
-- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
@@ -345,6 +356,18 @@ The owner wants the demos "as amazing as possible". The custom shader inputs dem
 - A low mist: fog that thins with height and glows toward the sun. Its color is the color of the sky at the horizon, so the far floor meets the sky with no line. The floor reaches 1.5 km and the camera sees 3 km, so the floor's edge lies at the horizon.
 - The clouds stand still. The sky's environment follows the sky, so moving clouds would make it again over every few frames.
 - The floor mirrors the crystals on WebGL2 too. Until M2-EX38, WebGL2's reflection pass drew each call after the floor's with the draw records of the call before it, as it left the floor out of its own reflection. The crystals' material comes after the floor's, so the crystals went missing from the mirror. The `reflection-batches` image test now puts a custom-material batch over a mirror.
+
+## The stone garden's scenery (12 October 2026)
+
+The owner asked for a richer contact shadows demo (`contact-shadows`, Stone garden) on 12 October 2026. Its scenery now lives in `examples/contact-shadows/garden.ts`, beside the sketch, and all of it is made in code.
+
+- Sand raked in rings around each rock, and in straight furrows between them. A normal map from the same rake gives the low sun a light relief. A stronger relief drew dark stripes that hid the cast shadows.
+- Granite rocks: polyhedra from `@null3d/geometry` with bumps, flat underneath, each with its own shape and warmth. One granite texture made from value noise covers the rocks, the stepping stones, the curb and the lantern. Moss covers the rocks' tops through their vertex colors.
+- Pebbles and moss clumps in one batch, tufts of grass, a stone lantern with a warm point light, and a plaster wall with a tiled cap.
+- Beyond the wall, a bamboo grove and pines of seven ragged tiers that droop at their tips. Their greens hold little red. A green with more red turned khaki in the orange light of the low sun.
+- The sun keeps the hour's own height as it turns, and the sky's sun turns with it. When the sky's sun stood higher than the hour's, the sky was too bright for the low sun's light, and the long shadows hardly showed. The sky's environment lights the scene, so the demo has no ambient light.
+- The wall stands high behind the garden, away from the sun's side. On the left, the sun's side, it stands only 0.5 m high. The first left wall stood 1.2 m high and shaded half the bed under a sun this low. The bamboo behind it fills the skyline there, and casts no shadows.
+- The camera stands low and close, over a rock, its drift of pebbles and a stepping stone, and the sun stands about 10 degrees high. There, the cascades miss the pebbles' long shadows, and contact shadows draw them. On a tall screen the camera stands farther back with a wider view, and looks above the stones, so they sit low in the frame.
 
 ## Showcase scenes
 
