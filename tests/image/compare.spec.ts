@@ -2,6 +2,7 @@
 // ramp runs. A short ramp of three steps checks that the shell raises the count, measures each step
 // and reports what it found. The held frames of both engines are image tests in the manifest.
 import { expect, test } from '@playwright/test';
+import { NIGHT_HOLD } from '../../examples/compare/night-town/scene.ts';
 import type { RampResult } from '../../examples/lib/ramp.ts';
 import { pageResult } from '../lib/page-result.ts';
 
@@ -20,6 +21,8 @@ const softwareGpu = () => test.info().project.name.startsWith('chromium-swiftsha
  * for the short ramp's top count alone, no warmup, and quarter-second steps.
  */
 const quick = () => (softwareGpu() ? '&max=400&warmup=0&step=0.25' : '');
+const quickTown = () =>
+	softwareGpu() ? `&max=${NIGHT_HOLD.softwareCount}&warmup=0&step=0.25` : '';
 
 for (const mode of ['scene-graph', 'instanced'] as const)
 	for (const engine of ['null3d', 'threejs'] as const)
@@ -95,6 +98,83 @@ for (const engine of ['null3d', 'threejs'] as const)
 		expect(measured.fps).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeGreaterThan(0);
 		expect(measured.memory?.bytes).toBeLessThanOrEqual(measured.memory?.browserBytes ?? 0);
+	});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	for (const gpu of ['webgpu', 'webgl2'] as const)
+		test(`Night town starts and draws with ${engine} on ${gpu}, and the ramp runs`, async ({
+			page,
+		}) => {
+			// The image tests hold each engine's look. These runs draw no effects, and each engine and
+			// GPU path builds the town in one mode: the scene graph on WebGPU, batches on WebGL2.
+			const mode = gpu === 'webgpu' ? 'scene-graph' : 'instanced';
+			const errors: string[] = [];
+			page.on('pageerror', (error) => errors.push(error.message));
+			page.on('console', (message) => {
+				if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+					errors.push(message.text());
+			});
+			// On the software GPU, three.js takes about a minute to build the shaders of each new
+			// count of lights, so the ramp holds the image tests' count there.
+			await page.goto(
+				`compare.html?compare=night-town&engine=${engine}&gpu=${gpu}&mode=${mode}&effects=${quickTown()}`,
+			);
+			const result = await pageResult<{
+				error?: string;
+				label: string;
+				tier: string;
+				build: string;
+				limit: { count: number; reason: string } | null;
+				ramp: RampResult;
+			}>(page, 100_000);
+			expect(result.error).toBeUndefined();
+			expect(result.tier).toBe(gpu);
+			expect(result.build).toBe(mode);
+			const { ramp } = result;
+			expect(ramp.steps.length).toBeGreaterThanOrEqual(1);
+			// The ramp counts lights, and stops at three.js's limit where WebGLRenderer finds one.
+			const top = Math.min(400, result.limit?.count ?? 400);
+			for (const step of ramp.steps) expect(step.count).toBeLessThanOrEqual(top);
+			// three.js builds new shaders when lights join the scene, and WebGPURenderer can show no
+			// frame for a whole step while it does. The first step's lights were built at the start.
+			if (!softwareGpu())
+				for (const step of engine === 'null3d' ? ramp.steps : ramp.steps.slice(0, 1))
+					expect(step.fps).toBeGreaterThan(0);
+			if (result.limit) {
+				expect(engine).toBe('threejs');
+				expect(gpu).toBe('webgl2');
+				expect(result.limit.count % 12).toBe(0);
+				expect(result.limit.reason).toContain('WebGLRenderer');
+			}
+			expect(errors).toEqual([]);
+		});
+
+for (const engine of ['null3d', 'threejs'] as const)
+	test(`Busy page measures ${engine} beside a busy page, with the page thread's figures`, async ({
+		page,
+	}) => {
+		const seconds = softwareGpu() ? 0.5 : 3;
+		await page.goto(
+			`compare.html?compare=busy-page&engine=${engine}&gpu=webgpu&effects=&measure=120&seconds=${seconds}${quick()}`,
+		);
+		// Typing into the busy page's search box during the measurement gives the browser input to
+		// time.
+		await page.locator('.busy-search').pressSequentially('lanterns by the harbor', { delay: 40 });
+		const result = await pageResult<{
+			error?: string;
+			label: string;
+			measured: {
+				count: number;
+				fps: number;
+				mainThread: { longTasks: number; inputDelayMs: number | null } | null;
+			};
+		}>(page, 100_000);
+		expect(result.error).toBeUndefined();
+		expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
+		expect(result.measured.count).toBe(120);
+		// Chrome reports long tasks, so the page thread's figures are there for both engines.
+		expect(result.measured.mainThread).not.toBeNull();
+		expect(result.measured.mainThread?.longTasks).toBeGreaterThanOrEqual(0);
 	});
 
 // Battle loads two models and draws thousands of skinned triangles per unit, so on the software GPU
