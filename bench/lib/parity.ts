@@ -265,9 +265,9 @@ const PAGES = {
 		switches: 'gpu=webgpu&sky=texture&backgroundFirst',
 		api: 'webgpu',
 	},
-	'null3d-webgpu-skin-vertex': {
+	'null3d-webgpu-skin-compute': {
 		folder: 'null3d',
-		switches: 'gpu=webgpu&skinning=vertex',
+		switches: 'gpu=webgpu&skinning=compute',
 		api: 'webgpu',
 	},
 	'null3d-webgpu-skin-full': {

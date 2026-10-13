@@ -41,6 +41,7 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
+import { SKIN_BUILDS_ADDRESS, SkinBuilds } from './skin-builds.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -347,6 +348,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	const emitted = new Map<string, string>();
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
 	const compiler = new CompilerPool();
+	/** Custom materials' builds that skin, which load on first use from modules of their own. */
+	const skinBuilds = new SkinBuilds();
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -425,9 +428,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		// early script imports nothing, so it runs as soon as it arrives, and the core's download
 		// starts sooner by the time the others take to arrive and run.
 		resolveId: {
-			filter: { id: [HOT_CLIENT_ADDRESS, /^@null3d\/engine$/] },
+			filter: { id: [HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS, /^@null3d\/engine$/] },
 			async handler(source, importer) {
 				if (HOT_CLIENT_ADDRESS.test(source)) return HOT_CLIENT_ID;
+				if (SKIN_BUILDS_ADDRESS.test(source))
+					return source.startsWith('\0') ? source : `\0${source}`;
 				if (!buildingPages || earlyCoreSought) return null;
 				earlyCoreSought = true;
 				const early = await this.resolve(EARLY_CORE_MODULE, importer, { skipSelf: true });
@@ -459,9 +464,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			},
 		},
 		load: {
-			filter: { id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS] } },
+			filter: {
+				id: { include: [WGSL_FILE, OPTIMIZED_MODEL, HOT_CLIENT_ADDRESS, SKIN_BUILDS_ADDRESS] },
+			},
 			async handler(id) {
 				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				if (SKIN_BUILDS_ADDRESS.test(id))
+					return (
+						skinBuilds.module(id) ??
+						this.error(
+							`null3D has no skin builds named ${id.slice(1)}. Reload the page so the dev server compiles its WGSL again.`,
+						)
+					);
 				// Another plugin's virtual module whose name ends like a WGSL file.
 				if (id.startsWith('\0')) return;
 				if (OPTIMIZED_MODEL.test(id)) {
@@ -510,7 +524,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				}
 				const pack = new ShaderPack();
 				return {
-					code: `export default ${pack.value(compiled.shader, key)};\n${pack.unpacker()}`,
+					code: `export default ${skinBuilds.value(pack, compiled.shader, key)};\n${pack.unpacker()}`,
 					map: { mappings: '' },
 					moduleType: 'js',
 				};
@@ -534,7 +548,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
 						out ??= new MagicString(code);
-						out.overwrite(start, end, pack.value(shader, key));
+						out.overwrite(start, end, skinBuilds.value(pack, shader, key));
 					}
 					if (out && !pack.empty) out.append(pack.unpacker());
 					if (keyOf(file, path) !== undefined && tagged.shaders.length > 0)
