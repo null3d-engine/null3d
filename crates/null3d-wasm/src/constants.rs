@@ -211,6 +211,16 @@ pub mod post_value {
     pub const COUNT: u32 = 50;
 }
 
+/// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
+/// setter call that takes numbers, such as `setLightValue`, from place 0 on, in the order that the
+/// call's comment gives. Wherever the browser does not inline a call into the core, it makes an
+/// object of each fraction that the call takes as an argument. So a setter that a sketch may call
+/// in every frame takes its numbers this way, and only whole numbers as arguments.
+pub mod call_value {
+    /// The numbers in the block: as many as the setter with the most numbers takes.
+    pub const COUNT: u32 = 10;
+}
+
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
 /// floats that TypeScript writes before it calls `setEnvironment`, as the post-processing values
 /// come.
@@ -334,6 +344,9 @@ pub mod texture_option {
     pub const UPLOAD_ALL: u32 = 2;
     /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
     pub const MEMORY_BUDGET_KIB: u32 = 3;
+    /// Any value makes the store keep each texture's texels after its upload, so that a new GPU
+    /// device uploads them again; 0 frees them once the upload is done (D-164).
+    pub const KEEP_COPIES: u32 = 4;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -450,6 +463,9 @@ pub mod animation_field {
     /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
     /// writes; made by `enableJointOverrides`.
     pub const LOOK_TARGETS: u32 = 12;
+    /// The frames between two frame steps of each instance's pose, 32-bit unsigned integers,
+    /// which TypeScript writes.
+    pub const UPDATE_INTERVALS: u32 = 13;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -1037,6 +1053,7 @@ pub fn typescript() -> String {
                 ("COUNT", post_value::COUNT),
             ],
         ),
+        ("CALL_VALUE", &[("COUNT", call_value::COUNT)]),
         (
             "ENVIRONMENT_VALUE",
             &[
@@ -1150,6 +1167,7 @@ pub fn typescript() -> String {
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
                 ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
+                ("KEEP_COPIES", texture_option::KEEP_COPIES),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
@@ -1228,6 +1246,7 @@ pub fn typescript() -> String {
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
                 ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
                 ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
+                ("UPDATE_INTERVALS", animation_field::UPDATE_INTERVALS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of

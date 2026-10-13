@@ -23,8 +23,8 @@ import { EngineError } from '../errors/engine-error';
 import { EFFECT_DEPTH, EFFECT_FLOATS, EFFECT_MAX, EFFECT_TEXTURES } from '../generated/core';
 import type { ShaderVariants } from '../generated/shaders';
 import type { EffectPieces, PieceBuilds } from '../gpu/effect-join';
-import { fromHex } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
+import { type ColorInput, writeLinearColor } from './color';
 import type { CoreMemory } from './memory';
 import { type CompiledWgsl, textureSlots } from './resources';
 import type { ShaderTemplates } from './shader-templates';
@@ -181,9 +181,6 @@ const UNIFORM_FLOATS: Readonly<Record<UniformType, number>> = {
 	vec4f: 4,
 };
 
-/** Scratch for a hex color's linear components, so a color allocates nothing. */
-const linear = [0, 0, 0];
-
 /** What a uniform of `type` takes, for an error. */
 function takes(type: UniformType): string {
 	const count = UNIFORM_FLOATS[type];
@@ -242,12 +239,7 @@ export function writeUniform(
 		out.set(value, at);
 		return;
 	}
-	const hex = hexValue(value as string | number);
-	if (hex < 0) throw invalidColor(value, call);
-	fromHex(linear, hex);
-	out[at] = linear[0] as number;
-	out[at + 1] = linear[1] as number;
-	out[at + 2] = linear[2] as number;
+	writeLinearColor(out, value as ColorInput, call, at);
 }
 
 /**
