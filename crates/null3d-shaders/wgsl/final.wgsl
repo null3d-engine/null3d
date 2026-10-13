@@ -97,10 +97,11 @@ var<private> eye_factor: f32 = 1.0;
 
 /// The automatic exposure's factor from its texel, or 1 while the flag is clear.
 fn eye_exposure() -> f32 {
-    if (settings.output.flags & AUTO_EXPOSURE) == 0u {
-        return 1.0;
-    }
-    return textureLoad(exposure_texel, vec2i(0), 0).x;
+    return select(
+        1.0,
+        textureLoad(exposure_texel, vec2i(0), 0).x,
+        (settings.output.flags & AUTO_EXPOSURE) != 0u,
+    );
 }
 
 /// Where a texture of `size` texels that a pass drew at the render size halved `halvings` times
