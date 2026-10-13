@@ -27,8 +27,8 @@ use super::data::{TextureRows, write_rows};
 use super::ids;
 use super::skin::Skins;
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
-    put_u32,
+    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
+    collect_bucket_keys, put_u32,
 };
 use crate::outline::mask_keys;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache, Prepass};
@@ -64,7 +64,7 @@ const CASTER_MATERIAL: u32 = 1;
 /// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
 /// group of the material's map, the vertex page of the mesh's first part, the engine mesh and
 /// material ids, and the data texture.
-type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+type BucketKey = crate::frame::BucketKey;
 
 /// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
 /// entries are rows, then the bucket whose entries are clusters of rows.
@@ -159,8 +159,6 @@ pub(super) struct Layout {
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
-    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
-    key_counts: Vec<(BucketKey, u32)>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -233,6 +231,7 @@ impl Layout {
         multi_draw: bool,
         shadows: CasterPasses,
         prepass: Prepass,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -372,15 +371,10 @@ impl Layout {
                 Drawn::Outlined => None,
             }
         };
-        collect_bucket_keys(
-            &mut self.key_counts,
-            scene,
-            batches,
-            scene_key,
-            |_, batch| batch_key(batch),
-        );
-        self.depthless = self
-            .key_counts
+        collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
+            batch_key(batch)
+        });
+        self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
@@ -410,7 +404,7 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         self.second_draws.clear();
-        for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
+        for &((pipeline, textures, _, mesh, material, group), _) in key_counts.iter() {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let second = (drawn == Drawn::Outlined)
@@ -445,7 +439,7 @@ impl Layout {
         }
         self.draws.extend_from_slice(&self.second_draws);
         // A key's bucket of rows; its bucket of clusters is the next one.
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of =
             |key: Option<BucketKey>| bucket_of(counts, key).map_or(NO_BUCKET, |key| 2 * key);
         self.scene_buckets.clear();

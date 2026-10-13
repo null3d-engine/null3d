@@ -26,7 +26,7 @@ use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::write_row_values;
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
+    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
 use crate::outline::mask_keys;
@@ -48,7 +48,7 @@ const INDEX_ENTRIES_PER_COPY: u32 = sizes::INSTANCE_STRIDE / sizes::INDEX_STRIDE
 /// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
 /// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
 /// keys have the same type, so both share one sort.
-type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+type BucketKey = crate::frame::BucketKey;
 
 /// What a layout's buckets draw.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -287,9 +287,6 @@ pub(super) struct Layout {
     waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
-    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
-    /// entry per bucket.
-    key_counts: Vec<(BucketKey, u32)>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -528,6 +525,7 @@ impl Layout {
         shadows: CasterPasses,
         prepass: Prepass,
         skinning: &Skinning,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -639,19 +637,14 @@ impl Layout {
             }
         };
 
-        collect_bucket_keys(
-            &mut self.key_counts,
-            scene,
-            batches,
-            scene_key,
-            |_, batch| batch_key(batch),
-        );
-        self.depthless = self
-            .key_counts
+        collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
+            batch_key(batch)
+        });
+        self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
-        if self.key_counts.len() as u32 >= MAX_BUCKETS {
+        if key_counts.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
         self.waiting.clear();
@@ -681,7 +674,7 @@ impl Layout {
         self.draws.clear();
         self.skinned.clear();
         let (mut copied, mut indexed) = (0, 0);
-        for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
+        for &((pipeline, group, _, mesh, material, bounds), count) in key_counts.iter() {
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -758,7 +751,7 @@ impl Layout {
         }
         (self.copied, self.indexed) = (copied, indexed);
 
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         self.instance_buckets.clear();
         self.home_buckets.clear();
@@ -1162,6 +1155,7 @@ mod tests {
                 CasterPasses::default(),
                 Prepass::Off,
                 &Skinning::default(),
+                &mut KeyCounts::new(),
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;
