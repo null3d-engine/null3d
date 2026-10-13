@@ -732,6 +732,10 @@ pub mod layout {
     /// opaque color for transmission: the image, which it reads with `textureLoad`, as plain
     /// floats.
     pub const VIEW_COPY: u32 = 25;
+    /// Group 0 of a step of still-camera accumulation: the step's values, the scene color that it
+    /// reads with `textureLoad` as plain floats, and the history of a still view, also read with
+    /// `textureLoad`. The store step binds a blank texel in place of the history.
+    pub const ACCUMULATE: u32 = 26;
     /// Group 0 of depth of field's composite step: [`EFFECT`]'s bindings, then at binding 4 the
     /// blurred image at half the render size, which the step reads with the linear sampler.
     pub const DOF_COMPOSITE: u32 = 27;
@@ -1369,10 +1373,14 @@ pub mod sizes {
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, and the camera's view and projection matrices, which custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 704;
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read, and
+    /// a still view's jitter, which the scene's vertex shaders add.
+    pub const FRAME_UNIFORM_BYTES: u32 = 720;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
+    /// Bytes of a still-camera accumulation step's values: the weight of the frame and the flags,
+    /// then a spare vector.
+    pub const ACCUMULATE_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -1571,6 +1579,10 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// A step of still-camera accumulation: one triangle over the render size, which blends the
+    /// scene color into the history of a still view, or copies it into the history (the store
+    /// build). It binds as [`layout::ACCUMULATE`](super::layout::ACCUMULATE) does.
+    pub const ACCUMULATE: u32 = 40;
     /// Depth of field's first step: one triangle over a target at half the render size, which
     /// reads four pixels of the scene's color and depth for each texel and writes their color with
     /// the blur's signed size. It binds as a custom effect that reads depth does.
@@ -1896,6 +1908,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL_EFFECTS", layout::FINAL_EFFECTS),
                 ("FINAL_EFFECTS_DEPTH_MS", layout::FINAL_EFFECTS_DEPTH_MS),
                 ("VIEW_COPY", layout::VIEW_COPY),
+                ("ACCUMULATE", layout::ACCUMULATE),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
                 ("PARTICLE", layout::PARTICLE),
@@ -1987,6 +2000,7 @@ pub fn typescript_constants() -> String {
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),
+                ("ACCUMULATE", template::ACCUMULATE),
                 ("DOF_SETUP", template::DOF_SETUP),
                 ("DOF_SETUP_MS", template::DOF_SETUP_MS),
                 ("DOF_BLUR", template::DOF_BLUR),

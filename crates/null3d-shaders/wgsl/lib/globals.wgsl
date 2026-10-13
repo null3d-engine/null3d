@@ -63,6 +63,20 @@ struct Frame {
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
     /// plane and 0 at the far plane. Zero in the views of lights.
     projection: mat4x4f,
+    /// The sub-pixel jitter of a still view's accumulated sample, in clip space: `xy` is the offset
+    /// a scene's vertex shaders add to a position's clip position, scaled by its `w`. A still view
+    /// draws each frame with a different offset, and the frames average to a sharper image. Zero
+    /// while the view moves, in the views of lights, and in every frame a moving view draws.
+    jitter: vec4f,
+}
+
+/// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
+/// added: a still view shifts by a fraction of a pixel, so its accumulated samples spread over the
+/// pixel. Use this in place of `view_proj * vec4f(relative_position, 1.0)` in a scene's vertex
+/// shaders.
+fn clip_with_jitter(view_proj: mat4x4f, relative_position: vec3f) -> vec4f {
+    let clip = view_proj * vec4f(relative_position, 1.0);
+    return clip + vec4f(frame.jitter.xy * clip.w, 0.0, 0.0);
 }
 
 /// The scene's environment, as the engine writes it into each frame's values: light from every

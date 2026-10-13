@@ -105,6 +105,69 @@ impl Still {
     }
 }
 
+/// The last frame of one parity that the comparison kept, so the next frame of that parity can tell
+/// whether anything changed. The buffers grow to the largest frame and are reused, so a comparison
+/// allocates nothing.
+#[derive(Default)]
+pub(crate) struct Snapshot {
+    words: Vec<u32>,
+    bytes: Vec<u8>,
+    /// The byte ranges of `bytes` that the frame wrote every frame whatever the scene holds, such
+    /// as the clock and the jitter: the comparison ignores them.
+    volatile: Vec<Range<usize>>,
+}
+
+impl Snapshot {
+    /// True when `words` and `bytes`, with the `volatile` ranges ignored, are the same as the frame
+    /// this snapshot kept, and then replaces it with this frame. The first frame of a parity, and
+    /// the first after [`Snapshot::forget`], have nothing to compare with, so they read as changed.
+    pub(crate) fn unchanged(
+        &mut self,
+        words: &[u32],
+        bytes: &[u8],
+        volatile: &[Range<usize>],
+    ) -> bool {
+        let same = !self.bytes.is_empty()
+            && self.words == words
+            && self.bytes.len() == bytes.len()
+            && same_outside(&self.bytes, bytes, volatile)
+            && self.volatile == volatile;
+        self.words.clear();
+        self.words.extend_from_slice(words);
+        self.bytes.clear();
+        self.bytes.extend_from_slice(bytes);
+        self.volatile.clear();
+        self.volatile.extend_from_slice(volatile);
+        same
+    }
+
+    /// Forgets the frame this snapshot kept, so the next comparison reads as changed, as the first
+    /// frame of a parity does.
+    pub(crate) fn forget(&mut self) {
+        self.words.clear();
+        self.bytes.clear();
+        self.volatile.clear();
+    }
+}
+
+/// True when `a` and `b` are equal outside the byte ranges in `volatile`, which are sorted and do
+/// not overlap.
+fn same_outside(a: &[u8], b: &[u8], volatile: &[Range<usize>]) -> bool {
+    let mut at = 0;
+    for range in volatile {
+        // A range that moves, shrinks or lies outside the frame means the frame's layout changed:
+        // the frames are not the same.
+        if range.start < at || range.end > a.len() || range.end > b.len() {
+            return false;
+        }
+        if a[at..range.start] != b[at..range.start] {
+            return false;
+        }
+        at = range.end;
+    }
+    a[at..] == b[at..]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +222,31 @@ mod tests {
         assert!(still.rests());
         assert_eq!(still.after(true).samples(), MAX_SAMPLES + 1);
         assert_eq!(still.after(false), moving, "a change starts again");
+    }
+
+    #[test]
+    fn only_a_frame_that_matches_outside_its_volatile_parts_is_unchanged() {
+        let mut snapshot = Snapshot::default();
+        let first = [1u32, 2, 3];
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        // The first frame of a parity has nothing to compare with.
+        assert!(!snapshot.unchanged(&first, &bytes, &[]));
+        // The same frame again is unchanged.
+        assert!(snapshot.unchanged(&first, &bytes, &[]));
+        // A different word, or a different byte, is a change.
+        assert!(!snapshot.unchanged(&[1, 2, 4], &bytes, &[]));
+        let mut other = bytes;
+        other[5] = 9;
+        assert!(!snapshot.unchanged(&first, &other, &[]));
+        // A byte inside a volatile range is not a change.
+        let range = 4..6;
+        assert!(snapshot.unchanged(&first, &other, std::slice::from_ref(&range)));
+        // A shorter frame, a moved range or a range past the end is a change.
+        assert!(!snapshot.unchanged(&first, &bytes[..7], std::slice::from_ref(&range)));
+        assert!(!snapshot.unchanged(&first, &bytes, &[7..9]));
+        assert!(!snapshot.unchanged(&first, &bytes, &[0..2, 1..3]));
+        // Forgetting the frame makes the next one read as changed.
+        snapshot.forget();
+        assert!(!snapshot.unchanged(&first, &bytes, &[]));
     }
 }

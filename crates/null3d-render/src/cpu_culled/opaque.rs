@@ -486,7 +486,8 @@ impl Opaque {
         };
         if new_uniform {
             let slot = state.slots.uniform * FRAME_SLOT_BYTES;
-            let (at, bytes) = arena.push(uniform.as_bytes())?;
+            let (at, bytes) =
+                arena.push_masked(uniform.as_bytes(), &FrameUniform::volatile_ranges())?;
             list.push(Op::WriteBuffer, &[ids::frame(view), slot, at, bytes])?;
             let (at, bytes) = arena.push(frame.offsets.as_bytes())?;
             list.push(

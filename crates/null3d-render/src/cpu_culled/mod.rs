@@ -109,7 +109,7 @@ use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows, joined_rows,
+    SceneSettings, UploadArena, drawn_rows, joined_rows, settled,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -1733,9 +1733,12 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
+        self.settings.set_still(self.lists.still());
+        let settled = settled(input);
         let (mut list, mut arena) = self.lists.take(input.frame)?;
         let result = self.record_into(input, &mut list, &mut arena);
-        self.lists.restore(input.frame, list, arena, result)
+        self.lists
+            .restore(input.frame, list, arena, settled, result)
     }
 
     fn visible_entries(&self, frame: u32) -> Option<u32> {
