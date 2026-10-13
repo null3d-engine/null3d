@@ -92,8 +92,9 @@ return {
 | `additive` | `false` | `true` adds the clip's change on top of the other layers. |
 | `time` | the first frame | Seconds into the clip at which it starts. A repeating clip wraps the time into its length. A clip that plays once holds the time within its length. |
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
+| `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight` and no clip already playing on the layer. |
 
-`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, because three.js's `crossFadeTo` shows the mix of two clips. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
@@ -141,6 +142,39 @@ return {
 `setWeight(name, weight)` sets the weight of a clip that plays, on every layer that plays it. It writes the weight into engine memory, so you can change it every frame at no cost. A clip at weight 0 leaves the pose. It keeps playing, and its time moves on, as in three.js. A fade multiplies the weight: a clip at weight 0.5 that fades in reaches 0.5. In development builds, `setWeight` on a clip that does not play throws E1218.
 
 Clips that blend by weight keep their own times. A walk and a run of different lengths then step at different moments, and the feet slide. A 1D blend keeps their steps together.
+
+## Inertial transitions
+
+A cross-fade from one clip to another samples both clips for the whole fade. It mixes their poses,
+so a walk fading into a run passes through half of each gait, where the feet slide. An inertial
+transition never mixes them: it samples only the new clip. The pose that the layer leaves carries
+on at its own speed, and it eases into the new clip.
+
+```ts
+const TO_RUN = Object.freeze({ fade: 0.3, transition: 'inertial' });
+const TO_WALK = Object.freeze({ fade: 0.3, transition: 'inertial' });
+
+return {
+  onUpdate() {
+    const moving = input.isDown('KeyW');
+    if (moving !== wasMoving) anim.play(moving ? 'run' : 'walk', moving ? TO_RUN : TO_WALK);
+    wasMoving = moving;
+  },
+};
+```
+
+At the switch, the animator records the pose that the layer is leaving, and the rate at which that
+pose moves. The new clip then plays alone. Each frame of the fade, the old pose carries on at that
+rate, and the layer's pose moves toward the new clip's by the ease `x²(3 - 2x)` of the fade's
+share `x`. The pose reaches the new clip exactly when the fade ends.
+
+An inertial transition needs a fade above 0, no `weight`, and no clip already playing on the layer.
+A play that joins its layer keeps the weighted blend. So do a layer with a 1D blend and an additive
+clip. `crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
+three.js shows.
+
+A transition costs one extrapolated pose and its velocity per joint of the layer. A scene that
+never uses one pays nothing, and a transition that starts allocates nothing.
 
 ## 1D blends
 
@@ -392,6 +426,7 @@ Where three.js and null3D differ:
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
 - A morphed vertex color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it. A glTF target that leaves out `COLOR_0` while another target has it changes no color in null3D, as the specification says. three.js r186 adds the base color there instead. Its WebGPURenderer draws no color targets, and its WebGLRenderer cannot draw them on colors without alpha.
 - A three.js `play()` never stops other actions. A null3D `play` without a weight fades out the other clips of its layer. Give each clip that plays beside others a `weight`.
+- three.js always cross-fades two actions. A null3D play with a fade can switch with an [inertial transition](#inertial-transitions) instead, which samples only the new clip. `crossFade` keeps the cross-fade.
 - three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
 - three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
 - `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.

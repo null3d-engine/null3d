@@ -94,7 +94,7 @@ impl Action {
     }
 
     /// True for a played slot on layer `layer` whose `ADDITIVE` bit is `kind`.
-    fn plays_on(&self, layer: usize, kind: u32) -> bool {
+    pub(super) fn plays_on(&self, layer: usize, kind: u32) -> bool {
         self.playing() && self.layer() == layer && self.flags & flag::ADDITIVE == kind
     }
 
@@ -217,7 +217,7 @@ const TO: u32 = 2;
 
 /// Where a clip of `duration` seconds starts at `time`: within the clip for a repeating clip, and
 /// held at its first or last frame for a clip that plays once.
-fn start_time(time: f32, duration: f32, looping: bool) -> f32 {
+pub(super) fn start_time(time: f32, duration: f32, looping: bool) -> f32 {
     if looping && duration > 0.0 {
         let t = time.rem_euclid(duration);
         // A tiny negative time rounds up to the clip's length.
@@ -270,7 +270,20 @@ impl Animations {
             .clone()
             .find(|&s| self.actions[s].in_blend(layer) && self.slots.clip[s] == target)
             .map(|s| self.slots.time[s]);
-        if !play.join {
+        // An inertial switch needs a fade, a clip to switch from, and no join or weight: it takes
+        // over the layer's base clips as a cross-fade would, but samples only the new clip.
+        let inertial = play.inertial
+            && play.fade > 0.0
+            && !play.join
+            && play.weight.is_none()
+            && kind == 0
+            && existing.is_none();
+        let started = if inertial {
+            self.start_inertial(instance, layer, play.fade)?
+        } else {
+            false
+        };
+        if !started && !play.join {
             self.fade_out_layer(instance, layer, kind, play.fade, existing);
         }
         let slot = existing.unwrap_or_else(|| self.take_slot(first, 0));
@@ -288,7 +301,7 @@ impl Animations {
             | if looping { flag::LOOP } else { 0 }
             | kind
             | ((layer as u32) << flag::LAYER_SHIFT);
-        action.fade(from, 1.0, play.fade);
+        action.fade(from, 1.0, if started { 0.0 } else { play.fade });
         if existing.is_none() {
             self.slots.clip[slot] = target;
             self.slots.weight[slot] = 1.0;

@@ -420,6 +420,7 @@ const anim = hero.animator();           // the copy's group animates; throws E12
 anim.clips;                             // the clip names
 anim.play('run', { fade: 0.2, loop: true, speed: 1 });  // loop: false holds the last frame
 anim.crossFade('walk', 0.3);            // = play('walk', { fade: 0.3 }); the layer's other clips fade out
+anim.play('run', { fade: 0.3, transition: 'inertial' }); // samples only the run: the walk carries on at its speed and eases in
 anim.play('walk', { time: 0.4 });       // starts 0.4 s in, so a crowd steps out of time
 anim.play('run', { weight: 0.3 });      // a weight joins the layer's clips instead of fading them out
 anim.setWeight('run', 0.6);             // 0 or more, on a clip that plays; free to call every frame

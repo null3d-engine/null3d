@@ -3871,6 +3871,7 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
             time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
             weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
             join: flags & play_flag::JOIN != 0,
+            inertial: flags & play_flag::INERTIAL != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)

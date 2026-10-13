@@ -11,8 +11,9 @@ mod three;
 use common::{Workers, axis_angle, character};
 use null3d_core::animation::{
     AnimationError, Animations, BakedKeys, Blend, Channel, Clip, DEFAULT_RATE, EVENT_WORDS,
-    Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, POSE_FIELDS,
-    Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, joints, resample,
+    Interpolation, MATRIX_FLOATS, MAX_BLEND, MAX_CLIP_KEYS, MAX_LAYERS, NO_PARENT, NO_SOURCE,
+    POSE_FIELDS, Play, Skeleton, SourceTrack, TrackProblem, bake, event_kind, flag, joints,
+    resample,
 };
 use null3d_core::error::{CoreError, Resource};
 use null3d_core::jobs::JobSystem;
@@ -2093,4 +2094,217 @@ fn a_look_at_aims_from_the_objects_place_in_the_world() {
             &identity.iter().map(|&v| f64::from(v)).collect::<Vec<_>>()
         ) < 1e-6
     );
+}
+
+/// A skeleton of one joint at the origin, whose bind matrix is the identity, so a frame step's
+/// skinning matrix holds the joint's local pose.
+fn single_joint() -> Skeleton {
+    Skeleton::new(
+        &[NO_PARENT],
+        &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    )
+    .unwrap()
+}
+
+/// A one-second clip of one joint whose translation moves along x at `speed` per second from
+/// `start`, so a sample is exactly `start + speed * t`.
+fn sliding(skeleton: &Skeleton, start: f32, speed: f32) -> Clip {
+    let track = SourceTrack {
+        joint: 0,
+        channel: Channel::Translation,
+        interpolation: Interpolation::Linear,
+        times: &[0.0, 1.0],
+        values: &[start, 0.0, 0.0, start + speed, 0.0, 0.0],
+    };
+    resample(skeleton, &[track], DEFAULT_RATE).unwrap()
+}
+
+/// The joint's local x translation from the last frame step.
+fn x_of(animations: &Animations, instance: u32) -> f32 {
+    animations.instance_matrices(instance)[3]
+}
+
+/// A play that switches its layer with an inertial transition over `fade` seconds.
+fn inertial(fade: f32) -> Play {
+    Play {
+        fade,
+        inertial: true,
+        ..Play::default()
+    }
+}
+
+/// The number of sample slots that a live play fills.
+fn playing_slots(animations: &Animations, instance: u32) -> usize {
+    let first = instance as usize * MAX_BLEND;
+    (first..first + MAX_BLEND)
+        .filter(|&s| animations.slots().source[s] != NO_SOURCE)
+        .count()
+}
+
+/// `x * x * (3 - 2x)`, clamped: the ease of Holden's dead blending, which the core follows.
+fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// An inertial switch extrapolates the outgoing pose at its own velocity and eases it into the
+/// new clip, and samples only the new clip while it runs. The figures are Holden's dead blending
+/// (`deadblending.c`, MIT): `ext` moves at the source velocity each step and the output is
+/// `lerp(ext, input, smoothstep(t / blendtime))`.
+#[test]
+fn an_inertial_switch_follows_the_dead_blending_reference() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let source = x_of(&animations, instance);
+    assert!((source - 10.0 * dt).abs() < 1e-4, "{source}");
+
+    let fade = 0.5;
+    animations.play(instance, run, inertial(fade)).unwrap();
+    assert_eq!(
+        playing_slots(&animations, instance),
+        1,
+        "only the run plays"
+    );
+
+    // `source` moves at 1 unit a second, and the run at 2 from 10; the reference follows.
+    for k in 1..=32 {
+        animations.update(&jobs, dt);
+        let t = k as f32 * dt;
+        let extrapolated = source + 1.0 * t;
+        let input = 10.0 + 2.0 * t;
+        let expected = if t < fade {
+            extrapolated + (input - extrapolated) * smoothstep(t / fade)
+        } else {
+            input
+        };
+        let got = x_of(&animations, instance);
+        assert!(
+            (got - expected).abs() < 2e-3,
+            "step {k}: got {got}, expected {expected}"
+        );
+    }
+}
+
+/// An inertial switch keeps the pose continuous at the switch: its first step's pose is the
+/// outgoing pose carried on at its own speed, not a jump to the new clip.
+#[test]
+fn an_inertial_switch_starts_from_the_outgoing_pose() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    let dt = 1.0 / 60.0;
+    animations.play(instance, walk, Play::default()).unwrap();
+    for _ in 0..10 {
+        animations.update(&jobs, dt);
+    }
+    let source = x_of(&animations, instance);
+    animations.play(instance, run, inertial(1.0)).unwrap();
+    animations.update(&jobs, dt);
+    let got = x_of(&animations, instance);
+    // One step of the outgoing pose at its speed, with only the 1/60 s share of the fade's ease
+    // pulling it toward the new clip.
+    let extrapolated = source + dt;
+    let input = 10.0 + 2.0 * dt;
+    let expected = extrapolated + (input - extrapolated) * smoothstep(dt);
+    assert!((got - expected).abs() < 2e-3, "{got} against {expected}");
+    // It is still near the outgoing pose, not already at the new clip.
+    assert!(got < 0.5, "{got}");
+    // A cross-fade instead samples both clips: its first step sits between them.
+    let blend_got = {
+        let mut other = Animations::new(&jobs, 1, 1).unwrap();
+        let other_id = other.add_skeleton(single_joint()).unwrap();
+        let a = other
+            .add_clip(other_id, sliding(&single_joint(), 0.0, 1.0))
+            .unwrap();
+        let b = other
+            .add_clip(other_id, sliding(&single_joint(), 10.0, 2.0))
+            .unwrap();
+        let other_instance = other.add_instance(other_id).unwrap();
+        other.play(other_instance, a, Play::default()).unwrap();
+        for _ in 0..10 {
+            other.update(&jobs, dt);
+        }
+        other.play(other_instance, b, faded(1.0)).unwrap();
+        assert_eq!(
+            playing_slots(&other, other_instance),
+            2,
+            "a blend samples both"
+        );
+        other.update(&jobs, dt);
+        x_of(&other, other_instance)
+    };
+    assert!(
+        blend_got > got + 0.1,
+        "the blend mixes in the new clip at once: {blend_got} against {got}"
+    );
+}
+
+/// An inertial switch without a fade, with a weight, or on a layer that plays nothing stays a
+/// plain switch: no dead blend runs, and the layer keeps its slot count.
+#[test]
+fn an_inertial_switch_falls_back_when_it_cannot_run() {
+    let jobs = JobSystem::new(0);
+    let skeleton = single_joint();
+    let mut animations = Animations::new(&jobs, 1, 1).unwrap();
+    let id = animations.add_skeleton(skeleton.clone()).unwrap();
+    let walk = animations
+        .add_clip(id, sliding(&skeleton, 0.0, 1.0))
+        .unwrap();
+    let run = animations
+        .add_clip(id, sliding(&skeleton, 10.0, 2.0))
+        .unwrap();
+    let instance = animations.add_instance(id).unwrap();
+    // No clip plays yet: nothing to extrapolate.
+    animations.play(instance, walk, inertial(0.5)).unwrap();
+    assert_eq!(playing_slots(&animations, instance), 1);
+    animations.update(&jobs, 1.0 / 60.0);
+    // A fade of 0 switches at once, and a weight joins the layer instead of switching it.
+    animations
+        .play(
+            instance,
+            run,
+            Play {
+                inertial: true,
+                ..Play::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(playing_slots(&animations, instance), 1);
+    animations
+        .play(
+            instance,
+            walk,
+            Play {
+                fade: 0.5,
+                weight: Some(0.5),
+                join: true,
+                inertial: true,
+                ..Play::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(playing_slots(&animations, instance), 2);
 }
