@@ -131,9 +131,12 @@ use crate::ao::{self, Ao, AoIds, AoPass, StepSources};
 use crate::bloom::{self, Bloom, BloomIds, BloomPass, ChainFrame, LEVELS, STEPS};
 use crate::camera::Mat4;
 use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
-use crate::effects::{self, Effect, EffectIds, EffectJoins, EffectPass, MAX_EFFECTS, Unit};
+use crate::effects::{
+    self, Effect, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
+};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
+use crate::fullscreen::{FullscreenIds, FullscreenPasses, PassInputs};
 use crate::grading::Grading;
 use crate::graph::{
     CANVAS, GraphError, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph,
@@ -146,7 +149,7 @@ use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles;
 use crate::shadows::{CascadeDepth, MAX_CASCADES, ShadowFrame};
 use crate::transmission::{TransmissionCopy, TransmissionIds};
-use crate::view::{View, ViewId, ViewNames};
+use crate::view::{Fullscreen, PassSource, View, ViewId, ViewNames};
 use crate::view_copy::{ViewCopies, ViewCopyIds};
 
 /// The format of the scene's depth targets.
@@ -161,6 +164,7 @@ pub(crate) struct GraphIds {
     pub(crate) bloom: BloomIds,
     pub(crate) ao: AoIds,
     pub(crate) effects: EffectIds,
+    pub(crate) fullscreen: FullscreenIds,
     pub(crate) dof: DofIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
@@ -261,6 +265,7 @@ const NO_EFFECT: Effect = Effect {
     template: 0,
     depth: false,
     values: [0.0; effects::EFFECT_FLOATS],
+    maps: EffectMaps::NONE,
 };
 /// The outline view's culling pass on WebGPU, and the buffer of its compacted instances and
 /// indirect draws.
@@ -363,6 +368,9 @@ pub(crate) enum Role {
     /// Copies a view's image into its target with its rows turned around, on WebGPU. The graph
     /// records it itself.
     ViewCopy(ViewId),
+    /// Draws a full-screen pass of the sketch's WGSL into its view's target, by its view. The
+    /// graph records it itself.
+    Fullscreen(ViewId),
     /// Copies the camera's opaque color into the first level of the target that surfaces which
     /// let light through sample. The graph records it, and the mip levels after its render pass.
     TransmissionCopy,
@@ -422,14 +430,14 @@ pub(crate) struct FrameGraph {
     graph: RenderGraph,
     /// What each declared pass records, by the pass's place in the order of declaration.
     roles: Vec<Role>,
-    /// Each view's opaque pass, by view.
-    opaque: Vec<PassId>,
+    /// Each view's opaque pass, with the view's place.
+    opaque: Vec<(u16, PassId)>,
     /// True when each view has a depth prepass.
     prepass: bool,
     /// True when a skinning pass skins meshes before the passes that draw them.
     skinning: bool,
-    /// Each view's depth prepass, by view, with the depth prepass.
-    prepasses: Vec<PassId>,
+    /// Each view's depth prepass, with the view's place, with the depth prepass.
+    prepasses: Vec<(u16, PassId)>,
     /// True when each camera view culls in two phases against its depth pyramid, on WebGPU.
     occlusion: bool,
     /// Each view's occluders' pass, and the depth that its depth pyramid reads, by view, with
@@ -501,11 +509,16 @@ pub(crate) struct FrameGraph {
     effect_pass: Option<EffectPass>,
     /// The GPU objects that the effects take.
     effect_ids: EffectIds,
+    /// The full-screen passes' GPU objects.
+    fullscreen_ids: FullscreenIds,
+    fullscreen: FullscreenPasses,
     /// The effects that run, in order: the first `effect_count` slots.
     effects: [Effect; MAX_EFFECTS],
     effect_count: usize,
     /// A bit for each effect that reads the scene's depth, by its place.
     effect_depths: u32,
+    /// The views whose targets each effect's textures show, by its place, which its pass reads.
+    effect_views: [u32; MAX_EFFECTS],
     /// How the sketch joins its effects into groups and folds them into the final pass.
     effect_joins: EffectJoins,
     /// The effects' passes, as the graph declares them: each a lone effect, or a group whose
@@ -549,8 +562,15 @@ pub(crate) struct FrameGraph {
     views: usize,
     /// The debug lines pass, once the passes are declared.
     debug_lines: Option<PassId>,
-    /// Each view's transparent pass, by view.
-    transparent: Vec<PassId>,
+    /// Each view's transparent pass, with the view's place.
+    transparent: Vec<(u16, PassId)>,
+    /// The views that are full-screen passes, as a mask of their places.
+    fullscreen_views: u32,
+    /// True when the full-screen passes that read the outline mask were declared reading it,
+    /// while outlines draw.
+    fullscreen_outline: bool,
+    /// True when a declared full-screen pass reads the scene color.
+    fullscreen_reads_color: bool,
     /// True while the transparent passes are on.
     transparent_on: bool,
     /// The copy of the camera's opaque color for surfaces that let light through.
@@ -633,6 +653,9 @@ impl FrameGraph {
             occluder_passes: Vec::new(),
             pyramid_depths: Vec::new(),
             view_passes: Vec::new(),
+            fullscreen_views: 0,
+            fullscreen_outline: false,
+            fullscreen_reads_color: false,
             view_on: Vec::new(),
             view_colors: Vec::new(),
             view_images: Vec::new(),
@@ -666,9 +689,16 @@ impl FrameGraph {
                 .is_hdr()
                 .then(|| EffectPass::new(ids.effects, gpu_culling && antialias.samples() > 1)),
             effect_ids: ids.effects,
+            fullscreen_ids: ids.fullscreen,
+            fullscreen: FullscreenPasses::new(
+                ids.fullscreen,
+                view_target_format(scene_color),
+                gpu_culling && antialias.samples() > 1,
+            ),
             effects: [NO_EFFECT; MAX_EFFECTS],
             effect_count: 0,
             effect_depths: 0,
+            effect_views: [0; MAX_EFFECTS],
             effect_joins: EffectJoins::default(),
             effect_units: [Unit::default(); MAX_EFFECTS],
             unit_count: 0,
@@ -737,8 +767,16 @@ impl FrameGraph {
         self.effect_pass = scene_color
             .is_hdr()
             .then(|| EffectPass::new(self.effect_ids, self.gpu_culling && self.samples > 1));
+        // The full-screen passes draw into targets of the view targets' format, which the new mode
+        // may change, and read the depth's samples.
+        self.fullscreen = FullscreenPasses::new(
+            self.fullscreen_ids,
+            view_target_format(scene_color),
+            self.gpu_culling && self.samples > 1,
+        );
         self.effect_count = 0;
         self.effect_depths = 0;
+        self.effect_views = [0; MAX_EFFECTS];
         self.unit_count = 0;
         self.folded = None;
         self.effect_textures = None;
@@ -938,17 +976,23 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof
+        let fullscreen = if self.fullscreen_views != 0 {
+            FullscreenPasses::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + effects + dof + fullscreen
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
     /// pass does. The resolve pass resolves the scene color into the canvas alone, so the copy
     /// for surfaces that let light through, which reads it before the transparent pass, needs the
-    /// final pass.
+    /// final pass, and so does a full-screen pass that reads the scene color.
     fn final_runs(&self) -> bool {
         !self.resolves
             || self.scales
             || self.grades
+            || self.fullscreen_reads_color
             || self.outline_draws()
             || self.transmission_declared
             || self.particle_depth_declared
@@ -1007,6 +1051,11 @@ impl FrameGraph {
         if self.outline_draws() != was {
             self.enable_outputs();
         }
+        // A full-screen pass reads the mask only while it is drawn, so the passes are declared
+        // again when that changes.
+        if self.fullscreen_views != 0 && self.outline_draws() != self.fullscreen_outline {
+            self.declared = false;
+        }
     }
 
     /// True while outlines draw: the sketch turned them on, and some object is outlined.
@@ -1057,6 +1106,10 @@ impl FrameGraph {
             .fold(0, |bits, (index, effect)| {
                 bits | (u32::from(effect.depth) << index)
             });
+        let mut views = [0; MAX_EFFECTS];
+        for (mask, effect) in views.iter_mut().zip(&effects[..count]) {
+            *mask = effect.maps.views;
+        }
         if count != self.effect_count || depths != self.effect_depths || *joins != self.effect_joins
         {
             self.effect_count = count;
@@ -1064,9 +1117,28 @@ impl FrameGraph {
             self.effect_joins = *joins;
             self.plan_effects(|_| false, None);
         }
+        if views != self.effect_views {
+            self.effect_views = views;
+            self.declared = false;
+        }
         self.effects[..count].copy_from_slice(&effects[..count]);
         self.effect_clock = clock;
         self.inverse_projection = projection.map(|(_, inverse)| inverse);
+    }
+
+    /// Takes the values of the custom effects and the full-screen passes of `effects` and `views`
+    /// for the frame's uploads, as the frame's texture work left their textures' layers. The passes
+    /// themselves stay as they were declared.
+    pub(crate) fn set_post_values(&mut self, effects: &[Effect], views: &[View]) {
+        let count = self.effect_count;
+        for (own, given) in self.effects[..count].iter_mut().zip(effects) {
+            own.values = given.values;
+        }
+        for (own, given) in self.declared_views.iter_mut().zip(views) {
+            if let (Some(own), Some(given)) = (own.fullscreen_pass_mut(), given.fullscreen_pass()) {
+                own.values = given.values;
+            }
+        }
     }
 
     /// Makes the final pass draw with the custom tone curve whose pipelines take the templates from
@@ -1214,11 +1286,9 @@ impl FrameGraph {
                 .extend(views.iter().map(|view| view.target().draws()));
             self.enable_views();
         }
-        for (&pass, view) in self.opaque.iter().zip(views) {
-            self.graph.set_layers(pass, view.layers());
-        }
-        for (&pass, view) in self.prepasses.iter().zip(views) {
-            self.graph.set_layers(pass, view.layers());
+        for &(index, pass) in self.opaque.iter().chain(&self.prepasses) {
+            self.graph
+                .set_layers(pass, views[usize::from(index)].layers());
         }
         for &(index, pass) in &self.occluder_passes {
             self.graph
@@ -1313,8 +1383,12 @@ impl FrameGraph {
                 .unwrap_or(true);
             self.graph.set_enabled(pass, on);
         }
-        for (index, &pass) in self.transparent.iter().enumerate() {
-            let on = self.view_on.get(index).copied().unwrap_or(true);
+        for &(index, pass) in &self.transparent {
+            let on = self
+                .view_on
+                .get(usize::from(index))
+                .copied()
+                .unwrap_or(true);
             self.graph.set_enabled(pass, on && self.transparent_on);
         }
     }
@@ -1331,7 +1405,8 @@ impl FrameGraph {
     /// for the camera's view, or a target that the plan gives no texture. Valid once the frame's
     /// [`FrameGraph::prepare`] made the plan's textures.
     pub(crate) fn view_target(&self, view: ViewId) -> Option<u32> {
-        if self.view_copies.is_some() && !self.view_copy_built {
+        let fullscreen = self.fullscreen_views & (1 << view.index()) != 0;
+        if self.view_copies.is_some() && !self.view_copy_built && !fullscreen {
             // The target holds no image until the copies draw.
             return None;
         }
@@ -1422,11 +1497,24 @@ impl FrameGraph {
         self.view_colors.push(None);
         self.view_images.clear();
         self.view_images.push(None);
+        // A full-screen pass draws its target whole, with one sample, on both paths.
+        let one_sample = Target::color(self.view_target_format()).array().shown();
+        self.fullscreen_views = 0;
         for (index, view) in views.iter().enumerate().skip(1) {
             let size = view_size(view);
-            let target = self.graph.keep(named[index].color.clone(), kept, size);
+            let fullscreen = view.fullscreen_pass().is_some() && !view.is_removed();
+            self.fullscreen_views |= u32::from(fullscreen) << index;
+            let shape = if fullscreen { one_sample } else { kept };
+            let target = self.graph.keep(named[index].color.clone(), shape, size);
             self.view_colors.push(Some(target));
         }
+        self.fullscreen_outline = self.outline_draws();
+        self.fullscreen_reads_color = views.iter().enumerate().any(|(index, view)| {
+            self.fullscreen_views & (1 << index) != 0
+                && view
+                    .fullscreen_pass()
+                    .is_some_and(|pass| pass.source == PassSource::SceneColor)
+        });
         if self.gpu_culling {
             self.graph.import_buffer(LIGHTS);
             let clusters = Pass::new("LightClusters", PassKind::Compute)
@@ -1435,6 +1523,9 @@ impl FrameGraph {
             self.add(clusters, Role::LightClusters);
             self.graph.import_buffer(OBJECTS);
             for (index, names) in named.iter().enumerate() {
+                if self.fullscreen_views & (1 << index) != 0 {
+                    continue;
+                }
                 let pass = Pass::new(names.culling.clone(), PassKind::Compute)
                     .reads(OBJECTS)
                     .creates_buffer(names.visible.clone());
@@ -1458,6 +1549,14 @@ impl FrameGraph {
             let names = &named[index];
             let size = view_size(view);
             let camera = id == ViewId::CAMERA;
+            if let Some(fullscreen) = view
+                .fullscreen_pass()
+                .filter(|_| self.fullscreen_views & (1 << index) != 0)
+            {
+                self.pyramid_depths.push(None);
+                self.declare_fullscreen(view, fullscreen, names, index);
+                continue;
+            }
             let mut pass = Pass::new(names.opaque.clone(), PassKind::Scene)
                 .size(size)
                 .layers(view.layers());
@@ -1486,7 +1585,7 @@ impl FrameGraph {
                 prepass = reads_targets(prepass, views, &named, index);
                 let prepass = optional_beyond_camera(prepass, index);
                 let prepass = self.add(prepass, Role::Prepass(id));
-                self.prepasses.push(prepass);
+                self.prepasses.push((index as u16, prepass));
                 self.view_passes.push((index as u16, prepass));
                 if occludes {
                     self.declare_ao();
@@ -1516,7 +1615,7 @@ impl FrameGraph {
             pass = reads_targets(pass, views, &named, index);
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Opaque(id));
-            self.opaque.push(pass);
+            self.opaque.push((index as u16, pass));
             self.view_passes.push((index as u16, pass));
         }
         let lines = Pass::new("DebugLines", PassKind::Scene)
@@ -1548,6 +1647,9 @@ impl FrameGraph {
             self.add(copy, Role::ParticleDepthCopy);
         }
         for (index, view) in views.iter().enumerate() {
+            if self.fullscreen_views & (1 << index) != 0 {
+                continue;
+            }
             let names = &named[index];
             let drawn = if copies && index != ViewId::CAMERA.index() {
                 &names.image
@@ -1567,10 +1669,14 @@ impl FrameGraph {
             let pass = reads_targets(pass, views, &named, index);
             let pass = optional_beyond_camera(pass, index);
             let pass = self.add(pass, Role::Transparent(ViewId::from_index(index)));
-            self.transparent.push(pass);
+            self.transparent.push((index as u16, pass));
         }
         if copies {
             for (index, view) in views.iter().enumerate().skip(1) {
+                if self.fullscreen_views & (1 << index) != 0 {
+                    self.view_images.push(None);
+                    continue;
+                }
                 let names = &named[index];
                 let pass = Pass::new(names.copy.clone(), PassKind::Fullscreen)
                     .optional()
@@ -1623,6 +1729,37 @@ impl FrameGraph {
         self.enable_outputs();
         self.views = views.len();
         self.declared = true;
+    }
+
+    /// Declares a full-screen pass: one triangle over its whole target, which reads the input
+    /// image, the scene's depth and the targets that its textures show. A pass that reads what the
+    /// camera's view draws runs after the camera's passes; while a texture shows it and nothing
+    /// else reads it, it still runs, so a material shows its image of the frame before. Any other
+    /// pass runs only while something reads its target, before the camera's passes that show it.
+    fn declare_fullscreen(
+        &mut self,
+        view: &View,
+        fullscreen: &Fullscreen,
+        names: &ViewPassNames,
+        index: usize,
+    ) {
+        let mut pass = Pass::new(names.opaque.clone(), PassKind::Fullscreen)
+            .size(view_size(view))
+            .writes(names.color.clone());
+        match fullscreen.source {
+            PassSource::SceneColor => pass = pass.reads(SCENE_COLOR),
+            PassSource::OutlineMask if self.fullscreen_outline => pass = pass.reads(OUTLINE_MASK),
+            _ => {}
+        }
+        if fullscreen.depth {
+            pass = pass.reads(SCENE_DEPTH);
+        }
+        pass = self.reads_views(pass, fullscreen.maps.views);
+        if !(fullscreen.reads_scene() && view.target().shown) {
+            pass = pass.optional();
+        }
+        let pass = self.add(pass, Role::Fullscreen(ViewId::from_index(index)));
+        self.view_passes.push((index as u16, pass));
     }
 
     /// Declares a camera view's occlusion culling before its opaque pass: the occluders' pass,
@@ -1719,9 +1856,25 @@ impl FrameGraph {
             {
                 pass = pass.reads(SCENE_DEPTH);
             }
+            let views = self.effect_views[unit.places()]
+                .iter()
+                .fold(0, |mask, views| mask | views);
+            pass = self.reads_views(pass, views);
             self.add(pass, Role::Effect(index as u8));
             input = EFFECT_TARGETS[index];
         }
+    }
+
+    /// The pass, reading the target of each view in the mask `views` that the graph declares.
+    fn reads_views(&self, mut pass: Pass, views: u32) -> Pass {
+        for (index, target) in self.view_colors.iter().enumerate() {
+            if let Some(target) = *target
+                && views & (1 << index) != 0
+            {
+                pass = pass.reads(self.graph.resource_name(target).to_owned());
+            }
+        }
+        pass
     }
 
     /// Declares depth of field's steps: the setup reads the custom effects' output and the scene
@@ -2002,10 +2155,20 @@ impl FrameGraph {
     /// 8-bit path an sRGB texture, which the copy fills with the display color decoded, so that
     /// materials which sample a view's texture read linear color on both paths.
     fn view_target_format(&self) -> u32 {
-        if self.scene_color.is_hdr() {
-            self.scene_color.format()
-        } else {
-            format::RGBA8_UNORM_SRGB
+        view_target_format(self.scene_color)
+    }
+
+    /// Asks `pipelines` for the pipeline of each full-screen pass of `views`. A builder asks with
+    /// the views of the frame it records, so a new pass's pipeline builds before its first frame.
+    pub(crate) fn request_fullscreen_pipelines(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        views: &[View],
+    ) {
+        for (place, view) in views.iter().enumerate() {
+            if let Some(pass) = view.fullscreen_pass().filter(|_| !view.is_removed()) {
+                self.fullscreen.request_pipeline(pipelines, place, pass);
+            }
         }
     }
 
@@ -2053,6 +2216,7 @@ impl FrameGraph {
     ) -> Result<(), RecordError> {
         self.upload_ao(list, arena)?;
         self.upload_effects(list, arena)?;
+        self.upload_fullscreen(list, arena)?;
         self.upload_dof(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
@@ -2183,6 +2347,73 @@ impl FrameGraph {
             inverse,
             made,
         )
+    }
+
+    /// Records the full-screen passes' objects and the block of each pass that runs in the plan,
+    /// and binds each to the textures that it reads.
+    fn upload_fullscreen(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<(), RecordError> {
+        if self.fullscreen_views == 0 {
+            return Ok(());
+        }
+        let frame = (self.canvas, self.scale);
+        let (clock, inverse, made) = (
+            self.effect_clock,
+            self.inverse_projection,
+            self.textures_made,
+        );
+        for place in 1..self.declared_views.len() {
+            if self.fullscreen_views & (1 << place) == 0 || !self.fullscreen_runs(place) {
+                continue;
+            }
+            let view = self.declared_views[place];
+            let Some(pass) = view.fullscreen_pass() else {
+                continue;
+            };
+            let color = match pass.source {
+                PassSource::SceneColor => self.sampled_id(SCENE_COLOR),
+                PassSource::OutlineMask if self.fullscreen_outline => self.sampled_id(OUTLINE_MASK),
+                _ => None,
+            };
+            let depth = if pass.depth {
+                self.sampled_id(SCENE_DEPTH)
+            } else {
+                None
+            };
+            let inputs = PassInputs {
+                color: color.unwrap_or(0),
+                depth: depth.unwrap_or(0),
+            };
+            let drawn = view_size(&view).made(self.canvas, self.scale);
+            self.fullscreen.prepare(
+                list,
+                arena,
+                (place, pass, inputs),
+                drawn,
+                frame,
+                clock,
+                inverse,
+                made,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// True when the full-screen pass of the view at `place` runs in the compiled plan.
+    fn fullscreen_runs(&self, place: usize) -> bool {
+        let Some(plan) = self.graph.plan() else {
+            return false;
+        };
+        self.view_passes
+            .iter()
+            .filter(|&&(index, _)| usize::from(index) == place)
+            .any(|&(_, pass)| {
+                matches!(self.roles[pass.index()], Role::Fullscreen(_))
+                    && plan.step_of(pass).is_some()
+            })
     }
 
     /// The color that each unit reads, and the scene depth's texture, or 0 while no effect reads
@@ -2475,11 +2706,17 @@ impl FrameGraph {
                                     usize::from(step),
                                     ao::corner(self.canvas, self.scale, self.ao_scale),
                                 )?,
-                            Role::Effect(index) => self
-                                .effect_pass
-                                .as_ref()
-                                .expect("effects run only on the HDR path")
-                                .record(list, self.effect_units[usize::from(index)])?,
+                            Role::Effect(index) => {
+                                let unit = self.effect_units[usize::from(index)];
+                                self.effect_pass
+                                    .as_ref()
+                                    .expect("effects run only on the HDR path")
+                                    .record_with_maps(
+                                        list,
+                                        unit,
+                                        &self.effects[usize::from(unit.first)].maps,
+                                    )?;
+                            }
                             Role::Dof(step) => self
                                 .dof_pass
                                 .as_ref()
@@ -2488,6 +2725,12 @@ impl FrameGraph {
                             Role::ViewCopy(view) => {
                                 if let Some(copies) = self.view_copies.as_ref() {
                                     copies.record(list, view.index())?;
+                                }
+                            }
+                            Role::Fullscreen(view) => {
+                                let place = view.index();
+                                if let Some(pass) = self.declared_views[place].fullscreen_pass() {
+                                    self.fullscreen.record(list, place, pass)?;
                                 }
                             }
                             Role::TransmissionCopy => self.transmission.record(list)?,
@@ -2681,6 +2924,7 @@ impl FrameGraph {
         if let Some(ao) = self.ao_pass.as_mut() {
             ao.reset_gpu();
         }
+        self.fullscreen.reset_gpu();
         if let Some(effects) = self.effect_pass.as_mut() {
             effects.reset_gpu();
         }
@@ -2778,6 +3022,17 @@ fn joined(name: &str, end: &str) -> Cow<'static, str> {
     Cow::Owned(text)
 }
 
+/// The format of the targets of views other than the camera's, which materials sample: the scene
+/// color's on the HDR path, and 8-bit sRGB color on the 8-bit path, whose texels materials read
+/// back as linear color.
+fn view_target_format(scene_color: SceneColor) -> u32 {
+    if scene_color.is_hdr() {
+        scene_color.format()
+    } else {
+        format::RGBA8_UNORM_SRGB
+    }
+}
+
 /// The size that a view draws at: its target's size in texels, or the render size halved as many
 /// times as its target says.
 fn view_size(view: &View) -> Size {
@@ -2795,12 +3050,14 @@ fn optional_beyond_camera(pass: Pass, index: usize) -> Pass {
 }
 
 /// The pass of view `index`, reading the targets of other views that its objects may show: for
-/// the camera's view, the target of every view that a texture shows, and for any other view, the
-/// targets that it names.
+/// the camera's view, the target of every view that a texture shows, but a full-screen pass that
+/// reads what the camera's view draws, whose image of the frame before it shows, and for any other
+/// view, the targets that it names.
 fn reads_targets(mut pass: Pass, views: &[View], named: &[ViewPassNames], index: usize) -> Pass {
     if index == ViewId::CAMERA.index() {
         for (other, view) in views.iter().enumerate().skip(1) {
-            if !view.is_removed() && view.target().shown {
+            let after = view.fullscreen_pass().is_some_and(Fullscreen::reads_scene);
+            if !view.is_removed() && view.target().shown && !after {
                 pass = pass.reads(named[other].color.clone());
             }
         }
@@ -2883,7 +3140,7 @@ mod tests {
         });
         reflection.follow_camera(1, 1);
         frames.sync(&[View::default(), reflection, shown()]);
-        let size = |view: usize| frames.graph().pass_size(frames.opaque[view]);
+        let size = |view: usize| frames.graph().pass_size(frames.opaque[view].1);
         assert_eq!(size(1), Size::Scaled(1));
         assert_eq!(size(2), Size::Full);
         assert!(frames.occludes(ViewId::CAMERA));
@@ -2895,7 +3152,10 @@ mod tests {
         // A new share of the render size declares the passes again.
         reflection.follow_camera(2, 1);
         frames.sync(&[View::default(), reflection, shown()]);
-        assert_eq!(frames.graph().pass_size(frames.opaque[1]), Size::Scaled(2));
+        assert_eq!(
+            frames.graph().pass_size(frames.opaque[1].1),
+            Size::Scaled(2)
+        );
     }
 
     #[test]
@@ -2931,6 +3191,111 @@ mod tests {
         assert!(made(&frames).contains(&(64, 48)));
     }
 
+    /// A full-screen pass of template 70 that reads `source`, of half the render size.
+    fn fullscreen(source: PassSource, shown: bool) -> View {
+        let pass = Fullscreen {
+            template: 70,
+            source,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
+        };
+        View::fullscreen(
+            pass,
+            ViewTarget {
+                halvings: 1,
+                shown,
+                ..ViewTarget::default()
+            },
+        )
+    }
+
+    /// The step of each named pass in the plan, or `None` for a pass that does not run.
+    fn step_of(frames: &FrameGraph, name: &str) -> Option<usize> {
+        steps(frames)
+            .iter()
+            .position(|step| step.iter().any(|pass| pass == name))
+    }
+
+    #[test]
+    fn a_full_screen_pass_fills_a_share_of_the_render_size_before_the_camera_that_shows_it() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        frames.sync(&[View::default(), fullscreen(PassSource::None, true)]);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::from_thousandths(500))
+            .unwrap();
+        let pass = frames
+            .graph()
+            .find_pass("Opaque1")
+            .expect("the pass is declared");
+        assert_eq!(frames.graph().pass_kind(pass), PassKind::Fullscreen);
+        assert_eq!(frames.graph().pass_size(pass), Size::Scaled(1));
+        assert_eq!(
+            Size::Scaled(1).viewport((64, 48), RenderScale::from_thousandths(500)),
+            (16, 12)
+        );
+        // The pass's shader fills the texture that the frame made, not a share of the canvas.
+        let mut arena = UploadArena::default();
+        arena.reset(4096);
+        frames.upload_fullscreen(&mut list, &mut arena).unwrap();
+        assert_eq!(frames.fullscreen.drawn(1), Some([16.0, 12.0, 12.0, 1.0]));
+        assert!(
+            frames.graph().find_pass("Culling1").is_none(),
+            "a pass culls nothing"
+        );
+        assert!(frames.graph().find_pass("Transparent1").is_none());
+        let pass_step = step_of(&frames, "Opaque1").expect("a texture shows the pass");
+        assert!(pass_step < step_of(&frames, "Opaque").unwrap());
+        assert!(frames.view_target(ViewId::from_index(1)).is_some());
+        // A pass that nothing shows or reads does not run.
+        frames.sync(&[View::default(), fullscreen(PassSource::None, false)]);
+        frames
+            .prepare(&mut list, (64, 48), RenderScale::FULL)
+            .unwrap();
+        assert_eq!(step_of(&frames, "Opaque1"), None);
+    }
+
+    #[test]
+    fn a_full_screen_pass_that_reads_the_scene_runs_after_it_for_the_effect_that_reads_it() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
+        let views = [View::default(), fullscreen(PassSource::SceneColor, true)];
+        frames.sync(&views);
+        let mut list = DrawList::with_capacity(256);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        // Shown alone, it still runs, after the camera's passes, so a material shows the frame
+        // before; the 8-bit path's final pass takes the place of the resolve pass.
+        let pass_step = step_of(&frames, "Opaque1").expect("a shown pass runs");
+        assert!(pass_step > step_of(&frames, "Opaque").unwrap());
+        assert_eq!(step_of(&frames, "Resolve"), None);
+        assert!(step_of(&frames, "Final").is_some());
+
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+        let effect = Effect {
+            template: 64,
+            depth: false,
+            values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps {
+                views: 1 << 1,
+                ..EffectMaps::NONE
+            },
+        };
+        frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
+        frames.sync(&[View::default(), fullscreen(PassSource::SceneColor, false)]);
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
+        let pass_step = step_of(&frames, "Opaque1").expect("the effect reads the pass");
+        let effect_step = steps(&frames)
+            .iter()
+            .position(|step| step.iter().any(|pass| pass.starts_with("Effect")))
+            .expect("the effect runs");
+        assert!(step_of(&frames, "Transparent").is_none_or(|camera| camera < pass_step));
+        assert!(pass_step < effect_step);
+    }
+
     #[test]
     fn views_after_the_camera_take_their_number_in_their_names() {
         assert_eq!(view_name(0, "sceneColor", "color"), "sceneColor");
@@ -2962,6 +3327,13 @@ mod tests {
             sampler: 12,
             first_group: 30,
             blank_depth: 902,
+        },
+        fullscreen: FullscreenIds {
+            buffer: 14,
+            sampler: 14,
+            first_group: 400,
+            blank_color: 905,
+            blank_depth: 906,
         },
         dof: DofIds {
             buffer: 13,
@@ -3610,6 +3982,7 @@ mod tests {
             template,
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
         };
         let chain = [
             effect(CUSTOM, false),
@@ -3726,6 +4099,7 @@ mod tests {
             template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
         };
         frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
@@ -3830,6 +4204,7 @@ mod tests {
             template,
             depth,
             values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
         };
         let chain = [
             effect(CUSTOM, false),
@@ -3955,6 +4330,7 @@ mod tests {
             template: CUSTOM,
             depth: false,
             values: [0.0; effects::EFFECT_FLOATS],
+            maps: EffectMaps::NONE,
         };
         frames.set_effects(&[effect], &EffectJoins::default(), [0.0; 2], None);
         frames.sync(&[View::default()]);
