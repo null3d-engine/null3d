@@ -28,6 +28,7 @@ import { messageOf } from '../errors/message';
 import {
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
+	TEXTURE_OPTION_KEEP_COPIES,
 	TEXTURE_OPTION_UPLOAD_ALL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
@@ -398,7 +399,9 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
-		textures.setKeepCopies(sketch.quality.keepCopies === true);
+		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
+		// each texture's map back after the GPU is lost.
+		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
