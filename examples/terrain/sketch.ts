@@ -13,8 +13,9 @@ const SIZE = 1200;
 const BOULDERS = 900;
 
 const hash = (x: number, y: number) => {
-	const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-	return s - Math.floor(s);
+	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+	h = Math.imul(h ^ (h >>> 13), 1274126177);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 const smooth = (t: number) => t * t * (3 - 2 * t);
 

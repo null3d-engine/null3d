@@ -65,7 +65,7 @@ export default defineSketch((ctx) => {
 
 ## How it works
 
-`createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a `Float32Array` height map. Later reads, such as `heightAt`, take the bilinear interpolation of the four samples around the point.
+`createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a height map held as a `Float32Array`. Later reads, such as `heightAt`, interpolate between the four samples around the point.
 
 The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four when the camera comes within a distance of its edge, so the ground near the camera takes the finest level. `maxLevel` sets that finest level, and `split` sets the distance at which a block splits. The default `maxLevel` of 6 over a 1,200 meter ground puts the camera's own block at about a meter of detail.
 
