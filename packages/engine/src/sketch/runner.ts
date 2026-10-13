@@ -358,9 +358,11 @@ export class SketchRunner {
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
-			// The page ends the job workers' loops through these words when the engine stops.
+			// The page ends the job workers' loops through these words when the engine stops, and
+			// lets them run the browser's measurement of its memory through the yield word.
 			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
 			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
+			Atomics.store(slots, Slot.JobsYieldAddress, glue.jobsYieldAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
