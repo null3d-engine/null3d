@@ -26,6 +26,7 @@ use null3d_core::bvh::rows::{QueryCamera, RowQuery};
 use null3d_core::bvh::scene::Source;
 use null3d_core::bvh::top::WorldRay;
 use null3d_core::error::CoreError;
+use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
@@ -81,9 +82,9 @@ pub mod constants;
 mod heap;
 
 use constants::{
-    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, camera_target,
-    debug_line_field, map_slot, mesh_arrays, morph_arrays, play_arg, play_flag, query, ring_field,
-    scene_field, shading, texture_option, texture_stat,
+    CLIP_PENDING, animation_field, animation_problem, arrays_problem, batch_field, call_value,
+    camera_target, debug_line_field, map_slot, mesh_arrays, morph_arrays, play_arg, play_flag,
+    query, ring_field, scene_field, shading, texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -182,10 +183,15 @@ struct Engine {
     /// The numbers of the next play of a clip or a blend (`constants::play_arg`), which
     /// TypeScript writes.
     play_args: [f32; play_arg::COUNT],
+    /// The numbers of the next setter call (`constants::call_value`), which TypeScript writes.
+    call_values: [f64; call_value::COUNT as usize],
     /// The debug lines of the next frame, which only development builds of the engine write.
     lines: LineStore,
     /// Skeletons, clips and animated instances, from the first `initAnimations` on.
     animations: Option<Animations>,
+    /// Matrix buffers that a growth of the animation table replaced, each with the frame from
+    /// which no frame's draw list reads them.
+    retired_matrices: Vec<(u32, [Box<[f32]>; 2])>,
     /// The morph weights of morphed objects, which TypeScript writes.
     morphs: MorphWeights,
     /// The ids of meshes that `destroyMeshes` removed, counting from 1, which the next frame
@@ -252,6 +258,11 @@ const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
 };
 
 impl Engine {
+    /// The first `N` numbers of the next setter call, as 32-bit floats.
+    fn call_values<const N: usize>(&self) -> [f32; N] {
+        std::array::from_fn(|k| self.call_values[k] as f32)
+    }
+
     /// The post-processing value at `place` (`constants::post_value`).
     fn post_value(&self, place: u32) -> f32 {
         self.post_values[place as usize]
@@ -558,8 +569,10 @@ pub fn init_engine(
         world_matrix: [0.0; 12],
         staging: Vec::new(),
         play_args: [0.0; play_arg::COUNT],
+        call_values: [0.0; call_value::COUNT as usize],
         lines: LineStore::default(),
         animations: None,
+        retired_matrices: Vec::new(),
         morphs: MorphWeights::new(),
         removed_meshes: Vec::new(),
         clip_jobs: Vec::new(),
@@ -924,6 +937,12 @@ pub fn world_matrix_address() -> u32 {
     value_with_engine(|e| Ok(address(&e.world_matrix)))
 }
 
+/// The address of the numbers of the next setter call (`constants::call_value`): 64-bit floats.
+#[wasm_bindgen(js_name = callValues)]
+pub fn call_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.call_values)))
+}
+
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in
 /// records, or the address of the write index TypeScript advances or of the read index the core
 /// advances.
@@ -952,6 +971,10 @@ pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
         e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         grow_ahead(e);
+        if !e.retired_matrices.is_empty() {
+            e.retired_matrices
+                .retain(|(free_at, _)| frame_after(*free_at, frame));
+        }
         e.structure_changed |= e.scene.take_structure_changed();
         if !e.removed_meshes.is_empty() {
             release_mesh_ids(e);
@@ -1291,16 +1314,19 @@ pub fn create_line_batch(
     })
 }
 
-/// Sets the width of a line batch's segments: CSS pixels, or world units for a batch made with
-/// world units. Every segment updates and uploads again.
+/// Sets the width of a line batch's segments to the first call value: CSS pixels, or world units
+/// for a batch made with world units. Every segment updates and uploads again.
 #[wasm_bindgen(js_name = setLineWidth)]
-pub fn set_line_width(batch: u32, width: f32) -> u32 {
-    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
-        Ok(batch) => {
-            batch.set_line_width(width);
-            0
+pub fn set_line_width(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [width] = e.call_values();
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_line_width(width);
+                0
+            }
+            Err(error) => core_failure(error),
         }
-        Err(error) => core_failure(error),
     })
 }
 
@@ -1461,16 +1487,19 @@ pub fn set_batch_shadows(batch: u32, bits: u32) -> u32 {
     })
 }
 
-/// Places a batch's origin, which its rows' positions are relative to, in 64-bit floats, and marks
-/// every row for update.
+/// Places a batch's origin, which its rows' positions are relative to, at the first three call
+/// values in 64-bit floats, and marks every row for update.
 #[wasm_bindgen(js_name = setBatchOrigin)]
-pub fn set_batch_origin(batch: u32, x: f64, y: f64, z: f64) -> u32 {
-    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
-        Ok(batch) => {
-            batch.set_origin([x, y, z]);
-            0
+pub fn set_batch_origin(batch: u32) -> u32 {
+    with_engine(|e| {
+        let [x, y, z, ..] = e.call_values;
+        match e.batches.get_mut(Handle::from_raw(batch)) {
+            Ok(batch) => {
+                batch.set_origin([x, y, z]);
+                0
+            }
+            Err(error) => core_failure(error),
         }
-        Err(error) => core_failure(error),
     })
 }
 
@@ -2088,14 +2117,14 @@ pub fn destroy_material(material: u32) -> u32 {
 }
 
 /// Changes one value of a material, by the float where the value starts in the material's row
-/// (`constants::material_param`), and keeps the others. The value takes as many of `x`, `y` and
-/// `z` as it has floats. Colors are linear.
+/// (`constants::material_param`), and keeps the others. The value takes as many of the first three
+/// call values as it has floats. Colors are linear.
 #[wasm_bindgen(js_name = setMaterialValue)]
-pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> u32 {
+pub fn set_material_value(material: u32, param: u32) -> u32 {
     with_engine(|e| {
+        let values: [f32; 3] = e.call_values();
         let table = e.renderer.settings_mut().materials_mut();
         let at = param as usize;
-        let values = [x, y, z];
         let width = materials::param::width(at).unwrap_or(0);
         match table.set(material.wrapping_sub(1), at, &values[..width]) {
             Ok(()) => 0,
@@ -2104,22 +2133,14 @@ pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> 
     })
 }
 
-/// Changes `count` custom values of a material, 1 to 4 of `x`, `y`, `z` and `w`, from float `at`
-/// of its row of custom values, and keeps the others: a custom material's uniform, as the shader
+/// Changes `count` custom values of a material, the first 1 to 4 call values, from float `at` of
+/// its row of custom values, and keeps the others: a custom material's uniform, as the shader
 /// compiler placed it.
 #[wasm_bindgen(js_name = setMaterialValues)]
-pub fn set_material_values(
-    material: u32,
-    at: u32,
-    count: u32,
-    x: f32,
-    y: f32,
-    z: f32,
-    w: f32,
-) -> u32 {
+pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
     with_engine(|e| {
+        let values: [f32; 4] = e.call_values();
         let table = e.renderer.settings_mut().materials_mut();
-        let values = [x, y, z, w];
         let width = (count as usize).min(values.len());
         match table.set_values(material.wrapping_sub(1), at as usize, &values[..width]) {
             Ok(()) => 0,
@@ -2528,63 +2549,58 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 
 // --- Camera, lights and background ---
 
-/// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
-/// objects whose layer masks share a bit with `layers`. With `target` the shadows' camera
-/// (`constants::camera_target`), the camera fits the main directional light's cascades instead.
+/// Draws from this camera object with a perspective lens, the objects whose layer masks share a
+/// bit with `layers`. The call values give the vertical field of view in degrees, the near
+/// distance and the far distance. With `target` the shadows' camera (`constants::camera_target`),
+/// the camera fits the main directional light's cascades instead.
 #[wasm_bindgen(js_name = setPerspectiveCamera)]
-pub fn set_perspective_camera(
-    camera: u32,
-    fov_degrees: f32,
-    near: f32,
-    far: f32,
-    layers: u32,
-    target: u32,
-) -> u32 {
+pub fn set_perspective_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        Lens::Perspective(Perspective {
-            fov_degrees,
-            near,
-            far,
-        }),
+        |[fov_degrees, near, far]| {
+            Lens::Perspective(Perspective {
+                fov_degrees,
+                near,
+                far,
+            })
+        },
         layers,
         target,
     )
 }
 
-/// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
-/// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
-/// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
-/// `layers`. With `target` the shadows' camera, it fits the main directional light's cascades.
+/// Draws from this camera object with an orthographic lens. The call values give the view's height
+/// and width, with a width of 0 following the canvas's aspect ratio, how far right of and above
+/// the camera's axis it is centered, and the near and far distances. It draws the objects whose
+/// layer masks share a bit with `layers`. With `target` the shadows' camera, it fits the main
+/// directional light's cascades.
 #[wasm_bindgen(js_name = setOrthographicCamera)]
-#[allow(clippy::too_many_arguments)]
-pub fn set_orthographic_camera(
-    camera: u32,
-    height: f32,
-    width: f32,
-    center_x: f32,
-    center_y: f32,
-    near: f32,
-    far: f32,
-    layers: u32,
-    target: u32,
-) -> u32 {
+pub fn set_orthographic_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        Lens::Orthographic(Orthographic {
-            height,
-            width: (width > 0.0).then_some(width),
-            center: [center_x, center_y],
-            near,
-            far,
-        }),
+        |[height, width, center_x, center_y, near, far]| {
+            Lens::Orthographic(Orthographic {
+                height,
+                width: (width > 0.0).then_some(width),
+                center: [center_x, center_y],
+                near,
+                far,
+            })
+        },
         layers,
         target,
     )
 }
 
-fn set_camera(camera: u32, lens: Lens, layers: u32, target: u32) -> u32 {
+/// Gives a camera the lens that `lens` makes of the first `N` call values.
+fn set_camera<const N: usize>(
+    camera: u32,
+    lens: impl FnOnce([f32; N]) -> Lens,
+    layers: u32,
+    target: u32,
+) -> u32 {
     with_engine(|e| {
+        let lens = lens(e.call_values());
         let settings = e.renderer.settings_mut();
         let camera = Handle::from_raw(camera);
         if target == camera_target::SHADOWS {
@@ -2807,12 +2823,14 @@ fn add_view_of(
     })
 }
 
-/// Sets the share of the render size each way, 1, 0.5 or 0.25, that the targets of reflection
+/// Sets the share of the render size each way, the first call value of 1, 0.5 or 0.25, that the
+/// targets of reflection
 /// passes without a scale of their own take, from the next frame on: the quality preset's
 /// reflection scale.
 #[wasm_bindgen(js_name = setReflectionScale)]
-pub fn set_reflection_scale(scale: f32) -> u32 {
+pub fn set_reflection_scale() -> u32 {
     with_engine(|e| {
+        let [scale] = e.call_values();
         e.renderer
             .settings_mut()
             .set_mirror_halvings(halvings_of(scale));
@@ -2952,51 +2970,56 @@ pub fn destroy_light(light: u32) -> u32 {
     with_engine(|e| e.lights.destroy(light).map_or_else(core_failure, |()| 0))
 }
 
-/// Sets one of a light's linear colors.
+/// Sets one of a light's linear colors to the first three call values.
 #[wasm_bindgen(js_name = setLightColor)]
-pub fn set_light_color(light: u32, which: u32, r: f32, g: f32, b: f32) -> u32 {
+pub fn set_light_color(light: u32, which: u32) -> u32 {
     with_engine(|e| {
+        let rgb = e.call_values();
         e.lights
-            .set_color(light, which, [r, g, b])
+            .set_color(light, which, rgb)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// Sets one of a light's numbers.
+/// Sets one of a light's numbers to the first call value.
 #[wasm_bindgen(js_name = setLightValue)]
-pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
+pub fn set_light_value(light: u32, which: u32) -> u32 {
     with_engine(|e| {
+        let [value] = e.call_values();
         e.lights
             .set_value(light, which, value)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// Sets the number that each light created from now on starts with, such as the shadow cascades
-/// of the quality preset.
+/// Sets the number that each light created from now on starts with to the first call value, such
+/// as the shadow cascades of the quality preset.
 #[wasm_bindgen(js_name = setLightDefault)]
-pub fn set_light_default(which: u32, value: f32) -> u32 {
+pub fn set_light_default(which: u32) -> u32 {
     with_engine(|e| {
+        let [value] = e.call_values();
         e.lights
             .set_default(which, value)
             .map_or_else(core_failure, |()| 0)
     })
 }
 
-/// The linear background color.
+/// The linear background color: the first three call values.
 #[wasm_bindgen(js_name = setBackground)]
-pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
+pub fn set_background() -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_background([r, g, b]);
+        let rgb = e.call_values();
+        e.renderer.settings_mut().set_background(rgb);
         0
     })
 }
 
-/// The device pixels per CSS pixel that the canvas draws with, which sizes sprites given in pixels
-/// of the screen.
+/// The device pixels per CSS pixel that the canvas draws with, the first call value, which sizes
+/// sprites given in pixels of the screen.
 #[wasm_bindgen(js_name = setPixelRatio)]
-pub fn set_pixel_ratio(ratio: f32) -> u32 {
+pub fn set_pixel_ratio() -> u32 {
     with_engine(|e| {
+        let [ratio] = e.call_values();
         e.renderer.settings_mut().set_pixel_ratio(ratio);
         0
     })
@@ -3076,13 +3099,14 @@ pub fn set_mesh_levels(base: u32, count: u32, fades: bool) -> u32 {
     })
 }
 
-/// How objects and batches pick their meshes' levels of detail, from the next frame on: the error
-/// in pixels under which a coarser level draws, 0 for none, what shadow views multiply it by, and
-/// whether two levels hand over in a fading band. Turning the bands on or off rebuilds the draw
-/// tables.
+/// How objects and batches pick their meshes' levels of detail, from the next frame on. The call
+/// values give the error in pixels under which a coarser level draws, 0 for none, and what shadow
+/// views multiply it by. `fades` says whether two levels hand over in a fading band. Turning the
+/// bands on or off rebuilds the draw tables.
 #[wasm_bindgen(js_name = setLevelQuality)]
-pub fn set_level_quality(threshold: f32, shadow_factor: f32, fades: bool) -> u32 {
+pub fn set_level_quality(fades: bool) -> u32 {
     with_engine(|e| {
+        let [threshold, shadow_factor] = e.call_values();
         let quality = LevelQuality {
             threshold,
             shadow_factor,
@@ -3097,11 +3121,12 @@ pub fn set_level_quality(threshold: f32, shadow_factor: f32, fades: bool) -> u32
 
 /// The shadow settings that the quality settings give every light: the texels on each side of the
 /// shadow filter, how many frames pass between two draws of a far cascade, whether a far cascade
-/// draws in every frame while a moving caster touches it, and the share of each cascade's length
-/// over which it blends into the next. The TypeScript API checks them.
+/// draws in every frame while a moving caster touches it, and, as the first call value, the share
+/// of each cascade's length over which it blends into the next. The TypeScript API checks them.
 #[wasm_bindgen(js_name = setShadowQuality)]
-pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool, blend: f32) -> u32 {
+pub fn set_shadow_quality(filter: u32, far_interval: u32, follow_movers: bool) -> u32 {
     with_engine(|e| {
+        let [blend] = e.call_values();
         let quality = ShadowQuality {
             filter,
             far_interval,
@@ -3552,34 +3577,14 @@ pub fn set_debug_view(view: u32) -> u32 {
     })
 }
 
-/// The scene's fog: its curve (`constants::fog_curve`), or no fog, its linear color, the density of
-/// exponential and exponential squared fog, the near and far distances of linear fog, the height
-/// where the fog has that density, its height falloff, its sun glow and the glow's exponent.
+/// The scene's fog: its curve (`constants::fog_curve`), or no fog. The call values give its linear
+/// color, the density of exponential and exponential squared fog, the near and far distances of
+/// linear fog, the height where the fog has that density, its height falloff, its sun glow and the
+/// glow's exponent.
 #[wasm_bindgen(js_name = setFog)]
-#[allow(clippy::too_many_arguments)]
-pub fn set_fog(
-    curve: u32,
-    r: f32,
-    g: f32,
-    b: f32,
-    density: f32,
-    near: f32,
-    far: f32,
-    height: f32,
-    height_falloff: f32,
-    sun_glow: f32,
-    sun_exponent: f32,
-) -> u32 {
+pub fn set_fog(curve: u32) -> u32 {
     with_engine(|e| {
-        let values = [
-            density,
-            near,
-            far,
-            height,
-            height_falloff,
-            sun_glow,
-            sun_exponent,
-        ];
+        let [r, g, b, values @ ..]: [f32; 10] = e.call_values();
         let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0
@@ -3858,14 +3863,43 @@ pub fn destroy_skeleton(skeleton: u32) -> u32 {
 /// id plus one.
 #[wasm_bindgen(js_name = createAnimatedInstance)]
 pub fn create_animated_instance(skeleton: u32, object: u32) -> u32 {
-    with_animations(|animations, _| {
+    value_with_engine(|e| {
+        let Some(animations) = e.animations.as_mut() else {
+            return Err(fail(codes::NOT_READY, [2, 0]));
+        };
+        let skeleton = skeleton.wrapping_sub(1);
+        // A full table doubles what it lacks, up to the joints that the joint texture holds. The
+        // old matrix buffers stay until no frame that a thread may still replay reads them.
+        if let Some((instances, joints)) =
+            animations.growth_for(skeleton, skinning::MAX_TABLE_JOINTS)
+        {
+            e.retired_matrices
+                .try_reserve(1)
+                .map_err(|_| out_of_memory(size_of::<(u32, [Box<[f32]>; 2])>() as u64))?;
+            let old = animations
+                .try_grow(instances, joints)
+                .map_err(animation_failure)?;
+            let free_at = next_frame(next_frame(e.scene.frame()));
+            e.retired_matrices.push((free_at, old));
+        }
         let instance = animations
-            .add_instance(skeleton.wrapping_sub(1))
+            .add_instance(skeleton)
             .map_err(animation_failure)?;
         animations
             .set_object(instance, object)
             .map_err(animation_failure)?;
         Ok(instance + 1)
+    })
+}
+
+/// The most animated instances that the animation table holds now, or 0 before it exists. The
+/// table grows as instances need it, which moves its arrays.
+#[wasm_bindgen(js_name = animationCapacity)]
+pub fn animation_capacity() -> u32 {
+    value_with_engine(|e| {
+        Ok(e.animations
+            .as_ref()
+            .map_or(0, Animations::instance_capacity))
     })
 }
 
@@ -3993,14 +4027,14 @@ pub fn animator_play_blend(instance: u32, count: u32, layer: u32, flags: u32) ->
     })
 }
 
-/// Stops clip `clip` on instance `instance`, or every clip when `clip` is 0, fading out over
-/// `fade` seconds.
+/// Stops clip `clip` on instance `instance`, or every clip when `clip` is 0, fading out over the
+/// seconds of the next play's fade (`PLAY_ARGS`).
 #[wasm_bindgen(js_name = animatorStop)]
-pub fn animator_stop(instance: u32, clip: u32, fade: f32) -> u32 {
-    with_animations(|animations, _| {
+pub fn animator_stop(instance: u32, clip: u32) -> u32 {
+    with_play_args(|animations, _, args| {
         let clip = clip.checked_sub(1);
         animations
-            .stop(instance.wrapping_sub(1), clip, fade)
+            .stop(instance.wrapping_sub(1), clip, args[play_arg::FADE])
             .map_err(animation_failure)?;
         Ok(0)
     })
