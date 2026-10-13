@@ -437,6 +437,7 @@ export const ANIMATION_PLAY_TIME = 4;
 export const ANIMATION_PLAY_WEIGHT = 8;
 export const ANIMATION_PLAY_JOIN = 16;
 export const ANIMATION_PLAY_VALUE = 32;
+export const ANIMATION_PLAY_INERTIAL = 64;
 export const ANIMATION_NO_SOURCE = 4294967295;
 export const ANIMATION_ARG_FADE = 0;
 export const ANIMATION_ARG_SPEED = 1;
