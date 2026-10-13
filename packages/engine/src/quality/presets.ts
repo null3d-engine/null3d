@@ -399,10 +399,10 @@ export interface QualitySettings {
 	followMovingCasters: boolean;
 	/**
 	 * How often a far character's pose updates: once in this many frames, from 1 to 4. Give it to
-	 * `animator.setUpdateInterval` for the characters that the camera sees from far, and 1 for
-	 * those near it, so a crowd samples and skins less without a near character stepping. The
-	 * governor raises it when frames take too long, after every other live step, so it is the last
-	 * thing to give way and the first to come back. It changes during play.
+	 * `animator.setUpdateInterval` for the characters that the camera sees from far. Give 1 to the
+	 * ones near it, so a crowd samples and skins less without a near character stepping. The
+	 * governor raises it when frames take too long, after every other live step. It is then the
+	 * last thing to give way and the first to come back. It changes during play.
 	 */
 	farAnimationInterval: number;
 	/**
