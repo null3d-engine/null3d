@@ -64,10 +64,10 @@ export default defineSketch(async (ctx) => {
 		{ intensity: day.skyIntensity },
 	);
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.8 });
-	scene.setFog({ color: [0.5, 0.36, 0.3], density: 0.0007, sunGlow: day.fog.sunGlow });
+	scene.setFog({ color: [0.55, 0.42, 0.35], density: 0.0005, sunGlow: day.fog.sunGlow });
 	post.set({
-		exposure: day.exposure * 1.15,
-		bloom: { intensity: 0.18, threshold: 1 },
+		exposure: day.exposure,
+		bloom: { intensity: 0.12, threshold: 1 },
 		vignette: {},
 	});
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 320 } });
@@ -119,10 +119,10 @@ export default defineSketch(async (ctx) => {
 			// A slow circle over the valley, looking down its length toward the low sun.
 			if (!view.userCamera) {
 				const t = time.now * 0.05;
-				const [x, z] = [Math.sin(t) * 250, Math.cos(t) * 250];
-				const [ax, az] = [Math.sin(t + 0.7) * 320, Math.cos(t + 0.7) * 320];
-				camera.setPosition(x, ground(x, z) + 42, z);
-				camera.lookAt(ax, ground(ax, az) + 6, az);
+				const [x, z] = [Math.sin(t) * 230, Math.cos(t) * 230];
+				const [ax, az] = [Math.sin(t + 0.55) * 330, Math.cos(t + 0.55) * 330];
+				camera.setPosition(x, ground(x, z) + 32, z);
+				camera.lookAt(ax, ground(ax, az) + 3, az);
 			}
 			camera.getWorldPosition(eye);
 			terrain.update(eye[0] as number, eye[2] as number);
