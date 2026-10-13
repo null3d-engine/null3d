@@ -502,11 +502,11 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is ACES, while three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
+`toneMapping`, `exposure`, `bloom`, `ao`, `dof`, `outline`, `lut` and `vignette` are built. Screen-space reflections, lit fog and still-camera accumulation are (0.2, not built yet). Contact shadows are a directional light's shadow option, `contactDistance`, not a post effect. The default tone mapping is `'agx-punchy'`, AgX with more contrast and color; use `'neutral'` for product views. three.js defaults to none. Ambient occlusion draws where the quality setting `aoScale` is above 0: on High and Ultra, or after `quality.set({ aoScale: 0.5 })` on phones and tablets. Depth of field draws where `dofSamples` is above 0: from Medium up, or after `quality.set({ dofSamples: 16 })` on Low.
 
 ```ts
 post.set({
-  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
+  toneMapping: 'agx-punchy', // the default | 'agx' | 'neutral' | 'aces' | 'none'
   exposure: 1,
   ev100: 15,                // (0.2) camera exposure for lights in real units; false turns it off
   bloom: { intensity: 0.2, threshold: 1 },  // (0.2) knee, blend ('mix' | 'add' | 'screen') and weights too; false turns it off
