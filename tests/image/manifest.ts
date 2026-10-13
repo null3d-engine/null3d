@@ -1915,6 +1915,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [SPRITE_IMAGE.width, SPRITE_IMAGE.height],
 	},
+	// Particles of the particles add-on: soft dots that bounce, smoke from a flipbook made in code,
+	// sparks along their velocity, and tumbling leaves, each moved by the GPU in closed form.
+	{
+		name: 'particles',
+		sketch: 'tests/pages/sketches/particles-sketch.ts',
+		hold: 2,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.

@@ -116,6 +116,16 @@ export type {
 } from './scene/lines';
 export type { Lut, LutData, LutDomain } from './scene/lut';
 export type {
+	ParticleBuffer,
+	ParticleBufferOptions,
+	ParticleFacing,
+	ParticleFlipbook,
+	ParticleGroundMode,
+	ParticleLook,
+	ParticleMotion,
+	ParticleValues,
+} from './scene/particles';
+export type {
 	ObjectEventHandler,
 	ObjectEventType,
 	ObjectPointerEvent,
