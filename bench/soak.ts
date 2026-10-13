@@ -16,7 +16,9 @@
 //   bun run bench:soak --scene s5 --gpu webgl2
 //   bun run bench:soak --scene s6
 import { parseArgs } from 'node:util';
-import { chromium, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { launchChromium } from '../packages/cli/src/browser.js';
+import { refuseBackgroundPriority } from '../tests/lib/app-window.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
@@ -194,8 +196,9 @@ function measureEnd(page: Page): Promise<{ frames: number; presentedFps: number 
 
 async function main(): Promise<void> {
 	const options = readOptions(process.argv.slice(2));
+	refuseBackgroundPriority();
 	const server = await serveBenchPages({ dev: options.dev });
-	const browser = await chromium.launch({
+	const browser = await launchChromium({
 		channel: 'chrome',
 		args: [`--remote-debugging-port=${DEBUG_PORT}`],
 	});

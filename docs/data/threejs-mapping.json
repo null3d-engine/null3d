@@ -76,8 +76,8 @@
       "three": "renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Custom, Linear) / toneMappingExposure",
       "status": "changed",
       "since": "0.1",
-      "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none' | curveWgsl, exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
+      "target": "post.set({ toneMapping: 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none' | curveWgsl, exposure })",
+      "notes": "The engine default is \"agx-punchy\", AgX with Filament's punchy look; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". A port keeps the curve it set: AgXToneMapping becomes \"agx\" and ACESFilmicToneMapping \"aces\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Copy toneMappingExposure to exposure unchanged: null3D multiplies it into each light rather than into the finished picture, which gives the same image, and bloom's threshold keeps its meaning. A scene in real units sets ev100 instead, and exposure then acts as exposure compensation. Reinhard, Cineon and CustomToneMapping become a custom tone curve: post.set({ toneMapping: wgsl }), where the WGSL declares fn toneCurve(color: vec3f) -> vec3f. Leave out the curve's multiply by toneMappingExposure, because the color arrives exposed.",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -165,7 +165,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const pass = render.addPass({ kind: 'scene', camera, writes: 'myTexture', size: [width, height] }); materials.unlit({ map: textures.fromPass(pass) })",
-      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw point and spot lights, but no ambient occlusion and no sky in this version, and a light that only a pass sees casts no shadow there.",
+      "notes": "Passes are declared, not called: the render graph orders them, runs them only while a texture shows them, and plans their memory. The texture holds linear color after the exposure, upright with v = 0 at the bottom as three.js's render target texture. A pass never draws objects that show its own texture. Scene passes draw point and spot lights and the scene's background, unless a clearColor replaces it, and no ambient occlusion, as three.js's render targets draw none. A light that only a pass sees casts no shadow there. A render target the size of the canvas or a share of it takes scale: 1, 0.5 or 0.25 in place of size, and follows the render size. A render target that a ShaderPass fills becomes a full-screen pass: render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale, textures }).",
       "docs": "guides/custom-passes",
       "detect": "\\b(WebGL)?RenderTarget\\b|\\.setRenderTarget\\s*\\("
     },
@@ -561,7 +561,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, which casts the shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -770,7 +770,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform. Roughness has three.js r187's floor of 0.045. Highlights on small curved shapes widen by Filament's specular anti-aliasing, where three.js adds its own term, so they are a little brighter and narrower there. A normal map that tilts a reflection below the surface fades the environment's reflection, which three.js does not.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
@@ -1573,7 +1573,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true)",
-      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. One outline style covers every outlined object.",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. edgeStrength has no setting, as the line is opaque. edgeGlow, pulsePeriod, the pattern texture and pmndrs blur and pulseSpeed have no setting: the line stays crisp. To pulse it, change its color or width every frame. For OutlinePass's soft glow, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow). One outline style covers every outlined object.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },
@@ -1594,8 +1594,8 @@
       "three": "ShaderPass (custom full-screen GLSL)",
       "status": "manual",
       "since": "0.2",
-      "target": "post.addEffect({ wgsl, uniforms, order })",
-      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). The engine joins effects that read only their own pixel into one pass. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters.",
+      "target": "post.addEffect({ wgsl, uniforms, textures, order }), or render.addPass({ kind: 'fullscreen', wgsl, writes, size or scale }) for a pass that writes a render target of its own",
+      "notes": "Rewrite the fragment shader in WGSL as fn effect(input: EffectInput) -> vec4f. texture2D(tDiffuse, vUv) becomes effectColor(input.uv), and pass.uniforms.x.value = v becomes post.setEffectUniform(effect, 'x', v). The engine joins effects that read only their own pixel into one pass. Effects run on linear HDR color before the tone curve. A ShaderPass after OutputPass sees display color, so retune its numbers. The uv's y axis is flipped: replace vUv.y with 1.0 - input.uv.y where direction matters. Other textures of the shader become var name: texture_2d<f32> with the textures option; sample a render pass's texture at effectPassUv(input.uv). A ShaderPass that writes a render target of its own, which a later pass reads, becomes a full-screen pass, with its input image as input: 'sceneColor', or a texture.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bShaderPass\\b"
     },
@@ -1606,7 +1606,7 @@
       "status": "manual",
       "since": "0.2",
       "target": "A custom effect for each, with post.addEffect",
-      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. Effects take no textures, so GlitchPass's random texture becomes noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
+      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. GlitchPass's random texture becomes a texture of the effect, from textures.fromData, or noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\b(Film|Glitch|Halftone|Afterimage|DotScreen|RenderPixelated|Bleach|Sobel)(Pass|Shader)\\b"
     },
@@ -1628,7 +1628,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ vignette: { intensity, size, falloff, roundness } })",
-      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; the default falloff of 2 and roundness of 0 give a close match. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
+      "notes": "null3D's vignette multiplies HDR color before the tone mapping, so bright corners darken instead of turning gray. VignetteShader's offset becomes size and darkness becomes intensity; under ACES the default falloff of 2 and roundness of 0 give a close match, and under AgX intensity stays at 1 or less with a falloff of 3. With darkness below 1, three.js also lifts dark corners toward a gray, and null3D does not. The postprocessing library's VignetteEffect maps the same way with its ESKIL technique; its default technique darkens with another curve, so tune intensity and size by eye.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bVignette(Shader|Effect)\\b"
     },
@@ -1719,6 +1719,17 @@
       "notes": "Segments between points drawn in one batch as quads with round ends, as Line2 draws them, at any width on every backend. mode 'strip', 'loop' or 'segments' replaces Line, LineLoop and LineSegments, and width replaces linewidth, in CSS pixels or with worldUnits. A one-pixel Line ports as width 1. Point colors are linear RGB, stored at 8 bits per channel. dashed and the dash values replace LineDashedMaterial and computeLineDistances. The call is async, because the first one downloads the line code. lit: true shades lines with the scene's lights. Raycasts hit a segment within half its width, as Line2 does, in pixels through the active camera or in world units. The lineThreshold option gives Raycaster.params.Line.threshold's test instead, as for Line. maxDistance limits line hits too, though three.js's Line2 ignores raycaster.far. lines.on('click', fn) takes pointer events, and the event's instance is the segment.",
       "docs": "api/lines",
       "detect": "new\\s+(THREE\\.)?(Line|LineSegments|LineLoop|Line2|LineSegments2)\\s*\\(|\\bLine(Basic|Dashed)?Material\\b|\\bLineGeometry\\b"
+    },
+    {
+      "id": "particles",
+      "category": "Sprites, points, lines and labels",
+      "three": "Points or InstancedMesh particles moved on the CPU / three.quarks ParticleSystem / three-nebula",
+      "status": "changed",
+      "since": "0.2",
+      "target": "await createParticles(ctx, { rate, bursts, lifetime, shape, speed, gravity, drag, wind, turbulence, size, colors, alphaOverLife, blending, map, flipbook }) from @null3d/particles; system.update() in onLateUpdate",
+      "notes": "three.js has no particle system. A port replaces the loop that moves Points or InstancedMesh rows with an emitter whose particles the GPU moves in closed form: gravity, drag toward the wind, turbulence and a ground that bounces them. Write the effect's look as curves over life in place of per-frame color and size code. AdditiveBlending becomes blending 'additive'; particles never write depth. A sprite atlas becomes map with flipbook. three.quarks's sub-emitters become subEmitters on 'death' or 'ground'. A system does not sort its own particles, cast shadows or take light.",
+      "docs": "api/particles",
+      "detect": "\\b(ParticleSystem|BatchedRenderer|ParticleEmitter)\\b|three\\.quarks|three-nebula"
     },
     {
       "id": "css-renderers",

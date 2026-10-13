@@ -25,11 +25,12 @@ export default defineSketch(({ post }) => {
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| `toneMapping` | `'aces'`, `'agx'`, `'neutral'`, `'none'`, or a custom tone curve's WGSL | `'aces'` |
+| `toneMapping` | `'agx-punchy'`, `'agx'`, `'neutral'`, `'aces'`, `'none'`, or a custom tone curve's WGSL | `'agx-punchy'` |
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
-- The curves use three.js's formulas: `'aces'` for `ACESFilmicToneMapping`, `'agx'` for `AgXToneMapping` and `'neutral'` for `NeutralToneMapping`.
+- The curves use three.js's formulas: `'agx'` for `AgXToneMapping`, `'neutral'` for `NeutralToneMapping` and `'aces'` for `ACESFilmicToneMapping`. `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color. three.js has no such curve.
+- `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
 - `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
 - three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
 - A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one.
@@ -209,6 +210,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 - The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
 - A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
+- A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow such as `OutlinePass` draws ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
 
@@ -254,10 +256,10 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 
 - The vignette multiplies each pixel's light before the tone mapping, as Filament, Unity's URP, Bevy and Babylon.js do. Bright corners darken as dark corners do.
 - At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
-- three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`, and the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
+- three.js's `VignetteShader` blends display color toward a gray instead. A port sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the vignette multiplies the linear value of each pixel's display color. They cost the final pass a few operations per pixel, and the table one texture read. On a device that resolves its multisampled picture straight into the canvas, they make the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping, and a plain background color then draws as a background so the vignette darkens it too. The table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
@@ -284,6 +286,7 @@ post.removeEffect(effect);
 | --- | --- | --- |
 | `wgsl` | WGSL that the null3D Vite plugin compiled, which declares `fn effect(input: EffectInput) -> vec4f` | Required |
 | `uniforms` | The first value of each field of the WGSL's `struct Uniforms`, by name | 0 for each field |
+| `textures` | The texture of each `var name: texture_2d<f32>;` that the WGSL declares, by name: a texture from a file or data, or a render pass's texture from `textures.fromPass` | None: white |
 | `order` | A number. Effects run from the lowest order to the highest. | 0 |
 
 A custom tone curve takes the place of the built-in curves:
@@ -300,6 +303,7 @@ post.set({ toneMapping: reinhard });
 
 - Effects run on linear HDR color, after the exposure and before bloom and the tone curve. At most 8 run at once. The engine joins effects that read only their own pixel into fewer passes ([Custom passes](../guides/custom-passes.md#cost)).
 - `setEffectUniform` allocates nothing, so a sketch can call it every frame. Keep a vector's values in one array that the sketch changes in place.
+- An effect samples a texture as `textureSampleLevel(name, nameSampler, uv, 0.0)`. A render pass's texture holds its bottom row first: sample it at `effectPassUv(input.uv)`. The textures are fixed when the effect is added, and an effect with textures draws in a pass of its own.
 - Effects and custom curves need HDR color. On a device without it they stay off, and development builds warn once.
 - [Custom passes](../guides/custom-passes.md) lists what an effect reads, and what effects cost.
 

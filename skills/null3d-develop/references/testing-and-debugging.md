@@ -110,8 +110,8 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
-| `?skinning=vertex` | On WebGPU, skin in the vertex shader of each pass instead of once per frame in a compute pass, to compare GPU time (`api/animation`) |
-| `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
+| `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass, to compare GPU time (`api/animation`) |
+| `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?target-fps=display`, `?target-fps=90` | (0.2) Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |

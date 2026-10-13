@@ -10,7 +10,7 @@
 // module the engine's geometry and materials, and the checks of later calls.
 
 import * as C from '../generated/core';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type {
 	ObjectEventHandler,
 	ObjectEventType,
@@ -273,6 +273,9 @@ interface LinePoints {
 	colors: Float32Array;
 }
 
+/** The point arrays of a line batch that dropped its views, until its next read makes them again. */
+const NO_POINTS: LinePoints = { positions: new Float32Array(0), colors: new Float32Array(0) };
+
 /** What a line batch's calls that change points reach in the core: the instance batch's calls. */
 export interface LineBatchRows extends PointerRows {
 	setActiveCount(count: number): void;
@@ -289,7 +292,7 @@ export interface LineBatchRows extends PointerRows {
  *
  * @category api/lines
  */
-export class LineBatch {
+export class LineBatch implements ViewHolder {
 	private generation = -1;
 	private points!: LinePoints;
 	/** @internal The batch's pointer event handlers, from its first `on`. */
@@ -305,7 +308,16 @@ export class LineBatch {
 		readonly material: LineMaterial,
 		private readonly batch: LineBatchRows,
 		private readonly checks: LineChecks,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the point arrays, which the next read makes again. */
+	dropViews(): void {
+		if (this.generation === -1) return;
+		this.generation = -1;
+		this.points = NO_POINTS;
+	}
 
 	/**
 	 * The point arrays, made again after the engine's memory grew. Sketches read points every

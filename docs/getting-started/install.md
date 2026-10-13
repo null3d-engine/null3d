@@ -12,7 +12,7 @@ summary: "The npm packages; the Vite plugin, which every Vite build needs; packa
 
 null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch.
 
-The commands on these pages use [Bun](https://bun.sh). npm, pnpm and Yarn work too, with their own install and run commands.
+The commands on these pages use [Bun](https://bun.sh) 1.4.3 or newer. Older Bun can drop its link to the browser that `bunx @null3d/cli test` and the tool's other browser commands drive, and the command then waits forever. npm, pnpm and Yarn work too, with their own install and run commands.
 
 ## Install the packages
 

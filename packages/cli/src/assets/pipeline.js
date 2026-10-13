@@ -20,8 +20,9 @@ import { dedup, dedupAccessors } from './dedup.js';
 import { quantizeMeshes, reorderMeshes } from './geometry.js';
 import { MAX_TEXTURE_SIDE } from './images.js';
 import { planLevels, SIMPLIFY_MAX_ERROR, simplifyMeshes, storeLevels } from './levels.js';
-import { MSFTLod } from './lod-extension.js';
+import { lodOf, MSFTLod } from './lod-extension.js';
 import { modelReport } from './report.js';
+import { shaderList, writeShaderList } from './shaders.js';
 import { addSpatialData, BVH_MIN_TRIANGLES } from './spatial.js';
 import {
 	NULL3D_MESH_BVH,
@@ -266,6 +267,10 @@ export async function optimizeModel(path, options, encode) {
 	// glTF names a KTX2 image only through KHR_texture_basisu. Readers that follow the rules, such
 	// as three.js's GLTFLoader, refuse a KTX2 image that a texture names directly.
 	if (uris.size > 0) doc.createExtension(KHRTextureBasisu).setRequired(true);
+	// The list of shader features and permutation bits that this model needs, recorded with the
+	// file for the engine. Every step that changes what the model draws has run by now.
+	const shaders = shaderList(doc, { lodOf });
+	writeShaderList(doc, shaders);
 	tidyBuffers(doc);
 	if (options.meshopt)
 		doc
@@ -283,6 +288,7 @@ export async function optimizeModel(path, options, encode) {
 		levels: [...levels.values()],
 		merged,
 		spatial,
+		shaders,
 		ms: performance.now() - start,
 	});
 	return { glb, files, report };
