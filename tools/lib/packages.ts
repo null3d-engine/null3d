@@ -92,6 +92,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	geometry: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		needs: ['engine'],
+		required: ['THIRD-PARTY-NOTICES.txt'],
+	},
 	cli: {
 		compile: false,
 		shaders: false,
@@ -105,6 +113,9 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/basis/package.json',
 			'vendor/basis/LICENSE',
 			'vendor/basis/NOTICE',
+			'vendor/ufbx/ufbx.wasm',
+			'vendor/ufbx/LICENSE',
+			'THIRD-PARTY-NOTICES.txt',
 		],
 	},
 };

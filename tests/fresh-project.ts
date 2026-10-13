@@ -43,7 +43,7 @@ const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
 const TEMPLATE = join(ROOT, 'tests/fixtures/fresh-project');
 /** The packages that the project's page and sketch import. */
-const DEPENDENCIES = ['@null3d/engine', '@null3d/controls'];
+const DEPENDENCIES = ['@null3d/engine', '@null3d/controls', '@null3d/geometry'];
 /** The packages that the project's tools run. */
 const DEV_DEPENDENCIES = ['@null3d/vite-plugin', '@null3d/cli'];
 /** Tools from npm, at the versions that the repository pins. */
@@ -109,8 +109,11 @@ function step(
 		throw new Error(`${title} failed with ${result.error?.message ?? `status ${result.status}`}`);
 }
 
+/** A browser, as the command-line tool starts it. */
+type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+
 /** A browser page, as the command-line tool's browser opens it. */
-type Page = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newPage']>>;
+type Page = Awaited<ReturnType<Browser['newPage']>>;
 
 /** The page's globals that the checks read, typed, as this file's Node settings lack them. */
 type PageGlobals = {
@@ -168,15 +171,56 @@ async function startOf(
 	return { start, isolated, tier };
 }
 
+/** How long a browser may take to close before the test goes on without it. */
+const CLOSE_LIMIT_MS = 15_000;
+
+/** How long one page of the website's build may take to load and start, past Playwright's limits. */
+const PAGE_LIMIT_MS = 90_000;
+
+/** Resolves with `promise`, or fails with the error that `error` writes once `ms` milliseconds pass. */
+async function within<T>(promise: Promise<T>, ms: number, error: () => string): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(error())), ms);
+	});
+	try {
+		return await Promise.race([promise, late]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/**
+ * Runs `use` with a server of the build, as `serveBuild` makes it, and a new browser, then stops
+ * both. A browser that does not close in time is left for the process's end, with a note, so that
+ * a stuck browser cannot hold the step until CI cancels it.
+ */
+async function withBrowser(
+	dist: string,
+	strict: boolean,
+	use: (browser: Browser, server: ReturnType<typeof serveBuild>) => Promise<void>,
+): Promise<void> {
+	const server = serveBuild(dist, strict);
+	const browser = await launchBrowser(defaultEnvironment());
+	try {
+		await use(browser, server);
+	} finally {
+		await within(browser.close(), CLOSE_LIMIT_MS, () => 'closing').catch(() =>
+			console.log(
+				`  the browser did not close within ${CLOSE_LIMIT_MS / 1000} s; going on without it`,
+			),
+		);
+		server.stop(true);
+	}
+}
+
 /**
  * Fails unless the build's page starts the engine with threads and no file breaks the strict
  * policy. The address asks for the single-threaded build, which a shipped game must ignore.
  */
 async function startsUnderStrictPolicy(dist: string): Promise<void> {
 	console.log('\nStart under a strict Content-Security-Policy');
-	const server = serveBuild(dist);
-	const browser = await launchBrowser(defaultEnvironment());
-	try {
+	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
 		const violations: string[] = [];
 		page.on('console', (message) => {
@@ -188,10 +232,7 @@ async function startsUnderStrictPolicy(dist: string): Promise<void> {
 			throw new Error(
 				`under a strict policy, with ?threads=off in the address, the page did not start the threaded engine: start ${start}, isolated ${isolated}, policy reports ${JSON.stringify(violations)}`,
 			);
-	} finally {
-		await browser.close();
-		server.stop(true);
-	}
+	});
 }
 
 /**
@@ -211,9 +252,7 @@ async function playsOffline(dist: string): Promise<void> {
 	for (const path of ['webgpu', 'webgl2'])
 		if (!list.start.some((file) => new RegExp(`/${path}-renderers-[\\w-]+\\.js$`).test(file)))
 			throw new Error(`${FILES_LIST} leaves the ${path} renderers out of the start`);
-	const server = serveBuild(dist);
-	const browser = await launchBrowser(defaultEnvironment());
-	try {
+	await withBrowser(dist, true, async (browser, server) => {
 		const page = await browser.newPage();
 		await page.goto(server.url.href);
 		const first = await startOf(page);
@@ -256,10 +295,7 @@ async function playsOffline(dist: string): Promise<void> {
 				`offline, the page did not start on the GPU path that its first visit did not draw with: start ${other.start}, path ${other.tier}, failed requests ${JSON.stringify(failed)}`,
 			);
 		console.log(`  started offline on ${first.tier} and on webgl2`);
-	} finally {
-		await browser.close();
-		server.stop(true);
-	}
+	});
 }
 
 /**
@@ -356,26 +392,39 @@ async function buildsExamples(project: string): Promise<void> {
 		},
 	);
 	console.log('\nStart demos from the website build');
-	const server = serveBuild(join(project, 'dist-site'), false);
-	const browser = await launchBrowser(defaultEnvironment());
-	try {
+	await withBrowser(join(project, 'dist-site'), false, async (browser, server) => {
 		const page = await browser.newPage();
+		const errors: string[] = [];
+		page.on('pageerror', (error) => errors.push(error.message));
+		page.on('console', (message) => {
+			if (message.type() === 'error') errors.push(message.text());
+		});
 		for (const demo of BUILT_PAGES) {
-			await page.goto(`${server.url.href}?${demo}`);
-			const state = await page
-				.waitForFunction(
-					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.demo,
-					undefined,
-					{ timeout: 60_000 },
-				)
-				.then((handle) => handle.jsonValue());
+			const started = performance.now();
+			errors.length = 0;
+			const state = await within(
+				page
+					.goto(`${server.url.href}?${demo}`)
+					.then(() =>
+						page.waitForFunction(
+							() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.demo,
+							undefined,
+							{ timeout: 60_000 },
+						),
+					)
+					.then((handle) => handle.jsonValue()),
+				PAGE_LIMIT_MS,
+				() =>
+					`the website build's page ?${demo} neither started nor failed within ${PAGE_LIMIT_MS / 1000} s; page errors: ${JSON.stringify(errors)}`,
+			);
+			const seconds = ((performance.now() - started) / 1000).toFixed(1);
 			if (state !== 'running')
-				throw new Error(`the website build did not start ?${demo}: ${state}`);
+				throw new Error(
+					`the website build did not start ?${demo}: ${state}; page errors: ${JSON.stringify(errors)}`,
+				);
+			console.log(`  ?${demo}: running after ${seconds} s`);
 		}
-	} finally {
-		await browser.close();
-		server.stop(true);
-	}
+	});
 }
 
 async function main(): Promise<void> {
@@ -416,13 +465,13 @@ async function main(): Promise<void> {
 		);
 		if (cores.length !== 2)
 			throw new Error(`the production build holds ${cores.length} engine cores, not 2`);
+		// The engine's notices come first, then the geometry package's.
 		const notices = join(project, 'dist', NOTICES_FILE);
-		const engineNotices = readFileSync(
-			join(ROOT, 'packages/engine/THIRD-PARTY-NOTICES.txt'),
-			'utf8',
-		);
-		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== engineNotices)
-			throw new Error(`the production build lacks the engine's notices in ${NOTICES_FILE}`);
+		const own = (name: string) =>
+			readFileSync(join(ROOT, `packages/${name}/THIRD-PARTY-NOTICES.txt`), 'utf8').trimEnd();
+		const expected = `${own('engine')}\n\n${own('geometry')}\n`;
+		if (!existsSync(notices) || readFileSync(notices, 'utf8') !== expected)
+			throw new Error(`the production build lacks the packages' notices in ${NOTICES_FILE}`);
 		await startsUnderStrictPolicy(join(project, 'dist'));
 		await playsOffline(join(project, 'dist'));
 		await buildsExamples(project);
@@ -437,6 +486,8 @@ async function main(): Promise<void> {
 if (import.meta.main) {
 	try {
 		await main();
+		// A browser that did not close keeps the process alive.
+		process.exit(0);
 	} catch (e) {
 		console.error(`error: ${(e as Error).message}`);
 		process.exit(1);

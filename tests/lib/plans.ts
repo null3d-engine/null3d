@@ -54,7 +54,7 @@ import {
 } from '../../bench/pages/lib/device-soak.ts';
 import { summarizeTrace } from '../../bench/pages/lib/trace.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
-import { DEMOS } from '../../examples/demos.ts';
+import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { STOP_TIMEOUT_MS } from '../../packages/engine/src/page/stop-jobs.ts';
 import {
@@ -113,6 +113,7 @@ import {
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
+import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
@@ -202,6 +203,8 @@ export type Check =
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
+	/** The first-draw page: a device's first pass of indirect draws, bare and after the engine's. */
+	| { kind: 'first-draw'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -447,13 +450,49 @@ const SHADERS_BASE_SECONDS = 30;
  */
 const SHADERS_SECONDS_PER_PROGRAM = 0.5;
 
+/** Every GLSL program of the engine, which the parts of the shaders page share. */
+const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
+
 /**
- * The shaders page's time, which grows with the GLSL programs that it compiles, so more shader
- * variants never make it time out. A page that stops still fails, with the last step it noted.
+ * The most GLSL programs that one part of the shaders page compiles. Each part is a page of its
+ * own, with a WebGL2 context of its own that it gives up at its end. Safari on CI's Mac lost the
+ * context of a page that compiled every program in one context, after 2,240 programs and 266 s.
+ */
+const SHADER_PROGRAMS_PER_PART = 400;
+
+/**
+ * The parts of the shaders page: enough that each holds about that many programs. A build that
+ * several device modules hold counts in each part that downloads one of them, so a part may hold
+ * somewhat more.
+ */
+export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
+
+/**
+ * The time of one part of the shaders page, which grows with the GLSL programs that it compiles, so
+ * more shader variants never make it time out. A slower device gets more: after each batch, the page
+ * tells the runner page when it expects to end, from its own pace, and the runner page waits that
+ * long, up to a cap. A page that stops still fails, with the last step it noted.
  */
 export const SHADERS_PAGE_SECONDS = Math.ceil(
-	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * glslProgramsOf(await everyShader()).length,
+	SHADERS_BASE_SECONDS + SHADERS_SECONDS_PER_PROGRAM * Math.ceil(GLSL_PROGRAMS / SHADER_PARTS),
 );
+
+/** The checks plan's item for one part of the shaders page. */
+const shaderPageId = (part: number) => `shaders-${part}`;
+
+/** The parts of the shaders page, each with its share of the programs and modules. */
+const shaderPages = (): PlanItem<Check>[] =>
+	Array.from({ length: SHADER_PARTS }, (_, i) =>
+		pageItem(
+			shaderPageId(i + 1),
+			'shaders',
+			{ kind: 'shaders' },
+			{
+				switches: [`part=${i + 1}`, `parts=${SHADER_PARTS}`],
+				timeoutSeconds: SHADERS_PAGE_SECONDS,
+			},
+		),
+	);
 
 /**
  * The production build of the engine test page, which the checks plan runs in every mode, under one
@@ -463,8 +502,8 @@ export const SHADERS_PAGE_SECONDS = Math.ceil(
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, the shader library's values on both GPU
- * paths, every run of the image test manifest, the compressed formats of KTX2 files on both GPU
+ * The browser checks: the capability report, isolation, every shader's compile in parts, the shader
+ * library's values on both GPU paths, every run of the image test manifest, the compressed formats of KTX2 files on both GPU
  * paths, the engine in every mode on both GPU paths, and again on the production build, the
  * threaded modes with wake messages in place of Atomics.waitAsync, a frame captured as a PNG file
  * in every mode on both GPU paths, and the engine started and stopped again and again in every
@@ -475,7 +514,7 @@ export function checksPlan(): PlanItem<Check>[] {
 	return [
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
-		pageItem('shaders', 'shaders', { kind: 'shaders' }, { timeoutSeconds: SHADERS_PAGE_SECONDS }),
+		...shaderPages(),
 		...TIERS.map((tier) =>
 			pageItem(
 				`shader-library-${tier}`,
@@ -499,6 +538,14 @@ export function checksPlan(): PlanItem<Check>[] {
 				`skin-pass-${path}`,
 				'skin-pass',
 				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`first-draw-${path}`,
+				'first-draw',
+				{ kind: 'first-draw', tier: 'webgpu' },
 				{ switches: [`gpu=${path}`] },
 			),
 		),
@@ -692,6 +739,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'stats',
 	'ktx2',
 	'skin-pass',
+	'first-draw',
 	'environment-generator',
 ]);
 
@@ -1038,10 +1086,10 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 }
 
 /**
- * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, or 4
- * custom effects.
+ * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
+ * sun's contact shadows, or 4 custom effects.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1055,13 +1103,16 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * halves: the difference there is the cost of ambient occlusion's own passes, and the rest is the
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
- * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing.
- * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan, and
- * D-119 those of the dof plan.
+ * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
+ * contact plan times the sun's contact shadows at 4 and 8 steps, the steps of Medium on WebGL2
+ * and of High, with the prepass on in both halves too, as for ambient occlusion.
+ * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
+ * D-119 those of the dof plan, and D-135 those of the contact plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
-	const prepass = effect === 'ao' ? [false, true] : [false];
+	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
 	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
+	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1077,23 +1128,26 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
 			prepass.flatMap((on) =>
-				tapCounts.map((taps) =>
-					pageItem(
-						`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}`,
-						'effect-cost',
-						{ kind: 'effect', effect, tier, scale },
-						{
-							switches: [
-								`gpu=${tier}`,
-								`scale=${scale}`,
-								`effect=${effect}`,
-								...(on ? ['prepass=on'] : []),
-								...(taps ? [`taps=${taps}`] : []),
-								// One pass for each effect, so a quarter of the difference is one pass.
-								...(effect === 'effects' ? ['join=off'] : []),
-							],
-							timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-						},
+				tapCounts.flatMap((taps) =>
+					stepCounts.map((steps) =>
+						pageItem(
+							`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}${steps ? `-${steps}` : ''}`,
+							'effect-cost',
+							{ kind: 'effect', effect, tier, scale },
+							{
+								switches: [
+									`gpu=${tier}`,
+									`scale=${scale}`,
+									`effect=${effect}`,
+									...(on ? ['prepass=on'] : []),
+									...(taps ? [`taps=${taps}`] : []),
+									...(steps ? [`steps=${steps}`] : []),
+									// One pass for each effect, so a quarter of the difference is one pass.
+									...(effect === 'effects' ? ['join=off'] : []),
+								],
+								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+							},
+						),
 					),
 				),
 			),
@@ -1545,7 +1599,7 @@ function warmUpSketches(): { scene: string; sketch: string }[] {
 		})),
 		...DEMOS.map((demo) => ({
 			scene: `demo-${demo.name}`,
-			sketch: `/examples/${demo.name}/sketch.ts`,
+			sketch: `/examples/${sketchPath(demo)}`,
 		})),
 	];
 }
@@ -1674,6 +1728,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
 	dof: () => effectPlan('dof'),
+	contact: () => effectPlan('contact'),
 	effects: () => effectPlan('effects'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
@@ -1777,6 +1832,39 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 		line: `the new sky's light shows ${since} frames after the move, over ${after.length} captures`,
 		problems: last.since === 15 ? [] : [`the last capture shows frame ${last.since}, not 15`],
 	};
+}
+
+/**
+ * The items that must share an item's shard: the items it needs, and for a part of the shaders
+ * page, the first part. Safari on CI's Mac compiles a part's programs about twice as fast after
+ * another part in the same browser, and four times as fast after two more, so the parts run in one
+ * shard, where only the first is slow.
+ */
+export function itemsTogether(item: PlanItem<Check>): string[] {
+	const needed = itemsNeeded(item.check);
+	return item.check.kind === 'shaders' ? [...needed, shaderPageId(1)] : needed;
+}
+
+/**
+ * About how long the slow pages of the checks plan take in Safari on CI's Mac, the slowest browser
+ * that CI runs the plan in, from main's runs of 12 October 2026. A part of the shaders page takes
+ * about 130 seconds when the browser compiles it first, then 65, then 30 to 35 each, so each part
+ * counts at their mean. The WebGPU pages of the same names skip there.
+ */
+const SLOW_PAGE_SECONDS: readonly (readonly [RegExp, number])[] = [
+	[/^shaders-\d+$/, 48],
+	[/^image-compare-battle-threejs-instanced-webgl2$/, 125],
+	[/^image-compare-battle-(null3d|null3d-instanced|threejs)-webgl2$/, 25],
+	[/^image-demo-creek-webgl2-/, 22],
+	[/restarts/, 20],
+];
+
+/** The mean time of every other page of the plan there, the skipped pages among them. */
+const PAGE_SECONDS = 1.5;
+
+/** About how long a page takes in Safari on CI's Mac, by which the shards split a plan. */
+export function expectedSeconds({ id }: { id: string }): number {
+	return SLOW_PAGE_SECONDS.find(([pattern]) => pattern.test(id))?.[1] ?? PAGE_SECONDS;
 }
 
 /**
@@ -2284,6 +2372,11 @@ export function judge(
 			const skin = result as unknown as SkinPassResult;
 			context?.note?.(skinPassNote(skin));
 			return skinPassProblems(skin);
+		}
+		case 'first-draw': {
+			const first = result as unknown as FirstDrawResult;
+			context?.note?.(firstDrawNote(first));
+			return firstDrawProblems(first);
 		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];

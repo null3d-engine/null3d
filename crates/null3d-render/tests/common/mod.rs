@@ -201,6 +201,7 @@ impl<B: FrameBuilder> World<B> {
             bias: 0.5,
             normal_bias: 1.0,
             distance: 40.0,
+            contact: 0.0,
             layers: DEFAULT_LAYERS,
         }));
     }
@@ -355,6 +356,7 @@ impl<B: FrameBuilder> World<B> {
             lines: self.lines.lines(),
             lights: &self.lights,
             shadow_lights: &self.shadow_lights,
+            light_table: self.light_table.as_ref(),
             pipelines_built: if self.pipelines_built == u32::MAX {
                 frame
             } else {

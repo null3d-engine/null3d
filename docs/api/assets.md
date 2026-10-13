@@ -3,12 +3,12 @@ id: api/assets
 title: Assets
 status: experimental
 since: "0.1"
-summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, loadJson, loadBinary, preload, onProgress."
+summary: "loadGltf, loadTexture, loadImageBitmap, loadLut, lutFromData, loadEnvironment, builtinEnvironment, skyEnvironment, loadCubemap, loadJson, loadBinary, preload, onProgress."
 ---
 
 # Assets
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds glTF models, color grading tables and environments. The API is experimental, so it can still change between versions. Morph targets load but do not draw. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds glTF models, color grading tables and environments. The API is experimental, so it can still change between versions.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -75,7 +75,7 @@ The prefab turns each part of the file into the engine's own:
 | `EXT_mesh_gpu_instancing` | An instance batch for each copy, in `instance.batches` |
 | A skin | Joints of the model's skeleton, which every copy's [animator](animation.md#models-from-gltf-files) poses. Joints are not objects. A skinned mesh goes in the copy's group |
 | An animation | A clip that a copy's animator plays, with linear, step and cubic spline keys. The job workers resample it while `loadGltf` waits |
-| A morph target | Kept with its mesh for a later version to draw. The mesh draws in its shape at rest |
+| A morph target | A morph target of the mesh, with the file's default weights. Clips that animate the weights play through the animator: [Morph targets](animation.md#morph-targets) |
 | `KHR_meshopt_compression`, `EXT_meshopt_compression` | The decoded vertex and index data, as the uncompressed file holds it. The first file with meshopt data downloads the decoder, about 6 KB after Brotli. A fallback buffer never downloads |
 | `KHR_draco_mesh_compression` | The decoded vertices and triangles. Normals and tangents become 8-bit integers, and texture coordinates between 0 and 1 become 16-bit integers. The first file with Draco data downloads Draco's decoder, about 60 KB after Brotli. Development builds warn about each such file and name the command that converts it to meshopt |
 
@@ -183,7 +183,7 @@ export default defineSketch(async ({ scene, assets }) => {
 - The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
 - `skyEnvironment` loads the same code and shaders as the room, and resolves once they are ready. The next frame makes the whole map, in about 10 ms on a MacBook Pro. Until the scene's first sky background, the map shows the sky's defaults.
-- The sky's map follows the sky. After `setBackground({ sky })` changes it, the map refreshes in 7 steps, one a frame. The scene draws with the old map until the last step. Each step takes under 1.1 ms on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
+- The sky's map follows the sky. After `setBackground({ sky })` changes it, the map refreshes in 20 stages, one a frame. The scene draws with the old map until the last stage. Each stage takes about 1 ms of GPU time on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
 - The tool's file needs no reading or filtering at load, so prefer it for maps that ship with a game. HDR files suit maps that change, such as files that users upload. The tool's file is not always the smaller download. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each.

@@ -12,6 +12,18 @@ const COMMANDS = {
 			'Makes glTF models load and draw faster: quantized, compressed meshes and KTX2 textures',
 		load: () => import('./assets/optimize.js'),
 	},
+	convert: {
+		summary: 'Converts .gltf, OBJ, FBX, STL and PLY models, and Draco-compressed ones, to .glb',
+		load: () => import('./assets/convert.js'),
+	},
+	'pack-orm': {
+		summary: 'Packs occlusion, roughness and metalness maps into one texture',
+		load: () => import('./assets/pack-orm.js'),
+	},
+	'normal-from-bump': {
+		summary: 'Makes a normal map from a height map, such as a bump map',
+		load: () => import('./assets/normal-from-bump.js'),
+	},
 	env: {
 		summary:
 			'Makes an environment map from an HDR image: a prefiltered cube map and its diffuse light',
@@ -23,7 +35,7 @@ export const HELP = `Usage: bunx @null3d/cli assets <command> [options]
 
 Commands:
 ${Object.entries(COMMANDS)
-	.map(([name, { summary }]) => `  ${name.padEnd(10)}${summary}`)
+	.map(([name, { summary }]) => `  ${name.padEnd(18)}${summary}`)
 	.join('\n')}
 
 Run bunx @null3d/cli assets <command> --help for a command's options.`;

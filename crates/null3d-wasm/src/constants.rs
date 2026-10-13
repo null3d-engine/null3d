@@ -3,7 +3,7 @@
 
 use null3d_core::animation::{
     Channel, DEFAULT_RATE, EVENT_CAPACITY, EVENT_WORDS, Interpolation, MAX_BLEND, MAX_CLIP_KEYS,
-    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind,
+    MAX_LAYERS as MAX_ANIMATION_LAYERS, NO_SOURCE, REST_FLOATS, TRACK_WORDS, event_kind, joints,
 };
 use null3d_core::cells::{CELL_SIZE, MAX_CELLS};
 use null3d_core::handle::{DEAD_GENERATION, GENERATION_BITS, MAX_SLOTS, SLOT_BITS};
@@ -21,6 +21,7 @@ use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
 use null3d_render::output::{Antialias, ToneMapping};
+use null3d_render::particles;
 use null3d_render::skinning::SkinningMode;
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 use null3d_render::{debug_view, fog};
@@ -86,6 +87,8 @@ pub mod shading {
     /// Wide lines lit as a standard material that faces the camera, for the rows of a line batch
     /// only.
     pub const LINE_LIT: u32 = 7;
+    /// Particles of a particle system of the particles add-on, for a system's object only.
+    pub const PARTICLE: u32 = 8;
     /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
     /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
@@ -107,6 +110,9 @@ pub mod shading {
     /// The bit of a custom shading whose WGSL has a vertex offset, which has the builds of a
     /// shadow caster that moves by it.
     pub const CUSTOM_CASTER: u32 = 1 << 30;
+    /// The bit of a custom shading whose WGSL reads an instance's index or an object's id, which
+    /// the frame builders then keep in the table of object ranges.
+    pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
 /// The map slots that `setMaterialMap` takes, in the order of a material's row.
@@ -123,10 +129,30 @@ pub mod map_slot {
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
 }
 
-/// The flags of an effect that `setEffect` takes.
+/// The flags of an effect that `setEffect` takes, and of a full-screen pass that `addPass` takes.
 pub mod effect_flag {
-    /// The effect reads the scene's depth.
+    /// The effect or the pass reads the scene's depth.
     pub const DEPTH: u32 = 1;
+}
+
+/// The kinds of pass that `addPass` adds.
+pub mod pass_kind {
+    /// A scene pass: the scene from a camera of the sketch.
+    pub const SCENE: u32 = 0;
+    /// A reflection pass: the camera's view mirrored across a plane.
+    pub const REFLECTION: u32 = 1;
+    /// A full-screen pass of the sketch's WGSL.
+    pub const FULLSCREEN: u32 = 2;
+}
+
+/// The input image of a full-screen pass that `addPass` takes.
+pub mod pass_source {
+    /// None: the pass reads a blank texel.
+    pub const NONE: u32 = 0;
+    /// The scene color as the camera's passes leave it.
+    pub const SCENE_COLOR: u32 = 1;
+    /// The outline mask.
+    pub const OUTLINE_MASK: u32 = 2;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -372,8 +398,34 @@ pub mod arrays_problem {
     /// A morph target delta is NaN or infinite. The second detail is its place, and the array's
     /// number, as in `MORPH_LENGTH`, times 2^28.
     pub const MORPH_NOT_FINITE: u32 = 10;
+    /// A vertex update named a mesh with joints or morph targets, which take no updates.
+    pub const POSED: u32 = 11;
     /// Plus the array's code; the second detail is the place of the value in the array.
     pub const NOT_FINITE: u32 = 16;
+}
+
+/// The second detail of a failure to give a mesh levels of detail: what is wrong with the levels.
+pub mod level_problem {
+    use null3d_render::levels::LevelError;
+
+    /// More levels than a mesh holds, its base mesh included.
+    pub const TOO_MANY: u32 = 1;
+    /// An error that is not finite, not above 0, or not above the error of the level before.
+    pub const ERRORS: u32 = 2;
+    /// A level that names no live mesh, or the base mesh itself.
+    pub const MESH: u32 = 3;
+    /// A level whose vertices have other attributes than the base mesh's.
+    pub const FORMAT: u32 = 4;
+
+    /// The problem of a refused set of levels.
+    pub fn of(error: LevelError) -> u32 {
+        match error {
+            LevelError::TooMany => TOO_MANY,
+            LevelError::Errors => ERRORS,
+            LevelError::Mesh => MESH,
+            LevelError::Format => FORMAT,
+        }
+    }
 }
 
 /// The arrays of the animation table that `animationArrays` returns.
@@ -404,6 +456,12 @@ pub mod animation_field {
     /// The numbers of the next `animatorPlay` or `animatorPlayBlend` call, `play_arg::COUNT`
     /// floats, which TypeScript writes before the call.
     pub const PLAY_ARGS: u32 = 10;
+    /// The joint overrides of every instance, `OVERRIDE_BLOCK` floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const JOINT_OVERRIDES: u32 = 11;
+    /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
+    /// writes; made by `enableJointOverrides`.
+    pub const LOOK_TARGETS: u32 = 12;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -630,6 +688,7 @@ pub fn typescript() -> String {
                 ("SHADOW_CASCADES", light_value::SHADOW_CASCADES),
                 ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
                 ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
+                ("SHADOW_CONTACT", light_value::SHADOW_CONTACT),
             ],
         ),
         (
@@ -784,7 +843,8 @@ pub fn typescript() -> String {
                 ("MSAA", Antialias::Msaa.code()),
             ],
         ),
-        // WebGPU's skinning modes, which ?skinning= picks to measure them (decision record D-20).
+        // WebGPU's skinning modes, which ?skinning= picks: the vertex shaders by default, or the
+        // skinning pass with or without its savings (decision record D-20).
         (
             "SKINNING",
             &[
@@ -804,6 +864,17 @@ pub fn typescript() -> String {
                 ("NONE", ToneMapping::None.code()),
             ],
         ),
+        // The layout of a particle system's records and values in engine memory.
+        (
+            "PARTICLE",
+            &[
+                ("RECORD_BYTES", particles::RECORD_BYTES),
+                ("PARAM_FLOATS", particles::PARAM_FLOATS as u32),
+                ("FRAME_FLOATS", particles::FRAME_FLOATS as u32),
+                ("MAX_SYSTEMS", particles::MAX_SYSTEMS as u32),
+                ("MAX_RECORDS", particles::MAX_RECORDS),
+            ],
+        ),
         (
             "SHADING",
             &[
@@ -814,6 +885,7 @@ pub fn typescript() -> String {
                 ("SPRITE", shading::SPRITE),
                 ("LINE", shading::LINE),
                 ("LINE_LIT", shading::LINE_LIT),
+                ("PARTICLE", shading::PARTICLE),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
                 ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
@@ -821,6 +893,7 @@ pub fn typescript() -> String {
                 ("CUSTOM_TRANSMISSION", shading::CUSTOM_TRANSMISSION),
                 ("CUSTOM_ROW_VALUES", shading::CUSTOM_ROW_VALUES),
                 ("CUSTOM_CASTER", shading::CUSTOM_CASTER),
+                ("CUSTOM_OBJECT_IDS", shading::CUSTOM_OBJECT_IDS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -912,7 +985,25 @@ pub fn typescript() -> String {
             &[
                 ("MAX", null3d_render::effects::MAX_EFFECTS as u32),
                 ("FLOATS", null3d_render::effects::EFFECT_FLOATS as u32),
+                ("TEXTURES", null3d_render::effects::MAX_TEXTURES as u32),
                 ("DEPTH", effect_flag::DEPTH),
+            ],
+        ),
+        // The kinds of pass that `addPass` adds, and the input images of a full-screen pass.
+        (
+            "PASS_KIND",
+            &[
+                ("SCENE", pass_kind::SCENE),
+                ("REFLECTION", pass_kind::REFLECTION),
+                ("FULLSCREEN", pass_kind::FULLSCREEN),
+            ],
+        ),
+        (
+            "PASS_SOURCE",
+            &[
+                ("NONE", pass_source::NONE),
+                ("SCENE_COLOR", pass_source::SCENE_COLOR),
+                ("OUTLINE_MASK", pass_source::OUTLINE_MASK),
             ],
         ),
         // The most scene passes that draw at once: every view but the camera's.
@@ -1166,6 +1257,8 @@ pub fn typescript() -> String {
                 ("SLOT_SOURCES", animation_field::SLOT_SOURCES),
                 ("BLEND_VALUES", animation_field::BLEND_VALUES),
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
+                ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
+                ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -1206,6 +1299,27 @@ pub fn typescript() -> String {
                 ("CUBIC_SPLINE", Interpolation::CubicSpline as u32),
             ],
         ),
+        // The layout of each instance's block of joint overrides (`animation::joints`).
+        (
+            "JOINT_OVERRIDE",
+            &[
+                ("BLOCK", joints::BLOCK_FLOATS as u32),
+                ("SLOTS", joints::MAX_OVERRIDES as u32),
+                ("FLOATS", joints::OVERRIDE_FLOATS as u32),
+                ("JOINT", joints::place::JOINT as u32),
+                ("MODE", joints::place::MODE as u32),
+                ("WEIGHT", joints::place::WEIGHT as u32),
+                ("ROTATION", joints::place::ROTATION as u32),
+                ("SET", joints::mode::SET),
+                ("ADD", joints::mode::ADD),
+                ("LOOK_WEIGHT", joints::place::LOOK_WEIGHT as u32),
+                ("LOOK_COUNT", joints::place::LOOK_COUNT as u32),
+                ("LOOK_FORWARD", joints::place::LOOK_FORWARD as u32),
+                ("LOOK_JOINTS", joints::place::LOOK_JOINTS as u32),
+                ("LOOK_JOINT_FLOATS", joints::place::LOOK_JOINT_FLOATS as u32),
+                ("MAX_LOOK_JOINTS", joints::MAX_LOOK_JOINTS as u32),
+            ],
+        ),
         (
             "ANIMATION_PROBLEM",
             &[
@@ -1239,7 +1353,17 @@ pub fn typescript() -> String {
                 ("MORPH_TOO_LARGE", arrays_problem::MORPH_TOO_LARGE),
                 ("MORPH_LENGTH", arrays_problem::MORPH_LENGTH),
                 ("MORPH_NOT_FINITE", arrays_problem::MORPH_NOT_FINITE),
+                ("POSED", arrays_problem::POSED),
                 ("NOT_FINITE", arrays_problem::NOT_FINITE),
+            ],
+        ),
+        (
+            "LEVEL_PROBLEM",
+            &[
+                ("TOO_MANY", level_problem::TOO_MANY),
+                ("ERRORS", level_problem::ERRORS),
+                ("MESH", level_problem::MESH),
+                ("FORMAT", level_problem::FORMAT),
             ],
         ),
     ];

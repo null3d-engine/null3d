@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { parseGpuCheckArgs } from '../gpu-check';
 import type { Comparison } from './compare';
 import { gpuCheckPasses, gpuCheckResult, type PresetComparison } from './gpu-check';
 
@@ -99,5 +100,19 @@ describe('the GPU check', () => {
 		expect(result.status).toBe('not judged');
 		expect(result.line).toEndWith('; the benchmark pages changed between the commits');
 		expect(gpuCheckPasses(result)).toBe(true);
+	});
+});
+
+describe("the GPU check's options", () => {
+	test('take both steps by default, or the one step named', () => {
+		expect(parseGpuCheckArgs([]).steps).toBe('both');
+		expect(parseGpuCheckArgs(['--prepare']).steps).toBe('prepare');
+		expect(parseGpuCheckArgs(['--measure']).steps).toBe('measure');
+		expect(parseGpuCheckArgs(['--prepare', '--measure']).steps).toBe('both');
+	});
+
+	test('refuse an empty base and too few rounds', () => {
+		expect(() => parseGpuCheckArgs(['--base', ''])).toThrow('--base');
+		expect(() => parseGpuCheckArgs(['--runs', '1'])).toThrow('--runs');
 	});
 });

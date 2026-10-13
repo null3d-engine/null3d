@@ -55,8 +55,11 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createSpotLight(options)` | A `SpotLight`: light from a point in a cone, out to its range |
 | `createHemisphereLight(options)` | A `HemisphereLight`: light from the sky above and the ground below |
 | `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
+| `createSprites(options)` | A batch of camera-facing quads, after an `await`: [Sprites](sprites.md) |
+| `createPoints(options)` | A batch of points, after an `await`: [Points](points.md) |
+| `createLines(options)` | A batch of wide lines, after an `await`: [Lines](lines.md) |
 
-Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md). Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
 ## Models and copies
 
@@ -243,7 +246,7 @@ The fog does not cover the background, so give the background the fog's color to
 
 ## Time of day
 
-`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
+`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

@@ -168,7 +168,7 @@ flowchart LR
 | Version | Adds |
 | --- | --- |
 | 0.1 | Physically based standard materials, custom materials in WGSL, clustered forward lighting, cascaded shadows and spot and point shadows, fog, ACES, AgX and neutral tone mapping, MSAA and FXAA, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
-| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
+| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, more geometry generators in `@null3d/geometry` and vertices that change each frame, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
 | 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
 </details>
@@ -315,7 +315,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 | Version | What it adds |
 | --- | --- |
 | 0.1, built | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, tone mapping, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
-| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines, large worlds and an add-on for particles |
+| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds. A physical sky, decals, area lights, a light probe grid, clearcoat and sheen, automatic exposure, reflection probes and order-independent transparency. Stand-in images and merged meshes for far objects, light through leaves and skin, and add-ons for particles and terrain |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling, the porting tools, motion blur, global illumination, and add-ons for Gaussian splats, MSDF text and physics |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
 
@@ -323,7 +323,7 @@ The first release is 0.1.0, when the steps 0.1, 0.2 and 0.3 below are done. The 
 
 Requirements:
 
-- [Bun](https://bun.sh/) 1.3.14 or newer
+- [Bun](https://bun.sh/) 1.4.3 or newer
 - The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
 - Node.js 24 or newer, which runs the browser tests
 - Google Chrome, which the browser tests drive on your real GPU

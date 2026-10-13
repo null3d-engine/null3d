@@ -85,7 +85,7 @@ The mask's second draw marks the parts that nothing hides. It draws with the dep
 
 - The scene's depth must outlive the scene's render pass while outlines draw. Where the device has transient attachments, the depth loses that usage then, and on a tile-based GPU it is written to memory.
 - The 8-bit path draws the same line as the HDR path, as both hold display color where the final pass paints it.
-- An outlined skinned object draws its mask in its pose of the frame. On WebGPU the mask pass reads the vertices that the skinning pass wrote, as the scene and shadow passes do ([D-20](D-20-webgpu-skinning.md)). With the switch that skins in the vertex shader, and always on WebGL2, the mask template's `SKIN` build skins them, as the depth template's does.
+- An outlined skinned object draws its mask in its pose of the frame. The vertex shaders skin by default on WebGPU since 8 October 2026, and always on WebGL2 ([D-20](D-20-webgpu-skinning.md)). There the mask template's `SKIN` build skins them, as the depth template's does. Where WebGPU's skinning pass skins them, the mask pass reads the vertices that the pass wrote, as the scene and shadow passes do.
 - The mask clears to zero, where every other render pass clears its color to the scene's background. A cleared mask must hold no coverage and no visible part.
 - The outline's passes and targets are switched on only while outlines are on and some object is outlined. Then the final pass runs in the build of its declaration that reads the mask: one declaration for each pair of bloom and outline.
 - A line wider than about 4 pixels of the canvas can leave a gap beside a part thinner than the width. The 8 reads step over such a part. Jump flooding is the later fix.
@@ -93,7 +93,7 @@ The mask's second draw marks the parts that nothing hides. It draws with the dep
 ## Consequences
 
 - Code: `crates/null3d-render/src/outline.rs`, and the outlined layouts of both builders (`gpu_driven/layout.rs`, `cpu_culled/layout.rs`). The outline view (`ViewId::OUTLINE`), and the frame graph's outline passes and final pass declarations. `wgsl/outline_mask.wgsl` and the line in `wgsl/final.wgsl`. The `OUTLINED` scene flag, the core call `setOutline`, `post.set`'s `outline`, and `setOutlined` on meshes and prefab copies.
-- Tests: the render crate's `outline.rs` and the outline graph and allocation tests, the image tests `outline-plain`, `outline-hidden`, `outline-scale-50`, `outline-8-bit`, `skinning-outline` and `skinning-outline-vertex`, and the parity scenes `outline-plain` and `outline-hidden` with their limit.
+- Tests: the render crate's `outline.rs` and the outline graph and allocation tests, the image tests `outline-plain`, `outline-hidden`, `outline-scale-50`, `outline-8-bit`, `skinning-outline` and `skinning-outline-compute`, and the parity scenes `outline-plain` and `outline-hidden` with their limit.
 - Docs: `api/post`, `api/objects`, `concepts/post-processing`, `guides/performance`, the mapping's `outline` entry, and both skills.
 - [D-52](D-52-intent-parity.md) lists `OutlinePass`'s glow and pulse among the `three-compat` candidates.
 - Device runs: the outline images and the line's GPU time on the iPad and a cloud phone (prototype P4).

@@ -9,7 +9,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 3. Behavior tests
 4. Testing on real devices
 5. Debugging tools
-6. The MCP server for agents (0.3)
+6. The MCP server for agents (0.3, not built yet)
 7. Error codes
 8. Troubleshooting table
 9. Before you ship
@@ -25,8 +25,8 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
-| `bunx @null3d/cli doctor` (0.3) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
-| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3) | Prints docs for the installed engine version |
+| `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
+| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
 
 The `shot`, `test` and `bench` commands are built, and `test` runs image tests only. Until `docs show` comes, read the docs in `node_modules/@null3d/engine/docs/` (SKILL.md section 1).
 
@@ -110,8 +110,8 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
 | `?cells=off` | Cull every object, with no grid cell out of view skipped first, to measure what skipping cells saves (`concepts/culling`) |
-| `?skinning=vertex` | On WebGPU, skin in the vertex shader of each pass instead of once per frame in a compute pass, to compare GPU time (`api/animation`) |
-| `?skinning=full`, `skip`, `narrow` | On WebGPU, turn off the compute pass's savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
+| `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass, to compare GPU time (`api/animation`) |
+| `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?target-fps=display`, `?target-fps=90` | (0.2) Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
@@ -126,7 +126,7 @@ Reaching the dev server:
 
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
-- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3) will print them all.
+- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3, not built yet) prints them all.
 
 ## 5. Debugging tools
 
@@ -143,7 +143,7 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
-## 6. The MCP server for agents (0.3)
+## 6. The MCP server for agents (0.3, not built yet)
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
 
