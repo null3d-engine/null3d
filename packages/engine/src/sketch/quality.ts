@@ -40,6 +40,12 @@ export interface QualityStart {
 	 * options give the texture memory. Without it, there is no cap.
 	 */
 	textureCapMiB?: number;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost, at the cost of one more copy of each image in memory. The
+	 * page turns it on for phones and tablets, and a page option can turn it off (D-164).
+	 */
+	keepCopies?: boolean;
 	/** True when the engine checks the preset after its first frame. */
 	check?: boolean;
 }

@@ -681,6 +681,7 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, medium.uploadBytesPerFrame),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, medium.maxAnisotropy),
 			textureOption(C.TEXTURE_OPTION_MEMORY_BUDGET_KIB, medium.textureMemoryMiB * 1024),
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
 			'setup',
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 2048),
 		]);
@@ -695,6 +696,21 @@ describe('SketchRunner', () => {
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
 			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
+	});
+
+	it('keeps the texture copies when the page keeps them, and frees them otherwise', async () => {
+		const kept = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: true },
+		});
+		expect(kept.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 1),
+		);
+		const freed = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, keepCopies: false },
+		});
+		expect(freed.log.filter((line) => line.startsWith('setTextureOption'))).toContain(
+			textureOption(C.TEXTURE_OPTION_KEEP_COPIES, 0),
+		);
 	});
 
 	it('records no setup frame into the list of a frame that the thread that draws still replays', async () => {
