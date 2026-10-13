@@ -1502,7 +1502,7 @@ async function runPlan(
 			} else {
 				counts.fail++;
 				if (item.check.kind === 'image') imageFailures++;
-				const again = !rerun && rerunsInNewTab(browser.name, verdict);
+				const again = !rerun && rerunsInNewTab(browser.name, verdict, device);
 				if (again) reruns.set(name, [...(reruns.get(name) ?? []), { item, verdict }]);
 				console.log(
 					`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}${again ? ' (RERUN: runs once more in a new runner page)' : ''}`,
