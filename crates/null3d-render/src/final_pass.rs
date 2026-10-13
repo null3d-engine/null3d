@@ -157,12 +157,21 @@ pub(crate) struct FinalPass {
     ids: FinalIds,
     /// True for the FXAA build of the pass.
     fxaa: bool,
+    /// True for the first of the two steps below the whole canvas's render scale: the pass then
+    /// draws one texel for each render pixel into a target of the render size, and leaves the
+    /// dither to the second step.
+    resolve: bool,
+    /// True when the scene color holds high dynamic range color, which the pass tone maps.
+    hdr: bool,
     /// The flags of the pass's settings: whether the scene color holds display color.
     flags: u32,
     /// The pipeline's id in the builder's cache, once the pass has asked for it.
     pipeline: Option<u32>,
     /// The bloom build's pipeline's id, once a frame with bloom asked for it.
     bloom_pipeline: Option<u32>,
+    /// The second step's pipeline's id, once the two-step asked for it: the plain build, which
+    /// scales the first step's display color up to the canvas.
+    present_pipeline: Option<u32>,
     /// The first template of the custom tone curve that the pass draws with, or `None` for the
     /// pass's own curves.
     tone_curve: Option<u32>,
@@ -192,16 +201,16 @@ struct Bound {
 impl FinalPass {
     /// The final pass of a builder whose scene draws into `scene_color` in the `antialias` mode.
     pub(crate) fn new(ids: FinalIds, scene_color: SceneColor, antialias: Antialias) -> Self {
+        let hdr = scene_color.is_hdr();
         Self {
             ids,
             fxaa: antialias == Antialias::Fxaa,
-            flags: if scene_color.is_hdr() {
-                0
-            } else {
-                OutputUniform::DISPLAY_COLOR
-            },
+            resolve: false,
+            hdr,
+            flags: if hdr { 0 } else { OutputUniform::DISPLAY_COLOR },
             pipeline: None,
             bloom_pipeline: None,
+            present_pipeline: None,
             tone_curve: None,
             fold_pipeline: None,
             folds: false,
@@ -211,13 +220,23 @@ impl FinalPass {
         }
     }
 
+    /// The first of the two steps below the whole canvas's render scale: the pass draws one texel
+    /// for each render pixel into a target of the render size, with FXAA and bloom, and the second
+    /// step scales its display color up to the canvas.
+    pub(crate) fn resolve(mut self) -> Self {
+        self.resolve = true;
+        self
+    }
+
     /// Takes the build and the flags for a scene that draws into `scene_color` in the `antialias`
     /// mode, from the next frame on. The pass asks for its pipelines and makes its bind group again.
     pub(crate) fn set_mode(&mut self, scene_color: SceneColor, antialias: Antialias) {
+        let resolve = self.resolve;
         let fresh = Self::new(self.ids, scene_color, antialias);
         *self = Self {
             created: self.created,
             tone_curve: self.tone_curve,
+            resolve,
             ..fresh
         };
     }
@@ -268,18 +287,23 @@ impl FinalPass {
     pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
 
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
-    /// `bloom`. A builder asks before it records the pipelines that its frame creates, so the list
-    /// creates them with the others, at its start.
+    /// `bloom`. With `two_step` it also asks for the second step's plain pipeline, which scales the
+    /// first step's display color up to the canvas. A builder asks before it records the pipelines
+    /// that its frame creates, so the list creates them with the others, at its start.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
         bloom: bool,
+        two_step: bool,
     ) -> Option<u32> {
         if self.pipeline.is_none() {
             self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
         }
         if bloom && self.bloom_pipeline.is_none() {
             self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
+        }
+        if two_step && !self.resolve && self.present_pipeline.is_none() {
+            self.present_pipeline = Some(pipelines.id(pipeline(false, false, None)));
         }
         self.bloom_pipeline
     }
@@ -303,6 +327,7 @@ impl FinalPass {
         outline: Option<OutlineInputs>,
         fold: Option<FoldInputs>,
         textures_made: bool,
+        scaled: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
         self.folds = fold.is_some();
@@ -314,9 +339,19 @@ impl FinalPass {
             tone_mapping,
             exposure: 1.0,
         };
+        // The first step's settings mark it, and the second step reads display color at the canvas:
+        // it holds the first step's tone mapped color, and dithers it when the first step read high
+        // dynamic range color.
+        let flags = if self.resolve {
+            self.flags | OutputUniform::RESOLVE
+        } else if scaled {
+            OutputUniform::DISPLAY_COLOR | if self.hdr { OutputUniform::DITHER } else { 0 }
+        } else {
+            self.flags
+        };
         let mut settings = FinalUniform {
             output: OutputUniform {
-                flags: self.flags,
+                flags,
                 ..output.uniform()
             },
             ..FinalUniform::default()
@@ -489,6 +524,19 @@ impl FinalPass {
         Ok(())
     }
 
+    /// Records the second step of the two-step pass inside the render pass that the render graph
+    /// began into the canvas: one triangle over the canvas, with the plain pipeline that scales the
+    /// first step's display color up to it.
+    pub(crate) fn record_present(&self, list: &mut DrawList) -> Result<(), RecordError> {
+        let pipeline = self
+            .present_pipeline
+            .expect("the two-step asks for its present pipeline before it records");
+        list.push(Op::SetPipeline, &[pipeline])?;
+        list.push(Op::SetBindGroup, &[0, self.ids.group, 0])?;
+        list.push(Op::Draw, &[3, 1, 0, 0])?;
+        Ok(())
+    }
+
     /// Forgets the GPU objects, so the next frame makes them again, after the thread that draws
     /// replaced the GPU. The pipeline keeps its id, which the cache creates again.
     pub(crate) fn reset_gpu(&mut self) {
@@ -523,7 +571,7 @@ mod tests {
         let mut arena = UploadArena::default();
         arena.reset(FinalPass::UPLOAD_BYTES);
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines, false);
+        pass.request_pipeline(&mut pipelines, false, false);
         pass.prepare(
             &mut list,
             &mut arena,
@@ -535,6 +583,7 @@ mod tests {
             None,
             None,
             true,
+            false,
         )
         .unwrap();
         (pipelines.keys()[0], pass.uploaded.unwrap(), list)
@@ -568,6 +617,72 @@ mod tests {
     }
 
     #[test]
+    fn the_two_step_marks_its_first_and_second_steps() {
+        check_flag("RESOLVE", OutputUniform::RESOLVE);
+        check_flag("DITHER", OutputUniform::DITHER);
+        let mut list = DrawList::with_capacity(256);
+        let mut arena = UploadArena::default();
+        arena.reset(FinalPass::UPLOAD_BYTES);
+        // The first step draws at the render size and leaves the dither to the second.
+        let mut first = FinalPass::new(
+            IDS,
+            SceneColor::from_format(format::RGBA16_FLOAT),
+            Antialias::Fxaa,
+        )
+        .resolve();
+        let mut pipelines = PipelineCache::default();
+        first.request_pipeline(&mut pipelines, false, false);
+        first
+            .prepare(
+                &mut list,
+                &mut arena,
+                ToneMapping::default(),
+                (64, 64),
+                5,
+                None,
+                Grading::default(),
+                None,
+                None,
+                true,
+                false,
+            )
+            .unwrap();
+        let flags = first.uploaded.unwrap().output.flags;
+        assert_ne!(flags & OutputUniform::RESOLVE, 0);
+        assert_eq!(flags & OutputUniform::DITHER, 0);
+
+        // The second step reads the first step's display color and dithers it, since the first step
+        // read high dynamic range color. It draws with its own plain pipeline.
+        let mut second = FinalPass::new(
+            IDS,
+            SceneColor::from_format(format::RGBA16_FLOAT),
+            Antialias::Msaa,
+        );
+        let mut pipelines = PipelineCache::default();
+        second.request_pipeline(&mut pipelines, false, true);
+        assert!(second.present_pipeline.is_some());
+        second
+            .prepare(
+                &mut list,
+                &mut arena,
+                ToneMapping::default(),
+                (64, 64),
+                5,
+                None,
+                Grading::default(),
+                None,
+                None,
+                true,
+                true,
+            )
+            .unwrap();
+        let flags = second.uploaded.unwrap().output.flags;
+        assert_ne!(flags & OutputUniform::DISPLAY_COLOR, 0);
+        assert_ne!(flags & OutputUniform::DITHER, 0);
+        assert_eq!(flags & OutputUniform::RESOLVE, 0);
+    }
+
+    #[test]
     fn a_custom_tone_curve_takes_its_own_templates_and_asks_again_when_it_changes() {
         let mut pass = FinalPass::new(
             IDS,
@@ -575,9 +690,9 @@ mod tests {
             Antialias::Fxaa,
         );
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines, true);
+        pass.request_pipeline(&mut pipelines, true, false);
         pass.set_tone_curve(Some(template::CUSTOM_FIRST));
-        pass.request_pipeline(&mut pipelines, true);
+        pass.request_pipeline(&mut pipelines, true, false);
         let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
         assert_eq!(
             templates,
@@ -593,7 +708,7 @@ mod tests {
             SceneColor::from_format(format::RGBA16_FLOAT),
             Antialias::None,
         );
-        pass.request_pipeline(&mut pipelines, false);
+        pass.request_pipeline(&mut pipelines, false, false);
         assert_eq!(
             pipelines.keys().last().map(|key| key.template),
             Some(template::CUSTOM_FIRST)
