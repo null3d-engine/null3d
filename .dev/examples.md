@@ -13,7 +13,8 @@ The demos in `examples/` serve two readers. A developer who clones this reposito
 | `examples/<name>/sketch.ts` | One demo, under 150 lines. The sketch shows the feature |
 | `examples/<name>/<scenery>.ts` | A demo's scenery, when the look bar needs more code than the sketch's 150 lines leave. The sketch imports it from the same folder, such as the particles demo's `glade.ts` ([D-142](decisions/D-142-more-techniques-before-1-0.md#the-days-other-rulings)) |
 | `examples/lib/interact.ts` | `interact`, which gives a demo's camera orbit controls and lets the pointer steer the demo ([Always-on interaction](#always-on-interaction)) |
-| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the forest demo and the test page that measures the levels' saving share |
+| `examples/lib/pines.ts` | Pines made in code at four levels of detail, and the hills they stand on, which the page that measures the levels' saving uses |
+| `examples/forest/woods.ts` | The forest demo's scenery: three firs and a broadleaf tree made in code at four levels of detail, the land and its ridges, the bark, needle and leaf textures, and the cut-out cards that draw the far trees on phones |
 | `examples/lib/` | Code that several demos share, such as `sampleUrl` |
 | `examples/vite.build.config.ts` | The production build of the page against this checkout's packages |
 | `examples/compare/comparisons.ts` | The list of comparisons with three.js ([below](#comparisons-with-threejs)) |
