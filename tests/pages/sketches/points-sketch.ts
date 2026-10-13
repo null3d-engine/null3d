@@ -1,7 +1,7 @@
 // The points' scene (bench/scenes/points.ts), which the parity test also draws with three.js:
 // opaque squares sized in world units at several depths, cut-out and see-through discs of a map,
 // and squares sized in pixels near the floor. The three.js twin draws with no tone mapping, three.js's
-// default, so the sketch turns off the engine's ACES.
+// default, so the sketch turns off the engine's default curve.
 import { color, defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
