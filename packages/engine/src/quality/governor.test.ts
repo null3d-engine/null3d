@@ -12,6 +12,7 @@ import {
 	CLOCK_LIMIT_MS,
 	DROP_AFTER_MS,
 	FAILED_RAISE_MS,
+	FEWEST_CONTACT_STEPS,
 	FRAME_US,
 	FULL_SCALE,
 	farIntervalSteps,
@@ -372,6 +373,26 @@ describe('the shadow steps', () => {
 });
 
 describe('the bloom steps', () => {
+	it('doubles the threshold of the levels of detail twice after the scale, only while a mesh has levels', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setShadows(5, 1, true);
+		controller.setCasters(1, false);
+		controller.setLevels(true);
+		const seen: string[] = [];
+		for (let k = 0; k < 4; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.detailFactor} ${controller.filter}`);
+		}
+		// The scale drops once, then the threshold doubles twice, then the filter lightens.
+		expect(seen).toEqual(['950 1 5', '950 2 5', '950 4 5', '950 4 3']);
+		expect([controller.steps, controller.maxSteps]).toEqual([3, 3]);
+		// A scene without levels takes the detail steps back at once, and changes what draws.
+		const before = controller.stepChanges;
+		controller.setLevels(false);
+		expect([controller.steps, controller.detailFactor, controller.filter]).toEqual([1, 1, 3]);
+		expect(controller.stepChanges).toBe(before + 1);
+	});
+
 	it("halves bloom's base after the shadow steps, only while bloom is on", () => {
 		const { controller, untilStep } = controlled(900);
 		controller.setShadows(5, 2, true);
@@ -415,6 +436,33 @@ describe('the bloom steps', () => {
 		controller.setAo(true, 0);
 		expect(controller.maxSteps).toBe(1);
 		expect(LOWEST_AO_SCALE).toBe(250);
+	});
+
+	it('give contact shadows their fewest steps last, while the sun casts shadows', () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAo(true, 500);
+		controller.setContact(16);
+		// Without a light that casts shadows, contact shadows have no step.
+		expect(controller.maxSteps).toBe(1);
+		controller.setCasters(1, false);
+		expect(controller.contactSteps).toBe(16);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.aoScale} ${controller.contactSteps}`);
+		}
+		// The scale drops to its lowest, then ambient occlusion draws at a quarter, then contact
+		// shadows take their fewest steps.
+		expect(seen).toEqual(['950 500 16', '950 250 16', '950 250 4']);
+		expect(controller.maxSteps).toBe(2);
+		// Ambient occlusion turned off takes its place, and contact shadows keep their step.
+		controller.setAo(false, 500);
+		expect([controller.steps, controller.aoScale, controller.contactSteps]).toEqual([1, 500, 4]);
+		// The fewest steps have no step, and none draw nothing to step.
+		controller.setContact(4);
+		controller.setContact(0);
+		expect(controller.maxSteps).toBe(0);
+		expect(FEWEST_CONTACT_STEPS).toBe(4);
 	});
 
 	it('take no step from the smallest base', () => {
@@ -570,9 +618,10 @@ describe('the governor in the frame loop', () => {
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
 		render.setRefreshHz(refreshHz);
-		const scene = { casters: 0, loading: false };
+		const scene = { casters: 0, levels: false, loading: false };
 		const reads: GovernorScene = {
 			shadowCasters: () => scene.casters,
+			hasLevels: () => scene.levels,
 			loading: () => scene.loading,
 		};
 		const resolution = new GovernorLoop(new Governor(), metrics, reads, maxTargetHz);

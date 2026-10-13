@@ -1,5 +1,6 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
+// ?effect=dof, ?effect=contact (the sun's contact shadows, with ?steps= steps per march, 8 by
+// default) or ?effect=effects names it. The last adds ?count= custom effects, 4 by default, to
 // bloom's scene. With dof, ?taps= sets the quality setting dofSamples, the gather's taps, which is
 // otherwise the preset's.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
@@ -18,16 +19,12 @@
 // whole pixel ratio, so the frame interval shows what joining saves.
 import { createEngine } from '@null3d/engine';
 import {
-	JOIN_TIMING_CHANNEL,
-	JOIN_TIMING_REQUEST,
-	type JoinTimingReport,
-} from '../../packages/engine/src/gpu/effect-join';
-import {
 	GL_TIMING_CHANNEL,
 	GL_TIMING_REQUEST,
 	type GlTimingReport,
 } from '../../packages/engine/src/gpu/webgl2/call-timing';
 import { featureCost } from './lib/feature-cost';
+import { requestJoinTiming } from './lib/join-timing';
 import { run } from './lib/result';
 
 /**
@@ -38,6 +35,7 @@ const SKETCHES = {
 	bloom: './sketches/bloom-sketch.ts',
 	ao: './sketches/ao-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
+	contact: './sketches/contact-shadows-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
 } as const;
 
@@ -47,6 +45,7 @@ const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
+const steps = params.get('steps');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
@@ -67,7 +66,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${steps === null ? '' : `&steps=${steps}`}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
@@ -168,22 +167,5 @@ function requestGlTiming(): Promise<GlTimingReport | undefined> {
 			resolve(event.data);
 		};
 		channel.postMessage(GL_TIMING_REQUEST);
-	}).finally(() => channel.close());
-}
-
-/**
- * The joined shaders' build times that the thread that draws kept, or undefined when none comes:
- * a release build keeps none.
- */
-function requestJoinTiming(): Promise<JoinTimingReport | undefined> {
-	const channel = new BroadcastChannel(JOIN_TIMING_CHANNEL);
-	return new Promise<JoinTimingReport | undefined>((resolve) => {
-		const timeout = setTimeout(() => resolve(undefined), 2000);
-		channel.onmessage = (event: MessageEvent<JoinTimingReport>) => {
-			if (event.data?.type !== 'join-timing') return;
-			clearTimeout(timeout);
-			resolve(event.data);
-		};
-		channel.postMessage(JOIN_TIMING_REQUEST);
 	}).finally(() => channel.close());
 }

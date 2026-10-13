@@ -5,6 +5,7 @@ import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { WGSL_UPDATE_EVENT } from './hot';
 import null3d, { type Null3dPluginOptions } from './index';
+import { UNPACK } from './pack';
 import type { ShaderProblem } from './shader-compiler';
 import type { CompiledMaterial, CompiledShader } from './shader-types';
 import {
@@ -317,8 +318,8 @@ fn effect(input: EffectInput) -> vec4f {
 	it('builds a surface function into every variant of the standard material', async () => {
 		const built = material(await compileWgsl('src/stripes.wgsl', SURFACE, HINT));
 		expect(built.functions).toEqual(['surface']);
-		// Each WebGL2 build has a twin that skins, for skinned meshes, and each build has a twin that
-		// reads the row values of instance batches.
+		// Each build has a twin that skins, for skinned meshes, and each build has a twin that reads
+		// the row values of instance batches.
 		const plain = [
 			'webgl2',
 			'webgl2_alpha_mask',
@@ -372,6 +373,11 @@ fn effect(input: EffectInput) -> vec4f {
 		const skinned = plain.filter((name) => name.startsWith('webgl2')).map((name) => `${name}_skin`);
 		const rowValued = plain.map((name) => `${name}_row_values`);
 		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned, ...rowValued].sort());
+		// The WebGPU builds that skin come apart, as they load on first use.
+		const skinnedWebgpu = plain
+			.filter((name) => name.startsWith('webgpu'))
+			.map((name) => `${name}_skin`);
+		expect(Object.keys(built.skinVariants ?? {}).sort()).toEqual(skinnedWebgpu.sort());
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
 		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });
@@ -622,9 +628,10 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		};
 		try {
 			const file = await server.transformRequest('/src/tint.wgsl');
-			expect(file?.code).toContain('"hot":"src/tint.wgsl"}');
+			// The key of the hot updates follows the shader's packed records.
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl"\)/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/"hot": ?"src\/tint\.ts#0"/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0"\)/);
 
 			const brighter = surface.replace('return', 'var s = defaultSurface(input);\n    return');
 			const [update] = await change('src/tint.wgsl', brighter);
@@ -663,7 +670,9 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			expect(sketch?.code).toContain('#version 300 es');
 			expect(sketch?.code).not.toContain('-> @builtin(position) vec4f {');
 			const file = await server.transformRequest('/src/shaders/glow.wgsl');
-			expect(file?.code).toStartWith('export default ({"kind":"shader","webgpu":');
+			expect(file?.code).toStartWith(
+				`export default ${UNPACK}("{\\"kind\\":\\"shader\\",\\"webgpu\\":`,
+			);
 			const error = await server.transformRequest('/src/broken.ts').then(
 				() => null,
 				(e: { plugin?: string; loc?: unknown; frame?: string }) => e,

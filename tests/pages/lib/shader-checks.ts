@@ -10,7 +10,8 @@ import {
 	METAL_FAULT,
 	RELINK_TAIL,
 } from '@null3d/engine/internal';
-import { progress } from './result';
+import { expectEnd, progress } from './result';
+import { expectedEndSeconds } from './runner-rules';
 
 /** A shader that the browser rejected, with the stage and the browser's log. */
 export interface ShaderFailure {
@@ -39,6 +40,17 @@ interface PendingProgram {
 const POLL_MS = 10;
 
 /**
+ * Fails the page with a message that names a lost context, and how far the page got. After a loss,
+ * every call returns null or false, which would otherwise read as a fault of the next program.
+ */
+function checkContext(gl: WebGL2RenderingContext, checked: number, total: number): void {
+	if (gl.isContextLost())
+		throw new Error(
+			`WebGL2 context lost after ${checked} of ${total} programs: the browser took the GPU context away, so the page cannot check the rest`,
+		);
+}
+
+/**
  * Starts one program's compile and link without waiting for either. `tail` goes at the end of both
  * sources.
  */
@@ -50,7 +62,12 @@ function startProgram(
 ): PendingProgram {
 	const vertex = gl.createShader(gl.VERTEX_SHADER);
 	const fragment = gl.createShader(gl.FRAGMENT_SHADER);
-	if (!vertex || !fragment) throw new Error(`createShader returned null for ${name}`);
+	if (!vertex || !fragment)
+		throw new Error(
+			gl.isContextLost()
+				? `WebGL2 context lost while the page started ${name}: the browser took the GPU context away`
+				: `createShader returned null for ${name}`,
+		);
 	gl.shaderSource(vertex, program.vertex.source + tail);
 	gl.shaderSource(fragment, program.fragment.source + tail);
 	gl.compileShader(vertex);
@@ -148,6 +165,9 @@ function checkProgram(
  */
 const BATCH = 32;
 
+/** The seconds that the page expects for its WGSL modules, after its GLSL programs. */
+const AFTER_GLSL_SECONDS = 30;
+
 /**
  * Compiles and links GLSL programs, each with its name, a batch at a time. Programs that read the
  * draw index are skipped, with a note, when the browser lacks `WEBGL_multi_draw`. Every compile and
@@ -176,11 +196,14 @@ export async function checkGlslPrograms(
 		return false;
 	});
 	const relinked: ShaderFailure[] = [];
+	const start = performance.now();
 	for (let first = 0; first < compiled.length; first += BATCH) {
+		checkContext(gl, first, compiled.length);
 		const pending = compiled
 			.slice(first, first + BATCH)
 			.map(([name, program]) => startProgram(gl, name, program));
 		if (parallel) await finished(gl, parallel, pending);
+		checkContext(gl, first, compiled.length);
 		const retries: PendingProgram[] = [];
 		for (const p of pending) {
 			if (metalFault(gl, p)) {
@@ -192,18 +215,26 @@ export async function checkGlslPrograms(
 			release(gl, p);
 		}
 		if (parallel) await finished(gl, parallel, retries);
+		checkContext(gl, first, compiled.length);
 		for (const p of retries) {
 			checkProgram(gl, p, failures, removed);
 			release(gl, p);
 		}
+		const checked = first + pending.length;
 		progress(
-			`GLSL: ${first + pending.length} of ${compiled.length} programs checked, ${relinked.length} linked again`,
+			`GLSL: ${checked} of ${compiled.length} programs checked, ${failures.length} failed, ${relinked.length} linked again`,
+		);
+		expectEnd(
+			expectedEndSeconds(performance.now(), start, checked, compiled.length, AFTER_GLSL_SECONDS),
 		);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
 	// Read only by the test harness, to refuse a software GPU in real-GPU runs.
 	const info = gl.getExtension('WEBGL_debug_renderer_info');
 	const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+	// Frees the driver's copy of every program now. Safari can keep a removed frame's context, and
+	// its compiled programs, for minutes, which the next part of the checks would pay for.
+	gl.getExtension('WEBGL_lose_context')?.loseContext();
 	return {
 		programs: compiled.length,
 		multiDraw,

@@ -82,7 +82,7 @@ describe('the preset table', () => {
 
 	it('draws the depth prepass on WebGL2 at every preset, and on no other GPU path (D-43)', () => {
 		const rows = ROWS.filter((row) => row.setting.webgl2).map((row) => row.name);
-		expect(rows).toEqual(['depthPrepass']);
+		expect(rows).toEqual(['contactShadowSteps', 'depthPrepass']);
 		for (const preset of QUALITY_PRESETS) {
 			expect(presetValue('depthPrepass', preset, 'webgl2')).toBe(true);
 			for (const tier of ['webgpu', 'webgpu-compat', undefined] as const)
@@ -129,13 +129,18 @@ describe('the preset table', () => {
 			'pointLightShadows',
 			'bloomSize',
 			'aoScale',
+			'contactShadowSteps',
 			'dofSamples',
 			'reflectionScale',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 			'governor',
 			'depthPrepass',
 			'gpuOcclusion',
 			'morphTargets',
 			'softwareOcclusion',
+			'softParticles',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'textureMemoryMiB',
@@ -168,8 +173,13 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'contactShadowSteps',
 			'dofSamples',
 			'reflectionScale',
+			'softParticles',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 			'softwareOcclusion',
 			'governor',
 			'antialias',
@@ -195,8 +205,13 @@ describe('the preset table', () => {
 			'shadowCascadeBlend',
 			'bloomSize',
 			'aoScale',
+			'contactShadowSteps',
 			'dofSamples',
 			'reflectionScale',
+			'softParticles',
+			'lodThreshold',
+			'lodShadowFactor',
+			'lodFade',
 			'softwareOcclusion',
 			'governor',
 		]);
@@ -242,10 +257,15 @@ describe('presetSettings', () => {
 			maxPixelRatio: 1.5,
 			minRenderScale: 0.5,
 			...full,
-			bloomSize: 128,
+			bloomSize: 64,
 			aoScale: 0,
 			dofSamples: 0,
+			contactShadowSteps: 0,
 			reflectionScale: 0.25,
+			softParticles: false,
+			lodThreshold: 2,
+			lodShadowFactor: 4,
+			lodFade: false,
 			softwareOcclusion: false,
 			shadowFilter: 3,
 			farCascadeInterval: 4,
@@ -270,8 +290,13 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0,
 			dofSamples: 22,
+			contactShadowSteps: 0,
 			reflectionScale: 0.5,
-			softwareOcclusion: true,
+			softParticles: true,
+			lodThreshold: 1,
+			lodShadowFactor: 2,
+			lodFade: true,
+			softwareOcclusion: false,
 			shadowFilter: 5,
 			farCascadeInterval: 3,
 			followMovingCasters: true,
@@ -295,8 +320,13 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 43,
+			contactShadowSteps: 8,
 			reflectionScale: 0.5,
-			softwareOcclusion: true,
+			softParticles: true,
+			lodThreshold: 1,
+			lodShadowFactor: 2,
+			lodFade: true,
+			softwareOcclusion: false,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
@@ -320,8 +350,13 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 71,
+			contactShadowSteps: 16,
 			reflectionScale: 1,
-			softwareOcclusion: true,
+			softParticles: true,
+			lodThreshold: 1,
+			lodShadowFactor: 2,
+			lodFade: true,
+			softwareOcclusion: false,
 			shadowFilter: 5,
 			farCascadeInterval: 2,
 			followMovingCasters: true,
@@ -354,7 +389,11 @@ describe('presetSettings', () => {
 	it("gives WebGL2 its own values, which the page's option replaces", () => {
 		for (const preset of QUALITY_PRESETS) {
 			const webgl2 = presetSettings(preset, {}, 'webgl2');
-			expect(webgl2).toEqual({ ...presetSettings(preset), depthPrepass: true });
+			expect(webgl2).toEqual({
+				...presetSettings(preset),
+				depthPrepass: true,
+				contactShadowSteps: presetValue('contactShadowSteps', preset, 'webgl2'),
+			});
 			expect(presetSettings(preset, {}, 'webgpu')).toEqual(presetSettings(preset));
 			expect(presetSettings(preset, { depthPrepass: false }, 'webgl2').depthPrepass).toBe(false);
 			expect(presetSettings(preset, { depthPrepass: true }, 'webgpu').depthPrepass).toBe(true);
@@ -415,7 +454,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, dofSamples, reflectionScale, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, reflectionScale, softParticles, lodThreshold, lodShadowFactor, lodFade, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

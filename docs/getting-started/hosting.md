@@ -166,7 +166,7 @@ The engine ships code from other projects:
 - a table of values from three.js, in the engine core
 - the Rust crates in the engine core
 
-Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`.
+Their licences ask each copy to carry their notices. A production build with the null3D Vite plugin writes these notices to `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
 
 ## Let browsers keep the build files
 
@@ -213,7 +213,7 @@ A game can play with no network after its first visit. Its own service worker ca
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
 | `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |
 
-Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
+Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. In this version, the start's files take about 6.7 MB, the skinning shaders 5.2 MB and the whole build 17.8 MB. These are the sizes of the files as they are, which the cache keeps. With compression, the downloads are about a fifth of that.
 
 This service worker caches the page, the start's files and the features that the game names:
 

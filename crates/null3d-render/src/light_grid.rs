@@ -54,14 +54,14 @@
 //! needs to find a position's cluster: [`LightGrid::cluster_at`] does what the shaders do.
 
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightShadow, VisibleLight};
+use null3d_core::lights::{LightShadow, LightView, VisibleLight};
 use null3d_core::shared::SharedMut;
 use null3d_gpu::drawlist::sizes::LIGHT_RECORD_BYTES;
 
 use crate::camera::{Mat4, ViewDepth};
-use crate::frame::words_as_bytes;
+use crate::frame::{FrameInput, words_as_bytes};
 use crate::shadow_tiles::ShadowTiles;
-use crate::view::ViewFrame;
+use crate::view::{MAX_VIEWS, ViewFrame, ViewId};
 
 // The core's light records are what the shaders read.
 const _: () = assert!(size_of::<VisibleLight>() == LIGHT_RECORD_BYTES as usize);
@@ -759,14 +759,12 @@ impl LightGrid {
     }
 }
 
-/// A frame builder's light grid: the grid of the camera's view each frame, and what the GPU holds
-/// of it. Only the camera's view lists point and spot lights: every other view's uniform block
-/// says that its grid lists none.
+/// One camera view's light grid: the grid of the view each frame, and what the GPU holds of it.
 ///
 /// The job workers list each cluster's lights, or on WebGPU the GPU does: the CPU then prepares
 /// the grid and uploads the light list and [`ClusterParams`] alone.
 #[derive(Debug)]
-pub(crate) struct CameraLights {
+pub(crate) struct ViewLights {
     grid: LightGrid,
     /// True when the GPU lists each cluster's lights.
     on_gpu: bool,
@@ -782,17 +780,9 @@ pub(crate) struct CameraLights {
     room: usize,
 }
 
-impl CameraLights {
-    /// A grid whose clusters' lights the job workers list.
-    pub(crate) fn new(limits: LightLimits) -> Self {
-        Self::with_assignment(limits, false)
-    }
-
-    /// A grid whose clusters' lights the GPU's light clustering passes list.
-    pub(crate) fn on_gpu(limits: LightLimits) -> Self {
-        Self::with_assignment(limits, true)
-    }
-
+impl ViewLights {
+    /// A grid whose clusters' lights the job workers list, or with `on_gpu`, the GPU's light
+    /// clustering passes.
     fn with_assignment(limits: LightLimits, on_gpu: bool) -> Self {
         let grid = LightGrid::new(DEFAULT_GRID, limits);
         let words = if on_gpu {
@@ -811,13 +801,13 @@ impl CameraLights {
         }
     }
 
-    /// The grid of the camera's view.
+    /// The grid of the view.
     pub(crate) fn grid(&self) -> &LightGrid {
         &self.grid
     }
 
-    /// Lists the frame's point and spot lights in the grid of the camera's view, `frame`, and
-    /// gives the view's uniform block the values that find each position's cluster.
+    /// Lists the frame's point and spot lights of the view `frame` in its grid, and gives the
+    /// view's uniform block the values that find each position's cluster.
     pub(crate) fn assign(
         &mut self,
         jobs: &JobSystem,
@@ -902,7 +892,7 @@ impl CameraLights {
             + self.lights_bytes().len()
     }
 
-    /// The room to keep in a frame's arena for the upload, at least [`CameraLights::upload_bytes`]
+    /// The room to keep in a frame's arena for the upload, at least [`ViewLights::upload_bytes`]
     /// once the frame's lights are assigned.
     pub(crate) fn upload_room(&self) -> usize {
         self.room
@@ -911,6 +901,120 @@ impl CameraLights {
     /// Forgets what the GPU holds, after the thread that draws replaced the GPU.
     pub(crate) fn forget_gpu(&mut self) {
         self.held = false;
+    }
+}
+
+/// A frame builder's light grids, one per camera view. The camera's view has its grid from the
+/// start. Every other camera view, such as a scene pass's, gets its own on the first frame that it
+/// sees a point or spot light, with the camera's limits, so passes in a scene without such lights
+/// cost nothing. A view without a grid lists no light: its uniform block's slices stay 0. A
+/// removed view's grid stays for the next view in its place.
+#[derive(Debug)]
+pub(crate) struct LightGrids {
+    /// Each camera view's grid, by view: the camera's first.
+    views: Vec<Option<ViewLights>>,
+    limits: LightLimits,
+    on_gpu: bool,
+    /// The point and spot lights that a view other than the camera's sees in the frame, before its
+    /// grid takes them.
+    seen: Vec<VisibleLight>,
+}
+
+impl LightGrids {
+    /// The grids of a builder whose job workers list each cluster's lights, or with `on_gpu`, whose
+    /// light clustering passes do.
+    pub(crate) fn new(limits: LightLimits, on_gpu: bool) -> Self {
+        let mut views: Vec<Option<ViewLights>> = (0..MAX_VIEWS).map(|_| None).collect();
+        views[ViewId::CAMERA.index()] = Some(ViewLights::with_assignment(limits, on_gpu));
+        Self {
+            views,
+            limits,
+            on_gpu,
+            seen: Vec::new(),
+        }
+    }
+
+    /// The grid of the camera's view.
+    pub(crate) fn camera(&self) -> &ViewLights {
+        self.get(ViewId::CAMERA)
+            .expect("the camera's view has a light grid")
+    }
+
+    /// The grid of camera view `view`, or `None` before the view first sees a light.
+    pub(crate) fn get(&self, view: ViewId) -> Option<&ViewLights> {
+        self.views.get(view.index())?.as_ref()
+    }
+
+    /// Each camera view that has a grid, with it.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (ViewId, &ViewLights)> {
+        self.views
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lights)| Some((ViewId::from_index(index), lights.as_ref()?)))
+    }
+
+    /// Each camera view that has a grid, with it, to change.
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (ViewId, &mut ViewLights)> {
+        self.views
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(index, lights)| Some((ViewId::from_index(index), lights.as_mut()?)))
+    }
+
+    /// Lists the point and spot lights of camera view `view`, whose values for the frame are
+    /// `frame`, in its grid, and writes each listed light's tile of the shadow atlas, which `tiles`
+    /// planned for the camera's view. The camera's view takes `input`'s visible lights. Any other
+    /// view gathers its own from `input`'s light table, with `exposure`, the exposure frames draw
+    /// with: a light that only such a view sees has no tile, so it casts no shadow there. A view
+    /// gets its grid here, the first time it sees a light.
+    pub(crate) fn assign(
+        &mut self,
+        view: ViewId,
+        frame: &mut ViewFrame,
+        input: &FrameInput<'_>,
+        exposure: f32,
+        tiles: &ShadowTiles,
+    ) {
+        let lights = if view == ViewId::CAMERA {
+            input.lights
+        } else {
+            let Some(table) = input.light_table else {
+                return;
+            };
+            let seen = &mut self.seen;
+            seen.clear();
+            // Room for every row: more only after the scene created lights.
+            seen.reserve(table.rows() as usize);
+            let light_view = LightView {
+                camera: frame.camera,
+                frustum: frame.frustum,
+                layers: frame.layers,
+            };
+            table.gather_view(input.scene, input.parity(), &light_view, exposure, seen);
+            &self.seen[..]
+        };
+        let Some(place) = self.views.get_mut(view.index()) else {
+            return;
+        };
+        if place.is_none() && !lights.is_empty() {
+            *place = Some(ViewLights::with_assignment(self.limits, self.on_gpu));
+        }
+        if let Some(grid) = place.as_mut() {
+            grid.assign(input.jobs, frame, lights);
+            grid.mark_shadows(tiles, input.shadow_lights);
+        }
+    }
+
+    /// The room to keep in a frame's arena for every grid's upload.
+    pub(crate) fn upload_room(&self) -> usize {
+        self.iter().map(|(_, lights)| lights.upload_room()).sum()
+    }
+
+    /// Forgets what the GPU holds of every grid, after the thread that draws replaced the GPU.
+    pub(crate) fn forget_gpu(&mut self) {
+        for (_, lights) in self.iter_mut() {
+            lights.forget_gpu();
+        }
     }
 }
 

@@ -37,6 +37,9 @@ import {
 	TEMPLATE_LINE,
 	TEMPLATE_LINE_LIT,
 	TEMPLATE_OUTLINE_MASK,
+	TEMPLATE_PARTICLE,
+	TEMPLATE_PARTICLE_DEPTH,
+	TEMPLATE_PARTICLE_MAP,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -55,6 +58,7 @@ import {
 } from '../../generated/shaders';
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
+import { PARTICLE_RECORDS } from '../particle-records';
 import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
@@ -232,6 +236,19 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	// shader too.
 	templates[TEMPLATE_SPRITE] = mesh(shaders.sprite);
 	templates[TEMPLATE_SPRITE_MAP] = mesh(shaders.sprite_map);
+	// Particles read their system's records, one for each instance.
+	templates[TEMPLATE_PARTICLE] = {
+		shader: shaders.particle,
+		pipeline: 'main',
+		vertices: PARTICLE_RECORDS,
+	};
+	templates[TEMPLATE_PARTICLE_MAP] = {
+		shader: shaders.particle_map,
+		pipeline: 'main',
+		vertices: PARTICLE_RECORDS,
+	};
+	// The soft particles' depth copy reads the one-sample copy of the depth that the backend keeps.
+	templates[TEMPLATE_PARTICLE_DEPTH] = { shader: shaders.particle_depth, pipeline: 'main' };
 	templates[TEMPLATE_LINE] = { shader: shaders.line, pipeline: 'main' };
 	templates[TEMPLATE_LINE_LIT] = { shader: shaders.line_lit, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
@@ -366,15 +383,20 @@ export function relink(gl: WebGL2RenderingContext, p: Program): void {
 	p.shaders = relinked.shaders;
 }
 
-/** The error of a program whose link failed, with the logs of its program and shaders. */
-function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
-	const logs = p.shaders
-		.map((shader) => gl.getShaderInfoLog(shader))
+/**
+ * The logs of a program whose link failed: the program's own, and each shader's that has one. A
+ * shader that failed to compile gives the program a log that says only so, and the shader's log
+ * names each error with its line. Call it before the shaders are deleted.
+ */
+export function linkLogs(gl: WebGL2RenderingContext, p: Program): string {
+	return [gl.getProgramInfoLog(p.program), ...p.shaders.map((s) => gl.getShaderInfoLog(s))]
 		.filter((log) => log)
 		.join('\n');
-	return new Error(
-		`a WebGL2 program failed to link${attempt}: ${gl.getProgramInfoLog(p.program)}\n${logs}`,
-	);
+}
+
+/** The error of a program whose link failed, with the logs of its program and shaders. */
+function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
+	return new Error(`a WebGL2 program failed to link${attempt}: ${linkLogs(gl, p)}`);
 }
 
 /**

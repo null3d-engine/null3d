@@ -15,11 +15,17 @@
 //! curves. The build adds the WGSL after the final pass's last line and builds every variant but
 //! the HALF builds with the shader def CUSTOM_TONE_CURVE.
 //!
+//! An effect's WGSL may declare textures, as a custom material's does (see [`crate::textures`]):
+//! the build binds them in the maps' group, group 1, loads their layers from the end of the
+//! effect's uniforms and builds with EFFECT_TEXTURES. A full-screen pass of the render graph runs
+//! the same build as an effect.
+//!
 //! Each effect also gets pieces, which the engine joins into a host at run time (see
 //! [`crate::pieces`]): for the host of joined effects, and for the final pass that effects fold
 //! into. A tone curve gets pieces for the final pass. An effect joins the effect before it only
 //! when it reads its input image at its own pixel alone: when it calls neither `effectPixel` nor
-//! `effectColor`.
+//! `effectColor`. An effect with textures gets no pieces and never joins: it draws in a pass of
+//! its own.
 //!
 //! Problems in the WGSL name its own lines; problems in a template's lines say so.
 
@@ -32,7 +38,7 @@ use crate::material::MaterialTemplate;
 use crate::pieces::{self, PieceOutput};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
-use crate::textures::resource_declarations;
+use crate::textures::{self, Texture, TextureOwner, resource_declarations};
 use crate::uniforms::{self, Owner, Uniform};
 use crate::{BuildError, Compiler, Inputs, Position, Problem, VariantOutput, features};
 
@@ -127,11 +133,14 @@ pub struct EffectOutput {
     /// True when the effect reads the scene's depth.
     pub depth: bool,
     /// True when the effect joins the effect before it: it reads its input image at its own pixel
-    /// alone. Always false for a tone curve.
+    /// alone and declares no textures. Always false for a tone curve.
     pub joins: bool,
+    /// The textures that the effect declares, with the float of its uniforms that holds each one's
+    /// layer: none for a tone curve.
+    pub textures: Vec<Texture>,
     /// The template's variants with the WGSL, by name.
     pub variants: BTreeMap<String, VariantOutput>,
-    /// The pieces that the engine joins into its hosts.
+    /// The pieces that the engine joins into its hosts: none for an effect with textures.
     pub pieces: EffectPieces,
 }
 
@@ -170,9 +179,14 @@ fn has_signature(tokens: &[Token], name: &str, param: &[&str], returns: &[&str])
         && returns.contains(&returned.as_str())
 }
 
-/// A problem for each directive in the WGSL, such as `enable`, and for each texture or sampler
-/// that it declares.
-fn source_problems(source: &EffectSource, tokens: &[Token], what: &str) -> Vec<Problem> {
+/// A problem for each directive in the WGSL, such as `enable`, and for a tone curve's, each
+/// texture or sampler that it declares.
+fn source_problems(
+    source: &EffectSource,
+    tokens: &[Token],
+    what: &str,
+    curve: bool,
+) -> Vec<Problem> {
     let path = source.path.as_str();
     let mut problems: Vec<Problem> = features::directive_lines(&source.source)
         .into_iter()
@@ -186,13 +200,16 @@ fn source_problems(source: &EffectSource, tokens: &[Token], what: &str) -> Vec<P
             )
         })
         .collect();
+    if !curve {
+        return problems;
+    }
     for declaration in resource_declarations(tokens) {
         let token = &tokens[declaration.first];
         problems.push(Problem::at(
             path,
             Some(locate(&source.source, &source.source, token.start)),
             format!(
-                "{what} declares no textures or samplers: the engine binds what it reads. Read the image with `effectColor(uv)` or `effectPixel(pixel)`."
+                "{what} declares no textures or samplers: it gets the color of each pixel. Read other images in an effect."
             ),
         ));
     }
@@ -244,7 +261,16 @@ impl Compiler {
         } else {
             "a tone curve's WGSL"
         };
-        let mut problems = source_problems(effect, &tokens, what);
+        let curve = function == TONE_CURVE;
+        let mut problems = source_problems(effect, &tokens, what, curve);
+        let found = if curve {
+            None
+        } else {
+            textures::read(&tokens, &effect.source, path, TextureOwner::Effect)
+                .map_err(|found| problems.extend(found))
+                .ok()
+        };
+        let texture_count = found.as_ref().map_or(0, |found| found.fields.len());
         let signature_ok = if function == EFFECT {
             has_signature(&tokens, EFFECT, &["EffectInput"], &["vec4f", "vec4<f32>"])
         } else {
@@ -265,11 +291,17 @@ impl Compiler {
                 ),
             ));
         }
-        let uniforms = uniforms::read(&tokens, &effect.source, path, 0, Owner::Effect)
-            .unwrap_or_else(|found| {
-                problems.extend(found);
-                None
-            });
+        let uniforms = uniforms::read(
+            &tokens,
+            &effect.source,
+            path,
+            texture_count as u32,
+            Owner::Effect,
+        )
+        .unwrap_or_else(|found| {
+            problems.extend(found);
+            None
+        });
         if function == TONE_CURVE
             && let Some(open) = tokens
                 .windows(2)
@@ -290,7 +322,7 @@ impl Compiler {
                 .any(|pair| names.contains(&pair[0].text) && pair[1].text == "(")
         };
         let depth = function == EFFECT && calls_any(&DEPTH_FUNCTIONS);
-        let joins = function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS);
+        let joins = function == EFFECT && !calls_any(&NEIGHBOR_FUNCTIONS) && texture_count == 0;
         let variants: BTreeMap<String, Variant> = template
             .variants()
             .iter()
@@ -306,6 +338,9 @@ impl Compiler {
                     defs.push("CUSTOM_EFFECT".to_owned());
                     if uniforms.is_some() {
                         defs.push("CUSTOM_UNIFORMS".to_owned());
+                    }
+                    if texture_count > 0 {
+                        defs.push("EFFECT_TEXTURES".to_owned());
                     }
                     if depth {
                         defs.push("EFFECT_DEPTH".to_owned());
@@ -329,7 +364,12 @@ impl Compiler {
             })
             .collect();
         let loader = uniforms.as_ref().map_or("", |found| found.loader.as_str());
-        let source = format!("{}{}{loader}", template.source(), effect.source);
+        let (own, bindings) = found
+            .as_ref()
+            .map_or((effect.source.as_str(), ""), |found| {
+                (found.source.as_str(), found.declarations.as_str())
+            });
+        let source = format!("{}{own}{loader}{bindings}", template.source());
         let mut errors = BuildError::default();
         let built = self.variants(
             path,
@@ -342,18 +382,23 @@ impl Compiler {
         );
         template.place_problems(&mut errors, path, &effect.source, note);
         errors.or(())?;
-        let pieces = self.effect_pieces(
-            templates,
-            effect,
-            function == TONE_CURVE,
-            uniforms.as_ref().map(|found| found.piece_loader.as_str()),
-            depth,
-        )?;
+        let pieces = if texture_count > 0 {
+            EffectPieces::default()
+        } else {
+            self.effect_pieces(
+                templates,
+                effect,
+                curve,
+                uniforms.as_ref().map(|found| found.piece_loader.as_str()),
+                depth,
+            )?
+        };
         Ok(EffectOutput {
             function: function.to_owned(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             depth,
             joins,
+            textures: found.map_or_else(Vec::new, |found| found.fields),
             variants: built,
             pieces,
         })

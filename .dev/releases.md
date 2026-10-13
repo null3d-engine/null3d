@@ -12,6 +12,8 @@ The first release is 0.1.0, as [Versions](#versions) says. Until then, no step b
 
 Merging that pull request runs the Release Publish workflow. It builds the shader modules and writes every generated file, which git on main does not keep ([D-105](decisions/D-105-generated-files-out-of-git.md)). It commits them in full on top of the merge commit, and tags that commit with the plain version, such as `0.1.0`. Only the tag points to that commit. The Claude Code plugin, `bunx skills add` and the docs on GitHub read the release from the tag, so they get the skills copy and the generated pages. The workflow then publishes the GitHub Release with the changelog section and each skill's zip file. Then it builds the WebAssembly files, packs every package that is not private, and publishes each tarball to npm. It skips a version that npm already has. [The npm packages](#the-npm-packages) says how a package is built and packed.
 
+The Release Publish workflow's two jobs, `publish` and `publish-npm`, may run for 30 minutes. They are the one exception to the rule that every CI job stops at 20 minutes ([Pull requests](pull-requests.md#cis-jobs)). A release is not a check of a commit, and a publish cut off halfway is worse than a slow one: a tag without its GitHub Release, or some packages on npm and not the others. They had not run yet on 12 October 2026, so their time is not known.
+
 ## Versions
 
 The first release is 0.1.0, when M3's exit gate passes, and 1.0 follows at M4's gate with the API freeze ([D-108](decisions/D-108-first-release.md), owner, 8 October 2026). That replaces the owner's ruling of 3 October 2026, which made 1.0 the first release. M1 and M2 end at their exit gates, and no publish step follows them. Before 0.1.0, M3 adds hosting with the isolation headers, basic fuzzing of the file loaders, the first npm publishes and a rule for the `since` values.
@@ -40,13 +42,14 @@ On 11 October 2026 the notes under the pages' titles stopped saying "Ships in nu
 
 ## The npm packages
 
-Four packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Five packages are public. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/packages.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
 | `@null3d/engine` | `lib/`, the built JavaScript and declarations. Both WebAssembly builds in `dist/wasm/`, the KTX2 transcoder and the meshopt decoder in `vendor/`, and a copy of `docs/` | The shader modules, then `lib/` and the copy of the docs |
 | `@null3d/vite-plugin` | `lib/`, and the shader compiler in `dist/shader-compiler.wasm` | `lib/` |
 | `@null3d/controls` | `lib/` | The engine's `lib/`, whose declarations it reads, then its own |
+| `@null3d/geometry` | `lib/`, and `THIRD-PARTY-NOTICES.txt` with the three.js and earcut licences, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
 ### Source in the repository, built files on npm
@@ -85,7 +88,22 @@ The publish job packs each package with `bun pm pack`, then publishes each tarba
 
 ### The fresh-project test
 
-`bun run test:packages` packs the packages, then makes a new Vite project from `tests/fixtures/fresh-project/` in a temporary folder. The folder is outside the repository, so no package in the repository's `node_modules` can stand in for a file that a tarball lacks. The test installs the tarballs with Bun, then runs the command-line tool's `test` command twice. The first run keeps its images as the references, and the second must match them. The command type checks the project with `skipLibCheck` off, so every declaration file in the packages must compile. It draws the sketch, which uses the orbit controls, on WebGPU, WebGPU's compatibility mode and WebGL2. Then `vite build` must write both engine cores. Last, the project builds a page of its own layout around a copy of `examples/`, as the website does, and two demos must start from that build ([Examples](examples.md#on-the-website)). The `packages` job in CI runs the test on SwiftShader.
+`bun run test:packages` packs the packages, then makes a new Vite project from `tests/fixtures/fresh-project/` in a temporary folder. The folder is outside the repository, so no package in the repository's `node_modules` can stand in for a file that a tarball lacks. The test installs the tarballs with Bun, then runs the command-line tool's `test` command twice. The first run keeps its images as the references, and the second must match them. The command type checks the project with `skipLibCheck` off, so every declaration file in the packages must compile. It draws the sketch, which uses the orbit controls and a torus knot from the geometry package, on WebGPU, WebGPU's compatibility mode and WebGL2. Then `vite build` must write both engine cores. Last, the project builds a page of its own layout around a copy of `examples/`, as the website does, and two demos must start from that build ([Examples](examples.md#on-the-website)). The `packages` job in CI runs the test on SwiftShader.
+
+The step takes 1 to 3 minutes in CI, and its limit there is 8. On 12 October 2026, it hung three times after "Start demos from the website build": in main's run 38232767149, in run 38230593908 of a pull request, and in run 38266409823 of #534. The first two printed nothing for 13 to 14 minutes, until the job's limit cancelled them, although Playwright limits each load to 30 seconds and each start to 60. Since then, each page of the website's build prints its time, and a page that neither starts nor fails in 90 seconds fails with the page's errors. A browser that does not close in 15 seconds is left behind with a note, so a stuck browser cannot hold the step.
+
+The cause was Bun 1.3.14, which ran the test. Playwright talks to Chrome over a pipe, and Bun closed its end of that pipe at random. Chrome logged "Connection terminated while reading from pipe" and ended normally. Playwright never noticed. Even its own time limits wait for an answer from the browser, so every later call waited forever. A debug job on CI's machines opened the four website pages in a fresh browser again and again, and timed each call:
+
+| Bun | Rounds | Hung | Load timed out | Pipe closed |
+| --- | --- | --- | --- | --- |
+| 1.3.14 | 135 | 11 | 9 | 20 |
+| 1.4.3 | 180 | 0 | 0 | 0 |
+
+Every failure matched a closed pipe in Chrome's log. A failed round stopped at a different page each time, as in CI. Bun 1.4.3 also ran 180 rounds with no failure where a browser server in Node owned the pipe. Bun 1.3.14 could not test that way: its HTTP client mishandles the WebSocket handshake that Playwright's `connect` uses, and the call waits until its time limit. The same pipe serves every Bun script that drives a browser: this test, the benchmark tools and the device runner's Chrome windows. Playwright's own test runner, which runs the browser and image tests, runs in Node, so the fault does not reach those tests.
+
+So every Bun script starts its browser with `launchChromium` in `packages/cli/src/browser.js`. In Bun, it finds the browser process that each launch starts, and checks twice a second that it still runs. When the process ends and Playwright has not noticed within 2 seconds, every call that waits fails at once. The message starts with `BROWSER_GONE` and names the Bun pipe fault. So a closed pipe fails a step within seconds, where it used to hang until the job's limit. Bun can also leave the ended browser unreaped, as a process in state Z, so the guard reads each process's state. The guard closes Playwright's client connection, which all the script's browsers share, so the script's later launches fail too: run the script again. On Bun 1.3.14 in the same loop, the first failing call of each CI machine failed in 2.4 to 2.5 seconds. `tests/lib/browser-launch.test.ts` fails when a Bun script starts a browser straight through Playwright, and `packages/cli/src/browser.test.ts` checks the guard.
+
+The guard turns a hang into a fast failure, but the step still fails. So the repository runs Bun 1.4.3 ([D-155](decisions/D-155-bun-1-4-3.md)). `tests/lib/bun-version.test.ts` fails when a workflow pins another version than `packageManager` in `package.json`, or when an older Bun runs the tests.
 
 The project's `overrides` take each `@null3d` package from its tarball. Without them, Bun looks on npm for the engine version that the controls name, which npm does not have before the release.
 
@@ -93,20 +111,21 @@ The first run passed on a MacBook Pro M5 Max in Chrome on 3 October 2026. The ty
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin` and `@null3d/controls` by hand. Each new add-on package, such as `@null3d/rapier` and `@null3d/particles`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls` and `@null3d/geometry` by hand. Each new add-on package, such as `@null3d/rapier` and `@null3d/particles`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
 3. Log in to npm with `npm login`, as an account that may publish in the `@null3d` scope.
-4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these three publishes:
+4. Publish each new tarball. Provenance needs a CI provider, so a flag turns it off for these four publishes:
 
    ```sh
    npm publish target/packages/null3d-engine-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-vite-plugin-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-controls-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-geometry-0.0.0.tgz --access public --provenance=false
    ```
 
-5. On npmjs.com, open each of the four packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
+5. On npmjs.com, open each of the five packages' settings, and add a trusted publisher: GitHub Actions, the owner `null3d-engine`, the repository `null3d` and the workflow `release-publish.yml`.
 6. Run the Release workflow with `minor`. Its publish job publishes 0.1.0 of every package through trusted publishing, with provenance.
 
 Until step 5, the publish job fails at the first package that has no trusted publisher. It skips the versions that npm has, so run it again after the setup.

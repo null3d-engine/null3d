@@ -45,6 +45,7 @@ import type {
 	MaterialData,
 	MeshData,
 	NodeData,
+	NodeLevels,
 	PrimitiveData,
 	TextureUse,
 } from './gltf-parse';
@@ -274,9 +275,11 @@ export async function loadGltf(
 	call: string,
 ): Promise<Prefab> {
 	const { data, bitmaps } = await parse(context, await file.arrayBuffer(), address, call);
-	// The thread that draws downloads the skinning and morph shader files while the textures
-	// decode, so a skinned or morphed model waits less for its pipelines. A skinned mesh's morph
-	// targets draw with skinning's builds.
+	// The thread that draws downloads the shader files of the features that the asset tool
+	// recorded with the file (its `NULL3D_shaders` list), and then the skinning and morph shader
+	// files of a file without such a list, while the textures decode. So a model waits less for
+	// its pipelines. A skinned mesh's morph targets draw with skinning's builds.
+	if (data.shaders) context.materials.shaders.needListed(data.shaders.features);
 	if (data.nodes.some((n) => n.skinned)) context.materials.shaders.need('skinning');
 	if (data.nodes.some((n) => !n.skinned && n.mesh >= 0 && hasMorphTargets(data.meshes[n.mesh])))
 		context.materials.shaders.need('morph');
@@ -300,6 +303,42 @@ export async function loadGltf(
 interface Made {
 	meshes: MeshGeometry[];
 	rig?: AnimationRig;
+}
+
+/** The screen height in pixels at which `MSFT_screencoverage` turns into errors. */
+const COVERAGE_HEIGHT = 1080;
+
+/**
+ * Gives each primitive's mesh of a node the levels of detail that `MSFT_lod` names: the same
+ * primitive of each level node's mesh. Each level's error comes from the asset tool's
+ * `NULL3D_lod_error`, or from `MSFT_screencoverage`: a level switches in where the mesh's sphere
+ * covers less of the screen's height than the level before allows, on a screen 1,080 pixels
+ * high. Levels whose meshes have other primitives, or no errors, are left out, and so are levels
+ * that a mesh cannot take, with a note.
+ */
+function setFileLevels(
+	base: readonly MeshGeometry[],
+	levels: NodeLevels,
+	data: GltfData,
+	meshOf: (k: number) => MeshGeometry[],
+): void {
+	const count = base.length;
+	if (levels.meshes.some((k) => (data.meshes[k] as MeshData).primitives.length !== count)) return;
+	const lower = levels.meshes.map(meshOf);
+	for (const [p, mesh] of base.entries()) {
+		const errors =
+			levels.errors ??
+			levels.coverage?.map((coverage) => (2 * mesh.radius) / (coverage * COVERAGE_HEIGHT));
+		if (!errors) return;
+		try {
+			mesh.setLevels(
+				lower.map((meshes, j) => ({ mesh: meshes[p] as MeshGeometry, error: errors[j] })),
+			);
+		} catch (error) {
+			data.notes.push(`the levels of detail of a mesh (${(error as Error).message})`);
+			return;
+		}
+	}
 }
 
 /** The prefab of a parsed file, once its textures and materials exist. */
@@ -344,6 +383,7 @@ async function buildPrefab(
 		const parent = n.parent < 0 ? 0 : (placed[n.parent] as number);
 		const mesh = n.mesh < 0 ? undefined : (data.meshes[n.mesh] as MeshData);
 		const made = n.mesh < 0 ? [] : meshOf(n.mesh);
+		if (n.levels && !n.skinned) setFileLevels(made, n.levels, data, meshOf);
 		const parts = (mesh?.primitives ?? []).map((p, k) => ({
 			mesh: made[k] as MeshGeometry,
 			material: materials.of(p),
@@ -618,7 +658,7 @@ function makeMeshes(
 function storeTree(core: CoreMemory, mesh: number, bytes: Uint8Array, call: string): boolean {
 	const words = Math.ceil(bytes.byteLength / 4);
 	const at = core.checkGrowth(core.glue.meshArrays(words), call);
-	new Uint8Array(core.u32(at, words).buffer, at, bytes.byteLength).set(bytes);
+	core.view(Uint8Array, at, bytes.byteLength).set(bytes);
 	return core.glue.setMeshBvh(mesh, bytes.byteLength) === 1;
 }
 
