@@ -59,6 +59,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
 	type PreloadSender,
@@ -100,6 +101,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Sends a shader's builds that load on first use to the thread that draws. */
+	sendBuilds: BuildsSender;
+	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
+	onAskBuilds(handler: (template: number) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -120,6 +125,12 @@ export interface SketchCore {
 	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
+	/**
+	 * Tells the page of an error that the sketch's own code threw in a frame, once for each distinct
+	 * message. The engine keeps drawing; the page reports it through `onSketchError`, and counts the
+	 * frames whose update failed.
+	 */
+	reportSketchError?(message: string): void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -137,10 +148,12 @@ const JOB_WINDOW = 30;
  */
 const JOB_GROW_US = 200;
 /**
- * Frames that the sketch thread leaves its parallel loops untimed after a window with too little
- * work, before it times them again. Each timing reads the browser's clock, which allocates a number.
+ * Seconds of sketch time that the sketch thread leaves its parallel loops untimed after a window
+ * with too little work, before it times them again. Each timing reads the browser's clock, which
+ * allocates a number. It is a time, so a slow frame rate holds the job workers back no longer than
+ * a fast one does.
  */
-const JOB_PAUSE = 270;
+const JOB_PAUSE_SECONDS = 4.5;
 
 /**
  * Resolves once a control slot holds frame `target` or a later one, or once the engine stops. It waits without
@@ -239,12 +252,16 @@ export class SketchRunner {
 	 */
 	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
-	/** The frames left before the sketch thread times its parallel loops again. */
-	private jobPause = 0;
+	/** The sketch time at which the sketch thread times its parallel loops again, while they pause. */
+	private jobPauseUntil = -1;
 	/** Whether the core times the parallel loops that the sketch thread hands out. */
 	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
+	/** True once the frame in progress has reported an error: its update did not run to its end. */
+	private updateFailed = false;
+	/** True while a frame is open, so an error outside one does not mark the next frame. */
+	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
@@ -353,9 +370,11 @@ export class SketchRunner {
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
 		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
 		if (sketch.jobWorkers > 0) {
-			// The page ends the job workers' loops through these words when the engine stops.
+			// The page ends the job workers' loops through these words when the engine stops, and
+			// lets them run the browser's measurement of its memory through the yield word.
 			Atomics.store(slots, Slot.JobsWakeAddress, glue.jobsWakeAddress());
 			Atomics.store(slots, Slot.JobsStopAddress, glue.jobsStopAddress());
+			Atomics.store(slots, Slot.JobsYieldAddress, glue.jobsYieldAddress());
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
@@ -416,6 +435,9 @@ export class SketchRunner {
 				get aoScale() {
 					return governor.aoScale / FULL_SCALE;
 				},
+				get contactShadowSteps() {
+					return governor.contactSteps;
+				},
 			},
 			textures.memory,
 		);
@@ -430,10 +452,15 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				wasmBytes: () => this.core.memory.buffer.byteLength,
+				wasmBytes: () => this.core.bytes,
 			},
 		};
-		const templates = new ShaderTemplates(sketch.sendShader);
+		const templates = new ShaderTemplates(
+			sketch.sendShader,
+			device.webgl2 ? 'glsl' : 'wgsl',
+			sketch.sendBuilds,
+		);
+		sketch.onAskBuilds((template) => templates.answer(template));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -454,7 +481,7 @@ export class SketchRunner {
 			templates,
 			device.joinEffects,
 		);
-		this.render = new Render(this.core, scene, materials.shaders, textures.maxSize);
+		this.render = new Render(this.core, scene, materials.shaders, templates, textures.maxSize);
 		// A pass's target has the scene color's format: 8-bit color only on the 8-bit path.
 		textures.passFormat = device.sceneColor === FORMAT_CANVAS ? 'rgba8unorm' : 'rgba16float';
 		this.ui = new Ui(
@@ -675,9 +702,11 @@ export class SketchRunner {
 	 */
 	private report(error: unknown): void {
 		const message = messageOf(error);
+		if (this.frameOpen) this.updateFailed = true;
 		if (!this.reported.has(message)) {
 			this.reported.add(message);
 			console.error(error);
+			this.sketch.reportSketchError?.(message);
 		}
 		if (this.holding) throw error;
 	}
@@ -698,8 +727,10 @@ export class SketchRunner {
 			this.timeHandedLoops(glue, false);
 			return;
 		}
-		if (this.jobPause > 0) {
-			if (--this.jobPause === 0) this.timeHandedLoops(glue, true);
+		if (this.jobPauseUntil >= 0) {
+			if (this.clock.now < this.jobPauseUntil) return;
+			this.jobPauseUntil = -1;
+			this.timeHandedLoops(glue, true);
 			return;
 		}
 		this.jobWindowUs += glue.takeHandedUs();
@@ -710,7 +741,7 @@ export class SketchRunner {
 		if (enough) {
 			this.sketch.wantJobs(Math.max(2, asked * 2));
 		} else {
-			this.jobPause = JOB_PAUSE;
+			this.jobPauseUntil = this.clock.now + JOB_PAUSE_SECONDS;
 			this.timeHandedLoops(glue, false);
 		}
 	}
@@ -756,6 +787,7 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		governor.setContact(settings.contactShadowSteps);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -763,10 +795,12 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
-			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
+			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -808,7 +842,8 @@ export class SketchRunner {
 			this.setLevelQuality() !== 0 ||
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
-			glue.setAoScale(governor.aoScale) !== 0
+			glue.setAoScale(governor.aoScale) !== 0 ||
+			glue.setContactSteps(governor.contactSteps) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -994,6 +1029,8 @@ export class SketchRunner {
 		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
+		this.updateFailed = false;
+		this.frameOpen = true;
 		this.phaseStart = start;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
@@ -1127,6 +1164,9 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// A frame whose update threw still presents, so its record marks it: the figure that counts
+		// completed updates leaves it out.
+		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
 		// The memory figures change slowly, so a few times a window is enough. They start with the
 		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
 		// memory of the last time a reader sampled.
@@ -1149,6 +1189,7 @@ export class SketchRunner {
 		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
 		this.core.refresh();
 		this.endPhase(Phase.Record);
+		this.frameOpen = false;
 		this.record.commit(performance.now() - start);
 		// Only the job workers asked for so far have records, so the figures count the ones that run.
 		const asked = this.sketch.wantJobs(0);

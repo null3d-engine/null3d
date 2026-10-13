@@ -650,7 +650,7 @@ pub mod layout {
     pub const FRAME: u32 = 0;
     /// Group 0 of the culling compute pipelines, plain and of the two occlusion phases: the
     /// view's parameters, the scene's tables, its compacted instances and indirect draws, then its
-    /// depth pyramid or a placeholder.
+    /// depth pyramid or a placeholder, the cell offsets texture and the skin firsts texture.
     pub const CULL: u32 = 1;
     /// Group 1 of render pipelines that read instances from data textures: the draw records.
     pub const DRAWS: u32 = 2;
@@ -738,6 +738,16 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
+    /// block of the view that draws, at a dynamic offset.
+    pub const PARTICLE: u32 = 32;
+    /// Group 2 of the particle templates: the view's copy of its opaque depth, which soft particles
+    /// read with `textureLoad` as unfilterable floats, or one texel at the far plane.
+    pub const PARTICLE_SCENE_DEPTH: u32 = 33;
+    /// The copy of the camera's opaque depth for soft particles from a multisampled depth, whose
+    /// first sample it reads with `textureLoad`. Only WebGPU has it: the one-sample copy binds as
+    /// [`VIEW_COPY`] does.
+    pub const PARTICLE_DEPTH_MS: u32 = 35;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1359,8 +1369,9 @@ pub mod sizes {
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, and the camera's view and projection matrices, which custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 704;
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read, and
+    /// the vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 720;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1373,6 +1384,10 @@ pub mod sizes {
     /// instead of copies of the matrices, and for a mesh with levels of detail, the level's error,
     /// the bucket of the next coarser level plus one, and the level's fade bucket plus one.
     pub const BUCKET_WORDS: u32 = 13;
+    /// A bucket record's first joint that sends the culling shader to each source's own: the
+    /// buckets that skinned objects share, whose vertex shaders skin, read the first joint of each
+    /// object's skin from a data texture of 32-bit indices, at the object's source.
+    pub const PER_SOURCE_JOINT: u32 = u32::MAX;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
@@ -1405,7 +1420,8 @@ pub mod sizes {
     /// Bytes of one draw record: the start of the draw's slice of the index list, its material
     /// and the data texture its instances come from, and one spare word.
     pub const DRAW_RECORD_BYTES: u32 = 16;
-    /// Draw records one multi-draw call reads: a 4 KiB uniform block.
+    /// Draw records one multi-draw call reads: a 4 KiB uniform block, which WebGL2's multi-draw
+    /// vertex shaders read through a texture copy, one texel per record.
     pub const MULTI_DRAW_RECORDS: u32 = 256;
     /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
@@ -1443,9 +1459,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
-    /// Bytes of the background's uniform block: eight vectors, which the cube map and the sky
-    /// read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 128;
+    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
+    /// plain color read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -1578,6 +1594,22 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
+    /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
+    /// bind group of index 0 is the frame's, 1 the system's of layout
+    /// [`PARTICLE`](super::layout::PARTICLE), and 2 the view's depth copy of layout
+    /// [`PARTICLE_SCENE_DEPTH`](super::layout::PARTICLE_SCENE_DEPTH). Each particle is a soft dot.
+    pub const PARTICLE: u32 = 53;
+    /// [`PARTICLE`] with a flipbook atlas: the bind group of index 3 is the map's, as for
+    /// [`SPRITE_MAP`] on WebGL2.
+    pub const PARTICLE_MAP: u32 = 54;
+    /// The copy of the camera's opaque depth that soft particles read: one triangle over a target
+    /// of 32-bit floats, which reads the depth one texel per pixel, with the layout
+    /// [`VIEW_COPY`](super::layout::VIEW_COPY).
+    pub const PARTICLE_DEPTH: u32 = 55;
+    /// [`PARTICLE_DEPTH`] from a multisampled depth, whose first sample it reads, with the layout
+    /// [`PARTICLE_DEPTH_MS`](super::layout::PARTICLE_DEPTH_MS). Only WebGPU has it.
+    pub const PARTICLE_DEPTH_MS: u32 = 56;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1867,6 +1899,9 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("PARTICLE", layout::PARTICLE),
+                ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
+                ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1960,6 +1995,10 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("PARTICLE", template::PARTICLE),
+                ("PARTICLE_MAP", template::PARTICLE_MAP),
+                ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
+                ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),
@@ -2090,6 +2129,14 @@ mod tests {
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
             format!(
+                "const PER_SOURCE_JOINT: u32 = {:#x}u;",
+                sizes::PER_SOURCE_JOINT
+            ),
+            format!(
+                "const INDEX_ROW_SHIFT: u32 = {}u;",
+                sizes::INDICES_PER_TEXTURE_ROW.trailing_zeros()
+            ),
+            format!(
                 "const WORKGROUP_SIZE: u32 = {}u;",
                 sizes::CULL_WORKGROUP_SIZE
             ),
@@ -2133,7 +2180,6 @@ mod tests {
                 "const VALUES_ROW_SHIFT: u32 = {}u;",
                 shift(sizes::ROW_VALUES_PER_TEXTURE_ROW)
             ),
-            format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             // The last of a material row's texels on WebGL2, one per vec4f.
             format!(
                 "textureLoad(materials, vec2u({}u, id), 0)",

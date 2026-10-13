@@ -45,6 +45,7 @@ import {
 import { createSpriteRows, fireAtlas, smokeAtlas } from '../../lib/particles';
 import { null3dSprites } from '../../lib/particles-null3d';
 import { sampleUrl } from '../../lib/samples';
+import { SIGNATURE_MESSAGE } from '../scene-signature';
 import {
 	ALL_ROCKS,
 	ARMIES,
@@ -946,9 +947,16 @@ export default defineSketch(
 		scene.setActiveCamera(camera);
 
 		page.onMessage((type, value) => {
-			if (type !== COUNT_MESSAGE) return;
-			setActiveUnits(state, Math.min(capacity, value as number));
-			shown = state.active;
+			if (type === COUNT_MESSAGE) {
+				setActiveUnits(state, Math.min(capacity, value as number));
+				shown = state.active;
+			} else if (type === SIGNATURE_MESSAGE) {
+				// The ramp's browser test asks where the camera is now: a frozen scene answers the same.
+				page.post(SIGNATURE_MESSAGE, {
+					token: value,
+					camera: [cameraPosition[0], cameraPosition[2]],
+				});
+			}
 		});
 
 		const cameraPosition = new Float64Array(3);

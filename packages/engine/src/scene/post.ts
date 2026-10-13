@@ -16,21 +16,22 @@ import type { Vec3Like } from '../math/types';
 import { type ColorInput, isComponent } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
 import { Lut } from './lut';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import type { CompiledWgsl } from './resources';
 import { ShaderPreloads } from './shader-preloads';
 import { ShaderTemplates } from './shader-templates';
 import type { UniformValues } from './wgsl-uniforms';
 
 /**
- * How the engine maps the scene's high dynamic range color to the screen, with three.js's
- * formulas. The curves are three.js's `ACESFilmicToneMapping` (`'aces'`), `AgXToneMapping`
- * (`'agx'`) and `NeutralToneMapping` (`'neutral'`). The value `'none'` clips the exposed color at
- * 1, as `LinearToneMapping` does.
+ * How the engine maps the scene's high dynamic range color to the screen. Three curves use
+ * three.js's formulas: `AgXToneMapping` (`'agx'`), `NeutralToneMapping` (`'neutral'`) and
+ * `ACESFilmicToneMapping` (`'aces'`). `'agx-punchy'` is AgX with Filament's punchy look, which adds
+ * contrast and color. `'aces'` serves ports of three.js scenes that set it. The value `'none'`
+ * clips the exposed color at 1, as `LinearToneMapping` does.
  *
  * @category api/post
  */
-export type ToneMapping = 'aces' | 'agx' | 'neutral' | 'none';
+export type ToneMapping = 'agx' | 'agx-punchy' | 'neutral' | 'aces' | 'none';
 
 /**
  * A custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the
@@ -46,6 +47,7 @@ export type ToneCurve = CompiledWgsl | `${string}toneCurve${string}`;
 const CODES: Readonly<Record<ToneMapping, number>> = {
 	aces: C.TONE_MAPPING_ACES,
 	agx: C.TONE_MAPPING_AGX,
+	'agx-punchy': C.TONE_MAPPING_AGX_PUNCHY,
 	neutral: C.TONE_MAPPING_NEUTRAL,
 	none: C.TONE_MAPPING_NONE,
 };
@@ -63,9 +65,7 @@ const SETTINGS = [
 	'outline',
 	'dof',
 ] as const;
-/** Bloom's number settings, in the order of their places in the core's block from its intensity on. */
-const BLOOM_NUMBERS = ['intensity', 'threshold', 'knee'] as const;
-const BLOOM_SETTINGS = [...BLOOM_NUMBERS, 'blend', 'weights'] as const;
+const BLOOM_SETTINGS = ['intensity', 'threshold', 'knee', 'blend', 'weights'] as const;
 /** Each way of blending bloom's glow, by its code in the core. */
 const BLENDS = { mix: 0, add: 1, screen: 2 } as const;
 /** The levels of bloom's chain, which take a weight each. */
@@ -86,17 +86,12 @@ const MAX_AO_SAMPLES = 64;
  * intensity's on, and its falloff and roundness from the falloff's on.
  */
 const VIGNETTE_SETTINGS = ['intensity', 'size', 'falloff', 'roundness'] as const;
-const VIGNETTE_FIRST = VIGNETTE_SETTINGS.slice(0, 2);
-const VIGNETTE_LAST = VIGNETTE_SETTINGS.slice(2);
 const OUTLINE_SETTINGS = ['color', 'hiddenColor', 'width'] as const;
-/**
- * Depth of field's number settings, in the order of their places in the core's block from its
- * focus distance on.
- */
+/** Depth of field's number settings. */
 const DOF_NUMBERS = ['focusDistance', 'aperture', 'focalLength', 'maxBlur', 'blades'] as const;
 /** The most blur that depth of field takes, as a share of the image's height. */
 const MAX_DOF_BLUR = 0.1;
-const TONE_MAPPINGS = "'aces', 'agx', 'neutral' or 'none'";
+const TONE_MAPPINGS = "'agx', 'agx-punchy', 'neutral', 'aces' or 'none'";
 
 /** The lowest and highest EV100 that `post.set` takes. */
 const EV100_MIN = -20;
@@ -307,9 +302,10 @@ export interface DofSettings {
 export interface PostSettings {
 	/**
 	 * How the engine maps high dynamic range color to the screen: a built-in curve's name, or a
-	 * custom tone curve's WGSL. The default is `'aces'`. three.js uses no tone mapping by default,
-	 * so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR color, as
-	 * bloom does; on a device without an HDR target the built-in curve stays.
+	 * custom tone curve's WGSL. The default is `'agx-punchy'`, which keeps the hues of bright colors
+	 * on their way to white and keeps the picture's contrast. three.js uses no tone mapping by
+	 * default, so a port of a three.js scene without it sets `'none'`. A custom curve needs HDR
+	 * color, as bloom does; on a device without an HDR target the built-in curve stays.
 	 */
 	toneMapping?: ToneMapping | ToneCurve;
 	/**
@@ -372,20 +368,13 @@ export interface PostSettings {
 }
 
 /**
- * Writes each setting of `group` that `keys` names and that the call gives as a number into the
- * post-processing values, the first key's at `place` and each next key's after it. It leaves the
- * values of the settings that the call leaves out.
+ * Writes `value` into the post-processing values at `place` when the call gives it as a number, and
+ * leaves the value there when the call leaves the setting out. Callers read each setting by its own
+ * name: a read by a key from a list goes through the browser's generic lookup, which copies a
+ * fraction into a new number object on every call.
  */
-function writeNumbers(
-	values: Float32Array,
-	place: number,
-	group: object,
-	keys: readonly string[],
-): void {
-	for (let k = 0; k < keys.length; k++) {
-		const value = (group as Record<string, unknown>)[keys[k] as string];
-		if (typeof value === 'number') values[place + k] = value;
-	}
+function writeNumber(values: Float32Array, place: number, value: unknown): void {
+	if (typeof value === 'number') values[place] = value;
 }
 
 /** Scratch for a hex color's linear components, so reading one allocates nothing. */
@@ -416,8 +405,8 @@ function writeColor(values: Float32Array, place: number, color: ColorInput, call
  *
  * @category api/post
  */
-export class Post {
-	private toneMapping = C.TONE_MAPPING_ACES;
+export class Post implements ViewHolder {
+	private toneMapping = C.TONE_MAPPING_AGX_PUNCHY;
 	/** The sketch's exposure, before the camera exposure of `ev100` scales it. */
 	private exposure = 1;
 	private ev100: number | false = false;
@@ -462,6 +451,12 @@ export class Post {
 		joinEffects = true,
 	) {
 		this.effects = new EffectChain(core, templates, joinEffects);
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
 	}
 
 	/**
@@ -560,8 +555,11 @@ export class Post {
 		if (vignette !== undefined) {
 			this.vignette = vignette !== false;
 			if (vignette !== false) {
-				writeNumbers(values, C.POST_VALUE_VIGNETTE_INTENSITY, vignette, VIGNETTE_FIRST);
-				writeNumbers(values, C.POST_VALUE_VIGNETTE_FALLOFF, vignette, VIGNETTE_LAST);
+				const { intensity, size, falloff, roundness } = vignette;
+				writeNumber(values, C.POST_VALUE_VIGNETTE_INTENSITY, intensity);
+				writeNumber(values, C.POST_VALUE_VIGNETTE_SIZE, size);
+				writeNumber(values, C.POST_VALUE_VIGNETTE_FALLOFF, falloff);
+				writeNumber(values, C.POST_VALUE_VIGNETTE_ROUNDNESS, roundness);
 			}
 			core.check(glue.setVignette(this.vignette), 'post.set', undefined, true);
 		}
@@ -584,8 +582,10 @@ export class Post {
 		if (bloom === undefined) return;
 		this.bloom = bloom !== false;
 		if (bloom !== false) {
-			const { blend, weights } = bloom;
-			writeNumbers(values, C.POST_VALUE_BLOOM_INTENSITY, bloom, BLOOM_NUMBERS);
+			const { intensity, threshold, knee, blend, weights } = bloom;
+			writeNumber(values, C.POST_VALUE_BLOOM_INTENSITY, intensity);
+			writeNumber(values, C.POST_VALUE_BLOOM_THRESHOLD, threshold);
+			writeNumber(values, C.POST_VALUE_BLOOM_KNEE, knee);
 			if (blend !== undefined && Object.hasOwn(BLENDS, blend))
 				values[C.POST_VALUE_BLOOM_BLEND] = BLENDS[blend];
 			if (weights !== undefined)
@@ -606,8 +606,13 @@ export class Post {
 	private setDof(dof: DofSettings | false, values: Float32Array): void {
 		this.dof = dof !== false;
 		if (dof) {
-			writeNumbers(values, C.POST_VALUE_DOF_FOCUS_DISTANCE, dof, DOF_NUMBERS);
-			if (dof.focalLength === 'camera') values[C.POST_VALUE_DOF_FOCAL_LENGTH] = 0;
+			const { focusDistance, aperture, focalLength, maxBlur, blades } = dof;
+			writeNumber(values, C.POST_VALUE_DOF_FOCUS_DISTANCE, focusDistance);
+			writeNumber(values, C.POST_VALUE_DOF_APERTURE, aperture);
+			writeNumber(values, C.POST_VALUE_DOF_FOCAL_LENGTH, focalLength);
+			writeNumber(values, C.POST_VALUE_DOF_MAX_BLUR, maxBlur);
+			writeNumber(values, C.POST_VALUE_DOF_BLADES, blades);
+			if (focalLength === 'camera') values[C.POST_VALUE_DOF_FOCAL_LENGTH] = 0;
 			const point = dof.focusPoint ?? (dof.focusDistance === undefined ? undefined : false);
 			if (point !== undefined) {
 				values[C.POST_VALUE_DOF_FOCUS_ON_POINT] = point ? 1 : 0;
@@ -629,7 +634,17 @@ export class Post {
 	/** Turns ambient occlusion on with the settings that `ao` gives, or off with `false`. */
 	private setAo(ao: AoSettings | false, values: Float32Array): void {
 		this.ao = ao !== false;
-		if (ao !== false) writeNumbers(values, C.POST_VALUE_AO_RADIUS, ao, AO_SETTINGS);
+		if (ao !== false) {
+			const { radius, thickness, distanceExponent, distanceFalloff, scale, samples, intensity } =
+				ao;
+			writeNumber(values, C.POST_VALUE_AO_RADIUS, radius);
+			writeNumber(values, C.POST_VALUE_AO_THICKNESS, thickness);
+			writeNumber(values, C.POST_VALUE_AO_DISTANCE_EXPONENT, distanceExponent);
+			writeNumber(values, C.POST_VALUE_AO_DISTANCE_FALLOFF, distanceFalloff);
+			writeNumber(values, C.POST_VALUE_AO_SCALE, scale);
+			writeNumber(values, C.POST_VALUE_AO_SAMPLES, samples);
+			writeNumber(values, C.POST_VALUE_AO_INTENSITY, intensity);
+		}
 		const on = this.ao && this.occlusionTargets;
 		if (on) this.shaders.need('ao');
 		if (DEV && this.ao && !this.occlusionTargets && !this.warnedNoAo) {
@@ -764,7 +779,7 @@ function checkSettings(settings: PostSettings): void {
 	)
 		throw new EngineError(
 			'E1213',
-			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness.",
+			"post.set() got three.js's vignette settings offset and darkness. Set size to the offset and intensity to the darkness. Under AgX, keep intensity at 1 or less and set falloff to 3.",
 		);
 	checkGroup('vignette', vignette, VIGNETTE_SETTINGS, 'intensity, size, falloff and roundness');
 	if (vignette) {

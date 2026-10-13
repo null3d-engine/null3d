@@ -31,7 +31,7 @@ import {
 	BACKGROUND_VALUE_TURBIDITY,
 } from '../generated/core';
 import { Environment } from './environment';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import { ShaderPreloads } from './shader-preloads';
 import { Texture } from './textures';
 
@@ -199,7 +199,7 @@ export type BackgroundSource = Texture | Environment | Cubemap | SkyBackground;
 const CALL = 'setBackground';
 
 /** @internal The scene's background source as the core holds it. */
-export class SceneBackground {
+export class SceneBackground implements ViewHolder {
 	/** The core's block of the background's values. */
 	private values: Float32Array | undefined;
 	/** The memory's generation that `values` was made in. */
@@ -209,7 +209,14 @@ export class SceneBackground {
 		private readonly core: CoreMemory,
 		/** Asks the thread that draws for a feature's shader file, once; it allocates nothing after. */
 		private readonly shaders: ShaderPreloads = new ShaderPreloads(),
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
+	}
 
 	/**
 	 * Draws `source` behind every object from the next frame on, with `options`. Throws E1203 for

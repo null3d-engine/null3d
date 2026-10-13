@@ -7,7 +7,7 @@
 // joints in 8 bits. The skinning pass must read each type. ?blend makes the middle character see
 // through, so the transparent pass draws it skinned. ?outline outlines the middle character with
 // the default outline, whose mask must follow the pose. ?tone=none turns off the engine's
-// default of ACES, as the parity test asks: the three.js twin draws with no tone mapping,
+// default curve, as the parity test asks: the three.js twin draws with no tone mapping,
 // three.js's default. ?textured draws the characters with a custom material that samples a texture
 // of stripes along their height, at texture coordinates from their positions, so custom materials'
 // textures must follow each way to skin. ?normalmap gives the characters tangents and the standard
@@ -16,12 +16,16 @@
 // in the clip's first pose, and the render scale at the whole canvas with the governor off, so
 // frames of play compare pixel for pixel whenever they come: on a slow GPU the governor lowers the
 // scale once its grace ends.
+// ?joints turns joints on top of the clip: the left character sets one joint's rotation halfway
+// and adds a turn to another, the middle one aims a chain of three joints at a point up and to the
+// right, and the right one aims two joints at a point to the left at half weight. A rotation that
+// the right character sets and then clears changes nothing.
 // ?late adds the characters during play, on the page's 'characters' message, and posts 'added'
 // once their pipelines are built: the first skinned mesh downloads the skinning shader file. With
 // ?extras the same message also turns bloom on and makes a line batch, two more features whose
 // shaders load on first use. The engine cannot load animated models yet, so the rig comes from the
 // engine's internal loader calls.
-import { defineSketch } from '@null3d/engine';
+import { type Animator, defineSketch } from '@null3d/engine';
 import { animateObject, createAnimationRig, skinObject } from '@null3d/engine/internal';
 import { OUTLINE_SETTINGS } from '../../../bench/scenes/outline';
 import {
@@ -48,6 +52,9 @@ const NORMAL_MAPPED = params.has('normalmap');
 const STILL = params.has('still');
 const LATE = params.has('late');
 const EXTRAS = params.has('extras');
+const JOINTS = params.has('joints');
+/** The sine and cosine of half of a turn of 0.7 radians, for the joint rotations of ?joints. */
+const [S, C] = [Math.sin(0.35), Math.cos(0.35)];
 /** Millimeters per meter: the scale of quantized positions. */
 const MM = 1000;
 /** Grooves of the normal map across one unit of x. */
@@ -86,6 +93,20 @@ function characterArrays() {
 		weights: { array: Uint8Array.from(weights, (v) => Math.round(v * 255)), normalized: true },
 		indices,
 	};
+}
+
+/** The joint overrides of character `k` for ?joints. */
+function turnJoints(animator: Animator, k: number): void {
+	if (k === 0) {
+		animator.setJointRotation('joint2', [0, 0, -S, C], 0.5);
+		animator.addJointRotation(animator.joint('joint4'), [S, 0, 0, C]);
+	} else if (k === 1) {
+		animator.lookAt([2.5, 2.6, 2], { joints: ['joint1', 'joint3', 'joint5'], limit: 0.7 });
+	} else {
+		animator.setJointRotation('joint5', [S, 0, 0, C]);
+		animator.clearJoint('joint5');
+		animator.lookAt([-3, 1.2, 3], { joints: ['joint2', 'joint4'], limit: [0.4, 0.8] }, 0.5);
+	}
 }
 
 /** A joint's inverse bind matrix, row-major 3 × 4, scaled from millimeters with ?quantized. */
@@ -196,6 +217,7 @@ export default defineSketch(({ scene, materials, geometry, post, textures, page,
 			const animator = animateObject(object, rig);
 			skinObject(object, animator);
 			animator.play(CLIP, { speed: STILL ? 0 : character.speed });
+			if (JOINTS) turnJoints(animator, k);
 		}
 	};
 	if (!LATE) {
