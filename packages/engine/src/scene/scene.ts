@@ -2587,7 +2587,12 @@ export class Scene implements ViewHolder {
 	takeAreaTablesFailure(): EngineError | undefined {
 		const failure = this.areaTablesFailure ?? this.areaTables?.takeFailure();
 		this.areaTablesFailure = undefined;
-		return failure;
+		if (failure === undefined) return undefined;
+		if (failure instanceof EngineError) return failure;
+		return new EngineError(
+			'E1431',
+			`the area lights' tables did not load from ${failure.url}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`,
+		);
 	}
 
 	/** @internal Settles when every picture that `setImage` set has been written to engine memory. */

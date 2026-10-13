@@ -10,7 +10,6 @@
 // bytes after them. Smooth tables predict well, so the differences are small and compress to less
 // than half.
 
-import { EngineError } from '../errors/engine-error';
 import type { CoreMemory } from './memory';
 
 /** Entries along each side of each table. */
@@ -59,17 +58,14 @@ export function decodeAreaTables(bytes: Uint8Array, out: Uint16Array): void {
  */
 export class AreaLightTables {
 	private loading: Promise<void> | undefined;
-	private failure: EngineError | undefined;
+	private failure: { url: string; error: unknown } | undefined;
 
 	constructor(private readonly core: CoreMemory) {}
 
 	/** Starts the download, once. Area lights light frames from the frame after it ends. */
 	load(): void {
 		this.loading ??= this.download().catch((error: unknown) => {
-			this.failure = new EngineError(
-				'E1431',
-				`the area lights' tables did not load from ${TABLES_URL.href}: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			this.failure = { url: TABLES_URL.href, error };
 		});
 	}
 
@@ -78,8 +74,8 @@ export class AreaLightTables {
 		return this.loading ?? Promise.resolve();
 	}
 
-	/** The download's failure, once: the frame loop reports it. */
-	takeFailure(): EngineError | undefined {
+	/** The download's failure, once: the frame loop reports it as E1431. */
+	takeFailure(): { url: string; error: unknown } | undefined {
 		const { failure } = this;
 		this.failure = undefined;
 		return failure;
