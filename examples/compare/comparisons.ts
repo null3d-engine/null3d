@@ -67,6 +67,11 @@ export interface Comparison {
 	 * holds no mode of its own, so the image tests draw its scene graph only.
 	 */
 	sameSceneAs?: string;
+	/**
+	 * Devices whose browsers draw the held frame another way, so its image tests keep references of
+	 * each such device, as the guide to image tests (.dev/image-tests.md) says.
+	 */
+	imageDevices?: readonly string[];
 	/** The effects that the scene draws, each a switch on the page. */
 	effects: readonly EffectName[];
 	/**
@@ -171,6 +176,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		hold: NIGHT_HOLD,
 		swiftShaderHoldCount: NIGHT_HOLD.softwareCount,
 		holdTimeoutSeconds: NIGHT_HOLD.timeoutSeconds,
+		// Firefox on Linux filters the facades' textures with its own anisotropic samples.
+		imageDevices: ['linux'],
 		objectsAt: nightObjects,
 		shadowTiles: 0,
 		modes: {
