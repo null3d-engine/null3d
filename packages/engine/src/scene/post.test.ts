@@ -371,6 +371,15 @@ describe('post.set', () => {
 		expect(reads()).toBe(1);
 	});
 
+	it('reads each number setting by its own name, so a call that runs every frame allocates nothing', async () => {
+		// A read by a key from a list goes through the browser's generic lookup, which copies each
+		// fraction into a new number object: 11 to 14 bytes per frame for ambient occlusion's
+		// intensity in `bench:allocation --ao`.
+		const source = await Bun.file(new URL('./post.ts', import.meta.url)).text();
+		expect(source).not.toMatch(/as Record<string, unknown>\)\[/);
+		expect(source).not.toMatch(/\[keys\[/);
+	});
+
 	it('refuses an unknown setting or tone mapping, and a value out of range, with E1213', () => {
 		const { post: output, calls, blooms } = post();
 		for (const bad of [

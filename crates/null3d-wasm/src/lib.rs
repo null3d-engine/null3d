@@ -48,7 +48,9 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::debug_view::DebugView;
 use null3d_render::dof::{self, Dof};
-use null3d_render::effects::{EFFECT_FLOATS, Effect};
+use null3d_render::effects::{
+    EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES as MAX_EFFECT_TEXTURES,
+};
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
 use null3d_render::frame::{
@@ -73,7 +75,7 @@ use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
 use null3d_render::sky_maps::MapSky;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
-use null3d_render::view::{MAX_VIEWS, View, ViewId, ViewNames, ViewTarget};
+use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -215,6 +217,9 @@ struct Engine {
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
     /// The uniforms of the custom effect that TypeScript sets next with `setEffect`.
     effect_values: Box<[f32; EFFECT_FLOATS]>,
+    /// The texture handles of a custom effect or a full-screen pass, which TypeScript writes with
+    /// its values.
+    effect_textures: Box<[u32; MAX_EFFECT_TEXTURES]>,
     /// The message of the last render graph error that a call met, with the passes and resources
     /// by name, which `renderGraphMessage` gives TypeScript.
     graph_message: String,
@@ -568,6 +573,7 @@ pub fn init_engine(
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
+        effect_textures: Box::new([0; MAX_EFFECT_TEXTURES]),
         graph_message: String::new(),
         expected_objects,
         ahead_failed: 0,
@@ -596,11 +602,26 @@ pub fn effect_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.effect_values[..])))
 }
 
+/// The address of a custom effect's or a full-screen pass's texture handles, one for each texture
+/// that its WGSL declares and 0 after them, which TypeScript writes with its values.
+#[wasm_bindgen(js_name = effectTextures)]
+pub fn effect_textures() -> u32 {
+    value_with_engine(|e| Ok(address(&e.effect_textures[..])))
+}
+
+/// The textures at `effectTextures`, as an effect's or a full-screen pass's maps.
+fn effect_maps(e: &Engine) -> EffectMaps {
+    EffectMaps {
+        textures: e.effect_textures.map(Handle::from_raw),
+        ..EffectMaps::default()
+    }
+}
+
 /// Sets the custom effect at place `index` in the order effects run, from the next frame on: the
 /// effect whose compiled WGSL has render pipeline template `template`, with the flags
-/// (`constants::effect_flag`) and the uniforms at `effectValues`. A new place goes after the last
-/// one. Template 0 removes the effect at `index` and every one after it. The TypeScript API checks
-/// the places and the uniforms.
+/// (`constants::effect_flag`), the uniforms at `effectValues` and the textures at
+/// `effectTextures`. A new place goes after the last one. Template 0 removes the effect at `index`
+/// and every one after it. The TypeScript API checks the places, the uniforms and the textures.
 #[wasm_bindgen(js_name = setEffect)]
 pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
     with_engine(|e| {
@@ -608,6 +629,7 @@ pub fn set_effect(index: u32, template: u32, flags: u32) -> u32 {
             template,
             depth: flags & constants::effect_flag::DEPTH != 0,
             values: *e.effect_values,
+            maps: effect_maps(e),
         });
         e.renderer.settings_mut().set_effect(index as usize, effect);
         0
@@ -671,10 +693,15 @@ pub fn destroy_engine() {
 }
 
 // Each doc comment below stays short: wasm-bindgen copies it into the glue.
-/// Serves the job system on job worker `index`: true when a call made it return, false at stop.
+/// Serves the job system on job worker `index` until it returns: 0 at stop, 1 for a call, 2 to
+/// yield to the thread's own tasks.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
-pub fn job_worker_loop(index: u32) -> bool {
-    JOBS.wait().worker_loop(index) == LoopExit::Called
+pub fn job_worker_loop(index: u32) -> u32 {
+    match JOBS.wait().worker_loop(index) {
+        LoopExit::Stopped => 0,
+        LoopExit::Called => 1,
+        LoopExit::Yielded => 2,
+    }
 }
 
 /// Asks job worker `index` to leave its loop to run a task.
@@ -745,6 +772,13 @@ pub fn jobs_wake_address() -> u32 {
 pub fn jobs_stop_address() -> u32 {
     JOBS.get()
         .map_or(0, |jobs| jobs.stop_words().1.as_ptr() as usize as u32)
+}
+
+/// The address of the job system's yield word, or 0 before it exists.
+#[wasm_bindgen(js_name = jobsYieldAddress)]
+pub fn jobs_yield_address() -> u32 {
+    JOBS.get()
+        .map_or(0, |jobs| jobs.yield_word().as_ptr() as usize as u32)
 }
 
 // --- Scene objects ---
@@ -2472,28 +2506,29 @@ fn graph_failure(e: &mut Engine, error: GraphError) -> u32 {
     fail(error.code(), error.details())
 }
 
-/// Adds a scene pass or a reflection pass, through a pass that the render graph names `pass`, which
-/// draws into a target that it names `target`. The view reads the targets of the other passes
-/// named in `reads`, one name per line, so the objects it draws may show them. With `clears`, its
-/// target clears to the exposed linear color `r`, `g`, `b` and alpha `a`; without, to the color
-/// the camera's target clears to.
+/// Adds a scene pass or a reflection pass, of `kind` (`constants::pass_kind`), through a pass that
+/// the render graph names `pass`, which draws into a target that it names `target`. The view reads
+/// the targets of the other passes named in `reads`, one name per line, so the objects it draws
+/// may show them. With `clears`, its target clears to the exposed linear color `r`, `g`, `b` and
+/// alpha `a`; without, to the color the camera's target clears to.
 ///
-/// With `scale` below 0 it is a scene pass: a view that draws the scene into a target of `width` x
-/// `height` texels. The view draws once a camera is set for it through `setPerspectiveCamera` or
+/// A scene pass draws the scene into a target of `width` x `height` texels, or with a width of 0,
+/// into a target of `scale` of the render size each way, 1, 0.5 or 0.25, which it fills whole at
+/// any render scale. The view draws once a camera is set for it through `setPerspectiveCamera` or
 /// `setOrthographicCamera`, with `constants::camera_target::PASS_VIEWS` plus its place.
 ///
-/// With `scale` from 0 it is a reflection pass: a view that draws the camera's view mirrored across
-/// the plane through the point (`px`, `py`, `pz`) of the world with normal (`nx`, `ny`, `nz`). Its
-/// target takes `scale` of the render size each way, 1, 0.5 or 0.25, or for 0 the share that
-/// `setReflectionScale` sets. It draws the objects on `layers`, or below 0 those on the camera's
-/// layers, in one frame of every `every`.
+/// A reflection pass draws the camera's view mirrored across the plane through the point (`px`,
+/// `py`, `pz`) of the world with normal (`nx`, `ny`, `nz`). Its target takes `scale` of the render
+/// size each way, 1, 0.5 or 0.25, or for 0 the share that `setReflectionScale` sets. It draws the
+/// objects on `layers`, or below 0 those on the camera's layers.
 ///
-/// Returns the view's place, from 1, or 0 when the builder draws the most views already, or when
-/// the pass does not fit the render graph, with the graph's error (E1502 to E1505), whose message
-/// `renderGraphMessage` gives.
+/// Either draws in one frame of every `every`. Returns the view's place, from 1, or 0 when the
+/// builder draws the most views already, or when the pass does not fit the render graph, with the
+/// graph's error (E1502 to E1505), whose message `renderGraphMessage` gives.
 #[wasm_bindgen(js_name = addPass)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_pass(
+    kind: u32,
     pass: &str,
     target: &str,
     reads: &str,
@@ -2514,14 +2549,25 @@ pub fn add_pass(
     py: f64,
     pz: f64,
 ) -> u32 {
-    let target_of = |size| ViewTarget {
-        size,
+    let kept = ViewTarget {
         every: every.max(1),
         clear: clears.then_some([r, g, b, a]),
         ..ViewTarget::default()
     };
-    let view = if scale < 0.0 {
-        View::default().with_target(target_of(Some((width.max(1), height.max(1)))))
+    let view = if kind == constants::pass_kind::SCENE {
+        let target = if width == 0 {
+            ViewTarget {
+                halvings: halvings_of(scale),
+                whole: true,
+                ..kept
+            }
+        } else {
+            ViewTarget {
+                size: Some((width, height.max(1))),
+                ..kept
+            }
+        };
+        View::default().with_target(target)
     } else {
         // The TypeScript API refuses a normal without length; the plane faces up in its place.
         let point = [px, py, pz];
@@ -2530,16 +2576,106 @@ pub fn add_pass(
             .expect("the up direction has length");
         let halvings = (scale > 0.0).then(|| halvings_of(scale));
         let layers = (layers >= 0.0).then_some(layers as u32);
-        View::mirror(mirror, halvings, layers).with_target(target_of(None))
+        View::mirror(mirror, halvings, layers).with_target(kept)
     };
     add_pass_view(view, pass, target, reads)
+}
+
+/// Adds a full-screen pass, through a pass that the render graph names `pass`, which draws the
+/// compiled WGSL of render pipeline template `template` over the whole of a target that it names
+/// `target`: of `width` x `height` texels, or with a width of 0, of `scale` of the render size
+/// each way, 1, 0.5 or 0.25. It reads the input image `source` (`constants::pass_source`), the
+/// scene's depth with the flag `constants::effect_flag::DEPTH`, its uniforms at `effectValues` and
+/// its textures at `effectTextures`, in one frame of every `every`. Returns the view's place, from
+/// 1, or 0 as `addPass` does.
+#[wasm_bindgen(js_name = addFullscreenPass)]
+#[allow(clippy::too_many_arguments)]
+pub fn add_fullscreen_pass(
+    pass: &str,
+    target_name: &str,
+    width: u32,
+    height: u32,
+    scale: f32,
+    every: u32,
+    template: u32,
+    flags: u32,
+    source: u32,
+) -> u32 {
+    let target = ViewTarget {
+        size: (width > 0).then_some((width, height.max(1))),
+        halvings: halvings_of(scale),
+        every: every.max(1),
+        ..ViewTarget::default()
+    };
+    let source = match source {
+        constants::pass_source::SCENE_COLOR => PassSource::SceneColor,
+        constants::pass_source::OUTLINE_MASK => PassSource::OutlineMask,
+        _ => PassSource::None,
+    };
+    add_view_of(
+        |e| {
+            let content = Fullscreen {
+                template,
+                source,
+                depth: flags & constants::effect_flag::DEPTH != 0,
+                values: *e.effect_values,
+                maps: effect_maps(e),
+            };
+            View::fullscreen(content, target)
+        },
+        pass,
+        target_name,
+        "",
+    )
+}
+
+/// Gives the full-screen pass of view place `place`, from 1, the uniforms at `effectValues` and
+/// the textures at `effectTextures`, from the next frame on. A texture that shows the pass's own
+/// target, or closes a loop of passes, fails with the render graph's error, and the pass keeps
+/// what it had.
+#[wasm_bindgen(js_name = setPassValues)]
+pub fn set_pass_values(place: u32) -> u32 {
+    with_engine(|e| {
+        let view = ViewId::from_place(place as usize);
+        let textures = e.effect_textures.map(Handle::from_raw);
+        let values = *e.effect_values;
+        let settings = e.renderer.settings_mut();
+        let Some(kept) = settings
+            .views()
+            .get(view.index())
+            .and_then(View::fullscreen_pass)
+            .copied()
+        else {
+            return 0;
+        };
+        settings.set_fullscreen_values(view, &values, &textures);
+        if let Err(error) = e.renderer.check_graph() {
+            let code = graph_failure(e, error);
+            let settings = e.renderer.settings_mut();
+            settings.set_fullscreen_values(view, &kept.values, &kept.maps.textures);
+            let _ = e.renderer.check_graph();
+            return code;
+        }
+        0
+    })
 }
 
 /// Adds the view of a sketch's pass with the render graph's names `pass` and `target`, reading
 /// the targets named in `reads`, one name per line. Returns its place, from 1, or 0 with the
 /// failures of `addPass`.
 fn add_pass_view(view: View, pass: &str, target: &str, reads: &str) -> u32 {
+    add_view_of(|_| view, pass, target, reads)
+}
+
+/// Adds the view that `view_of` makes from the engine as [`add_pass_view`] adds a view.
+fn add_view_of(
+    view_of: impl FnOnce(&Engine) -> View,
+    pass: &str,
+    target: &str,
+    reads: &str,
+) -> u32 {
     value_with_engine(|e| {
+        let view = view_of(e);
         let names = ViewNames {
             pass: pass.to_owned(),
             target: target.to_owned(),
@@ -2980,6 +3116,16 @@ pub fn set_ao_scale(thousandths: u32) -> u32 {
         e.renderer
             .settings_mut()
             .set_ao_scale(thousandths as f32 / 1000.0);
+        0
+    })
+}
+
+/// Sets the steps of each march of the main directional light's contact shadows, from the next
+/// frame on: 0 draws none.
+#[wasm_bindgen(js_name = setContactSteps)]
+pub fn set_contact_steps(steps: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_contact_steps(steps);
         0
     })
 }

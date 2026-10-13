@@ -514,6 +514,33 @@ function minimapTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the full-screen pass tests. */
+export const FULLSCREEN_SKETCH = 'tests/pages/sketches/fullscreen-sketch.ts';
+
+/**
+ * Full-screen passes on every tier. The first test chains a scene pass at a quarter of the
+ * render size into a full-screen pass that posterizes it, and paints a second texture from
+ * nothing, which shows upright: red at its top. The glow test blurs the outline mask at half size
+ * and adds it to the scene's color through an effect's texture. The echo test reads the scene
+ * color at a quarter size in a full-screen pass, and an effect shows it as an inset. The scale-50
+ * tests draw the glow and the echo at a render scale of 0.5, where each pass's texture takes its
+ * share of the smaller render size and the pass fills it whole.
+ */
+function fullscreenTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FULLSCREEN_SKETCH}${query}`,
+		hold: 0,
+	});
+	return [
+		test('fullscreen-passes', ''),
+		test('fullscreen-glow', '?glow'),
+		test('fullscreen-echo', '?echo'),
+		test('fullscreen-glow-scale-50', '?glow&half'),
+		test('fullscreen-echo-scale-50', '?echo&half'),
+	];
+}
+
 /** The sketch of the reflection tests: boxes on a mirror floor or on water, under the sky. */
 export const REFLECTION_SKETCH = 'tests/pages/sketches/reflection-sketch.ts';
 
@@ -1032,6 +1059,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...outlineTests(),
 	...minimapTests(),
 	...reflectionTests(),
+	...fullscreenTests(),
 	...occlusionTests(),
 	...gradingTests(),
 	...darkToneTests(),
@@ -1187,6 +1215,26 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		(view): ImageTest => ({
 			name: view === '' ? 'shadows-contact' : `shadows-contact-${view}`,
 			sketch: `tests/pages/sketches/shadow-contact-sketch.ts${view === '' ? '' : `?view=${view}`}`,
+			hold: 0,
+			size: [480, 270],
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		}),
+	),
+	// Contact shadows: pebbles, a thin pole, a crate and an upright tyre under a low sun, with a
+	// coarse shadow map. The march runs in the step after the depth copy alone, in ambient
+	// occlusion's last step with it on, and with 4 steps. Off, the cascades draw alone.
+	...(
+		[
+			['contact-shadows', ''],
+			['contact-shadows-ao', '?ao'],
+			['contact-shadows-steps-4', '?steps=4'],
+			['contact-shadows-off', '?off'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/contact-shadows-sketch.ts${query}`,
 			hold: 0,
 			size: [480, 270],
 			sameOnEveryTier: true,
@@ -2068,6 +2116,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 					swiftShaderSwitches: [`count=${comparison.swiftShaderHoldCount}`],
 				}),
 			};
+			// A comparison that draws another's scene, such as the Busy page, holds the same frame:
+			// its test shares that comparison's references, in the scene graph mode only.
+			if (comparison.sameSceneAs)
+				return [{ ...test, reference: `compare-${comparison.sameSceneAs}-${engine}` }];
 			return [
 				test,
 				{

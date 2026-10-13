@@ -27,7 +27,7 @@ import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
-import { progress, run, sharedMemories } from './lib/result';
+import { expectEnd, progress, run, sharedMemories } from './lib/result';
 import {
 	allocateMemory,
 	countRoom,
@@ -36,8 +36,10 @@ import {
 	MOST_ROOM_SEEN,
 	ROOM_CAP,
 	ROOM_KEPT,
+	ROOM_WAIT_SECONDS,
 	roomAfterPauses,
 } from './lib/room';
+import { expectedEndSeconds } from './lib/runner-rules';
 
 const params = new URLSearchParams(location.search);
 /** The memories' maximum in 64 KiB pages: 1 GiB, the engine's default, unless ?maximum sets it. */
@@ -417,10 +419,15 @@ async function round(kind: Kind, cycles: number, roomBefore?: number): Promise<R
 	const refused = sharedMemories.refused;
 	const trailFrom = window.__null3dProgress?.length ?? 0;
 	try {
+		const roundStart = performance.now();
 		for (; done < cycles; done++) {
 			cycleStart = window.__null3dProgress?.length ?? 0;
 			progress(`${kind}: cycle ${done + 1}`);
 			await cycle(kind);
+			// A slow device gets the time that its pace needs, and the wait for the room after.
+			expectEnd(
+				expectedEndSeconds(performance.now(), roundStart, done + 1, cycles, ROOM_WAIT_SECONDS),
+			);
 		}
 	} catch (e) {
 		failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
