@@ -7,14 +7,16 @@ import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import {
 	type DeviceShaders,
 	type FirstUseShaders,
+	glslFirstUseFiles,
 	loadGlslFeature,
 	loadGlslShaders,
 	loadWgslFeature,
 	loadWgslShaders,
+	wgslFirstUseFiles,
 } from '../generated/shaders';
 import type { CanvasHolder } from '../gpu/canvas-release';
 import type { Completion } from '../gpu/completion';
-import { DeviceShaderSet } from '../gpu/device-shaders';
+import { DeviceShaderSet, filesFor } from '../gpu/device-shaders';
 import { reclaimContext, webgl2Context } from '../gpu/webgl2/context';
 import type { PowerPreference } from '../page/capabilities';
 import { type CoreDevice, TEXTURE_COMPRESSION } from '../page/limits';
@@ -132,27 +134,32 @@ const WGSL_FEATURE_FILES: Readonly<Record<string, string>> = { morph: 'skinning'
 
 /**
  * The device's shaders, from the start's module of its fixed bits, as a set that loads the module
- * of other fixed bits through `load`, and the module of a feature that loads on first use through
- * `loadFeature`, when a pipeline needs it. The modules of the features that `options` preloads
- * download with the start's, and the set holds them before the renderer starts. The features that
- * the sketch asks for later, through the image table, load as soon as they are asked for.
- * `featureFiles` names, for a feature whose work this path does with another feature's builds,
- * the feature whose file to load in its place.
+ * of other fixed bits through `load`, and a module of features that load on first use through
+ * `loadFeature`, when a pipeline needs it. `files` are the keys of those modules. The modules of
+ * the features that `options` preloads download with the start's, and the set holds them before
+ * the renderer starts. The features that the sketch asks for later, through the image table, load
+ * as soon as they are asked for. `featureFiles` names, for a feature whose work this path does
+ * with another feature's builds, the feature whose file to load in its place.
  */
 async function deviceShaders(
 	device: CoreDevice,
 	options: RendererOptions,
 	load: (bits: number) => Promise<DeviceShaders>,
-	loadFeature: (feature: string, bits: number) => Promise<FirstUseShaders>,
+	loadFeature: (file: string, bits: number) => Promise<FirstUseShaders>,
+	files: readonly string[],
 	featureFiles: Readonly<Record<string, string>> = {},
 ): Promise<DeviceShaderSet> {
 	const fileOf = (feature: string) => featureFiles[feature] ?? feature;
 	const bits = device.shaderBits;
 	const preload = (options.preload ?? []).map(fileOf);
 	// Every download starts at once: a module that the set imports again comes from the cache.
-	for (const feature of preload) loadFeature(feature, bits).catch(() => undefined);
-	const shaders = new DeviceShaderSet(await freshIf(device, load(bits)), bits, (more, feature) =>
-		freshIf(device, feature === undefined ? load(more) : loadFeature(feature, more)),
+	for (const file of filesFor(files, new Set(preload)))
+		loadFeature(file, bits).catch(() => undefined);
+	const shaders = new DeviceShaderSet(
+		await freshIf(device, load(bits)),
+		bits,
+		(more, file) => freshIf(device, file === undefined ? load(more) : loadFeature(file, more)),
+		files,
 	);
 	await shaders.preload(preload);
 	const table = options.imageTable;
@@ -205,7 +212,8 @@ export async function createRenderer(
 			const [, , shaders, timing, renderers] = await Promise.all([
 				reclaimContext(canvas),
 				contextRestored(gl),
-				scene && deviceShaders(device, options, loadGlslShaders, loadGlslFeature),
+				scene &&
+					deviceShaders(device, options, loadGlslShaders, loadGlslFeature, glslFirstUseFiles()),
 				options.glTiming && import('../gpu/webgl2/call-timing'),
 				loadWebGL2Renderers(),
 			]);
@@ -219,7 +227,15 @@ export async function createRenderer(
 	}
 	const [gpu, shaders, renderers] = await Promise.all([
 		requestDevice(options),
-		scene && deviceShaders(device, options, loadWgslShaders, loadWgslFeature, WGSL_FEATURE_FILES),
+		scene &&
+			deviceShaders(
+				device,
+				options,
+				loadWgslShaders,
+				loadWgslFeature,
+				wgslFirstUseFiles(),
+				WGSL_FEATURE_FILES,
+			),
 		loadWebGPURenderers(),
 	]);
 	return renderers.webgpuRenderer(gpu, canvas, options, shaders);

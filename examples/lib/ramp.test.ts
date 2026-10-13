@@ -3,7 +3,9 @@ import {
 	countRange,
 	countToSlider,
 	deviceClass,
+	displayRate,
 	HOLD_SHARE,
+	noFrameText,
 	RampTracker,
 	rampCount,
 	rampSteps,
@@ -53,6 +55,49 @@ describe('the ramp', () => {
 		expect(tracker.result()).toMatchObject({ held: 400, stopReason: 'maximum' });
 	});
 
+	test('steps past one count that draws no frame, and stops at two in a row', async () => {
+		// An engine that holds 60 fps but draws nothing at one count, as Chrome 155 did for three.js's
+		// WebGLRenderer at 60 lights, and nothing at all past 1,728.
+		let count = 0;
+		const result = await runRamp(
+			{
+				setCount(next) {
+					count = next;
+				},
+				measure: async () =>
+					count === 1200 || count > 1728
+						? { fps: 0, cpuMs: null, noFrame: true }
+						: { fps: 60, cpuMs: 1 },
+			},
+			PLAN,
+			{ displayHz: 60, wait: async () => {} },
+		);
+		expect(result).toMatchObject({
+			held: 1728,
+			drew: 1728,
+			skipped: [1200],
+			stopReason: 'no-frame',
+		});
+		expect(result.steps.map((step) => step.count)).toEqual([1000, 1200, 1440, 1728, 2074, 2488]);
+		const text = noFrameText('three.js', { ...result, failure: 'a link error' }, 'lights');
+		expect(text).toBe(
+			'three.js drew no frame at 1,200 lights, but did at the next count, so the ramp stepped past: a fault of this browser (a link error). three.js could not draw 2,488 lights; it drew 1,728 at most (a link error).',
+		);
+	});
+
+	test('a count that draws no frame at the maximum stops the ramp, and drawing everywhere says nothing', () => {
+		const tracker = new RampTracker({ start: 100, factor: 2, max: 400 }, 60);
+		expect(tracker.add({ step: 0, count: 100, fps: 60, cpuMs: 1 })).toBeNull();
+		expect(tracker.add({ step: 1, count: 200, fps: 60, cpuMs: 1 })).toBeNull();
+		expect(tracker.add({ step: 2, count: 400, fps: 0, cpuMs: null, noFrame: true })).toBe(
+			'no-frame',
+		);
+		expect(tracker.result()).toMatchObject({ held: 200, drew: 200, skipped: [] });
+		const holds = new RampTracker({ start: 100, factor: 2, max: 400 }, 60);
+		holds.add({ step: 0, count: 100, fps: 60, cpuMs: 1 });
+		expect(noFrameText('null3D', holds.result(), 'lights')).toBe('');
+	});
+
 	test('runs on an engine: sets each count, settles, measures and reports each step', async () => {
 		const asked: string[] = [];
 		const steps: number[] = [];
@@ -98,6 +143,14 @@ describe('the ramp', () => {
 			},
 		);
 		expect(result.steps).toHaveLength(1);
+	});
+
+	test("judges against the engine's rate when the page's own frames run slower than the display", () => {
+		expect(displayRate(30, 120.07)).toBe(120);
+		expect(displayRate(60, 143.2)).toBe(144);
+		expect(displayRate(120, 119.4)).toBe(120);
+		expect(displayRate(120, 64)).toBe(120);
+		expect(displayRate(60, 61)).toBe(60);
 	});
 });
 

@@ -398,7 +398,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and so does the `weighted` blending on a custom material or a material with `transmission`, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
+`opacity`, `alphaCutoff`, `metalness`, `roughness`, `aoMapIntensity` and `transmission` go from 0 to 1, and `emissiveIntensity`, `lightMapIntensity` and `thickness` take 0 or more. `attenuationDistance` takes more than 0. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217. So does the `weighted` blending on a custom material or a material with `transmission`. A depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 
