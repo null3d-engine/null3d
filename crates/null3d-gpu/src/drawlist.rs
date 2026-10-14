@@ -157,14 +157,17 @@ pub enum Op {
     /// `ReleaseImage`, so a new GPU device can fill the texture again. A list that runs again, as
     /// a capture's does, fills the texture again with the same texels.
     GenerateTexture = 54,
-    /// [texture id, image id, stage, then the sky's settings as 16 floats: the sun's position and
+    /// [texture id, image id, stage, the physical sky's panorama texture id or 0 for the analytic
+    /// sky, then the analytic sky's settings as 16 floats: the sun's position and
     /// a spare, the turbidity, Rayleigh, Mie coefficient and Mie directional g, the cloud scale,
     /// speed, coverage and density, and the cloud elevation, the time and two spares]: runs one
     /// stage of a sky map on the cube texture that the generator under the image id filled. The
     /// backend's plan of the stages says what each one draws: the first ones draw the sky into
     /// the generator's own chain of levels, a face each; the next ones filter the map's levels for
     /// their roughness from the chain, a few faces each; the last copies the finished levels into
-    /// the texture at once. Only stage 0 reads the settings, which hold for the whole refresh.
+    /// the texture at once. Only stage 0 reads the settings, which hold for the whole refresh. A
+    /// stage that names a panorama reads the panorama, a 2D texture of 16-bit floats, in place of
+    /// the analytic sky's model, as the generator reads a panorama file.
     /// The stages before the copy write nothing that a frame reads, so a map can refresh over
     /// several frames while frames draw with the old one. Each stage reads only what earlier
     /// stages wrote, in this list or in an earlier one.
@@ -748,6 +751,11 @@ pub mod layout {
     /// first sample it reads with `textureLoad`. Only WebGPU has it: the one-sample copy binds as
     /// [`VIEW_COPY`] does.
     pub const PARTICLE_DEPTH_MS: u32 = 35;
+    /// The physical sky's group: at binding 0 its uniform block, at bindings 1, 2 and 3 its
+    /// transmittance, multiple scattering and sky view tables, at binding 4 a linear sampler that
+    /// clamps, and at binding 5 one that repeats across the width. Group 0 of its tables' steps,
+    /// group 1 of its background.
+    pub const ATMOSPHERE: u32 = 39;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1369,9 +1377,10 @@ pub mod sizes {
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read, and
-    /// the vignette that the 8-bit path's fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 720;
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read, the
+    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
+    /// fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 816;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1459,6 +1468,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
+    /// Bytes of the frame's shadow settings: the cascades' block followed by the tiles' block, one
+    /// binding of the frame's group (D-146).
+    pub const SHADOW_SETTINGS_BYTES: u32 = SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES;
     /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
     /// plain color read (see `null3d_render::background`).
     pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
@@ -1489,6 +1501,13 @@ pub mod template {
     /// The depth of instanced shadow casters, drawn from a light into a layer of a shadow map.
     /// Casters between the light and the layer's view flatten onto its near face.
     pub const SHADOW_DEPTH: u32 = 8;
+    /// The physical sky's tables and its panorama: one triangle over the whole target, whose first
+    /// vertex names the step, three times the table's index. Its group 0 has layout
+    /// [`ATMOSPHERE`](super::layout::ATMOSPHERE).
+    pub const SKY_TABLE: u32 = 10;
+    /// The physical sky behind every object, drawn as [`BACKGROUND_SKY`] is, from its tables. Its
+    /// group 1 has layout [`ATMOSPHERE`](super::layout::ATMOSPHERE).
+    pub const BACKGROUND_ATMOSPHERE: u32 = 11;
     /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
     /// samples a layer of a texture array. The bind group of index 0 is the frame's, that of index
     /// 1 the texture's and that of index 2 the background's, of layout
@@ -1610,6 +1629,21 @@ pub mod template {
     /// [`PARTICLE_DEPTH`] from a multisampled depth, whose first sample it reads, with the layout
     /// [`PARTICLE_DEPTH_MS`](super::layout::PARTICLE_DEPTH_MS). Only WebGPU has it.
     pub const PARTICLE_DEPTH_MS: u32 = 56;
+    /// The volumetric fog's light step: one triangle over the grid's texture, which lights each cell
+    /// of the grid. It binds the camera's frame group at group 0, as the background does, and at
+    /// group 1 its settings, the last frame's grid and a sampler, as a step of bloom binds them.
+    pub const FOG_LIGHT: u32 = 57;
+    /// The volumetric fog's sum: one triangle over the summed grid's texture, which joins the
+    /// blocks' sums in front of each cell. It binds as a step of bloom does.
+    pub const FOG_SUM: u32 = 58;
+    /// The volumetric fog's apply step: one triangle over a target of the render size, which adds
+    /// the summed grid's light to the scene's color. It binds as depth of field's composite does.
+    pub const FOG_APPLY: u32 = 59;
+    /// [`FOG_APPLY`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const FOG_APPLY_MS: u32 = 60;
+    /// The volumetric fog's block step: one triangle over a texture of the grid's size, which sums
+    /// the cells of each block of slices up to each cell. It binds as a step of bloom does.
+    pub const FOG_BLOCK: u32 = 69;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -1902,6 +1936,7 @@ pub fn typescript_constants() -> String {
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
+                ("ATMOSPHERE", layout::ATMOSPHERE),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -1985,6 +2020,8 @@ pub fn typescript_constants() -> String {
                 ("AO_DENOISE", template::AO_DENOISE),
                 ("BACKGROUND_CUBE", template::BACKGROUND_CUBE),
                 ("BACKGROUND_SKY", template::BACKGROUND_SKY),
+                ("SKY_TABLE", template::SKY_TABLE),
+                ("BACKGROUND_ATMOSPHERE", template::BACKGROUND_ATMOSPHERE),
                 ("SHADOW_CUTOUT", template::SHADOW_CUTOUT),
                 ("SHADOW_CUTOUT_MAP", template::SHADOW_CUTOUT_MAP),
                 ("VIEW_COPY", template::VIEW_COPY),
@@ -1999,6 +2036,11 @@ pub fn typescript_constants() -> String {
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
                 ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
+                ("FOG_LIGHT", template::FOG_LIGHT),
+                ("FOG_SUM", template::FOG_SUM),
+                ("FOG_APPLY", template::FOG_APPLY),
+                ("FOG_APPLY_MS", template::FOG_APPLY_MS),
+                ("FOG_BLOCK", template::FOG_BLOCK),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

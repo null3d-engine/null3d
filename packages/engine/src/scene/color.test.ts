@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { fromHex, fromHsl } from '../math/color';
 import { create } from '../math/vec3';
-import { linearColor } from './color';
+import { linearColor, writeLinearColor } from './color';
 
 describe('linearColor', () => {
 	it('reads hex strings, short hex strings and numbers alike, as sRGB', () => {
@@ -18,14 +18,34 @@ describe('linearColor', () => {
 		expect(linearColor([hsl[0], hsl[1], hsl[2]], 'test')).toEqual([hsl[0], hsl[1], hsl[2]]);
 	});
 
-	it('scales the linear color by the intensity', () => {
-		const [r, g, b] = linearColor('#ffffff', 'test', 3);
-		expect([r, g, b].map((c) => Math.round(c * 1e5) / 1e5)).toEqual([3, 3, 3]);
-		expect(linearColor([1, 0.5, 0], 'test', 2)).toEqual([2, 1, 0]);
+	it('gives every 8-bit level the value of the sRGB curve, exactly', () => {
+		for (let level = 0; level < 256; level++) {
+			const hex = level * 0x010101;
+			expect(linearColor(hex, 'test')).toEqual([...fromHex(create(), hex)]);
+		}
+	});
+
+	it('writes into an array from a place, and leaves its other values', () => {
+		const out = new Float64Array([9, 9, 9, 9, 9]);
+		expect(writeLinearColor(out, 0x4a8cff, 'test', 1)).toBe(out);
+		expect([...out]).toEqual([9, ...fromHex(create(), 0x4a8cff), 9]);
+		writeLinearColor(out, [0.25, 0.5, 1], 'test', 2);
+		expect([...out.subarray(2)]).toEqual([0.25, 0.5, 1]);
 	});
 
 	it('refuses other forms with E1204, naming the call', () => {
-		for (const bad of ['blue', '#12345', 0x1000000, -1, 1.5, [0, 0, 2], [0, 0], null] as const)
+		const bad3 = [0, Number.NaN, 0];
+		for (const bad of [
+			'blue',
+			'#12345',
+			0x1000000,
+			-1,
+			1.5,
+			[0, 0, 2],
+			[0, 0],
+			bad3,
+			null,
+		] as const)
 			expect(() => linearColor(bad as never, 'setBackground')).toThrow(
 				`E1204: setBackground() got the color ${JSON.stringify(bad)}.`,
 			);

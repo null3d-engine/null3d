@@ -141,9 +141,10 @@ use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
+use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, UploadArena,
+    RecordError, SceneSettings, UploadArena, bind_frame_group,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -153,6 +154,7 @@ use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Packing};
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
+use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
@@ -255,14 +257,13 @@ mod ids {
     /// The casters' bucket table and bucket records, which the shadow cascades' culling reads.
     pub const CASTER_BUCKETS: u32 = LINES + 1;
     pub const CASTER_RECORDS: u32 = LINES + 2;
-    /// The cascades' uniform block, which receivers read beside the shadow map.
+    /// The frame's shadow settings, which receivers read beside the shadow map and the atlas: the
+    /// sun's cascades, then the atlas's tiles (D-146).
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
-    /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
-    const SORTED: u32 = SHADOW_TILES + 1;
+    const SORTED: u32 = FINAL_SETTINGS + 1;
 
     pub const fn sorted(view: ViewId) -> u32 {
         SORTED + view.index() as u32
@@ -324,10 +325,14 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    /// The uniform buffer of the physical sky's values.
+    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
-    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
+    pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
+    /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
+    pub const FOG_VOLUME: u32 = FULLSCREEN + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FULLSCREEN + 1;
+    pub const PAGES: u32 = FOG_VOLUME + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -360,9 +365,11 @@ mod ids {
     pub const ROW_VALUES: u32 = BLANK_TRANSMISSION + 1;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = ROW_VALUES + 1;
+    /// The physical sky's tables and panorama.
+    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The texel that a full-screen pass without an input image reads, and the one that it binds
     /// in place of the scene's depth when it reads none.
-    pub const BLANK_PASS_COLOR: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const BLANK_PASS_COLOR: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     pub const BLANK_PASS_DEPTH: u32 = BLANK_PASS_COLOR + 1;
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
@@ -385,10 +392,14 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 6;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 7;
+    /// The physical sky's samplers.
+    pub const SKY_SAMPLERS: u32 = 8;
     /// The linear sampler of the full-screen passes.
-    pub const FULLSCREEN_SAMPLER: u32 = 8;
+    pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
+    /// The linear sampler of the volumetric fog's steps.
+    pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 9;
+    pub const SAMPLERS: u32 = FOG_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -456,10 +467,14 @@ mod ids {
     pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub const PARTICLE_DEPTH_COPY_GROUP: u32 = PARTICLE_DEPTH_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of each full-screen pass, by its view's place, after the particles'.
-    pub const FULLSCREEN_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
-    /// The bind groups of materials' maps, after the full-screen passes'.
-    pub const TEXTURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The physical sky's bind groups, after the particles'.
+    pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
+    pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
+    /// The bind groups of the volumetric fog's steps, after the full-screen passes'.
+    pub const FOG_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of materials' maps, after the volumetric fog's.
+    pub const TEXTURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -567,6 +582,8 @@ pub struct GpuDrivenRenderer {
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
+    /// The physical sky's tables.
+    physical_sky: PhysicalSkyPass,
     /// The point and spot lights of each camera view.
     lights: LightGrids,
     /// The camera views whose light buffers exist, as a mask of view places.
@@ -672,6 +689,11 @@ impl GpuDrivenRenderer {
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
                         },
+                        fog: FogVolumeIds {
+                            buffer: ids::FOG_VOLUME,
+                            sampler: ids::FOG_SAMPLER,
+                            first_group: ids::FOG_GROUPS,
+                        },
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
@@ -713,6 +735,12 @@ impl GpuDrivenRenderer {
                 groups: ids::PARTICLE_GROUPS,
                 depth_groups: ids::PARTICLE_DEPTH_GROUPS,
                 blank_depth: ids::BLANK_PARTICLE_DEPTH,
+            }),
+            physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
+                buffer: ids::PHYSICAL_SKY,
+                textures: ids::SKY_TABLES,
+                samplers: ids::SKY_SAMPLERS,
+                groups: ids::SKY_GROUPS,
             }),
             lights: LightGrids::new(config.light_limits, true),
             lights_made: 0,
@@ -983,6 +1011,11 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
+        self.graph.set_fog_volume(self.settings.fog_volume_frame(
+            input.scene,
+            parity,
+            input.canvas,
+        ));
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
@@ -1000,6 +1033,8 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
             Place::of(self.layout.depthless),
         );
+        self.physical_sky
+            .request_pipeline(&mut self.pipelines, self.settings.physical_sky().is_some());
         created_pipelines |= self.skinning.create_pipeline(list, input.frame)?;
         // Occlusion culling's shaders load on first use: its pipelines wait for the scene's first
         // marked occluder.
@@ -1202,7 +1237,21 @@ impl GpuDrivenRenderer {
             table: ids::MATERIALS,
             values: ids::CUSTOM_VALUES,
         };
-        let groups_remade = self.settings.record_materials(input, list, arena, table)?;
+        let camera_y = match self.frames.get(ViewId::CAMERA.index()) {
+            Some(Some(frame)) => frame.uniform.camera_world[1],
+            _ => 0.0,
+        };
+        physical_sky::record_frame(
+            &mut self.physical_sky,
+            &mut self.settings,
+            (&self.pipelines, input.pipelines_built),
+            camera_y,
+            list,
+            arena,
+        )?;
+        let groups_remade =
+            self.settings
+                .record_materials(input, list, arena, table, &self.physical_sky)?;
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
         self.settings.update_post_layers();
@@ -1240,7 +1289,8 @@ impl GpuDrivenRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(list, arena, &self.settings)?;
+        self.background
+            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let binding_bytes = self.config.storage_binding_bytes;
         let (shared_recreated, casters_recreated) = if upload_everything {
             let shared = self.layout.apply(list, arena, binding_bytes)?;
@@ -1439,7 +1489,8 @@ impl GpuDrivenRenderer {
             list.push(Op::WriteBuffer, &[ids::SHADOWS, 0, at, bytes])?;
         }
         self.cascades_held = shadow.is_some() || (self.cascades_held && !shadows);
-        self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+        self.tiles
+            .upload(list, arena, ids::SHADOWS, sizes::SHADOW_UNIFORM_BYTES)?;
         let shadow_detail = self.settings.shadow_level_view(input.canvas);
         for tile in 0..tiles {
             let view = ViewId::tile(tile);
@@ -1607,6 +1658,7 @@ impl GpuDrivenRenderer {
                     opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
+                Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
                     transparent.record(list, view, sorted, skinning, settings, meshes, particles)
                 }
@@ -1629,7 +1681,7 @@ impl GpuDrivenRenderer {
 
     /// Records the creation of the material table, the data texture of materials' custom values,
     /// and three.js's table of specular terms, whose sizes never change, and of the shadows'
-    /// uniform block and sampler.
+    /// settings block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(
             list,
@@ -1637,7 +1689,6 @@ impl GpuDrivenRenderer {
             ids::SHADOW_SAMPLER,
             Some(ids::SHADOW_TEXEL_SAMPLER),
         )?;
-        ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -1724,6 +1775,7 @@ impl GpuDrivenRenderer {
             + particles
             + self.graph.upload_bound()
             + BackgroundPass::UPLOAD_BYTES
+            + PhysicalSkyPass::UPLOAD_BYTES
     }
 }
 
@@ -1784,6 +1836,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.value_rows = 0;
         self.background.reset_gpu();
         self.particles.reset_gpu();
+        self.physical_sky.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.forget_gpu();

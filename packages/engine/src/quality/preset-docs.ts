@@ -67,6 +67,7 @@ export const SETTING_DOCS: {
 	shadowFilter: { label: 'Shadow filter', print: (value) => `${value} x ${value} texels` },
 	farCascadeInterval: { label: 'Far cascade updates', print: everyNth },
 	followMovingCasters: { label: 'Far cascades follow moving casters', print: yesNo },
+	farAnimationInterval: { label: 'Far-animation updates', print: everyNth },
 	shadowCascadeBlend: {
 		label: 'Blend between shadow cascades',
 		print: (value) => `${Math.round(Number(value) * 100)}% of each cascade`,
@@ -88,6 +89,10 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	fogSlices: {
+		label: 'Volumetric fog',
+		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
+	},
 	reflectionScale: {
 		label: 'Reflection passes',
 		print: (value) =>
@@ -101,6 +106,10 @@ export const SETTING_DOCS: {
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
 	lodFade: { label: 'Level of detail fades', print: yesNo },
+	physicalSky: {
+		label: 'Physical sky',
+		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

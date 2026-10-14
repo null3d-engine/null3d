@@ -80,7 +80,7 @@ export default defineSketch(({ scene, post }) => {
 
 A point or spot light ends at its `range`, in meters. It has no default, because the engine finds the lights near each surface by their ranges. Its light fades with distance by `decay`, and the default, 2, is the physical rate. A spot light's `angle` goes from its direction to the edge of its cone, in radians, up to π/2, and the default is π/3. Its `penumbra`, from 0 to 1, is the part of the cone over which the light fades out toward the edge.
 
-Every setter allocates nothing except `setColor` and `setGroundColor`, which convert the color. So `onUpdate` can call `setIntensity`, `setDirection`, `setRange` and the others in every frame. Set colors at setup, and animate intensities.
+Every setter allocates nothing, `setColor` and `setGroundColor` included. So `onUpdate` can call `setIntensity`, `setColor`, `setDirection`, `setRange` and the others in every frame.
 
 ## Which lights reach surfaces
 
@@ -151,6 +151,8 @@ const sun = scene.createDirectionalLight({
 });
 sun.setShadow({ bias: 0.02, normalBias: 0.04 });
 ```
+
+The `distance` default is `'auto'`. The engine follows the farthest surface that receives shadows in the camera's view, rounded up on a ladder. A small scene then gets sharper shadows without naming a distance. Pass a number to fix it, as a port of a scene with its own shadow distance does. See [Shadows](../concepts/shadows.md#settings).
 
 Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
 
