@@ -41,18 +41,17 @@ run('hold', async () => {
 	[box.near, box.far] = [0.1, 2 * sun.position.length()];
 	box.updateProjectionMatrix();
 
-	const [width, height] = SHADOW_CATCHER.size;
-	const plane = new three.Mesh(
-		new three.PlaneGeometry(width, height),
+	const [width, depth] = SHADOW_CATCHER.size;
+	const ground = new three.Mesh(
+		new three.BoxGeometry(width, 0.2, depth),
 		new three.ShadowMaterial({
 			color: SHADOW_CATCHER.color,
 			opacity: SHADOW_CATCHER.opacity,
 		}),
 	);
-	plane.rotation.x = -Math.PI / 2;
-	plane.position.set(...SHADOW_CATCHER.position);
-	plane.receiveShadow = true;
-	scene.add(plane);
+	ground.position.set(...SHADOW_CATCHER.position);
+	ground.receiveShadow = true;
+	scene.add(ground);
 
 	for (const caster of SHADOW_CATCHER_CASTERS) {
 		const mesh =
@@ -65,7 +64,7 @@ run('hold', async () => {
 						new three.BoxGeometry(...caster.size),
 						new three.MeshStandardMaterial({ color: '#8d94a0', roughness: 0.7 }),
 					);
-		mesh.position.set(...caster.position);
+		mesh.position.set(caster.position[0], caster.position[1], caster.position[2]);
 		mesh.castShadow = true;
 		scene.add(mesh);
 	}
