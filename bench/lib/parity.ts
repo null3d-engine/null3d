@@ -522,6 +522,8 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/lights.html?scene=hemisphere`,
 		sketchSwitches: NO_TONE,
 	},
+	// Rectangle lights against three.js's RectAreaLight, with the same fitted tables and formulas.
+	{ test: 'lights-rect', twin: `${TWINS}/lights.html?scene=rect`, sketchSwitches: NO_TONE },
 	{ test: 'fog-linear', twin: `${TWINS}/fog.html?fog=linear` },
 	{ test: 'fog-exp2', twin: `${TWINS}/fog.html?fog=exp2` },
 	...TONE_MAPPINGS.flatMap((tone) =>
@@ -689,11 +691,20 @@ export const REFERENCE_PRESET_SWITCH = 'preset=high';
  * The dev-server path of the page that draws one scene's hold frame, at the references' preset, with
  * more switches. A three.js twin that copies the preset's settings reads the same switch.
  */
+/**
+ * Switches that a scene's hold page always gets, whatever the command asks for. S5 gives a far
+ * character a longer update interval by default, which steps its pose; a hold frame that parity or
+ * the image tests compare must hold every character at every frame, so the twin's pose matches.
+ */
+const SCENE_HOLD_SWITCHES: Partial<Record<BenchScene, string>> = { s5: 'anim=every' };
+
 export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
+	// Only the null3D page takes the scene's own switches; the twin ignores them.
+	const sceneSwitch = isNull3dPage(kind) ? SCENE_HOLD_SWITCHES[scene] : undefined;
 	return pagePath(
 		scene,
 		kind,
-		['hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
+		[sceneSwitch, 'hold', REFERENCE_PRESET_SWITCH, switches].filter(Boolean).join('&'),
 	);
 }
 

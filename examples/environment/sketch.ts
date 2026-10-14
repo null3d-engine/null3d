@@ -8,6 +8,7 @@
 // the floor, and the floor's custom material lights that picture as its reflection.
 import { defineSketch } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 
 /** Seconds that each environment shows. */
@@ -32,6 +33,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time } = ctx;
+	reportLoading(ctx);
 	const [sunset, studio, sky] = await Promise.all([
 		assets.loadEnvironment(sampleUrl('sources/hdri/polyhaven/venice_sunset/venice_sunset_2k.hdr')),
 		assets.loadEnvironment(

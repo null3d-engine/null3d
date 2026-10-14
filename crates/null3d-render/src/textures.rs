@@ -715,6 +715,10 @@ pub struct TextureStore {
     budget: u32,
     /// True while the next frame uploads everything, whatever its budget.
     unbudgeted: bool,
+    /// True while the store keeps each texture's texels after its upload, so a new GPU device
+    /// uploads them again (D-164). Off, the store frees them once no list can read them, which
+    /// saves the memory of one more copy of each image.
+    keep_copies: bool,
     max_anisotropy: u32,
     /// True when a map became ready or stopped drawing since the last check.
     layers_changed: bool,
@@ -749,6 +753,7 @@ impl TextureStore {
             recorded: 0,
             budget: DEFAULT_UPLOAD_BUDGET,
             unbudgeted: false,
+            keep_copies: false,
             max_anisotropy: DEFAULT_MAX_ANISOTROPY,
             layers_changed: false,
             stats: UploadStats::default(),
@@ -1341,7 +1346,7 @@ impl TextureStore {
         match old {
             State::Queued { source, .. } => self.release_unused(source),
             State::Uploaded { source, .. } => {
-                if let Source::Generated { .. } = source {
+                if self.holds_after_upload(source) {
                     self.release_unused(source);
                 }
                 self.layers_changed = true;
@@ -1370,7 +1375,7 @@ impl TextureStore {
                 self.queue.retain(|&queued| queued != texture);
             }
             State::Uploaded { source, .. } => {
-                if let Source::Generated { .. } = source {
+                if self.holds_after_upload(source) {
                     self.release_unused(source);
                 }
                 self.layers_changed = true;
@@ -1379,6 +1384,14 @@ impl TextureStore {
         }
         self.arrays[slot.array as usize].mark(slot.layer, false);
         Ok(())
+    }
+
+    /// True when the store still holds an uploaded source and must release it if the texture gets
+    /// other texels or is destroyed: a generator always, and an image or data while the store keeps
+    /// copies.
+    fn holds_after_upload(&self, source: Source) -> bool {
+        matches!(source, Source::Generated { .. })
+            || (self.keep_copies && matches!(source, Source::Image { .. } | Source::Data { .. }))
     }
 
     /// Releases texels that went to no texture: an image in the next frame's list, and data once
@@ -1506,6 +1519,47 @@ impl TextureStore {
     /// held frame, the only one drawn, must.
     pub fn upload_all_next_frame(&mut self) {
         self.unbudgeted = true;
+    }
+
+    /// Keeps each texture's texels after its upload (`keep`), so that a new GPU device uploads
+    /// them again, or frees them once no list can read them. The engine sets this once, before a
+    /// sketch runs. A change to false releases the copies that the store still holds, as if each
+    /// upload had just finished.
+    pub fn set_keep_copies(&mut self, keep: bool) {
+        if keep == self.keep_copies {
+            return;
+        }
+        self.keep_copies = keep;
+        if keep {
+            return;
+        }
+        let recorded = self.recorded;
+        for slot in 0..self.textures.len() {
+            let State::Uploaded {
+                source,
+                released_in: 0,
+            } = self.textures[slot].state
+            else {
+                continue;
+            };
+            if !matches!(source, Source::Image { .. } | Source::Data { .. }) {
+                continue;
+            }
+            let generation = u32::from(self.handles.generations()[slot]);
+            self.releases.push(Release {
+                source,
+                after: match source {
+                    Source::Data { .. } => recorded,
+                    _ => 0,
+                },
+                texture: Handle::new(slot as u32, generation),
+            });
+        }
+    }
+
+    /// True while the store keeps each texture's texels after its upload.
+    pub fn keep_copies(&self) -> bool {
+        self.keep_copies
     }
 
     /// Caps the anisotropy of every sampler, which the GPU makes again when the cap changes.
@@ -1951,8 +2005,9 @@ impl TextureStore {
                         self.finished.push((id, layer));
                     }
                 }
-                // A generator stays for a new GPU device, which runs it again.
-                if !matches!(source, Source::Generated { .. }) {
+                // A generator stays for a new GPU device, which runs it again. So does every source
+                // while the store keeps copies, which is what a new device uploads again.
+                if !matches!(source, Source::Generated { .. }) && !self.keep_copies {
                     self.releases.push(Release {
                         source,
                         after: frame,
