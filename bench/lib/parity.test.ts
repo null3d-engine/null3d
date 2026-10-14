@@ -308,6 +308,7 @@ describe('feature scenes', () => {
 			'gltf-specular',
 			'gltf-ior',
 			'shadows',
+			'shadow-catcher',
 			'morph',
 			'bloom-strong',
 			'ao-default',

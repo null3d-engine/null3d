@@ -27,10 +27,11 @@ How the data was produced: reading the shader manifest (`crates/null3d-shaders/s
 
 ## Decision
 
-`feature::SHADOW_CATCHER` (material feature 2097152) sets `flag::SHADOW_CATCHER` (row flag 128) in the material's flags word. `materials.shadowCatcher({ color, opacity })` creates a lit material with that flag and the `blend` alpha mode. `lit.wgsl`'s `shade` returns early for it. `shadow_catcher` writes the material's color with alpha `opacity * (1 - sun_shadow)`, premultiplied. The exposure and the tone mapping apply, and the scene's fog does not. The mesh must set `receiveShadows`, as three.js requires `receiveShadow`; without a shadow-casting directional light the surface draws nothing.
+`feature::SHADOW_CATCHER` (material feature 2097152) sets `flag::SHADOW_CATCHER` (row flag 128) in the material's flags word. `materials.shadowCatcher({ color, opacity })` creates a lit material with that flag and the `blend` alpha mode. `lit.wgsl`'s `shade` returns early for it, after every derivative call. `shadow_catcher` writes the material's color with alpha `opacity * (1 - sun_shadow)`, premultiplied. The exposure and the tone mapping apply, and the scene's fog does not. The mesh must set `receiveShadows`, as three.js requires `receiveShadow`; without a shadow-casting directional light the surface draws nothing.
 
 ## Consequences
 
+- The branch reads the material's row. It sits after the lit fragment's derivatives (the specular anti-aliasing kernel, the alpha hash's threshold and alpha to coverage's width), because WebGPU rejects a derivative in control flow that depends on a material value: `dpdy` must run in uniform control flow. Everything the branch adds therefore comes after those reads.
 - The surface shows the main directional light's shadow only. Point and spot light shadows are computed in the clustered-light path, which a shadow catcher skips. A later feature could add them.
 - A surface that faces away from the sun draws nothing, where three.js may show a false shadow on it. A shadow catcher is a plane that faces the sun, so the images match in practice.
 - The material takes no texture maps, and `color` and `opacity` are the values it uses. It is documented on `docs/api/materials.md`, the mapping turns `ShadowMaterial` onto it, and the skills mark it as built.

@@ -850,14 +850,22 @@ fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 /// own occlusion, and its contact shadows darken the sun's light where the surface receives
 /// shadows. A shadow-catcher material draws only the sun's shadows instead (`shadow_catcher`).
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
-    if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
-        return shadow_catcher(s, input, pixel);
-    }
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
     // function bends it.
     let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
+    // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
+    // must run in uniform control flow, and everything after the branch depends on it.
+#ifdef ALPHA_HASH
+    let hash_threshold = alpha_hash_threshold(hash_place);
+#endif
+#ifdef ALPHA_COVERAGE
+    let alpha_width = fwidth(s.alpha);
+#endif
+    if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
+        return shadow_catcher(s, input, pixel);
+    }
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
 #ifdef MAPS
@@ -917,11 +925,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_HASH
-    if s.alpha < alpha_hash_threshold(hash_place) {
+    if s.alpha < hash_threshold {
         discard;
     }
 #else ifdef ALPHA_COVERAGE
-    let coverage = alpha_coverage(s.alpha, fwidth(s.alpha), material_row.emissive.w);
+    let coverage = alpha_coverage(s.alpha, alpha_width, material_row.emissive.w);
     if coverage <= 0.0 {
         discard;
     }
