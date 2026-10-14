@@ -140,7 +140,7 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // joints of skinned objects, one texel row while nothing is skinned.
     assert_eq!(camera.pass[1], 0);
     assert_ne!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 15);
+    assert_eq!(count(&commands, Op::CreateTexture), 16);
     // Each view writes its cell offsets into a row of its own.
     let rows: Vec<u32> = offsets_writes(&commands, offsets_texture(&commands))
         .iter()
@@ -264,8 +264,9 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     // light casts shadows, the table of specular terms, the materials' custom values, the
     // environment's blank cube, the blank textures that stand in for ambient occlusion and for
     // the copy that surfaces which let light through sample, the views' cell offsets, the row
-    // values texture of instance batches, and the first joints of skinned objects.
-    assert_eq!(count(&commands, Op::CreateTexture), 12);
+    // values texture of instance batches, the first joints of skinned objects, and the blank 3D
+    // texture that the frame groups bind while the scene has no light probe grid.
+    assert_eq!(count(&commands, Op::CreateTexture), 13);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);

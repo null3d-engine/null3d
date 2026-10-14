@@ -159,14 +159,16 @@ use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PipelineCache, Prepass};
+use crate::probe_grid;
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
-use crate::sorted::{SkinnedPipeline, SortedLayout};
+use crate::sorted::{SkinnedPipeline, SortedLayout, SortedRows};
 use crate::textures::{TextureIds, TextureStore};
 use crate::transmission::{self, TransmissionIds};
 use crate::view::{ViewFrame, ViewId};
 use crate::view_copy::ViewCopyIds;
+use crate::weighted::WeightedIds;
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES, Phase};
 use layout::{Drawn, Layout};
 use lights::LightClusters;
@@ -230,6 +232,7 @@ mod ids {
     use crate::effects::EffectPass;
     use crate::particles::ParticleIds;
     use crate::view::{MAX_VIEW_IDS, MAX_VIEWS, ViewId};
+    use crate::weighted::WeightedIds;
 
     pub const MATERIALS: u32 = 1;
     pub const MATRICES: u32 = 2;
@@ -265,8 +268,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
-    const SORTED: u32 = FINAL_SETTINGS + 1;
+    const SORTED: u32 = OUTPUT_SETTINGS + 1;
 
     pub const fn sorted(view: ViewId) -> u32 {
         SORTED + view.index() as u32
@@ -357,7 +362,9 @@ mod ids {
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_ENVIRONMENT + 1;
+    /// The blank 3D texture that the frame's groups bind while the scene has no light probe grid.
+    pub const BLANK_PROBE_GRID: u32 = BLANK_ENVIRONMENT + 1;
+    pub const JOINTS: u32 = BLANK_PROBE_GRID + 1;
     /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
     pub const MORPHS: u32 = JOINTS + 1;
     /// Every morphed object's weights (see [`crate::morph`]).
@@ -368,9 +375,13 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The first step of the two-step pass's own blank color grading table and outline texture,
+    /// which it owns so that it never destroys the final pass's.
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
-    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const CELL_OFFSETS: u32 = OUTPUT_BLANK_OUTLINE + 1;
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = CELL_OFFSETS + 1;
@@ -421,8 +432,11 @@ mod ids {
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
     pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
+    /// The linear sampler of the first step of the two-step pass's color grading table, which it
+    /// owns so that it never destroys the final pass's.
+    pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
+    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -456,6 +470,8 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's view copies.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
     /// Each camera view's group of its light clustering dispatches, after the final pass's group.
     pub const fn light_group(view: ViewId) -> u32 {
         FINAL_GROUP + 1 + view.index() as u32
@@ -465,7 +481,7 @@ mod ids {
         FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -487,8 +503,10 @@ mod ids {
     pub const DOF_GROUPS: u32 = VIEW_COPY_GROUPS + MAX_VIEWS as u32;
     /// The bind group of the copy of the camera's opaque color, after depth of field's.
     pub const TRANSMISSION_GROUP: u32 = DOF_GROUPS + DOF_STEPS as u32;
-    /// Each particle system's bind group, after the copy's.
-    pub const PARTICLE_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// The bind groups of the weighted layer's composite and depth copy, after the copy's.
+    pub const WEIGHTED_GROUPS: u32 = TRANSMISSION_GROUP + 1;
+    /// Each particle system's bind group, after the weighted layer's.
+    pub const PARTICLE_GROUPS: u32 = WEIGHTED_GROUPS + WeightedIds::GROUPS;
     /// Each camera view's group of its depth copy for soft particles, after the systems'.
     pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
@@ -656,6 +674,8 @@ pub struct GpuDrivenRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The 3D texture that the frame groups bind: the grid's, or the blank one.
+    bound_probe_grid: u32,
     /// The texel rows of the row values texture, 0 before it exists.
     value_rows: u32,
 }
@@ -713,6 +733,13 @@ impl GpuDrivenRenderer {
                             first_group: ids::ACCUMULATE_GROUPS,
                             blank: ids::BLANK_ACCUMULATION,
                         },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
+                            blank_lut: ids::OUTPUT_BLANK_LUT,
+                            lut_sampler: ids::OUTPUT_LUT_SAMPLER,
+                            blank_outline: ids::OUTPUT_BLANK_OUTLINE,
+                        },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,
                             sampler: ids::BLOOM_SAMPLER,
@@ -761,6 +788,9 @@ impl GpuDrivenRenderer {
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
                             blank: ids::BLANK_TRANSMISSION,
+                        },
+                        weighted: WeightedIds {
+                            first_group: ids::WEIGHTED_GROUPS,
                         },
                         particle_depth: ids::PARTICLE_DEPTH_COPY_GROUP,
                         view_copy: Some(ViewCopyIds {
@@ -826,6 +856,7 @@ impl GpuDrivenRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            bound_probe_grid: ids::BLANK_PROBE_GRID,
             value_rows: 0,
         }
     }
@@ -956,11 +987,16 @@ impl GpuDrivenRenderer {
         let area_switched = self
             .settings
             .update_area_shading(&mut self.pipelines, input.pipelines_built);
+        // Lit meshes switch to or from the light probe grid's templates.
+        let probe_switched = self
+            .settings
+            .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         let upload_everything = particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
+            || probe_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
@@ -1005,6 +1041,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                    self.graph.weighted_targets(targets),
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1019,6 +1056,7 @@ impl GpuDrivenRenderer {
                     0,
                     shadows,
                     |_, _| SkinnedPipeline::NotSkinned,
+                    None,
                     &mut self.key_counts,
                 )
                 .map_err(out_of_memory)?;
@@ -1037,6 +1075,7 @@ impl GpuDrivenRenderer {
                         0,
                         shadows,
                         |slot, key| skinning.sorted_pipeline(slot as u32, key),
+                        None,
                         &mut self.key_counts,
                     )
                     .map_err(out_of_memory)?;
@@ -1143,6 +1182,7 @@ impl GpuDrivenRenderer {
             .set_outline(self.settings.outline(), !self.outlined.buckets.is_empty());
         self.graph.set_still(self.settings.still());
         self.graph.set_transmission(self.sorted.transmits());
+        self.graph.set_weighted(self.sorted.weighs());
         let skipped = self.settings.decal_skipped_layers();
         let shown = self.settings.views()[ViewId::CAMERA.index()].layers();
         self.redraw_layout.set_layer_filter(skipped, shown);
@@ -1233,6 +1273,7 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     self.bound_environment,
+                    self.bound_probe_grid,
                     transmission(view),
                 )?;
             }
@@ -1342,6 +1383,7 @@ impl GpuDrivenRenderer {
                 atlas,
                 ao_texture,
                 self.bound_environment,
+                self.bound_probe_grid,
                 transmission(view),
             )?;
         }
@@ -1408,12 +1450,33 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     environment,
+                    self.bound_probe_grid,
+                    transmission(view),
+                )?;
+            }
+        }
+        let (probe_grid, grid_uniform) = self.settings.probe_grid_map(ids::BLANK_PROBE_GRID);
+        if probe_grid != self.bound_probe_grid {
+            self.bound_probe_grid = probe_grid;
+            for index in 0..views {
+                let view = ViewId::from_index(index);
+                let lights = light_owner(self.lights_made, view);
+                opaque::bind_frame(
+                    list,
+                    view,
+                    lights,
+                    shadow_map,
+                    atlas,
+                    ao_texture,
+                    environment,
+                    probe_grid,
                     transmission(view),
                 )?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
             frame.uniform.environment = lit;
+            frame.uniform.probe_grid = grid_uniform;
         }
         if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
             frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
@@ -1805,6 +1868,7 @@ impl GpuDrivenRenderer {
         let (redraw_layout, redraws) = (&self.redraw_layout, &self.redraws);
         let particles = &self.particles;
         let (settings, meshes) = (&self.settings, &self.meshes);
+        let weighted = self.graph.weighted_declared();
         self.graph.record(
             list,
             |view| settings.clear_color_of(view),
@@ -1844,7 +1908,14 @@ impl GpuDrivenRenderer {
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
-                    transparent.record(list, view, sorted, skinning, settings, meshes, 0, particles)
+                    let rows = if weighted && view == ViewId::CAMERA {
+                        SortedRows::Sorted
+                    } else {
+                        SortedRows::All
+                    };
+                    transparent.record(
+                        list, view, rows, sorted, skinning, settings, meshes, 0, particles,
+                    )
                 }
                 Role::Decals => {
                     let depth = ids::DECAL_DEPTH_GROUP;
@@ -1852,6 +1923,7 @@ impl GpuDrivenRenderer {
                     decals.record(
                         list,
                         view,
+                        SortedRows::All,
                         decal_layout,
                         skinning,
                         settings,
@@ -1865,6 +1937,7 @@ impl GpuDrivenRenderer {
                     redraws.record(
                         list,
                         view,
+                        SortedRows::All,
                         redraw_layout,
                         skinning,
                         settings,
@@ -1873,6 +1946,17 @@ impl GpuDrivenRenderer {
                         particles,
                     )
                 }
+                Role::Weighted => transparent.record(
+                    list,
+                    ViewId::CAMERA,
+                    SortedRows::Weighted,
+                    sorted,
+                    skinning,
+                    settings,
+                    meshes,
+                    0,
+                    particles,
+                ),
                 _ => Ok(()),
             },
         )?;
@@ -1900,6 +1984,7 @@ impl GpuDrivenRenderer {
             ids::SHADOW_SAMPLER,
             Some(ids::SHADOW_TEXEL_SAMPLER),
         )?;
+        probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -2081,6 +2166,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.bound_probe_grid = ids::BLANK_PROBE_GRID;
         self.value_rows = 0;
         self.background.reset_gpu();
         self.particles.reset_gpu();

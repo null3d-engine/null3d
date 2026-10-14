@@ -33,6 +33,7 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
+use crate::probe_grid;
 use crate::transmission;
 use crate::view::{ViewFrame, ViewId};
 
@@ -66,6 +67,7 @@ pub(super) struct LitTextures {
     pub(super) atlas: u32,
     pub(super) occlusion: u32,
     pub(super) environment: u32,
+    pub(super) probe_grid: u32,
     pub(super) lights: u32,
     /// The copy of the opaque color that surfaces which let light through sample: the camera's,
     /// or a blank texel for other views.
@@ -307,6 +309,7 @@ impl Opaque {
             atlas,
             occlusion,
             environment,
+            probe_grid,
             lights,
             transmission: copy,
         }) = lit
@@ -317,7 +320,7 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 63 + environment::ENTRY_WORDS];
+        let mut words = [0; 68 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
         words[23..43].copy_from_slice(&[
             4,
@@ -341,25 +344,26 @@ impl Opaque {
             0,
             0,
         ]);
+        words[43..48].copy_from_slice(&probe_grid::entries(probe_grid));
         for slot in 0..RING {
-            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
-            words[43..48].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
-            words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[53..58].copy_from_slice(&[
+            words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 15]);
+            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
+            words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[58..63].copy_from_slice(&[
                 transmission::BINDING,
                 resource_kind::TEXTURE,
                 copy,
                 0,
                 0,
             ]);
-            words[58..63].copy_from_slice(&[
+            words[63..68].copy_from_slice(&[
                 LIGHT_TABLES_BINDING,
                 resource_kind::TEXTURE,
                 ids::LIGHT_TABLES,
                 0,
                 0,
             ]);
-            words[63..]
+            words[68..]
                 .copy_from_slice(&environment::entries(environment, ids::ENVIRONMENT_SAMPLER));
             list.push(Op::CreateBindGroup, &words)?;
         }

@@ -115,9 +115,11 @@ pub mod shading {
     pub const CUSTOM_OBJECT_IDS: u32 = 1 << 31;
 }
 
-/// The map slots that `setMaterialMap` takes, in the order of a material's row.
+/// The map slots that `setMaterialMap` takes, in the order of a material's row, then the maps of
+/// a layered material in [`LayerMap::ALL`]'s order, which take the slots that such a material has
+/// no other use for.
 pub mod map_slot {
-    use null3d_render::materials::MapSlot;
+    use null3d_render::materials::{LayerMap, MAP_SLOTS, MapSlot};
 
     pub const BASE_COLOR: u32 = MapSlot::BaseColor as u32;
     pub const METAL_ROUGH: u32 = MapSlot::MetalRough as u32;
@@ -127,6 +129,23 @@ pub mod map_slot {
     pub const LIGHT: u32 = MapSlot::Light as u32;
     pub const SPECULAR_INTENSITY: u32 = MapSlot::SpecularIntensity as u32;
     pub const SPECULAR_COLOR: u32 = MapSlot::SpecularColor as u32;
+    pub const COAT: u32 = layer(LayerMap::Coat);
+    pub const COAT_ROUGHNESS: u32 = layer(LayerMap::CoatRoughness);
+    pub const COAT_NORMAL: u32 = layer(LayerMap::CoatNormal);
+    pub const SHEEN_COLOR: u32 = layer(LayerMap::SheenColor);
+    pub const SHEEN_ROUGHNESS: u32 = layer(LayerMap::SheenRoughness);
+
+    /// The number that `setMaterialMap` takes for a layer map: its place after the map slots.
+    const fn layer(map: LayerMap) -> u32 {
+        let mut k = 0;
+        while k < LayerMap::ALL.len() {
+            if LayerMap::ALL[k] as u32 == map as u32 {
+                return (MAP_SLOTS + k) as u32;
+            }
+            k += 1;
+        }
+        u32::MAX
+    }
 }
 
 /// The flags of an effect that `setEffect` takes, and of a full-screen pass that `addPass` takes.
@@ -245,6 +264,23 @@ pub mod environment_value {
     pub const SH: u32 = 4;
     /// The values in the block.
     pub const COUNT: u32 = 31;
+}
+
+/// The places of the light probe grid's values in the block that `lightProbeValues` gives: 32-bit
+/// floats that TypeScript writes before it calls `setLightProbeGrid`, as the environment's come.
+pub mod light_probe_value {
+    /// The grid's corner of least x, y and z.
+    pub const ORIGIN: u32 = 0;
+    /// The spacing between probes along each axis.
+    pub const SPACING: u32 = 3;
+    /// The probes along each axis.
+    pub const COUNTS: u32 = 6;
+    /// The factor of the grid's light on every surface.
+    pub const INTENSITY: u32 = 9;
+    /// The share of the environment's diffuse light that the grid takes over.
+    pub const ENVIRONMENT_WEIGHT: u32 = 10;
+    /// The values in the block.
+    pub const COUNT: u32 = 11;
 }
 
 /// The places of the background's values in the block that `backgroundValues` gives: 32-bit floats
@@ -872,6 +908,7 @@ pub fn typescript() -> String {
                     "TRANSIENT_ATTACHMENTS",
                     Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
                 ),
+                ("FLOAT16_TARGETS", Capabilities::FLOAT16_TARGETS.0 as u32),
             ],
         ),
         (
@@ -954,6 +991,9 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("SHADOW_CATCHER", feature::SHADOW_CATCHER),
+                ("COAT_SHEEN", feature::COAT_SHEEN),
+                ("WEIGHTED", feature::WEIGHTED),
                 ("DECAL", feature::DECAL),
             ],
         ),
@@ -990,6 +1030,11 @@ pub fn typescript() -> String {
                 ("LIGHT", map_slot::LIGHT),
                 ("SPECULAR_INTENSITY", map_slot::SPECULAR_INTENSITY),
                 ("SPECULAR_COLOR", map_slot::SPECULAR_COLOR),
+                ("COAT", map_slot::COAT),
+                ("COAT_ROUGHNESS", map_slot::COAT_ROUGHNESS),
+                ("COAT_NORMAL", map_slot::COAT_NORMAL),
+                ("SHEEN_COLOR", map_slot::SHEEN_COLOR),
+                ("SHEEN_ROUGHNESS", map_slot::SHEEN_ROUGHNESS),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -1017,6 +1062,14 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                ("CLEARCOAT", param::CLEARCOAT as u32),
+                ("CLEARCOAT_ROUGHNESS", param::CLEARCOAT_ROUGHNESS as u32),
+                (
+                    "CLEARCOAT_NORMAL_SCALE",
+                    param::CLEARCOAT_NORMAL_SCALE as u32,
+                ),
+                ("SHEEN_COLOR", param::SHEEN_COLOR as u32),
+                ("SHEEN_ROUGHNESS", param::SHEEN_ROUGHNESS as u32),
                 ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
                 ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
                 ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
@@ -1120,6 +1173,17 @@ pub fn typescript() -> String {
                 ("ROTATION", environment_value::ROTATION),
                 ("SH", environment_value::SH),
                 ("COUNT", environment_value::COUNT),
+            ],
+        ),
+        (
+            "LIGHT_PROBE_VALUE",
+            &[
+                ("ORIGIN", light_probe_value::ORIGIN),
+                ("SPACING", light_probe_value::SPACING),
+                ("COUNTS", light_probe_value::COUNTS),
+                ("INTENSITY", light_probe_value::INTENSITY),
+                ("ENVIRONMENT_WEIGHT", light_probe_value::ENVIRONMENT_WEIGHT),
+                ("COUNT", light_probe_value::COUNT),
             ],
         ),
         (
