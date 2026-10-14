@@ -660,8 +660,10 @@ pub mod layout {
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
     /// Group 0 of the final pass: its settings and the scene color it reads, then at bindings 9
-    /// and 10 the color grading table, a 3D texture, and its linear sampler, and at binding 11 the
-    /// outline effect's mask, which the table's sampler reads.
+    /// and 10 the color grading table, a 3D texture, and its linear sampler, at binding 11 the
+    /// outline effect's mask, which the table's sampler reads, and at binding 12 the texel of the
+    /// automatic exposure, which it reads as plain floats. Every build of the final pass has
+    /// binding 12.
     pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
@@ -763,6 +765,11 @@ pub mod layout {
     /// clamps, and at binding 5 one that repeats across the width. Group 0 of its tables' steps,
     /// group 1 of its background.
     pub const ATMOSPHERE: u32 = 39;
+    /// Group 0 of the exposure meter's compute steps: the meter's uniform block, the color it
+    /// meters, a linear sampler, the histogram and the state as storage buffers, then the texel of
+    /// the exposure as a storage texture of `RGBA32_FLOAT`, which the final pass reads. Only WebGPU
+    /// has it.
+    pub const EXPOSURE: u32 = 40;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -1531,6 +1538,10 @@ pub mod template {
     /// The final pass with bloom: [`FINAL`]'s pass, which adds bloom's levels to the scene color
     /// before the output transform.
     pub const FINAL_BLOOM: u32 = 14;
+    /// The exposure meter's downsample step: one triangle over a grid of 16 x 16 cells, each of
+    /// which writes the mean log luminance of its part of the color and its center weight. It
+    /// binds as a step of bloom does.
+    pub const EXPOSURE_LUMINANCE: u32 = 15;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
     /// Light clustering, first step: counts the lights of each cluster of the light grid.
@@ -1559,6 +1570,13 @@ pub mod template {
     /// The second phase of occlusion culling: the culling shader's `late` entry point, which
     /// tests the instances in view against the depth pyramid.
     pub const OCCLUSION_LATE: u32 = 25;
+    /// The exposure meter's adaptation from the downsample: one triangle over one texel, which
+    /// meters the cells, moves the stored exposure toward the result and writes the new exposure.
+    /// It binds as ambient occlusion's later steps do: the cells, then the stored exposure.
+    pub const EXPOSURE_ADAPT: u32 = 26;
+    /// The exposure meter's histogram: a compute shader that adds a grid of the color's samples to
+    /// bins of log luminance. WebGPU only.
+    pub const EXPOSURE_HISTOGRAM: u32 = 27;
     /// One level of the depth pyramid that the second phase of occlusion culling tests against.
     pub const DEPTH_PYRAMID: u32 = 28;
     /// Wide lines: a quad with round ends for each instance batch row, whose world matrix holds a
@@ -1599,6 +1617,9 @@ pub mod template {
     /// target, which reads the texel of the same column in the mirrored row of the image, so the
     /// target holds the image's bottom row first. Only WebGPU has it.
     pub const VIEW_COPY: u32 = 39;
+    /// The exposure meter's adaptation from the histogram: a compute shader that meters the bins,
+    /// moves the stored exposure toward the result and writes the new exposure. WebGPU only.
+    pub const EXPOSURE_ADAPT_HISTOGRAM: u32 = 40;
     /// Depth of field's first step: one triangle over a target at half the render size, which
     /// reads four pixels of the scene's color and depth for each texel and writes their color with
     /// the blur's signed size. It binds as a custom effect that reads depth does.
@@ -1953,6 +1974,7 @@ pub fn typescript_constants() -> String {
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
                 ("ATMOSPHERE", layout::ATMOSPHERE),
+                ("EXPOSURE", layout::EXPOSURE),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -2054,6 +2076,13 @@ pub fn typescript_constants() -> String {
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
                 ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
+                ("EXPOSURE_LUMINANCE", template::EXPOSURE_LUMINANCE),
+                ("EXPOSURE_ADAPT", template::EXPOSURE_ADAPT),
+                ("EXPOSURE_HISTOGRAM", template::EXPOSURE_HISTOGRAM),
+                (
+                    "EXPOSURE_ADAPT_HISTOGRAM",
+                    template::EXPOSURE_ADAPT_HISTOGRAM,
+                ),
                 ("FOG_LIGHT", template::FOG_LIGHT),
                 ("FOG_SUM", template::FOG_SUM),
                 ("FOG_APPLY", template::FOG_APPLY),

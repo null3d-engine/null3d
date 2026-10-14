@@ -95,6 +95,11 @@ export const SETTING_DOCS: {
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
 	ssrSteps: { label: 'Screen-space reflection steps per ray' },
+	exposureMeter: {
+		label: "Automatic exposure's meter",
+		print: (value) =>
+			value === 'histogram' ? 'histogram on WebGPU, else 16 x 16 cells' : '16 x 16 cells',
+	},
 	fogSlices: {
 		label: 'Volumetric fog',
 		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),

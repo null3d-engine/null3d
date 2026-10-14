@@ -96,6 +96,14 @@
 //! render size, and the camera's opaque pass reads the last one. They are declared only while
 //! ambient occlusion is on, on either path, since it needs no HDR color.
 //!
+//! While the sketch turns automatic exposure on, on the HDR path, the meter's steps run just
+//! before the final pass's render pass (see [`crate::exposure`]). They read the color that the
+//! final pass reads and write the exposure's texel, which the final pass then multiplies the color
+//! by. They are no passes of the graph: the meter owns its small targets, which keep its state
+//! from frame to frame, and the frame records its steps itself, as it records the transmission
+//! copy's mip levels. Until the meter's pipelines are built, the final pass keeps the camera's
+//! exposure.
+//!
 //! The final pass also grades the canvas color with a color grading table and the vignette (see
 //! [`crate::grading`]). Both work on display color, so they draw on the 8-bit path too: while the
 //! sketch sets either, the final pass runs there in place of the resolve pass, as it does while
@@ -134,6 +142,7 @@ use crate::dof::{self, DofFrame, DofIds, DofPass, DofSources};
 use crate::effects::{
     self, Effect, EffectIds, EffectJoins, EffectMaps, EffectPass, MAX_EFFECTS, Unit,
 };
+use crate::exposure::{ExposureFrame, ExposureIds, ExposurePass};
 use crate::final_pass::{BloomInputs, FinalIds, FinalPass, FoldInputs, OutlineInputs};
 use crate::fog_volume::{self, FogVolumeFrame, FogVolumeIds, FogVolumePass, FogVolumeSources};
 use crate::frame::{CanvasOutput, RecordError, UploadArena};
@@ -173,6 +182,7 @@ pub(crate) struct GraphIds {
     pub(crate) effects: EffectIds,
     pub(crate) fullscreen: FullscreenIds,
     pub(crate) dof: DofIds,
+    pub(crate) exposure: ExposureIds,
     pub(crate) fog: FogVolumeIds,
     /// The copies of views' images into their targets, which only WebGPU makes.
     pub(crate) view_copy: Option<ViewCopyIds>,
@@ -604,6 +614,14 @@ pub(crate) struct FrameGraph {
     /// The textures that depth of field's steps read, found once for each compile of the graph,
     /// which the count says.
     dof_textures: Option<(u32, DofSources)>,
+    /// The automatic exposure's meter and its GPU objects, once the sketch first turns it on.
+    exposure_pass: Option<ExposurePass>,
+    /// The GPU objects that the meter takes.
+    exposure_ids: ExposureIds,
+    /// What the meter draws with in the frame, while the sketch turns automatic exposure on.
+    exposure: Option<ExposureFrame>,
+    /// True once the meter's pipelines draw: built, after the frame whose list created them.
+    exposure_built: bool,
     /// The volumetric fog's steps and their GPU objects, once the sketch first turns it on.
     fog_pass: Option<FogVolumePass>,
     /// The GPU objects that the volumetric fog's steps take.
@@ -800,6 +818,10 @@ impl FrameGraph {
             dof_built: false,
             dof_declared: false,
             dof_textures: None,
+            exposure_pass: None,
+            exposure_ids: ids.exposure,
+            exposure: None,
+            exposure_built: false,
             fog_pass: None,
             fog_ids: ids.fog,
             fog: None,
@@ -886,6 +908,10 @@ impl FrameGraph {
         self.ao_pass = None;
         self.dof_pass = None;
         self.dof_built = false;
+        // The meter reads HDR color only.
+        if !scene_color.is_hdr() {
+            self.exposure = None;
+        }
         self.fog_pass = None;
         self.fog_built = false;
         // The copy's target takes the scene color's format, which its pipeline draws into, and the
@@ -1209,7 +1235,12 @@ impl FrameGraph {
         } else {
             0
         };
-        FinalPass::UPLOAD_BYTES + bloom + ao + ssr + effects + dof + fog + fullscreen
+        let exposure = if self.exposure.is_some() {
+            ExposurePass::UPLOAD_BYTES
+        } else {
+            0
+        };
+        FinalPass::UPLOAD_BYTES + bloom + ao + ssr + effects + dof + fog + fullscreen + exposure
     }
 
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
@@ -1414,6 +1445,44 @@ impl FrameGraph {
         if self.dof_draws() != was {
             self.declared = false;
         }
+    }
+
+    /// Turns automatic exposure on with what the frame meters with, or off with `None`, for the
+    /// next frames. The plan stays as it is: the meter records its own steps. The 8-bit path draws
+    /// no automatic exposure.
+    pub(crate) fn set_exposure(&mut self, exposure: Option<ExposureFrame>) {
+        self.exposure = exposure.filter(|_| self.scene_color.is_hdr());
+    }
+
+    /// True while the meter runs: the sketch turned automatic exposure on, on the HDR path, and the
+    /// meter's pipelines are built. Until then the final pass keeps the camera's exposure.
+    pub(crate) fn exposure_draws(&self) -> bool {
+        self.exposure.is_some() && self.exposure_built
+    }
+
+    /// The meter, made when first asked for.
+    fn exposure_meter(&mut self) -> &mut ExposurePass {
+        let rows_from_bottom = !self.gpu_culling;
+        self.exposure_pass
+            .get_or_insert_with(|| ExposurePass::new(self.exposure_ids, rows_from_bottom))
+    }
+
+    /// Records the creation of the meter's compute pipelines in the list of `frame`, while the
+    /// sketch turns automatic exposure on and its meter is the histogram. Call it before
+    /// [`FrameGraph::request_pipelines`]. Returns true when it recorded them.
+    pub(crate) fn create_exposure_pipelines(
+        &mut self,
+        list: &mut DrawList,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
+        let Some(exposure) = self.exposure else {
+            return Ok(false);
+        };
+        let meter = self.exposure_meter();
+        if meter.path(exposure.meter) != crate::exposure::Meter::Histogram {
+            return Ok(false);
+        }
+        meter.create_compute_pipelines(list, frame)
     }
 
     /// True while depth of field draws: the sketch turned it on on the HDR path, and its pipelines
@@ -2486,6 +2555,13 @@ impl FrameGraph {
                 self.declared = false;
             }
         }
+        self.exposure_built = match self.exposure {
+            Some(exposure) => {
+                self.exposure_meter()
+                    .request_pipelines(pipelines, exposure.meter, pipelines_built)
+            }
+            None => false,
+        };
         let fog_built = self.fog.is_some() && {
             let steps = self.fog_steps();
             steps.request_pipelines(pipelines);
@@ -2632,6 +2708,7 @@ impl FrameGraph {
         self.upload_effects(list, arena)?;
         self.upload_fullscreen(list, arena)?;
         self.upload_dof(list, arena)?;
+        let exposure = self.upload_exposure(list, arena)?;
         self.upload_fog(list, arena)?;
         self.bind_view_copies(list)?;
         self.bind_transmission(list)?;
@@ -2694,8 +2771,36 @@ impl FrameGraph {
             grading,
             outline,
             fold,
+            exposure,
             self.textures_made,
         )
+    }
+
+    /// Uploads the meter's block and binds its steps to the color that the final pass reads while
+    /// the meter runs, and returns its texel, which the final pass reads. A frame without the
+    /// meter makes the next frame that meters take its stops at once.
+    fn upload_exposure(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<Option<u32>, RecordError> {
+        let frame = match self.exposure {
+            Some(frame) if self.exposure_draws() && self.final_runs() => frame,
+            _ => {
+                if let Some(meter) = self.exposure_pass.as_mut() {
+                    meter.skip();
+                }
+                return Ok(None);
+            }
+        };
+        let source = self
+            .sampled_id(self.color_output())
+            .expect("the meter reads the color that the final pass reads");
+        let size = (self.canvas, self.scale);
+        let made = self.textures_made;
+        let meter = self.exposure_meter();
+        meter.prepare(list, arena, size, frame, source, made)?;
+        Ok(Some(meter.texel()))
     }
 
     /// The texture that each of bloom's declared steps reads, and the base level's, found by name
@@ -3176,6 +3281,12 @@ impl FrameGraph {
                     }) {
                         continue;
                     }
+                    let finals = passes.iter().any(|&pass| {
+                        matches!(self.roles[pass.index()], Role::Final | Role::FinalBloom)
+                    });
+                    if finals && let Some(meter) = self.exposure_pass.as_ref() {
+                        meter.record(list)?;
+                    }
                     let masks = passes
                         .iter()
                         .any(|&pass| self.roles[pass.index()] == Role::OutlineMask);
@@ -3458,6 +3569,9 @@ impl FrameGraph {
         }
         if let Some(dof) = self.dof_pass.as_mut() {
             dof.reset_gpu();
+        }
+        if let Some(meter) = self.exposure_pass.as_mut() {
+            meter.reset_gpu();
         }
         if let Some(fog) = self.fog_pass.as_mut() {
             fog.reset_gpu();
@@ -3870,6 +3984,19 @@ mod tests {
             buffer: 13,
             sampler: 13,
             first_group: 50,
+        },
+        exposure: ExposureIds {
+            buffer: 14,
+            sampler: 14,
+            cells: 904,
+            texel: 905,
+            stored: 906,
+            first_group: 70,
+            compute: Some(crate::exposure::ComputeIds {
+                histogram: 15,
+                state: 16,
+                pipelines: [70, 71],
+            }),
         },
         fog: FogVolumeIds {
             buffer: 14,
@@ -4728,6 +4855,130 @@ mod tests {
                 .keys()
                 .iter()
                 .all(|key| key.template != null3d_gpu::drawlist::template::DOF_SETUP)
+        );
+    }
+
+    /// What a frame meters automatic exposure with: the default settings and `meter`.
+    fn exposure_frame(meter: crate::exposure::Meter) -> ExposureFrame {
+        ExposureFrame {
+            settings: crate::exposure::AutoExposure::default(),
+            meter,
+            seconds: 1.0 / 60.0,
+        }
+    }
+
+    #[test]
+    fn the_exposure_meter_runs_before_the_final_pass_and_costs_nothing_while_off() {
+        use crate::exposure::Meter;
+        let canvas = (1280, 720);
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        frames.sync(&[View::default()]);
+        let mut list = DrawList::with_capacity(8192);
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 1);
+        pipelines.create_new(&mut list, 1).unwrap();
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        let without = steps(&frames);
+        let keys = pipelines.keys().len();
+        let bound = frames.upload_bound();
+        let record = |frames: &mut FrameGraph, list: &mut DrawList| {
+            let mut arena = UploadArena::default();
+            arena.reset(frames.upload_bound());
+            list.clear();
+            frames
+                .upload(list, &mut arena, Output::default(), Grading::default())
+                .unwrap();
+            frames
+                .record(list, |_| [0.0; 4], |_| false, |_, _| Ok(()))
+                .unwrap();
+            null3d_gpu::drawlist::decode(list.words())
+                .map(|command| command.unwrap())
+                .map(|command| (command.op, command.operands.to_vec()))
+                .collect::<Vec<_>>()
+        };
+
+        // Off, the frame declares, asks for, uploads and records nothing of the meter, and the
+        // final pass binds the blank texel with its flag clear.
+        frames.set_exposure(None);
+        frames.request_pipelines(&mut pipelines, 1);
+        assert_eq!(pipelines.keys().len(), keys);
+        assert_eq!(frames.upload_bound(), bound);
+        let commands = record(&mut frames, &mut list);
+        assert!(
+            !commands
+                .iter()
+                .any(|(op, _)| *op == Op::Dispatch || *op == Op::CopyTextureToTexture)
+        );
+        assert_eq!(steps(&frames), without);
+
+        // On, the histogram's compute pass runs just before the final pass's render pass, and the
+        // final pass binds the meter's texel at binding 12.
+        frames.set_exposure(Some(exposure_frame(Meter::Histogram)));
+        assert!(frames.create_exposure_pipelines(&mut list, 2).unwrap());
+        frames.request_pipelines(&mut pipelines, 1);
+        assert!(
+            !frames.exposure_draws(),
+            "the meter waits for its pipelines"
+        );
+        frames.request_pipelines(&mut pipelines, 2);
+        assert!(frames.exposure_draws());
+        frames
+            .prepare(&mut list, canvas, RenderScale::FULL)
+            .unwrap();
+        assert_eq!(steps(&frames), without, "the plan stays as it was");
+        let commands = record(&mut frames, &mut list);
+        let place = |op: Op| commands.iter().rposition(|(o, _)| *o == op).unwrap();
+        let final_pass = commands
+            .iter()
+            .rposition(|(op, operands)| *op == Op::BeginRenderPass && operands[0] == 0)
+            .expect("the final pass draws into the canvas");
+        assert!(place(Op::Dispatch) < final_pass);
+        assert!(place(Op::EndComputePass) < final_pass);
+        let final_group = commands
+            .iter()
+            .find(|(op, operands)| {
+                *op == Op::CreateBindGroup && operands[0] == IDS.final_pass.group
+            })
+            .expect("the final pass's group");
+        let texel = final_group.1[3..]
+            .chunks(5)
+            .find(|entry| entry[0] == 12)
+            .expect("binding 12");
+        assert_eq!(texel[2], IDS.exposure.texel);
+
+        // Off again, the final pass binds the blank texel.
+        frames.set_exposure(None);
+        frames.request_pipelines(&mut pipelines, 2);
+        let commands = record(&mut frames, &mut list);
+        let final_group = commands
+            .iter()
+            .find(|(op, operands)| {
+                *op == Op::CreateBindGroup && operands[0] == IDS.final_pass.group
+            })
+            .expect("the final pass's group again");
+        let texel = final_group.1[3..]
+            .chunks(5)
+            .find(|entry| entry[0] == 12)
+            .expect("binding 12");
+        assert_eq!(texel[2], IDS.final_pass.blank_outline);
+        assert!(!commands.iter().any(|(op, _)| *op == Op::Dispatch));
+    }
+
+    #[test]
+    fn the_8_bit_path_meters_no_exposure() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
+        frames.sync(&[View::default()]);
+        frames.set_exposure(Some(exposure_frame(crate::exposure::Meter::Downsample)));
+        let mut pipelines = PipelineCache::default();
+        frames.request_pipelines(&mut pipelines, 0);
+        assert!(!frames.exposure_draws());
+        assert!(
+            pipelines.keys().is_empty()
+                || pipelines.keys().iter().all(|key| {
+                    key.template != null3d_gpu::drawlist::template::EXPOSURE_LUMINANCE
+                })
         );
     }
 

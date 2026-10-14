@@ -120,6 +120,7 @@ Drawing:
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
+| Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
@@ -161,6 +162,7 @@ Effects:
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
 | Wet streets, polished floors and metal that reflect the scene | `post.set({ ssr: { maxDistance, thickness } })` (0.2) with smooth materials; quality setting `ssrScale`, 0 on Low; set an environment for where rays miss. A flat mirror or water: a reflection pass | `api/post`, `concepts/post-processing` |
 | Depth of field, a camera's lens | `camera.setFocalLength(mm)` and `post.set({ dof: { aperture, focusDistance or focusPoint } })` (0.2); quality setting `dofSamples`, 0 on Low | `api/post`, `api/cameras`, `concepts/post-processing` |
+| An eye that adapts from bright to dark places, automatic exposure | `post.set({ autoExposure: { minEv, maxEv, speedUp, speedDown, compensation } })` (0.2), from the camera's `exposure` or `ev100`; quality setting `exposureMeter` | `api/post`, `concepts/post-processing` |
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |
 | Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Water, mirrors and polished floors that reflect the scene | `render.addPass({ kind: 'reflection', writes, plane: { point } })`, and a custom material that sets `s.reflection` (0.2) | `api/render`, `shaders/surface-functions`, `guides/custom-passes` |

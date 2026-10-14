@@ -55,6 +55,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set`, and custom effects in `post.addEffect` (0.2) |
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `radius`, `levels`, `mipmapBlur`) | `bloom: { intensity, threshold: luminanceThreshold, knee: luminanceSmoothing, blend: 'screen', weights }` (0.2), mapped (section 5). `mipmapBlur: false` (Kawase) has no match: map it as the mip blur and list the difference |
 | `ToneMappingEffect` (`mode`) | `toneMapping`. `REINHARD`, `REINHARD2`, `CINEON`, `OPTIMIZED_CINEON` and `UNCHARTED2` become a custom tone curve (0.2, section 7), with their settings as constants |
+| `ToneMappingEffect` with `REINHARD2_ADAPTIVE` (`adaptationRate`, `middleGrey`), `AdaptiveLuminancePass`, three.js's old `AdaptiveToneMappingPass` | `autoExposure: { metering: 'mean', speedUp, speedDown, compensation }` (0.2), plus the custom Reinhard curve. `adaptationRate` becomes about `speedUp` and `speedDown`, and `middleGrey` the `compensation`, `log2(middleGrey / 0.18)` stops. null3D weights the center and meters on the GPU, so the exposure differs a little: list it |
 | `SMAAEffect`, `FXAAEffect` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` |
 | `VignetteEffect` (`offset`, `darkness`) | As `VignetteShader` (0.2) for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
 | `SSAOEffect`, N8AO | `ao` (0.2) |

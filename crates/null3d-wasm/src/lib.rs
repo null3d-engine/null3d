@@ -53,6 +53,7 @@ use null3d_render::effects::{
     EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES as MAX_EFFECT_TEXTURES,
 };
 use null3d_render::environment::Environment;
+use null3d_render::exposure::{AutoExposure, Meter as ExposureMeter, Metering};
 use null3d_render::fog::Fog;
 use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
@@ -244,15 +245,17 @@ struct Engine {
 /// intensity and size, `GTAOPass`'s radius, thickness, distance exponent, distance falloff, scale,
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
 /// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
-/// depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of 2%
-/// of the image's height and round aperture, with no focus point, then screen-space reflections'
+/// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
+/// 2% of the image's height and round aperture, with no focus point, then the automatic
+/// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
+/// per second, range of 4 stops either way and no compensation, then screen-space reflections'
 /// full intensity, most distance of 100, thickness of 0.5 and most roughness of 0.5.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 100.0, 0.5,
-        0.5,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
+        3.0, 1.0, -4.0, 4.0, 0.0, 1.0, 100.0, 0.5, 0.5,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -3164,6 +3167,46 @@ pub fn set_dof(on: bool) -> u32 {
             blades: value(place::DOF_BLADES) as u32,
         });
         e.renderer.settings_mut().set_dof(dof);
+        0
+    })
+}
+
+/// Turns automatic exposure on with its metering, percentiles, center weight, speeds, range and
+/// compensation from the post-processing values, or off, from the next frame on. The TypeScript
+/// API checks the values.
+#[wasm_bindgen(js_name = setAutoExposure)]
+pub fn set_auto_exposure(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let auto_exposure = on.then(|| AutoExposure {
+            metering: Metering::from_code(value(place::AUTO_EXPOSURE_METERING) as u32)
+                .unwrap_or_default(),
+            percentiles: [
+                value(place::AUTO_EXPOSURE_PERCENTILES),
+                value(place::AUTO_EXPOSURE_PERCENTILES + 1),
+            ],
+            center_weight: value(place::AUTO_EXPOSURE_CENTER_WEIGHT),
+            speed_up: value(place::AUTO_EXPOSURE_SPEED_UP),
+            speed_down: value(place::AUTO_EXPOSURE_SPEED_DOWN),
+            min_ev: value(place::AUTO_EXPOSURE_MIN_EV),
+            max_ev: value(place::AUTO_EXPOSURE_MAX_EV),
+            compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
+        });
+        e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Sets the meter of automatic exposure, which the quality settings set, from the next frame on:
+/// 0 the downsample, 1 the histogram where the GPU path has compute shaders. Other codes keep the
+/// meter as it was.
+#[wasm_bindgen(js_name = setExposureMeter)]
+pub fn set_exposure_meter(meter: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(meter) = ExposureMeter::from_code(meter) {
+            e.renderer.settings_mut().set_exposure_meter(meter);
+        }
         0
     })
 }

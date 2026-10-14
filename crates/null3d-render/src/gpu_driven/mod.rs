@@ -140,6 +140,7 @@ use crate::dfg;
 use crate::dof::DofIds;
 use crate::effects::EffectIds;
 use crate::environment;
+use crate::exposure::{ComputeIds, ExposureIds};
 use crate::final_pass::FinalIds;
 use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
@@ -334,8 +335,12 @@ mod ids {
     pub const SSR: u32 = FULLSCREEN + 1;
     /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
     pub const FOG_VOLUME: u32 = SSR + 1;
+    /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
+    pub const EXPOSURE: u32 = FOG_VOLUME + 1;
+    pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
+    pub const EXPOSURE_STATE: u32 = EXPOSURE_HISTOGRAM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = FOG_VOLUME + 1;
+    pub const PAGES: u32 = EXPOSURE_STATE + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -377,8 +382,12 @@ mod ids {
     /// The first joint of the skin of each scene slot that the vertex shaders skin, which the
     /// culling pass copies into the instances of buckets that such objects share.
     pub const SKIN_FIRSTS: u32 = BLANK_PASS_DEPTH + 1;
+    /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
+    pub const EXPOSURE_CELLS: u32 = SKIN_FIRSTS + 1;
+    pub const EXPOSURE_TEXEL: u32 = EXPOSURE_CELLS + 1;
+    pub const EXPOSURE_STORED: u32 = EXPOSURE_TEXEL + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = SKIN_FIRSTS + 1;
+    pub const TARGETS: u32 = EXPOSURE_STORED + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas.
@@ -401,8 +410,10 @@ mod ids {
     pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
     /// The linear sampler of the volumetric fog's steps.
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
+    /// The linear sampler of the automatic exposure's meter.
+    pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = FOG_SAMPLER + 1;
+    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -419,6 +430,9 @@ mod ids {
     pub const OCCLUSION_EARLY: u32 = 9;
     pub const OCCLUSION_LATE: u32 = 10;
     pub const PYRAMID: u32 = 11;
+    /// The automatic exposure's histogram and adaptation.
+    pub const EXPOSURE_BINS: u32 = 12;
+    pub const EXPOSURE_ADAPT: u32 = 13;
 
     /// Each view's bind groups: the frame group of its render pipelines, its culling group, and
     /// the group of the pipelines that read their instances by index.
@@ -478,8 +492,10 @@ mod ids {
     pub const SSR_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
     /// The bind groups of the volumetric fog's steps, after screen-space reflections'.
     pub const FOG_GROUPS: u32 = SSR_GROUPS + crate::ssr::STEPS as u32;
-    /// The bind groups of materials' maps, after the volumetric fog's.
-    pub const TEXTURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
+    /// The bind groups of the automatic exposure's meter, after the fog's.
+    pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
+    /// The bind groups of materials' maps, after the meter's.
+    pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -698,6 +714,19 @@ impl GpuDrivenRenderer {
                             buffer: ids::FOG_VOLUME,
                             sampler: ids::FOG_SAMPLER,
                             first_group: ids::FOG_GROUPS,
+                        },
+                        exposure: ExposureIds {
+                            buffer: ids::EXPOSURE,
+                            sampler: ids::EXPOSURE_SAMPLER,
+                            cells: ids::EXPOSURE_CELLS,
+                            texel: ids::EXPOSURE_TEXEL,
+                            stored: ids::EXPOSURE_STORED,
+                            first_group: ids::EXPOSURE_GROUPS,
+                            compute: Some(ComputeIds {
+                                histogram: ids::EXPOSURE_HISTOGRAM,
+                                state: ids::EXPOSURE_STATE,
+                                pipelines: [ids::EXPOSURE_BINS, ids::EXPOSURE_ADAPT],
+                            }),
                         },
                         transmission: TransmissionIds {
                             group: ids::TRANSMISSION_GROUP,
@@ -1022,6 +1051,8 @@ impl GpuDrivenRenderer {
         );
         self.graph
             .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
+        self.graph.set_exposure(self.settings.exposure_frame());
+        created_pipelines |= self.graph.create_exposure_pipelines(list, input.frame)?;
         self.graph.set_fog_volume(self.settings.fog_volume_frame(
             input.scene,
             parity,

@@ -18,6 +18,7 @@ import {
 	LAYOUT_DOF_COMPOSITE_MS,
 	LAYOUT_EFFECT,
 	LAYOUT_EFFECT_DEPTH_MS,
+	LAYOUT_EXPOSURE,
 	LAYOUT_FINAL,
 	LAYOUT_FINAL_BLOOM,
 	LAYOUT_FINAL_EFFECTS,
@@ -77,6 +78,10 @@ import {
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
 	TEMPLATE_DOF_SETUP_MS,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM,
+	TEMPLATE_EXPOSURE_HISTOGRAM,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
 	TEMPLATE_FOG_APPLY,
@@ -246,7 +251,14 @@ const LIGHT_ENTRY_POINTS: Readonly<Record<number, string>> = {
 	[TEMPLATE_LIGHT_WRITE]: 'write_lights',
 };
 
+/** The automatic exposure's compute templates: each one's entry point in the histogram shader. */
+const EXPOSURE_ENTRY_POINTS: Readonly<Record<number, string>> = {
+	[TEMPLATE_EXPOSURE_HISTOGRAM]: 'histogram_main',
+	[TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM]: 'adapt_main',
+};
+
 /** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
+
 const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	{
 		arrayStride: SIZE_INSTANCE_STRIDE,
@@ -433,6 +445,10 @@ export class Pipelines {
 	private readonly skinLayout: GPUPipelineLayout;
 	/** The skinning pass's builds, which arrive with the skinning feature's shader file. */
 	private readonly skin: ShaderVariants;
+	/** The automatic exposure's histogram steps, which arrive with the exposure feature's file. */
+	private readonly exposureHistogram: ShaderVariants;
+	/** The histogram steps' pipeline layout, made at their first pipeline. */
+	private exposureLayout: GPUPipelineLayout | undefined;
 	private readonly mipmap: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 	/** The module of the fragment shader that writes nothing, made at its first use. */
@@ -621,6 +637,8 @@ export class Pipelines {
 			{ binding: 9, visibility: fragment, texture: { viewDimension: '3d' } },
 			{ binding: 10, visibility: fragment, sampler: {} },
 			{ binding: 11, visibility: fragment, texture: {} },
+			// The automatic exposure's texel, in 32-bit floats, which no device need filter.
+			{ binding: 12, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		];
 		this.defineLayout(LAYOUT_FINAL, 'final', finalEntries);
 		// The base level of bloom's chain, which the final pass's bloom build reads with a linear
@@ -838,6 +856,14 @@ export class Pipelines {
 			[TEMPLATE_AO_DENOISE, 'ao denoise', shaders.ao, 'denoise', LAYOUT_AO],
 			[TEMPLATE_SSR_REDUCE, 'ssr reduce', shaders.ssr_reduce, 'reduce', LAYOUT_SSR_REDUCE],
 			[TEMPLATE_SSR_TRACE, 'ssr trace', shaders.ssr, 'trace', LAYOUT_SSR_TRACE],
+			[
+				TEMPLATE_EXPOSURE_LUMINANCE,
+				'exposure cells',
+				shaders.exposure,
+				'downsample',
+				LAYOUT_EFFECT,
+			],
+			[TEMPLATE_EXPOSURE_ADAPT, 'exposure adapt', shaders.exposure, 'adapt', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP, 'dof setup', shaders.dof, 'setup', LAYOUT_EFFECT],
 			[TEMPLATE_DOF_SETUP_MS, 'dof setup ms', shaders.dof_ms, 'setup', LAYOUT_EFFECT_DEPTH_MS],
 			[TEMPLATE_DOF_BLUR, 'dof gather', shaders.dof, 'gather', LAYOUT_BLOOM],
@@ -951,6 +977,27 @@ export class Pipelines {
 		this.lightClusters = variantFor(shaders.light_clusters, 0, 'wgsl')?.wgsl ?? undefined;
 		this.skinLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_SKIN)] });
 		this.skin = shaders.skin;
+		this.exposureHistogram = shaders.exposure_histogram;
+		// The histogram steps' group: their settings, the color they meter with a linear filter,
+		// the histogram and the stored exposure, and the exposure's texel that they write. It is
+		// made at its first use.
+		this.defineLayout(
+			LAYOUT_EXPOSURE,
+			'exposure',
+			[
+				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
+				{ binding: 1, visibility: compute, texture: {} },
+				{ binding: 2, visibility: compute, sampler: {} },
+				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
+				{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
+				{
+					binding: 5,
+					visibility: compute,
+					storageTexture: { access: 'write-only', format: 'rgba32float' },
+				},
+			],
+			true,
+		);
 		this.mipmap = variantFor(shaders.mipmap, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
@@ -1243,6 +1290,7 @@ export class Pipelines {
 	computeVariants(template: number): ShaderVariants | undefined {
 		if (template === TEMPLATE_SKIN) return this.skin;
 		if (template === TEMPLATE_DEPTH_PYRAMID) return this.pyramid;
+		if (EXPOSURE_ENTRY_POINTS[template] !== undefined) return this.exposureHistogram;
 		return OCCLUSION_ENTRY_POINTS[template] !== undefined ? this.occlusion : undefined;
 	}
 
@@ -1289,6 +1337,19 @@ export class Pipelines {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
 				compute: { module: this.module('depth pyramid', shader), entryPoint: 'main' },
+			};
+		}
+		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];
+		if (exposureEntry) {
+			const shader = variantFor(this.exposureHistogram, 0, 'wgsl')?.wgsl;
+			if (!shader) throw new Error("the device's shader modules have no exposure histogram shader");
+			this.exposureLayout ??= this.device.createPipelineLayout({
+				bindGroupLayouts: [this.layout(LAYOUT_EXPOSURE)],
+			});
+			return {
+				label: `exposure ${exposureEntry}`,
+				layout: this.exposureLayout,
+				compute: { module: this.module('exposure histogram', shader), entryPoint: exposureEntry },
 			};
 		}
 		const entryPoint = LIGHT_ENTRY_POINTS[template];

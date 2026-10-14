@@ -612,6 +612,10 @@ export interface CoreGlue extends CoreErrors {
 	setSsrQuality(thousandths: number, steps: number): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** Turns automatic exposure on with the post-processing values' settings, or off. */
+	setAutoExposure(on: boolean): number;
+	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
+	setExposureMeter(meter: number): number;
 	/**
 	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
 	 * returns its id, or 0 when the scene holds the most systems already.
@@ -984,6 +988,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSsr',
 	'readsLastFrame',
 	'setSsrQuality',
+	'setAutoExposure',
+	'setExposureMeter',
 	'createParticles',
 	'destroyParticles',
 	'particleRecords',

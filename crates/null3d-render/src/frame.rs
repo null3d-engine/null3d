@@ -39,6 +39,7 @@ use crate::debug_view::{self, DebugView};
 use crate::dof::{self, Dof, DofFrame};
 use crate::effects::{EFFECT_FLOATS, Effect, EffectJoins, EffectMaps, MAX_EFFECTS, MAX_TEXTURES};
 use crate::environment::{Environment, EnvironmentUniform};
+use crate::exposure::{AutoExposure, ExposureFrame, Meter};
 use crate::fog::{self, Fog};
 use crate::fog_volume::{self, FogVolumeFrame, Volumetric};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -732,6 +733,10 @@ pub struct SceneSettings {
     ssr_scale: f32,
     /// The most steps of screen-space reflections' march, which the quality settings set.
     ssr_steps: u32,
+    /// The automatic exposure's settings while the sketch turns it on.
+    auto_exposure: Option<AutoExposure>,
+    /// The meter of automatic exposure, which the quality settings set.
+    exposure_meter: Meter,
     /// The volumetric fog's settings while the sketch turns it on.
     fog_volume: Option<Volumetric>,
     /// The slices of the volumetric fog's grid, which the quality settings set: 0 draws none.
@@ -854,6 +859,8 @@ impl SceneSettings {
             ssr: None,
             ssr_scale: ao::MAX_SCALE,
             ssr_steps: ssr::DEFAULT_STEPS,
+            auto_exposure: None,
+            exposure_meter: Meter::default(),
             fog_volume: None,
             fog_slices: fog_volume::SLICE_COUNTS[1],
             fog_halvings: 0,
@@ -1237,6 +1244,33 @@ impl SceneSettings {
     /// on.
     pub fn set_dof(&mut self, dof: Option<Dof>) {
         self.dof = dof;
+    }
+
+    /// The automatic exposure's settings while it adapts: while the sketch turns it on and no debug
+    /// view draws.
+    pub fn auto_exposure(&self) -> Option<AutoExposure> {
+        self.auto_exposure.filter(|_| !self.debug_view.is_debug())
+    }
+
+    /// Turns automatic exposure on with its settings, or off with `None`, from the next recorded
+    /// frame on.
+    pub fn set_auto_exposure(&mut self, auto_exposure: Option<AutoExposure>) {
+        self.auto_exposure = auto_exposure;
+    }
+
+    /// Sets the meter of automatic exposure, which the quality settings set, from the next
+    /// recorded frame on.
+    pub fn set_exposure_meter(&mut self, meter: Meter) {
+        self.exposure_meter = meter;
+    }
+
+    /// What the meter of automatic exposure draws with in the frame, or `None` while it is off.
+    pub(crate) fn exposure_frame(&self) -> Option<ExposureFrame> {
+        Some(ExposureFrame {
+            settings: self.auto_exposure()?,
+            meter: self.exposure_meter,
+            seconds: self.clock[1],
+        })
     }
 
     /// Sets the taps of depth of field's gather, one of [`dof::TAP_COUNTS`] or 0, which draws none,

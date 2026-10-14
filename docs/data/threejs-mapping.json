@@ -1600,6 +1600,17 @@
       "detect": "\\bBokehPass\\b|\\bDepthOfField(Effect)?\\b|\\bdof\\s*\\("
     },
     {
+      "id": "auto-exposure",
+      "category": "Post-processing",
+      "three": "None built in; pmndrs ToneMappingEffect with ToneMappingMode.REINHARD2_ADAPTIVE (adaptationRate, middleGrey), AdaptiveLuminancePass, AdaptiveToneMappingPass",
+      "status": "changed",
+      "since": "0.2",
+      "target": "post.set({ autoExposure: { metering, percentiles, centerWeight, speedUp, speedDown, minEv, maxEv, compensation } })",
+      "notes": "three.js has no automatic exposure; renderer.toneMappingExposure stays post.set({ exposure }), and the eye adapts from it. pmndrs's adaptive tone mapping becomes autoExposure with metering: 'mean'. Its adaptationRate becomes about speedUp and speedDown, and its middleGrey the compensation, log2(middleGrey / 0.18) stops. Its Reinhard curve becomes a custom tone curve. The meter runs on the GPU in the same frame: a histogram on WebGPU, or 16 x 16 cells on WebGL2 and the Low preset (quality setting exposureMeter). It weights the center, adapts at its own speeds for brighter and darker scenes, and stays within minEv and maxEv, in stops from the camera's exposure. Hold mode settles at once, so image tests stay the same. It needs HDR color, as bloom does.",
+      "docs": "api/post",
+      "detect": "\\bREINHARD2_ADAPTIVE\\b|\\bAdaptive(Luminance|ToneMapping)Pass\\b|\\badaptationRate\\b"
+    },
+    {
       "id": "shader-pass",
       "category": "Post-processing",
       "three": "ShaderPass (custom full-screen GLSL)",
@@ -1752,6 +1763,17 @@
       "notes": "three.js has no particle system. A port replaces the loop that moves Points or InstancedMesh rows with an emitter whose particles the GPU moves in closed form: gravity, drag toward the wind, turbulence and a ground that bounces them. Write the effect's look as curves over life in place of per-frame color and size code. AdditiveBlending becomes blending 'additive'; particles never write depth. A sprite atlas becomes map with flipbook. three.quarks's sub-emitters become subEmitters on 'death' or 'ground'. A system does not sort its own particles, cast shadows or take light.",
       "docs": "api/particles",
       "detect": "\\b(ParticleSystem|BatchedRenderer|ParticleEmitter)\\b|three\\.quarks|three-nebula"
+    },
+    {
+      "id": "terrain",
+      "category": "Geometry",
+      "three": "A displaced PlaneGeometry, or three.js's TerrainGenerator over a height map",
+      "status": "changed",
+      "since": "0.2",
+      "target": "await createTerrain(ctx, { size, height, layers, splat, maxLevel, split }) from @null3d/terrain; terrain.update(cameraX, cameraZ) in onUpdate; terrain.heightAt(x, z)",
+      "notes": "A port replaces one displaced grid with a height field drawn as a camera-centred quadtree of blocks: the ground near the camera keeps fine detail, the far hills draw coarse blocks, and a skirt around each block hides the seam where two levels meet. Up to four tiled layers blend by a splat map, which the add-on fills by default from the height and the slope, in place of a hand-painted or vertex-colored ground. The terrain carries no collision, so a port that walked on the ground reads heightAt and normalAt to place objects instead of a physics collider. A port that morphed two levels on the GPU keeps its own morph; this add-on draws the levels as they are and closes the seam with the skirt.",
+      "docs": "api/terrain",
+      "detect": "\\bTerrainGenerator\\b|\\bgetHeightAt\\b"
     },
     {
       "id": "css-renderers",

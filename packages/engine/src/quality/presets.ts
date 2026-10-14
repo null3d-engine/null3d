@@ -203,6 +203,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: [16, 24, 32, 48, 64],
 	},
+	// How automatic exposure meters the scene while a sketch turns it on: `histogram` bins a grid of
+	// 128 samples on the short side in compute shaders, on WebGPU; `downsample` draws 16 x 16 cells
+	// and meters them in one texel, on every GPU path. WebGL2 has no compute shaders, so it always
+	// takes the downsample. Low takes it everywhere, as the cheaper path for phones. A change makes
+	// no GPU object it has not made before (D-148).
+	exposureMeter: {
+		presets: ['downsample', 'histogram', 'histogram', 'histogram'],
+		changes: 'live',
+		values: ['downsample', 'histogram'],
+	},
 	// The slices of the volumetric fog's grid along the view. The grid's columns follow: 64, 96 or
 	// 128 cells on the canvas's short side for 32, 64 or 96 slices. 0 draws no volumetric fog even
 	// when the sketch turns it on: the fog keeps its sun glow, which phones on Low draw at no cost.
@@ -489,6 +499,13 @@ export interface QualitySettings {
 	 * farther objects and cost more. It changes during play.
 	 */
 	ssrSteps: 16 | 24 | 32 | 48 | 64;
+	/**
+	 * How automatic exposure meters the scene's brightness while `post.set` turns it on:
+	 * `histogram` bins a grid of samples in compute shaders, on WebGPU, and `downsample` averages
+	 * 16 x 16 cells of the image, on every GPU path. WebGL2 always takes the downsample. The
+	 * downsample costs less, with a coarser meter. It changes during play.
+	 */
+	exposureMeter: 'downsample' | 'histogram';
 	/**
 	 * The slices of the volumetric fog's grid along the view: 32, 64 or 96, with 64, 96 or 128
 	 * cells across its short side, or 0, which draws no volumetric fog even when `scene.setFog`
