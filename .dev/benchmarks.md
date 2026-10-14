@@ -30,6 +30,27 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
 
+### Build caches
+
+The build caches live under one root, `~/.cache/null3d` by default, each in a named subfolder:
+`cargo-target` for the compiled Rust dependency crates and the WebAssembly builds, `shader-modules`
+for the built shader modules, `shader-cache` for the per-entry shader build, and `wasm-artifacts` for
+the built wasm and tool modules. `NULL3D_BUILD_CACHE` names another root and moves them all; the older
+per-cache variables still name one folder. Clearing the root is always safe, because every entry is a
+pure function of its inputs and a missing entry only costs the build time.
+
+Figures from the Mac on 14 October 2026, with the shared cargo target warm:
+
+| build or edit | run again | from the cache |
+| --- | --- | --- |
+| a fresh worktree's first `--pages-only` build | 236.8 s | 0.32 s |
+| a no-change `--pages-only` build | 114.5 s | 0.28 s |
+| a worktree's shader modules | about 3 min | about 0.2 s |
+| one shader's edit | about 500 s | about 10 s |
+
+A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement. The
+dependency crates compile once for every checkout on the machine rather than once per worktree.
+
 ## What a report measures
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
