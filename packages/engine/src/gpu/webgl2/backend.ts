@@ -68,6 +68,8 @@ const COPY_PROGRAM = 'mipmap copy';
 const COLOR_ATTACHMENT0 = 0x8ce0;
 const DEPTH_ATTACHMENT = 0x8d00;
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
+const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
+const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -2250,11 +2252,13 @@ export class WebGL2Backend {
 		const keepsColor = storeColor || resolves;
 		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a colour-only
 		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
-		// runs the invalidate on the thread that draws before it draws the pass.
-		const discard: number[] = [];
-		if (this.passColor && !keepsColor) discard.push(COLOR_ATTACHMENT0);
-		if (this.passDepth && !storeDepth) discard.push(DEPTH_ATTACHMENT);
-		if (discard.length > 0) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		// runs the invalidate on the thread that draws before it draws the pass. The lists are made
+		// once, because this runs for every pass of every frame.
+		const discardColor = this.passColor !== null && !keepsColor;
+		const discardDepth = this.passDepth !== null && !storeDepth;
+		if (discardColor && discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_BOTH);
+		else if (discardColor) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_COLOR);
+		else if (discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_DEPTH);
 		if (resolves) {
 			const into =
 				this.passResolve === 0
