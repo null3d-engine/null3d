@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use null3d_gpu::drawlist::permutation;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{BuildError, Pipeline, Problem};
 
@@ -115,7 +115,7 @@ impl FirstUseFeatures {
 }
 
 /// One built variant.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VariantOutput {
     /// The permutation bits the build was made with, as a render pipeline's permutation word
     /// holds them: 0 for a variant without permutation bits.
@@ -127,7 +127,7 @@ pub struct VariantOutput {
 }
 
 /// One WGSL module and the entry points of each render pipeline.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WgslOutput {
     /// The module that naga writes from the composed, validated and compacted module.
     pub source: String,
@@ -136,7 +136,7 @@ pub struct WgslOutput {
 }
 
 /// The vertex and fragment shaders of one render pipeline, to link into one WebGL2 program.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslProgram {
     /// The vertex shader.
     pub vertex: GlslStage,
@@ -145,7 +145,7 @@ pub struct GlslProgram {
 }
 
 /// One GLSL ES 3.00 shader and the names its resources have in it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlslStage {
     /// The shader source.
@@ -157,7 +157,7 @@ pub struct GlslStage {
 }
 
 /// A WGSL resource binding.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Binding {
     /// The bind group.
     pub group: u32,
@@ -166,7 +166,7 @@ pub struct Binding {
 }
 
 /// A uniform block of one GLSL stage.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslUniformBlock {
     /// The block name, for `getUniformBlockIndex`.
     pub name: String,
@@ -176,7 +176,7 @@ pub struct GlslUniformBlock {
 }
 
 /// A texture uniform of one GLSL stage, which joins a WGSL texture and its sampler.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslTexture {
     /// The uniform name, for `getUniformLocation`.
     pub name: String,
