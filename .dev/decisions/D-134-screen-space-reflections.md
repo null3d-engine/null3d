@@ -116,3 +116,23 @@ Option D: a depth pyramid and a trace at the screen texture's size run before th
 - Skills: the develop skill's task table and quick reference, and the port skill's post-processing table.
 - Tests: `ssr.rs` and `frame_graph.rs` unit tests, the `ssr-*` image tests and `ssr.spec.ts`, the `wet-street` demo, `--ssr` in `bench:allocation`, and the S1 switch `ssr`.
 - Later: stochastic rays with a temporal pass if temporal anti-aliasing ships; motion vectors would also remove the one-frame lag of moving objects' reflections.
+
+## Addendum, 15 October 2026: a custom material's surface keeps no screen-space reflection
+
+The `ssr-planar` image test and its place in `ssr.spec.ts` were removed. A planar reflection pass over part of the floor argued that the material's planar reflection and the screen's join by the material's share of `surface.reflection`. They do not. This addendum records what the probes found, so that a later task can finish the join.
+
+The probes, on WebGPU and WebGL2, through the SSR sketch's own switches:
+
+- `?ssr` alone reflects both boxes. `?ssr&planar` loses every screen-space reflection, and keeps the planar one.
+- `?ssr&planar&mask=all` keeps both, because the planar share covers the whole floor. `mask=none` loses both, because nothing joins a share of 0.
+- A declared but unused reflection pass changes nothing, so the pass itself is not the cause.
+- A custom material with no pass texture at all, and `s.reflection = vec4f(0.0)`, loses the screen-space reflections exactly as the planar case does. So any surface that a custom material draws keeps none of them.
+- Ambient occlusion on, a longer held time, and a second capture all change nothing. It is not a warm-up.
+
+The screen read returns no hit while the blank stand-in texture is bound, and a frame binds it until the trace's steps are built. `ssr_draws` needs `ssr_built`, which needs the steps' pipelines and the color copy's pipeline, and the copy's identity also decides whether the frame before's view is found. A frame drawn with a custom material reaches neither, so `uniform.occlusion` keeps its zeros and `screen_read` returns no hit.
+
+The fault is not main's: reverting `9726a73ef` and `f5c556f82` left the loss in place (`c12859615` conflicts, so its revert was skipped), and the branch's own pre-merge tip `a4159e649` fails too, there with `E1408` and a pipeline that could not build. The blend itself came with `235f2f9e8`, this task's own commit.
+
+The run also found a build fault worth its own note in the build cache's guide: with several worktrees sharing `~/.cache/null3d/cargo-target`, one target directory compiled another checkout's crate (`E1402`, "the threaded engine core was built from other Rust sources than this checkout holds", and `cannot find value SSR_REDUCE in module template`). `NULL3D_NO_CACHE=1` does not prevent it; a `touch` of the crate's files in that checkout clears it.
+
+Docs: `concepts/post-processing` now says that a surface a custom material draws receives no screen-space reflection, and that a planar pass under it still shows. Tests: the `ssr-planar` test left `manifest.ts`, `ssr.spec.ts`, `ssr-sketch.ts` and both reference sets. Later: finish the join, then put the case back with its references.
