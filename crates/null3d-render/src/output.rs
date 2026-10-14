@@ -145,7 +145,8 @@ pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
     /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
-    /// [`OutputUniform::VIGNETTE`] and [`OutputUniform::LUT`].
+    /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::OUTLINE`] and
+    /// [`OutputUniform::AUTO_EXPOSURE`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -164,6 +165,8 @@ impl OutputUniform {
     pub const LUT: u32 = 4;
     /// The flag that makes the final pass draw the outline's line.
     pub const OUTLINE: u32 = 8;
+    /// The flag that makes the final pass multiply HDR color by the automatic exposure's texel.
+    pub const AUTO_EXPOSURE: u32 = 16;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

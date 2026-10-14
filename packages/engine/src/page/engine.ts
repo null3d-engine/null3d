@@ -245,6 +245,15 @@ export interface EngineOptions {
 	 */
 	textureMemoryMiB?: number;
 	/**
+	 * True keeps the engine's copy of each texture's texels after their upload, so a texture that
+	 * maps an image draws with its map again after the browser takes the GPU away. It costs about
+	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
+	 * a texture draws with its color alone until the sketch gives it texels again. Without this
+	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
+	 * is likeliest to lose its GPU.
+	 */
+	keepTextureCopies?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -472,6 +481,12 @@ export interface EngineMode {
 	 * that the options asked for. `report.worker` holds the probe's answer.
 	 */
 	renderFallback: RenderFallback | null;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost. It is on for a phone and a tablet, and the page's
+	 * `keepTextureCopies` option can name either value.
+	 */
+	keepTextureCopies: boolean;
 }
 
 /**
@@ -1205,6 +1220,13 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
+	/**
+	 * The engine keeps a copy of each texture's texels after their upload where the device is a
+	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
+	 * otherwise (D-164).
+	 */
+	const keepTextureCopies =
+		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,
@@ -1495,6 +1517,13 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			// A channel's ports keep the engine's closures alive while they stay open: a port with a
+			// listener is a pending activity, which the page never collects. The engine has stopped, so
+			// close both ends and let go of the channels.
+			for (const { port1, port2 } of channels) {
+				port1.close();
+				port2.close();
+			}
 			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
@@ -1612,6 +1641,7 @@ async function startEngine(
 			),
 			options: tierSettings,
 			textureCapMiB,
+			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
 		};
@@ -1627,6 +1657,7 @@ async function startEngine(
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
 			renderFallback,
+			keepTextureCopies,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];

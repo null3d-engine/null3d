@@ -168,8 +168,15 @@ async function runDemo(demo: Demo): Promise<void> {
 		choices.className = 'choices';
 		stage.append(choices);
 	}
+	// The help that a showcase scene posts: its keys and the camera mode. A held frame has none.
+	const hud = !params.has('hold') ? element('div') : undefined;
+	if (hud) {
+		hud.className = 'hud';
+		hud.hidden = true;
+		stage.append(hud);
+	}
 	try {
-		await startDemo({ canvas, demo, labels, choices });
+		await startDemo({ canvas, demo, labels, choices, hud });
 	} catch (error) {
 		const message = element('p', error instanceof Error ? error.message : String(error));
 		message.className = 'error';

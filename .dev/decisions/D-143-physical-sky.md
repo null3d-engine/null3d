@@ -1,0 +1,105 @@
+# D-143: Physical sky and aerial perspective
+
+Status: design decided by the helper of M2-EX26 on 11 October 2026, for the owner's review. The owner approved the demo's look on 13 October 2026. The figures of cost and size are under Data. Date: 2026-10-11. Task: M2-EX26.
+
+Summary: `scene.setBackground({ atmosphere })` draws a physically based sky: Rayleigh and Mie scattering and ozone, from Hillaire's three lookup tables (2020), as Unreal Engine and Bevy draw theirs. The same air hazes distant objects by distance and by the sun's angle, inside each surface's shader, as fog does. The sky's environment, the moon, the stars and the clouds follow it. The Low preset draws three.js's analytic sky in its place, matched in brightness. Nothing runs or downloads while no scene uses it.
+
+## Question
+
+The owner asked on 11 October 2026 for the demos to be "as amazing as possible" (D-142). The sky is three.js's Preetham model ([D-118](D-118-sky-environment.md)). It has no ozone, no twilight past 2 degrees under the horizon, and it does not haze the scene's objects. How does the engine draw a physical sky on all three GPU paths? How do distant objects take the air's color? How does it light the scene, and what does it cost?
+
+## Rule
+
+- The best technique by default ([D-52](D-52-intent-parity.md)). The analytic sky stays, for ports of three.js's `Sky` and for phones.
+- One look on WebGPU, compatibility mode and WebGL2, with image references on the Mac's GPU and on SwiftShader.
+- Tables drawn again only when what they hold changes. No pass, no texture and no shader download while no scene draws the physical sky ([AGENTS.md](../../AGENTS.md#design-principles), principle 8).
+- No allocation per frame ([AGENTS.md](../../AGENTS.md#hard-rules), hard rule 1).
+- It fits the sky's environment (D-118), the scene fog and the lit fog (D-133).
+
+## Options
+
+### The sky
+
+| Option | Verdict |
+| --- | --- |
+| A: an analytic fit, such as Preetham (now) or Hosek-Wilkie | Kept as the cheap sky. No ozone, no twilight, no altitude, and no physical link to the haze on objects |
+| B: Bruneton's precomputed tables (2008), 4D scattering in a 3D texture | Rejected. Its tables are large, and its precompute is long: seconds on a phone. three.js's community atmosphere uses it, for scenes seen from space |
+| C: a march along each pixel's ray | Rejected. 30 or more steps of the air per pixel cost too much at full resolution, and more on phones |
+| D: Hillaire's tables (2020): transmittance, multiple scattering and a sky view | Chosen. Unreal Engine and Bevy use it. The tables are small and quick to draw, and a pixel of the sky reads one texel |
+
+How option D works here:
+
+- **Transmittance**, 256 x 64 texels: the share of light that passes from a height to the top of the air, for each angle, after Bruneton's mapping. 40 steps a texel. Drawn when the air changes.
+- **Multiple scattering**, 32 x 32 texels: the light that scatters more than once, as Hillaire's isotropic sum gives it, for each height and sun angle. 64 directions of 20 steps a texel. Drawn when the air changes.
+- **Sky view**, 256 x 128 texels: the light of the whole sky seen from the camera's height, single scattering plus the table above. Its rows crowd near the horizon, as Hillaire's do. Its columns run around the whole sky, not from the sun, so the sun and the moon add their light in the same march. Drawn when the sun, the moon, the air or the camera's height changes.
+- **The background** reads the sky view in each pixel's direction. It adds the sun's disc through the transmittance, the moon, the stars and the clouds.
+
+Each table is one triangle over a small 16-bit float target, which every GPU path draws. WebGL2 needs `EXT_color_buffer_float` for that, as bloom does. The engine core records the tables as it records bloom's steps, so the three paths share one plan.
+
+### Aerial perspective
+
+| Option | Verdict |
+| --- | --- |
+| A: Hillaire's volume of 32 x 32 x 32 cells over the view, read by each surface | Rejected. Every mesh shader would bind one more texture, on every GPU path, beside the frame's group. A step that applies it after the opaque pass misses the transparent pass and the 8-bit path |
+| B: a pass after the opaque objects that reads the depth | Rejected for the same reasons, and for its cost in bandwidth on phones |
+| C: work it out per pixel in the shaders' fog step, from a few values of each frame | Chosen |
+
+Over the distances of a scene, the air's density falls with height as the fog's does, and the sun's light changes little. So the shaders integrate Rayleigh and Mie along each ray exactly, with the fog's own height integral, one per kind of particle. They take the phase of each light per pixel. The core works out, once a frame, the sun's and the moon's light at the camera and the multiple scattering there, from the same model as the tables. This is exact for an air of two exponential layers, and it ignores the earth's curve. That error stays small within a few tens of kilometres.
+
+The step runs before the scene fog, so fog still lies over a hazed scene. The lit fog (D-133) applies after the opaque pass, over both. The values grow the frame's uniform block by 96 bytes. Without a physical sky, the shaders skip the step on one value of the frame, as they skip fog.
+
+`metersPerUnit` sets the scale of the scene, and `aerialPerspective` scales the haze: 0 turns it off, and more than 1 makes a small scene look large, as Unreal's distance scale does.
+
+### Light from the sky
+
+The sky's environment (D-118) shows whichever sky the background draws. For the physical sky:
+
+- When a refresh of the map starts, the core draws the sky with its clouds into a panorama of 512 x 256 texels. The map's stages read that panorama, so all its faces show one sky while the sun moves. Its stages are the same 20 stages.
+- The diffuse light comes from the CPU, as for the analytic sky, from a small copy of the model with coarse tables.
+
+### Night
+
+The moon is a second light of the air, as in the analytic sky's second sky (D-118). `moonIntensity` sets its light, and the sky adds what both lights scatter. `timeOfDay` fades it in between 6 and 12 degrees under the horizon, as D-118's cross-fade does. The physical sky keeps its own twilight below the horizon, so the fade needs no table of dusk light.
+
+The background draws the moon's disc lit from the sun's side, so it shows its phase. Stars come from a hash of the direction, faded by the air toward the horizon. They add their light to the sky's, so they show only where the sky is dark enough.
+
+### Phones
+
+The coordinator asked that the Low preset keep the analytic sky. The quality setting `physicalSky` is off on Low. There, a physical sky's settings draw the analytic sky: the same sun, moon, air and clouds. The core matches its brightness to the physical sky's mean light, from both CPU models, so the scene's exposure fits either sky. The aerial perspective stays on, since it costs what fog costs.
+
+## Data
+
+The `physical-sky` timing plan ran on the Mac (Apple M5 Max, Chrome 155, 120 Hz) on 13 October 2026, at a load of 3.3 ([devices](../devices.md)). Its page draws a ground of boxes under a low sun and clouds, with the window at 1512 x 758 points and 2 pixels to a point. Each item times three.js's analytic sky (off) against the physical sky (on), with the haze on the boxes. The figures are each side's median GPU time per frame, from the page's GPU timer.
+
+| Item | Analytic sky (ms) | Physical sky (ms) | Difference (ms) |
+| --- | --- | --- | --- |
+| WebGPU, scale 1, sun still | 1.97 | 1.44 | -0.52 |
+| WebGPU, scale 1, sun moving | 1.97 | 2.16 | +0.20 |
+| WebGPU, scale 0.5, sun still | 1.77 | 1.77 | 0.00 |
+| WebGPU, scale 0.5, sun moving | 1.77 | 1.97 | +0.20 |
+| WebGL2, scale 1, sun still | 3.32 | 3.26 | -0.06 |
+| WebGL2, scale 1, sun moving | 3.25 | 3.29 | +0.04 |
+| WebGL2, scale 0.5, sun still | 2.79 | 2.78 | -0.00 |
+| WebGL2, scale 0.5, sun moving | 2.78 | 3.18 | +0.41 |
+
+- With the sun still, the physical sky costs what the analytic sky costs, within the timer's noise of about half a millisecond. The sky view table is not drawn again, and the background reads it once per pixel.
+- With the sun moving in every frame, the sky view table is drawn in every frame. That costs 0.04 to 0.41 ms per frame. The transmittance and multiple scattering tables are drawn only when the air's settings change, so a moving sun never draws them.
+- Every item held the display's 120 Hz, so no frame was late on either side.
+- The CPU time per frame of both workers stayed at 0.07 to 0.21 ms on both sides. The diffuse light from the CPU's copy of the model adds no time that the page can measure, even with the sun moving.
+- The page's timer measures whole frames, so the plan gives no GPU time for each table alone. SwiftShader's times say nothing about a real GPU, so the plan runs on the Mac's GPU only.
+- The Low preset draws the analytic sky, so its cost does not change. Medium, High and Ultra draw the physical sky at the costs above.
+- The allocation check (`bun run bench:allocation --atmosphere`, also with `--atmosphere-environment`, and on WebGL2) passed on 12 October 2026: no allocation per frame in the sketch worker or the render worker.
+- Download sizes are under Consequences.
+
+## Decision
+
+- `scene.setBackground({ atmosphere })` draws the physical sky from Hillaire's three tables.
+- Aerial perspective runs per pixel in the shaders' fog step, from values of each frame.
+- The sky's environment reads a panorama of the sky made when each refresh starts.
+- The Low preset draws the analytic sky with matched brightness.
+
+## Consequences
+
+- The sky model now has two more copies: the shaders' and the core's CPU copy for the diffuse light and the frame's values. A unit test compares the CPU copy's transmittance and sky light with known values.
+- The frame's uniform block grows by 96 bytes on every path.
+- Every surface shader holds the haze step, so each shader build grows by 2 to 4% after Brotli, and the small sprite and line builds by 6 to 11%. The engine core grows by 2.5%, and the environment's generator by 2.2% for its panorama step. The physical sky's own shaders load on first use: 8 to 9 KB after Brotli for each GPU path.
