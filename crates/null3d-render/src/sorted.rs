@@ -46,7 +46,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::occlusion::OcclusionBuffer;
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::world::SphereArrays;
-use null3d_gpu::drawlist::state_flags;
+use null3d_gpu::drawlist::{state_flags, template};
 
 use crate::frame::{
     CellOffsets, KeyCounts, RunCells, SceneSettings, bucket_of, collect_bucket_keys, push_runs,
@@ -54,7 +54,6 @@ use crate::frame::{
 use crate::materials::feature;
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 use crate::view::ViewFrame;
-use null3d_gpu::drawlist::template;
 
 /// What makes a sorted bucket: what the mesh and material ask of their pipeline, the bind group of
 /// the material's map, the vertex page of the mesh's first part, the engine mesh and material ids,
@@ -87,17 +86,12 @@ pub(crate) struct SortedBucket {
     /// The data texture its rows come from, where the builder has several, or a skinned object's
     /// slot with [`SKINNED_GROUP`].
     pub(crate) group: u32,
+    /// The id of the pipeline that draws its rows in the camera's weighted layer (see
+    /// [`crate::weighted`]), or 0 for a bucket whose material does not take the weighted blending.
+    pub(crate) weighted: u32,
 }
 
 impl SortedBucket {
-    /// The pipelines that draw each run of the bucket, in order: the back faces' first for a
-    /// double-sided material that blends, as three.js draws one, and then the bucket's own. A
-    /// material with `forceSinglePass`, or a pair whose faces always face the camera, draws once.
-    pub(crate) fn passes(&self) -> impl Iterator<Item = u32> + use<> {
-        let back = (self.back != 0).then_some(self.back);
-        back.into_iter().chain(std::iter::once(self.pipeline))
-    }
-
     /// The scene slot of the skinned object whose bucket this is, or `None` for a bucket that
     /// draws no skinned object.
     pub(crate) fn skinned_slot(&self) -> Option<u32> {
@@ -131,6 +125,41 @@ struct SortedBatch {
     id: Handle,
     bucket: u32,
     base: u32,
+}
+
+/// Which of a view's sorted rows a pass draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SortedRows {
+    /// Every row, back to front, each bucket with its own pipeline: a view's transparent pass
+    /// while the camera draws no weighted layer.
+    All,
+    /// The rows of buckets without a weighted pipeline, back to front: the camera's transparent
+    /// pass while it draws its weighted layer.
+    Sorted,
+    /// The rows of buckets with a weighted pipeline, with that pipeline: the camera's weighted
+    /// pass.
+    Weighted,
+}
+
+impl SortedRows {
+    /// The pipelines that draw a run of `bucket`'s rows in a pass of these rows, in order, or
+    /// none where the pass leaves the bucket out. In the transparent pass, a double-sided material
+    /// that blends draws its back faces first, as three.js draws one, and then the bucket's own
+    /// pipeline; a material with `forceSinglePass`, or a pair whose faces always face the camera,
+    /// draws once. In the weighted layer every bucket draws once, both faces together.
+    pub(crate) fn passes(self, bucket: &SortedBucket) -> impl Iterator<Item = u32> + use<> {
+        let weighted = bucket.weighted != 0;
+        let (back, front, weighted_pass) = match self {
+            SortedRows::Weighted => (None, None, weighted.then_some(bucket.weighted)),
+            SortedRows::Sorted if weighted => (None, None, None),
+            _ => (
+                (bucket.back != 0).then_some(bucket.back),
+                Some(bucket.pipeline),
+                None,
+            ),
+        };
+        back.into_iter().chain(front).chain(weighted_pass)
+    }
 }
 
 /// Neighbors in a view's sorted order that share a bucket: `count` rows from row `first` of the
@@ -215,7 +244,7 @@ pub(crate) struct SortedLayout {
     /// largest bucket, which can at most sit between the others'.
     draws_room: u32,
     /// The most draws that a run of any sorted bucket takes: one per part of its mesh, for each of
-    /// its passes.
+    /// its passes, the weighted layer's included.
     most_parts: u32,
     /// The frame's culling runs, and the scene objects' arrays that they read.
     runs: Vec<CullRun>,
@@ -231,6 +260,8 @@ pub(crate) struct SortedLayout {
     /// True when some bucket's pairs let light through, so the camera's view copies its opaque
     /// color for them.
     transmits: bool,
+    /// True when some bucket has a pipeline of the weighted layer.
+    weighs: bool,
     /// The pairs that the layout takes.
     kind: SortedKind,
     /// The layers whose objects a redraw layout draws again: those that decals skip.
@@ -322,6 +353,12 @@ impl SortedLayout {
         self.transmits
     }
 
+    /// True when some bucket's material takes the weighted blending, and the builder asked for
+    /// the weighted layer's pipelines, so the camera's view may draw that layer.
+    pub(crate) fn weighs(&self) -> bool {
+        self.weighs
+    }
+
     /// The rows that can draw in the transparent pass.
     pub(crate) fn rows(&self) -> u32 {
         self.rows
@@ -349,8 +386,10 @@ impl SortedLayout {
     /// `place` gives a batch's first row in the builder's data and its data texture. While
     /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
     /// shadow map. `skin` says how each scene object draws by its skinning: a skinned object that
-    /// waits gets no bucket, and the layout asks only for its pipeline (see [`Self::waiting`]). The
-    /// layout then reserves every list that a frame's sort takes.
+    /// waits gets no bucket, and the layout asks only for its pipeline (see [`Self::waiting`]).
+    /// With `weighted`, the targets of the camera's weighted layer, each bucket whose material
+    /// takes the weighted blending gets that layer's pipeline too. The layout then reserves every
+    /// list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -363,6 +402,7 @@ impl SortedLayout {
         resident: u32,
         shadows: bool,
         skin: impl Fn(usize, DrawKey) -> SkinnedPipeline,
+        weighted: Option<PassTargets>,
         key_counts: &mut KeyCounts,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
@@ -456,13 +496,32 @@ impl SortedLayout {
             .iter()
             .any(|&((pipeline, ..), _)| pipeline.transmits());
         let (mut total, mut largest, mut most_parts) = (0u32, 0u32, 1u32);
+        self.weighs = false;
         for &((pipeline, textures, _, mesh, material, group), count) in key_counts.iter() {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let (back, front) = match faces(pipeline, material) {
                 Some((back, front)) => (pipelines.id(back.in_pass(targets)), front),
                 None => (0, pipeline),
             };
-            let passes = if back == 0 { 1 } else { 2 };
+            // Only the standard, unlit and sprite templates have builds of the weighted layer:
+            // custom materials and lines sort as they blend.
+            let weighs = feature::weighs(settings.materials().features(material - 1))
+                && matches!(
+                    pipeline.template,
+                    template::INSTANCED_LIT
+                        | template::INSTANCED_STANDARD_MAPS
+                        | template::INSTANCED_UNLIT
+                        | template::INSTANCED_UNLIT_MAP
+                        | template::SPRITE
+                        | template::SPRITE_MAP
+                );
+            let weighted = match weighted {
+                Some(layer) if weighs => pipelines.id(pipeline.weighted().in_pass(layer)),
+                _ => 0,
+            };
+            self.weighs |= weighted != 0;
+            // A weighted bucket draws its runs once more, in the camera's weighted layer.
+            let passes = if back == 0 { 1 } else { 2 } + u32::from(weighted != 0);
             most_parts = most_parts.max(meshes.parts(slot).len() as u32 * passes);
             // A particle system's pipeline reads no draw index, so of the pass's bits it takes
             // only tone mapping.
@@ -478,6 +537,7 @@ impl SortedLayout {
                 mesh,
                 material,
                 group,
+                weighted,
             });
             total = total.saturating_add(count);
             largest = largest.max(count);

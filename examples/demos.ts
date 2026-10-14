@@ -195,6 +195,18 @@ export const DEMOS: readonly Demo[] = [
 		hold: 1,
 	},
 	{
+		name: 'weighted-transparency',
+		group: 'Light, materials and effects',
+		sketch: new URL('./weighted-transparency/sketch.ts', import.meta.url),
+		code: 'weighted-transparency/',
+		title: 'Weighted transparency',
+		scene: 'Glass pavilion',
+		summary:
+			"Eight panes of stained glass that cross each other, and 600 puffs of smoke from a brazier, blend in any order with the weighted blending, as three.js's OITPassNode blends them. Sorting by object cannot order them, so with normal blending they pop as the camera turns.",
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'time-of-day',
 		group: 'Light, materials and effects',
 		sketch: new URL('./time-of-day/sketch.ts', import.meta.url),
