@@ -395,33 +395,32 @@ const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.n
 
 /**
  * Where a variant's wasm-bindgen output and its optimized wasm are staged before they go in place.
- * It lives in this checkout, not in the shared cargo target. Every build shares the target folder,
- * so two builds in different worktrees would write and remove one `out` folder at once; Cargo's own
- * lock covers its own build, not this staging step, and a folder that one build removed under
- * another makes wasm-opt fail with "Failed opening output file". A folder per checkout keeps two
- * builds from colliding.
+ * It lives in this checkout, not in the shared cargo target, and it carries the process id, so no two
+ * builds ever share one, in one checkout or in several. A shared staging folder lets one build remove
+ * another's half-written output, which makes wasm-opt fail with "Failed opening output file". Because
+ * a folder belongs to one build, a build never needs to wait for another.
  */
 export function variantStagingFolder(variant: Variant): string {
-	return join(root, 'target', `wasm-${variant.name}`, 'out');
+	return join(root, 'target', `wasm-${variant.name}`, `out-${process.pid}`);
 }
 
 /**
- * The machine-wide build lock, held by every build on this machine and by a size check with its base
- * build. Cargo locks its own target folder, but a build also stages the core and the build tools'
- * modules, and a size check builds the base commit with that commit's own build script. That script
- * may stage into the shared target folder, so one lock over the whole of a build, and over a size
- * check's base build, keeps two builds from removing each other's staged files.
+ * The size check's lock. An ordinary build takes no lock: it stages in a folder of its own (see
+ * variantStagingFolder), and Cargo locks the target folder that builds share. A size check takes this
+ * lock, because it also builds the base commit with that commit's own build script, and an older
+ * script may stage into the shared target folder. One lock over the whole check keeps two checks, or a
+ * check and an older build, from removing each other's staged files.
  */
-const BUILD_LOCK = join(CACHE_ROOT, 'build.lock');
+const SIZE_CHECK_LOCK = join(CACHE_ROOT, 'build.lock');
 
 /**
- * Takes the machine-wide build lock and returns the function that releases it. Every build holds it,
- * and a size check holds it across its base build too, so two builds never stage into one folder.
+ * Takes the size check's lock and returns the function that releases it. Ordinary builds do not take
+ * it, so the team's builds overlap; a size check does, across its base build too.
  */
 export function acquireBuildLock(): () => void {
 	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
 	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
-	return acquireLock(BUILD_LOCK);
+	return acquireLock(SIZE_CHECK_LOCK);
 }
 
 /**
@@ -911,10 +910,11 @@ async function main(): Promise<void> {
 		console.log(resolveBase(chooseBase(options.base, process.env)).sha);
 		return;
 	}
-	// One build at a time on this machine. A size check holds the lock across its base build too, so
-	// the base commit's own build script cannot stage under this build's files. The lock is released
-	// on exit, so a finished, failed or interrupted build leaves none behind.
-	if (options.checkSize || !options.prebuilt) {
+	// Only a size check takes the lock: it also builds the base commit with that commit's own build
+	// script, which may stage into the shared target folder. Ordinary builds overlap, because each one
+	// stages in a folder of its own and Cargo locks the target folder that builds share. The lock is
+	// released on exit, so a finished, failed or interrupted check leaves none behind.
+	if (options.checkSize) {
 		const release = acquireBuildLock();
 		process.once('exit', release);
 		for (const signal of ['SIGINT', 'SIGTERM'] as const)
