@@ -217,7 +217,12 @@ function checkVolume(volume: FogVolumeOptions, values: readonly [number, number,
 export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	if (fog === null) {
 		core.glue.setFog(FOG_CURVE_NONE);
-		core.glue.setFogVolume(false, 0, 0, 0, 0);
+		const none = core.callValues();
+		none[0] = 0;
+		none[1] = 0;
+		none[2] = 0;
+		none[3] = 0;
+		core.glue.setFogVolume(false);
 		return false;
 	}
 	const values = core.callValues();
@@ -240,6 +245,12 @@ export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	}
 	writeLinearColor(values, fog.color, CALL);
 	core.glue.setFog(CURVES[fog.curve ?? 'exponential']);
-	core.glue.setFogVolume(volume !== undefined, ...volumeValues, values[FIRST]);
+	// The volumetric fog reads its four numbers from the call values, which setFog has read.
+	const density = values[FIRST] as number;
+	values[0] = volumeValues[0];
+	values[1] = volumeValues[1];
+	values[2] = volumeValues[2];
+	values[3] = density;
+	core.glue.setFogVolume(volume !== undefined);
 	return volume !== undefined;
 }

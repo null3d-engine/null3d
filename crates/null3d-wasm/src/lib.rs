@@ -3478,18 +3478,13 @@ pub fn set_fog(curve: u32) -> u32 {
 }
 
 /// Turns the volumetric fog on, or off, from the next frame on: the light of the sun and the point
-/// and spot lights that the scene's fog scatters toward the camera, through their shadows. It takes
-/// how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that its grid
-/// reaches, and the fog's density. The TypeScript API checks the values.
+/// and spot lights that the scene's fog scatters toward the camera, through their shadows. The call
+/// values give how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that
+/// its grid reaches, and the fog's density. The TypeScript API checks the values.
 #[wasm_bindgen(js_name = setFogVolume)]
-pub fn set_fog_volume(
-    on: bool,
-    intensity: f32,
-    anisotropy: f32,
-    distance: f32,
-    density: f32,
-) -> u32 {
+pub fn set_fog_volume(on: bool) -> u32 {
     with_engine(|e| {
+        let [intensity, anisotropy, distance, density]: [f32; 4] = e.call_values();
         let volumetric = on.then_some(Volumetric {
             intensity,
             anisotropy,

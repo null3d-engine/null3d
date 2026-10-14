@@ -379,6 +379,7 @@ export class Governor {
 	setAnimation(interval: number): void {
 		if (interval === this.animationSetting) return;
 		this.animationSetting = interval;
+		this.applySteps();
 	}
 
 	/**
