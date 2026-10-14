@@ -32,6 +32,7 @@
 		"packages/controls/**",
 		"packages/geometry/**",
 		"packages/particles/**",
+		"packages/impostors/**",
 		"packages/terrain/**"
 	]
 }
