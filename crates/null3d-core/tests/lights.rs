@@ -14,7 +14,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{
     FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, VisibleLight, color,
-    kind, value,
+    farthest_receiver_distance, kind, ladder_distance, value,
 };
 use null3d_core::scene::{Command, SceneStorage, flags};
 
@@ -507,8 +507,9 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
     );
     assert_eq!(
         (shadow.bias, shadow.normal_bias, shadow.distance),
-        (0.01, 0.02, 200.0)
+        (0.01, 0.02, 0.0)
     );
+    assert!(shadow.auto, "the default distance is automatic");
 
     for (code, number) in [
         (value::SHADOW_CASCADES, 2.0),
@@ -531,6 +532,56 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
         .set_value(sun_row, value::SHADOW_CASCADES, 9.0)
         .unwrap();
     assert_eq!(world.frame(None).sun_shadow.unwrap().cascades, 4);
+}
+
+#[test]
+fn a_light_without_a_named_distance_follows_the_farthest_visible_receiver() {
+    let mut world = World::new();
+    let (sun, row) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    world.commands.push(Command::set_flags(
+        sun,
+        flags::CAST_SHADOWS,
+        flags::CAST_SHADOWS,
+    ));
+    let receiving = flags::VISIBLE | flags::RECEIVE_SHADOWS;
+    let near = world.object([0.0, 0.0, -10.0], NO_TURN, Handle::NONE, receiving);
+    let far = world.object([0.0, 0.0, -30.0], NO_TURN, Handle::NONE, receiving);
+    // A caster that receives nothing does not set the distance.
+    world.object(
+        [0.0, 0.0, -600.0],
+        NO_TURN,
+        Handle::NONE,
+        flags::VISIBLE | flags::CAST_SHADOWS,
+    );
+    // A hidden receiver does not either.
+    let hidden = world.object([0.0, 0.0, -700.0], NO_TURN, Handle::NONE, receiving);
+    world.commands.push(Command::set_visible(hidden, false));
+    world.frame(Some(&origin_view()));
+    // Give each receiver an own sphere: 2 m around a point 10 m out, and 5 m around one 30 m out.
+    // The farthest sphere reaches 35 m, which rounds up to the ladder step 1.25^16.
+    world.scene.set_local_radius(near, 2.0).unwrap();
+    world.scene.set_local_radius(far, 5.0).unwrap();
+    world.frame(Some(&origin_view()));
+    let view = origin_view();
+    let raw = farthest_receiver_distance(&world.scene, world.scene.parity(), &view);
+    assert!((raw - 35.0).abs() < 0.5, "the farthest receiver, got {raw}");
+    let held = ladder_distance(0.0, raw);
+    assert!(
+        (held - 35.527_115).abs() < 0.01,
+        "the ladder step, got {held}"
+    );
+    // The gathered shadow is automatic, and its distance is left for the render worker to resolve.
+    let shadow = world.frame(Some(&view)).sun_shadow.unwrap();
+    assert!(shadow.auto, "the light names no distance");
+    assert_eq!(shadow.distance, 0.0);
+    // A named distance is kept, and it is no longer automatic.
+    world
+        .lights
+        .set_value(row, value::SHADOW_DISTANCE, 80.0)
+        .unwrap();
+    let shadow = world.frame(Some(&view)).sun_shadow.unwrap();
+    assert!(!shadow.auto);
+    assert_eq!(shadow.distance, 80.0);
 }
 
 #[test]
@@ -560,6 +611,104 @@ fn new_lights_start_with_the_tables_defaults() {
         .unwrap();
     assert_eq!(numbers(&world.lights, after), [4.0, 1024.0]);
     assert!(world.lights.set_default(value::LAST + 1, 1.0).is_err());
+}
+
+#[test]
+fn area_lights_wait_for_their_tables_then_join_the_visible_list_by_their_range_spheres() {
+    let mut world = World::new();
+    let point = world.ranged(kind::POINT, [0.0, 0.0, -10.0], 1.0);
+    let rect = world.ranged(kind::RECT, [0.0, 2.0, -10.0], 5.0);
+    let _behind = world.ranged(kind::TUBE, [0.0, 0.0, 10.0], 1.0);
+    let tube = world.ranged(kind::TUBE, [1.0, 0.0, -20.0], 5.0);
+    world.frame(Some(&origin_view()));
+    assert_eq!(world.visible_rows(), [point]);
+    world.lights.set_area_ready(true);
+    world.frame(Some(&origin_view()));
+    assert_eq!(world.visible_rows(), [point, rect, tube]);
+    let visible = world.lights.visible();
+    assert_eq!((visible[1].kind, visible[2].kind), (kind::RECT, kind::TUBE));
+    assert_eq!(visible[1].position, [0.0, 2.0, -10.0]);
+    assert_eq!(visible[1].range, 5.0);
+    // Area lights cast no shadows, so their records hold no tile.
+    assert_eq!(visible[1].shadow, 0.0);
+    assert!(world.lights.shadows().is_empty());
+}
+
+#[test]
+fn a_rectangle_light_records_its_half_sides_along_its_turned_axes() {
+    let mut world = World::new();
+    // A quarter turn about Y points the light's X axis along -Z.
+    let (_, rect) = world.light(
+        kind::RECT,
+        [0.0, 0.0, -5.0],
+        turn([0.0, 1.0, 0.0], FRAC_PI_2),
+    );
+    for (which, number) in [
+        (value::RANGE, 8.0),
+        (value::WIDTH, 4.0),
+        (value::HEIGHT, 2.0),
+        (value::INTENSITY, 3.0),
+    ] {
+        world.lights.set_value(rect, which, number).unwrap();
+    }
+    world.lights.set_area_ready(true);
+    world.frame(Some(&origin_view()));
+    let record = world.lights.visible()[0];
+    // Half the width along the light's X axis, where a spot light keeps its direction.
+    assert_close(record.direction, [0.0, 0.0, -2.0]);
+    // Half the height along its Y axis, in the places of the decay and the cone cosines.
+    assert_close(
+        [record.decay, record.cone_cos, record.penumbra_cos],
+        [0.0, 1.0, 0.0],
+    );
+    assert_close(record.color, [3.0, 3.0, 3.0]);
+}
+
+#[test]
+fn a_tube_light_records_half_its_axis_and_its_radius_and_ignores_its_scale() {
+    let mut world = World::new();
+    let h = world.object([0.0, 0.0, -5.0], NO_TURN, Handle::NONE, flags::VISIBLE);
+    world.scene.set_scale(h, [3.0, 3.0, 3.0]).unwrap();
+    let tube = world.lights.create(h, kind::TUBE).unwrap();
+    for (which, number) in [
+        (value::RANGE, 8.0),
+        (value::WIDTH, 2.0),
+        (value::RADIUS, 0.05),
+    ] {
+        world.lights.set_value(tube, which, number).unwrap();
+    }
+    world.lights.set_area_ready(true);
+    world.frame(Some(&origin_view()));
+    let record = world.lights.visible()[0];
+    // The tube runs along the light's -Z axis.
+    assert_close(record.direction, [0.0, 0.0, -1.0]);
+    assert_close(
+        [record.decay, record.cone_cos, record.penumbra_cos],
+        [0.05, 0.0, 0.0],
+    );
+}
+
+#[test]
+fn area_lights_start_one_meter_wide_and_high_with_a_thin_tube() {
+    let mut world = World::new();
+    let (_, rect) = world.light(kind::RECT, [0.0; 3], NO_TURN);
+    let numbers = [value::WIDTH, value::HEIGHT, value::RADIUS, value::IMAGE]
+        .map(|code| world.lights.value(rect, code).unwrap());
+    assert_eq!(numbers, [1.0, 1.0, 0.025, 0.0]);
+}
+
+#[test]
+fn a_rectangle_light_s_record_holds_its_image_layer_where_a_spot_light_holds_its_tile() {
+    let mut world = World::new();
+    let rect = world.ranged(kind::RECT, [0.0, 0.0, -5.0], 8.0);
+    let tube = world.ranged(kind::TUBE, [0.0, 1.0, -5.0], 8.0);
+    world.lights.set_value(rect, value::IMAGE, 4.0).unwrap();
+    world.lights.set_value(tube, value::IMAGE, 4.0).unwrap();
+    world.lights.set_area_ready(true);
+    world.frame(Some(&origin_view()));
+    let shadows: Vec<f32> = world.lights.visible().iter().map(|l| l.shadow).collect();
+    // Tubes take no image.
+    assert_eq!(shadows, [4.0, 0.0]);
 }
 
 #[test]
@@ -622,4 +771,35 @@ fn another_view_gathers_the_lights_it_sees_and_leaves_the_camera_s_lists_alone()
         .gather_view(scene, scene.parity(), &layered_view, 1.0, &mut seen);
     let rows: Vec<u32> = seen.iter().map(|l| l.light).collect();
     assert_eq!(rows, [layered_row]);
+}
+
+#[test]
+fn another_view_gathers_area_lights_once_their_tables_arrive() {
+    let mut world = World::new();
+    let rect = world.ranged(kind::RECT, [0.0, 2.0, 10.0], 4.0);
+    let tube = world.ranged(kind::TUBE, [1.0, 0.0, 12.0], 4.0);
+    world.lights.set_value(rect, value::IMAGE, 3.0).unwrap();
+    world.frame(Some(&origin_view()));
+    // A second camera 20 m behind the first, which sees both lights in front of it.
+    let (cell, local) = cells::split([0.0, 0.0, 20.0]);
+    let second = view_from(CellPosition { cell, local });
+    let mut seen = Vec::with_capacity(world.lights.rows() as usize);
+    let scene = &world.scene;
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &second, 1.0, &mut seen);
+    assert!(seen.is_empty());
+
+    world.lights.set_area_ready(true);
+    let scene = &world.scene;
+    world
+        .lights
+        .gather_view(scene, scene.parity(), &second, 1.0, &mut seen);
+    let rows: Vec<u32> = seen.iter().map(|l| l.light).collect();
+    assert_eq!(rows, [rect, tube]);
+    assert_eq!((seen[0].kind, seen[1].kind), (kind::RECT, kind::TUBE));
+    assert_close(seen[0].position, [0.0, 2.0, -10.0]);
+    // The rectangle keeps its image's layer, and the tube its radius in the decay's place.
+    assert_eq!((seen[0].shadow, seen[1].shadow), (3.0, 0.0));
+    assert_eq!(seen[1].decay, 0.025);
 }
