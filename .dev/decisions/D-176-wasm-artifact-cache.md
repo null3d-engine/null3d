@@ -34,10 +34,15 @@ On the Mac (18 cores), 14 October 2026, with the shared cargo target warm and `b
 | no change, forced with `--no-cache` | 83.8 s |
 
 The first build downloads wasm-bindgen and compiles the tool modules, which the later builds do not.
-The cache restored 575 files byte-identical to a full build's, by SHA-256: the two core variants (the
-wasm, the glue and wasm-bindgen's type files), the shader compiler, the asset tool's formats and the
-generated shader modules. A build with one entry file changed rebuilt that variant alone (59.0 s) and
-wrote the same bytes; the other variant and the tool modules still hit the cache.
+The cache restored 575 files byte-identical to a full build's, by SHA-256. They are the two core
+variants (the wasm, the glue and wasm-bindgen's type files), the shader compiler, the asset tool's
+formats and the generated shader modules. A build with one entry file changed rebuilt that variant
+alone (59.0 s) and wrote the same bytes. The other variant and the tool modules still hit the cache.
+
+A fresh worktree at the same commit, with `bun install` done, took 236.8 s for its first build with
+no cache. The same checkout built in 0.32 s from the cache, again with identical bytes. Cargo
+recompiles the engine's crates for the new worktree's paths, so a fresh checkout skips more than a
+no-change build does.
 
 ## Decision
 
