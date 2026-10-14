@@ -54,6 +54,17 @@ enable draw_index;
 // share a few units: maps whose texture arrays and samplers are the same share one, and each map's
 // layer in the row also names its unit.
 //
+// The DECAL builds draw decals: a material projected onto every surface inside an object's box,
+// in a pass of their own after the camera's opaque pass. Each draws the back faces of the box's
+// mesh, a cube from -0.5 to 0.5 on each axis, through the instance's world matrix. Each pixel
+// reads the scene's depth there and at its four neighbors, and finds the surface that the pixel
+// shows and the surface's normal, from the neighbor on each axis whose depth lies closer. A pixel
+// whose surface lies outside the box draws nothing. The box's x and y axes give the texture
+// coordinates, as three.js's DecalGeometry gives them, and the frame of the normal map. The
+// material's values then fill the surface as for any mesh, and `shade` lights it. The decal fades
+// where the surface turns away from the box's z axis, and near the box's two ends along it. It
+// writes its color times its alpha, beside the alpha, which blends over the scene's color.
+//
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
 // fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
@@ -113,6 +124,11 @@ enable draw_index;
 #import null3d::mesh::{map_layer, map_ready, map_unit, straight_texel, world_direction}
 #else ifdef TRANSMISSION
 #import null3d::mesh::{world_direction}
+#else ifdef DECAL
+#import null3d::mesh::{world_direction}
+#endif
+#ifdef DECAL
+#import null3d::mesh::{decal_values}
 #endif
 #ifdef TRANSMISSION
 #import null3d::globals::{MaterialTransmission}
@@ -167,6 +183,17 @@ var<private> diffuse_light: vec3f;
 
 /// The object's scale along each of its axes.
 var<private> object_scale: vec3f;
+#endif
+
+#ifdef DECAL
+/// How much of the decal shows at the pixel, from its fades, which multiplies its alpha.
+var<private> decal_fade: f32;
+
+/// How the decal's texture coordinates change across a pixel and up a row, from the surface
+/// under the neighboring pixels. Derivatives of the coordinates themselves would jump at the
+/// edges of objects, where the surface under the box's face jumps.
+var<private> decal_uv_dx: vec2f;
+var<private> decal_uv_dy: vec2f;
 #endif
 
 
@@ -242,7 +269,13 @@ fn map_uv(flags: u32, slot: u32, first: MapUv, second: MapUv) -> MapUv {
 /// Texture coordinates through the material's transform, with their derivatives.
 fn transformed_uv(uv: vec2f, uv_u: vec4f, uv_v: vec4f) -> MapUv {
     let at = vec2f(dot(uv_u.xyz, vec3f(uv, 1.0)), dot(uv_v.xyz, vec3f(uv, 1.0)));
+#ifdef DECAL
+    let dx = vec2f(dot(uv_u.xy, decal_uv_dx), dot(uv_v.xy, decal_uv_dx));
+    let dy = vec2f(dot(uv_u.xy, decal_uv_dy), dot(uv_v.xy, decal_uv_dy));
+    return MapUv(at, dx, dy);
+#else
     return MapUv(at, dpdx(at), dpdy(at));
+#endif
 }
 
 #ifdef WEBGL2
@@ -309,6 +342,49 @@ fn specular_color_texel(layer: f32, at: MapUv) -> vec4f {
 #endif
 #endif
 
+#ifdef DECAL
+// The scene's depth, which the decal builds read: the group after the maps' on WebGPU, or after
+// the frame's without maps, and the group after the maps' on WebGL2, which reads a copy of one
+// sample of a multisampled depth.
+#ifdef WEBGL2
+@group(4) @binding(0) var decal_depth: texture_2d<f32>;
+#else ifdef DEPTH_MULTISAMPLED
+#ifdef MAPS
+@group(2) @binding(0) var decal_depth: texture_multisampled_2d<f32>;
+#else
+@group(1) @binding(0) var decal_depth: texture_multisampled_2d<f32>;
+#endif
+#else ifdef MAPS
+@group(2) @binding(0) var decal_depth: texture_2d<f32>;
+#else
+@group(1) @binding(0) var decal_depth: texture_2d<f32>;
+#endif
+
+/// The vertex attributes that the decal builds read: the position of a corner of the box.
+struct VertexIn {
+    @location(0) position: vec3f,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4f,
+    /// The point of the box's face, relative to the camera.
+    @location(0) relative: vec3f,
+    /// How far the point lies in front of the camera, along its view.
+    @location(1) distance: f32,
+    @location(2) @interpolate(flat, either) material: u32,
+    /// The center of the box, relative to the camera.
+    @location(3) @interpolate(flat, either) origin: vec3f,
+    /// The rows of the inverse of the box's world matrix, which turn a point relative to its center
+    /// into the box's own space. Each points along one of the box's axes.
+    @location(4) @interpolate(flat, either) to_box_x: vec3f,
+    @location(5) @interpolate(flat, either) to_box_y: vec3f,
+    @location(6) @interpolate(flat, either) to_box_z: vec3f,
+#ifdef ROW_VALUES
+    /// The color of the instance's row.
+    @location(10) @interpolate(flat, either) row_color: vec4f,
+#endif
+}
+#else
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
@@ -398,6 +474,7 @@ struct VertexOut {
     @location(12) @interpolate(flat, either) ids: vec2u,
 #endif
 }
+#endif
 
 #ifdef CUSTOM
 /// What a vertex offset function knows of a vertex of the mesh, in the mesh's own space, before
@@ -514,8 +591,10 @@ fn with_maps(surface: Surface, input: SurfaceInput) -> Surface {
     // then samples with them inside its branch.
     let first = transformed_uv(input.uv, m.uv_u, m.uv_v);
     let second = transformed_uv(input.uv1, m.uv_u, m.uv_v);
+#ifndef VERTEX_TANGENT
     let position_dy = dpdy(input.relativePosition) * ROWS_UP;
     let position_dx = dpdx(input.relativePosition);
+#endif
     if map_ready(m.maps.x) {
         let texel = straight_texel(m, base_color_texel(m.maps.x, map_uv(flags, 0u, first, second)));
         s.baseColor *= texel.rgb;
@@ -602,6 +681,7 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
     return s;
 }
 
+#ifndef DECAL
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
@@ -740,6 +820,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #endif
     return out;
 }
+#endif
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun, less
 /// where its shadows fall, the point and spot lights of the surface's cluster, the ambient and
@@ -832,7 +913,13 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
     // as the surface moves. As in Filament, the normal is the mesh's own, before a map or a surface
     // function bends it.
+#ifdef DECAL
+    // A decal's normal comes from the depths around the pixel, whose changes say nothing of how
+    // the mesh curves, so its highlights keep their own sharpness.
+    let kernel = 0.0;
+#else
     let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
+#endif
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
 #ifdef MAPS
@@ -927,13 +1014,17 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let finished = finish_exposed(fogged(outgoing, input.relativePosition, material_row), pixel.xy);
 #endif
-#ifdef ALPHA_COVERAGE
+#ifdef DECAL
+    let shown = saturate(s.alpha) * decal_fade;
+    return vec4f(finished.rgb * shown, shown);
+#else ifdef ALPHA_COVERAGE
     return vec4f(finished.rgb, coverage);
 #else
     return fragment_color(material_row, finished.rgb, s.alpha);
 #endif
 }
 
+#ifndef DECAL
 @fragment
 #ifdef SAMPLE_MASK
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> MaskedFragment {
@@ -1035,3 +1126,135 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #endif
 #endif
 }
+#else
+@vertex
+fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
+    let found = find_instance(i);
+    var out: VertexOut;
+    out.relative = relative_position(found, mesh_position(v.position));
+    out.clip = clip_of(found, out.relative);
+    // A perspective camera's clip w is the distance along its view. An orthographic camera's view
+    // runs away from the direction toward it.
+    let eye = engine_frame.camera_position;
+    out.distance = select(dot(out.relative, -eye.xyz), out.clip.w, eye.w > 0.5);
+    out.material = found.material;
+    out.origin = relative_position(found, vec3f(0.0));
+    let x = world_direction(found, vec3f(1.0, 0.0, 0.0));
+    let y = world_direction(found, vec3f(0.0, 1.0, 0.0));
+    let z = world_direction(found, vec3f(0.0, 0.0, 1.0));
+    // The inverse of the matrix whose columns are the box's axes, by its cofactors. A flat box has
+    // none, and marks nothing.
+    let det = dot(x, cross(y, z));
+    let scale = select(0.0, 1.0 / det, abs(det) > 1e-20);
+    out.to_box_x = cross(y, z) * scale;
+    out.to_box_y = cross(z, x) * scale;
+    out.to_box_z = cross(x, y) * scale;
+#ifdef ROW_VALUES
+    out.row_color = row_values_of(found).color;
+#endif
+    return out;
+}
+
+/// The scene's depth value at a texel of its depth target, from 1 at the near plane to 0 at the far
+/// plane, with the texel kept inside the target.
+fn decal_depth_at(texel: vec2i) -> f32 {
+    let last = vec2i(textureDimensions(decal_depth)) - 1;
+    return textureLoad(decal_depth, clamp(texel, vec2i(0), last), 0).x;
+}
+
+/// How far in front of the camera, along its view, a surface with depth value `depth` lies.
+fn decal_distance(depth: f32) -> f32 {
+    let near = engine_frame.camera_range.x;
+    let far = engine_frame.camera_range.y;
+    if engine_frame.camera_position.w > 0.5 {
+        let ratio = near / far;
+        return near / max(ratio + depth * (1.0 - ratio), 1e-7);
+    }
+    return far - depth * (far - near);
+}
+
+/// The surface under a point of the box's face that lies `along` in front of the camera, where
+/// the scene's depth is `depth`, relative to the camera: along the view ray through the point, at
+/// the surface's distance.
+fn decal_surface(relative: vec3f, along: f32, depth: f32) -> vec3f {
+    let eye = engine_frame.camera_position;
+    let to = decal_distance(depth);
+    if eye.w > 0.5 {
+        return relative * (to / max(along, 1e-7));
+    }
+    return relative - eye.xyz * (to - along);
+}
+
+/// A share that rises smoothly from 0 at `low` to 1 at `high`.
+fn decal_ramp(low: f32, high: f32, x: f32) -> f32 {
+    let t = saturate((x - low) / max(high - low, 1e-4));
+    return t * t * (3.0 - 2.0 * t);
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4f {
+    material_row = material_of(in.material);
+    // The derivatives come first, while every pixel of the quad runs.
+    let step_x = dpdx(in.relative);
+    let step_y = dpdy(in.relative);
+    let distance_x = dpdx(in.distance);
+    let distance_y = dpdy(in.distance);
+    let texel = vec2i(floor(in.clip.xy));
+    let depth = decal_depth_at(texel);
+    let right_depth = decal_depth_at(texel + vec2i(1, 0));
+    let left_depth = decal_depth_at(texel - vec2i(1, 0));
+    let next_depth = decal_depth_at(texel + vec2i(0, 1));
+    let last_depth = decal_depth_at(texel - vec2i(0, 1));
+    let center = decal_surface(in.relative, in.distance, depth);
+    let right = decal_surface(in.relative + step_x, in.distance + distance_x, right_depth);
+    let left = decal_surface(in.relative - step_x, in.distance - distance_x, left_depth);
+    let next = decal_surface(in.relative + step_y, in.distance + distance_y, next_depth);
+    let last = decal_surface(in.relative - step_y, in.distance - distance_y, last_depth);
+    // On each axis, the neighbor whose depth lies closer belongs to the same surface, so the
+    // normal holds at the edges of objects.
+    let across = select(center - left, right - center, abs(right_depth - depth) < abs(depth - left_depth));
+    let down = select(center - last, next - center, abs(next_depth - depth) < abs(depth - last_depth));
+    let eye = engine_frame.camera_position;
+    let to_view = normalize(eye.xyz - center * eye.w);
+    let face = normalize(cross(across, down));
+    let normal = select(-face, face, dot(face, to_view) >= 0.0);
+
+    // The surface in the box's own space, from -0.5 to 0.5 on each axis inside it.
+    let from_origin = center - in.origin;
+    let local = vec3f(
+        dot(in.to_box_x, from_origin),
+        dot(in.to_box_y, from_origin),
+        dot(in.to_box_z, from_origin),
+    );
+    let values = decal_values(in.material);
+    let facing = dot(normal, normalize(in.to_box_z));
+    let angle_fade = decal_ramp(values.y, values.x, facing);
+    let edge_fade = saturate((1.0 - abs(local.z) * 2.0) / max(values.z, 1e-4));
+    let inside = all(abs(local) <= vec3f(0.5)) && depth > 0.0;
+    decal_fade = select(0.0, angle_fade * edge_fade, inside);
+    if decal_fade <= 0.0 {
+        discard;
+    }
+    decal_uv_dx = vec2f(dot(in.to_box_x, across), dot(in.to_box_y, across));
+    decal_uv_dy = vec2f(dot(in.to_box_x, down), dot(in.to_box_y, down));
+
+    var input: SurfaceInput;
+    input.relativePosition = center;
+    input.viewDirection = to_view;
+    input.normal = normal;
+    input.vertexColor = vec4f(1.0);
+#ifdef ROW_VALUES
+    input.vertexColor = in.row_color;
+#endif
+#ifdef MAPS
+    input.uv = local.xy + 0.5;
+    input.uv1 = input.uv;
+#endif
+    // The normal map's frame: the box's x and y axes, laid onto the surface.
+    input.tangent = in.to_box_x - normal * dot(in.to_box_x, normal);
+    input.bitangent = in.to_box_y - normal * dot(in.to_box_y, normal);
+    input.frontFacing = true;
+    let s = defaultSurface(input);
+    return shade(s, input, vec4f(in.clip.xy, depth, 1.0));
+}
+#endif

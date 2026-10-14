@@ -299,6 +299,21 @@ pub(crate) fn check_builds(
             }
         }
     }
+    // A value of the permutation word names one feature in each shader, so a shader lists only
+    // one of the names that share a value (decision record D-156).
+    let mut listed: BTreeMap<u32, &str> = BTreeMap::new();
+    for bit in variants.values().flat_map(|variant| &variant.permutations) {
+        let Some(value) = permutation::bit(bit) else {
+            continue;
+        };
+        if let Some(other) = listed.insert(value, bit)
+            && other != bit
+        {
+            errors.push(format!(
+                "{shader} lists \"{other}\" and \"{bit}\", which share one value. A shader may list only one of the names that share a value (decision record D-156)."
+            ));
+        }
+    }
     errors
 }
 
@@ -664,6 +679,24 @@ variants.a = { defs = ["TONE_MAP"], permutations = ["SHINY", "TONE_MAP", "TONE_M
             "{all}"
         );
         assert!(all.contains("in both defs and permutations"), "{all}");
+    }
+
+    #[test]
+    fn a_shader_lists_only_one_of_the_names_that_share_a_value() {
+        let text = r#"
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.a = { permutations = ["FXAA"], targets = ["wgsl"] }
+variants.b = { permutations = ["AREA_LIGHTS"], targets = ["glsl"] }
+"#;
+        let all = Manifest::parse(text).unwrap_err().join("\n");
+        assert!(
+            all.contains("lists \"FXAA\" and \"AREA_LIGHTS\", which share one value"),
+            "{all}"
+        );
+        let one = text.replace("[\"FXAA\"]", "[\"AREA_LIGHTS\"]");
+        assert!(Manifest::parse(&one).is_ok());
     }
 
     #[test]
