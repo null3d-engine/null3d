@@ -2046,7 +2046,7 @@ export class RectAreaLight extends Light {
 			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
 				if (this.id !== id || this.pendingImage !== image) return;
 				const at = core.check(core.glue.areaLightImage(id), call, this.label);
-				prepareLightImage(image, new Uint16Array(core.memory.buffer, at, LIGHT_IMAGE_HALVES));
+				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
 				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
 			}),
 		);
