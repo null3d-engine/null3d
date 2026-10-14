@@ -1,6 +1,6 @@
 import { expect, type Page, type Route, test } from '@playwright/test';
 import { ISOLATION_HEADERS } from '../../packages/vite-plugin/src/index.ts';
-import { FIRST_USE_WASM, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
+import { FIRST_USE_FILES, isFirstUseShaderPart, LATER_PARTS } from '../../tools/lib/size-report.ts';
 import { ALONE } from '../lib/alone.ts';
 import {
 	ENGINE_MODES,
@@ -265,7 +265,7 @@ const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * lists these files apart from the start, and the WebAssembly modules that load on first use with
  * them.
  */
-const FIRST_USE_FILES: readonly RegExp[] = [
+const FIRST_USE_PATTERNS: readonly RegExp[] = [
 	...[
 		...new Set(
 			LATER_PARTS.filter(({ afterFirstFrame }) => !afterFirstFrame).map(({ module }) => module),
@@ -274,7 +274,7 @@ const FIRST_USE_FILES: readonly RegExp[] = [
 		const stem = (module.split('/').at(-1) as string).replace(/\.ts$/, '');
 		return new RegExp(`/${escaped(module)}$|/${escaped(stem)}-[\\w-]{8}\\.js$`);
 	}),
-	...FIRST_USE_WASM.map((file) => {
+	...FIRST_USE_FILES.map((file) => {
 		const dot = file.lastIndexOf('.');
 		return new RegExp(`/${escaped(file.slice(0, dot))}(-[\\w-]{8})?${escaped(file.slice(dot))}$`);
 	}),
@@ -308,7 +308,8 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(requests.some((path) => /\/null3d_bg(-[\w-]+)?\.wasm$/.test(path))).toBe(true);
 			expect(
 				requests.filter(
-					(path) => FIRST_USE_FILES.some((file) => file.test(path)) || isFirstUseShaderFile(path),
+					(path) =>
+						FIRST_USE_PATTERNS.some((file) => file.test(path)) || isFirstUseShaderFile(path),
 				),
 			).toEqual([]);
 			const renderers = (path: string) => new RegExp(`/${path}-renderers(\\.ts|-[\\w-]{8}\\.js)$`);
@@ -325,6 +326,7 @@ const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
 	{ feature: 'transmission', sketch: 'tests/pages/sketches/transmission-sketch.ts' },
 	{ feature: 'weighted', sketch: 'tests/pages/sketches/weighted-sketch.ts' },
+	{ feature: 'decals', sketch: 'tests/pages/sketches/decal-first-use-sketch.ts' },
 ] as const;
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's

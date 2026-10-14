@@ -10,7 +10,17 @@
 // field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
-import { createMoods, isMood, type Mood } from '../../lib/stage';
+import {
+	ATMOSPHERE,
+	LIGHTING,
+	POST,
+	QUALITY,
+	radioGroup,
+	TIMES_OF_DAY,
+	toggleGroup,
+} from '../../lib/controls';
+import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { createMoods, isMood } from '../../lib/stage';
 import { createAir } from './air';
 import { createHouses } from './houses';
 import { createLamps } from './lamps';
@@ -41,13 +51,15 @@ const TARGET = [0, 1.4, 0] as const;
  * opening view. Low passes keep to the open cross of the lanes and the square, so the camera never
  * enters a house. The first shot holds still, so a held frame lands on the opening view.
  */
-const SHOTS: readonly Shot[] = [
-	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 5, move: 'hold' },
+export const SHOTS: readonly Shot[] = [
+	// The opening view holds only briefly, so the camera starts moving soon after the page loads.
+	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 0.8, move: 'hold' },
 	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 3 },
 	{ position: [26, 14, -8], target: [8, 4, 2], seconds: 9 },
-	{ position: [26, 6, -4], target: [12.6, 8, 8.4], seconds: 8 },
-	{ position: [6, 4.0, 0.6], target: [0, 3, 0], seconds: 7 },
-	{ position: [0.5, 4.2, 13], target: [0, 2.8, -2], seconds: 7 },
+	{ position: [26, 6, -1.2], target: [12.6, 8, 8.4], seconds: 8 },
+	{ position: [6, 4.0, -0.3], target: [0, 3, 0], seconds: 6 },
+	{ position: [2, 4.0, 6], target: [0, 3, 0], seconds: 3 },
+	{ position: [0.3, 4.2, 13], target: [0, 2.8, -2], seconds: 7 },
 	{ position: [0, 15, 26], target: [0, 3, 2], seconds: 7 },
 	{ position: [-20, 15, -14], target: [0, 3, 0], seconds: 8 },
 	{ position: [-1, 4, -6], target: [1, 3, 2], seconds: 7 },
@@ -59,6 +71,7 @@ const params = new URL(import.meta.url).searchParams;
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
+	page.post('loading', 'Building the town');
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
@@ -67,20 +80,25 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 70, normalBias: 0.05, contactDistance: 0.25 },
 	});
-	post.set({
-		bloom: { intensity: 0.72, threshold: 1 },
-		ao: { radius: 0.7 },
-		vignette: {},
+	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
+	// occlusion starts on, so the scene's shadows read.
+	post.set({ ao: { radius: 0.7 } });
+	const camera = scene.createPerspectiveCamera({
+		fov: FOV,
+		near: 0.08,
+		far: 500,
+		layers: 1 | INTERIOR_LAYER | EFFECT_LAYER,
 	});
-	const camera = scene.createPerspectiveCamera({ fov: FOV, near: 0.08, far: 500 });
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
 	const houses = createHouses(ctx, detail.texture);
 	const props = createProps(ctx, houses.clear);
+	page.post('loading', 'Growing the pines');
 	const trees = await createTrees(ctx, (x, z) => houses.clear(x, z) || props.clear(x, z));
 	const lamps = await createLamps(ctx);
+	page.post('loading', 'Falling the snow');
 	const air = await createAir(ctx, houses.homes);
 	const fit = () => {
 		trees.fit(quality.preset);
@@ -89,38 +107,133 @@ export default defineSketch(async (ctx) => {
 	};
 	fit();
 
-	// The mood: night at its start, with a little cloud and a light fog for depth.
-	const setMood = createMoods(ctx, sun, sky, room, {
+	// The mood: night at its start, with a little cloud and a light fog for depth. `Auto` moves the
+	// sun and the moon across the sky; the other moods hold an hour.
+	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: 0.0075,
 		cloudCoverage: 0.35,
 	});
-	const choose = (mood: Mood) => setMood(mood);
 	const start = params.get('mood');
-	choose(isMood(start) ? start : 'Night');
+	stage.set(isMood(start) ? start : 'Night');
 
+	// The scene's own controls: the effects that its HUD offers, and the state of each.
+	const effects: Record<string, boolean> = {
+		sky: true,
+		fog: true,
+		snow: true,
+		shadows: true,
+		contact: true,
+		ao: true,
+		environment: true,
+		bloom: false,
+		dof: false,
+		exposure: false,
+		vignette: false,
+	};
 	// The "DSLR" lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
 	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
 	let dslr = false;
 	const setLens = (on: boolean) => {
 		dslr = on;
+		effects.dof = on;
 		if (on) camera.setFocalLength(DSLR_FOCAL_LENGTH);
 		else camera.setFov(FOV);
 		post.set(on ? lens : { dof: false });
 	};
 	if (params.has('dslr')) setLens(true);
 
+	const repaint = () => stage.set(stage.mood);
+	const setEffect = (id: string, on: boolean): void => {
+		effects[id] = on;
+		switch (id) {
+			case 'sky':
+				if (on) repaint();
+				else {
+					scene.setBackground([0.02, 0.025, 0.04]);
+					scene.setEnvironment(null);
+				}
+				break;
+			case 'fog':
+				if (on) repaint();
+				else scene.setFog(null);
+				break;
+			case 'snow':
+				air.setSnow(on);
+				break;
+			case 'shadows':
+				sun.setCastShadows(on);
+				break;
+			case 'contact':
+				sun.setShadow({ contactDistance: on ? 0.25 : 0 });
+				break;
+			case 'ao':
+				post.set({ ao: on ? { radius: 0.7 } : false });
+				break;
+			case 'environment':
+				if (on) repaint();
+				else scene.setEnvironment(null);
+				break;
+			case 'bloom':
+				post.set({ bloom: on ? { blend: 'add', intensity: 0.7, threshold: 1 } : false });
+				break;
+			case 'dof':
+				setLens(on);
+				break;
+			case 'exposure':
+				post.set({ autoExposure: on ? {} : false });
+				break;
+			case 'vignette':
+				post.set({ vignette: on ? {} : false });
+				break;
+		}
+	};
+	const groups = () => [
+		radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
+		toggleGroup(
+			'atmosphere',
+			'Atmosphere',
+			ATMOSPHERE,
+			['sky', 'fog', 'snow'],
+			(id) => effects[id] ?? false,
+		),
+		toggleGroup(
+			'lighting',
+			'Lighting',
+			LIGHTING,
+			['shadows', 'contact', 'ao', 'environment'],
+			(id) => effects[id] ?? false,
+		),
+		toggleGroup(
+			'post',
+			'Post',
+			POST,
+			['bloom', 'dof', 'exposure', 'vignette'],
+			(id) => effects[id] ?? false,
+		),
+		radioGroup('quality', 'Quality', QUALITY, quality.preset),
+	];
+
 	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
 		speed: 8,
-		rows: () => [{ key: 'D', text: `lens: ${dslr ? 'on' : 'off'}` }],
+		groups,
 	});
 
 	page.onMessage((name, value) => {
-		if (name === 'mood' && isMood(value)) choose(value);
-		if (name === 'dslr') setLens(value === 'On');
-		if (name === 'camera') film.toggle();
+		const picked = String(value);
+		if (name === 'camera') film.select(picked);
+		else if (name === 'mood' && isMood(value)) {
+			stage.set(value);
+			film.refresh();
+		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
+			setEffect(picked, !(effects[picked] ?? false));
+			film.refresh();
+		} else if (name === 'quality') {
+			void quality.setPreset(picked as QualityPreset);
+			film.refresh();
+		} else if (name === 'dslr') setLens(picked === 'On');
 	});
 
 	return {
@@ -130,6 +243,7 @@ export default defineSketch(async (ctx) => {
 				setLens(!dslr);
 				film.refresh();
 			}
+			stage.update(dt);
 			film.update(dt);
 			if (dslr) post.set(lens);
 			air.update(t);

@@ -36,6 +36,8 @@ export const LIGHT_KIND_POINT = 2;
 export const LIGHT_KIND_SPOT = 3;
 export const LIGHT_KIND_HEMISPHERE = 4;
 export const LIGHT_KIND_AMBIENT = 5;
+export const LIGHT_KIND_RECT = 6;
+export const LIGHT_KIND_TUBE = 7;
 
 export const LIGHT_COLOR_MAIN = 0;
 export const LIGHT_COLOR_GROUND = 1;
@@ -51,6 +53,10 @@ export const LIGHT_VALUE_SHADOW_CASCADES = 7;
 export const LIGHT_VALUE_SHADOW_MAP_SIZE = 8;
 export const LIGHT_VALUE_SHADOW_DISTANCE = 9;
 export const LIGHT_VALUE_SHADOW_CONTACT = 10;
+export const LIGHT_VALUE_WIDTH = 11;
+export const LIGHT_VALUE_HEIGHT = 12;
+export const LIGHT_VALUE_RADIUS = 13;
+export const LIGHT_VALUE_IMAGE = 14;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
@@ -200,6 +206,7 @@ export const MATERIAL_FEATURE_ALPHA_HASH = 2048;
 export const MATERIAL_FEATURE_SINGLE_PASS = 4096;
 export const MATERIAL_FEATURE_TRANSMISSION = 8192;
 export const MATERIAL_FEATURE_WEIGHTED = 524288;
+export const MATERIAL_FEATURE_DECAL = 131072;
 
 export const DEBUG_VIEW_LIT = 0;
 export const DEBUG_VIEW_NORMALS = 1;
@@ -243,6 +250,9 @@ export const MATERIAL_PARAM_THICKNESS = 37;
 export const MATERIAL_PARAM_IOR = 38;
 export const MATERIAL_PARAM_ATTENUATION_COLOR = 40;
 export const MATERIAL_PARAM_ATTENUATION_DISTANCE = 43;
+export const MATERIAL_PARAM_DECAL_FADE_START = 36;
+export const MATERIAL_PARAM_DECAL_FADE_END = 37;
+export const MATERIAL_PARAM_DECAL_EDGE_FADE = 38;
 
 export const EFFECT_MAX = 8;
 export const EFFECT_FLOATS = 32;
