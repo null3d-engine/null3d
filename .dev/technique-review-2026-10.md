@@ -176,7 +176,7 @@ The lit shader's fragment stage reads 13 of the 16 units once environment light 
 1. AO and any other screen-space result share one RG8 texture. Contact shadows run inline and need none.
 2. All probe grids share one 3D texture.
 3. Reflection probes are octahedral maps in one 2D array. Compatibility mode has no cube arrays.
-4. The two LTC tables of area lights are one 2-layer array.
+4. The two LTC tables of area lights are one 2-layer array. As built, they share the split-sum table's array with the lights' images ([D-145](decisions/D-145-area-lights.md)).
 5. Decals and light maps take layers of the shared texture arrays.
 6. The shader build counts the units of each build and fails at 16.
 

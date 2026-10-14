@@ -2,6 +2,7 @@
 // strung with fairy lights. Pines and branches are made in code; the fairy lights are one sprite
 // batch of small warm dots that twinkle. The pines thin out by the preset, so a phone draws few.
 import { type InstanceBatch, type QualityPreset, quat, type SketchContext } from '@null3d/engine';
+import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import { groundHeight, offRoad } from './land';
 
@@ -198,6 +199,7 @@ export async function createTrees(
 		depthWrite: false,
 		dynamic: true,
 	});
+	markEffect(lights);
 	const seeds = Float32Array.from({ length: count * 2 }, () => next());
 	let row = 0;
 	for (const spot of bareSpots) {

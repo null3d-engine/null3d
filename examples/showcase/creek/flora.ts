@@ -9,6 +9,7 @@ import {
 	type SketchContext,
 	type SpriteBatch,
 } from '@null3d/engine';
+import { markEffect } from '../../lib/layers';
 import { random, within } from '../../lib/procedural';
 import type { Crown } from './air';
 import { groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
@@ -37,7 +38,7 @@ const PLANT_REACH: Record<PlantKind, number> = {
  * and its size. Groves stand on the far bank behind the cave, with young trees among them, and a
  * few trees on the near bank frame the view.
  */
-const TREES: readonly (readonly [number, number, TreeKind, number])[] = [
+export const TREES: readonly (readonly [number, number, TreeKind, number])[] = [
 	[-3, -8.5, 'oak', 0.85],
 	[5.5, -10, 'beech', 0.85],
 	[15, -7.5, 'birch', 0.8],
@@ -235,6 +236,7 @@ export async function createFlora(
 		depthWrite: false,
 		dynamic: true,
 	});
+	markEffect(fireflies);
 	const hover = Float32Array.from({ length: FIREFLIES * 4 }, () => next());
 	for (let f = 0; f < FIREFLIES; f++) {
 		fireflies.sizes.set([0.06, 0.06], f * 2);
