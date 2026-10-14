@@ -891,6 +891,7 @@ pub fn typescript() -> String {
                     "TRANSIENT_ATTACHMENTS",
                     Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
                 ),
+                ("FLOAT16_TARGETS", Capabilities::FLOAT16_TARGETS.0 as u32),
             ],
         ),
         (
@@ -974,6 +975,7 @@ pub fn typescript() -> String {
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
                 ("COAT_SHEEN", feature::COAT_SHEEN),
+                ("WEIGHTED", feature::WEIGHTED),
                 ("DECAL", feature::DECAL),
             ],
         ),
