@@ -123,8 +123,6 @@ export interface MaterialBuild {
 	readonly textures: readonly CompiledTexture[];
 	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
-	/** The WebGPU builds that skin in the vertex shader, by name, which load on first use. */
-	readonly skinVariants?: Readonly<Record<string, ShaderVariant>>;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */
@@ -220,23 +218,11 @@ export function joinShares(shares: readonly MaterialResult[]): MaterialResult {
 	}
 	const [first] = builds;
 	if (problems.size > 0 || !first) return { ok: false, problems: [...problems.values()] };
-	const variants = sortedBuilds(builds.map((build) => build.variants));
-	const skinVariants = sortedBuilds(builds.map((build) => build.skinVariants ?? {}));
-	const material = { ...first, variants, ...(first.skinVariants && { skinVariants }) };
-	return { ok: true, material, warnings: [...warnings.values()] };
-}
-
-/**
- * The builds of every share in one map, in the order that the compiler gives them: the byte order
- * of their names, as Rust's sorted map gives them.
- */
-function sortedBuilds(
-	shares: readonly Readonly<Record<string, ShaderVariant>>[],
-): Record<string, ShaderVariant> {
-	const all: Record<string, ShaderVariant> = Object.assign({}, ...shares);
-	const sorted: Record<string, ShaderVariant> = {};
-	for (const name of Object.keys(all).sort()) sorted[name] = all[name] as ShaderVariant;
-	return sorted;
+	const all = Object.assign({}, ...builds.map((build) => build.variants));
+	const variants: Record<string, ShaderVariant> = {};
+	// The compiler's builds come in the byte order of their names, as Rust's sorted map gives them.
+	for (const name of Object.keys(all).sort()) variants[name] = all[name];
+	return { ok: true, material: { ...first, variants }, warnings: [...warnings.values()] };
 }
 
 /** Adds problems to a map of them, each once with the builds of every copy, sorted. */
