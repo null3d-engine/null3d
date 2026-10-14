@@ -254,6 +254,8 @@ export type Check =
 	| { kind: 'gpu-occlusion' }
 	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
 	| { kind: 'jitter'; tier: Tier }
+	/** The specular shimmer page: highlight flicker against a supersampled row of the same frames. */
+	| { kind: 'shimmer'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -1087,9 +1089,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, or 4 custom effects.
+ * sun's contact shadows, 4 custom effects, or the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects' | 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1105,14 +1107,41 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
  * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
  * contact plan times the sun's contact shadows at 4 and 8 steps, the steps of Medium on WebGL2
- * and of High, with the prepass on in both halves too, as for ambient occlusion.
+ * and of High, with the prepass on in both halves too, as for ambient occlusion. The physical sky
+ * plan times the physical sky against three.js's analytic sky, with the sun still and with the sun
+ * moving in every frame, which draws the sky view table again in each frame.
  * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
- * D-119 those of the dof plan, and D-135 those of the contact plan.
+ * D-119 those of the dof plan, D-135 those of the contact plan, and D-143 those of the physical
+ * sky plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
-	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
-	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
-	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
+	// Each variant's suffix to the item's name, and its switches.
+	const variants: Record<CostedEffect, (readonly [string, readonly string[]])[]> = {
+		bloom: [['', []]],
+		ao: [
+			['', []],
+			['-prepass', ['prepass=on']],
+		],
+		dof: [
+			['-16', ['taps=16']],
+			['-22', ['taps=22']],
+		],
+		contact: [false, true].flatMap((on) =>
+			[4, 8].map(
+				(steps) =>
+					[
+						`${on ? '-prepass' : ''}-${steps}`,
+						[...(on ? ['prepass=on'] : []), `steps=${steps}`],
+					] as const,
+			),
+		),
+		// One pass for each effect, so a quarter of the difference is one pass.
+		effects: [['', ['join=off']]],
+		sky: [
+			['', []],
+			['-moving', ['moving']],
+		],
+	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1127,28 +1156,15 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 			: [];
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
-			prepass.flatMap((on) =>
-				tapCounts.flatMap((taps) =>
-					stepCounts.map((steps) =>
-						pageItem(
-							`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}${steps ? `-${steps}` : ''}`,
-							'effect-cost',
-							{ kind: 'effect', effect, tier, scale },
-							{
-								switches: [
-									`gpu=${tier}`,
-									`scale=${scale}`,
-									`effect=${effect}`,
-									...(on ? ['prepass=on'] : []),
-									...(taps ? [`taps=${taps}`] : []),
-									...(steps ? [`steps=${steps}`] : []),
-									// One pass for each effect, so a quarter of the difference is one pass.
-									...(effect === 'effects' ? ['join=off'] : []),
-								],
-								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-							},
-						),
-					),
+			variants[effect].map(([suffix, switches]) =>
+				pageItem(
+					`${effect}-${tier}-${scale * 100}${suffix}`,
+					'effect-cost',
+					{ kind: 'effect', effect, tier, scale },
+					{
+						switches: [`gpu=${tier}`, `scale=${scale}`, `effect=${effect}`, ...switches],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
 				),
 			),
 		),
@@ -1712,6 +1728,36 @@ export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * How long the shimmer page may take: two rows of camera steps, one of them at sixteen times the
+ * pixels, which a phone's GPU draws slowly.
+ */
+const SHIMMER_TIMEOUT_SECONDS = 300;
+
+/**
+ * The shimmer page's scenes that a device run measures: small low-poly shapes, smooth spheres, and
+ * spheres a few pixels across. The bump-mapped scene is left out, because specular anti-aliasing
+ * never sees a normal map's detail.
+ */
+const SHIMMER_SCENES = ['small', 'smooth', 'tiny'] as const;
+
+/**
+ * How much the highlights of shiny shapes flicker in each scene on each GPU path, against a
+ * supersampled row of the same frames. D-79 records the results.
+ */
+export function shimmerPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		SHIMMER_SCENES.map((scene) =>
+			pageItem(
+				`shimmer-${scene}-${tier}`,
+				'specular-shimmer',
+				{ kind: 'shimmer', tier },
+				{ switches: [`gpu=${tier}`, `scene=${scene}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+			),
+		),
+	);
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	smoke: smokePlan,
@@ -1730,6 +1776,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	dof: () => effectPlan('dof'),
 	contact: () => effectPlan('contact'),
 	effects: () => effectPlan('effects'),
+	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
@@ -1740,6 +1787,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'gpu-occlusion': gpuOcclusionPlan,
 	'occlusion-s6': occlusionS6Plan,
 	jitter: jitterPlan,
+	shimmer: shimmerPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -2497,6 +2545,10 @@ export function judge(
 			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
 			if (problems.length === 0) context?.note?.(line);
 			return problems;
+		}
+		case 'shimmer': {
+			const shimmer = result as ItemResult & { shimmer?: number };
+			return typeof shimmer.shimmer === 'number' ? [] : ['the page measured no shimmer'];
 		}
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {

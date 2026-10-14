@@ -105,12 +105,35 @@ export default defineSketch(async (context) => {
 		placed = true;
 	};
 
+	// A character that the camera sees from far updates its pose less often, so the job workers
+	// sample and blend fewer of them in a frame. The `farAnimationInterval` quality setting gives
+	// the interval, which the governor may raise. `?anim=every` holds every character at every
+	// frame, as the image and parity tests need for a repeatable pose.
+	const everyFrame = new URL(import.meta.url).searchParams.get('anim') === 'every';
+	/** Under this distance of the camera a character looks large, so it updates in every frame. */
+	const nearDistance = 24;
+	const cameraPlace = new Float64Array(3);
+	const rateCharacters = (): void => {
+		const far = everyFrame ? 1 : context.quality.governor.farAnimationInterval;
+		const x = cameraPlace[0] as number;
+		const z = cameraPlace[2] as number;
+		for (let i = 0; i < data.count; i++) {
+			const dx = (positions[i * 3] as number) - x;
+			const dz = (positions[i * 3 + 2] as number) - z;
+			(animators[i] as Animator).setUpdateInterval(
+				dx * dx + dz * dz < nearDistance * nearDistance ? 1 : far,
+			);
+		}
+	};
+
 	if (demo) return playable();
 	const moveCamera = followPath(camera, s5CameraPath(data));
 	const pose = (t: number): void => {
 		clock[0] = t;
 		moveCharacters();
 		moveCamera(t);
+		camera.getWorldPosition(cameraPlace);
+		rateCharacters();
 	};
 	pose(time.now);
 	return {
@@ -148,6 +171,8 @@ export default defineSketch(async (context) => {
 					moveCharacters();
 				}
 				controls.update(time.dt);
+				camera.getWorldPosition(cameraPlace);
+				rateCharacters();
 				reportQuality();
 			},
 		};

@@ -95,10 +95,11 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
- * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
+ * look, which three.js lacks, joins the curves that three.js shares here.
  */
 function toneMappingTests(): ImageTest[] {
-	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -1135,7 +1136,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
-	// a scene has, so other devices get a wider tolerance here.
+	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
+	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1143,7 +1145,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -1653,6 +1655,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// The physical sky at four times of day from `timeOfDay` with the physical model: its tables,
+	// its background with clouds, the moon and the stars, its environment, and the aerial
+	// perspective on a row of pillars out to 20 kilometres. Then the afternoon with the analytic sky
+	// standing in, as on Low, the afternoon without the aerial perspective, and the night on the
+	// 8-bit path, where the sky's own shader tone maps its color (D-143).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `physical-sky-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	...(
+		[
+			['physical-sky-analytic', 'analytic'],
+			['physical-sky-no-haze', 'haze=0'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=afternoon&${query}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	{
+		name: 'physical-sky-night-8-bit',
+		sketch: 'tests/pages/sketches/physical-sky-sketch.ts?time=night',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
@@ -2114,7 +2154,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
-			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
+			// update rates are its default, and a held frame otherwise catches far characters
+			// between two of their poses.
+			...(scene === 's5' && {
+				switches: ['anim=every'],
+				swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`],
+			}),
 			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
@@ -2225,6 +2271,7 @@ const HALF_PRECISION_TESTS = [
 	'lights-16',
 	'shadows',
 	toneMappingTest('agx', 0),
+	toneMappingTest('agx-punchy', 0),
 	eightBitTest('aces'),
 ];
 

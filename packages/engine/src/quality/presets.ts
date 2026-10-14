@@ -126,6 +126,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// How often a far character's pose updates: once in this many frames. A sketch reads it and
+	// gives it to `animator.setUpdateInterval`, which holds out a character near the camera at 1.
+	// The job workers then sample, blend and compose a far crowd less often, and a held pose skips
+	// the skinning pass too. A higher value costs less, with more visible stepping. The governor
+	// raises it after every other live step.
+	farAnimationInterval: {
+		presets: [4, 4, 2, 1],
+		changes: 'live',
+		values: { min: 1, max: 4, whole: true, heavierBelow: true },
+	},
 	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
 	// layer of the shadow map. D-73 gives the figures.
@@ -210,6 +220,15 @@ export const QUALITY_SETTINGS = {
 	// Whether two levels hand over in a short dithered band past each switch distance. Low switches
 	// at once: the dither's discard costs tile GPUs their hidden-surface removal in the band.
 	lodFade: {
+		presets: [false, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
+	// Whether the background's physical sky draws from its own tables, or the analytic sky stands
+	// in for it, matched in brightness. The coordinator kept the analytic sky on Low, which phones
+	// draw; the tables' cost per preset is in D-143. A change makes no GPU object until the other
+	// sky first draws.
+	physicalSky: {
 		presets: [false, true, true, true],
 		changes: 'live',
 		values: 'flag',
@@ -388,6 +407,14 @@ export interface QualitySettings {
 	 */
 	followMovingCasters: boolean;
 	/**
+	 * How often a far character's pose updates: once in this many frames, from 1 to 4. Give it to
+	 * `animator.setUpdateInterval` for the characters that the camera sees from far. Give 1 to the
+	 * ones near it, so a crowd samples and skins less without a near character stepping. The
+	 * governor raises it when frames take too long, after every other live step. It is then the
+	 * last thing to give way and the first to come back. It changes during play.
+	 */
+	farAnimationInterval: number;
+	/**
 	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper
 	 * shadows hand over to a far cascade's softer ones. Pixels in the band read both cascades, so a
@@ -448,6 +475,12 @@ export interface QualitySettings {
 	 * once. It changes during play.
 	 */
 	lodFade: boolean;
+	/**
+	 * Whether `{ atmosphere }` backgrounds draw the physical sky from its tables. False draws
+	 * three.js's analytic sky in its place, with the same sun, moon, air and clouds, matched to the
+	 * physical sky's brightness, and keeps the haze on distant objects. It changes during play.
+	 */
+	physicalSky: boolean;
 	/**
 	 * Whether the frame-budget governor runs. When frames take too long, it lowers the render scale
 	 * toward `minRenderScale`. Then it raises `lodThreshold` up to four times while a mesh has

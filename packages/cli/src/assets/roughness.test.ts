@@ -255,6 +255,7 @@ function texturesReport(
 			trees: 0,
 			treeBytes: 0,
 		},
+		shaders: { permutations: [], features: [], buckets: [] },
 		ms: 0,
 	});
 }

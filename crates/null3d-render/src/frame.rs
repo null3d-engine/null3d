@@ -49,13 +49,15 @@ use crate::meshes::{MAX_BUFFER_BYTES, MeshMoves, MeshStorage, Page, UpdateError}
 use crate::outline::Outline;
 use crate::output::{Antialias, Output, SceneColor, ToneMapping};
 use crate::particles::ParticleTable;
+use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
+use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
     fit_cascades,
 };
-use crate::sky_maps::SkyMaps;
+use crate::sky_maps::{MapSky, SkyMaps};
 use crate::textures::TextureStore;
 use crate::textures::budget::NeedView;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId, ViewNames};
@@ -673,6 +675,13 @@ pub struct SceneSettings {
     used_materials: Vec<bool>,
     /// What the camera's view draws behind every object, over the background color.
     background: Option<Background>,
+    /// The CPU model of the physical sky's air, once the scene drew a physical sky.
+    air: Option<AirModel>,
+    /// True while the quality settings draw the physical sky, else the analytic sky stands in.
+    physical_sky: bool,
+    /// The analytic sky that stands in for the physical sky, and the factor of its light, while the
+    /// quality settings turn the physical sky off.
+    stand_in: Option<(crate::background::Sky, f32)>,
     /// The views, the camera's first.
     views: Vec<View>,
     /// The names that each view gives the render graph, by view.
@@ -788,6 +797,9 @@ impl SceneSettings {
             shared_map_units: 0,
             used_materials: Vec::new(),
             background: None,
+            air: None,
+            physical_sky: true,
+            stand_in: None,
             views: vec![View::default()],
             view_names: vec![ViewNames::default()],
             lighting: Lighting {
@@ -1244,8 +1256,9 @@ impl SceneSettings {
         });
         match ready {
             Some((mut environment, (map, levels))) => {
-                if let Some(sh) = self.sky_maps.sh(environment.texture) {
+                if let Some((sh, gain)) = self.sky_maps.light(environment.texture) {
                     environment.sh = sh;
+                    environment.intensity *= gain;
                 }
                 (
                     map,
@@ -1271,11 +1284,28 @@ impl SceneSettings {
         self.outline = outline;
     }
 
-    /// True while the sketch sets a color grading table or the vignette, outside a debug view,
-    /// whose colors reach the canvas as its shader writes them. The final pass then runs on every
-    /// path.
+    /// True while the sketch sets a color grading table, or the vignette on the HDR path, outside
+    /// a debug view, whose colors reach the canvas as its shader writes them. The final pass then
+    /// runs on every path. On the 8-bit path the scene shaders apply the vignette.
     pub(crate) fn grades(&self) -> bool {
-        (self.lut.is_some() || self.vignette.is_some()) && !self.debug_view.is_debug()
+        (self.lut.is_some() || self.final_vignette().is_some()) && !self.debug_view.is_debug()
+    }
+
+    /// The vignette that the final pass applies: the sketch's on the HDR path, none on the 8-bit
+    /// path.
+    fn final_vignette(&self) -> Option<Vignette> {
+        self.vignette.filter(|_| self.canvas.scene_color.is_hdr())
+    }
+
+    /// The vignette's values that the scene shaders apply before their tone mapping: the sketch's
+    /// on the 8-bit path outside a debug view, else zeros, which apply none.
+    pub(crate) fn scene_vignette(&self) -> [f32; 4] {
+        match self.vignette {
+            Some(vignette) if !self.canvas.scene_color.is_hdr() && !self.debug_view.is_debug() => {
+                vignette.uniform()
+            }
+            _ => [0.0; 4],
+        }
     }
 
     /// What the final pass grades the frame with: the table once its texels are on the GPU, and
@@ -1291,7 +1321,7 @@ impl SceneSettings {
         });
         Grading {
             lut,
-            vignette: self.vignette,
+            vignette: self.final_vignette(),
         }
     }
 
@@ -1462,22 +1492,112 @@ impl SceneSettings {
     }
 
     /// What the camera's view draws behind every object, or none for the background color alone,
-    /// as in every debug view.
+    /// as in every debug view. While the quality settings turn the physical sky off, the analytic
+    /// sky stands in for it.
     pub fn background(&self) -> Option<Background> {
-        self.background.filter(|_| !self.debug_view.is_debug())
+        let background = self.background.filter(|_| !self.debug_view.is_debug())?;
+        match (background.source, self.stand_in) {
+            (BackgroundSource::Atmosphere(_), Some((sky, gain))) => Some(Background {
+                source: BackgroundSource::Sky(sky),
+                intensity: background.intensity * gain,
+                ..background
+            }),
+            _ => Some(background),
+        }
+    }
+
+    /// The exposed background color that the camera's view draws as a background on the 8-bit
+    /// path while the vignette is on, or none. There the scene shaders darken their light by the
+    /// vignette before their tone mapping, and a clear alone would leave the color as it is. Without
+    /// a background color the clear is black, which the vignette leaves black.
+    pub(crate) fn vignetted_background_color(&self) -> Option<[f32; 3]> {
+        if self.background().is_some() || self.scene_vignette()[0] <= 0.0 {
+            return None;
+        }
+        let color = self.lighting.background?;
+        Some(self.drawn_output().expose(color))
     }
 
     /// Draws `background` behind every object in the camera's view, or only the background color
     /// with none.
     pub fn set_background_source(&mut self, background: Option<Background>) {
-        if let Some(Background {
-            source: BackgroundSource::Sky(sky),
-            ..
-        }) = background
-        {
-            self.sky_maps.set_sky(sky);
-        }
         self.background = background;
+        self.update_sky();
+    }
+
+    /// Draws the physical sky while `on`, else the analytic sky in its place, as the quality
+    /// settings choose.
+    pub fn set_physical_sky(&mut self, on: bool) {
+        if self.physical_sky != on {
+            self.physical_sky = on;
+            self.update_sky();
+        }
+    }
+
+    /// The physical sky's settings while the scene's background is one, whichever sky draws.
+    fn atmosphere(&self) -> Option<&Atmosphere> {
+        match &self.background {
+            Some(Background {
+                source: BackgroundSource::Atmosphere(atmosphere),
+                ..
+            }) => Some(atmosphere),
+            _ => None,
+        }
+    }
+
+    /// The physical sky's settings and its background's intensity while its own tables draw it:
+    /// the scene's background is the physical sky, the quality settings draw it, and no debug view
+    /// draws.
+    pub(crate) fn physical_sky(&self) -> Option<(&Atmosphere, f32)> {
+        let intensity = self.background()?.intensity;
+        match &self.background()?.source {
+            BackgroundSource::Atmosphere(_) => Some((self.atmosphere()?, intensity)),
+            _ => None,
+        }
+    }
+
+    /// Brings the sky maps, the air's model and the analytic stand-in in line with the background
+    /// and the quality settings.
+    fn update_sky(&mut self) {
+        self.stand_in = None;
+        let Some(background) = self.background else {
+            return;
+        };
+        match background.source {
+            BackgroundSource::Sky(sky) => self.sky_maps.set_sky(MapSky::analytic(sky)),
+            BackgroundSource::Atmosphere(atmosphere) => {
+                let air = atmosphere.air();
+                match &mut self.air {
+                    Some(model) => model.set_air(air),
+                    None => self.air = Some(AirModel::new(air)),
+                }
+                let model = self.air.as_ref().expect("the model was just made");
+                if self.physical_sky {
+                    let height = match self.sky_maps.sky() {
+                        Some(MapSky::Physical { height, .. }) => height,
+                        _ => atmosphere.height_of(0.0),
+                    };
+                    self.sky_maps
+                        .set_sky(MapSky::Physical { atmosphere, height });
+                } else {
+                    let (sky, gain) = analytic_stand_in(&atmosphere, model);
+                    self.stand_in = Some((sky, gain));
+                    self.sky_maps.set_sky(MapSky::Analytic { sky, gain });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The aerial perspective's values for a camera at height `y` in the world, in a frame whose
+    /// exposure is `exposure`: all zero without a physical sky.
+    fn aerial(&self, y: f32, exposure: f32) -> AerialUniform {
+        match (self.atmosphere(), &self.air, self.background) {
+            (Some(atmosphere), Some(model), Some(background)) if !self.debug_view.is_debug() => {
+                AerialUniform::of(atmosphere, model, y, background.intensity * exposure)
+            }
+            _ => AerialUniform::default(),
+        }
     }
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a
@@ -1491,6 +1611,7 @@ impl SceneSettings {
         list: &mut DrawList,
         arena: &mut UploadArena,
         table: MaterialStorage,
+        sky: &PhysicalSkyPass,
     ) -> Result<bool, RecordError> {
         let frame = input.frame;
         if self.textures.needs_estimate()
@@ -1500,7 +1621,17 @@ impl SceneSettings {
                 .estimate_needs(input.scene, input.batches, &self.materials, &view);
         }
         let remade = self.textures.record(list, frame)?;
-        self.sky_maps.record(&self.textures, list)?;
+        // A map of the physical sky starts a fill from the panorama of the sky as it is now, which
+        // the pass draws once the frame's texture work has made the map ready, so a held frame,
+        // whose first frame makes it, fills it too.
+        let drawn = self.sky_maps.wants_panorama(&self.textures) && sky.record_panorama(list)?;
+        self.sky_maps.record(
+            &self.textures,
+            list,
+            drawn,
+            sky.panorama(),
+            self.air.as_ref(),
+        )?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(
@@ -2266,6 +2397,7 @@ impl SceneSettings {
             hemisphere: self.lighting.hemisphere,
             output: output.uniform(),
             fog: fog::uniform_of(self.lighting.fog.as_ref(), y, output.exposure),
+            aerial: self.aerial(y, output.exposure),
             clock: self.clock,
             camera_world: [x, y, z, 0.0],
             target_size: [width, height, 1.0 / width, 1.0 / height],
@@ -2279,6 +2411,11 @@ impl SceneSettings {
                 && (self.ao().is_some() || self.contact_reach().is_some())
             {
                 ao::frame_values(self.ao(), canvas, scale, self.screen_scale())
+            } else {
+                [0.0; 4]
+            },
+            vignette: if view_id == ViewId::CAMERA {
+                self.scene_vignette()
             } else {
                 [0.0; 4]
             },
@@ -2332,19 +2469,28 @@ fn sways(materials: &MaterialTable, material: u32) -> bool {
             .is_ok_and(Shading::casts_its_own_way)
 }
 
+/// What makes a bucket of a layout, the same key that [`crate::levels`] names, so both frame
+/// builders share one sort and one type.
+pub(crate) type BucketKey = crate::levels::BucketKey;
+
+/// Scratch for layout rebuilds: every bucket key with its source count, sorted and merged into one
+/// entry per bucket. It holds an entry for every scene slot while it sorts, so a frame builder
+/// keeps one for all its layouts, which rebuild one after another and read it only while they do.
+pub(crate) type KeyCounts = Vec<(BucketKey, u32)>;
+
 /// Collects the bucket key of every scene slot, shown or hidden, with a count of one, and of every
 /// batch, with its row capacity. Sorted, equal keys merge into one entry per bucket, in key order.
 /// A slot or batch without a key draws nowhere. Reuses `out`, which grows only with the scene.
-pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
-    out: &mut Vec<(K, u32)>,
+pub(crate) fn collect_bucket_keys(
+    out: &mut KeyCounts,
     scene: &SceneStorage,
     batches: &BatchTable,
-    scene_key: impl Fn(usize) -> Option<K>,
-    batch_key: impl Fn(usize, &InstanceBatch) -> Option<K>,
+    scene_key: impl Fn(usize) -> Option<BucketKey>,
+    batch_key: impl Fn(usize, &InstanceBatch) -> Option<BucketKey>,
 ) {
     let scene_rows = (scene.capacity() + 1) as usize;
     out.clear();
-    out.reserve(scene_rows + batches.len() as usize);
+    out.reserve_exact(scene_rows + batches.len() as usize);
     for slot in 0..scene_rows {
         if let Some(key) = scene_key(slot) {
             out.push((key, 1));
@@ -2366,7 +2512,7 @@ pub(crate) fn collect_bucket_keys<K: Ord + Copy>(
 }
 
 /// The bucket of a key in a table that [`collect_bucket_keys`] made, or `None` for no key.
-pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Option<u32> {
+pub(crate) fn bucket_of(table: &[(BucketKey, u32)], key: Option<BucketKey>) -> Option<u32> {
     let key = key?;
     table
         .binary_search_by_key(&key, |&(k, _)| k)

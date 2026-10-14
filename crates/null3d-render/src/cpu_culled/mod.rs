@@ -108,8 +108,8 @@ use crate::effects::EffectIds;
 use crate::environment;
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
-    SceneSettings, UploadArena, drawn_rows, joined_rows,
+    CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
+    RecordError, SceneSettings, UploadArena, drawn_rows, joined_rows,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -120,6 +120,7 @@ use crate::meshes::{MeshMoves, MeshStorage, Packing};
 use crate::occlusion::Occluders;
 use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
+use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PassTargets, PipelineCache, Prepass};
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowFrame, ShadowUniform};
@@ -158,14 +159,13 @@ mod ids {
     }
     /// The vertices of the debug lines.
     pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEW_IDS as u32;
-    /// The cascades' uniform block, which receivers read beside the shadow map.
+    /// The frame's shadow settings, which receivers read beside the shadow map and the atlas: the
+    /// sun's cascades, then the atlas's tiles (D-146).
     pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
-    /// The uniform block of the shadow atlas's tiles, which receivers read beside the atlas.
-    pub const SHADOW_TILES: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = SHADOW_TILES + 1;
+    pub const BLOOM: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
@@ -179,8 +179,10 @@ mod ids {
     /// The table of object ranges, which the vertex shaders of custom materials that read an
     /// instance's index or an object's id search.
     pub const OBJECT_RANGES: u32 = PARTICLE_BUFFERS + ParticleIds::BUFFERS;
+    /// The uniform buffer of the physical sky's values.
+    pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
-    pub const FULLSCREEN: u32 = OBJECT_RANGES + 1;
+    pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FULLSCREEN + 1;
 
@@ -241,8 +243,10 @@ mod ids {
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
     /// The texel that particle systems bind in place of a view's depth copy.
     pub const BLANK_PARTICLE_DEPTH: u32 = STREAMED_VALUES + RING;
+    /// The physical sky's tables and panorama.
+    pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = BLANK_PARTICLE_DEPTH + 1;
+    pub const TARGETS: u32 = SKY_TABLES + crate::physical_sky::TEXTURES;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow atlas. The shadow map reads its texels without one.
@@ -257,10 +261,12 @@ mod ids {
     pub const EFFECT_SAMPLER: u32 = 5;
     /// The linear sampler of depth of field's steps.
     pub const DOF_SAMPLER: u32 = 6;
+    /// The physical sky's samplers.
+    pub const SKY_SAMPLERS: u32 = 7;
     /// The linear sampler of the full-screen passes.
-    pub const FULLSCREEN_SAMPLER: u32 = 7;
+    pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 8;
+    pub const SAMPLERS: u32 = FULLSCREEN_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
@@ -300,8 +306,10 @@ mod ids {
     pub const PARTICLE_DEPTH_GROUPS: u32 = PARTICLE_GROUPS + ParticleIds::GROUPS;
     /// The bind group of the copy of the camera's opaque depth that soft particles read.
     pub const PARTICLE_DEPTH_COPY_GROUP: u32 = PARTICLE_DEPTH_GROUPS + MAX_VIEWS as u32;
-    /// The bind group of each full-screen pass, by its view's place, after the particles'.
-    pub const FULLSCREEN_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The physical sky's bind groups, after the particles'.
+    pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
+    /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
+    pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
     /// The bind groups of materials' maps, after the full-screen passes'.
     pub const TEXTURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
 }
@@ -377,6 +385,8 @@ pub struct CpuCulledRenderer {
     casters: Layout,
     /// The outlined objects' layout, which the outline view draws.
     outlined: Layout,
+    /// The layouts' scratch for rebuilds, which they share.
+    key_counts: KeyCounts,
     /// The shadow passes of the frame that the layouts were built for.
     layouts_shadowed: CasterPasses,
     /// True when the layouts were built while outlines are on.
@@ -412,6 +422,8 @@ pub struct CpuCulledRenderer {
     background: BackgroundPass,
     /// The particle systems' GPU objects and draws.
     particles: ParticlePass,
+    /// The physical sky's tables.
+    physical_sky: PhysicalSkyPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -520,6 +532,7 @@ impl CpuCulledRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             outlined: Layout::new(Drawn::Outlined),
+            key_counts: KeyCounts::new(),
             layouts_shadowed: CasterPasses::default(),
             layouts_outlined: false,
             layout_prepass: false,
@@ -551,6 +564,12 @@ impl CpuCulledRenderer {
                 groups: ids::PARTICLE_GROUPS,
                 depth_groups: ids::PARTICLE_DEPTH_GROUPS,
                 blank_depth: ids::BLANK_PARTICLE_DEPTH,
+            }),
+            physical_sky: PhysicalSkyPass::new(PhysicalSkyIds {
+                buffer: ids::PHYSICAL_SKY,
+                textures: ids::SKY_TABLES,
+                samplers: ids::SKY_SAMPLERS,
+                groups: ids::SKY_GROUPS,
             }),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
@@ -684,7 +703,16 @@ impl CpuCulledRenderer {
         let prepass = self.graph.depth_pass(Prepass::OwnVertexShader);
         let (settings, pipelines, skins) = (&self.settings, &mut self.pipelines, &self.skins);
         self.layout.rebuild(
-            settings, pipelines, skins, targets, input, limit, multi_draw, shadows, prepass,
+            settings,
+            pipelines,
+            skins,
+            targets,
+            input,
+            limit,
+            multi_draw,
+            shadows,
+            prepass,
+            &mut self.key_counts,
         )?;
         // The casters' layout holds buckets only while a light casts shadows.
         if shadows.any() {
@@ -699,6 +727,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.casters.clear();
@@ -717,6 +746,7 @@ impl CpuCulledRenderer {
                 multi_draw,
                 shadows,
                 Prepass::Off,
+                &mut self.key_counts,
             )?;
         } else {
             self.outlined.clear();
@@ -743,6 +773,7 @@ impl CpuCulledRenderer {
                 RESIDENT,
                 shadows.any(),
                 |slot, key| skins.sorted_pipeline(slot, key),
+                &mut self.key_counts,
             )
             .map_err(out_of_memory)?;
         self.skins.asked();
@@ -876,16 +907,16 @@ impl CpuCulledRenderer {
             + self
                 .particles
                 .upload_bound(self.settings.particles(), views)
+            + PhysicalSkyPass::UPLOAD_BYTES
             + sizes::OBJECT_RANGE_BYTES as usize
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
     /// material it holds and one for each material's custom values, and three.js's table of
-    /// specular terms in the columns after them, and of the shadows' uniform block and comparison
+    /// specular terms in the columns after them, and of the shadows' settings block and comparison
     /// sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER, None)?;
-        ShadowTiles::create_objects(list, ids::SHADOW_TILES)?;
         list.push(
             Op::CreateTexture,
             &[
@@ -1163,6 +1194,8 @@ impl CpuCulledRenderer {
             self.graph.scene_targets(),
             Place::of(self.layout.depthless),
         );
+        self.physical_sky
+            .request_pipeline(&mut self.pipelines, self.settings.physical_sky().is_some());
         let created_pipelines = self.pipelines.create_new(list, input.frame)? > 0;
         if !self.created {
             self.create_fixed(list)?;
@@ -1251,7 +1284,20 @@ impl CpuCulledRenderer {
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
-        self.settings.record_materials(input, list, arena, table)?;
+        let camera_y = self
+            .culling
+            .frame(ViewId::CAMERA)
+            .map_or(0.0, |frame| frame.uniform.camera_world[1]);
+        physical_sky::record_frame(
+            &mut self.physical_sky,
+            &mut self.settings,
+            (&self.pipelines, input.pipelines_built),
+            camera_y,
+            list,
+            arena,
+        )?;
+        self.settings
+            .record_materials(input, list, arena, table, &self.physical_sky)?;
         // The frame's texture work made the passes' targets and uploads ready, so the textures
         // of the effects and the full-screen passes sample from this frame on.
         self.settings.update_post_layers();
@@ -1282,7 +1328,8 @@ impl CpuCulledRenderer {
             self.settings.drawn_output(),
             self.settings.grading(),
         )?;
-        self.background.prepare(list, arena, &self.settings)?;
+        self.background
+            .prepare(list, arena, &self.settings, self.physical_sky.group())?;
         let culling = &self.culling;
         self.particles.prepare(
             list,
@@ -1355,7 +1402,8 @@ impl CpuCulledRenderer {
                 list.push(Op::WriteBuffer, &[ids::SHADOWS, 0, at, bytes])?;
             }
             self.cascades_held = self.shadow.is_some() || (self.cascades_held && !shadowed);
-            self.tiles.upload(list, arena, ids::SHADOW_TILES)?;
+            self.tiles
+                .upload(list, arena, ids::SHADOWS, sizes::SHADOW_UNIFORM_BYTES)?;
             upload_views(
                 list,
                 arena,
@@ -1791,6 +1839,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.bound_environment = ids::BLANK_ENVIRONMENT;
         self.background.reset_gpu();
         self.particles.reset_gpu();
+        self.physical_sky.reset_gpu();
         self.graph.reset_gpu();
         self.settings.forget_shadow_maps();
         self.layout.built = false;

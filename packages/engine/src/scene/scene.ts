@@ -33,16 +33,16 @@ import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer } from '../shared/control';
-import type { CoreGlue } from '../shared/core';
 import type { Animator, SceneAnimations } from './animation';
 import {
 	type BackgroundOptions,
 	type BackgroundSource,
 	Cubemap,
+	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
 } from './background';
-import { type ColorInput, linearColor } from './color';
+import { type ColorInput, linearColor, writeLinearColor } from './color';
 import { Environment, type EnvironmentOptions, SceneEnvironment } from './environment';
 import { type FogOptions, setSceneFog } from './fog';
 import {
@@ -1457,7 +1457,7 @@ export abstract class Camera extends Object3D {
 	 * cascades, or past `CAMERA_TARGET_PASS_VIEWS`, the lens of a scene pass's view, with the
 	 * pass's `layers`.
 	 */
-	abstract sendLens(glue: CoreGlue, target?: number, layers?: number): void;
+	abstract sendLens(core: CoreMemory, target?: number, layers?: number): void;
 }
 
 /**
@@ -1540,8 +1540,12 @@ export class PerspectiveCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
-		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far, layers, target);
+	sendLens(core: CoreMemory, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
+		const values = core.callValues();
+		values[0] = this.verticalFov;
+		values[1] = this.near;
+		values[2] = this.far;
+		core.glue.setPerspectiveCamera(this.handle, layers, target);
 	}
 }
 
@@ -1620,26 +1624,22 @@ export class OrthographicCamera extends Camera {
 	}
 
 	/** @internal */
-	sendLens(glue: CoreGlue, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
-		const view = this.view;
-		glue.setOrthographicCamera(
-			this.handle,
-			view.height,
-			view.width,
-			view.centerX,
-			view.centerY,
-			this.near,
-			this.far,
-			layers,
-			target,
-		);
+	sendLens(core: CoreMemory, target: number = C.CAMERA_TARGET_VIEW, layers = this.layers): void {
+		const { view } = this;
+		const values = core.callValues();
+		values[0] = view.height;
+		values[1] = view.width;
+		values[2] = view.centerX;
+		values[3] = view.centerY;
+		values[4] = this.near;
+		values[5] = this.far;
+		core.glue.setOrthographicCamera(this.handle, layers, target);
 	}
 }
 
 /**
  * A light: a scene object that lights the objects around it. Each kind of light has a class of its
- * own. Setters allocate nothing except those that convert a color, so `onUpdate` can animate
- * lights.
+ * own. Setters allocate nothing, colors included, so `onUpdate` can animate lights.
  *
  * @category api/lights
  */
@@ -1654,9 +1654,10 @@ export class Light extends Object3D {
 	readonly linear = new Float64Array([1, 1, 1]);
 	/**
 	 * @internal What an intensity in the light's unit is in three.js's unit: 1, or the candela of
-	 * one lumen for a point or spot light in lumens.
+	 * one lumen for a point or spot light in lumens. It sits in a typed array so a per-frame
+	 * `setIntensity` reads it without boxing a number.
 	 */
-	unitScale = 1;
+	readonly unitScale = new Float64Array(1).fill(1);
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -1668,18 +1669,19 @@ export class Light extends Object3D {
 		const { core } = this.scene;
 		twin.id = core.checkGrowth(core.glue.copyLight(this.id, handle), 'clone', this.label);
 		twin.linear.set(this.linear);
-		twin.unitScale = this.unitScale;
+		twin.unitScale[0] = this.unitScale[0] as number;
 		return twin;
 	}
 
-	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
+	/** Sets the color. It allocates nothing, so a sketch can change the color in every frame. */
 	setColor(color: ColorInput): void {
 		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
 	/** Sets the factor that scales the color, in the unit that the light was created with. */
 	setIntensity(intensity: number): void {
-		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity * this.unitScale);
+		this.scene.core.callValues()[0] = intensity * (this.unitScale[0] as number);
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY);
 	}
 
 	/** Removes the light at the next frame. Its children become roots. */
@@ -1695,9 +1697,15 @@ export class Light extends Object3D {
 	/** @internal Sets one of the light's colors, by its code in the light table. */
 	paint(call: string, which: number, color: ColorInput): void {
 		if (DEV) checkLive(call, this);
-		const rgb = linearColor(color, call);
-		if (which === C.LIGHT_COLOR_MAIN) this.linear.set(rgb);
-		this.scene.core.glue.setLightColor(this.id, which, rgb[0], rgb[1], rgb[2]);
+		const { core } = this.scene;
+		const rgb = writeLinearColor(core.callValues(), color, call);
+		if (which === C.LIGHT_COLOR_MAIN) {
+			const { linear } = this;
+			linear[0] = rgb[0] as number;
+			linear[1] = rgb[1] as number;
+			linear[2] = rgb[2] as number;
+		}
+		core.glue.setLightColor(this.id, which);
 	}
 
 	/** @internal Sets each of the shadow settings that `shadow` gives. */
@@ -1708,24 +1716,35 @@ export class Light extends Object3D {
 		}
 	}
 
-	/** @internal Sets one of the light's numbers, by its code in the light table. */
-	write(call: string, which: number, value: number): void {
+	/**
+	 * @internal Sets one of the light's numbers, by its code in the light table. A per-frame setter
+	 * writes the number into the call values in its own small body and calls this with no number,
+	 * so no fraction crosses a call that the browser may not inline. Making a light, and its shadow
+	 * settings, pass the number itself.
+	 */
+	write(call: string, which: number, value?: number): void {
+		const { core } = this.scene;
+		// A per-frame setter writes the call value itself and passes no number; a light's creation
+		// and its shadow settings pass the number, which may be undefined for a required setting.
+		if (arguments.length < 3) value = core.callValues()[0] as number;
+		else core.callValues()[0] = value as number;
 		if (DEV) {
 			checkLive(call, this);
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
 			// Cascades are whole, and map sizes are powers of two.
+			const number = value as number;
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
-					? Number.isInteger(value)
-					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (value & (value - 1)) === 0;
-			if (!(value >= limits[1] && value <= limits[2] && whole))
+					? Number.isInteger(number)
+					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
+			if (!(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
 					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
 				);
 		}
-		this.scene.core.glue.setLightValue(this.id, which, value);
+		core.glue.setLightValue(this.id, which);
 	}
 
 	/**
@@ -1790,12 +1809,14 @@ export class DirectionalLight extends Light {
 export class PointLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/**
@@ -1821,22 +1842,26 @@ export class PointLight extends Light {
 export class SpotLight extends Light {
 	/** Sets the distance in meters where the light ends, above 0. */
 	setRange(range: number): void {
-		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+		this.scene.core.callValues()[0] = range;
+		this.write('setRange', C.LIGHT_VALUE_RANGE);
 	}
 
 	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
 	setDecay(decay: number): void {
-		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
+		this.scene.core.callValues()[0] = decay;
+		this.write('setDecay', C.LIGHT_VALUE_DECAY);
 	}
 
 	/** Sets the angle in radians from the light's direction to the edge of its cone: up to π/2. */
 	setAngle(angle: number): void {
-		this.write('setAngle', C.LIGHT_VALUE_ANGLE, angle);
+		this.scene.core.callValues()[0] = angle;
+		this.write('setAngle', C.LIGHT_VALUE_ANGLE);
 	}
 
 	/** Sets the part of the cone, from 0 to 1, over which the light fades out toward the edge. */
 	setPenumbra(penumbra: number): void {
-		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA, penumbra);
+		this.scene.core.callValues()[0] = penumbra;
+		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA);
 	}
 
 	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
@@ -1866,7 +1891,7 @@ export class SpotLight extends Light {
  * @category api/lights
  */
 export class HemisphereLight extends Light {
-	/** Sets the ground color. Converting a color allocates. */
+	/** Sets the ground color. It allocates nothing. */
 	setGroundColor(color: ColorInput): void {
 		this.paint('setGroundColor', C.LIGHT_COLOR_GROUND, color);
 	}
@@ -1922,7 +1947,7 @@ export class InstanceBatch implements ViewHolder {
 		scene.core.holdViews(this);
 	}
 
-	/** @internal Forgets the row arrays, which the next read makes again. */
+	/** Forgets the row arrays, which the next read makes again. */
 	dropViews(): void {
 		if (this.generation === -1) return;
 		this.generation = -1;
@@ -2078,8 +2103,12 @@ export class InstanceBatch implements ViewHolder {
 	/** @internal Places the origin that the rows of the batch and of its parts are relative to. */
 	setOrigin([x, y, z]: Vec3, call: string): void {
 		const { core } = this.scene;
-		core.check(core.glue.setBatchOrigin(this.id, x, y, z), call, undefined, true);
-		for (const part of this.parts) core.glue.setBatchOrigin(part, x, y, z);
+		const values = core.callValues();
+		values[0] = x;
+		values[1] = y;
+		values[2] = z;
+		core.check(core.glue.setBatchOrigin(this.id), call, undefined, true);
+		for (const part of this.parts) core.glue.setBatchOrigin(part);
 	}
 
 	/** Marks rows of a static batch to update and upload. */
@@ -2452,7 +2481,7 @@ export class Scene implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the views of the scene's arrays and of the morph weights. */
+	/** Forgets the views of the scene's arrays and of the morph weights. */
 	dropViews(): void {
 		this.currentViews = undefined;
 		this.morphGeneration = -1;
@@ -2797,13 +2826,13 @@ export class Scene implements ViewHolder {
 	/** @internal */
 	lensChanged(camera: Camera): void {
 		camera.updateLens();
-		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
-		if (camera === this.shadowCamera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
+		if (camera === this.activeCamera) camera.sendLens(this.core);
+		if (camera === this.shadowCamera) camera.sendLens(this.core, C.CAMERA_TARGET_SHADOWS);
 		const passes = this.passCameras;
 		for (let place = 1; place < passes.length; place++) {
 			const pass = passes[place];
 			if (pass?.camera === camera)
-				camera.sendLens(this.core.glue, C.CAMERA_TARGET_PASS_VIEWS + place, pass.layers);
+				camera.sendLens(this.core, C.CAMERA_TARGET_PASS_VIEWS + place, pass.layers);
 		}
 	}
 
@@ -2817,7 +2846,7 @@ export class Scene implements ViewHolder {
 			return;
 		}
 		this.passCameras[place] = { camera, layers };
-		camera.sendLens(this.core.glue, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
+		camera.sendLens(this.core, C.CAMERA_TARGET_PASS_VIEWS + place, layers);
 	}
 
 	/**
@@ -2826,7 +2855,7 @@ export class Scene implements ViewHolder {
 	 */
 	setShadowCamera(camera: Camera | undefined): void {
 		this.shadowCamera = camera;
-		if (camera) camera.sendLens(this.core.glue, C.CAMERA_TARGET_SHADOWS);
+		if (camera) camera.sendLens(this.core, C.CAMERA_TARGET_SHADOWS);
 		else this.core.glue.clearShadowCamera();
 	}
 
@@ -3121,10 +3150,14 @@ export class Scene implements ViewHolder {
 			const object = new kind(this, handle, name);
 			const { core } = this;
 			object.id = core.checkGrowth(core.glue.createLight(handle, light.kind), call, name);
-			const [r, g, b] = light.color;
 			object.linear.set(light.color);
-			core.glue.setLightColor(object.id, C.LIGHT_COLOR_MAIN, r, g, b);
-			for (const [which, value] of light.values) core.glue.setLightValue(object.id, which, value);
+			const values = core.callValues();
+			values.set(light.color);
+			core.glue.setLightColor(object.id, C.LIGHT_COLOR_MAIN);
+			for (const [which, value] of light.values) {
+				values[0] = value;
+				core.glue.setLightValue(object.id, which);
+			}
 			return object;
 		}
 		if (!node.mesh) return new Group(this, handle, name);
@@ -3582,15 +3615,15 @@ export class Scene implements ViewHolder {
 			light.destroy();
 			throw error;
 		}
-		light.unitScale = intensityScale(type, intensityUnit);
+		light.unitScale[0] = intensityScale(type, intensityUnit);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {
 			const value = options[key];
 			if (which === C.LIGHT_VALUE_INTENSITY) {
 				// An intensity in another unit, even the default of 1, is that unit's.
-				if (value !== undefined || light.unitScale !== 1)
-					light.write(call, which, (value ?? 1) * light.unitScale);
+				if (value !== undefined || light.unitScale[0] !== 1)
+					light.write(call, which, (value ?? 1) * (light.unitScale[0] as number));
 			} else if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
 				light.write(call, which, value as number);
 		}
@@ -3645,7 +3678,8 @@ export class Scene implements ViewHolder {
 	/**
 	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
 	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
-	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * map from `assets.loadCubemap`, three.js's sky with `{ sky: { sunPosition } }`, or the physical
+	 * sky with `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture
 	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
 	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
 	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
@@ -3665,13 +3699,14 @@ export class Scene implements ViewHolder {
 			background instanceof Texture ||
 			background instanceof Environment ||
 			background instanceof Cubemap ||
-			isSkyBackground(background)
+			isSkyBackground(background) ||
+			isAtmosphereBackground(background)
 		) {
 			this.sceneBackground.set(background, options);
 			return;
 		}
-		const [r, g, b] = linearColor(background, 'setBackground');
-		this.core.glue.setBackground(r, g, b);
+		writeLinearColor(this.core.callValues(), background, 'setBackground');
+		this.core.glue.setBackground();
 		this.sceneBackground.clear();
 	}
 
@@ -3696,11 +3731,11 @@ export class Scene implements ViewHolder {
 	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
 	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
 	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
-	 * value out of its range, and E1203 for a value that is not finite. Converting the color
-	 * allocates.
+	 * value out of its range, and E1203 for a value that is not finite. The call allocates nothing,
+	 * so a sketch can change the fog in every frame.
 	 */
 	setFog(fog: FogOptions | null): void {
-		setSceneFog(this.core.glue, fog);
+		setSceneFog(this.core, fog);
 	}
 
 	/** The raycasts and overlap queries, made on the first call. */

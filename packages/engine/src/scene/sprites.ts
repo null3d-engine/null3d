@@ -217,7 +217,7 @@ export class SpriteBatch implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the row arrays, which the next read makes again. */
+	/** Forgets the row arrays, which the next read makes again. */
 	dropViews(): void {
 		if (this.generation === -1) return;
 		this.generation = -1;
