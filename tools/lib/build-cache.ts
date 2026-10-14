@@ -131,6 +131,8 @@ function isRunning(pid: number): boolean {
  */
 export function acquireLock(path: string): () => void {
 	mkdirSync(dirname(path), { recursive: true });
+	const started = performance.now();
+	let said = false;
 	for (;;) {
 		try {
 			writeFileSync(path, String(process.pid), { flag: 'wx' });
@@ -139,9 +141,22 @@ export function acquireLock(path: string): () => void {
 			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
 		}
 		const holder = Number.parseInt(readFileSync(path, 'utf8'), 10);
-		if (Number.isInteger(holder) && isRunning(holder)) sleep(LOCK_POLL_MS);
-		else rmSync(path, { force: true });
+		if (Number.isInteger(holder) && isRunning(holder)) {
+			if (!said) {
+				// Every build on the machine holds this lock, and a size check holds it across its
+				// whole base build, so a wait here can last many minutes. Say who holds it: without
+				// this a build that waits prints nothing and looks hung. When the holder is an
+				// orphaned build, or one whose work has already landed, kill it and the lock moves.
+				console.log(`waiting for the lock at ${path}, held by pid ${holder}`);
+				said = true;
+			}
+			sleep(LOCK_POLL_MS);
+		} else rmSync(path, { force: true });
 	}
+	if (said)
+		console.log(
+			`took the lock at ${path} after ${Math.round((performance.now() - started) / 1000)} s`,
+		);
 	return () => rmSync(path, { force: true });
 }
 
