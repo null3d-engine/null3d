@@ -629,6 +629,10 @@ impl Layout {
         };
         let key_of = |pipeline: Option<DrawKey>, mesh, material, bounds, object: u32, skinned| {
             let pipeline = skin(pipeline?, skinned);
+            // A decal draws in the decal pass alone: no shadow, depth or outline.
+            if pipeline.decal() {
+                return None;
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
@@ -662,6 +666,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
             Some((pipeline, group, page, mesh, material, bounds))
         };

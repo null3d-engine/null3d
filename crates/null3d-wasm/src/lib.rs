@@ -30,7 +30,7 @@ use null3d_core::frames::{frame_after, next_frame};
 use null3d_core::handle::{Handle, MAX_SLOTS};
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, LoopExit, WorkerId};
-use null3d_core::lights::LightTable;
+use null3d_core::lights::{LightTable, kind as light_kind, value as light_value};
 use null3d_core::lines::{LineLook, LineMode};
 use null3d_core::morph::MorphWeights;
 use null3d_core::occlusion::BlockerMesh;
@@ -53,7 +53,9 @@ use null3d_render::effects::{
     EFFECT_FLOATS, Effect, EffectMaps, MAX_TEXTURES as MAX_EFFECT_TEXTURES,
 };
 use null3d_render::environment::Environment;
+use null3d_render::exposure::{AutoExposure, Meter as ExposureMeter, Metering};
 use null3d_render::fog::Fog;
+use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
@@ -63,16 +65,19 @@ use null3d_render::gpu_driven::{
 };
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
+use null3d_render::light_tables;
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
+use null3d_render::sky_maps::MapSky;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
@@ -163,6 +168,8 @@ mod render_detail {
     pub const SKINNED_PAGES_FULL: u32 = 13;
     /// The second detail is the most views a frame builder draws, the camera's included.
     pub const TOO_MANY_VIEWS: u32 = 14;
+    /// The second detail is the most rectangle lights with images at once.
+    pub const LIGHT_IMAGES_FULL: u32 = 16;
     /// Levels of detail that a mesh cannot take; the second detail says why
     /// (`constants::level_problem`).
     pub const BAD_LEVELS: u32 = 15;
@@ -241,12 +248,15 @@ struct Engine {
 /// samples and blend intensity, a white outline of 2 CSS pixels with no line around hidden parts,
 /// bloom's mixing blend and its levels' default shares, the vignette's falloff and roundness,
 /// then depth of field's focus at 10, aperture of f/2.8, the camera's focal length, largest blur of
-/// 2% of the image's height and round aperture, with no focus point.
+/// 2% of the image's height and round aperture, with no focus point, then the automatic
+/// exposure's percentile mean between 10% and 90%, center weight of 0.5, speeds of 3 and 1 stops
+/// per second, range of 4 stops either way and no compensation.
 const POST_DEFAULTS: [f32; constants::post_value::COUNT as usize] = {
     let mut values = [
         1.0, 0.15, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0, 1.0, 1.0,
         16.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 2.8, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.1, 0.9, 0.5,
+        3.0, 1.0, -4.0, 4.0, 0.0,
     ];
     let mut level = 0;
     while level < bloom::LEVELS {
@@ -2735,6 +2745,16 @@ pub fn set_reflection_scale() -> u32 {
     })
 }
 
+/// Sets the most area lights that one frame shades, from the next frame on: the quality preset's
+/// `areaLights`. Past it, the area lights nearest the camera shade.
+#[wasm_bindgen(js_name = setAreaLightCap)]
+pub fn set_area_light_cap(cap: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_area_light_cap(cap);
+        0
+    })
+}
+
 /// The halvings of the render size each way that make a share `scale` of it: 0 for the whole
 /// size, 1 for half and 2 for a quarter.
 fn halvings_of(scale: f32) -> u8 {
@@ -2901,12 +2921,100 @@ pub fn set_light_default(which: u32) -> u32 {
     })
 }
 
+// The area lights' two tables load on first use: TypeScript fetches them when the sketch makes its
+// first area light, writes their half floats at the address that `areaLightTables` gives, and
+// calls `finishAreaLightTables`. Area lights light frames from the next frame on. A rectangle
+// light's image goes the same way, through `areaLightImage` and `finishAreaLightImage`.
+/// Makes room for the area lights' tables, and returns the address of their half floats.
+#[wasm_bindgen(js_name = areaLightTables)]
+pub fn area_light_tables() -> u32 {
+    value_with_engine(|e| {
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.area_texels_mut() {
+            Some(texels) => Ok(address(texels)),
+            None => Err(out_of_memory(light_tables::AREA_HALVES as u64 * 2)),
+        }
+    })
+}
+
+/// Marks the area lights' tables as written, so the next frame uploads them and lists area
+/// lights.
+#[wasm_bindgen(js_name = finishAreaLightTables)]
+pub fn finish_area_light_tables() -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().light_tables_mut().finish_area();
+        0
+    })
+}
+
+/// Makes room for rectangle light `light`'s image, and returns the address of its half floats.
+/// Fails with E1501 when every place for an image is taken.
+#[wasm_bindgen(js_name = areaLightImage)]
+pub fn area_light_image(light: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights.object(light).map_err(core_failure)?;
+        let tables = e.renderer.settings_mut().light_tables_mut();
+        match tables.image_texels_mut(light) {
+            Some(texels) => Ok(address(texels)),
+            None => Err(render_failure(
+                render_detail::LIGHT_IMAGES_FULL,
+                light_tables::MAX_IMAGES as u32,
+            )),
+        }
+    })
+}
+
+/// Marks rectangle light `light`'s image as written, so the next frame uploads it and the light
+/// shows it.
+#[wasm_bindgen(js_name = finishAreaLightImage)]
+pub fn finish_area_light_image(light: u32) -> u32 {
+    with_engine(|e| {
+        let layer = e
+            .renderer
+            .settings_mut()
+            .light_tables_mut()
+            .finish_image(light);
+        let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
+        e.lights
+            .set_value(light, light_value::IMAGE, image)
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// Takes rectangle light `light`'s image away, so it lights with its color alone.
+#[wasm_bindgen(js_name = removeAreaLightImage)]
+pub fn remove_area_light_image(light: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer
+            .settings_mut()
+            .light_tables_mut()
+            .remove_image(light);
+        match e.lights.kind(light) {
+            light_kind::NONE => 0,
+            _ => e
+                .lights
+                .set_value(light, light_value::IMAGE, 0.0)
+                .map_or_else(core_failure, |()| 0),
+        }
+    })
+}
+
 /// The linear background color: the first three call values.
 #[wasm_bindgen(js_name = setBackground)]
 pub fn set_background() -> u32 {
     with_engine(|e| {
         let rgb = e.call_values();
         e.renderer.settings_mut().set_background(rgb);
+        0
+    })
+}
+
+/// Sets the layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+/// layer shows no decals: it draws again after them, over its own pixels.
+#[wasm_bindgen(js_name = setDecalLayers)]
+pub fn set_decal_layers(mask: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_decal_layers(mask);
         0
     })
 }
@@ -3162,6 +3270,46 @@ pub fn set_dof(on: bool) -> u32 {
     })
 }
 
+/// Turns automatic exposure on with its metering, percentiles, center weight, speeds, range and
+/// compensation from the post-processing values, or off, from the next frame on. The TypeScript
+/// API checks the values.
+#[wasm_bindgen(js_name = setAutoExposure)]
+pub fn set_auto_exposure(on: bool) -> u32 {
+    with_engine(|e| {
+        use constants::post_value as place;
+        let value = |at| e.post_value(at);
+        let auto_exposure = on.then(|| AutoExposure {
+            metering: Metering::from_code(value(place::AUTO_EXPOSURE_METERING) as u32)
+                .unwrap_or_default(),
+            percentiles: [
+                value(place::AUTO_EXPOSURE_PERCENTILES),
+                value(place::AUTO_EXPOSURE_PERCENTILES + 1),
+            ],
+            center_weight: value(place::AUTO_EXPOSURE_CENTER_WEIGHT),
+            speed_up: value(place::AUTO_EXPOSURE_SPEED_UP),
+            speed_down: value(place::AUTO_EXPOSURE_SPEED_DOWN),
+            min_ev: value(place::AUTO_EXPOSURE_MIN_EV),
+            max_ev: value(place::AUTO_EXPOSURE_MAX_EV),
+            compensation: value(place::AUTO_EXPOSURE_COMPENSATION),
+        });
+        e.renderer.settings_mut().set_auto_exposure(auto_exposure);
+        0
+    })
+}
+
+/// Sets the meter of automatic exposure, which the quality settings set, from the next frame on:
+/// 0 the downsample, 1 the histogram where the GPU path has compute shaders. Other codes keep the
+/// meter as it was.
+#[wasm_bindgen(js_name = setExposureMeter)]
+pub fn set_exposure_meter(meter: u32) -> u32 {
+    with_engine(|e| {
+        if let Some(meter) = ExposureMeter::from_code(meter) {
+            e.renderer.settings_mut().set_exposure_meter(meter);
+        }
+        0
+    })
+}
+
 /// Sets the taps of depth of field's gather, which the quality settings set, from the next frame
 /// on: one of 16, 22, 43 or 71, or 0, which draws no depth of field. Other counts take the next
 /// count up, at most 71.
@@ -3378,7 +3526,7 @@ pub fn set_occlusion_buffer(pixels: u32) -> u32 {
 
 // Draws the source `kind` (`background_kind`) behind every object in the camera's view, with the
 // background's values, or only the background color for `NONE`. A texture, an environment or a
-// cube map is cube texture or texture `texture`; the sky takes none. The TypeScript API checks the
+// cube map is cube texture or texture `texture`; the analytic and the physical sky take none. The TypeScript API checks the
 // values. Fails for a texture that is not live.
 /// Draws a background source behind every object, or none.
 #[wasm_bindgen(js_name = setBackgroundSource)]
@@ -3389,6 +3537,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
         let sky = sky_of(&values[..]);
+        let atmosphere = atmosphere_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -3402,10 +3551,15 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             kind_of::ENVIRONMENT => Some(BackgroundSource::Environment(texture)),
             kind_of::CUBEMAP => Some(BackgroundSource::Cubemap(texture)),
             kind_of::SKY => Some(BackgroundSource::Sky(sky)),
+            kind_of::ATMOSPHERE => Some(BackgroundSource::Atmosphere(atmosphere)),
             _ => None,
         };
-        let draws = source
-            .filter(|source| matches!(source, BackgroundSource::Sky(_)) || !texture.is_none());
+        let draws = source.filter(|source| {
+            matches!(
+                source,
+                BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_)
+            ) || !texture.is_none()
+        });
         settings.set_background_source(draws.map(|source| Background {
             source,
             intensity,
@@ -3438,6 +3592,45 @@ fn sky_of(values: &[f32]) -> Sky {
     }
 }
 
+/// The physical sky's settings in the background's values.
+fn atmosphere_of(values: &[f32]) -> Atmosphere {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
+    Atmosphere {
+        sun_position: three(at::SUN_POSITION),
+        sun_intensity: value(at::SUN_INTENSITY),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+        rayleigh: value(at::RAYLEIGH),
+        haze: value(at::HAZE),
+        ozone: value(at::OZONE),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        ground_albedo: value(at::GROUND_ALBEDO),
+        altitude: value(at::ALTITUDE),
+        meters_per_unit: value(at::METERS_PER_UNIT),
+        aerial_perspective: value(at::AERIAL_PERSPECTIVE),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        moon_position: three(at::MOON_POSITION),
+        moon_intensity: value(at::MOON_INTENSITY),
+        stars: value(at::STARS),
+    }
+}
+
+/// Draws the physical sky while `on`, else the analytic sky in its place, from the next frame on,
+/// as the quality settings choose.
+#[wasm_bindgen(js_name = setPhysicalSky)]
+pub fn set_physical_sky(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_physical_sky(on);
+        0
+    })
+}
+
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
 // frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
@@ -3458,7 +3651,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         }
         let maps = settings.sky_maps_mut();
         if maps.sky().is_none() {
-            maps.set_sky(sky);
+            maps.set_sky(MapSky::analytic(sky));
         }
         maps.add(texture, stages);
         0
@@ -3490,6 +3683,54 @@ pub fn set_fog(curve: u32) -> u32 {
         let [r, g, b, values @ ..]: [f32; 10] = e.call_values();
         let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
+        0
+    })
+}
+
+/// Turns the volumetric fog on, or off, from the next frame on: the light of the sun and the point
+/// and spot lights that the scene's fog scatters toward the camera, through their shadows. The call
+/// values give how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that
+/// its grid reaches, and the fog's density. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setFogVolume)]
+pub fn set_fog_volume(on: bool) -> u32 {
+    with_engine(|e| {
+        let [intensity, anisotropy, distance, density]: [f32; 4] = e.call_values();
+        let volumetric = on.then_some(Volumetric {
+            intensity,
+            anisotropy,
+            distance,
+            density,
+        });
+        e.renderer.settings_mut().set_fog_volume(volumetric);
+        0
+    })
+}
+
+/// Sets the slices of the volumetric fog's grid, which the quality settings set, from the next
+/// frame on: one of 32, 64 or 96, or 0, which draws no volumetric fog. Other counts take the next
+/// count up, at most 96.
+#[wasm_bindgen(js_name = setFogSlices)]
+pub fn set_fog_slices(slices: u32) -> u32 {
+    with_engine(|e| {
+        let counts = fog_volume::SLICE_COUNTS;
+        let slices = match slices {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= slices)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_fog_slices(slices);
+        0
+    })
+}
+
+/// Sets the frame-budget governor's halvings of the slices that each frame draws of the
+/// volumetric fog's grid, from the next frame on. A halving makes no GPU object.
+#[wasm_bindgen(js_name = setFogHalvings)]
+pub fn set_fog_halvings(halvings: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_fog_halvings(halvings);
         0
     })
 }
@@ -3887,6 +4128,7 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
             time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
             weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
             join: flags & play_flag::JOIN != 0,
+            inertial: flags & play_flag::INERTIAL != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)

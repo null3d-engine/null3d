@@ -136,6 +136,9 @@ export interface SketchCore {
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/** Each meter of automatic exposure, by its code in the core. */
+const EXPOSURE_METERS = { downsample: 0, histogram: 1 } as const;
+
 /**
  * While a reader shows the frame figures, the first frame that samples publishes the memory
  * figures, and then one frame in every this many.
@@ -307,6 +310,10 @@ export class SketchRunner {
 	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
+	/** True while the scene's fog is volumetric, as the governor knows it. */
+	private fogOn = false;
+	/** The volumetric fog's slices that the `fogSlices` setting gives. */
+	private fogSetting = 0;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
@@ -799,6 +806,8 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.fogSetting = settings.fogSlices;
+		governor.setFog(this.fogOn, this.fogSetting);
 		governor.setContact(settings.contactShadowSteps);
 		governor.setAnimation(settings.farAnimationInterval);
 		this.stepChanges = governor.stepChanges;
@@ -810,8 +819,13 @@ export class SketchRunner {
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
+			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
+			glue.setFogSlices(settings.fogSlices) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
+			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
@@ -864,7 +878,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
-			glue.setContactSteps(governor.contactSteps) !== 0
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -893,6 +908,7 @@ export class SketchRunner {
 	private followEffects(): boolean {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
+		this.followFog();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
 		return ao || bloom || custom || passes;
@@ -914,9 +930,18 @@ export class SketchRunner {
 		return true;
 	}
 
+	/** Follows the scene's volumetric fog, which the governor's fog step needs on. */
+	private followFog(): void {
+		const on = this.context.scene.needsHdr;
+		if (on === this.fogOn) return;
+		this.fogOn = on;
+		this.governor.setFog(on, this.fogSetting);
+	}
+
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
+	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
+	 * with slices to draw turns on, on a device that started
 	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
 	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
 	 * until they are built, and the frame before stays on screen meanwhile.
@@ -928,8 +953,8 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
-			return false;
+		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
+		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
@@ -961,11 +986,11 @@ export class SketchRunner {
 	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
-	 * loss, textures included. It waits for every texture image to reach that thread first. Where a
-	 * pass reads the motion since the frame before, that thread draws the frame before the last one
-	 * first, which then creates the objects and uploads the scene, so the last frame has a frame
-	 * before it one step earlier. The first failure in the sketch or the core stops the hold with
-	 * E1408.
+	 * loss, textures included. It waits for the area lights' tables to load and for every texture
+	 * image to reach that thread first. Where a pass reads the motion since the frame before, that
+	 * thread draws the frame before the last one first, which then creates the objects and uploads
+	 * the scene, so the last frame has a frame before it one step earlier. The first failure in the
+	 * sketch or the core stops the hold with E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
@@ -981,6 +1006,8 @@ export class SketchRunner {
 				// debug view does, has the thread that draws draw the frame before it first.
 				const before = step === steps - 1 && glue.holdsFrameBefore() !== 0;
 				if (first === 0 && (before || step === steps)) {
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
@@ -1094,6 +1121,10 @@ export class SketchRunner {
 			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
+			const tablesFailure = this.context.scene.takeAreaTablesFailure();
+			if (tablesFailure) this.report(tablesFailure);
+			const imageFailure = this.context.scene.takeImageFailure();
+			if (imageFailure) this.report(imageFailure);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {

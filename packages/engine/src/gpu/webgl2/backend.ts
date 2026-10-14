@@ -24,6 +24,7 @@ import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../gener
 import type { DepthMode } from '../../page/switches';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
+import type { MemoryViews } from '../../shared/memory-views';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
@@ -66,9 +67,9 @@ const COPY_PROGRAM = 'mipmap copy';
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
 const DEPTH_ATTACHMENT = 0x8d00;
-const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
 const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
+const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -110,6 +111,21 @@ interface BlockCopy {
 	width: number;
 	/** The buffer's write count when the texture last took the range's bytes. */
 	writes: number;
+}
+
+/** A `CopyTextureToBuffer` that a `ReadBuffer` collects: a `readPixels` into a pack buffer. */
+interface PendingPack {
+	/** The pack buffer's id in the draw list. */
+	buffer: number;
+	offset: number;
+	size: number;
+	/** The fence that signals once the `readPixels` has run. */
+	fence: WebGLSync;
+	/** Where the bytes land in engine memory, and the control slot to add one to, set by the read. */
+	destination: number;
+	slot: number;
+	/** True once a `ReadBuffer` has asked for these bytes. */
+	wanted: boolean;
 }
 
 /** How GL stores a texture format, and how texels of it upload. */
@@ -438,6 +454,15 @@ export class WebGL2Backend {
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
+	/**
+	 * The engine's memory views and the control slots, for `ReadBuffer` commands: the thread that
+	 * draws sets them, so the bytes that a pick maps land where the sketch thread reads them.
+	 * Without them, a read command is a no-op, as when a test replays a list outside a running
+	 * engine.
+	 */
+	readSink: { views: MemoryViews; slots: Int32Array } | undefined;
+	/** The packs whose `readPixels` is in flight, by buffer id, until a `ReadBuffer` collects them. */
+	private readonly pendingPacks = new Map<number, PendingPack>();
 	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
 	private readonly unpackBuffers: (WebGLBuffer | null)[] = new Array(UNPACK_RING).fill(null);
 	private readonly unpackSizes = new Array<number>(UNPACK_RING).fill(0);
@@ -546,6 +571,8 @@ export class WebGL2Backend {
 	private passResolve = G.NO_TARGET;
 	/** The pass's depth target, whose one-sample copy the pass's end updates when it has one. */
 	private passDepth: GlTexture | null = null;
+	/** The pass's colour target, or null for the canvas and for a depth-only pass. */
+	private passColor: GlTexture | null = null;
 	private passFlags = 0;
 	private passToCanvas = false;
 
@@ -925,6 +952,12 @@ export class WebGL2Backend {
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
+				case G.OP_COPY_TEXTURE_TO_BUFFER:
+					this.copyTextureToBuffer(words, a);
+					break;
+				case G.OP_READ_BUFFER:
+					this.readBuffer(words, a);
+					break;
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -1045,6 +1078,7 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+		this.flushReads();
 		this.replayed = true;
 	}
 
@@ -1705,9 +1739,12 @@ export class WebGL2Backend {
 		this.beforeGenerator();
 		const target = texture.texture as WebGLTexture;
 		const { width, mips } = texture;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.programHost, target, width, mips, words, floats, a, this.gpuMemory);
-		else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const from = words[a + 3] as number;
+			const panorama = from === 0 ? null : (this.textureOf(from).texture as WebGLTexture);
+			const host = this.programHost;
+			code.skyStage(host, target, width, mips, words, floats, a, this.gpuMemory, panorama);
+		} else code.run(this.programHost, target, width, mips, this.images.generator(id)[0]);
 		this.afterGenerator();
 	}
 
@@ -1941,6 +1978,91 @@ export class WebGL2Backend {
 		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
 	}
 
+	/**
+	 * Reads a box of texels of a texture into a pack buffer with `readPixels`, which GL runs after
+	 * the commands recorded before it. A fence follows, so a `ReadBuffer` can tell when the bytes
+	 * are there without stalling the GPU. The buffer is bound as the pixel pack buffer.
+	 */
+	private copyTextureToBuffer(words: Uint32Array, a: number): void {
+		const gl = this.gl;
+		const source = this.textureOf(words[a] as number);
+		const level = words[a + 1] as number;
+		const x = words[a + 2] as number;
+		const y = words[a + 3] as number;
+		const layer = words[a + 4] as number;
+		const id = words[a + 5] as number;
+		const offset = words[a + 6] as number;
+		const width = words[a + 9] as number;
+		const height = words[a + 10] as number;
+		const record = this.need(this.buffers, id, 'buffer');
+		const previous = this.pendingPacks.get(id);
+		if (previous) this.dropPack(id, previous);
+		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.copyFramebuffer);
+		this.attachLevel(gl.READ_FRAMEBUFFER, source.format.attachment, source, level, layer);
+		gl.readBuffer(source.format.attachment);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, record.buffer);
+		gl.readPixels(x, y, width, height, source.format.format, source.format.type, offset);
+		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+		// A framebuffer that is not bound keeps what it holds alive, so the source leaves it.
+		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, source.format.attachment, gl.TEXTURE_2D, null, 0);
+		const size = width * height * source.format.bytes;
+		if (fence)
+			this.pendingPacks.set(id, {
+				buffer: id,
+				offset,
+				size,
+				fence,
+				destination: 0,
+				slot: -1,
+				wanted: false,
+			});
+	}
+
+	/** Asks for the bytes of a pack buffer, which `flushReads` collects once its fence signals. */
+	private readBuffer(words: Uint32Array, a: number): void {
+		const pack = this.pendingPacks.get(words[a] as number);
+		if (!pack) return;
+		pack.offset = words[a + 1] as number;
+		pack.size = words[a + 2] as number;
+		pack.destination = words[a + 3] as number;
+		pack.slot = words[a + 4] as number;
+		pack.wanted = true;
+	}
+
+	/**
+	 * Collects the packs whose fence has signalled: the GPU has run their `readPixels`, so the
+	 * bytes copy into engine memory and the read's control slot rises by one. A pack whose fence
+	 * has not signalled stays for a later frame, so a read never stalls the GPU.
+	 */
+	private flushReads(): void {
+		if (this.pendingPacks.size === 0) return;
+		const gl = this.gl;
+		const { readSink } = this;
+		for (const [id, pack] of this.pendingPacks) {
+			if (!pack.wanted) continue;
+			const status = gl.clientWaitSync(pack.fence, 0, 0);
+			if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) continue;
+			const record = this.need(this.buffers, id, 'buffer');
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, record.buffer);
+			const bytes = new Uint8Array(pack.size);
+			gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, pack.offset, bytes);
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+			if (readSink) {
+				readSink.views.view(Uint8Array, pack.destination, pack.size).set(bytes);
+				if (pack.slot >= 0) Atomics.add(readSink.slots, pack.slot, 1);
+			}
+			this.dropPack(id, pack);
+		}
+	}
+
+	/** Deletes a pack's fence and forgets it. */
+	private dropPack(id: number, pack: PendingPack): void {
+		this.gl.deleteSync(pack.fence);
+		this.pendingPacks.delete(id);
+	}
+
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
 		const gl = this.gl;
 		const id = words[a] as number;
@@ -2052,6 +2174,7 @@ export class WebGL2Backend {
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;
 		this.passToCanvas = color === 0;
+		this.passColor = null;
 		const depthTarget = depth === G.NO_TARGET ? null : this.need(this.textures, depth, 'texture');
 		this.passDepth = depthTarget;
 		let framebuffer: WebGLFramebuffer | null;
@@ -2067,6 +2190,7 @@ export class WebGL2Backend {
 			this.passHeight = depthTarget.height;
 		} else {
 			const target = this.need(this.textures, color, 'texture');
+			this.passColor = target;
 			framebuffer = this.colorFramebuffer(target, depthTarget);
 			this.passWidth = target.width;
 			this.passHeight = target.height;
@@ -2127,14 +2251,15 @@ export class WebGL2Backend {
 		const storeDepth = (this.passFlags & G.PASS_STORE_DEPTH) !== 0;
 		const resolves = this.passResolve !== G.NO_TARGET;
 		const keepsColor = storeColor || resolves;
-		const discard = storeDepth
-			? keepsColor
-				? undefined
-				: DISCARD_COLOR
-			: keepsColor
-				? DISCARD_DEPTH
-				: DISCARD_BOTH;
-		if (discard) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a colour-only
+		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
+		// runs the invalidate on the thread that draws before it draws the pass. The lists are made
+		// once, because this runs for every pass of every frame.
+		const discardColor = this.passColor !== null && !keepsColor;
+		const discardDepth = this.passDepth !== null && !storeDepth;
+		if (discardColor && discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_BOTH);
+		else if (discardColor) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_COLOR);
+		else if (discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_DEPTH);
 		if (resolves) {
 			const into =
 				this.passResolve === 0
