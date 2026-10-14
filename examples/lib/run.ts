@@ -1,7 +1,7 @@
 // Starts a demo on a canvas. The examples page uses it, and so can any page that shows the demos
 // in a layout of its own, such as the website's: the page owns the canvas, the text and the
 // styles, and this module owns how a demo starts.
-import { createEngine, type Engine } from '@null3d/engine';
+import { createEngine, type Engine, type StartupStage } from '@null3d/engine';
 import type { Demo } from '../demos';
 import type { HudGroup } from './controls';
 import { createHud } from './hud';
@@ -53,30 +53,132 @@ export async function startDemo({
 }: StartOptions): Promise<Engine> {
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
-	// No preset: the engine's start-up check picks one that the device holds at its frame rate.
-	const engine = await createEngine({
-		canvas,
-		sketch: demo.sketch,
-		largeWorld: demo.largeWorld,
-		// Collapsed, the overlay stays small until clicked.
-		stats: stats && { collapsed: true },
-	});
+	// The loading overlay covers the canvas from before the engine starts until the first frame draws.
+	const loader = createLoader(canvas);
+	let engine: Engine;
+	try {
+		// No preset: the engine's start-up check picks one that the device holds at its frame rate.
+		engine = await createEngine({
+			canvas,
+			sketch: demo.sketch,
+			largeWorld: demo.largeWorld,
+			// Collapsed, the overlay stays small until clicked.
+			stats: stats && { collapsed: true },
+			onProgress: (stage) => loader.stage(stage),
+		});
+	} catch (error) {
+		loader.fail(error instanceof Error ? error.message : String(error));
+		throw error;
+	}
 	if (choices) showChoices(engine, demo, choices);
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
-	// scene posts at its start.
+	// scene posts at its start. The same handler carries the loading progress that a scene posts.
 	const readers = [
 		...(labels ? [labelReader(engine, labels)] : []),
 		...(hud ? [hudReader(engine, hud)] : []),
 	];
-	if (readers.length > 0)
-		engine.onSketchMessage((type, data) => {
-			for (const reader of readers) reader(type, data);
-		});
+	engine.onSketchMessage((type, data) => {
+		if (type === 'loading') {
+			loader.note(data);
+			return;
+		}
+		for (const reader of readers) reader(type, data);
+	});
+	// The overlay leaves with the first frame, so it never covers a drawn scene.
+	void engine.firstFrame.then(
+		() => loader.hide(),
+		() => loader.hide(),
+	);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
 	return engine;
+}
+
+/** The text that a scene posts while it loads its files, for the loading overlay. */
+interface LoadingMessage {
+	/** What the scene is doing now, such as how many files have loaded. */
+	text: string;
+	/** How far the load has gone, from 0 to 1, for the bar. Without it, the bar keeps moving. */
+	value?: number;
+}
+
+/** The loading overlay of a starting demo. */
+interface Loader {
+	/** Shows the engine's start stage: `core`, `sketch` or `first-frame`. */
+	stage(stage: StartupStage): void;
+	/** Shows the progress that a scene posts while it loads its files. */
+	note(data: unknown): void;
+	/** Fades the overlay out; the first frame is drawn. */
+	hide(): void;
+	/** Shows the error text in place of the progress; the start failed. */
+	fail(text: string): void;
+}
+
+/**
+ * Makes the loading overlay over the canvas: a glass card that names the start's stage and any
+ * progress a scene posts, in the style of the showcase HUD. It fades out when the first frame is
+ * drawn, and shows the error instead when the start fails.
+ */
+function createLoader(canvas: HTMLCanvasElement): Loader {
+	const host = canvas.parentElement ?? document.body;
+	const overlay = document.createElement('div');
+	overlay.className = 'loader';
+	overlay.setAttribute('role', 'status');
+	overlay.setAttribute('aria-live', 'polite');
+	const box = document.createElement('div');
+	box.className = 'loader__box';
+	const label = document.createElement('p');
+	label.className = 'loader__label';
+	label.textContent = 'Loading the engine';
+	const bar = document.createElement('div');
+	bar.className = 'loader__bar';
+	const fill = document.createElement('div');
+	fill.className = 'loader__fill';
+	bar.append(fill);
+	box.append(label, bar);
+	overlay.append(box);
+	host.append(overlay);
+	let hidden = false;
+	const hide = (): void => {
+		if (hidden) return;
+		hidden = true;
+		overlay.classList.add('loader--done');
+		const remove = () => overlay.remove();
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches) remove();
+		else setTimeout(remove, 320);
+	};
+	return {
+		stage(stage) {
+			if (stage === 'memory-wait') label.textContent = 'Waiting for the engine memory';
+			else if (stage === 'core') label.textContent = 'Starting the sketch';
+			else if (stage === 'sketch') label.textContent = 'Drawing the first frame';
+			else if (stage === 'first-frame') hide();
+		},
+		note(data) {
+			if (typeof data === 'string') {
+				label.textContent = data;
+				return;
+			}
+			const message = data as Partial<LoadingMessage> | null;
+			if (!message || typeof message.text !== 'string') return;
+			label.textContent = message.text;
+			if (typeof message.value === 'number') {
+				fill.classList.add('loader__fill--set');
+				const value = Math.max(0, Math.min(1, message.value));
+				fill.style.width = `${Math.round(value * 100)}%`;
+			}
+		},
+		hide,
+		fail(text) {
+			hidden = true;
+			overlay.classList.add('loader--error');
+			label.textContent = text;
+			label.classList.add('loader__label--error');
+			bar.hidden = true;
+		},
+	};
 }
 
 /**

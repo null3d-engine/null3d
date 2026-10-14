@@ -70,6 +70,7 @@ const params = new URL(import.meta.url).searchParams;
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
+	page.post('loading', 'Building the town');
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
@@ -78,10 +79,9 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 70, normalBias: 0.05, contactDistance: 0.25 },
 	});
-	post.set({
-		bloom: { blend: 'add', intensity: 0.7, threshold: 1 },
-		ao: { radius: 0.7 },
-	});
+	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
+	// occlusion starts on, so the scene's shadows read.
+	post.set({ ao: { radius: 0.7 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.08,
@@ -94,8 +94,10 @@ export default defineSketch(async (ctx) => {
 	createLand(ctx, detail.land, detail.texture);
 	const houses = createHouses(ctx, detail.texture);
 	const props = createProps(ctx, houses.clear);
+	page.post('loading', 'Growing the pines');
 	const trees = await createTrees(ctx, (x, z) => houses.clear(x, z) || props.clear(x, z));
 	const lamps = await createLamps(ctx);
+	page.post('loading', 'Falling the snow');
 	const air = await createAir(ctx, houses.homes);
 	const fit = () => {
 		trees.fit(quality.preset);
@@ -123,9 +125,9 @@ export default defineSketch(async (ctx) => {
 		contact: true,
 		ao: true,
 		environment: true,
-		bloom: true,
+		bloom: false,
 		dof: false,
-		exposure: true,
+		exposure: false,
 		vignette: false,
 	};
 	// The "DSLR" lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
