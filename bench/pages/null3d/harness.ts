@@ -106,6 +106,7 @@ const SKETCH_SWITCHES = [
 	'particles',
 	'passes',
 	'still',
+	'anim',
 	'batchShadows',
 	'rowValues',
 	'levels',

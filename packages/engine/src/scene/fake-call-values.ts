@@ -4,6 +4,7 @@
 // as the numbers it gave.
 
 import { CALL_VALUE_COUNT } from '../generated/core';
+import { MemoryViews } from '../shared/memory-views';
 
 /** The call values that each setter reads, after its whole-number arguments. */
 const READS: Readonly<Record<string, number>> = {
@@ -33,7 +34,8 @@ export function callValueArguments(
 	memory: WebAssembly.Memory,
 	address = ADDRESS,
 ): number[] {
-	return [...new Float64Array(memory.buffer, address, READS[name] ?? 0)];
+	// Every view of the engine's memory is made by the accessor module (hard rule 20).
+	return [...new MemoryViews(memory).f64(address, READS[name] ?? 0)];
 }
 
 /**

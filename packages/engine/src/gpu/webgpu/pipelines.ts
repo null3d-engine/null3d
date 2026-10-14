@@ -512,7 +512,6 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
-			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
