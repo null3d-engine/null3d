@@ -6,6 +6,7 @@
 // The particles add-on will take these over when it ships: emitters with their own update on the
 // GPU. Until then, sprite batches carry them.
 import type { SketchContext, Texture } from '@null3d/engine';
+import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Mood } from '../../lib/stage';
 import { groundHeight, streamZ, WATER } from './land';
@@ -29,6 +30,30 @@ type Rgb = [number, number, number];
 
 /** Each mood's linear tint of the leaves, the motes' glow, and the mist's color and opacity. */
 const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: number }> = {
+	Auto: {
+		leaves: [1, 1, 0.95],
+		motes: [0.5, 0.48, 0.4],
+		mist: [0.85, 0.9, 0.95],
+		mistOpacity: 0.15,
+	},
+	Dawn: {
+		leaves: [0.8, 0.82, 0.9],
+		motes: [0.6, 0.5, 0.4],
+		mist: [0.7, 0.72, 0.85],
+		mistOpacity: 0.35,
+	},
+	Morning: {
+		leaves: [0.95, 1, 0.9],
+		motes: [0.45, 0.5, 0.42],
+		mist: [0.85, 0.9, 0.95],
+		mistOpacity: 0.2,
+	},
+	Midday: {
+		leaves: [1, 1, 0.95],
+		motes: [0.5, 0.5, 0.45],
+		mist: [0.9, 0.94, 0.98],
+		mistOpacity: 0.12,
+	},
 	Afternoon: {
 		leaves: [1, 1, 0.95],
 		motes: [0.5, 0.48, 0.4],
@@ -41,7 +66,7 @@ const LOOK: Record<Mood, { leaves: Rgb; motes: Rgb; mist: Rgb; mistOpacity: numb
 		mist: [1, 0.82, 0.62],
 		mistOpacity: 0.4,
 	},
-	Blue: {
+	Dusk: {
 		leaves: [0.28, 0.32, 0.45],
 		motes: [0, 0, 0],
 		mist: [0.05, 0.06, 0.09],
@@ -111,7 +136,11 @@ function puff({ textures }: SketchContext, size: number, falloff: number): Textu
 export async function createAir(
 	ctx: SketchContext,
 	crowns: readonly Crown[],
-): Promise<{ update(t: number): void; setMood(mood: Mood): void }> {
+): Promise<{
+	update(t: number): void;
+	setMood(mood: Mood): void;
+	setFireflies(on: boolean): void;
+}> {
 	const { scene } = ctx;
 	const next = random(71);
 	const [leaves, motes, mist] = await Promise.all([
@@ -138,6 +167,11 @@ export async function createAir(
 			dynamic: true,
 		}),
 	]);
+	// The air fills the scene, so the clearance guard must not treat a leaf, a mote or the mist as a
+	// wall.
+	markEffect(leaves);
+	markEffect(motes);
+	markEffect(mist);
 	// Each row's own four numbers from 0 to 1: where it starts in its cycle, its speed and its path.
 	const seeds = (count: number) => Float32Array.from({ length: count * 4 }, () => next());
 	const leafSeed = seeds(LEAVES);
@@ -145,6 +179,7 @@ export async function createAir(
 	const mistSeed = seeds(MIST);
 	for (let k = 0; k < LEAVES; k++) leaves.frames[k] = k % 4;
 	let glow: Rgb = LOOK.Afternoon.motes;
+	let fireflies = false;
 	return {
 		setMood(mood) {
 			const look = LOOK[mood];
@@ -152,9 +187,13 @@ export async function createAir(
 			// A material's color stops at white, so the motes' glow, which bloom needs above white,
 			// goes into each row's color.
 			glow = look.motes;
-			motes.setActiveCount(glow[0] === 0 ? 0 : MOTES);
+			motes.setActiveCount(glow[0] === 0 && !fireflies ? 0 : MOTES);
 			mist.setActiveCount(look.mistOpacity === 0 ? 0 : MIST);
 			mist.material.set({ color: look.mist, opacity: look.mistOpacity });
+		},
+		setFireflies(on) {
+			fireflies = on;
+			motes.setActiveCount(on || glow[0] !== 0 ? MOTES : 0);
 		},
 		update(t) {
 			// Leaves: each falls from a crown over its own time, swaying and spinning, carried on the
