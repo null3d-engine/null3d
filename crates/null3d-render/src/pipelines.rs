@@ -190,9 +190,22 @@ impl DrawKey {
     }
 
     /// True when the pair draws back to front in the transparent pass, after the opaque objects:
-    /// it blends, or it lets light through.
+    /// it blends, or it lets light through. A decal blends, but draws in the decal pass instead.
     pub const fn sorts(self) -> bool {
-        self.blends() || self.transmits()
+        (self.blends() || self.transmits()) && !self.decal()
+    }
+
+    /// True for a decal's pair: the box of its object projects the material onto the surfaces
+    /// inside it, in the decal pass after the camera's opaque pass. Such a pair draws in no other
+    /// pass: it casts no shadow, has no depth and no outline.
+    pub const fn decal(self) -> bool {
+        self.template == template::DECAL || self.template == template::DECAL_MAPS
+    }
+
+    /// True when the pair leaves the opaque buckets for a pass that culls and orders its rows on
+    /// the job workers: the transparent pass or the decal pass.
+    pub const fn leaves_opaque(self) -> bool {
+        self.sorts() || self.decal()
     }
 
     /// True when the pair writes depth wherever it draws, so a background drawn after the opaque
