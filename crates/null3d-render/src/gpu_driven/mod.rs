@@ -953,11 +953,16 @@ impl GpuDrivenRenderer {
         let area_switched = self
             .settings
             .update_area_shading(&mut self.pipelines, input.pipelines_built);
+        // Lit meshes switch to or from the light probe grid's templates.
+        let probe_switched = self
+            .settings
+            .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         let upload_everything = particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
+            || probe_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass

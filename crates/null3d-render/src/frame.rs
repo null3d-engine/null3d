@@ -62,6 +62,7 @@ use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
 use crate::probe_grid::{ProbeGrid, ProbeGridUniform};
+use crate::probe_shading::ProbeShading;
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
@@ -744,6 +745,8 @@ pub struct SceneSettings {
     environment: Option<Environment>,
     /// The scene's light probe grid while the sketch sets one.
     probe_grid: Option<ProbeGrid>,
+    /// Whether lit meshes draw through the grid's templates.
+    probe_shading: ProbeShading,
     /// The environment maps of the scene's sky.
     sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
@@ -871,6 +874,7 @@ impl SceneSettings {
             vignette: None,
             environment: None,
             probe_grid: None,
+            probe_shading: ProbeShading::default(),
             sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
@@ -2270,6 +2274,7 @@ impl SceneSettings {
     pub fn forget_shadow_maps(&mut self) {
         self.shadow_schedule.reset();
         self.area_shading.forget_gpu();
+        self.probe_shading.forget_gpu();
     }
 
     /// Turns area shading on or off for the frame (see [`AreaShading::update`]): on once the last
@@ -2288,7 +2293,22 @@ impl SceneSettings {
     /// The key that a pair draws with in the scene's passes, from its shading key: with the bit
     /// that shades area lights while area shading is on (see [`AreaShading::key`]).
     pub fn area_key(&self, pipeline: DrawKey) -> DrawKey {
-        self.area_shading.key(pipeline)
+        self.probe_shading.key(self.area_shading.key(pipeline))
+    }
+
+    /// Turns probe shading on or off for the frame (see [`ProbeShading::update`]): on once the
+    /// scene sets a grid whose texture is on the GPU and the lit pipelines in use have their grid
+    /// builds. Returns true when it changes, so the layouts take their keys again.
+    pub(crate) fn update_probe_shading(
+        &mut self,
+        pipelines: &mut PipelineCache,
+        pipelines_built: u32,
+    ) -> bool {
+        let wanted = self
+            .probe_grid
+            .is_some_and(|grid| self.textures.ready_volume(grid.texture).is_some());
+        self.probe_shading
+            .update(wanted, pipelines, pipelines_built)
     }
 
     /// The main directional light's shadows in the next frame, whose targets have the canvas's
