@@ -59,15 +59,16 @@ in a landing, so keep the count down:
   inside the checkout as before. Cargo locks a target folder while it writes, so two builds that share
   it run in turn.
 - A second shared cache holds the built files themselves, `~/.cache/null3d/wasm-artifacts`. Each core
-  variant and the build tools' modules are kept under a key of every input: the Rust sources' stamp,
-  the variant's flags, the target, the release profile, the Rust toolchain, and the wasm-bindgen and
-  wasm-opt releases. A build whose inputs all match copies the wasm, the glue and the modules in place
-  and runs no cargo, wasm-bindgen or wasm-opt, and a fresh worktree skips the link too. Set
-  `NULL3D_WASM_ARTIFACTS` to another folder, or to `local`; `NULL3D_NO_BUILD_CACHE=1` or `--no-cache`
-  builds every file again. A cache that is missing, unreadable or unwritable only costs the build
-  time. On the Mac a no-change `--pages-only` build took 114.5 s with an empty cache, 0.28 s from the
-  cache and 83.8 s forced with `--no-cache`, with every built file byte-identical.
-  [D-176](decisions/D-176-wasm-artifact-cache.md) gives the key and the rest of the figures.
+  variant and the build tools' modules are kept under a key of every input. The Rust sources' stamp,
+  the variant's flags, the target, the release profile, the toolchain and the wasm-bindgen and
+  wasm-opt releases all go into that key. When every input matches, the build copies the wasm, the
+  glue and the modules in place. It then runs no cargo, wasm-bindgen or wasm-opt, and a fresh worktree
+  skips the link too. Set `NULL3D_WASM_ARTIFACTS` to another folder, or to `local`. Set
+  `NULL3D_NO_BUILD_CACHE=1` or `--no-cache` to build every file again. A missing, unreadable or
+  unwritable cache only costs the build time. On the Mac a no-change `--pages-only` build took 114.5 s
+  with an empty cache and 0.28 s from it. A fresh worktree's first build took 236.8 s without the
+  cache and 0.32 s with it. Every built file was byte-identical.
+  [D-176](decisions/D-176-wasm-artifact-cache.md) gives the key and the figures.
 - `bun run build --pages-only` builds only what the dev pages and the tools need, with no size report
   and no production build of the test page. Use it while developing and looking at a scene; use the
   full `bun run build` when a landing needs the size check.
