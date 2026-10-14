@@ -337,7 +337,12 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
 });
-const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
+// (0.2) A decal: a mesh of geometry.box() with this material projects it onto every opaque surface in
+// the box, lit there. The box's z axis points out of the surface; its x and y sides hold the map.
+const decal = materials.decal({ map: color, normalMap: normals, metalnessRoughnessMap: orm,
+  angleFade: [Math.PI / 3, (4 * Math.PI) / 9],   // fades on surfaces that turn away from its z axis
+  edgeFade: 0.2 });                              // fades near both ends of the box along z
+scene.createMesh({ mesh: geometry.box(), material: decal, position, rotation, scale: [2, 2, 0.5] });
 
 const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike

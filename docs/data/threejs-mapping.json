@@ -830,6 +830,17 @@
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
     },
     {
+      "id": "decal-geometry",
+      "category": "Geometry",
+      "three": "DecalGeometry (addon), with a material that has polygonOffset",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.createMesh({ mesh: geometry.box(), material: materials.decal({ map, normalMap, roughness }), position, rotation, scale: size })",
+      "notes": "No geometry is cut: the box projects the material onto every opaque surface inside it, in a pass after the opaque objects, lit by every light and shadow. DecalGeometry's position, orientation and size become the box's position, rotation and scale. The image lies on the box's x and y sides and looks along its z axis, as DecalGeometry lays it. There is no target mesh: the decal marks every opaque surface in its box. polygonOffset, depthWrite: false and transparent: true are not needed. angleFade and edgeFade fade the decal on surfaces that turn away and near the box's ends, where DecalGeometry stretches the image. A batch of boxes with one decal material draws many decals in one draw. Blended surfaces show no decals. Projected texture libraries, such as three-projected-material, become a large decal box.",
+      "docs": "api/materials",
+      "detect": "\\bDecalGeometry\\b"
+    },
+    {
       "id": "mat-basic",
       "category": "Materials",
       "three": "MeshBasicMaterial",

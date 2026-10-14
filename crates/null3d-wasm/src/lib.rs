@@ -3009,6 +3009,16 @@ pub fn set_background() -> u32 {
     })
 }
 
+/// Sets the layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+/// layer shows no decals: it draws again after them, over its own pixels.
+#[wasm_bindgen(js_name = setDecalLayers)]
+pub fn set_decal_layers(mask: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_decal_layers(mask);
+        0
+    })
+}
+
 /// The device pixels per CSS pixel that the canvas draws with, the first call value, which sizes
 /// sprites given in pixels of the screen.
 #[wasm_bindgen(js_name = setPixelRatio)]

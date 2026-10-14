@@ -73,7 +73,7 @@ export interface Null3dPageOptions {
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
  * hemisphere lights to S1, `areaLights` adds rectangle and tube lights to S1 that circle it and
- * change their intensities every frame, `setters` calls each per-frame setter in S1, colors included, `sides` draws S2's boxes see-through and double-sided: `two` draws each
+ * change their intensities every frame, `setters` calls each per-frame setter in S1, colors included, `decals` puts a ground with a batch of decals under S1, and `decals=off` the ground alone, `sides` draws S2's boxes see-through and double-sided: `two` draws each
  * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
  * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
  * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
@@ -114,6 +114,7 @@ const SKETCH_SWITCHES = [
 	'levels',
 	'hemisphere',
 	'areaLights',
+	'decals',
 	'setters',
 	'frames',
 ] as const;

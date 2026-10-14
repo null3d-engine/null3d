@@ -673,6 +673,8 @@ function reflectionTests(): ImageTest[] {
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** The sketch of decals on a stone yard. */
+const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -2169,6 +2171,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
+	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
+	// splashes that row colors tint and fade. The decals spec compares places with the bare yard.
+	{ name: 'decals', sketch: DECALS_SKETCH, hold: 0, size: [640, 360] },
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

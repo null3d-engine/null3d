@@ -177,6 +177,8 @@ export type {
 	CompiledWgsl,
 	ConeOptions,
 	CylinderOptions,
+	DecalOptions,
+	DecalValues,
 	DepthBias,
 	Geometry,
 	IntegerArray,

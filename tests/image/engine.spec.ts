@@ -325,6 +325,7 @@ const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'particles', sketch: 'tests/pages/sketches/particles-sketch.ts' },
 	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
 	{ feature: 'transmission', sketch: 'tests/pages/sketches/transmission-sketch.ts' },
+	{ feature: 'decals', sketch: 'tests/pages/sketches/decal-first-use-sketch.ts' },
 ] as const;
 
 // A page that uses one such feature downloads that feature's shader file once, for its device's
