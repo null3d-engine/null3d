@@ -1466,6 +1466,9 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
+    /// Bytes of the frame's shadow settings: the cascades' block followed by the tiles' block, one
+    /// binding of the frame's group (D-146).
+    pub const SHADOW_SETTINGS_BYTES: u32 = SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES;
     /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
     /// plain color read (see `null3d_render::background`).
     pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
