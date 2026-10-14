@@ -48,10 +48,10 @@ function settings(elevation: number, turn: number): Float32Array {
  * texture and generator words go unread here.
  */
 function command(stage: number, sky: Float32Array): [Uint32Array, Float32Array] {
-	const words = new Uint32Array(19);
+	const words = new Uint32Array(20);
 	const floats = new Float32Array(words.buffer);
 	words[2] = stage;
-	floats.set(sky, 3);
+	floats.set(sky, 4);
 	return [words, floats];
 }
 
@@ -126,7 +126,7 @@ async function timeWebGPU(): Promise<Timed> {
 	const stage = async (k: number, sky: Float32Array) => {
 		const start = performance.now();
 		const encoder = device.createCommandEncoder();
-		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory);
+		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory, undefined);
 		device.queue.submit([encoder.finish()]);
 		await device.queue.onSubmittedWorkDone();
 		return performance.now() - start;
@@ -135,7 +135,7 @@ async function timeWebGPU(): Promise<Timed> {
 	let start = performance.now();
 	const encoder = device.createCommandEncoder();
 	for (let k = 0; k < STAGES; k++)
-		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory);
+		generator.skyStage(device, encoder, target, ...command(k, sky), 0, memory, undefined);
 	device.queue.submit([encoder.finish()]);
 	await device.queue.onSubmittedWorkDone();
 	const fill = performance.now() - start;
@@ -153,7 +153,7 @@ async function timeWebGPU(): Promise<Timed> {
 	const exact = cube();
 	const fineEncoder = device.createCommandEncoder();
 	for (let k = 0; k < STAGES; k++)
-		fine.skyStage(device, fineEncoder, exact, ...command(k, last), 0, memory);
+		fine.skyStage(device, fineEncoder, exact, ...command(k, last), 0, memory, undefined);
 	device.queue.submit([fineEncoder.finish()]);
 	const referenceLevels = await readLevels(device, exact);
 	generator.release(target, memory);
@@ -247,7 +247,7 @@ async function timeWebGL2(): Promise<Timed> {
 		}
 		const start = performance.now();
 		for (let k = first; k <= last; k++)
-			generator.skyStage(host, target, SIZE, LEVELS, ...command(k, sky), 0, memory);
+			generator.skyStage(host, target, SIZE, LEVELS, ...command(k, sky), 0, memory, null);
 		if (last === STAGES - 1) read();
 		if (timer) gl.endQuery(timer.TIME_ELAPSED_EXT);
 		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);

@@ -40,6 +40,12 @@ export interface ViewOptions {
 	 * does, so the scene holds its frame rate with dynamic resolution.
 	 */
 	dynamicResolution?: boolean;
+	/**
+	 * How far a shadow-casting sun's one shadow map reaches, in meters, for a scene with no
+	 * cascades. Undefined follows the engine's automatic distance, which reaches the farthest
+	 * visible receiver. A scene names it to match its three.js twin, as S6 does.
+	 */
+	shadowDistance?: number;
 }
 
 /**
@@ -62,7 +68,7 @@ export function readGovernor(moduleUrl: string): boolean {
 /**
  * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
  * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
- * default of ACES. The twins also draw every pixel of the canvas and never lighten their shadows,
+ * default curve. The twins also draw every pixel of the canvas and never lighten their shadows,
  * so the null3D pages keep the render scale at 1 and turn off the quality governor, unless the
  * scene asks for dynamic resolution.
  */
@@ -70,18 +76,24 @@ export function setUpView(
 	{ scene, post, quality }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	background: string = BACKGROUND,
-	{ cascades = 0, dynamicResolution = false }: ViewOptions = {},
+	{ cascades = 0, dynamicResolution = false, shadowDistance }: ViewOptions = {},
 ): PerspectiveCamera {
 	post.set({ toneMapping: 'none' });
 	if (!dynamicResolution) quality.set({ minRenderScale: 1, governor: false });
 	scene.setBackground(background);
 	const { mapSize, distance } = SHADOWS;
+	const shadow =
+		cascades > 0
+			? { cascades, mapSize, distance }
+			: shadowDistance !== undefined
+				? { distance: shadowDistance }
+				: undefined;
 	scene.createDirectionalLight({
 		direction: sun.direction,
 		color: sun.color,
 		intensity: sun.intensity,
 		castShadows: sun.castShadows === true || cascades > 0,
-		...(cascades > 0 ? { shadow: { cascades, mapSize, distance } } : {}),
+		...(shadow ? { shadow } : {}),
 	});
 	scene.createAmbientLight({ color: ambient.color, intensity: ambient.intensity });
 	const camera = scene.createPerspectiveCamera({

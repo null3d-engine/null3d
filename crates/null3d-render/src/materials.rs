@@ -68,6 +68,12 @@ pub enum Shading {
     Sprite,
     /// A sprite material with its map, at each sprite's frame of the atlas; nothing creates it.
     SpriteMap,
+    /// Particles of a particle system of the particles add-on: a soft dot for each record of the
+    /// system, whose shader moves it to its age (see [`crate::particles`]). With a live map the
+    /// material draws as [`Shading::ParticleMap`].
+    Particle,
+    /// A particle material with its map, a flipbook atlas; nothing creates it.
+    ParticleMap,
     /// Wide lines, as three.js's `LineMaterial` draws them: a quad with round ends for each
     /// segment of a line batch, in the base color times the segment's colors, with dashes that the
     /// material's custom values set.
@@ -134,6 +140,8 @@ impl Shading {
             Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
             Shading::Sprite => template::SPRITE,
             Shading::SpriteMap => template::SPRITE_MAP,
+            Shading::Particle => template::PARTICLE,
+            Shading::ParticleMap => template::PARTICLE_MAP,
             Shading::Line => template::LINE,
             Shading::LineLit => template::LINE_LIT,
             Shading::Custom(custom) => custom.template,
@@ -144,7 +152,12 @@ impl Shading {
     /// needs to draw with it.
     pub const fn attributes(self) -> u32 {
         match self {
-            Shading::Lit | Shading::Unlit | Shading::Line | Shading::LineLit => 0,
+            Shading::Lit
+            | Shading::Unlit
+            | Shading::Line
+            | Shading::LineLit
+            | Shading::Particle
+            | Shading::ParticleMap => 0,
             Shading::TexCoords
             | Shading::UnlitMap
             | Shading::StandardMaps
@@ -168,7 +181,7 @@ impl Shading {
     /// multiply and a mask compares with the material's alpha cutoff.
     pub const fn reads_base_color(self) -> bool {
         match self {
-            Shading::TexCoords => false,
+            Shading::TexCoords | Shading::Particle | Shading::ParticleMap => false,
             Shading::Custom(custom) => custom.base_color,
             _ => true,
         }
@@ -185,6 +198,12 @@ impl Shading {
         }
     }
 
+    /// True when its shader is a whole shader of the sketch's, not built from the standard
+    /// material's template. Such a shader has no builds that skin in the vertex shader.
+    pub const fn is_full_shader(self) -> bool {
+        matches!(self, Shading::Custom(custom) if !custom.row_values)
+    }
+
     /// True when its shadows draw with its own caster builds, which move each vertex by its
     /// vertex offset: a custom material's whose WGSL has one.
     pub const fn casts_its_own_way(self) -> bool {
@@ -195,6 +214,16 @@ impl Shading {
     /// reads an instance's index or an object's id.
     pub const fn reads_object_ids(self) -> bool {
         matches!(self, Shading::Custom(custom) if custom.object_ids)
+    }
+
+    /// The template that draws a decal with this shading: the standard material's, with or
+    /// without maps, or `None` for shading that has no decal builds.
+    pub const fn decal_template(self) -> Option<u32> {
+        match self {
+            Shading::Lit => Some(template::DECAL),
+            Shading::StandardMaps => Some(template::DECAL_MAPS),
+            _ => None,
+        }
     }
 }
 
@@ -241,6 +270,11 @@ pub mod feature {
     /// material's transmission value sets how much light passes. It takes no mask, so it wins over
     /// [`ALPHA_MASK`].
     pub const TRANSMISSION: u32 = 8192;
+    /// The material is a decal's: each object with it projects the material onto the surfaces
+    /// inside the object's box, in the decal pass after the camera's opaque pass, and draws no
+    /// mesh of its own. Only the standard material has it. It blends, and wins over every other
+    /// feature that picks a pass, a mask or faces.
+    pub const DECAL: u32 = 131072;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -255,7 +289,8 @@ pub mod feature {
         | NO_FOG
         | ALPHA_HASH
         | SINGLE_PASS
-        | TRANSMISSION;
+        | TRANSMISSION
+        | DECAL;
 
     /// True for features that test alpha with the masked shader variant: a mask that neither
     /// blends nor lets light through.
@@ -377,6 +412,13 @@ pub mod param {
     /// The distance through the volume over which light takes [`ATTENUATION_COLOR`], in world
     /// units, or 0 for light that the volume does not absorb.
     pub const ATTENUATION_DISTANCE: usize = 43;
+    /// A decal material's values take the place of the transmission's, which a decal never has.
+    /// The cosine of the angle from the decal's direction at which it starts to fade.
+    pub const DECAL_FADE_START: usize = TRANSMISSION;
+    /// The cosine of the angle from the decal's direction past which it shows nothing.
+    pub const DECAL_FADE_END: usize = THICKNESS;
+    /// The share of the box's depth, from 0 to 1, over which the decal fades at each end.
+    pub const DECAL_EDGE_FADE: usize = IOR;
 
     /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
     /// the flags, the map layers, a spare float or a float inside a value.
@@ -523,6 +565,11 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row
 };
 
+/// The decal values of a new decal material's row, in place of the transmission's: the decal
+/// starts to fade 60 degrees from its direction and shows nothing past 80 degrees, as cosines, and
+/// fades over the last fifth of its box's depth at each end.
+pub const DECAL_DEFAULTS: [f32; 3] = [0.5, 0.173_648_18, 0.2];
+
 /// Materials by id, with a fixed capacity so the GPU table never moves.
 #[derive(Debug)]
 pub struct MaterialTable {
@@ -616,6 +663,9 @@ impl MaterialTable {
         row.copy_from_slice(&DEFAULT_ROW);
         row[..4].copy_from_slice(&color);
         row[param::FLAGS] = row_flags(features) as f32;
+        if features & feature::DECAL != 0 {
+            row[param::DECAL_FADE_START..][..DECAL_DEFAULTS.len()].copy_from_slice(&DECAL_DEFAULTS);
+        }
         self.shading[at] = shading;
         self.features[at] = features;
         self.maps[at] = [Handle::NONE; MAP_SLOTS];

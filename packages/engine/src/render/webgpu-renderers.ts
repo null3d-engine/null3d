@@ -1,15 +1,18 @@
 // The renderers of the WebGPU path. A thread downloads this file only when it draws with WebGPU, so
 // a page that draws with WebGL2 never downloads the WebGPU backend.
 
-import { SKINNING_FULL, SKINNING_SKIP_ONLY } from '../generated/core';
+import { SKINNING_FULL, SKINNING_SKIP_ONLY, SKINNING_VERTEX } from '../generated/core';
 import { clearWebGPUCanvas } from '../gpu/canvas-release';
 import { QueueCompletion } from '../gpu/completion';
 import type { DeviceShaderSet } from '../gpu/device-shaders';
 import { captureWebGPU } from '../gpu/readback';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
+import { FirstPass } from '../gpu/webgpu/first-pass';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
+import { controlViews } from '../shared/control';
 import type { ImageTable } from '../shared/images';
+import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
 import {
@@ -35,7 +38,7 @@ export function webgpuRenderer(
 	const { scene, metrics } = options;
 	if (!scene || !shaders)
 		return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics, options.gpuError);
-	const renderer = new WebGPUSceneRenderer(
+	return new WebGPUSceneRenderer(
 		gpu.tier,
 		gpu.device,
 		canvas,
@@ -45,10 +48,9 @@ export function webgpuRenderer(
 		options.imageTable,
 		shaders,
 		options.device.transparent,
+		options.device.skinning,
 		options.gpuError,
 	);
-	renderer.setSkinningMode(options.device.skinning);
-	return renderer;
 }
 
 class WebGPURenderer implements Renderer {
@@ -151,6 +153,8 @@ class WebGPUSceneRenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly frames: FrameReplay;
+	/** The pass that the device draws before its first frame. */
+	private readonly firstPass: FirstPass;
 	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	/**
@@ -164,7 +168,9 @@ class WebGPUSceneRenderer implements Renderer {
 
 	/**
 	 * A transparent canvas composites with premultiplied alpha; any other ignores alpha.
-	 * `gpuError` hears the first WebGPU error of each kind that no error scope caught.
+	 * `skinning` is the core's code of the skinning mode, which picks the shaders that a preload
+	 * of skinning prepares and the skinning pass's directions. `gpuError` hears the first WebGPU
+	 * error of each kind that no error scope caught.
 	 */
 	constructor(
 		readonly tier: Tier,
@@ -176,10 +182,12 @@ class WebGPUSceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
+		skinning: number,
 		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		this.errors = new GpuErrorWatch(device, gpuError);
+		this.firstPass = new FirstPass(device);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -198,7 +206,12 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
-		shaders.onPreloaded((feature, module) => this.backend.precompile(feature, module));
+		this.backend.readSink = { views: new MemoryViews(memory), slots: controlViews(control).slots };
+		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
+		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
+			this.backend.skinWithFloatDirections();
+		this.backend.skinsInVertexShaders = skinning === SKINNING_VERTEX;
+		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
@@ -207,14 +220,9 @@ class WebGPUSceneRenderer implements Renderer {
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
 	resize(): void {}
 
-	/** Makes the skinning pass write 32-bit float directions where core skinning mode `mode` asks. */
-	setSkinningMode(mode: number): void {
-		if (mode === SKINNING_FULL || mode === SKINNING_SKIP_ONLY)
-			this.backend.skinWithFloatDirections();
-	}
-
+	/** A frame draws once its pipelines and the device's first pass are built. */
 	prepare(frame: number): boolean {
-		return this.frames.prepare(frame);
+		return this.frames.prepare(frame) && this.firstPass.ready;
 	}
 
 	get building(): boolean {
@@ -232,6 +240,7 @@ class WebGPUSceneRenderer implements Renderer {
 		const figures = record.figures;
 		if (figures && !this.culledLoading) this.loadCulledCounts();
 		backend.culled?.beginFrame(figures);
+		this.firstPass.draw();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
@@ -260,6 +269,8 @@ class WebGPUSceneRenderer implements Renderer {
 	 */
 	async capture(): Promise<{ width: number; height: number; pixels: Uint8Array }> {
 		const frame = await this.frames.builtTaken();
+		await this.firstPass.built;
+		this.firstPass.draw();
 		const { width, height } = this.canvas;
 		const pixels = await captureWebGPU(this.device, width, height, this.format, (texture) => {
 			this.backend.canvasTarget = texture;

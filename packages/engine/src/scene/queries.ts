@@ -12,7 +12,7 @@ import * as C from '../generated/core';
 import type { Vec3Like } from '../math/types';
 import type { Ray } from './frame-cameras';
 import type { LineBatch } from './lines';
-import type { CoreMemory } from './memory';
+import type { CoreMemory, ViewHolder } from './memory';
 import {
 	EVENT_DISTANCE,
 	EVENT_NORMAL,
@@ -252,7 +252,10 @@ function newHit(): RaycastHit {
 }
 
 /** The scene's queries: see the module comment. */
-export class SceneQueries {
+/** A view of no numbers, which the queries keep in place of views that they dropped. */
+const NO_NUMBERS = new Float64Array(0);
+
+export class SceneQueries implements ViewHolder {
 	private generation = -1;
 	private input!: Float64Array;
 	private hits!: Float64Array;
@@ -265,7 +268,17 @@ export class SceneQueries {
 	constructor(
 		private readonly core: CoreMemory,
 		private readonly targets: QueryTargets,
-	) {}
+	) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the views, which the next query makes again. */
+	dropViews(): void {
+		this.generation = -1;
+		this.input = NO_NUMBERS;
+		this.hits = NO_NUMBERS;
+		this.rays = NO_NUMBERS;
+	}
 
 	/** Makes the views on engine memory again after the memory or the hit array grew. */
 	private views(): void {

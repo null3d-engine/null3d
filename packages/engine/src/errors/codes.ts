@@ -147,7 +147,7 @@ const DOCS = {
 		title: 'Invalid setting',
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, and a built-in environment that the engine does not have.',
-		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
 		since: '0.1',
 	},
 	E1214: {
@@ -434,6 +434,14 @@ const DOCS = {
 		cause:
 			'engine.requestPointerLock() asked the browser to lock the pointer to the canvas, and the browser refused or ended the lock before it began. Browsers lock the pointer only right after the user clicks or presses a key. They never lock it on phones or in some frames, and they refuse for a moment after the user pressed Esc.',
 		example: 'E1425: the browser refused the pointer lock: NotAllowedError.',
+		since: '0.2',
+	},
+	E1431: {
+		title: "Area lights' tables missing",
+		cause:
+			"The sketch made a rectangle or tube light, and the file of the area lights' fitted tables did not download. The engine's package ships the file, area-light-tables.bin, beside its code, and the engine downloads it with the first area light. Until the file arrives, area lights give no light. A server or a build that leaves out the file, or a Content-Security-Policy whose connect-src blocks its address, stops the download.",
+		example:
+			"E1431: the area lights' tables did not load from https://example.com/assets/area-light-tables-Zx8c_Vb1.bin: HTTP 404",
 		since: '0.2',
 	},
 	E1501: {

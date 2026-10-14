@@ -386,6 +386,7 @@ fn shadow_cascades_cull_once_while_the_camera_culls_twice() {
             bias: 0.5,
             normal_bias: 1.0,
             distance: 60.0,
+            auto: false,
             contact: 0.0,
             layers: DEFAULT_LAYERS,
         }));

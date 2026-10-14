@@ -20,7 +20,7 @@ import { transformQuat } from '../../../packages/engine/src/math/vec3.ts';
 import { dfgLut } from './dfg-table.ts';
 
 type V2 = [number, number];
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 type V4 = [number, number, number, number];
 
 /** Input texels per case, after the texel that holds the function number. */
@@ -356,7 +356,7 @@ const AGX_MAX_EV = 4.026069;
 
 const rrtAndOdtFit = (v: V3) =>
 	map3(v, (x) => (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081));
-const acesFilmic = (c: V3) =>
+export const acesFilmic = (c: V3) =>
 	map3(mat3(ACES_OUTPUT, rrtAndOdtFit(mat3(ACES_INPUT, scale(c, 1 / 0.6)))), saturate);
 const agxContrast = (v: V3) =>
 	map3(v, (x) => {
@@ -372,13 +372,20 @@ const agxContrast = (v: V3) =>
 			0.00232
 		);
 	});
-function agx(c: V3): V3 {
+/** AgX, with Filament's punchy look after the contrast curve when `punchy` is true. */
+export function agx(c: V3, punchy = false): V3 {
 	const inset = mat3(AGX_INSET, mat3(SRGB_TO_REC2020, c));
 	const logged = map3(
 		inset,
 		(x) => (Math.log2(Math.max(x, 1e-10)) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV),
 	);
-	const curved = mat3(AGX_OUTSET, agxContrast(map3(logged, saturate)));
+	let contrast = agxContrast(map3(logged, saturate));
+	if (punchy) {
+		const looked = map3(contrast, (x) => Math.max(x, 0) ** 1.35);
+		const luma = 0.2126 * looked[0] + 0.7152 * looked[1] + 0.0722 * looked[2];
+		contrast = map3(looked, (x) => luma + 1.4 * (x - luma));
+	}
+	const curved = mat3(AGX_OUTSET, contrast);
 	return map3(
 		mat3(
 			REC2020_TO_SRGB,
@@ -463,23 +470,24 @@ interface Pbr {
 	roughness: number;
 	metalness: number;
 }
-function pbrMaterial(base: V3, metalness: number, roughness: number, geometry: number): Pbr {
+function pbrMaterial(base: V3, metalness: number, roughness: number, kernel: number): Pbr {
 	const specular: V3 = [0.04, 0.04, 0.04];
+	const filtered = saturate(roughness ** 4 + kernel) ** 0.25;
 	return {
 		base,
 		diffuse: scale(base, 1 - metalness),
 		specular,
 		blended: mix3(specular, base, metalness),
 		grazing: 1,
-		roughness: Math.min(Math.max(roughness, 0.0525) + geometry, 1),
+		roughness: Math.min(Math.max(filtered, 0.045), 1),
 		metalness,
 	};
 }
 /** The material that the test shader's cases build from the first two texels. */
 const materialOf = (i: Inputs) => {
 	const [r, g, b, metalness] = i.f(0);
-	const [roughness, geometry] = i.f(1);
-	return pbrMaterial([r, g, b], metalness, roughness, geometry);
+	const [roughness, kernel] = i.f(1);
+	return pbrMaterial([r, g, b], metalness, roughness, kernel);
 };
 /** Inputs whose first two texels make a material, and whose later texels hold unit directions. */
 const materialCase =
@@ -488,7 +496,7 @@ const materialCase =
 		Array.from({ length: SAMPLES }, () => {
 			const i = new Inputs()
 				.setF(0, [...values(random, 3, 0, 1), between(random, 0, 1)])
-				.setF(1, [between(random, 0, 1), between(random, 0, 0.2)]);
+				.setF(1, [between(random, 0, 1), between(random, 0, 0.04)]);
 			fill(random, i);
 			return i;
 		});
@@ -1573,6 +1581,36 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			return floats(direction, betaR, betaM, [sunE, lowSun, smoothstep(direction[1], -0.08, 0.3)]);
 		},
 		tolerance: HALF_TOLERANCE,
+	},
+	{
+		name: 'color::tone_map_agx_punchy',
+		cases: uniform(3, 0.01, 8),
+		expected: (i) => floats(agx(xyz(i.f(0)), true)),
+	},
+	{
+		name: 'lighting::horizon_occlusion',
+		cases: samples((random) =>
+			new Inputs().setF(0, unit(random)).setF(1, unit(random)).setF(2, unit(random)),
+		),
+		expected: (i) => {
+			const [view, normal, vertex] = [xyz(i.f(0)), xyz(i.f(1)), xyz(i.f(2))];
+			const reflected = sub(scale(normal, 2 * dot(normal, view)), view);
+			return scalar(saturate(1 + dot(reflected, vertex)) ** 2);
+		},
+	},
+	{
+		name: 'lighting::specular_aa_kernel',
+		cases: (random) => [
+			new Inputs().setF(0, [0, 0, 0]).setF(1, [0, 0, 0]),
+			new Inputs().setF(0, [0.5, 0.2, 0]).setF(1, [0, 0.3, 0.1]),
+			...samples((r) =>
+				new Inputs().setF(0, values(r, 3, -0.1, 0.1)).setF(1, values(r, 3, -0.1, 0.1)),
+			)(random),
+		],
+		expected: (i) => {
+			const [du, dv] = [xyz(i.f(0)), xyz(i.f(1))];
+			return scalar(Math.min(2 * 0.15 * (dot(du, du) + dot(dv, dv)), 0.01));
+		},
 	},
 ];
 

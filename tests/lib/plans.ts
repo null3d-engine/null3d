@@ -113,6 +113,7 @@ import {
 	THREADED_MODES,
 } from './engine-checks.ts';
 import { type GeneratorResult, generatorReport } from './environment-generator-checks.ts';
+import { type FirstDrawResult, firstDrawNote, firstDrawProblems } from './first-draw-checks.ts';
 import { type GpuPath, type MissingAllowed, NONE_MISSING, skippedPath } from './gpu-paths.ts';
 import { borrowedRun, type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { JITTER_TABLE_HEAD, jitterRows, saveJitterResult } from './jitter-checks.ts';
@@ -202,6 +203,8 @@ export type Check =
 	| { kind: 'environment-generator'; tier: Tier }
 	/** The skinning pass page: the WebGPU skinning shader on fixed meshes, read back and drawn. */
 	| { kind: 'skin-pass'; tier: Tier }
+	/** The first-draw page: a device's first pass of indirect draws, bare and after the engine's. */
+	| { kind: 'first-draw'; tier: Tier }
 	| { kind: 'quality' }
 	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
 	| { kind: 'preset-check' }
@@ -251,6 +254,8 @@ export type Check =
 	| { kind: 'gpu-occlusion' }
 	/** The large-world jitter page: flights at the origin and far from it, on one GPU path. */
 	| { kind: 'jitter'; tier: Tier }
+	/** The specular shimmer page: highlight flicker against a supersampled row of the same frames. */
+	| { kind: 'shimmer'; tier: Tier }
 	/** The animation page, which times the core's animation step on the job workers for a crowd. */
 	| { kind: 'animation'; characters: number }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -457,7 +462,11 @@ const GLSL_PROGRAMS = glslProgramsOf(await everyShader()).length;
  */
 const SHADER_PROGRAMS_PER_PART = 400;
 
-/** The parts of the shaders page: enough that none holds more than that many programs. */
+/**
+ * The parts of the shaders page: enough that each holds about that many programs. A build that
+ * several device modules hold counts in each part that downloads one of them, so a part may hold
+ * somewhat more.
+ */
 export const SHADER_PARTS = Math.ceil(GLSL_PROGRAMS / SHADER_PROGRAMS_PER_PART);
 
 /**
@@ -531,6 +540,14 @@ export function checksPlan(): PlanItem<Check>[] {
 				`skin-pass-${path}`,
 				'skin-pass',
 				{ kind: 'skin-pass', tier: 'webgpu' },
+				{ switches: [`gpu=${path}`] },
+			),
+		),
+		...(['webgpu', 'compat'] as const).map((path) =>
+			pageItem(
+				`first-draw-${path}`,
+				'first-draw',
+				{ kind: 'first-draw', tier: 'webgpu' },
 				{ switches: [`gpu=${path}`] },
 			),
 		),
@@ -724,6 +741,7 @@ const SMOKE_KINDS: ReadonlySet<Check['kind']> = new Set([
 	'stats',
 	'ktx2',
 	'skin-pass',
+	'first-draw',
 	'environment-generator',
 ]);
 
@@ -1071,9 +1089,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, or 4 custom effects.
+ * sun's contact shadows, the volumetric fog, 4 custom effects, or the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects' | 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1088,15 +1106,50 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
  * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
- * contact plan times the sun's contact shadows at 4 and 8 steps, the steps of Medium on WebGL2
- * and of High, with the prepass on in both halves too, as for ambient occlusion.
- * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
- * D-119 those of the dof plan, and D-135 those of the contact plan.
+ * fog plan times the volumetric fog at 32, 64 and 96 slices, the grids of Medium, High and Ultra;
+ * 32 is also the candidate for Low. The contact plan times the sun's contact shadows at 4 and 8
+ * steps, the steps of Medium on WebGL2 and of High, with the prepass on in both halves too, as for
+ * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
+ * with the sun still and with the sun moving in every frame, which draws the sky view table again
+ * in each frame. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
+ * contact plan, and D-143 those of the physical sky plan.
  */
-export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
-	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
-	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
-	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
+export function effectPlan(
+	effect: CostedEffect,
+	calls: boolean | 'sync' = false,
+): PlanItem<Check>[] {
+	// The call profile of the thread that draws, for a device run that diagnoses its cost.
+	const callSwitches =
+		calls === 'sync' ? ['gltiming', 'gl-timing=sync'] : calls ? ['gltiming'] : [];
+	// Each variant's suffix to the item's name, and its switches.
+	const variants: Record<CostedEffect, (readonly [string, readonly string[]])[]> = {
+		bloom: [['', []]],
+		ao: [
+			['', []],
+			['-prepass', ['prepass=on']],
+		],
+		dof: [
+			['-16', ['taps=16']],
+			['-22', ['taps=22']],
+		],
+		contact: [false, true].flatMap((on) =>
+			[4, 8].map(
+				(steps) =>
+					[
+						`${on ? '-prepass' : ''}-${steps}`,
+						[...(on ? ['prepass=on'] : []), `steps=${steps}`],
+					] as const,
+			),
+		),
+		fog: [32, 64, 96].map((slices) => [`-${slices}`, [`slices=${slices}`]] as const),
+		// One pass for each effect, so a quarter of the difference is one pass.
+		effects: [['', ['join=off']]],
+		sky: [
+			['', []],
+			['-moving', ['moving']],
+		],
+	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1111,28 +1164,21 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 			: [];
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
-			prepass.flatMap((on) =>
-				tapCounts.flatMap((taps) =>
-					stepCounts.map((steps) =>
-						pageItem(
-							`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}${steps ? `-${steps}` : ''}`,
-							'effect-cost',
-							{ kind: 'effect', effect, tier, scale },
-							{
-								switches: [
-									`gpu=${tier}`,
-									`scale=${scale}`,
-									`effect=${effect}`,
-									...(on ? ['prepass=on'] : []),
-									...(taps ? [`taps=${taps}`] : []),
-									...(steps ? [`steps=${steps}`] : []),
-									// One pass for each effect, so a quarter of the difference is one pass.
-									...(effect === 'effects' ? ['join=off'] : []),
-								],
-								timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-							},
-						),
-					),
+			variants[effect].map(([suffix, switches]) =>
+				pageItem(
+					`${effect}-${tier}-${scale * 100}${suffix}`,
+					'effect-cost',
+					{ kind: 'effect', effect, tier, scale },
+					{
+						switches: [
+							`gpu=${tier}`,
+							`scale=${scale}`,
+							`effect=${effect}`,
+							...switches,
+							...callSwitches,
+						],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
 				),
 			),
 		),
@@ -1696,6 +1742,36 @@ export const MEMORY_LIMIT_CHECKS: ReadonlySet<Check['kind']> = new Set([
 	'tab-memory',
 ]);
 
+/**
+ * How long the shimmer page may take: two rows of camera steps, one of them at sixteen times the
+ * pixels, which a phone's GPU draws slowly.
+ */
+const SHIMMER_TIMEOUT_SECONDS = 300;
+
+/**
+ * The shimmer page's scenes that a device run measures: small low-poly shapes, smooth spheres, and
+ * spheres a few pixels across. The bump-mapped scene is left out, because specular anti-aliasing
+ * never sees a normal map's detail.
+ */
+const SHIMMER_SCENES = ['small', 'smooth', 'tiny'] as const;
+
+/**
+ * How much the highlights of shiny shapes flicker in each scene on each GPU path, against a
+ * supersampled row of the same frames. D-79 records the results.
+ */
+export function shimmerPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		SHIMMER_SCENES.map((scene) =>
+			pageItem(
+				`shimmer-${scene}-${tier}`,
+				'specular-shimmer',
+				{ kind: 'shimmer', tier },
+				{ switches: [`gpu=${tier}`, `scene=${scene}`], timeoutSeconds: SHIMMER_TIMEOUT_SECONDS },
+			),
+		),
+	);
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	smoke: smokePlan,
@@ -1711,9 +1787,13 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	'ao-calls': () => effectPlan('ao', true),
+	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	dof: () => effectPlan('dof'),
 	contact: () => effectPlan('contact'),
+	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
+	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
@@ -1724,6 +1804,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	'gpu-occlusion': gpuOcclusionPlan,
 	'occlusion-s6': occlusionS6Plan,
 	jitter: jitterPlan,
+	shimmer: shimmerPlan,
 	animation: animationPlan,
 	'tab-memory': tabMemoryPlan,
 	soak: soakPlan,
@@ -1819,14 +1900,13 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items it needs, and for a part of the shaders
- * page, the first part. Safari on CI's Mac compiles a part's programs about twice as fast after
- * another part in the same browser, and four times as fast after two more, so the parts run in one
- * shard, where only the first is slow.
+ * The items that must share an item's shard: the items whose results the check compares with. The
+ * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
+ * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
+ * parts spread over the shards like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
-	const needed = itemsNeeded(item.check);
-	return item.check.kind === 'shaders' ? [...needed, shaderPageId(1)] : needed;
+	return itemsNeeded(item.check);
 }
 
 /**
@@ -2363,6 +2443,11 @@ export function judge(
 			context?.note?.(skinPassNote(skin));
 			return skinPassProblems(skin);
 		}
+		case 'first-draw': {
+			const first = result as unknown as FirstDrawResult;
+			context?.note?.(firstDrawNote(first));
+			return firstDrawProblems(first);
+		}
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
 			const frames = (result.frames ?? []) as { wrong: number[]; errors?: string[] }[];
@@ -2482,6 +2567,10 @@ export function judge(
 			const { line, problems } = skyRefreshReport(result as ItemResult & SkyRefreshResult);
 			if (problems.length === 0) context?.note?.(line);
 			return problems;
+		}
+		case 'shimmer': {
+			const shimmer = result as ItemResult & { shimmer?: number };
+			return typeof shimmer.shimmer === 'number' ? [] : ['the page measured no shimmer'];
 		}
 		case 'occlusion': {
 			const occlusion = result as ItemResult & {
