@@ -1932,14 +1932,13 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items it needs, and for a part of the shaders
- * page, the first part. Safari on CI's Mac compiles a part's programs about twice as fast after
- * another part in the same browser, and four times as fast after two more, so the parts run in one
- * shard, where only the first is slow.
+ * The items that must share an item's shard: the items whose results the check compares with. The
+ * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
+ * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
+ * parts spread over the shards like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
-	const needed = itemsNeeded(item.check);
-	return item.check.kind === 'shaders' ? [...needed, shaderPageId('base', 1)] : needed;
+	return itemsNeeded(item.check);
 }
 
 /**
