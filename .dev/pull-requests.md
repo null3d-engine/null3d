@@ -51,28 +51,38 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
-in a landing, so keep the count down:
+in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
+default, each in a named subfolder: `cargo-target`, `shader-modules`, `shader-cache` and
+`wasm-artifacts`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still
+name one folder. Clearing the root is always safe, because every entry is a pure function of its
+inputs, so re-checking a branch on a moved main is cheap.
+[D-176](decisions/D-176-wasm-artifact-cache.md) and
+[D-177](decisions/D-177-build-cache-module.md) give the keys, and
+[Benchmarks](benchmarks.md#build-caches) the figures.
 
-- Cargo builds into a **cache shared by every checkout** on the machine,
-  `~/.cache/null3d/cargo-target`, so the dependency crates (wasm-bindgen and the rest) compile once
-  instead of once per worktree. Set `NULL3D_CARGO_TARGET` to another folder, or to `local`, to build
-  inside the checkout as before. Cargo locks a target folder while it writes, so two builds that share
-  it run in turn.
-- `bun run build --pages-only` builds only what the dev pages and the tools need, with no size report
-  and no production build of the test page. Use it while developing and looking at a scene; use the
-  full `bun run build` when a landing needs the size check.
-- On a machine that runs several things at once, run one build at a time so that two do not compete
-  for the cores. The coordination shell the team queues its Mac work through gives `cargo test`,
-  `cargo clippy` and a native `cargo build` the same shared cache as well
-  (`CARGO_TARGET_DIR=~/.cache/null3d/cargo-target/native`), so the Rust tests reuse the compiled
-  dependencies across worktrees too.
-- Never run **two builds at once**, in one checkout or several, and never a build beside a browser or
-  image run of the same worktree: a half-written core makes a page fail for no reason (`E1402`,
-  `E1406`).
-- Keep the measurement: note how long a build and the test runs took when you change this area, and
-  record it here or in [Benchmarks](benchmarks.md), so the next change can tell whether it helped.
-  Earlier figures: a full build took 11 minutes on CI and 8 to 13 minutes on the Mac; `cargo test
-  --workspace` took 15 minutes on CI, its longest job; a browser shard ran 9 to 15 minutes.
+- `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
+  landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
+- Run one build at a time, and never a build beside a browser or image run of the same worktree. One
+  machine-wide lock serializes every build and a size check's base build, and each build stages its own
+  output in its own checkout, so two builds can never remove each other's files. A half-written core
+  makes a page fail for no reason (`E1402`, `E1406`).
+
+A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
+shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the variant spec
+and the compiler's version. A game's second `vite build` therefore compiles only the shaders that
+changed. On a small project of eight shaders a cold build took 2.87 s and the next took 0.30 s.
+[D-175](decisions/D-175-vite-plugin-shader-cache.md) gives the figures and the key.
+
+The engine's own shader build has a per-entry cache too. `bun run shaders`, and every command that
+runs it, passes `--cache ~/.cache/null3d/shader-cache/<stamp>` to `shader-build`, where the stamp
+hashes the compiler's sources. The build keeps each entry's compiled output under that folder. A
+change to one shader then compiles only that shader, and a change to a library module compiles only
+the entries that import it. On the Mac on 14 October 2026, all 54 entries from cold took 442 s. A
+second run with nothing changed took 10.6 s and compiled none. A change to the one file that the two
+cull entries share took 10.4 s and compiled 2 entries. A change to `lib/math.wgsl` compiled the 31
+entries that import it, through `null3d::lighting` and `null3d::area_lights`, and took 356 s.
+`--no-cache`, or `NULL3D_NO_SHADER_CACHE=1`, compiles every entry again.
+[D-56](decisions/D-56-first-use-shader-files.md) gives the reasons and the key.
 
 ### A clash on a generated file
 

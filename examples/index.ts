@@ -134,7 +134,25 @@ async function runDemo(demo: Demo): Promise<void> {
 	const title = element('summary');
 	const h1 = element('h1');
 	h1.append(...heading(demo));
-	title.append(h1);
+	// The chevron floats at the top right of the summary, in place of the native marker. It points
+	// down while the caption is folded and up while it is open, and the summary toggles it once.
+	const chevron = element('span');
+	chevron.className = 'caption__chevron';
+	chevron.setAttribute('aria-hidden', 'true');
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+	svg.setAttribute('viewBox', '0 0 24 24');
+	svg.setAttribute('fill', 'none');
+	svg.setAttribute('width', '18');
+	svg.setAttribute('height', '18');
+	const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	path.setAttribute('d', 'M6 9l6 6 6-6');
+	path.setAttribute('stroke', 'currentColor');
+	path.setAttribute('stroke-width', '2');
+	path.setAttribute('stroke-linecap', 'round');
+	path.setAttribute('stroke-linejoin', 'round');
+	svg.append(path);
+	chevron.append(svg);
+	title.append(h1, chevron);
 	caption.append(title, element('p', demo.summary));
 	const code = element('a', 'View code', sourceUrl(demo));
 	code.target = '_blank';
