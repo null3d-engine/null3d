@@ -142,6 +142,12 @@ pub enum Op {
     /// layer count]: copies texels between two textures of the same format, one sample each. Depth
     /// textures do not copy, because WebGL2 cannot copy them.
     CopyTextureToTexture = 49,
+    /// [texture location (5 words), buffer id, buffer offset, bytes per row, rows per image, width,
+    /// height]: copies a box of texels of a texture with `COPY_SRC` usage into a buffer with
+    /// `COPY_DST` usage, which `ReadBuffer` then reads back. GPU picking copies its small id target
+    /// through this. The buffer offset aligns to 256 bytes, and each row of the copy starts at a
+    /// multiple of the texture's texel size.
+    CopyTextureToBuffer = 50,
     /// [image id]: closes an image that the backend holds, once no later command uploads it. A
     /// backend that holds no such image does nothing, as when a capture replays a list again.
     ReleaseImage = 51,
@@ -149,6 +155,12 @@ pub enum Op {
     /// of a custom material whose last material was destroyed. A backend that holds no such
     /// pipeline does nothing, as when a capture replays a list again.
     DestroyPipeline = 52,
+    /// [buffer id, offset, size, destination address in engine memory]: once the GPU has run the
+    /// commands before this one, maps `size` bytes of the buffer at `offset` and copies them into
+    /// engine memory at `destination`. The buffer needs `MAP_READ` usage, and the command is
+    /// asynchronous: the bytes land, and the thread that draws marks them ready, one or more frames
+    /// after the command replays. GPU picking reads the ids under the pointer this way.
+    ReadBuffer = 53,
     /// [texture id, image id]: runs the generator that the backend holds under the image id, which
     /// fills every mip level of every face of a cube texture on the GPU in one submit, ahead of the
     /// frame's passes. The thread that draws counts a generator among the images it received once
@@ -177,7 +189,7 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 41] = [
+    pub const ALL: [Op; 43] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -214,8 +226,10 @@ impl Op {
         Op::EndComputePass,
         Op::CopyBufferToBuffer,
         Op::CopyTextureToTexture,
+        Op::CopyTextureToBuffer,
         Op::ReleaseImage,
         Op::DestroyPipeline,
+        Op::ReadBuffer,
         Op::GenerateTexture,
         Op::SkyMapStep,
         Op::Submit,
@@ -263,8 +277,10 @@ impl Op {
             Op::EndComputePass => "END_COMPUTE_PASS",
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
+            Op::CopyTextureToBuffer => "COPY_TEXTURE_TO_BUFFER",
             Op::ReleaseImage => "RELEASE_IMAGE",
             Op::DestroyPipeline => "DESTROY_PIPELINE",
+            Op::ReadBuffer => "READ_BUFFER",
             Op::GenerateTexture => "GENERATE_TEXTURE",
             Op::SkyMapStep => "SKY_MAP_STEP",
             Op::Submit => "SUBMIT",
@@ -278,13 +294,8 @@ pub mod reserved {
     /// Runs a compute pipeline with workgroup counts that the GPU reads from a buffer: skinning
     /// only the meshes that culling found visible, and the second phase of occlusion culling.
     pub const DISPATCH_INDIRECT: u8 = 43;
-    /// Copies texels into a buffer, to read a frame or computed values back.
-    pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
-    /// Reads part of a buffer back into engine memory once the GPU has run the commands before it,
-    /// a frame or more later: the object ids that GPU picking draws under the pointer.
-    pub const READ_BUFFER: u8 = 53;
 
-    pub const ALL: [u8; 3] = [DISPATCH_INDIRECT, COPY_TEXTURE_TO_BUFFER, READ_BUFFER];
+    pub const ALL: [u8; 1] = [DISPATCH_INDIRECT];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -1705,6 +1716,12 @@ pub mod template {
     /// The volumetric fog's block step: one triangle over a texture of the grid's size, which sums
     /// the cells of each block of slices up to each cell. It binds as a step of bloom does.
     pub const FOG_BLOCK: u32 = 69;
+    /// GPU picking: each object of the camera's view written with its object or batch id and its
+    /// instance's row where the scene's depth leaves it, into a small id target, with the scene's
+    /// depth as its depth target and an EQUAL test that writes no depth. A masked fragment wrote
+    /// no depth, so it never matches, and picking follows the mask. Binds as the frame's group
+    /// does, and reads the table of object ranges for each instance's id.
+    pub const PICK: u32 = 70;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2118,6 +2135,7 @@ pub fn typescript_constants() -> String {
                 ("FOG_APPLY", template::FOG_APPLY),
                 ("FOG_APPLY_MS", template::FOG_APPLY_MS),
                 ("FOG_BLOCK", template::FOG_BLOCK),
+                ("PICK", template::PICK),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

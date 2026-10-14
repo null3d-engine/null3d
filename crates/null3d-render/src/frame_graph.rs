@@ -5339,9 +5339,11 @@ mod tests {
                 1,
                 "the final pass binds the mask in its own group"
             );
+            // Binding 11 is the outline mask; binding 12 is the automatic exposure's texel, which
+            // every build binds, so filter for the mask alone.
             let outline_entries: Vec<_> = groups[0][3..]
                 .chunks(5)
-                .filter(|entry| entry[0] >= 11)
+                .filter(|entry| entry[0] == 11)
                 .map(|entry| entry[2])
                 .collect();
             assert_eq!(outline_entries.len(), 1);
