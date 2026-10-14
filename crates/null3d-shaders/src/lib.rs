@@ -192,6 +192,29 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         {
             output.first_use.bits.insert(bit, feature.clone());
         }
+        for name in &first_use.bits {
+            let Some(bit) = permutation::bit(name) else {
+                continue;
+            };
+            // Only a value that names another feature too needs a per-shader mask: an unshared bit
+            // counts for every template ([`output::shared_bits`], decision record D-156).
+            if output::shared_bits() & bit == 0 {
+                continue;
+            }
+            for (shader_name, shader) in &manifest.shaders {
+                if shader
+                    .variants
+                    .values()
+                    .any(|variant| variant.permutations.contains(name))
+                {
+                    *output
+                        .first_use
+                        .listed
+                        .entry(shader_name.clone())
+                        .or_default() |= bit;
+                }
+            }
+        }
     }
     errors.or(output)
 }

@@ -244,6 +244,9 @@ scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   /
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });  // (0.2) lights surfaces: sky from +Y, ground from below
+scene.createRectAreaLight({ position, direction, width: 3, height: 2, range: 15, color, intensity });  // (0.2) range is required; light leaves along -Z
+scene.createTubeLight({ position, direction, length: 2, radius: 0.025, range: 8, color, intensity });  // (0.2) the tube runs along -Z
+const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
 const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, atmosphere, skyIntensity, light, fog, ambient, exposure }, plain values
 timeOfDay(17.5, { model: 'physical' });  // (0.2) values that match setBackground({ atmosphere: day.atmosphere })
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
@@ -252,8 +255,10 @@ scene.createDirectionalLight(day.light);  // the sun by day, the moon after suns
 sun.setShadow({ contactDistance: 0.3 });  // (0.2) contact shadows' reach in meters, 0 = off; drawn where contactShadowSteps > 0 (High, Ultra)
 
 light.setIntensity(v); light.setColor(c);   // every light; call from a small step so the browser inlines it
-light.setDirection(x, y, z);                 // directional and spot lights: the way the light travels
-light.setRange(r); light.setDecay(d);        // point and spot lights
+light.setDirection(x, y, z);                 // directional, spot and area lights: the way the light travels, or the tube's axis
+light.setRange(r); light.setDecay(d);        // point and spot lights; setRange on area lights too
+rect.setSize(width, height); tube.setSize(length, radius);  // (0.2) area lights; the object's scale does not size them
+rect.setImage({ width, height, data });     // (0.2) sRGB pixels shown over the light, top row first; null for one color
 light.setAngle(a); light.setPenumbra(p);     // spot lights; angle in radians, up to π/2
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
 light.setCastShadows(true);                  // directional, spot and point lights
@@ -267,6 +272,7 @@ light.setVisible(false); light.destroy();    // lights are objects: section 4
 - three.js aims a directional light from its position to a target. Pass the target minus the position as `direction`, or call `lookAt`.
 - A light lights a camera's view when their layer masks share a bit. Without lights, standard materials draw black.
 - Units follow three.js r155 and later: point and spot intensity in candela, the others in lux. The same colors and intensities give the same light as in three.js. For real units, give point and spot lights `intensityUnit: 'lumen'` (0.2), and set the camera with `post.set({ ev100: 15 })` (0.2) for a sunny day (`concepts/lighting`).
+- Area lights (0.2): `createRectAreaLight` for windows, screens and soft boxes, `createTubeLight` for neon and fluorescent tubes. Intensity is the surface's brightness in nits, as three.js's `RectAreaLight`; shiny surfaces show the light's whole shape. They need a `range`, cast no shadows, and cost a surface several times a point light, so the preset's `areaLights` caps them per frame (4 on Low to 32 on Ultra, most light at the camera first, fading across the cap); put the lights that matter nearest the camera, or make them brightest. They light from the frame after their 19 KB table file downloads with the first one; a failed download reports E1431 (`api/lights`).
 - Point and spot lights light the surfaces their ranges reach, through clustered lighting, so keep each range as short as the look allows. Surfaces show the first visible directional light, every ambient light, every hemisphere light (0.2), and the point and spot lights. Hemisphere lights are diffuse only and add to an environment's light; the environment's `intensity` and a material's `envIntensity` do not scale them. A scene lit by the sky's environment needs no hemisphere light.
 - Shadows: that directional light casts them when it has `castShadows`, from meshes with `castShadows` onto meshes with `receiveShadows`. Its cascades fit the camera's view and keep still edges as it turns. The nearest cascade draws every frame, and far ones every few frames (`farCascadeInterval`). A far one that a dynamic object touches draws every frame on every preset. `followMovingCasters: false` keeps its turns, so far moving shadows trail by a few frames. Neighboring cascades blend over a band, a share of each cascade's length (`shadowCascadeBlend`, 0.1). `shadowFilter` softens edges over 3 or 5 texels. Both follow the preset. Defaults: the preset's `shadowCascades` and `shadowMapSize`, the automatic `distance`, bias 0.01 m and normal bias 0.02 m. Both are in meters, up to one texel of the surface's cascade, scaled by each surface's angle to the light. The map stores 16-bit depth. In far cascades a smaller `bias` then acts as 1.5 depth steps, about 2 cm 200 m out. Unlit materials show no shadows. Both GPU paths draw them. Instance batches take `castShadows` and `receiveShadows` in `createInstances`, or `batch.setCastShadows(true)` / `setReceiveShadows(true)`, for every row (0.2); sprite, point and line batches take none (`concepts/shadows`).
 - Spot and point light shadows: each spot light with `castShadows` takes a tile of the shared shadow atlas, and each point light six. Point lights cast only where the preset's `pointLightShadows` is on (High and Ultra), or with that `createEngine` option. The preset's `shadowTiles` caps the tiles, and the lights that look largest on screen get them first. `shadowTileSize` sets each tile's texels. All three are `createEngine` options. A tile draws again only when its light moves, or a caster in its view moves, changes its layers or changes its pose. So still scenes cost nothing per frame, and at most 12 tiles draw again in a frame. The biases are in meters, up to one texel of the tile, and `shadowFilter` softens its edges too (`concepts/shadows`).
@@ -331,7 +337,12 @@ const brick = materials.standard({   // maps are fixed at creation; the mesh nee
   envIntensity: 1,                   // (0.2) the scene environment's light on this material
   uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
 });
-const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
+// (0.2) A decal: a mesh of geometry.box() with this material projects it onto every opaque surface in
+// the box, lit there. The box's z axis points out of the surface; its x and y sides hold the map.
+const decal = materials.decal({ map: color, normalMap: normals, metalnessRoughnessMap: orm,
+  angleFade: [Math.PI / 3, (4 * Math.PI) / 9],   // fades on surfaces that turn away from its z axis
+  edgeFade: 0.2 });                              // fades near both ends of the box along z
+scene.createMesh({ mesh: geometry.box(), material: decal, position, rotation, scale: [2, 2, 0.5] });
 
 const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both, or a full shader
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike

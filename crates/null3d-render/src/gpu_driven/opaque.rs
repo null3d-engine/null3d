@@ -83,7 +83,7 @@ pub(super) fn bind_frame(
         entry(0, resource_kind::BUFFER, ids::frame(view)),
         entry(1, resource_kind::BUFFER, ids::MATERIALS),
         entry(2, resource_kind::TEXTURE, ids::CUSTOM_VALUES),
-        entry(3, resource_kind::TEXTURE, ids::DFG),
+        entry(3, resource_kind::TEXTURE, ids::LIGHT_TABLES),
         entry(4, resource_kind::TEXTURE, shadow_map),
         entry(5, resource_kind::SAMPLER, ids::SHADOW_SAMPLER),
         entry(6, resource_kind::BUFFER, ids::SHADOWS),
