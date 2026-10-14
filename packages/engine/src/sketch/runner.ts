@@ -28,6 +28,7 @@ import { messageOf } from '../errors/message';
 import {
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
+	TEXTURE_OPTION_KEEP_COPIES,
 	TEXTURE_OPTION_UPLOAD_ALL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
@@ -59,6 +60,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
 	type PreloadSender,
@@ -100,6 +102,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
+	/** Sends a shader's builds that load on first use to the thread that draws. */
+	sendBuilds: BuildsSender;
+	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
+	onAskBuilds(handler: (template: number) => void): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -120,10 +126,19 @@ export interface SketchCore {
 	wantJobs(count: number): number;
 	/** Tells the page the slot in the label table of each label's id. */
 	sendLabelSlot: LabelSlotSender;
+	/**
+	 * Tells the page of an error that the sketch's own code threw in a frame, once for each distinct
+	 * message. The engine keeps drawing; the page reports it through `onSketchError`, and counts the
+	 * frames whose update failed.
+	 */
+	reportSketchError?(message: string): void;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
 const SLOT_POLL_MS = 4;
+/** Each meter of automatic exposure, by its code in the core. */
+const EXPOSURE_METERS = { downsample: 0, histogram: 1 } as const;
+
 /**
  * While a reader shows the frame figures, the first frame that samples publishes the memory
  * figures, and then one frame in every this many.
@@ -247,6 +262,10 @@ export class SketchRunner {
 	private timingHanded = true;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
+	/** True once the frame in progress has reported an error: its update did not run to its end. */
+	private updateFailed = false;
+	/** True while a frame is open, so an error outside one does not mark the next frame. */
+	private frameOpen = false;
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
 	/** True while hold mode steps the sketch: the first failure then stops it. */
@@ -291,6 +310,10 @@ export class SketchRunner {
 	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
+	/** True while the scene's fog is volumetric, as the governor knows it. */
+	private fogOn = false;
+	/** The volumetric fog's slices that the `fogSlices` setting gives. */
+	private fogSetting = 0;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
@@ -340,6 +363,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
 			shadowTileSize,
@@ -352,8 +376,11 @@ export class SketchRunner {
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		// Directional lights that name no cascades or map size take the preset's.
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
+		const values = this.core.callValues();
+		values[0] = shadowCascades;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
+		values[0] = shadowMapSize;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.
@@ -363,7 +390,6 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(
@@ -380,6 +406,9 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
+		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
+		// each texture's map back after the GPU is lost.
+		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
@@ -423,6 +452,9 @@ export class SketchRunner {
 				get contactShadowSteps() {
 					return governor.contactSteps;
 				},
+				get farAnimationInterval() {
+					return governor.animationInterval;
+				},
 			},
 			textures.memory,
 		);
@@ -437,10 +469,15 @@ export class SketchRunner {
 				tier: sketch.capabilities.tier,
 				preset: () => this.quality.preset,
 				renderScaleThousandths: () => this.renderScale(),
-				wasmBytes: () => this.core.memory.buffer.byteLength,
+				wasmBytes: () => this.core.bytes,
 			},
 		};
-		const templates = new ShaderTemplates(sketch.sendShader);
+		const templates = new ShaderTemplates(
+			sketch.sendShader,
+			device.webgl2 ? 'glsl' : 'wgsl',
+			sketch.sendBuilds,
+		);
+		sketch.onAskBuilds((template) => templates.answer(template));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
@@ -666,7 +703,8 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
-		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
+		this.core.callValues()[0] = viewport.pixelRatio;
+		this.sketch.glue.setPixelRatio();
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -682,9 +720,11 @@ export class SketchRunner {
 	 */
 	private report(error: unknown): void {
 		const message = messageOf(error);
+		if (this.frameOpen) this.updateFailed = true;
 		if (!this.reported.has(message)) {
 			this.reported.add(message);
 			console.error(error);
+			this.sketch.reportSketchError?.(message);
 		}
 		if (this.holding) throw error;
 	}
@@ -765,7 +805,10 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.fogSetting = settings.fogSlices;
+		governor.setFog(this.fogOn, this.fogSetting);
 		governor.setContact(settings.contactShadowSteps);
+		governor.setAnimation(settings.farAnimationInterval);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -775,9 +818,15 @@ export class SketchRunner {
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
-			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
+			glue.setFogSlices(settings.fogSlices) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
+			this.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setAreaLightCap(settings.areaLights) !== 0 ||
 			this.setLevelQuality() !== 0 ||
-			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0
+			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
+			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
+			glue.setSoftParticles(settings.softParticles) !== 0
 		)
 			this.report(coreFailure(glue, 'quality.set'));
 	}
@@ -788,8 +837,16 @@ export class SketchRunner {
 	 * them.
 	 */
 	private setLevelQuality(): number {
-		const threshold = this.lodThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(threshold, this.lodShadowFactor, this.lodFade);
+		const values = this.core.callValues();
+		values[0] = this.lodThreshold * this.governor.detailFactor;
+		values[1] = this.lodShadowFactor;
+		return this.sketch.glue.setLevelQuality(this.lodFade);
+	}
+
+	/** Gives the core the share of the render size that reflection targets take by default. */
+	private setReflectionScale(scale: number): number {
+		this.core.callValues()[0] = scale;
+		return this.sketch.glue.setReflectionScale();
 	}
 
 	/**
@@ -799,11 +856,11 @@ export class SketchRunner {
 	 */
 	private setShadowQuality(): number {
 		const { governor } = this;
+		this.core.callValues()[0] = this.cascadeBlend;
 		return this.sketch.glue.setShadowQuality(
 			governor.filter,
 			governor.farInterval,
 			this.followMovers,
-			this.cascadeBlend,
 		);
 	}
 
@@ -820,7 +877,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
-			glue.setContactSteps(governor.contactSteps) !== 0
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -849,6 +907,7 @@ export class SketchRunner {
 	private followEffects(): boolean {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
+		this.followFog();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
 		return ao || bloom || custom || passes;
@@ -870,9 +929,18 @@ export class SketchRunner {
 		return true;
 	}
 
+	/** Follows the scene's volumetric fog, which the governor's fog step needs on. */
+	private followFog(): void {
+		const on = this.context.scene.needsHdr;
+		if (on === this.fogOn) return;
+		this.fogOn = on;
+		this.governor.setFog(on, this.fogSetting);
+	}
+
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
+	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
+	 * with slices to draw turns on, on a device that started
 	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
 	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
 	 * until they are built, and the frame before stays on screen meanwhile.
@@ -884,8 +952,8 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
-			return false;
+		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
+		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
@@ -917,7 +985,8 @@ export class SketchRunner {
 	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
-	 * loss, textures included. It waits for every texture image to reach that thread first. The
+	 * loss, textures included. It waits for the area lights' tables to load and for every texture
+	 * image to reach that thread first. The
 	 * first failure in the sketch or the core stops the hold with E1408.
 	 */
 	private async hold(seconds: number): Promise<void> {
@@ -930,6 +999,8 @@ export class SketchRunner {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
 				if (step === steps) {
+					await this.context.scene.imagesSettled();
+					await this.context.scene.areaTablesSettled();
 					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
 					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
 					// Like a new GPU device, the thread that draws has none of the objects that the
@@ -1006,6 +1077,8 @@ export class SketchRunner {
 		this.recorded.frame = frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
+		this.updateFailed = false;
+		this.frameOpen = true;
 		this.phaseStart = start;
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
@@ -1039,6 +1112,10 @@ export class SketchRunner {
 			this.followBudgets();
 			// The clips' events of the frame before, so the sketch's update sees them.
 			this.context.scene.animations?.dispatch(this.reportError);
+			const tablesFailure = this.context.scene.takeAreaTablesFailure();
+			if (tablesFailure) this.report(tablesFailure);
+			const imageFailure = this.context.scene.takeImageFailure();
+			if (imageFailure) this.report(imageFailure);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {
@@ -1139,6 +1216,9 @@ export class SketchRunner {
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		this.record.count(Counter.OccludedEntries, glue.occludedEntries(frame));
+		// A frame whose update threw still presents, so its record marks it: the figure that counts
+		// completed updates leaves it out.
+		this.record.count(Counter.UpdateErrors, this.updateFailed ? 1 : 0);
 		// The memory figures change slowly, so a few times a window is enough. They start with the
 		// first frame that samples, so the figures never show 0 for memory the engine holds, nor the
 		// memory of the last time a reader sampled.
@@ -1161,6 +1241,7 @@ export class SketchRunner {
 		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
 		this.core.refresh();
 		this.endPhase(Phase.Record);
+		this.frameOpen = false;
 		this.record.commit(performance.now() - start);
 		// Only the job workers asked for so far have records, so the figures count the ones that run.
 		const asked = this.sketch.wantJobs(0);

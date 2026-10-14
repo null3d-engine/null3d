@@ -109,6 +109,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite (0.2) |
 | `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
+| `DecalGeometry` (add-on), with a material that has `polygonOffset` | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, ... })` (0.2): `DecalGeometry`'s position, orientation and size become the box's `position`, `rotation` and `scale`. No geometry is cut, and no target mesh is named: the box marks every opaque surface inside it, lit by every light. Drop `polygonOffset`, `depthWrite: false` and `transparent: true`. `angleFade` and `edgeFade` hide the stretching that `DecalGeometry` shows at steep surfaces (`api/materials`) |
 | `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })` (0.2), and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction become transmission: give the water's custom material `transmission`, `thickness` and `ior: 1.33`, and set `s.transmission` with the rippled normal (`api/materials`) |
 
 ## 7. Texture settings
@@ -210,7 +211,8 @@ const leaf = materials.shader({
 
 ## 9. Checking material parity
 
-1. Compare with post-processing off and tone mapping matched. null3D defaults to ACES, so a three.js side with `NoToneMapping` needs `post.set({ toneMapping: 'none' })` on the null3D side.
+1. Compare with post-processing off and tone mapping matched. null3D defaults to punchy AgX, so a three.js side with `NoToneMapping` needs `post.set({ toneMapping: 'none' })` on the null3D side.
 2. Compare one material type at a time, on a simple lit test view: a sphere and a plane under the scene's lights.
 3. Read the diff image. Uniformly brighter or darker usually means color space, exposure or light units. Different highlight size means roughness mapping. Missing detail means a missing map, or a map with the wrong color space.
-4. Record accepted differences in the report, with the reason.
+4. Expect two small differences, which need no fix. Highlights on small curved shapes are a little brighter and narrower, because null3D widens them by Filament's specular anti-aliasing, not by three.js's term. Grazing reflections on strong normal maps are darker, because null3D fades reflections that point below the surface. Both are always on, with no three.js mode (`concepts/lighting`).
+5. Record accepted differences in the report, with the reason.

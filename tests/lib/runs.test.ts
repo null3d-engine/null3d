@@ -6,7 +6,7 @@ import { everyShader } from '../../packages/engine/src/generated/shaders.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { HEARTBEAT_NAME, MOST_TIME_SHARE } from '../pages/lib/runner-rules.ts';
-import { glslProgramsOf } from '../pages/lib/shader-list.ts';
+import { glslProgramsOf, wgslModulesOf } from '../pages/lib/shader-list.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -266,6 +266,37 @@ describe('waitForRunners', () => {
 		);
 		expect(rerunsInNewTab('Firefox', ['E1109: refused'])).toBe(false);
 		expect(rerunsInNewTab('Chrome', ['E1302: lost'])).toBe(false);
+	});
+
+	it('runs a page once more in a new runner page on iOS, whatever the browser is called', () => {
+		// Chromium on iOS names itself Chrome, but its memory is WebKit's.
+		const iphone = {
+			userAgent:
+				'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1',
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], iphone)).toBe(true);
+		// iPad Safari gives a Mac's user agent; only the touch screen tells the two apart.
+		const ipad = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], ipad)).toBe(true);
+		// Desktop and Android browsers draw with Blink, so their failures are not explained by it.
+		const mac = {
+			userAgent:
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+			maxTouchPoints: 0,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], mac)).toBe(false);
+		const android = {
+			userAgent:
+				'Mozilla/5.0 (Linux; Android 14; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36',
+			maxTouchPoints: 5,
+		};
+		expect(rerunsInNewTab('Chrome', ['E1109: refused'], android)).toBe(false);
+		// The rerun needs a held-memory failure, whatever the device is.
+		expect(rerunsInNewTab('Chrome', ['the image differs from its reference'], iphone)).toBe(false);
 	});
 
 	it('names a sketch module that did not load, with what the test server sends for it now', async () => {
@@ -1018,7 +1049,8 @@ describe('the checks plan', () => {
 
 	it('splits the shaders page into parts that share every program, each with time for its share', async () => {
 		const parts = items.filter((item) => item.check.kind === 'shaders');
-		const programs = glslProgramsOf(await everyShader()).length;
+		const all = await everyShader();
+		const programs = glslProgramsOf(all).length;
 		expect(programs).toBeGreaterThan(100);
 		expect(parts.length).toBe(SHADER_PARTS);
 		expect(SHADER_PARTS).toBeGreaterThan(1);
@@ -1028,8 +1060,14 @@ describe('the checks plan', () => {
 				`/tests/pages/shaders.html?part=${i + 1}&parts=${SHADER_PARTS}`,
 			]),
 		);
-		// No part compiles more than a few hundred programs in one WebGL2 context.
+		// The parts together check every build, and no part compiles more than a few hundred
+		// programs in one WebGL2 context.
+		const shares = await Promise.all(parts.map((_, i) => everyShader(i + 1, SHADER_PARTS)));
+		const names = (lists: (readonly [string, unknown])[]) => new Set(lists.map(([name]) => name));
+		expect(names(shares.flatMap(glslProgramsOf))).toEqual(names(glslProgramsOf(all)));
+		expect(names(shares.flatMap(wgslModulesOf))).toEqual(names(wgslModulesOf(all)));
 		expect(programs / SHADER_PARTS).toBeLessThanOrEqual(400);
+		for (const share of shares) expect(glslProgramsOf(share).length).toBeLessThanOrEqual(600);
 		for (const part of parts) expect(part.timeoutSeconds).toBe(SHADERS_PAGE_SECONDS);
 		expect(SHADERS_PAGE_SECONDS).toBeGreaterThan(30 + programs / SHADER_PARTS / 4);
 	});

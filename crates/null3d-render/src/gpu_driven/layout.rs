@@ -19,14 +19,15 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
+use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes, template};
 
 use super::ids;
 use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
-use crate::data_texture::write_row_values;
+use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
+    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
 use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
@@ -75,13 +76,20 @@ const MESH_BOUNDS: u32 = 0;
 const UNCULLED_BOUNDS: u32 = 1;
 /// The bounds of a scene object with a sphere of its own: this plus its slot.
 const OWN_BOUNDS: u32 = 2;
+/// The bounds of the skinned objects that the vertex shaders skin. The objects of one mesh and
+/// material share a bucket, as a crowd of one model draws in one instanced draw per part, and the
+/// bucket's sphere holds each object's own (see `Layout::fit_skinned`).
+const SHARED_SKIN_BOUNDS: u32 = u32::MAX;
 
 /// The bounds part of a scene object's bucket key. The culling shader reads one local sphere per
-/// bucket, so each object with a sphere of its own draws from a bucket of its own.
-fn bounds_of(scene: &SceneStorage, slot: usize) -> u32 {
+/// bucket, so each object with a sphere of its own draws from a bucket of its own, apart from the
+/// skinned objects that the vertex shaders skin, whose copies need no vertices of their own.
+fn bounds_of(scene: &SceneStorage, skinning: &Skinning, slot: usize) -> u32 {
     let object_flags = scene.flags()[slot];
     if object_flags & flags::UNCULLED != 0 {
         UNCULLED_BOUNDS
+    } else if skinning.skins_in_vertex_shader(slot as u32) {
+        SHARED_SKIN_BOUNDS
     } else if object_flags & flags::CUSTOM_BOUNDS != 0 {
         OWN_BOUNDS + slot as u32
     } else {
@@ -89,11 +97,21 @@ fn bounds_of(scene: &SceneStorage, slot: usize) -> u32 {
     }
 }
 
+/// The scene slot of the one object that bounds `bounds` belong to, or `None` for bounds that
+/// buckets share.
+fn object_of(bounds: u32) -> Option<u32> {
+    match bounds {
+        SHARED_SKIN_BOUNDS => None,
+        own => own.checked_sub(OWN_BOUNDS),
+    }
+}
+
 /// The centre and radius of the local sphere that culls a bucket with `bounds`, whose mesh's
 /// sphere has `mesh_radius`.
 fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3], f32) {
     match bounds {
-        MESH_BOUNDS => ([0.0; 3], mesh_radius),
+        // A shared bucket's sphere comes from its objects' once the layout lists them.
+        MESH_BOUNDS | SHARED_SKIN_BOUNDS => ([0.0; 3], mesh_radius),
         UNCULLED_BOUNDS => ([0.0; 3], UNBOUNDED_RADIUS),
         own => {
             let slot = (own - OWN_BOUNDS) as usize;
@@ -128,8 +146,8 @@ pub(super) struct Bucket {
     /// The local sphere that culls its sources.
     pub(super) center: [f32; 3],
     pub(super) radius: f32,
-    /// True for the bucket of a skinned object whose vertex shader skins it, with the first joint
-    /// of its skin in the joint texture.
+    /// True for a bucket of skinned objects whose vertex shaders skin them, whose first joint
+    /// sends the culling pass to each source's own (see [`sizes::PER_SOURCE_JOINT`]).
     pub(super) skins: bool,
     pub(super) first_joint: u32,
     /// True when its pipelines read their instances by index, so its slice holds an index entry
@@ -287,16 +305,20 @@ pub(super) struct Layout {
     batch_rows: Vec<BatchRows>,
     /// The per-frame reset of every indirect draw: instance counts at zero.
     pub(super) indirect_template: Vec<u32>,
-    /// Each bucket of a skinned object, with the object's slot, in bucket order. Their bounds
-    /// change with the pose in every frame.
+    /// Each skinned object whose bounds its pose moves, with its bucket, in bucket order: one
+    /// object in a bucket of its own where the skinning pass skins it, and the objects that share
+    /// a bucket where the vertex shaders skin them. Their bounds change with the pose in every
+    /// frame.
     skinned: Vec<(u32, u32)>,
+    /// The first joint of the skin of each scene slot up to the last that the vertex shaders skin,
+    /// or 0, which the scene's layout uploads to the skin firsts texture, and the texel rows that
+    /// the texture holds, 0 before it exists.
+    skin_firsts: Vec<u32>,
+    skin_firsts_rows: u32,
     /// The pipelines of the skinned objects that the layout leaves out until they are built.
     waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
-    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
-    /// entry per bucket.
-    key_counts: Vec<(BucketKey, u32)>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -375,6 +397,7 @@ impl Layout {
     /// table, the bucket records and the cell order.
     pub(super) fn upload_bound(&self) -> usize {
         let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
+        let firsts = self.skin_firsts.len() * 4;
         // A frame that writes every record writes the skinned objects' bounds again after them.
         let writes = if self.skinned.is_empty() { 1 } else { 2 };
         // The scene's layout may build its table of object ranges in the frame, after this bound.
@@ -383,7 +406,7 @@ impl Layout {
         } else {
             0
         };
-        rows + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
+        rows + firsts + self.buckets.len() * BUCKET_BYTES as usize * writes + ranges
     }
 
     /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
@@ -426,6 +449,7 @@ impl Layout {
     pub(super) fn forget_gpu(&mut self) {
         self.built = false;
         self.buffer_sizes = [0; 5];
+        self.skin_firsts_rows = 0;
         self.order_uploaded = false;
     }
 
@@ -541,6 +565,7 @@ impl Layout {
         shadows: CasterPasses,
         prepass: Prepass,
         skinning: &Skinning,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -579,6 +604,10 @@ impl Layout {
         };
         let key_of = |pipeline: Option<DrawKey>, mesh, material, bounds, object: u32, skinned| {
             let pipeline = skin(pipeline?, skinned);
+            // A decal draws in the decal pass alone: no shadow, depth or outline.
+            if pipeline.decal() {
+                return None;
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
@@ -606,6 +635,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
             Some((pipeline, group, page, mesh, material, bounds))
         };
@@ -620,7 +650,7 @@ impl Layout {
             if left_out {
                 return None;
             }
-            let bounds = bounds_of(scene, slot);
+            let bounds = bounds_of(scene, skinning, slot);
             let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
             key_of(
                 settings.pipeline_of(mesh, material),
@@ -658,17 +688,13 @@ impl Layout {
             }
         };
 
-        collect_bucket_keys(
-            &mut self.key_counts,
-            scene,
-            batches,
-            scene_key,
-            |_, batch| batch_key(batch),
-        );
+        collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
+            batch_key(batch)
+        });
         // A skinned or morphed object draws its base level: its vertices come from regions of its
         // own, which the levels do not have.
         let eligible = |key: &BucketKey| {
-            let object = key.5.checked_sub(OWN_BOUNDS);
+            let object = object_of(key.5);
             key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0
                 && object.is_none_or(|slot| {
                     skinning.object(slot).is_none() && scene.morphs()[slot as usize] == 0
@@ -676,13 +702,12 @@ impl Layout {
         };
         let levels = settings.levels();
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
-        self.depthless = self
-            .key_counts
+        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
-        if self.key_counts.len() as u32 >= MAX_BUCKETS {
+        if key_counts.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
         self.waiting.clear();
@@ -712,12 +737,16 @@ impl Layout {
         self.draws.clear();
         self.skinned.clear();
         let (mut copied, mut indexed) = (0, 0);
-        for &(key, count) in &self.key_counts {
+        for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, meshes, eligible);
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
+            // The vertex shaders of a bucket of skinned objects find each copy's first joint in the
+            // copy, which the culling pass takes from the copy's own source, so the bucket's
+            // objects may share it. The SKIN builds never read their instances by index.
+            let skins = pipeline.permutation & permutation::SKIN != 0;
             let by_index = self.index_instances && pipeline.reads_index();
             let pipeline = if by_index {
                 pipeline.by_index()
@@ -727,9 +756,8 @@ impl Layout {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
-            let object = bounds.checked_sub(OWN_BOUNDS);
-            let skin = object.and_then(|object| skinning.object(object));
-            if let (Some(object), Some(_)) = (object, skin) {
+            let object = object_of(bounds);
+            if let Some(object) = object.filter(|&object| skinning.object(object).is_some()) {
                 self.skinned.push((self.buckets.len() as u32, object));
             }
             let regions = object.and_then(|object| skinning.parts_of(object));
@@ -766,8 +794,8 @@ impl Layout {
                 draws: parts.len() as u32,
                 center,
                 radius,
-                skins: object.is_some_and(|object| skinning.skins_in_vertex_shader(object)),
-                first_joint: skin.map_or(0, |skin| skin.joint_base),
+                skins,
+                first_joint: if skins { sizes::PER_SOURCE_JOINT } else { 0 },
                 indexed: by_index,
                 levels: links,
             });
@@ -795,16 +823,31 @@ impl Layout {
         }
         (self.copied, self.indexed) = (copied, indexed);
 
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         self.instance_buckets.clear();
         self.home_buckets.clear();
         let slots = world.radii().iter().zip(scene.cells()).zip(scene.flags());
         for (slot, ((&radius, &cell), &flags)) in slots.take(scene_rows as usize).enumerate() {
-            let home = bucket_of(scene_key(slot));
+            let key = scene_key(slot);
+            let home = bucket_of(key);
+            if home != HIDDEN && key.is_some_and(|key| key.5 == SHARED_SKIN_BOUNDS) {
+                self.skinned.push((home, slot as u32));
+            }
             self.home_buckets.push(home);
             self.instance_buckets
                 .push(scene_entry(home, radius, cell, flags));
+        }
+        self.skinned.sort_unstable();
+        if self.owns_sources() {
+            self.skin_firsts.clear();
+            for (slot, joint_base) in skinning.vertex_skinned() {
+                let slot = slot as usize;
+                if slot >= self.skin_firsts.len() {
+                    self.skin_firsts.resize(slot + 1, 0);
+                }
+                self.skin_firsts[slot] = joint_base;
+            }
         }
         self.occluders = occluders_in(&self.instance_buckets);
         self.source_layers.clear();
@@ -830,6 +873,7 @@ impl Layout {
             }
         }
 
+        self.fit_skinned(scene);
         self.indirect_template.clear();
         for draw in &self.draws {
             self.indirect_template.extend_from_slice(&[
@@ -863,6 +907,41 @@ impl Layout {
         Ok(())
     }
 
+    /// Gives each bucket of skinned objects the sphere that holds its objects' spheres, which the
+    /// animation step moves: an object's own in a bucket of its own, and in a bucket that several
+    /// share, the sphere around their centres' mean that reaches past each one's.
+    fn fit_skinned(&mut self, scene: &SceneStorage) {
+        for objects in self.skinned.chunk_by(|a, b| a.0 == b.0) {
+            let sphere = |&(_, slot): &(u32, u32)| local_sphere(scene, OWN_BOUNDS + slot, 0.0);
+            let (center, radius) = match objects {
+                [object] => sphere(object),
+                _ => {
+                    let share = 1.0 / objects.len() as f32;
+                    let mut mean = [0.0f32; 3];
+                    for (center, _) in objects.iter().map(sphere) {
+                        for (m, c) in mean.iter_mut().zip(center) {
+                            *m += c * share;
+                        }
+                    }
+                    let reach = |(center, radius): ([f32; 3], f32)| {
+                        let d = [
+                            center[0] - mean[0],
+                            center[1] - mean[1],
+                            center[2] - mean[2],
+                        ];
+                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() + radius
+                    };
+                    (
+                        mean,
+                        objects.iter().map(sphere).map(reach).fold(0.0, f32::max),
+                    )
+                }
+            };
+            let bucket = &mut self.buckets[objects[0].0 as usize];
+            (bucket.center, bucket.radius) = (center, radius);
+        }
+    }
+
     /// Uploads the bounds of the skinned objects' buckets, which the animation step moved: one
     /// write of the records from the first such bucket to the last.
     pub(super) fn update_skinned(
@@ -875,8 +954,10 @@ impl Layout {
         else {
             return Ok(());
         };
-        for &(bucket, slot) in &self.skinned {
-            let (center, radius) = local_sphere(scene, OWN_BOUNDS + slot, 0.0);
+        self.fit_skinned(scene);
+        for objects in self.skinned.chunk_by(|a, b| a.0 == b.0) {
+            let bucket = objects[0].0;
+            let Bucket { center, radius, .. } = self.buckets[bucket as usize];
             let record = &mut self.bucket_records[(bucket * BUCKET_WORDS) as usize..];
             record[2] = radius.to_bits();
             record[5..8].copy_from_slice(&center.map(f32::to_bits));
@@ -939,7 +1020,31 @@ impl Layout {
             let (at, bytes) = arena.push(words_as_bytes(&self.bucket_records))?;
             list.push(Op::WriteBuffer, &[records, 0, at, bytes])?;
         }
+        if self.owns_sources() {
+            recreated |= self.upload_skin_firsts(list, arena)?;
+        }
         Ok(recreated)
+    }
+
+    /// Makes the skin firsts texture big enough for the first joints, with room to grow, and at
+    /// least one texel row, which the culling groups bind while no object needs it, then uploads
+    /// the first joints. Returns true when it made the texture again.
+    fn upload_skin_firsts(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+    ) -> Result<bool, RecordError> {
+        let count = self.skin_firsts.len() as u32;
+        let needed = count.div_ceil(sizes::INDICES_PER_TEXTURE_ROW);
+        let limit = BUDGET[Limit::TextureDimension2D as usize];
+        let texture = DataTexture::indices(ids::SKIN_FIRSTS, 1);
+        let made = texture.grow(list, &mut self.skin_firsts_rows, needed, limit)?;
+        if count > 0 {
+            let (at, _) = arena.push(words_as_bytes(&self.skin_firsts))?;
+            let rows = TextureRows::indices(0, count);
+            data_texture::write_rows(list, ids::SKIN_FIRSTS, rows, at)?;
+        }
+        Ok(made)
     }
 
     /// Rewrites the table entries of the sources whose membership, cell or layers changed since
@@ -1217,6 +1322,7 @@ mod tests {
                 CasterPasses::default(),
                 Prepass::Off,
                 &Skinning::default(),
+                &mut KeyCounts::new(),
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;
