@@ -120,6 +120,7 @@ Drawing:
 | Less detail far away | `mesh.setLevels([{ mesh, error }])`, or levels from `bunx @null3d/cli assets optimize --lod`, which `assets.loadGltf` reads (0.2) | `concepts/lod` |
 | Camera-facing quads that the sketch moves itself | `scene.createSprites` (0.2) | `api/sprites` |
 | Fire, smoke, sparks, rain, leaves and other particle effects | `createParticles` from `@null3d/particles` (0.2) | `api/particles` |
+| Hills, valleys and other ground from a height field | `createTerrain` from `@null3d/terrain` (0.2) | `api/terrain` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
 | Shapes for debugging only | `debug.line`, `debug.box`, `debug.axes` | `api/debug` |
@@ -160,12 +161,14 @@ Effects:
 | Outlines around chosen meshes | `post.set({ outline: { color, width } })` and `mesh.setOutlined(true)` (0.2) | `api/post`, `api/objects` |
 | Ambient occlusion | `post.set({ ao: { radius, intensity } })` (0.2), with `quality.set({ aoScale: 0.5 })` on phones and tablets | `api/post`, `concepts/post-processing` |
 | Depth of field, a camera's lens | `camera.setFocalLength(mm)` and `post.set({ dof: { aperture, focusDistance or focusPoint } })` (0.2); quality setting `dofSamples`, 0 on Low | `api/post`, `api/cameras`, `concepts/post-processing` |
+| An eye that adapts from bright to dark places, automatic exposure | `post.set({ autoExposure: { minEv, maxEv, speedUp, speedDown, compensation } })` (0.2), from the camera's `exposure` or `ev100`; quality setting `exposureMeter` | `api/post`, `concepts/post-processing` |
 | A custom full-screen effect, or a tone curve of your own | `post.addEffect({ wgsl, uniforms, order })`, or `post.set({ toneMapping: wgsl })` (0.2) | `guides/custom-passes` |
 | Render to a texture: a minimap, a camera's screen | `render.addPass({ kind: 'scene', camera, writes, size })` and `textures.fromPass(pass)` (0.2) | `api/render`, `guides/custom-passes` |
 | Water, mirrors and polished floors that reflect the scene | `render.addPass({ kind: 'reflection', writes, plane: { point } })`, and a custom material that sets `s.reflection` (0.2) | `api/render`, `shaders/surface-functions`, `guides/custom-passes` |
 | Glass, gems and clear water that show what lies behind them, bent and blurred | `materials.standard({ transmission: 1, thickness, ior, roughness })`, or a custom material that sets `s.transmission` (0.2) | `api/materials`, `shaders/surface-functions` |
 | Decals: scorch marks, mud, puddles, road paint, moss, cracks, posters | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, metalnessRoughnessMap, angleFade, edgeFade })`; the box's z axis points out of the surfaces it marks; a batch of boxes for many (0.2) | `api/materials` |
 | Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2); a physical sky that also hazes distant objects: `scene.setBackground({ atmosphere })` (0.2) | `api/scene` |
+| Light shafts, sun rays through trees, glowing cones under lamps and headlights | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy, distance } })` (0.2); quality setting `fogSlices`, 0 on Low, where the fog keeps its `sunGlow` | `api/scene`, `concepts/lighting` |
 | Light from the sky, or a time of day | `scene.setEnvironment(await assets.skyEnvironment())` (0.2); `timeOfDay(hours)` values for the sky, the sun, the fog and the exposure (0.2) | `concepts/lighting` |
 
 ## 6. Custom shaders in brief

@@ -30,8 +30,14 @@ import {
 	TEMPLATE_DOF_COMPOSITE,
 	TEMPLATE_DOF_FILTER,
 	TEMPLATE_DOF_SETUP,
+	TEMPLATE_EXPOSURE_ADAPT,
+	TEMPLATE_EXPOSURE_LUMINANCE,
 	TEMPLATE_FINAL,
 	TEMPLATE_FINAL_BLOOM,
+	TEMPLATE_FOG_APPLY,
+	TEMPLATE_FOG_BLOCK,
+	TEMPLATE_FOG_LIGHT,
+	TEMPLATE_FOG_SUM,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -272,10 +278,19 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_DOF_BLUR] = { shader: shaders.dof, pipeline: 'gather' };
 	templates[TEMPLATE_DOF_FILTER] = { shader: shaders.dof, pipeline: 'tent' };
 	templates[TEMPLATE_DOF_COMPOSITE] = { shader: shaders.dof, pipeline: 'composite' };
+	// The volumetric fog's steps: the light step reads the camera's frame group as the background
+	// does, and the apply step the same one-sample copy of the depth.
+	templates[TEMPLATE_FOG_LIGHT] = { shader: shaders.fog_light, pipeline: 'light' };
+	templates[TEMPLATE_FOG_BLOCK] = { shader: shaders.fog_volume, pipeline: 'block' };
+	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
+	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
 	// Decals draw in a pass of their own, never in the depth prepass.
 	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
 	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };
+	// The automatic exposure meters with its downsample on WebGL2, which has no compute shaders.
+	templates[TEMPLATE_EXPOSURE_LUMINANCE] = { shader: shaders.exposure, pipeline: 'downsample' };
+	templates[TEMPLATE_EXPOSURE_ADAPT] = { shader: shaders.exposure, pipeline: 'adapt' };
 	if (DEV) {
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

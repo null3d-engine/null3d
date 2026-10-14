@@ -30,7 +30,10 @@
 // on in S1, and changes its intensity every frame. `--bloom` turns bloom on in S1, and changes
 // its intensity every frame, so the core writes the chain's settings again in each frame. `--dof`
 // turns depth of field on in S1, focused on a point that moves every frame, so the core writes its
-// steps' blocks again in each frame. The camera orbits, so each frame
+// steps' blocks again in each frame. `--exposure` turns automatic exposure on in S1, and changes
+// its compensation every frame, so the meter runs and uploads its block in each frame. `--fog`
+// gives S1 height fog with the volumetric fog on, whose block the core writes again in each frame.
+// The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
 // line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
@@ -93,6 +96,8 @@
 //   bun run bench:allocation --ao --gpu webgl2
 //   bun run bench:allocation --bloom --gpu webgl2
 //   bun run bench:allocation --dof --gpu webgl2
+//   bun run bench:allocation --exposure --gpu webgl2
+//   bun run bench:allocation --fog --gpu webgl2
 //   bun run bench:allocation --outline --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
 //   bun run bench:allocation --labels 256 --gpu webgl2
@@ -354,6 +359,19 @@ const BLOOM_REPLAY_BUDGET = 15 * 64;
 const DOF_REPLAY_BUDGET = 4 * 64;
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--exposure`:
+ * the encoders of the meter's passes, a compute pass for the histogram or two render passes for the
+ * downsample, at bloom's allowance per pass.
+ */
+const EXPOSURE_REPLAY_BUDGET = 2 * 64;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--fog`: the
+ * encoders of the volumetric fog's three render passes, at bloom's allowance per pass.
+ */
+const FOG_REPLAY_BUDGET = 3 * 64;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--effects`:
  * the encoders of the two effects' render passes, at bloom's allowance per pass.
  */
@@ -563,7 +581,12 @@ async function main(): Promise<void> {
 		const bloom = args.includes('--bloom') ? '&bloom' : '';
 		if (bloom && scene !== 's1') throw new Error('--bloom turns bloom on in S1 only');
 		const dof = args.includes('--dof') ? '&dof' : '';
+		const fog = args.includes('--fog') ? '&fog' : '';
+		if (fog && scene !== 's1') throw new Error('--fog turns the volumetric fog on in S1 only');
 		if (dof && scene !== 's1') throw new Error('--dof turns depth of field on in S1 only');
+		const exposure = args.includes('--exposure') ? '&exposure' : '';
+		if (exposure && scene !== 's1')
+			throw new Error('--exposure turns automatic exposure on in S1 only');
 		const outline = args.includes('--outline') ? '&outline' : '';
 		if (outline && scene !== 's1') throw new Error('--outline outlines boxes in S1 only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
@@ -617,7 +640,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${setters}${effects}${sky}${reflection}${transmission}${decals}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${setters}${effects}${sky}${reflection}${transmission}${decals}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -762,6 +785,8 @@ async function main(): Promise<void> {
 					(replay && (batchShadows || scene === 's4') ? CONTACT_REPLAY_BUDGET : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
+					(replay && exposure ? EXPOSURE_REPLAY_BUDGET : 0) +
+					(replay && fog ? FOG_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +

@@ -68,6 +68,16 @@ export interface PlayOptions {
 	 * clip that already plays keeps its weight.
 	 */
 	weight?: number;
+	/**
+	 * How a play with a `fade` switches what its layer plays. `'blend'`, the default, cross-fades
+	 * the layer's old clips with the new one, as three.js's `crossFadeTo` does, and samples both
+	 * while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves
+	 * continues on its path and eases into the new clip, which keeps feet from sliding through a
+	 * mixed gait. It needs a fade above 0, no `weight` and no `join`, and a clip already playing on
+	 * the layer keeps its own fade. `crossFade` always cross-fades, so a port of `crossFadeTo`
+	 * shows the blend that three.js shows.
+	 */
+	transition?: 'blend' | 'inertial';
 }
 
 /**
@@ -626,7 +636,7 @@ export class Animator implements Described {
 	 * clip with a weight still takes over.
 	 */
 	crossFade(name: string, duration: number, options?: PlayOptions): void {
-		this.start('crossFade', name, options, false, duration);
+		this.start('crossFade', name, options, false, duration, true);
 	}
 
 	/**
@@ -940,6 +950,7 @@ export class Animator implements Described {
 		options: PlayOptions | undefined,
 		join: boolean,
 		duration?: number,
+		forceBlend = false,
 	): void {
 		const clip = this.clip(call, name);
 		if (DEV) {
@@ -952,7 +963,11 @@ export class Animator implements Described {
 		args.set(read.numbers);
 		if (duration !== undefined) args[C.ANIMATION_ARG_FADE] = duration;
 		const joins = join && (read.flags & C.ANIMATION_PLAY_WEIGHT) !== 0;
-		const flags = read.flags | (joins ? C.ANIMATION_PLAY_JOIN : 0);
+		// A cross-fade keeps the weighted blend, so a port of three.js's crossFadeTo shows the mix
+		// three.js shows, whatever transition its options name.
+		const flags =
+			(read.flags & (forceBlend ? ~C.ANIMATION_PLAY_INERTIAL : ~0)) |
+			(joins ? C.ANIMATION_PLAY_JOIN : 0);
 		const status = core.glue.animatorPlay(this.instance, clip, read.layer, flags);
 		// The first additive play of a clip stores its additive form, which can grow the memory.
 		core.refresh();
@@ -967,13 +982,17 @@ export class Animator implements Described {
 		const fade = options.fade ?? 0;
 		const speed = options.speed ?? 1;
 		const layer = options.layer ?? 0;
-		const { time, weight } = options;
+		const { time, weight, transition } = options;
 		if (DEV) {
 			this.checkFade(call, fade);
 			checks.checkNumber(call, 'speed', speed, this);
 			this.checkLayer(call, layer);
 			if (time !== undefined) checks.checkNumber(call, 'time', time, this);
 			if (weight !== undefined) this.checkWeight(call, weight);
+			if (transition !== undefined && transition !== 'blend' && transition !== 'inertial')
+				refuse(
+					`${call}() got the transition ${transition} on ${this.describe()}; it takes 'blend' or 'inertial'.`,
+				);
 		}
 		const read = recordFor(options, sharedOptions, ReadOptions);
 		const { numbers } = read;
@@ -985,7 +1004,8 @@ export class Animator implements Described {
 			(options.loop === false ? 0 : C.ANIMATION_PLAY_LOOP) |
 			(options.additive ? C.ANIMATION_PLAY_ADDITIVE : 0) |
 			(time === undefined ? 0 : C.ANIMATION_PLAY_TIME) |
-			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT);
+			(weight === undefined ? 0 : C.ANIMATION_PLAY_WEIGHT) |
+			(transition === 'inertial' ? C.ANIMATION_PLAY_INERTIAL : 0);
 		read.layer = layer;
 		if (read !== sharedOptions) playRecords.set(options, read);
 		return read;

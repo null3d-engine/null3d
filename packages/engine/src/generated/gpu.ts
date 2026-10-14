@@ -140,6 +140,7 @@ export const LAYOUT_PARTICLE = 32;
 export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
 export const LAYOUT_PARTICLE_DEPTH_MS = 35;
 export const LAYOUT_ATMOSPHERE = 39;
+export const LAYOUT_EXPOSURE = 40;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -251,6 +252,15 @@ export const TEMPLATE_PARTICLE = 53;
 export const TEMPLATE_PARTICLE_MAP = 54;
 export const TEMPLATE_PARTICLE_DEPTH = 55;
 export const TEMPLATE_PARTICLE_DEPTH_MS = 56;
+export const TEMPLATE_EXPOSURE_LUMINANCE = 15;
+export const TEMPLATE_EXPOSURE_ADAPT = 26;
+export const TEMPLATE_EXPOSURE_HISTOGRAM = 27;
+export const TEMPLATE_EXPOSURE_ADAPT_HISTOGRAM = 40;
+export const TEMPLATE_FOG_LIGHT = 57;
+export const TEMPLATE_FOG_SUM = 58;
+export const TEMPLATE_FOG_APPLY = 59;
+export const TEMPLATE_FOG_APPLY_MS = 60;
+export const TEMPLATE_FOG_BLOCK = 69;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
