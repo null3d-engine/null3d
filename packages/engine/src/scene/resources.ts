@@ -1354,11 +1354,12 @@ interface CompiledUniform {
  */
 interface CompiledMaterial extends CompiledWgsl {
 	readonly kind: 'material';
+	/** The builds, which a module's value leaves out: they load on first use through `builds`. */
 	readonly variants: ShaderVariants;
-	/** The WebGPU builds that skin, where a hot update brings them with the others. */
-	readonly skinVariants?: ShaderVariants;
-	/** Imports the WebGPU builds that skin in the vertex shader, which load on first use. */
-	readonly skinBuilds?: BuildsLoader;
+	/** Imports a set of the builds, which load on first use, by GPU path and permutation bits. */
+	readonly builds?: BuildsLoader;
+	/** Every permutation bit of the builds, joined, where the value leaves the builds out. */
+	readonly permutations?: number;
 	readonly locations: readonly number[];
 	/** The optional vertex attributes (`VERTEX_*` bits) that the vertex stage reads. */
 	readonly attributes: number;
@@ -1374,21 +1375,21 @@ interface CompiledMaterial extends CompiledWgsl {
 }
 
 /**
- * What the thread that draws builds a custom material's pipelines from. Its builds that skin come
- * on first use, unless the compiled WGSL holds them.
+ * What the thread that draws builds a custom material's pipelines from. Its builds come on first
+ * use, unless the compiled WGSL holds them, as a hot update's does.
  */
 function customShader(compiled: CompiledMaterial): CustomShader {
-	const { skinVariants } = compiled;
 	return {
-		variants: skinVariants ? { ...compiled.variants, ...skinVariants } : compiled.variants,
+		variants: compiled.variants,
 		locations: compiled.locations,
 		textures: compiled.textures.length,
-		...(!skinVariants && compiled.skinBuilds && { skinBuilds: true }),
+		...(compiled.builds && { builds: true }),
 	};
 }
 
 /** True when one of a custom material's builds has any of the permutation bits of `bits`. */
 function builds(compiled: CompiledMaterial, bits: number): boolean {
+	if (compiled.permutations !== undefined) return (compiled.permutations & bits) !== 0;
 	return Object.values(compiled.variants).some((v) => v.permutation & bits);
 }
 
@@ -2290,7 +2291,7 @@ export class Materials {
 			compiled,
 			() => [customShader(compiled)],
 			compiled.hot,
-			compiled.skinBuilds,
+			compiled.builds,
 		);
 	}
 

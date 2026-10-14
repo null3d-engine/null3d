@@ -188,11 +188,18 @@ export function createCinematic(
 	};
 
 	// The controls orbit the route's opening look-at until a takeover gives them their own target,
-	// so their first update never turns the camera around the origin.
+	// so their first update never turns the camera around the origin. The camera also takes the
+	// opening pose now, so a frame drawn before the route's first step shows the opening view and
+	// never the pose the camera was created at.
 	routePose(0, sample);
 	controls.target[0] = sample[3] as number;
 	controls.target[1] = sample[4] as number;
 	controls.target[2] = sample[5] as number;
+	camera.setPosition(sample[0] as number, sample[1] as number, sample[2] as number);
+	camera.lookAt(sample[3] as number, sample[4] as number, sample[5] as number);
+	options.target[0] = sample[3] as number;
+	options.target[1] = sample[4] as number;
+	options.target[2] = sample[5] as number;
 
 	/** The phase of the route whose pose is nearest to `at`, weighing the position and the target. */
 	const nearestPhase = (at: Float32Array): number => {
