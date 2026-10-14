@@ -423,6 +423,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'terrain',
+		group: 'Scale',
+		sketch: new URL('./terrain/sketch.ts', import.meta.url),
+		code: 'terrain/',
+		title: 'Terrain',
+		scene: 'Golden valley',
+		summary:
+			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, and boulders made in code stand on the ground.',
+		controls: `${CAMERA} The camera circles the valley, and the ground follows it.`,
+		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'galaxy',
 		group: 'Scale',
 		sketch: new URL('./galaxy/sketch.ts', import.meta.url),

@@ -2012,6 +2012,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/particles-sketch.ts',
 		hold: 2,
 	},
+	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
+	// with grass, soil, rock and snow blended by a splat map, and stones seated with heightAt.
+	{
+		name: 'terrain',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts',
+		hold: 1,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
