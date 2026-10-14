@@ -5,7 +5,11 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { Document, NodeIO } from '@gltf-transform/core';
-import { EXTMeshGPUInstancing, KHRMaterialsTransmission } from '@gltf-transform/extensions';
+import {
+	EXTMeshGPUInstancing,
+	KHRMaterialsClearcoat,
+	KHRMaterialsTransmission,
+} from '@gltf-transform/extensions';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import { lodOf } from './lod-extension.js';
 import { budgetWarnings, PRESET_TEXTURE_MEMORY_MIB } from './report.js';
@@ -141,6 +145,24 @@ describe('shaderList', () => {
 		expect(list.buckets[0]?.key).toBe(
 			'lit uv0+color+joints+weights+morph VERTEX_COLOR+SKIN+MORPH+LOD_FADE',
 		);
+	});
+
+	it('names the clear coat and sheen of a layered material', () => {
+		const doc = new Document();
+		const clearcoat = doc
+			.createExtension(KHRMaterialsClearcoat)
+			.createClearcoat()
+			.setClearcoatFactor(1);
+		const coated = doc.createMaterial('coated').setExtension('KHR_materials_clearcoat', clearcoat);
+		doc
+			.createScene()
+			.addChild(
+				doc.createNode('ball').setMesh(doc.createMesh('ball').addPrimitive(triangle(doc, coated))),
+			);
+		const list = shaderList(doc, { lodOf });
+		expect(list.permutations).toEqual(['COAT_SHEEN']);
+		expect(list.features).toEqual(['coat_sheen']);
+		expect(list.buckets[0]?.key).toBe('lit uv0 COAT_SHEEN');
 	});
 
 	it('counts each instance of an instancing node as one object', () => {

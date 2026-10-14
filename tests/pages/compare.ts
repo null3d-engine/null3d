@@ -14,7 +14,6 @@
 // frames has made them all. `?step=` sets the seconds of each step of the short ramp, which settles
 // for 0.4 of each step and measures the rest.
 import { measurePageMemory } from '@null3d/engine/stats';
-import { dressStage } from '../../examples/compare/busy-page/page';
 import { COMPARISONS } from '../../examples/compare/comparisons';
 import type { SceneSignature } from '../../examples/compare/scene-signature';
 import { type EngineName, rampComparison, startComparison } from '../../examples/lib/compare';
@@ -58,8 +57,6 @@ run('compare', async () => {
 	const [width, height] = (params.get('size') ?? '').split('x').map(Number);
 	if (width && height) Object.assign(canvas.style, { width: `${width}px`, height: `${height}px` });
 	const gpu = params.get('gpu') === 'webgl2' ? 'webgl2' : 'webgpu';
-	// A comparison that dresses its stage, such as the Busy page, does so beside the canvas.
-	const dressed = dressStage(comparison, document.body, canvas, true);
 	const hold = params.has('hold') ? Number(params.get('hold')) : undefined;
 	const full = params.get('ramp') === 'full';
 	const fixed = params.has('measure') ? Number(params.get('measure')) : undefined;
@@ -102,7 +99,6 @@ run('compare', async () => {
 	if (started.held) {
 		const { width, height, pixels } = started.held;
 		await started.destroy();
-		dressed?.stop();
 		return { ...report, width, height, pixels: toBase64(pixels) };
 	}
 	if (fixed !== undefined) {
@@ -113,7 +109,6 @@ run('compare', async () => {
 		const memory = skipMemory ? null : await started.measureMemory();
 		const parts = skipMemory ? null : await memoryParts();
 		await started.destroy();
-		dressed?.stop();
 		return { ...report, measured: { count: started.count, ...frames, memory, parts } };
 	}
 	const step = Number(params.get('step') ?? 1);
@@ -139,7 +134,6 @@ run('compare', async () => {
 				},
 	);
 	await started.destroy();
-	dressed?.stop();
 	if (probing) return { ...report, ramp, signatures: await Promise.all(signatures) };
 	return { ...report, ramp };
 });

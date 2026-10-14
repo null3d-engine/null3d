@@ -696,6 +696,16 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	setEnvironment(texture: number): number;
 	/**
+	 * The address of the block of the light probe grid's values (`LIGHT_PROBE_VALUE_*`), 32-bit
+	 * floats that TypeScript writes before it calls `setLightProbeGrid`.
+	 */
+	lightProbeValues(): number;
+	/**
+	 * Lights the scene with the light probe grid whose coefficients are 3D texture `texture`, or
+	 * with none when `texture` is 0, from the next frame on.
+	 */
+	setLightProbeGrid(texture: number): number;
+	/**
 	 * Draws the scene into a target of another format, by code, with another anti-aliasing mode, by
 	 * code, from the next frame on.
 	 */
@@ -1011,6 +1021,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setVignette',
 	'environmentValues',
 	'setEnvironment',
+	'lightProbeValues',
+	'setLightProbeGrid',
 	'setOutline',
 	'effectValues',
 	'effectTextures',
