@@ -91,6 +91,8 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type {
+	AtmosphereBackground,
+	AtmosphereOptions,
 	BackgroundOptions,
 	BackgroundSource,
 	Cubemap,

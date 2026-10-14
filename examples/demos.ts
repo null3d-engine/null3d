@@ -231,6 +231,20 @@ export const DEMOS: readonly Demo[] = [
 			'Road paint, a zebra crossing, puddles, cracks, moss, mud and a scorch mark on a street at dusk, with bare bricks, posters, graffiti and stains on the house fronts, each a box that projects its maps onto the surfaces inside it, lit by the low sun and the street lamps. A walker on a layer of its own crosses the puddles clean.',
 		controls: `${CAMERA} Click or tap the street to throw mud or a scorch mark there.`,
 		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'atmosphere',
+		group: 'Light, materials and effects',
+		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),
+		code: 'atmosphere/',
+		title: 'Atmosphere',
+		scene: 'Valley of ridges',
+		summary:
+			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
+		hold: 2,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'contact-shadows',

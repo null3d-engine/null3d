@@ -1672,9 +1672,20 @@
       "status": "changed",
       "since": "0.2",
       "target": "scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, ... } })",
-      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other.",
+      "notes": "three.js's Sky as the scene's background, with its uniforms' names, defaults and formulas, clouds and sun disc included. Drop the mesh and its scale: the sky draws behind every object. SkyMesh moves its clouds by the renderer's clock; pass the sketch's time as time instead. The sky lights nothing, as in three.js: for its light, `scene.setEnvironment(await assets.skyEnvironment())` follows the sky in place of `pmremGenerator.fromScene`. `timeOfDay(hours)` gives a sky, a sun, fog and an exposure that match each other. For a physical sky with ozone, twilight and haze on distant objects, move to `{ atmosphere }`, which looks different from three.js's sky.",
       "docs": "api/scene",
       "detect": "new\\s+Sky(Mesh)?\\s*\\("
+    },
+    {
+      "id": "atmosphere",
+      "category": "Post-processing",
+      "three": "A physical sky and aerial perspective (add-ons such as @takram/three-atmosphere: SkyMaterial, AerialPerspectiveEffect)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "scene.setBackground({ atmosphere: { sunPosition, sunIntensity, rayleigh, haze, ozone, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, ... } })",
+      "notes": "The engine's own physical sky, from Hillaire's lookup tables, with no files to load. One background call draws the sky and hazes every object by its distance, so drop the sky mesh, the precomputed textures and the aerial perspective effect. Set metersPerUnit to the scene's scale, and aerialPerspective above 1 to make a small scene look larger. The sun's light is in the units of a directional light: aim the scene's light at the sun yourself, or take it from timeOfDay(hours, { model: 'physical' }). The sky lights nothing by itself: scene.setEnvironment(await assets.skyEnvironment()) follows it. The Low preset draws the analytic sky in its place.",
+      "docs": "api/scene",
+      "detect": "new\\s+(SkyMaterial|AerialPerspectiveEffect|StarsMaterial)\\s*\\("
     },
     {
       "id": "lensflare",
