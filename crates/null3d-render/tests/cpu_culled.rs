@@ -326,11 +326,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
         // cube of the environment, the ring of three light data textures, the blank textures
         // that stand in for ambient occlusion and for the copy that surfaces which let light
         // through sample, the row values textures of the resident rows and of the ring of
-        // streamed ones, one texel row each while no batch has row values, and the blank array
-        // of reflection probes.
-        // through sample, and the row values textures of the resident rows and of the ring of
-        // streamed ones, one texel row each while no batch has row values, and the light tables
-        // of area lights.        assert_eq!(count(&commands, Op::CreateTexture), 24);
+        // streamed ones, one texel row each while no batch has row values, and the shared array
+        // of the light tables and the probes' maps.
+        assert_eq!(count(&commands, Op::CreateTexture), 24);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
