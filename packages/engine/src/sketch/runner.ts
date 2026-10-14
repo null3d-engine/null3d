@@ -445,6 +445,9 @@ export class SketchRunner {
 				get contactShadowSteps() {
 					return governor.contactSteps;
 				},
+				get farAnimationInterval() {
+					return governor.animationInterval;
+				},
 			},
 			textures.memory,
 		);
@@ -796,6 +799,7 @@ export class SketchRunner {
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
 		governor.setContact(settings.contactShadowSteps);
+		governor.setAnimation(settings.farAnimationInterval);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (

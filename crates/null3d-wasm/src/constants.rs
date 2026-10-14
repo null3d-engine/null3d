@@ -463,6 +463,9 @@ pub mod animation_field {
     /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
     /// writes; made by `enableJointOverrides`.
     pub const LOOK_TARGETS: u32 = 12;
+    /// The frames between two frame steps of each instance's pose, 32-bit unsigned integers,
+    /// which TypeScript writes.
+    pub const UPDATE_INTERVALS: u32 = 13;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -1243,6 +1246,7 @@ pub fn typescript() -> String {
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
                 ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
                 ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
+                ("UPDATE_INTERVALS", animation_field::UPDATE_INTERVALS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of

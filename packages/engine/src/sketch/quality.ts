@@ -108,6 +108,13 @@ export interface QualityGovernor {
 	 * the fewest after the governor's last step.
 	 */
 	readonly contactShadowSteps: number;
+	/**
+	 * The frames between two updates of a far character's pose now. It is
+	 * `settings.farAnimationInterval`, or up to twice as long for each of the governor's last
+	 * steps, at most every 4th frame. Give it to `animator.setUpdateInterval` for the characters
+	 * that the camera sees from far.
+	 */
+	readonly farAnimationInterval: number;
 }
 
 /**
@@ -401,6 +408,9 @@ export class SketchQuality implements Quality {
 			},
 			get contactShadowSteps() {
 				return settings.contactShadowSteps;
+			},
+			get farAnimationInterval() {
+				return settings.farAnimationInterval;
 			},
 		};
 	}
