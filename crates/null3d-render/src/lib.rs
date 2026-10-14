@@ -111,3 +111,4 @@ pub mod textures;
 mod transmission;
 pub mod view;
 mod view_copy;
+mod weighted;
