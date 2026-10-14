@@ -410,7 +410,7 @@ The result holds plain values. Apply them to your own objects, as above:
 | --- | --- |
 | `sky` | `scene.setBackground({ sky })`. Add the clouds and their `time` of your own: `{ ...day.sky, cloudCoverage: 0.3 }` |
 | `skyIntensity` | The sky background's and the sky environment's `intensity` |
-| `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light at least 25 degrees up |
+| `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light that rises from the horizon as night falls |
 | `fog` | `scene.setFog`: the `color` of the sky's horizon and the `sunGlow`. Choose the curve and the density for your scene |
 | `ambient` | An ambient light's `color` and `intensity`, for a scene without the sky's environment. A scene lit by the sky's environment needs none |
 | `exposure` | `post.set({ exposure })`: 1 by day, up to 3.5 at night |
@@ -421,9 +421,9 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 | --- | --- |
 | `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
 | `skyIntensity` | 1: the physical sky dims by itself after sunset |
-| `light` | The sun through the air, which reddens as it sets. After sunset, the moon, whose light grows as night falls |
+| `light` | The sun through the air, which reddens as it sets. As night falls the light sweeps to the moon and turns cool, while the sun's own light fades |
 | `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
-| `exposure` | Follows the sky's mean light, as an eye adapts: 1 by day, up to 4 through dusk, and 3.5 once night has fallen, as with the analytic sky |
+| `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.6 once night has fallen |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 
