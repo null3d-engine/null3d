@@ -1,8 +1,8 @@
 # D-133: Volumetric fog and light shafts
 
-Status: proposed, 2026-10-11. Date: 2026-10-11. Task: M2-EX21.
+Status: decided by its landing, 2026-10-14. Date: 2026-10-11. Task: M2-EX21.
 
-Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Four fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. The figures per preset are to come.
+Summary: `scene.setFog({ volumetric })` lights the scene's fog with the main directional light and the point and spot lights, through their shadows. Sun rays then fall through trees, and lamps and headlights glow in cones. The engine lights a grid of cells that follow the camera's view (froxels), as Frostbite and Unreal do. It sums the cells front to back, and adds the light that the fog scatters toward the camera after the main pass. Four fragment steps run on every GPU path, and their code and shaders load on first use. The quality setting `fogSlices` sizes the grid. Low keeps the fog's analytic sun glow, at no cost. Data holds the figures per preset and the download sizes.
 
 ## Question
 
@@ -93,7 +93,7 @@ three.js has no volumetric fog in its core. Its `webgpu_volume_lighting` example
 
 ## Data
 
-To come: the download sizes.
+The download sizes: the lit fog's shader builds load on the feature's first use, 7,397 bytes for WebGPU and 7,405 for WebGL2 after Brotli, and a page that uses none of them adds nothing. The feature's code in a page's start adds about 460 bytes after Brotli, mostly its pipeline tables and the scene API.
 
 ### Cost on the Mac
 
@@ -105,7 +105,7 @@ The fog cost test (`NULL3D_FOG_COST=1 bun run test:browser -- fog-cost.spec.ts`)
 | 64 (High) | +1.70 / +1.70 ms | +1.70 / +1.57 ms | +1.47 / +1.61 ms |
 | 96 (Ultra) | +5.37 / +5.37 ms | +5.31 / +5.05 ms | +4.40 / +4.65 ms |
 
-The CPU time per frame stayed within 0.04 ms of the fog's off side on every path. The lamps cost little: each cell loops over the lights of its own cluster. The cost grows faster than the cells: from 32 to 96 slices the cells grow about 12 times, and the cost about 10 times, but from 64 to 96 the cells grow 2.7 times and the cost 3.2 times. The sum step loops, for each cell, over every slice in front of it, so its work grows with the square of the slices.
+These figures are with the one step that summed every slice in front of each cell. From 32 to 96 slices the cells grow about 12 times and the cost about 10 times, but from 64 to 96 the cells grow 2.7 times and the cost 3.2 times: that step's work grew with the square of the slices. The block step and the sum split it on 14 October 2026, so a cell reads at most 8 slices and one texel per block, 12 and 20 texels at 32 and 96 slices. The CPU time per frame stayed within 0.04 ms of the fog's off side on every path. The lamps cost little: each cell loops over the lights of its own cluster.
 
 ### Allocation
 
