@@ -90,7 +90,7 @@ export const DEMOS: readonly Demo[] = [
 			'Clear water over a stony bed, which mirrors the banks and shows the stones under it, with dense swaying grass, mossy rocks and leaves that float on the current, under the sky of the time of day. Trees, ferns and a cave mouth stand on the banks.',
 		assets:
 			'Shows organic models loaded from files: its trees, plants and cave mouth are built by script in Blender and optimized by the asset tool. The land, water, grass and rocks are made in code.',
-		hold: 21,
+		hold: 0.5,
 		timeoutSeconds: 60,
 	},
 	{

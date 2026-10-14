@@ -235,7 +235,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town follows.
 
 ### The parts
 
@@ -271,7 +271,7 @@ The page's measurement takes the median interval of 40 of its frames, or of thos
 
 Factory's ramps top out at 50,000 moving parts on desktops, 30,000 on tablets and 20,000 on phones. Each row is a first guess until a device sitting measures it.
 
-Night town's and Busy page's ramps count lights, 12 to a block. They start at 60, 48 and 36 lights and top out at 1,020, 720 and 480 on desktops, tablets and phones. Each stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
+Night town's ramp counts lights, 12 to a block. It starts at 60, 48 and 36 lights and tops out at 1,020, 720 and 480 on desktops, tablets and phones. It stays under 1,024 lights, the most that both engines' clustered lighting lists at once. three.js's WebGLRenderer stops at the most lights that the GPU builds into one shader, and the page shows that limit ([D-121](decisions/D-121-comparison-tier.md#night-town-and-busy-page)).
 
 ### Fairness rules
 
@@ -450,7 +450,7 @@ The particles demo uses the particles add-on. The showcase and comparison scenes
 A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
 
 - **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
-- **Night town** and the **Busy page** take screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Night town** takes screen-space reflections, area lights, reflection probes, decals and automatic exposure.
 - **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
 - **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
 
@@ -596,7 +596,7 @@ The owner decided these points about the examples:
 - Every demo and comparison shows the engine's stats overlay. The overlay gains memory, triangle, object and GPU-time figures, and a switch on the page. A three.js page prints the same figures in the same layout.
 - The comparison tier's speed runs, the ramp and the fixed counts, run with the overlay collapsed in both engines. A collapsed overlay samples nothing, so the headline figures carry no overlay cost. The three.js side uses the same overlay code and the same rule ([D-116](decisions/D-116-stats-overlay-figures.md#the-overlays-layout-and-rules)).
 - The demos must show the engine's power, not one call each. The weak feature demos get richer scenes. A showcase tier holds larger scenes from the benchmarks. New demos cover the features that have none.
-- The comparison demos show where null3D leads by most, by the figures in [Benchmark results](benchmark-results.md). These are animated crowds (S5's mechanism: 120 against 18 frames per second on the Mac) and deep hierarchies (S2: 3 to 16% of three.js's CPU time). They are also a town with shadows and many lights (S4 and S3), and a page that stays responsive beside a heavy scene. The set is Battle and Factory from the old repository, a new Night town, and a Busy page. The old repository's City is left out: most of its objects stand still, where three.js ties. Swarms of identical boxes are left out too: they are GPU-bound on phones, and the scene code takes most of the frame.
+- The comparison demos show where null3D leads by most, by the figures in [Benchmark results](benchmark-results.md). These are animated crowds (S5's mechanism: 120 against 18 frames per second on the Mac) and deep hierarchies (S2: 3 to 16% of three.js's CPU time). They are also a town with shadows and many lights (S4 and S3). The set is Battle and Factory from the old repository, and a new Night town. The old repository's City is left out: most of its objects stand still, where three.js ties. Swarms of identical boxes are left out too: they are GPU-bound on phones, and the scene code takes most of the frame.
 - Each comparison's headline figure is the largest count that each engine holds at the display rate on the viewer's device. A ramp finds it by raising the count. At a fixed count, both engines often hold the display rate, which hides the gap. Before a comparison ships, a device sitting runs its ramp on the Mac, the S24+, a Pixel, the iPad and a WebGL-only iPhone. null3D must hold the higher count on every device class.
 - The comparisons have a high-fidelity look: shadows, environment light, fog, bloom, ambient occlusion and grading. Each engine draws each effect with its own best technique for the same intent ([D-52](decisions/D-52-intent-parity.md)). The owner reviews both engines' held frames before a scene ships. This replaces the old repository's rule that an effect stays off until both engines draw it pixel for pixel. Each effect stays a switch, and each device class gets one effect level that both engines use.
 - Every demo runs by itself and is always interactive, with no switch. Later in the day, the owner asked for the camera hand-over and the pointer steering that [Always-on interaction](#always-on-interaction) describes.
