@@ -815,6 +815,7 @@ export class SketchRunner {
 			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
+			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
