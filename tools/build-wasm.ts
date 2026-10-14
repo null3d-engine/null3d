@@ -18,6 +18,8 @@
 //                                           with no size report: the two WebAssembly files, the
 //                                           shader compiler that the dev server runs on their
 //                                           WGSL, and the asset tool's formats
+//   bun tools/build-wasm.ts --no-cache      build every file again instead of copying a file that
+//                                           an earlier build of the same inputs left in the cache
 //
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
@@ -29,6 +31,15 @@
 // Each file goes in place whole, by a rename from a temporary name (tools/lib/atomic-files.ts). A
 // dev server or a browser run of the same checkout can read the files while a build runs, as the
 // GPU check's first step builds beside a running test, and a half-written core fails its page.
+//
+// The build's product is a pure function of its inputs, so each artifact set is cached under a key
+// of every input: the core sources' stamp, the variant's flags, the target, the release profile,
+// the Rust toolchain and the wasm-bindgen and wasm-opt releases. A hit copies the files in place
+// and skips cargo, wasm-bindgen and wasm-opt, which is most of a no-change build and a fresh
+// worktree. The cache is shared by every checkout, ~/.cache/null3d/wasm-artifacts; set
+// `NULL3D_WASM_ARTIFACTS` to another folder, or to `local`, and `NULL3D_NO_BUILD_CACHE=1` to build
+// every file again. A different input uses another key, so a hit can never hold another build's
+// files.
 //
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
@@ -60,7 +71,7 @@ import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth'
 import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
-import { ensureShaderModules } from './lib/shader-modules';
+import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
 	type BaseChoice,
 	chooseBase,
@@ -121,8 +132,17 @@ const JS_BUILD_DIR = 'target/js-size';
  * where its tool loads it from.
  */
 const TOOL_MODULES = [
-	{ crate: 'null3d-shaders-wasm', path: fileURLToPath(SHADER_COMPILER_URL) },
-	{ crate: 'null3d-assets-wasm', path: fileURLToPath(ASSET_FORMATS_URL) },
+	{
+		crate: 'null3d-shaders-wasm',
+		/** The crate's folder, whose sources and flags key its cached module. */
+		folder: 'crates/null3d-shaders-wasm',
+		path: fileURLToPath(SHADER_COMPILER_URL),
+	},
+	{
+		crate: 'null3d-assets-wasm',
+		folder: 'crates/null3d-assets-wasm',
+		path: fileURLToPath(ASSET_FORMATS_URL),
+	},
 ] as const;
 
 interface Variant {
@@ -292,10 +312,12 @@ export interface BuildOptions {
 	prebuilt: boolean;
 	/** Print the commit that the size check compares with, and build nothing. */
 	printBase: boolean;
+	/** Build every file again, instead of copying a file that an earlier build cached. */
+	noCache: boolean;
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] [--prebuilt] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
+	'usage: bun tools/build-wasm.ts [--no-cache] [--check-size [--base <ref>] [--prebuilt] | --sizes-only | --prebuilt | --names | --pages-only | --print-base [--base <ref>]]';
 
 /** Reads the command line. It throws on an unknown option and on options that exclude each other. */
 export function parseOptions(args: readonly string[]): BuildOptions {
@@ -306,6 +328,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		pagesOnly: false,
 		prebuilt: false,
 		printBase: false,
+		noCache: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -315,6 +338,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		else if (arg === '--pages-only') options.pagesOnly = true;
 		else if (arg === '--prebuilt') options.prebuilt = true;
 		else if (arg === '--print-base') options.printBase = true;
+		else if (arg === '--no-cache') options.noCache = true;
 		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
 			options.base = args[++i];
 		else
@@ -363,11 +387,212 @@ const CARGO_TARGET_BASE =
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
 
 /**
- * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
- * the Rust sources that the build read.
+ * The cache of built artifacts, keyed by every input of the build. A hit copies the files in place
+ * and skips cargo, wasm-bindgen and wasm-opt. It is shared by every checkout on the machine, so a
+ * no-change build and a fresh worktree skip the link. Set `NULL3D_WASM_ARTIFACTS` to another
+ * folder, or to `local` to keep the cache inside this checkout. `NULL3D_NO_BUILD_CACHE=1` and
+ * `--no-cache` build every file again. A cache that cannot be written does not fail a build.
  */
-function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, stamp: string): void {
+const ARTIFACT_CACHE_BASE =
+	process.env.NULL3D_WASM_ARTIFACTS === 'local'
+		? join(root, 'target', 'wasm-artifacts')
+		: (process.env.NULL3D_WASM_ARTIFACTS ?? join(homedir(), '.cache', 'null3d', 'wasm-artifacts'));
+/** Bumped when the key or the layout changes, which refuses every entry an earlier version wrote. */
+const ARTIFACT_FORMAT = 2;
+/** The file that holds each entry's file names and their hashes. */
+const ARTIFACT_RECORD = 'artifacts.json';
+/**
+ * Every file a core build writes into a variant's folder: wasm-bindgen's glue and its type
+ * declarations, and the optimized WebAssembly file. The cache holds and restores them all, so a hit
+ * leaves the folder as a full build does. The size report measures only the two in `CORE_FILES`.
+ */
+const CORE_ARTIFACTS = [
+	'null3d.js',
+	'null3d_bg.wasm',
+	'null3d.d.ts',
+	'null3d_bg.wasm.d.ts',
+] as const;
+
+/**
+ * What identifies the exact tool binaries of a build, part of every cache key: the Rust toolchain,
+ * and this machine's wasm-bindgen and wasm-opt releases.
+ */
+export interface ToolVersions {
+	rust: string;
+	bindgen: string;
+	wasmOpt: string;
+}
+
+/** The versions that identify this machine's build tools, for the cache key. */
+function toolVersions(cargoLock: string): ToolVersions {
+	const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+		devDependencies?: Record<string, string>;
+	};
+	return {
+		rust: readFileSync(join(root, 'rust-toolchain.toml'), 'utf8'),
+		bindgen: `${lockedVersion(cargoLock, 'wasm-bindgen')}-${releaseTarget(process.platform, process.arch)}`,
+		wasmOpt: `${manifest.devDependencies?.binaryen ?? 'unknown'}-${process.platform}-${process.arch}`,
+	};
+}
+
+/** The hash of `data`, for a cache key and for the record that checks an entry. */
+const digest = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+
+/**
+ * The key of a core variant's artifacts: the sources' stamp, the variant's flags, the target, the
+ * release profile and the tool versions. Any other input gives another key, so a hit holds exactly
+ * the bytes that this build would write.
+ */
+export function variantKey(
+	variant: Variant,
+	stamp: string,
+	keepNames: boolean,
+	tools: ToolVersions,
+): string {
+	return digest(
+		[
+			`format=${ARTIFACT_FORMAT}`,
+			'kind=core',
+			`variant=${variant.name}`,
+			`stamp=${stamp}`,
+			`rustflags=${variant.rustflags}`,
+			`cargoArgs=${variant.cargoArgs.join(' ')}`,
+			`wasmOptFeatures=${variant.wasmOptFeatures.join(' ')}`,
+			`keepNames=${keepNames ? '1' : '0'}`,
+			'target=wasm32-unknown-unknown',
+			'profile=release',
+			`rust=${tools.rust}`,
+			`bindgen=${tools.bindgen}`,
+			`wasmOpt=${tools.wasmOpt}`,
+		].join('\n'),
+	);
+}
+
+/** The key of the build tools' modules, from their crates' inputs and the same flags and versions. */
+export function toolsKey(shaders: string, assets: string, tools: ToolVersions): string {
+	return digest(
+		[
+			`format=${ARTIFACT_FORMAT}`,
+			'kind=tools',
+			`shaders=${shaders}`,
+			`assets=${assets}`,
+			'rustflags=-Cstrip=symbols',
+			'target=wasm32-unknown-unknown',
+			'profile=release',
+			`rust=${tools.rust}`,
+		].join('\n'),
+	);
+}
+
+/**
+ * The input hashes of the two crates that the build tools' modules come from, in `TOOL_MODULES`
+ * order. A crate is named by its folder, which `inputHash` reads, so a name without its `crates/`
+ * step would throw here and fail every build before it could cache anything.
+ */
+export function toolInputs(root: string): [string, string] {
+	return [inputHash(root, TOOL_MODULES[0].folder), inputHash(root, TOOL_MODULES[1].folder)];
+}
+
+/**
+ * The folder of the cache entry `key`, when it holds every named file with the recorded bytes, or
+ * null on a miss. A missing or edited file, and a record that will not parse, are misses, so the
+ * caller builds and writes the entry again. Every file the record names is checked, not only the
+ * named ones, so a hit never serves a file that is not the one the build wrote.
+ */
+export function readArtifacts(base: string, key: string, names: readonly string[]): string | null {
+	const folder = join(base, key);
+	let record: Record<string, string>;
+	try {
+		record = JSON.parse(readFileSync(join(folder, ARTIFACT_RECORD), 'utf8')) as Record<
+			string,
+			string
+		>;
+	} catch {
+		return null;
+	}
+	for (const name of names) if (!(name in record)) return null;
+	for (const name of Object.keys(record)) {
+		try {
+			if (record[name] !== digest(readFileSync(join(folder, name)))) return null;
+		} catch {
+			return null;
+		}
+	}
+	return folder;
+}
+
+/** The files of a cache entry `folder`, in order, which `readArtifacts` has already checked. */
+export function artifactFiles(folder: string): string[] {
+	try {
+		const record = JSON.parse(readFileSync(join(folder, ARTIFACT_RECORD), 'utf8')) as Record<
+			string,
+			string
+		>;
+		return Object.keys(record)
+			.filter((name) => name !== ARTIFACT_RECORD)
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Stores the files of `sources`, each under its name, at `base` under `key`, with the record that
+ * checks them. A cache that cannot be written is not an error: the build's output is already in
+ * place, and the next build writes the entry again.
+ */
+export function writeArtifacts(
+	base: string,
+	key: string,
+	sources: readonly (readonly [string, string])[],
+): void {
+	const folder = join(base, key);
+	const staging = `${folder}.${process.pid}.partial`;
+	try {
+		rmSync(staging, { recursive: true, force: true });
+		mkdirSync(staging, { recursive: true });
+		const record: Record<string, string> = {};
+		for (const [name, source] of sources) {
+			const file = join(staging, name);
+			copyFileSync(source, file);
+			record[name] = digest(readFileSync(file));
+		}
+		writeFileSync(join(staging, ARTIFACT_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
+		mkdirSync(base, { recursive: true });
+		rmSync(folder, { recursive: true, force: true });
+		renameSync(staging, folder);
+	} catch (e) {
+		// The staging path may not be removable, such as when the cache base is a file. Cleaning up
+		// is best effort: a cache that cannot be written must never fail the build.
+		try {
+			rmSync(staging, { recursive: true, force: true });
+		} catch {}
+		console.warn(`could not write the build cache: ${(e as Error).message}`);
+	}
+}
+
+/**
+ * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
+ * the Rust sources that the build read. It copies the files of an earlier build of the same inputs
+ * from the cache, when there is one, and skips cargo, wasm-bindgen and wasm-opt.
+ */
+function buildVariant(
+	variant: Variant,
+	bindgen: string,
+	keepNames: boolean,
+	stamp: string,
+	tools: ToolVersions,
+	noCache: boolean,
+): void {
 	const targetDir = buildFolder(variant);
+	const dest = join(root, OUT_DIR, variant.name);
+	const key = variantKey(variant, stamp, keepNames, tools);
+	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, CORE_ARTIFACTS);
+	if (cached) {
+		console.log(`\nthe ${variant.name} WebAssembly file is unchanged, copying it from the cache`);
+		for (const name of artifactFiles(cached)) copyInPlace(join(cached, name), join(dest, name));
+		return;
+	}
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
 	run(
 		'cargo',
@@ -403,16 +628,33 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
 		wasm,
 	]);
 	if (variant.reclaimsHeap) checkHeapStart(readFileSync(linked), readFileSync(wasm));
-	replaceFolder(staged, join(root, OUT_DIR, variant.name));
+	// Every file the build staged, which replaceFolder then puts in place: the same set a read restores.
+	const stagedFiles = readdirSync(staged)
+		.filter((name) => !name.endsWith('.partial'))
+		.map((name) => [name, join(staged, name)] as const);
+	if (!noCache) writeArtifacts(ARTIFACT_CACHE_BASE, key, stagedFiles);
+	replaceFolder(staged, dest);
 }
 
 /**
  * Builds the build tools' modules. Each takes and gives its data through its memory, so it needs
  * no JavaScript glue. The build drops the function names and skips wasm-opt, which on the shader
  * compiler takes longer than the whole build, saves almost nothing after Brotli and makes compiles
- * no faster.
+ * no faster. It copies the modules of an earlier build of the same inputs from the cache, when
+ * there is one.
  */
-function buildToolModules(): void {
+function buildToolModules(tools: ToolVersions, noCache: boolean): void {
+	const names = TOOL_MODULES.map(({ crate }) => `${crate}.wasm`);
+	const [shaders, assets] = toolInputs(root);
+	const key = toolsKey(shaders, assets, tools);
+	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
+	if (cached) {
+		console.log(
+			"\nthe shader compiler and the asset tool's formats are unchanged, copying them from the cache",
+		);
+		for (const { crate, path } of TOOL_MODULES) copyInPlace(join(cached, `${crate}.wasm`), path);
+		return;
+	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	console.log("\nbuilding the shader compiler and the asset tool's formats");
 	run(
@@ -432,6 +674,12 @@ function buildToolModules(): void {
 		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
 		copyInPlace(built, path);
 	}
+	if (!noCache)
+		writeArtifacts(
+			ARTIFACT_CACHE_BASE,
+			key,
+			TOOL_MODULES.map(({ crate, path }) => [`${crate}.wasm`, path] as const),
+		);
 }
 
 /**
@@ -630,8 +878,11 @@ async function main(): Promise<void> {
 		const bindgen = await wasmBindgen(lockedVersion(cargoLock, 'wasm-bindgen'));
 		// The stamp of the sources as the build starts, which the builds then read.
 		const stamp = coreSourcesStamp(root);
-		for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames, stamp);
-		if (!options.sizesOnly) buildToolModules();
+		const tools = toolVersions(cargoLock);
+		const noCache = options.noCache || process.env.NULL3D_NO_BUILD_CACHE === '1';
+		for (const variant of VARIANTS)
+			buildVariant(variant, bindgen, options.keepNames, stamp, tools, noCache);
+		if (!options.sizesOnly) buildToolModules(tools, noCache);
 	}
 	if (options.pagesOnly) return;
 
