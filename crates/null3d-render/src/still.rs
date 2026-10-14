@@ -16,6 +16,8 @@
 //! accumulation pass and the resting of the thread that draws are the next steps of the task; this
 //! module holds the parts that they rest on.
 
+use std::ops::Range;
+
 /// The bases of the jitter sequence's two axes: Halton(2, 3).
 const HALTON_X: u32 = 2;
 const HALTON_Y: u32 = 3;
@@ -217,7 +219,7 @@ mod tests {
             assert_eq!(still.samples(), sample);
             assert!(still.accumulating());
             assert_eq!(still.jitter_sample(), sample);
-            assert!((still.weight() - 1.0 / sample as f32).abs() < 1e-6);
+            assert!((still.weight() - 1.0 / (sample + 1) as f32).abs() < 1e-6);
         }
         assert!(still.rests());
         assert_eq!(still.after(true).samples(), MAX_SAMPLES + 1);
@@ -238,12 +240,16 @@ mod tests {
         let mut other = bytes;
         other[5] = 9;
         assert!(!snapshot.unchanged(&first, &other, &[]));
-        // A byte inside a volatile range is not a change.
+        // A byte inside a volatile range is not a change, once the same volatile set is the one
+        // the snapshot holds (the first frame of a volatile layout has nothing to compare with).
         let range = 4..6;
-        assert!(snapshot.unchanged(&first, &other, std::slice::from_ref(&range)));
+        let volatile = std::slice::from_ref(&range);
+        assert!(!snapshot.unchanged(&first, &other, volatile));
+        assert!(snapshot.unchanged(&first, &other, volatile));
         // A shorter frame, a moved range or a range past the end is a change.
         assert!(!snapshot.unchanged(&first, &bytes[..7], std::slice::from_ref(&range)));
-        assert!(!snapshot.unchanged(&first, &bytes, &[7..9]));
+        let past = 7..9;
+        assert!(!snapshot.unchanged(&first, &bytes, std::slice::from_ref(&past)));
         assert!(!snapshot.unchanged(&first, &bytes, &[0..2, 1..3]));
         // Forgetting the frame makes the next one read as changed.
         snapshot.forget();

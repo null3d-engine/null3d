@@ -17,6 +17,8 @@
 //!   material's
 //! - `dof`: depth of field, a camera lens's blur by distance from the focus, with the near and far
 //!   fields apart, as three.js's BokehPass draws it in intent
+//! - `exposure`: automatic exposure, which adapts the picture to the scene's brightness from a
+//!   meter on the GPU, as an eye or a camera does
 //! - `environment`: the scene's environment map, which standard materials reflect and take
 //!   diffuse light from, and its part of each frame's uniform block
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas, and grades it
@@ -57,6 +59,7 @@
 
 pub mod accumulate;
 pub mod ao;
+pub mod area_shading;
 pub mod arrays;
 pub mod background;
 pub mod bloom;
@@ -70,8 +73,10 @@ pub mod dfg;
 pub mod dof;
 pub mod effects;
 pub mod environment;
+pub mod exposure;
 mod final_pass;
 pub mod fog;
+pub mod fog_volume;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
@@ -82,6 +87,7 @@ pub mod grading;
 pub mod graph;
 pub mod levels;
 pub mod light_grid;
+pub mod light_tables;
 pub mod materials;
 pub mod meshes;
 pub mod mirror;
@@ -92,6 +98,8 @@ pub mod outline;
 pub mod output;
 pub mod parallel_record;
 pub mod particles;
+pub mod physical_sky;
+pub mod physical_sky_light;
 pub mod pipelines;
 pub mod queries;
 pub mod shadow_tiles;

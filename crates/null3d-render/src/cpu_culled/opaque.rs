@@ -42,6 +42,8 @@ const ROW_VALUES_BINDING: u32 = 8;
 /// The binding of the table of object ranges in the frame group, where WebGL2's mesh shaders
 /// declare it.
 const OBJECT_RANGES_BINDING: u32 = 8;
+/// The binding of the light tables in the frame group (see [`crate::light_tables`]).
+const LIGHT_TABLES_BINDING: u32 = 3;
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
 /// each cell: after the uniform block, aligned for binding.
 const OFFSETS_AT: u32 = sizes::FRAME_UNIFORM_BYTES.next_multiple_of(OFFSET_ALIGNMENT);
@@ -317,7 +319,7 @@ impl Opaque {
         };
         let mut words = [0; 63 + environment::ENTRY_WORDS];
         words[3..23].copy_from_slice(&common);
-        words[23..48].copy_from_slice(&[
+        words[23..43].copy_from_slice(&[
             4,
             resource_kind::TEXTURE,
             map,
@@ -332,26 +334,28 @@ impl Opaque {
             resource_kind::BUFFER,
             ids::SHADOWS,
             0,
-            sizes::SHADOW_UNIFORM_BYTES,
+            sizes::SHADOW_SETTINGS_BYTES,
             9,
             resource_kind::TEXTURE,
             atlas,
             0,
             0,
-            10,
-            resource_kind::BUFFER,
-            ids::SHADOW_TILES,
-            0,
-            sizes::SHADOW_TILES_UNIFORM_BYTES,
         ]);
         for slot in 0..RING {
             words[..3].copy_from_slice(&[group + slot, bind_layout::FRAME, 14]);
-            words[48..53].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
-            words[53..58].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
-            words[58..63].copy_from_slice(&[
+            words[43..48].copy_from_slice(&[7, resource_kind::TEXTURE, lights + slot, 0, 0]);
+            words[48..53].copy_from_slice(&[11, resource_kind::TEXTURE, occlusion, 0, 0]);
+            words[53..58].copy_from_slice(&[
                 transmission::BINDING,
                 resource_kind::TEXTURE,
                 copy,
+                0,
+                0,
+            ]);
+            words[58..63].copy_from_slice(&[
+                LIGHT_TABLES_BINDING,
+                resource_kind::TEXTURE,
+                ids::LIGHT_TABLES,
                 0,
                 0,
             ]);

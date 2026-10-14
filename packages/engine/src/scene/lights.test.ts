@@ -11,6 +11,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
+import { withCallValues } from './fake-call-values';
 import { CoreMemory } from './memory';
 import { type Light, Scene } from './scene';
 
@@ -64,7 +65,7 @@ function fakeCore() {
 		lastErrorCode: () => 0,
 		lastErrorDetail: () => 0,
 	};
-	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
+	const core = new CoreMemory(withCallValues(glue, memory) as unknown as CoreGlue, memory);
 	const scene = new Scene(core, { frame: FRAME }, false);
 	/** The command records the scene queued, as [operation, handle, a, b]. */
 	const commands = () => {
@@ -257,6 +258,11 @@ describe('creating lights', () => {
 		sun.setShadow({ cascades: 4 });
 		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_CASCADES]).toBe(4);
 		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_MAP_SIZE]).toBe(1024);
+		// 'auto' writes the core's auto value, 0, and a number writes itself.
+		sun.setShadow({ distance: 'auto' });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_DISTANCE]).toBe(0);
+		sun.setShadow({ distance: 120 });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_DISTANCE]).toBe(120);
 		// Settings left out keep the core's defaults.
 		const plain = scene.createDirectionalLight({ shadow: {} });
 		expect(tableRow(plain).values).toEqual([]);

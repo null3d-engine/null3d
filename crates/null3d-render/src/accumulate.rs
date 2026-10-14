@@ -268,6 +268,7 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), before);
         // A new weight, or a read that moved, uploads and binds again.
+        arena.reset(UPLOAD_BYTES);
         pass.prepare(&mut list, &mut arena, inputs, 0.5, false)
             .unwrap();
         assert!(list.len() > before);
@@ -275,6 +276,7 @@ mod tests {
             color: 20,
             ..inputs
         };
+        arena.reset(UPLOAD_BYTES);
         pass.prepare(&mut list, &mut arena, moved, 0.5, false)
             .unwrap();
         assert_eq!(pass.bound[0], Some((20, 11)));

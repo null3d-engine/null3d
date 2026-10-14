@@ -17,17 +17,23 @@ use crate::background::Sky;
 const GRID: usize = 8;
 
 const PI: f32 = std::f32::consts::PI;
-const TOTAL_RAYLEIGH: [f32; 3] = [5.804_543e-6, 1.356_291_1e-5, 3.026_590_2e-5];
-const MIE_CONST: [f32; 3] = [1.839_991_9e14, 2.779_802_4e14, 4.079_048e14];
+/// The scattering coefficients per million metres, and the optical lengths in millions of metres,
+/// as the shaders keep them.
+const TOTAL_RAYLEIGH: [f32; 3] = [5.804_543, 13.562_911, 30.265_902];
+const MIE_PER_TURBIDITY: [f32; 3] = [159.711_29, 241.286_85, 354.061_37];
 const CUTOFF_ANGLE: f32 = 1.610_731_6;
 const STEEPNESS: f32 = 1.5;
 const EE: f32 = 1000.0;
-const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e3;
-const MIE_ZENITH_LENGTH: f32 = 1.25e3;
+const RAYLEIGH_ZENITH_LENGTH: f32 = 8.4e-3;
+const MIE_ZENITH_LENGTH: f32 = 1.25e-3;
 const THREE_OVER_SIXTEEN_PI: f32 = 0.059_683_104;
 const ONE_OVER_FOUR_PI: f32 = 0.079_577_47;
 
-type Vec3 = [f32; 3];
+/// A linear color or a direction.
+pub(crate) type Vec3 = [f32; 3];
+
+/// Coefficients of the diffuse light: red, green and blue for each of nine.
+pub(crate) type Sh = [[f32; 3]; 9];
 
 /// The values of the whole sky that three.js's vertex shader finds once.
 struct Whole {
@@ -70,11 +76,12 @@ fn whole(sky: &Sky) -> Whole {
     let low_sun = (1.0 - sun_direction[1]).powf(5.0).clamp(0.0, 1.0);
     let sun_fade = 1.0 - (1.0 - (p[1] / 450_000.0).exp()).clamp(0.0, 1.0);
     let rayleigh = sky.rayleigh - (1.0 - sun_fade);
-    let mie = 0.434 * (0.2 * sky.turbidity) * 10e-18;
     Whole {
         sun_direction,
         beta_r: map(TOTAL_RAYLEIGH, |c| c * rayleigh),
-        beta_m: map(MIE_CONST, |c| mie * c * sky.mie_coefficient),
+        beta_m: map(MIE_PER_TURBIDITY, |c| {
+            sky.turbidity * c * sky.mie_coefficient
+        }),
         sun_e,
         low_sun,
         day: smoothstep(-0.08, 0.3, sun_direction[1]),
@@ -95,7 +102,8 @@ fn cloud_gradient(i: [f32; 2]) -> [f32; 2] {
     ]
 }
 
-fn cloud_noise(p: [f32; 2]) -> f32 {
+/// 2D gradient noise, from about -1 to 1, as the shaders' `cloud_noise`.
+pub(crate) fn cloud_noise(p: [f32; 2]) -> f32 {
     let i = [p[0].floor(), p[1].floor()];
     let f = [p[0] - i[0], p[1] - i[1]];
     let u = f.map(|f| f * f * f * (f * (f * 6.0 - 15.0) + 10.0));
@@ -112,7 +120,8 @@ fn cloud_noise(p: [f32; 2]) -> f32 {
     mix(mix(a, b, u[0]), mix(c, d, u[0]), u[1]) * 1.6
 }
 
-fn cloud_fbm(start: [f32; 2], drift: f32) -> f32 {
+/// Four octaves of the noise, each drifting on its own, as the shaders' `cloud_fbm`.
+pub(crate) fn cloud_fbm(start: [f32; 2], drift: f32) -> f32 {
     let mut p = start;
     let mut result = 0.0;
     let mut amplitude = 1.0;
@@ -240,6 +249,16 @@ pub(crate) fn sky_sh(sky: &Sky) -> [[f32; 3]; 9] {
     sh
 }
 
+/// The mean luminance of the analytic sky's light, without the second sky, over a coarse grid.
+pub(crate) fn mean_luminance(sky: &Sky) -> f32 {
+    let w = whole(sky);
+    let sh = project_coarse(|d| {
+        let l = light(d, &w, sky);
+        [0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; 3]
+    });
+    sh[0][0] / (0.282_095 * 4.0 * PI)
+}
+
 /// The squares near the sun that the projection splits into `FINER` x `FINER` smaller ones: those
 /// whose centers lie within this cosine of the sun's direction. The haze's glow around the sun is
 /// narrow and bright, and a coarse grid misjudges its share of the light.
@@ -250,13 +269,31 @@ const FINER: usize = 4;
 /// into `finer` x `finer`.
 fn integrate(sky: &Sky, n: usize, finer: usize) -> [[f32; 3]; 9] {
     let w = whole(sky);
+    project_grid(|d| light(d, &w, sky), w.sun_direction, n, finer)
+}
+
+/// The nine coefficients of the light that `light` gives in each unit direction, summed over the
+/// grid that [`sky_sh`] sums over, with the squares near the unit direction `sun` split.
+pub(crate) fn project(light: impl Fn(Vec3) -> Vec3, sun: Vec3) -> Sh {
+    project_grid(light, sun, GRID, FINER)
+}
+
+/// The nine coefficients of `light` over a coarse grid of 3 x 3 squares a face, enough for its
+/// mean.
+pub(crate) fn project_coarse(light: impl Fn(Vec3) -> Vec3) -> Sh {
+    project_grid(light, [0.0, 1.0, 0.0], 3, 1)
+}
+
+/// The coefficients of `light` summed over `n` x `n` squares a face, each weighed by its solid
+/// angle, with the squares within `NEAR_SUN` of `sun` split into `finer` x `finer`.
+fn project_grid(light: impl Fn(Vec3) -> Vec3, sun: Vec3, n: usize, finer: usize) -> Sh {
     let step = 2.0 / n as f32;
     let mut sums = [[0.0f32; 3]; 9];
     let mut add = |face: usize, s0: f32, t0: f32, size: f32| {
         let (s1, t1) = (s0 + size, t0 + size);
         let solid_angle = area(s0, t0) - area(s0, t1) - area(s1, t0) + area(s1, t1);
         let d = unit(face_direction(face, 0.5 * (s0 + s1), 0.5 * (t0 + t1)));
-        let l = light(d, &w, sky);
+        let l = light(d);
         for (sum, b) in sums.iter_mut().zip(basis(d)) {
             for c in 0..3 {
                 sum[c] += l[c] * b * solid_angle;
@@ -269,7 +306,7 @@ fn integrate(sky: &Sky, n: usize, finer: usize) -> [[f32; 3]; 9] {
             for column in 0..n {
                 let s0 = column as f32 * step - 1.0;
                 let center = unit(face_direction(face, s0 + 0.5 * step, t0 + 0.5 * step));
-                let near = dot(center, w.sun_direction) > NEAR_SUN;
+                let near = finer > 1 && dot(center, sun) > NEAR_SUN;
                 let parts = if near { finer } else { 1 };
                 let size = step / parts as f32;
                 for j in 0..parts {
@@ -300,6 +337,34 @@ mod tests {
         Sky {
             sun_position: [0.3, 0.8, -0.5],
             ..Sky::default()
+        }
+    }
+
+    /// The shaders keep the coefficients in a struct, whose floats some WebGL2 drivers keep at
+    /// half precision. Across three.js's ranges of the settings, from a tenth of each upper
+    /// limit, every coefficient stays within half precision's normal range.
+    #[test]
+    fn the_scattering_coefficients_stay_within_half_precision() {
+        const SMALLEST_NORMAL_HALF: f32 = 6.103_515_6e-5;
+        const LARGEST_HALF: f32 = 65_504.0;
+        for turbidity in [2.0, 10.0, 20.0] {
+            for rayleigh in [0.4, 2.0, 4.0] {
+                for mie_coefficient in [0.01, 0.05, 0.1] {
+                    let sky = Sky {
+                        turbidity,
+                        rayleigh,
+                        mie_coefficient,
+                        ..noon()
+                    };
+                    let w = whole(&sky);
+                    for c in w.beta_r.into_iter().chain(w.beta_m) {
+                        assert!(
+                            (SMALLEST_NORMAL_HALF..=LARGEST_HALF).contains(&c),
+                            "a coefficient of {c} for {sky:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 

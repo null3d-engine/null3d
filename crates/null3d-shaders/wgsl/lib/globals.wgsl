@@ -1,5 +1,6 @@
 #define_import_path null3d::globals
 #import null3d::fog::Fog
+#import null3d::sky_scattering::Aerial
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
@@ -68,6 +69,11 @@ struct Frame {
     /// draws each frame with a different offset, and the frames average to a sharper image. Zero
     /// while the view moves, in the views of lights, and in every frame a moving view draws.
     jitter: vec4f,
+    /// The physical sky's air between the camera and each surface, all zero without one.
+    aerial: Aerial,
+    /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
+    /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
+    vignette: vec4f,
 }
 
 /// The clip position of `relative_position` through `view_proj`, with the frame's sub-pixel jitter
