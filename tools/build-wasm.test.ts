@@ -175,13 +175,16 @@ describe('variantKey', () => {
 });
 
 describe('variantStagingFolder', () => {
-	it('stages inside the checkout, apart from the shared cargo target', () => {
+	it('stages inside the checkout, apart from the shared cargo target, in a folder of its own', () => {
 		// Two builds in different worktrees share the cargo target. If they also staged there, one
-		// build's rm -rf would take the other's half-written core out from under wasm-opt.
+		// build's rm -rf would take the other's half-written core out from under wasm-opt. The process
+		// id keeps two builds from sharing one staging folder even in the same checkout, which is what
+		// lets ordinary builds run at the same time.
 		for (const variant of VARIANTS) {
 			const staged = variantStagingFolder(variant);
 			expect(staged.startsWith(`${process.cwd()}/target/`)).toBe(true);
 			expect(staged).not.toContain('cargo-target');
+			expect(staged.endsWith(`out-${process.pid}`)).toBe(true);
 		}
 	});
 });
