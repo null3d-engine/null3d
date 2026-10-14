@@ -68,11 +68,18 @@ in a landing, so keep the count down:
   dependencies across worktrees too.
 - Never run **two builds at once**, in one checkout or several, and never a build beside a browser or
   image run of the same worktree: a half-written core makes a page fail for no reason (`E1402`,
-  `E1406`).
+  `E1406`). Two builds of one variant also share its staging folder, `wasm-<variant>/out`. Each build
+  removes that folder before it stages its files there.
 - Keep the measurement: note how long a build and the test runs took when you change this area, and
   record it here or in [Benchmarks](benchmarks.md), so the next change can tell whether it helped.
   Earlier figures: a full build took 11 minutes on CI and 8 to 13 minutes on the Mac; `cargo test
   --workspace` took 15 minutes on CI, its longest job; a browser shard ran 9 to 15 minutes.
+
+A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
+shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the variant spec
+and the compiler's version. A game's second `vite build` therefore compiles only the shaders that
+changed. On a small project of eight shaders a cold build took 2.87 s and the next took 0.30 s.
+[D-175](decisions/D-175-vite-plugin-shader-cache.md) gives the figures and the key.
 
 ### A clash on a generated file
 
