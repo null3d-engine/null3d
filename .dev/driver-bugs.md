@@ -132,3 +132,20 @@ Smallest known case: a page and two workers of about 60 lines in all. One worker
 Workaround in the engine: the page keeps every channel that it makes for the engine's threads until the engine stops ([Browser faults](implementation-notes.md#browser-faults)).
 
 To report: Mozilla's Bugzilla (Core, DOM: postMessage), with the test page.
+
+## Adreno 619: a value held in a GLSL structure keeps only 16 bits
+
+Status: not reported yet. Found 13 October 2026.
+
+- Device: Samsung Galaxy Tab A9 Plus (SM-X216B), Qualcomm Adreno 619, Android 14, in BrowserStack's device cloud.
+- Browser: Chrome 152 on WebGL2, which hands the GLSL to Qualcomm's driver directly, without ANGLE's own precision pass.
+- Seen in: the shader library page (`tests/pages/shader-library.ts`) and a probe hooked into `tests/pages/shaders.ts` (run `20261012-184020-smoke`).
+
+What happens: every value that a GLSL structure holds is stored at 16 bits. The precision that the shader declares does not matter. A float rounds to half precision with flush: `1234.567` reads `1234`, `0.123456` reads `0.12341`, and `1e-5` reads 0. A whole number keeps only its low 16 bits, with the sign of the low half. `0x89abcdef` reads `0xffffcdef`, even in a `highp uvec4` member.
+
+Smallest known case: a fragment shader that builds a structure in any of these ways loses the bits. The ways are a constructor, a helper that returns one, a helper parameter, a structure of scalars, one with a `uint` or an array member, its own gathered stage inputs (`VertexOut in_ = VertexOut(gl_FragCoord, ...)`), and a copy of a uniform block's structure. A plain local, a local array, a helper's non-structure result, a varying, a structure member read in place (`block.field`), and a plain uniform member are exact.
+
+Workaround in the engine: the shader build replaces each structure local, parameter and result with plain ones on naga's code model. It runs before the GLSL writer. A structure argument becomes one argument for each member, a helper's result becomes one `out` parameter for each member, and a structure or private global becomes one local or global for each member. No structure value is materialized. The shader crate's test checks every built shader for a structure-typed local, parameter or result ([Browser faults](implementation-notes.md#browser-faults)).
+
+To report: Qualcomm, through Chromium's issue tracker, with the probe page.
+
