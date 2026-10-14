@@ -68,9 +68,12 @@ inputs, so re-checking a branch on a moved main is cheap.
   makes a page fail for no reason (`E1402`, `E1406`).
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
-shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the variant spec
-and the compiler's version. A game's second `vite build` therefore compiles only the shaders that
-changed. On a small project of eight shaders a cold build took 2.87 s and the next took 0.30 s.
+shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
+variant spec and the compiler's version. A game's second `vite build` therefore compiles only the
+shaders that changed. On a small project of eight shaders a cold build took 2.87 s and the next took
+0.30 s. The plugin cannot load repository tooling. So it repeats
+[D-177](decisions/D-177-build-cache-module.md)'s three rules on its own: an atomic write, a miss when
+an input changes, and one opt-out. `NULL3D_NO_CACHE=1`, or Vite's `--force`, ignores it.
 [D-175](decisions/D-175-vite-plugin-shader-cache.md) gives the figures and the key.
 
 The engine's own shader build has a per-entry cache too. `bun run shaders`, and every command that
