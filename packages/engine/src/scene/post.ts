@@ -708,11 +708,10 @@ export class Post implements ViewHolder {
 		}
 		const on = this.ssr && this.occlusionTargets;
 		if (on) {
-			// The reflections draw on ambient occlusion's grid, read the copy of the opaque color
-			// that transmission makes, and light their surfaces from their own shader builds.
+			// The reflections draw on ambient occlusion's grid, and read the copy of the opaque color
+			// that transmission makes.
 			this.shaders.need('ao');
 			this.shaders.need('transmission');
-			this.shaders.need('reflections');
 		}
 		if (DEV && this.ssr && !this.occlusionTargets && !this.warnedNoSsr) {
 			this.warnedNoSsr = true;

@@ -32,12 +32,9 @@ struct ScreenRead {
     /// shadows, from the four texels around the pixel, each weighted by how close its depth lies to
     /// the pixel's. The length counts a texel whose ray missed as 0, so reflections read `hit`.
     values: vec4f,
-#ifdef REFLECTIONS
     /// x: the mean length of the reflected rays of the texels that hit, over those texels alone.
-    /// y: the share of the texels' weight that hit. Both 0 where none hit. Only the builds that
-    /// read screen-space reflections have it: the others download none of that code.
+    /// y: the share of the texels' weight that hit. Both 0 where none hit.
     hit: vec2f,
-#endif
 }
 
 /// The screen texture's values at the pixel at `pixel`, a fragment position, whose depth value is
@@ -47,11 +44,7 @@ struct ScreenRead {
 fn screen_read(pixel: vec3f, blended: bool) -> ScreenRead {
     let values = frame.occlusion;
     if values.z <= 0.0 || blended {
-#ifdef REFLECTIONS
         return ScreenRead(NO_SCREEN_VALUES, vec2f(0.0));
-#else
-        return ScreenRead(NO_SCREEN_VALUES);
-#endif
     }
     let size = vec2i(textureDimensions(gtao_map));
     var from_top = pixel.xy;
@@ -66,10 +59,8 @@ fn screen_read(pixel: vec3f, blended: bool) -> ScreenRead {
     let blend = at - floor(at);
     var sum = vec4f(0.0);
     var total = 0.0;
-#ifdef REFLECTIONS
     var hits = 0.0;
     var reach = 0.0;
-#endif
     var nearest = NO_SCREEN_VALUES;
     var nearest_gap = 1e30;
     for (var k = 0; k < 4; k++) {
@@ -84,11 +75,9 @@ fn screen_read(pixel: vec3f, blended: bool) -> ScreenRead {
         let weight = along.x * along.y * max(0.0, 1.0 - gap / (DEPTH_TOLERANCE * pixel.z));
         sum += held * weight;
         total += weight;
-#ifdef REFLECTIONS
         let hit = select(0.0, weight, held.z > 0.0);
         hits += hit;
         reach += hit * held.z;
-#endif
         if gap < nearest_gap {
             nearest_gap = gap;
             nearest = held;
@@ -97,12 +86,8 @@ fn screen_read(pixel: vec3f, blended: bool) -> ScreenRead {
     // Where no texel lies at the pixel's depth, as on a thin edge, the nearest one in depth speaks
     // for it.
     let held = select(nearest, sum / total, total > 1e-4);
-#ifdef REFLECTIONS
     let found = vec2f(reach / max(hits, 1e-4), hits / max(total, 1e-4));
     return ScreenRead(held, select(vec2f(0.0), found, hits > 1e-4));
-#else
-    return ScreenRead(held);
-#endif
 }
 
 /// How much ambient light reaches a pixel whose screen values are `screen` (`screen_read`): 1 for

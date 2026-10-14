@@ -84,9 +84,7 @@ enable draw_index;
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
-#ifdef REFLECTIONS
 #import null3d::ssr::{screen_reflection}
-#endif
 #ifdef SKIN
 #import null3d::mesh::{skin_of, skinned_direction, skinned_point}
 #endif
@@ -844,11 +842,9 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let blended = (u32(material_row.strengths.z) & BLEND_FLAG) != 0u;
 #endif
-    // The screen texture's values, which the occlusion and the contact shadows read, then what the
-    // screen showed along the mirror direction, with a planar reflection over it: the planar
-    // reflection's share wins on its plane.
+    // The screen texture's values, then what the screen showed along the mirror direction, with a
+    // planar reflection over it: the planar reflection's share wins on its plane.
     let screen = screen_read(pixel.xyz, blended);
-#ifdef REFLECTIONS
     let mirrored = screen_reflection(
         screen.hit,
         input.relativePosition,
@@ -864,18 +860,6 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let reflection = vec4f(mirror, mirror_share);
 #else
     let reflection = mirrored;
-#endif
-#else
-    // The reflections' own builds load on first use, so a frame that draws without them keeps the
-    // environment's reflection, and a custom material keeps its planar reflection pass's share.
-#ifdef CUSTOM
-    let planar = saturate(s.reflection.a);
-    let mirror_share = planar;
-    let mirror = s.reflection.rgb * planar / max(planar, 1e-6);
-    let reflection = vec4f(mirror, mirror_share);
-#else
-    let reflection = vec4f(0.0);
-#endif
 #endif
     let reflected = light_surface(
         pbr,

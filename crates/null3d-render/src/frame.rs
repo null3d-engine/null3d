@@ -2282,10 +2282,6 @@ impl SceneSettings {
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = base_color && feature::masks(features);
         let transmits = has(feature::TRANSMISSION) && shading.transmits();
-        // A surface that lets light through shows none of the reflections, so its pair keeps the
-        // builds it has. The reflections' builds of the lit shader load on first use, so a page
-        // that draws without them downloads none of that code.
-        let reflects = self.ssr().is_some() && !transmits && shading.reflects();
         let rows = row_values && shading.reads_row_values() && !transmits;
         let own_way = masked && tests_alpha_its_way(shading) && !rows;
         let hashed = own_way && has(feature::ALPHA_HASH);
@@ -2301,7 +2297,6 @@ impl SceneSettings {
                 | bit(hashed, permutation::ALPHA_HASH)
                 | bit(tangents, permutation::VERTEX_TANGENT)
                 | bit(transmits, permutation::TRANSMISSION)
-                | bit(reflects, permutation::REFLECTIONS)
                 | bit(rows, permutation::ROW_VALUES),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
