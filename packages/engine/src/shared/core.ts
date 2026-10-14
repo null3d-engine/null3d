@@ -535,6 +535,18 @@ export interface CoreGlue extends CoreErrors {
 	 * scale of their own take: the first call value.
 	 */
 	setReflectionScale(): number;
+	/** Sets the most area lights that one frame shades. */
+	setAreaLightCap(cap: number): number;
+	/** Makes room for the area lights' tables; the address of their half floats, or 0. */
+	areaLightTables(): number;
+	/** Marks the area lights' tables as written, so frames light with area lights. */
+	finishAreaLightTables(): number;
+	/** Makes room for a rectangle light's image; the address of its half floats, or 0. */
+	areaLightImage(light: number): number;
+	/** Marks a rectangle light's image as written, so frames show it. */
+	finishAreaLightImage(light: number): number;
+	/** Takes a rectangle light's image away. */
+	removeAreaLightImage(light: number): number;
 	/** Draws the physical sky from its tables while `on`, else the analytic sky in its place. */
 	setPhysicalSky(on: boolean): number;
 	/** Removes the scene pass of a view place, or fails with the render graph's error. */
@@ -600,6 +612,10 @@ export interface CoreGlue extends CoreErrors {
 	setDof(on: boolean): number;
 	/** The taps of depth of field's gather, from the next frame on: 0 draws none. */
 	setDofTaps(taps: number): number;
+	/** Turns automatic exposure on with the post-processing values' settings, or off. */
+	setAutoExposure(on: boolean): number;
+	/** The meter of automatic exposure, from the next frame on: 0 the downsample, 1 the histogram. */
+	setExposureMeter(meter: number): number;
 	/**
 	 * Makes a particle system of `capacity` records for the object in scene slot `slot`, and
 	 * returns its id, or 0 when the scene holds the most systems already.
@@ -746,6 +762,11 @@ export interface CoreGlue extends CoreErrors {
 	 * `DEBUG_VIEW_LIT`, from the next frame on.
 	 */
 	setDebugView(view: number): number;
+	/**
+	 * The layers whose objects decals mark, as a 32-bit mask. An object that is also on another
+	 * layer draws again after the decals.
+	 */
+	setDecalLayers(mask: number): number;
 	// The animation table. Ids that its create calls return, and that its other calls take, are the
 	// table's ids plus one; a create call returns 0 on failure.
 	/** Creates the animation table for `instances` animated objects with `joints` joints in all. */
@@ -947,6 +968,12 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'addFullscreenPass',
 	'setPassValues',
 	'setReflectionScale',
+	'setAreaLightCap',
+	'areaLightTables',
+	'finishAreaLightTables',
+	'areaLightImage',
+	'finishAreaLightImage',
+	'removeAreaLightImage',
 	'setPhysicalSky',
 	'removeScenePass',
 	'setScenePassEnabled',
@@ -969,6 +996,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setContactSteps',
 	'setDof',
 	'setDofTaps',
+	'setAutoExposure',
+	'setExposureMeter',
 	'createParticles',
 	'destroyParticles',
 	'particleRecords',
@@ -1003,6 +1032,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setFogSlices',
 	'setFogHalvings',
 	'setDebugView',
+	'setDecalLayers',
 	'initAnimations',
 	'animationStaging',
 	'createSkeleton',

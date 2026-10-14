@@ -76,6 +76,7 @@ export type Three = Pick<
 	| 'Quaternion'
 	| 'QuaternionKeyframeTrack'
 	| 'Raycaster'
+	| 'RectAreaLight'
 	| 'RepeatWrapping'
 	| 'RingGeometry'
 	| 'Scene'

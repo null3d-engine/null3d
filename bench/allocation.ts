@@ -30,8 +30,10 @@
 // on in S1, and changes its intensity every frame. `--bloom` turns bloom on in S1, and changes
 // its intensity every frame, so the core writes the chain's settings again in each frame. `--dof`
 // turns depth of field on in S1, focused on a point that moves every frame, so the core writes its
-// steps' blocks again in each frame. `--fog` gives S1 height fog with the volumetric fog on, whose
-// block the core writes again in each frame. The camera orbits, so each frame
+// steps' blocks again in each frame. `--exposure` turns automatic exposure on in S1, and changes
+// its compensation every frame, so the meter runs and uploads its block in each frame. `--fog`
+// gives S1 height fog with the volumetric fog on, whose block the core writes again in each frame.
+// The camera orbits, so each frame
 // places every label at a new point, and the thread that draws copies them for the page.
 // `--outline` adds 16 outlined boxes to S1, turns outlines on with a hidden line, and changes the
 // line's width every frame. `--tile-shadows` adds two point lights and two spot lights that cast
@@ -45,10 +47,12 @@
 // `--effects` adds two custom effects to S1, one of which reads the scene's depth, and
 // changes a uniform of each every frame. `--environment` lights S1 with the built-in room, and
 // turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
-// one of them tilted, and changes their intensities every frame. `--setters` calls, every frame,
-// each setter that a sketch may call per frame, with fractions and colors: the lights', a standard
-// and a custom material's, a line batch's, the camera's field of view, the fog and the background
-// color. Run it after a change of any setter, on both GPU paths. `--sky` draws three.js's sky behind S1, and
+// one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
+// rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
+// their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
+// call per frame, with fractions and colors: the lights', a standard and a custom material's, a
+// line batch's, the camera's field of view, the fog and the background color. Run it after a
+// change of any setter, on both GPU paths. `--sky` draws three.js's sky behind S1, and
 // moves its sun and its clouds every frame. `--sky-environment` does the same, and lights S1 with
 // the sky's environment too, which refreshes one stage a frame while the sun moves. `--atmosphere`
 // and `--atmosphere-environment` do the same with the physical sky, whose sky view table draws
@@ -58,9 +62,10 @@
 // births every frame, one of them soft, so the frame copies the opaque depth for it.
 // `--transmission` puts clear water that lets light through under S1,
 // which samples a copy of the swarm's colors that the frame makes, with its mip levels, in every
-// frame. `--passes` adds a full-screen pass that reads S1's color at half the render size, whose
-// texture a custom effect adds as a glow, and changes the pass's uniform every frame. `--prepass`
-// turns the depth prepass on, in any scene.
+// frame. `--decals` puts a ground with a batch of decals under S1, which turn every frame, so the
+// decal pass culls, orders and uploads their rows in every frame. `--passes` adds a full-screen
+// pass that reads S1's color at half the render size, whose texture a custom effect adds as a glow,
+// and changes the pass's uniform every frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -93,6 +98,7 @@
 //   bun run bench:allocation --ao --gpu webgl2
 //   bun run bench:allocation --bloom --gpu webgl2
 //   bun run bench:allocation --dof --gpu webgl2
+//   bun run bench:allocation --exposure --gpu webgl2
 //   bun run bench:allocation --fog --gpu webgl2
 //   bun run bench:allocation --outline --gpu webgl2
 //   bun run bench:allocation --scene s4 --prepass --gpu webgl2
@@ -100,6 +106,7 @@
 //   bun run bench:allocation --labels 256 --no-inline
 //   bun run bench:allocation --environment --gpu webgl2
 //   bun run bench:allocation --hemisphere --gpu webgl2
+//   bun run bench:allocation --area-lights --gpu webgl2
 //   bun run bench:allocation --setters --gpu webgl2
 //   bun run bench:allocation --effects --gpu webgl2
 //   bun run bench:allocation --stats --gpu webgl2
@@ -107,6 +114,7 @@
 //   bun run bench:allocation --sky-environment --gpu webgl2
 //   bun run bench:allocation --reflection --gpu webgl2
 //   bun run bench:allocation --transmission --gpu webgl2
+//   bun run bench:allocation --decals --gpu webgl2
 //   bun run bench:allocation --particles --gpu webgl2
 //   bun run bench:allocation --passes --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
@@ -192,7 +200,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2. After a few minutes the browser compiles the render loop's `draw` with `drawFrame`
  *   inlined and the tracker's `afterSubmit` not, and counts the object there. Also the clock
- *   readings at each frame's submit and completion, and at each check of the frames still in flight;
+ *   readings at each frame's submit and completion, and at each check of the frames still in flight,
+ *   including `giveUpStalled`, which reads the clock at each frame while frames stall;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
@@ -236,6 +245,7 @@ export const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> =
 		'push gpu/completion.ts': 24,
 		'finish gpu/completion.ts': 40,
 		'unfinished gpu/completion.ts': 16,
+		'giveUpStalled gpu/completion.ts': 16,
 	},
 };
 /**
@@ -354,6 +364,13 @@ const BLOOM_REPLAY_BUDGET = 15 * 64;
 const DOF_REPLAY_BUDGET = 4 * 64;
 
 /**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--exposure`:
+ * the encoders of the meter's passes, a compute pass for the histogram or two render passes for the
+ * downsample, at bloom's allowance per pass.
+ */
+const EXPOSURE_REPLAY_BUDGET = 2 * 64;
+
+/**
  * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--fog`: the
  * encoders of the volumetric fog's three render passes, at bloom's allowance per pass.
  */
@@ -401,6 +418,12 @@ const PASSES_REPLAY_BUDGET = 2 * 64;
  * per pass, 173 per frame.
  */
 const TRANSMISSION_MIPS_BUDGET = 11 * 32;
+
+/**
+ * The bytes per frame that the WebGPU replay may allocate on top of its budget with `--decals`: the
+ * encoder of the decal pass's render pass, at bloom's allowance per pass.
+ */
+const DECALS_REPLAY_BUDGET = 64;
 
 /**
  * What S5 and S6 allocate on top of `BUDGETS`, on a real GPU, for what they draw more than S1:
@@ -566,6 +589,9 @@ async function main(): Promise<void> {
 		const fog = args.includes('--fog') ? '&fog' : '';
 		if (fog && scene !== 's1') throw new Error('--fog turns the volumetric fog on in S1 only');
 		if (dof && scene !== 's1') throw new Error('--dof turns depth of field on in S1 only');
+		const exposure = args.includes('--exposure') ? '&exposure' : '';
+		if (exposure && scene !== 's1')
+			throw new Error('--exposure turns automatic exposure on in S1 only');
 		const outline = args.includes('--outline') ? '&outline' : '';
 		if (outline && scene !== 's1') throw new Error('--outline outlines boxes in S1 only');
 		const prepass = args.includes('--prepass') ? '&prepass=on' : '';
@@ -587,6 +613,8 @@ async function main(): Promise<void> {
 		if (environment && scene !== 's1') throw new Error('--environment lights S1 only');
 		const hemisphere = args.includes('--hemisphere') ? '&hemisphere' : '';
 		if (hemisphere && scene !== 's1') throw new Error('--hemisphere lights S1 only');
+		const areaLights = args.includes('--area-lights') ? '&areaLights' : '';
+		if (areaLights && scene !== 's1') throw new Error('--area-lights lights S1 only');
 		const setters = args.includes('--setters') ? '&setters' : '';
 		if (setters && scene !== 's1') throw new Error("--setters calls S1's setters only");
 		const effects = args.includes('--effects') ? '&effects' : '';
@@ -607,6 +635,8 @@ async function main(): Promise<void> {
 		if (reflection && scene !== 's1') throw new Error('--reflection puts water under S1 only');
 		const transmission = args.includes('--transmission') ? '&transmission' : '';
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
+		const decals = args.includes('--decals') ? '&decals' : '';
+		if (decals && scene !== 's1') throw new Error('--decals puts decals under S1 only');
 		const particles = args.includes('--particles') ? '&particles' : '';
 		if (particles && scene !== 's1') throw new Error('--particles adds particles to S1 only');
 		const passes = args.includes('--passes') ? '&passes' : '';
@@ -617,7 +647,7 @@ async function main(): Promise<void> {
 		// `?keep` runs the scene as a timed run draws it until the page closes, with no measurement of
 		// the page's own, so no timer of the page's runs and the engine never stops before the samples
 		// end. A demo would add the playable controls and the stats overlay of S5 and S6.
-		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${setters}${effects}${sky}${reflection}${transmission}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
+		const query = `keep&n=${n}${blend}${animated}${morphed}${grading}${sprites}${lines}${ao}${bloom}${dof}${exposure}${fog}${outline}${prepass}${labels}${tileShadows}${batchShadows}${rowValues}${levels}${environment}${hemisphere}${areaLights}${setters}${effects}${sky}${reflection}${transmission}${decals}${particles}${passes}${statsQuery}${swiftShader ? '&frames' : ''}`;
 		const url = `${server.url}${pagePath(scene, kind, query)}`;
 		await page.goto(url);
 		// On a real GPU the engine draws a frame at each of the display's frames, so the check counts
@@ -741,6 +771,7 @@ async function main(): Promise<void> {
 			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
 		);
 		const over: string[] = [];
+		const unsampled: string[] = [];
 		for (const [worker, workerSamples] of samples) {
 			const budgets = {
 				...BUDGETS[worker as (typeof WORKERS)[number]],
@@ -754,6 +785,9 @@ async function main(): Promise<void> {
 				setters || hemisphere ? SETTER_BUDGETS[worker as (typeof WORKERS)[number]] : {};
 			const sceneBudgets = SCENE_BUDGETS[scene]?.[worker as (typeof WORKERS)[number]] ?? {};
 			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
+			// Each worker allocates in every frame, the sketch worker's frame wait and the replay's
+			// browser objects at least. A worker whose samples hold nothing was not sampled at all.
+			if (!bytes.get(worker)) unsampled.push(worker);
 			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const replay = name === 'replay webgpu/backend.ts';
 				const extra =
@@ -762,10 +796,12 @@ async function main(): Promise<void> {
 					(replay && (batchShadows || scene === 's4') ? CONTACT_REPLAY_BUDGET : 0) +
 					(replay && bloom ? BLOOM_REPLAY_BUDGET : 0) +
 					(replay && dof ? DOF_REPLAY_BUDGET : 0) +
+					(replay && exposure ? EXPOSURE_REPLAY_BUDGET : 0) +
 					(replay && fog ? FOG_REPLAY_BUDGET : 0) +
 					(replay && effects ? EFFECTS_REPLAY_BUDGET : 0) +
 					(replay && reflection ? REFLECTION_REPLAY_BUDGET : 0) +
 					(replay && transmission ? TRANSMISSION_REPLAY_BUDGET : 0) +
+					(replay && decals ? DECALS_REPLAY_BUDGET : 0) +
 					(replay && particles ? PARTICLES_REPLAY_BUDGET : 0) +
 					(replay && passes ? PASSES_REPLAY_BUDGET : 0) +
 					(name === 'generateMipmaps webgpu/backend.ts' && transmission
@@ -782,8 +818,12 @@ async function main(): Promise<void> {
 				);
 			}
 		}
-		console.log(over.length === 0 ? 'pass' : `FAIL: over budget: ${over.join('; ')}`);
-		process.exitCode = over.length === 0 ? 0 : 1;
+		if (unsampled.length > 0)
+			console.log(`FAIL: the profiler sampled nothing in ${unsampled.join(' and ')}`);
+		if (over.length > 0) console.log(`FAIL: over budget: ${over.join('; ')}`);
+		const passed = over.length === 0 && unsampled.length === 0;
+		if (passed) console.log('pass');
+		process.exitCode = passed ? 0 : 1;
 	} finally {
 		// A browser that does not close must not hide the error that ended the check.
 		await within(browser.close(), STEP_MS, 'closing the browser').catch((e: Error) =>

@@ -260,6 +260,52 @@ function dofTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the automatic exposure tests: boxes and a lamp under a sun. */
+const EXPOSURE_SKETCH = 'tests/pages/sketches/exposure-sketch.ts';
+
+/** The automatic exposure tests' image size. */
+const EXPOSURE_SIZE = [320, 180] as const;
+
+/**
+ * Automatic exposure in hold mode, which meters the held frame and takes its stops at once, on
+ * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
+ * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
+ * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
+ * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
+ * keeps the camera's exposure.
+ */
+function exposureTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EXPOSURE_SKETCH}${query}`,
+		hold: 1,
+		size: EXPOSURE_SIZE,
+	});
+	return [
+		test('exposure-off', '?light=dark'),
+		test('exposure-dark', '?light=dark&auto'),
+		test('exposure-bright', '?light=bright&auto'),
+		test('exposure-mean', '?light=dark&auto&metering=mean'),
+		test('exposure-center', '?light=dark&auto&center=1'),
+		test('exposure-compensation', '?light=dark&auto&comp=1'),
+		test('exposure-range', '?light=dark&auto&min=-2'),
+		test('exposure-bloom', '?light=dark&auto&bloom'),
+		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
+		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
+		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-8-bit', '?light=dark&auto'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'exposure-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the custom effects' tests. */
 const EFFECTS_SKETCH = 'tests/pages/sketches/effects-sketch.ts';
 
@@ -628,6 +674,8 @@ function reflectionTests(): ImageTest[] {
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** The sketch of decals on a stone yard. */
+const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1102,6 +1150,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...exposureTests(),
 	...fogVolumeTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
@@ -1755,8 +1804,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
-	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
+	// lights through an orthographic camera. Then the same floor under a hemisphere light, under
+	// three rectangle lights, under the same lights showing an image, and under three tube lights. The parity test compares the grid of 16,
+	// the spot lights, the hemisphere light and the rectangle lights with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -1765,6 +1815,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
 			['lights-hemisphere', 'scene=hemisphere'],
+			['lights-rect', 'scene=rect'],
+			['lights-rect-image', 'scene=rect-image'],
+			['lights-tube', 'scene=tube'],
 		] as const
 	).map(([name, query]) => ({
 		name,
@@ -1772,6 +1825,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
+	// The rectangle lights again with a cap of one area light a frame: only the nearest light, the
+	// pink strip over the right of the floor, shades.
+	{
+		name: 'lights-rect-capped',
+		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=rect&areaLights=1',
+		hold: 0,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.
@@ -2121,6 +2182,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
+	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
+	// splashes that row colors tint and fade. The decals spec compares places with the bare yard.
+	{ name: 'decals', sketch: DECALS_SKETCH, hold: 0, size: [640, 360] },
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{

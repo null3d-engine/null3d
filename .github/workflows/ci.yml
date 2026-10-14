@@ -649,7 +649,7 @@ jobs:
       matrix:
         browser: [Safari, Firefox]
         shard: [1, 2, 3, 4, 5, 6]
-        shards: [6]
+        shards: [7]
     env:
       HUSKY: "0"
     steps:

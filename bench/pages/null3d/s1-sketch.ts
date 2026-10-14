@@ -21,13 +21,18 @@
 // intensity every frame, for the allocation sample of scene.setEnvironment and the environment's
 // light. The `hemisphere` switch adds two hemisphere lights, one upright and one tilted, and
 // changes their intensities every frame, for the allocation sample of the frame's sum of them.
+// The `areaLights` switch adds eight rectangle lights, two of which show images, and four tube
+// lights, which circle the swarm and change their intensities every frame, for the allocation
+// sample of area lights.
 // The `effects` switch adds two custom effects, one of which reads the scene's depth, and
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
-// sample of post.set's focus point and depth of field's steps. The `fog` switch gives the scene
-// height fog with the volumetric fog on, for the allocation sample of its steps, whose block the
-// core writes again in every frame as the camera orbits.
+// sample of post.set's focus point and depth of field's steps. The `exposure` switch turns automatic
+// exposure on, and changes its compensation every frame, for the allocation sample of post.set's
+// automatic exposure and the meter's steps. The `fog` switch gives the scene height fog with the
+// volumetric fog on, for the allocation sample of its steps, whose block the core writes again in
+// every frame as the camera orbits.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -36,6 +41,10 @@
 // The `transmission` switch puts clear water that lets light through under the swarm, for the
 // allocation sample and the cost of the copy of the opaque colors that it samples, and of its
 // shading.
+// The `decals` switch puts a ground under the swarm with a batch of decals on it, which turn every
+// frame, for the cost of the decal pass and the allocation sample of its rows. The tall boxes of
+// the decals reach the lowest boxes of the swarm too. `decals=off` puts the ground alone, the
+// other side of the decals' cost.
 // The `passes` switch adds a full-screen pass that reads the scene's color at half the render
 // size and softens it, and a custom effect that adds the pass's texture as a glow, then changes
 // the pass's uniform every frame, for the allocation sample of render.setPassUniform, the pass's
@@ -92,6 +101,8 @@ export default defineSketch(async (context) => {
 	const reflection = switches.get('reflection');
 	if (reflection !== null) createWater(context, reflection);
 	if (switches.has('transmission')) createClearWater(context);
+	const decals = switches.get('decals');
+	const turnDecals = decals === null ? undefined : createDecals(context, decals !== 'off');
 	const particles = switches.has('particles') ? await createParticleFountains(context) : [];
 	const soft = switches.has('passes') ? createSoftGlow(context) : undefined;
 	// One settings object, changed in place, so the sketch's own code allocates nothing per frame.
@@ -111,6 +122,8 @@ export default defineSketch(async (context) => {
 	const focus: [number, number, number] = [0, 0, 0];
 	const lens = { dof: { aperture: 2, focusPoint: focus } };
 	const dof = switches.has('dof');
+	const eye = { autoExposure: { compensation: 0 } };
+	const exposure = switches.has('exposure');
 	if (switches.has('fog'))
 		context.scene.setFog({
 			color: '#8090a0',
@@ -171,6 +184,7 @@ export default defineSketch(async (context) => {
 		});
 	const now = new Float64Array(1);
 	const poseHemispheres = switches.has('hemisphere') ? createHemispheres(context, now) : undefined;
+	const areas = switches.has('areaLights') ? createAreaLights(context) : undefined;
 	const setValues = switches.has('setters') ? await createSetters(context, camera, now) : undefined;
 	const pose = (t: number) => {
 		poseSwarm(t);
@@ -178,6 +192,7 @@ export default defineSketch(async (context) => {
 		animate(t);
 		morph(t);
 		moveCasters?.(t);
+		turnDecals?.(t);
 		if (outlined) {
 			line.width = 2 + Math.sin(t);
 			context.post.set(outlineSettings);
@@ -185,6 +200,14 @@ export default defineSketch(async (context) => {
 		// The frame's time goes through a typed array: a step of its own takes no fraction, so no
 		// number crosses a call that the browser may not inline.
 		now[0] = t;
+		if (areas)
+			for (let k = 0; k < areas.length; k++) {
+				const angle = t * 0.3 + (k * Math.PI * 2) / areas.length;
+				const light = areas[k] as (typeof areas)[number];
+				light.setPosition(Math.cos(angle) * S1_EXTENT, 4, Math.sin(angle) * S1_EXTENT);
+				light.setDirection(-Math.cos(angle), -0.3, -Math.sin(angle));
+				light.setIntensity(4 + Math.sin(t + k));
+			}
 		if (room) {
 			turn[1] = 0.5 * t;
 			lighting.intensity = 0.75 + 0.25 * Math.sin(t);
@@ -208,6 +231,11 @@ export default defineSketch(async (context) => {
 			focus[2] = 20 * Math.cos(0.5 * t);
 			context.post.set(lens);
 		}
+		if (exposure) {
+			eye.autoExposure.compensation = 0.5 * Math.sin(t);
+			context.post.set(eye);
+		}
+
 		if (tint && haze) {
 			warm[2] = 0.9 + 0.1 * Math.sin(t);
 			context.post.setEffectUniform(tint, 'color', warm);
@@ -435,6 +463,28 @@ async function createSetters(
 	};
 }
 
+/**
+ * Eight rectangle lights, two of which show a striped image, and four tube lights for the
+ * `areaLights` switch. The frames move them around the swarm.
+ */
+function createAreaLights({ scene }: SketchContext) {
+	const stripes = new Uint8Array(16 * 16 * 4).map((_, i) => ((i >> 6) % 2 ? 255 : 40));
+	const image = { width: 16, height: 16, data: stripes };
+	const range = S1_EXTENT * 3;
+	return Array.from({ length: 12 }, (_, k) =>
+		k < 8
+			? scene.createRectAreaLight({
+					width: 4,
+					height: 2,
+					range,
+					color: k % 2 ? '#ffd29a' : '#9ad2ff',
+					dynamic: true,
+					...(k < 2 ? { image } : {}),
+				})
+			: scene.createTubeLight({ length: 3, range, color: '#ff6ab0', dynamic: true }),
+	);
+}
+
 /** The folder of the KTX2 sample model, whose 19 textures the `decode` switch transcodes. */
 const LAMP = '/samples/sources/khronos/StainedGlassLamp/glTF-KTX-BasisU';
 /** The meshopt sample model, which the `decode` switch loads after each round of textures. */
@@ -523,6 +573,70 @@ function createClearWater({ scene, geometry, materials }: SketchContext) {
 		position: [0, WATER_HEIGHT, 0],
 	});
 	water.setRotationEuler(-Math.PI / 2, 0, 0);
+}
+
+/** Decals on each side of the `decals` switch's square of them, and the texels of their image. */
+const DECAL_ROWS = 16;
+const DECAL_TEXELS = 64;
+
+/**
+ * Adds the `decals` switch's ground under the swarm, and with `marked` a dynamic batch of decals on
+ * it: soft round marks with a dark ring, in a square across the swarm's extent. Returns the step
+ * that turns each one about the vertical, which writes the batch's rotations in place.
+ */
+function createDecals({ scene, geometry, materials, textures }: SketchContext, marked: boolean) {
+	const ground = scene.createMesh({
+		mesh: geometry.plane({ width: 1200, height: 1200 }),
+		material: materials.standard({ color: '#6b6560', roughness: 0.9 }),
+		position: [0, WATER_HEIGHT, 0],
+	});
+	ground.setRotationEuler(-Math.PI / 2, 0, 0);
+	if (!marked) return undefined;
+	const data = new Uint8Array(DECAL_TEXELS * DECAL_TEXELS * 4);
+	for (let y = 0; y < DECAL_TEXELS; y++)
+		for (let x = 0; x < DECAL_TEXELS; x++) {
+			const r =
+				Math.hypot(x + 0.5 - DECAL_TEXELS / 2, y + 0.5 - DECAL_TEXELS / 2) / (DECAL_TEXELS / 2);
+			const ring = Math.max(0, 1 - Math.abs(r - 0.8) * 8);
+			const shade = 40 + 120 * (1 - ring);
+			data.set(
+				[shade, shade * 0.8, shade * 0.6, 255 * Math.max(0, Math.min(1, (1 - r) * 4))],
+				(y * DECAL_TEXELS + x) * 4,
+			);
+		}
+	const map = textures.fromData({
+		width: DECAL_TEXELS,
+		height: DECAL_TEXELS,
+		data,
+		colorSpace: 'srgb',
+		mipmaps: true,
+	});
+	const count = DECAL_ROWS * DECAL_ROWS;
+	const decals = scene.createInstances(geometry.box(), count, {
+		material: materials.decal({ map, roughness: 0.4 }),
+		dynamic: true,
+	});
+	const spacing = (2 * S1_EXTENT) / DECAL_ROWS;
+	for (let k = 0; k < count; k++) {
+		const [column, row] = [k % DECAL_ROWS, Math.floor(k / DECAL_ROWS)];
+		const x = -S1_EXTENT + (column + 0.5) * spacing;
+		const z = -S1_EXTENT + (row + 0.5) * spacing;
+		decals.positions.set([x, WATER_HEIGHT, z], k * 3);
+		decals.scales.set([spacing * 0.9, spacing * 0.9, 30], k * 3);
+	}
+	const rotations = decals.rotations;
+	return (t: number) => {
+		for (let k = 0; k < count; k++) {
+			// A box turned to project down, then about the vertical by its own angle.
+			const half = 0.5 * (t + k);
+			const c = Math.SQRT1_2 * Math.cos(half);
+			const s = Math.SQRT1_2 * Math.sin(half);
+			rotations[k * 4] = -c;
+			rotations[k * 4 + 1] = s;
+			rotations[k * 4 + 2] = s;
+			rotations[k * 4 + 3] = c;
+		}
+	};
 }
 
 /** The number of outlined boxes that the `outline` switch adds. */
