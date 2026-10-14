@@ -4,13 +4,12 @@
 // the snow through the pines that ring the clearing. Everything is made in code: the land, the
 // houses, the props, the trees and the falling snow.
 //
-// The camera runs a cinematic route that loops over the square. `c` toggles between the route (Auto)
-// and the user's orbit controls (Manual); `h` hides the on-screen help. The page's buttons pick a
-// time of day (Night at its start), and `d` or the buttons turn on a "DSLR" lens with depth of field.
-// For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
+// The camera runs a cinematic route made for this scene (see SHOTS). `c` toggles between the route
+// (Auto) and the user's own fly camera (Manual); `h` hides the on-screen help. The page's buttons
+// pick a time of day (Night at its start), and `d` or the buttons turn on a "DSLR" lens with depth of
+// field. For held frames, the sketch's address takes the mood: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset } from '@null3d/engine';
 import { createCinematic, type Shot } from '../../lib/cinematic';
-import { interact } from '../../lib/interact';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createHouses } from './houses';
@@ -35,17 +34,24 @@ const HEADING = 2.3;
 const TARGET = [0, 1.4, 0] as const;
 
 /**
- * The cinematic route: low across the snowy square toward the lit houses and the clock tower, up
- * over the roofs, past the lamps and the tower, then back. The first shot holds still, so a held
- * frame lands on a fixed hero pose.
+ * The cinematic route. It opens high and back, showing the whole town, the square and the clock
+ * tower at once. Then it swings over the town to the east, drops into the east lane for the tower,
+ * crosses the square past the well and the lamps into the north lane, climbs the north lane and
+ * sweeps high over the roofs to the south, drops into the south lane, and climbs back to the
+ * opening view. Low passes keep to the open cross of the lanes and the square, so the camera never
+ * enters a house. The first shot holds still, so a held frame lands on the opening view.
  */
 const SHOTS: readonly Shot[] = [
-	{ position: [-6, 2.6, -15], target: [2, 2.8, 3], seconds: 5, move: 'hold' },
-	{ position: [-2, 6.5, -23], target: [4, 4, 2], seconds: 7 },
-	{ position: [16, 5, -9], target: [2, 3, 2], seconds: 8 },
-	{ position: [18, 3.2, 10], target: [0, 2.6, 0], seconds: 8 },
-	{ position: [3, 8.5, 18], target: [0, 2.5, 0], seconds: 6 },
-	{ position: [-6, 2.6, -15], target: [2, 2.8, 3], seconds: 6 },
+	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 5, move: 'hold' },
+	{ position: [-30, 30, -40], target: [2, 3, 6], seconds: 3 },
+	{ position: [26, 14, -8], target: [8, 4, 2], seconds: 9 },
+	{ position: [26, 6, -4], target: [12.6, 8, 8.4], seconds: 8 },
+	{ position: [6, 4.0, 0.6], target: [0, 3, 0], seconds: 7 },
+	{ position: [0.5, 4.2, 13], target: [0, 2.8, -2], seconds: 7 },
+	{ position: [0, 15, 26], target: [0, 3, 2], seconds: 7 },
+	{ position: [-20, 15, -14], target: [0, 3, 0], seconds: 8 },
+	{ position: [-1, 4, -6], target: [1, 3, 2], seconds: 7 },
+	{ position: [0, 12, 4], target: [0, 3, 2], seconds: 6 },
 ];
 
 const params = new URL(import.meta.url).searchParams;
@@ -69,12 +75,6 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({ fov: FOV, near: 0.08, far: 500 });
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
-	const view = interact(ctx, camera, {
-		target,
-		minDistance: 6,
-		maxDistance: 70,
-		maxPolarAngle: 1.5,
-	});
 
 	createLand(ctx, detail.land, detail.texture);
 	const houses = createHouses(ctx, detail.texture);
@@ -110,15 +110,17 @@ export default defineSketch(async (ctx) => {
 	};
 	if (params.has('dslr')) setLens(true);
 
-	const film = createCinematic(ctx, camera, view, {
+	const film = createCinematic(ctx, camera, {
 		shots: SHOTS,
 		target,
+		speed: 8,
 		rows: () => [{ key: 'D', text: `lens: ${dslr ? 'on' : 'off'}` }],
 	});
 
 	page.onMessage((name, value) => {
 		if (name === 'mood' && isMood(value)) choose(value);
 		if (name === 'dslr') setLens(value === 'On');
+		if (name === 'camera') film.toggle();
 	});
 
 	return {
@@ -129,7 +131,6 @@ export default defineSketch(async (ctx) => {
 				film.refresh();
 			}
 			film.update(dt);
-			if (film.mode === 'manual') view.update(dt);
 			if (dslr) post.set(lens);
 			air.update(t);
 		},

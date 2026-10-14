@@ -146,6 +146,19 @@
 			}
 			.hud[hidden] { display: none; }
 			.hud-row { display: flex; gap: 0.5rem; justify-content: flex-end; }
+			button.hud-row {
+				pointer-events: auto;
+				margin: 0;
+				padding: 0;
+				border: 0;
+				background: none;
+				color: inherit;
+				font: inherit;
+				text-align: right;
+				cursor: pointer;
+			}
+			button.hud-row:hover { color: #fff; }
+			button.hud-row:focus-visible { outline: 1px solid var(--link); }
 			.hud-key { min-width: 1.1rem; font-weight: 600; color: #f2c14e; }
 			.compare .switch { display: flex; gap: 0.25rem; }
 			.compare .switch a { padding: 0.15rem 0.6rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
@@ -199,6 +212,8 @@
 				.sidebar.open { transform: none; visibility: visible; transition: transform 0.2s ease; }
 				.sidebar .brand { display: none; }
 				.backdrop { position: fixed; inset: var(--bar) 0 0 0; z-index: 1; background: rgb(0 0 0 / 0.5); }
+				/* The help sits below the stats overlay, above the choices bar, on a narrow panel. */
+				.hud { top: 5.6rem; bottom: auto; max-width: calc(100% - 1.5rem); }
 				/* The stats overlay sits over the whole page, so it hides while the drawer is open. */
 				body:has(.sidebar.open) [data-null3d-stats] { display: none; }
 				.welcome { padding: 1.25rem 1rem; }

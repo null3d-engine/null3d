@@ -301,6 +301,11 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - `?jobs=` sets the most job workers, at most one for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
 - The development flag and this one live in one module. It holds constants only, so the bundler folds them into each file that reads them. The files that load on first use still share no module with the start's files (review R8, R8-11).
 
+## Messages from a sketch to the page
+
+- A sketch's `page.post` reaches the page as a message. The engine keeps a message that arrives before the page listens, and gives it to the first handler alone, then forgets it: a second handler registered later never sees it. So a page that reads two kinds of message, such as a demo's labels and a showcase scene's help, registers one handler that routes each type. In October 2026 the examples page registered one handler for labels and another for the showcase help, so the help that a sketch posts at its start was dropped and the on-screen help never showed.
+- `engine.onSketchMessage` returns a function that removes the handler.
+
 ## Public type declarations
 
 - The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
