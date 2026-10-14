@@ -359,6 +359,9 @@ pub mod texture_option {
     pub const UPLOAD_ALL: u32 = 2;
     /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
     pub const MEMORY_BUDGET_KIB: u32 = 3;
+    /// Any value makes the store keep each texture's texels after its upload, so that a new GPU
+    /// device uploads them again; 0 frees them once the upload is done (D-164).
+    pub const KEEP_COPIES: u32 = 4;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -475,6 +478,9 @@ pub mod animation_field {
     /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
     /// writes; made by `enableJointOverrides`.
     pub const LOOK_TARGETS: u32 = 12;
+    /// The frames between two frame steps of each instance's pose, 32-bit unsigned integers,
+    /// which TypeScript writes.
+    pub const UPDATE_INTERVALS: u32 = 13;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -1187,6 +1193,7 @@ pub fn typescript() -> String {
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
                 ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
+                ("KEEP_COPIES", texture_option::KEEP_COPIES),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
@@ -1265,6 +1272,7 @@ pub fn typescript() -> String {
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
                 ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
                 ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
+                ("UPDATE_INTERVALS", animation_field::UPDATE_INTERVALS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
