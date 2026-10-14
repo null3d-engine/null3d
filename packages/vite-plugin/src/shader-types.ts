@@ -133,20 +133,23 @@ export interface CompiledMaterial<
 	}[keyof Uniforms & string][];
 	/** The textures that the WGSL declares as `var name: texture_2d<f32>;`, in order. */
 	readonly textures: readonly CompiledTexture<Textures>[];
-	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
+	/**
+	 * The standard material's variants with the WGSL's functions, or a full shader's, by name. A
+	 * module's value holds none: its builds load on first use, through `builds`.
+	 */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 	/**
-	 * The WebGPU builds that skin in the vertex shader, by name, as the compiler gives them. A
-	 * module carries them apart from the other builds, through `skinBuilds`.
+	 * Imports one set of the material's builds, which load on first use: those of a GPU path
+	 * (`'wgsl'` or `'glsl'`) whose skinning bit and the bits that a device fixes are those of
+	 * `set`. The engine imports its device's set when it first uses the material, and another set
+	 * when a pipeline needs one. A page never downloads the sets of other devices.
 	 */
-	readonly skinVariants?: Readonly<Record<string, ShaderVariant>>;
-	/**
-	 * Imports the WebGPU builds that skin in the vertex shader, which load on first use: when the
-	 * material first draws a skinned mesh on WebGPU. A page without such a mesh never loads them.
-	 */
-	readonly skinBuilds?: () => Promise<{
-		readonly variants: Readonly<Record<string, ShaderVariant>>;
-	}>;
+	readonly builds?: (
+		target: 'wgsl' | 'glsl',
+		set: number,
+	) => Promise<Readonly<Record<string, ShaderVariant>>>;
+	/** In a module's value, every permutation bit of the material's builds, joined. */
+	readonly permutations?: number;
 	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */
