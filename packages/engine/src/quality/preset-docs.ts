@@ -108,6 +108,10 @@ export const SETTING_DOCS: {
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
 	lodFade: { label: 'Level of detail fades', print: yesNo },
+	physicalSky: {
+		label: 'Physical sky',
+		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
