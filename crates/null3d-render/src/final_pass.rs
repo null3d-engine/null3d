@@ -287,14 +287,14 @@ impl FinalPass {
     pub(crate) const UPLOAD_BYTES: usize = SETTINGS_BYTES as usize;
 
     /// Asks `pipelines` for the pass's pipeline, once, and for its bloom build's once a frame has
-    /// `bloom`. With `two_step` it also asks for the second step's plain pipeline, which scales the
-    /// first step's display color up to the canvas. A builder asks before it records the pipelines
-    /// that its frame creates, so the list creates them with the others, at its start.
+    /// `bloom`. The plain final pass also asks, once, for the second step's pipeline, which scales
+    /// the first step's display color up to the canvas, so it is ready whenever the render scale
+    /// drops below the whole canvas. A builder asks before it records the pipelines that its frame
+    /// creates, so the list creates them with the others, at its start.
     pub(crate) fn request_pipeline(
         &mut self,
         pipelines: &mut PipelineCache,
         bloom: bool,
-        two_step: bool,
     ) -> Option<u32> {
         if self.pipeline.is_none() {
             self.pipeline = Some(pipelines.id(pipeline(self.fxaa, false, self.tone_curve)));
@@ -302,7 +302,7 @@ impl FinalPass {
         if bloom && self.bloom_pipeline.is_none() {
             self.bloom_pipeline = Some(pipelines.id(pipeline(self.fxaa, true, self.tone_curve)));
         }
-        if two_step && !self.resolve && self.present_pipeline.is_none() {
+        if !self.resolve && self.present_pipeline.is_none() {
             self.present_pipeline = Some(pipelines.id(pipeline(false, false, None)));
         }
         self.bloom_pipeline
@@ -571,7 +571,7 @@ mod tests {
         let mut arena = UploadArena::default();
         arena.reset(FinalPass::UPLOAD_BYTES);
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines, false, false);
+        pass.request_pipeline(&mut pipelines, false);
         pass.prepare(
             &mut list,
             &mut arena,
@@ -622,7 +622,8 @@ mod tests {
         check_flag("DITHER", OutputUniform::DITHER);
         let mut list = DrawList::with_capacity(256);
         let mut arena = UploadArena::default();
-        arena.reset(FinalPass::UPLOAD_BYTES);
+        // Two steps, so two settings blocks fit.
+        arena.reset(2 * FinalPass::UPLOAD_BYTES);
         // The first step draws at the render size and leaves the dither to the second.
         let mut first = FinalPass::new(
             IDS,
@@ -631,7 +632,7 @@ mod tests {
         )
         .resolve();
         let mut pipelines = PipelineCache::default();
-        first.request_pipeline(&mut pipelines, false, false);
+        first.request_pipeline(&mut pipelines, false);
         first
             .prepare(
                 &mut list,
@@ -659,7 +660,7 @@ mod tests {
             Antialias::Msaa,
         );
         let mut pipelines = PipelineCache::default();
-        second.request_pipeline(&mut pipelines, false, true);
+        second.request_pipeline(&mut pipelines, false);
         assert!(second.present_pipeline.is_some());
         second
             .prepare(
@@ -690,15 +691,17 @@ mod tests {
             Antialias::Fxaa,
         );
         let mut pipelines = PipelineCache::default();
-        pass.request_pipeline(&mut pipelines, true, false);
+        pass.request_pipeline(&mut pipelines, true);
         pass.set_tone_curve(Some(template::CUSTOM_FIRST));
-        pass.request_pipeline(&mut pipelines, true, false);
+        pass.request_pipeline(&mut pipelines, true);
         let templates: Vec<u32> = pipelines.keys().iter().map(|key| key.template).collect();
+        // The pass's own builds, the second step's plain build, then the curve's two builds.
         assert_eq!(
             templates,
             [
                 template::FINAL,
                 template::FINAL_BLOOM,
+                template::FINAL,
                 template::CUSTOM_FIRST,
                 template::CUSTOM_FIRST + 1
             ],
@@ -708,7 +711,7 @@ mod tests {
             SceneColor::from_format(format::RGBA16_FLOAT),
             Antialias::None,
         );
-        pass.request_pipeline(&mut pipelines, false, false);
+        pass.request_pipeline(&mut pipelines, false);
         assert_eq!(
             pipelines.keys().last().map(|key| key.template),
             Some(template::CUSTOM_FIRST)
