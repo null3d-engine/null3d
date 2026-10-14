@@ -207,8 +207,20 @@ pub mod post_value {
     /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
     pub const DOF_FOCUS_POINT: u32 = 46;
     pub const DOF_FOCUS_ON_POINT: u32 = 49;
+    /// The automatic exposure's metering (0 the mean, 1 the percentile mean), its two percentiles,
+    /// its center weight, its speeds while the scene grows brighter and darker in stops per
+    /// second, the darkest and the brightest scene it adapts to in stops, and its compensation in
+    /// stops, in this order.
+    pub const AUTO_EXPOSURE_METERING: u32 = 50;
+    pub const AUTO_EXPOSURE_PERCENTILES: u32 = 51;
+    pub const AUTO_EXPOSURE_CENTER_WEIGHT: u32 = 53;
+    pub const AUTO_EXPOSURE_SPEED_UP: u32 = 54;
+    pub const AUTO_EXPOSURE_SPEED_DOWN: u32 = 55;
+    pub const AUTO_EXPOSURE_MIN_EV: u32 = 56;
+    pub const AUTO_EXPOSURE_MAX_EV: u32 = 57;
+    pub const AUTO_EXPOSURE_COMPENSATION: u32 = 58;
     /// The values in the block.
-    pub const COUNT: u32 = 50;
+    pub const COUNT: u32 = 59;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -690,6 +702,8 @@ pub fn typescript() -> String {
                 ("SPOT", light_kind::SPOT),
                 ("HEMISPHERE", light_kind::HEMISPHERE),
                 ("AMBIENT", light_kind::AMBIENT),
+                ("RECT", light_kind::RECT),
+                ("TUBE", light_kind::TUBE),
             ],
         ),
         (
@@ -710,6 +724,10 @@ pub fn typescript() -> String {
                 ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
                 ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
                 ("SHADOW_CONTACT", light_value::SHADOW_CONTACT),
+                ("WIDTH", light_value::WIDTH),
+                ("HEIGHT", light_value::HEIGHT),
+                ("RADIUS", light_value::RADIUS),
+                ("IMAGE", light_value::IMAGE),
             ],
         ),
         (
@@ -936,6 +954,7 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("DECAL", feature::DECAL),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -998,6 +1017,9 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
+                ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
+                ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which
@@ -1067,6 +1089,26 @@ pub fn typescript() -> String {
                 ("DOF_BLADES", post_value::DOF_BLADES),
                 ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
                 ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
+                ("AUTO_EXPOSURE_METERING", post_value::AUTO_EXPOSURE_METERING),
+                (
+                    "AUTO_EXPOSURE_PERCENTILES",
+                    post_value::AUTO_EXPOSURE_PERCENTILES,
+                ),
+                (
+                    "AUTO_EXPOSURE_CENTER_WEIGHT",
+                    post_value::AUTO_EXPOSURE_CENTER_WEIGHT,
+                ),
+                ("AUTO_EXPOSURE_SPEED_UP", post_value::AUTO_EXPOSURE_SPEED_UP),
+                (
+                    "AUTO_EXPOSURE_SPEED_DOWN",
+                    post_value::AUTO_EXPOSURE_SPEED_DOWN,
+                ),
+                ("AUTO_EXPOSURE_MIN_EV", post_value::AUTO_EXPOSURE_MIN_EV),
+                ("AUTO_EXPOSURE_MAX_EV", post_value::AUTO_EXPOSURE_MAX_EV),
+                (
+                    "AUTO_EXPOSURE_COMPENSATION",
+                    post_value::AUTO_EXPOSURE_COMPENSATION,
+                ),
                 ("COUNT", post_value::COUNT),
             ],
         ),
