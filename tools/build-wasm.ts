@@ -387,6 +387,18 @@ const CARGO_TARGET_BASE =
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
 
 /**
+ * Where a variant's wasm-bindgen output and its optimized wasm are staged before they go in place.
+ * It lives in this checkout, not in the shared cargo target. Every build shares the target folder,
+ * so two builds in different worktrees would write and remove one `out` folder at once; Cargo's own
+ * lock covers its own build, not this staging step, and a folder that one build removed under
+ * another makes wasm-opt fail with "Failed opening output file". A folder per checkout keeps two
+ * builds from colliding.
+ */
+export function variantStagingFolder(variant: Variant): string {
+	return join(root, 'target', `wasm-${variant.name}`, 'out');
+}
+
+/**
  * The cache of built artifacts, keyed by every input of the build. A hit copies the files in place
  * and skips cargo, wasm-bindgen and wasm-opt. It is shared by every checkout on the machine, so a
  * no-change build and a fresh worktree skip the link. Set `NULL3D_WASM_ARTIFACTS` to another
@@ -609,8 +621,10 @@ function buildVariant(
 		],
 		{ RUSTFLAGS: variant.rustflags },
 	);
-	// The files take shape in the build folder, and go in place whole once every step and check passed.
-	const staged = `${targetDir}/out`;
+	// The files take shape in this checkout's staging folder, and go in place whole once every step
+	// and check passed. The staging folder is private, never the shared cargo target's (see
+	// variantStagingFolder).
+	const staged = variantStagingFolder(variant);
 	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
 	run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
