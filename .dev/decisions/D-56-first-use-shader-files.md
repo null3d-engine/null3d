@@ -263,3 +263,45 @@ The addresses of the combined files do not sit in the main module. There, 157 ha
 Only Creek uses two features whose builds meet. It fetches the files of alpha to coverage with level fades and with sprites, and the WebGL2 or WebGPU table. Battle's count depends on how far its scene got in the 12 seconds. Battle and Creek did not start on the main build that the size check left, so their counts on main follow from the rule: one file per feature that the branch's run fetched.
 
 **The cost of the table on first use.** Creek asks for the files of alpha to coverage, level fades and cutout in the same frame as the two combined ones. So the table cannot start earlier, and the combined files wait for it. On WebGL2 in three runs, the table took 7, 6 and 112 ms on the dev server. The combined files' last byte came 26, 33 and 0 ms after that of the level fades' file, which held those builds on main. On WebGPU it came 24, 22 and 16 ms after it. That is at most two frames at 60 Hz, once per page, while the masked plants' pipelines build. It is not done earlier, at a page's first feature file: most pages that use skinning or sprites would then fetch a table that they never read.
+
+## Addendum, 2026-10-14: the build compiles only the entries that changed
+
+Status: decided, 2026-10-14, by the owner's build-speed priority.
+
+**Question.** The build composed and compiled every entry of the manifest on each run, and compared the modules only afterwards. Editing one `.wgsl` file therefore recompiled all 54 entries and their builds, about 8 minutes on the Mac. The modules' cache in `tools/lib/shader-modules.ts` keys on a hash of every WGSL file, so the very edit that caused the work changed its key, and it could not help.
+
+**Rule.** The build keys each entry on that entry's own inputs, and reuses the entry's compiled output when they are unchanged:
+
+- the entry's file and source;
+- the entry's table in the manifest: its pipelines, its variants, and each variant's defs, permutation bits and targets, as the build names its builds;
+- every library module the entry imports, directly or through another module, with the text of each, so a change to a library module reaches exactly the entries that import it;
+- a stamp of the compiler, which the wrapper hashes from the compiler's sources, so a change to the compiler misses every entry.
+
+The shared tables, `shaders.ts` and the feature and combos modules, are assembled from the entries' records on every run, which is cheap. An entry that is missing, unreadable or written under another key, or whose dependency's text changed, is a miss, and the entry compiles again. A folder that cannot be read or written costs the next run its work and nothing else. The cache lives in `~/.cache/null3d/shader-cache/<stamp>`, which every checkout on the machine shares.
+
+**Data.** All figures are the wall time of `cargo run -p null3d-shaders --bin shader-build -- --root .` on the Mac on 14 October 2026, with the cargo build warm. The machine was otherwise busy, so the figures carry some load.
+
+| What changed | Entries compiled | Entries reused | Time |
+| --- | --- | --- | --- |
+| Nothing, cold cache | 54 | 0 | 442.4 s |
+| Nothing, warm cache | 0 | 54 | 10.6 s |
+| One entry's file, `cull.wgsl`, which the two cull entries share | 2 | 52 | 10.4 s |
+| The library module `lib/math.wgsl` | 31 | 23 | 356.0 s |
+
+The 31 entries that import `null3d::math` include the two custom-material templates, which build every variant, so they are the dearest of the 54. The module reaches them through `null3d::lighting` and `null3d::area_lights`, so an edit to `math.wgsl` is the dearest library edit, close to a full build. The 23 entries that do not import it, directly or through another module, stay on disk.
+
+The folder held 499 MB after the cold run, because an entry's record holds the WGSL and the GLSL with reflection of each of its builds. The warm run reads it in 10.6 s. A run with nothing changed does not reach the build at all: the modules' cache answers first. The folder is written once for each compiler stamp, and a later run rewrites only the entries that changed.
+
+**Options.**
+- Keep the modules' cache alone and rebuild it whenever any WGSL file changed. This is what main did. It costs 442 s for any edit, however small.
+- Key one cache entry on the whole manifest, as the modules' cache does. An edit to one shader would still miss every entry, so this saves nothing.
+- Key each entry on its own file alone. A change to a shared library module would then serve a stale entry, so this is wrong.
+- Key each entry on its file, its manifest table, the library modules it imports and a compiler stamp, as the rule says. This compiles exactly what changed.
+
+**Decision.** Keep a per-entry cache, keyed on the entry's own inputs and the library modules it imports, under a folder named by the compiler's stamp. A hit skips the composition and the GLSL translation for that entry and reuses its recorded output. `--no-cache`, and `NULL3D_NO_SHADER_CACHE=1`, compile every entry again. The Vite plugin's own shader cache ([D-175](D-175-vite-plugin-shader-cache.md)) uses the same environment variable for the same reason.
+
+**Consequences.**
+- `crates/null3d-shaders/src/cache.rs` holds the cache, `crates/null3d-shaders/src/lib.rs` builds each entry through it, and `--cache`, `--stamp` and `--no-cache` reach `shader-build`.
+- `tools/lib/shader-modules.ts` passes the folder and the compiler stamp, and turns the cache off for `NULL3D_NO_SHADER_CACHE=1`.
+- The build output does not change. A warm run writes the same modules as a cold one, which the tests in `crates/null3d-shaders/tests/cache.rs` and `tests/cli.rs` check.
+- [Pull requests and parallel work](../pull-requests.md#builds) notes the cache and its figures beside the repository's other caches.
