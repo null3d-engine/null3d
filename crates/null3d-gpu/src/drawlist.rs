@@ -1629,6 +1629,21 @@ pub mod template {
     /// [`PARTICLE_DEPTH`] from a multisampled depth, whose first sample it reads, with the layout
     /// [`PARTICLE_DEPTH_MS`](super::layout::PARTICLE_DEPTH_MS). Only WebGPU has it.
     pub const PARTICLE_DEPTH_MS: u32 = 56;
+    /// The volumetric fog's light step: one triangle over the grid's texture, which lights each cell
+    /// of the grid. It binds the camera's frame group at group 0, as the background does, and at
+    /// group 1 its settings, the last frame's grid and a sampler, as a step of bloom binds them.
+    pub const FOG_LIGHT: u32 = 57;
+    /// The volumetric fog's sum: one triangle over the summed grid's texture, which joins the
+    /// blocks' sums in front of each cell. It binds as a step of bloom does.
+    pub const FOG_SUM: u32 = 58;
+    /// The volumetric fog's apply step: one triangle over a target of the render size, which adds
+    /// the summed grid's light to the scene's color. It binds as depth of field's composite does.
+    pub const FOG_APPLY: u32 = 59;
+    /// [`FOG_APPLY`] from a multisampled depth target, whose sample 0 it reads. WebGPU only.
+    pub const FOG_APPLY_MS: u32 = 60;
+    /// The volumetric fog's block step: one triangle over a texture of the grid's size, which sums
+    /// the cells of each block of slices up to each cell. It binds as a step of bloom does.
+    pub const FOG_BLOCK: u32 = 69;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
     /// template from here up, which the thread that draws receives from the sketch. The engine's
     /// own templates take ids below it.
@@ -2021,6 +2036,11 @@ pub fn typescript_constants() -> String {
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
                 ("PARTICLE_DEPTH_MS", template::PARTICLE_DEPTH_MS),
+                ("FOG_LIGHT", template::FOG_LIGHT),
+                ("FOG_SUM", template::FOG_SUM),
+                ("FOG_APPLY", template::FOG_APPLY),
+                ("FOG_APPLY_MS", template::FOG_APPLY_MS),
+                ("FOG_BLOCK", template::FOG_BLOCK),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
         ),

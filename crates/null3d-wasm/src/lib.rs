@@ -54,6 +54,7 @@ use null3d_render::effects::{
 };
 use null3d_render::environment::Environment;
 use null3d_render::fog::Fog;
+use null3d_render::fog_volume::{self, Volumetric};
 use null3d_render::frame::{
     CanvasOutput, FrameBuilder, FrameInput, LevelQuality, RecordError, SceneSettings,
 };
@@ -3523,6 +3524,54 @@ pub fn set_fog(curve: u32) -> u32 {
     })
 }
 
+/// Turns the volumetric fog on, or off, from the next frame on: the light of the sun and the point
+/// and spot lights that the scene's fog scatters toward the camera, through their shadows. The call
+/// values give how much light the fog scatters, Henyey-Greenstein's anisotropy, the distance that
+/// its grid reaches, and the fog's density. The TypeScript API checks the values.
+#[wasm_bindgen(js_name = setFogVolume)]
+pub fn set_fog_volume(on: bool) -> u32 {
+    with_engine(|e| {
+        let [intensity, anisotropy, distance, density]: [f32; 4] = e.call_values();
+        let volumetric = on.then_some(Volumetric {
+            intensity,
+            anisotropy,
+            distance,
+            density,
+        });
+        e.renderer.settings_mut().set_fog_volume(volumetric);
+        0
+    })
+}
+
+/// Sets the slices of the volumetric fog's grid, which the quality settings set, from the next
+/// frame on: one of 32, 64 or 96, or 0, which draws no volumetric fog. Other counts take the next
+/// count up, at most 96.
+#[wasm_bindgen(js_name = setFogSlices)]
+pub fn set_fog_slices(slices: u32) -> u32 {
+    with_engine(|e| {
+        let counts = fog_volume::SLICE_COUNTS;
+        let slices = match slices {
+            0 => 0,
+            _ => counts
+                .into_iter()
+                .find(|&count| count >= slices)
+                .unwrap_or(counts[counts.len() - 1]),
+        };
+        e.renderer.settings_mut().set_fog_slices(slices);
+        0
+    })
+}
+
+/// Sets the frame-budget governor's halvings of the slices that each frame draws of the
+/// volumetric fog's grid, from the next frame on. A halving makes no GPU object.
+#[wasm_bindgen(js_name = setFogHalvings)]
+pub fn set_fog_halvings(halvings: u32) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_fog_halvings(halvings);
+        0
+    })
+}
+
 // --- Animation ---
 //
 // Skeletons and clips come in through the staging words. The sketch thread writes each animated
@@ -3916,6 +3965,7 @@ pub fn animator_play(instance: u32, clip: u32, layer: u32, flags: u32) -> u32 {
             time: (flags & play_flag::TIME != 0).then_some(args[play_arg::TIME]),
             weight: (flags & play_flag::WEIGHT != 0).then_some(args[play_arg::WEIGHT]),
             join: flags & play_flag::JOIN != 0,
+            inertial: flags & play_flag::INERTIAL != 0,
         };
         animations
             .play(instance.wrapping_sub(1), clip.wrapping_sub(1), play)
