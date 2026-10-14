@@ -545,7 +545,7 @@ export function downloadSizes(
  * spare. The shader file fills most of it, so per-feature shader files bring both down. Until then
  * they stop a start that grows on a gzip host, or on a host that sends files as they are.
  */
-export const START_BUDGET: Budget = { raw: 3_328 * 1024, gzip: 448 * 1024, brotli: 140 * 1024 };
+export const START_BUDGET: Budget = { raw: 3_448 * 1024, gzip: 464 * 1024, brotli: 145 * 1024 };
 
 /** The budget for each part that loads after the start. */
 export const LATER_BUDGET: Budget = { raw: 64 * 1024, gzip: 24 * 1024, brotli: 16 * 1024 };

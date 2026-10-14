@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, rectangle and tube lights, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show one directional light. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -165,6 +165,33 @@ Real mist lies low and thins with height. With a `heightFalloff`, the fog's dens
 
 The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color, as in three.js's WebGPURenderer and in WebGLRenderer with a half-float target. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
 
+### Volumetric fog
+
+With the fog's `volumetric` option, the lights light the fog itself, through their shadows. A low sun shines through the gaps between trees in rays, and the trees' shadows cut dark lanes through the haze. A street lamp or a car's headlight casts a glowing cone, with the shadows of what stands in it. [Scene](../api/scene.md#volumetric-fog) lists the options.
+
+```mermaid
+flowchart LR
+    light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum steps<br/>each cell adds up<br/>the cells in front of it,<br/>block by block"]
+    last["Last frame's grid"] --> light
+    sum --> apply["Apply step<br/>each pixel adds the<br/>light at its depth"]
+    scene["Scene color and depth"] --> apply
+    apply --> effects["Custom effects, depth of field,<br/>bloom, final pass"]
+```
+
+The engine lights a grid of cells that follow the camera's view, a technique called froxels, which Frostbite and Unreal Engine use too. The grid's columns and rows cover the view, and its slices run away from the camera, thin near it and thicker far away. Each frame runs three stages:
+
+1. The light step lights each cell once. It finds how dense the fog is there, from the fog's `density` and `heightFalloff`. It adds the sun's light where the sun's shadow map sees the cell, and the light of each point and spot light of the cell's cluster, through its shadow. A phase function sets how much of each light the fog sends toward the camera. It sends most when the camera looks into the light, as `anisotropy` sets.
+2. The sum adds up, for each cell, the light of the cells in front of it, dimmed by the fog between them. It runs in two steps: the first sums each block of 8 slices, and the second joins the blocks. So its cost grows with the slices, not with their square.
+3. The apply step adds the summed light at each pixel's depth to the scene's color, after the transparent objects and before the custom effects. It reads the grid through a smooth cubic filter over the 16 nearest cells, so the cells' edges never show, even on Medium's coarse grid.
+
+Each frame moves the cells' sample points a little, and blends each cell's light with the last frame's light at the same place in the world. Over about ten frames that settles the light in each cell, so rays show steady, smooth edges. The grid's cost follows its cells, not the screen's pixels, and each cell loops over the lights of its own cluster alone.
+
+The fog of the section above stays as it is: it dims each surface and mixes in the fog's color. The grid only adds the light that the sun and the lamps scatter toward the camera, and while it draws it replaces the sun glow. Past the grid's `distance`, the fog scatters the sun's light without shadows, in a closed formula, so no edge shows where the grid ends.
+
+The quality setting `fogSlices` sets the grid: 32 slices with 64 cells on the canvas's short side on Medium, 64 slices with 96 on High, and 96 slices with 128 on Ultra. On Low it is 0, and the fog keeps its sun glow, at no cost. The frame-budget governor's last step halves the slices that each frame draws. While the fog is not volumetric, nothing of it runs or downloads.
+
+Surfaces that blend or let light through, such as water and glass, draw before the apply step. They take the lit fog of the whole line of sight to the opaque surface behind them.
+
 ## Environment maps
 
 An environment map holds the light that reaches a point from every direction, such as a sky, a street or a room. Metal and glossy surfaces reflect it, and every surface takes some of it as diffuse light. Metals need it most, since they have almost no diffuse color and show only what they reflect.
@@ -251,7 +278,7 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 
 ## Sky and backgrounds
 
-The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, or three.js's analytic sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
+The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, three.js's analytic sky, or the physical sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -303,12 +330,42 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
 - three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
+### The physical sky
+
+The physical sky models the earth's air: a layer 100 km deep over a planet of the earth's size. Its molecules scatter blue light more than red (Rayleigh scattering), its haze scatters every color and mostly forward (Mie scattering), and its ozone absorbs some orange. The engine follows Hillaire's method of 2020, which Unreal Engine and Bevy use. Three small tables hold what each pixel would otherwise work out along its ray:
+
+```mermaid
+flowchart LR
+  air["The air's settings"] --> T["Transmittance table<br/>256 x 64"]
+  air --> M["Multiple scattering table<br/>32 x 32"]
+  T --> M
+  T --> V["Sky view table<br/>256 x 128"]
+  M --> V
+  lights["Sun, moon, camera height"] --> V
+  V --> B["Background"]
+  V --> P["Panorama for the sky's environment"]
+  T --> B
+```
+
+- The transmittance table holds the share of light that passes from each height to the top of the air, along each angle. The sun's light reaches each point through it, and it reddens the sun as it sets.
+- The multiple scattering table holds the light that scatters more than once. Without it the sky would be too dark and too saturated, most of all at twilight.
+- The sky view table holds the whole sky's light, seen from the camera's height. Its rows crowd near the horizon, where the sky changes fastest.
+
+The engine draws the first two tables when the air's settings change, and the sky view when the air, the sun, the moon or the camera's height changes. A still sky draws none of them. The background then reads one texel of the sky view per pixel, and adds the sun's disc, the moon, the stars and the clouds.
+
+The aerial perspective needs no table. Over a scene's distances, the air's density falls with height as height fog's does, and the sun's light along the way barely changes. So each surface's shader integrates Rayleigh's and Mie's scattering along its ray exactly, from a few values that the engine works out each frame. It costs about what fog costs. Past a few tens of kilometres, the earth's curve, which this leaves out, would show.
+
+At night the moon is a second light of the air: it lights the sky as the sun does, a little bluer at the scene's exposure. The moon's disc shows its phase, lit from the sun's side. The stars add their light to the sky's, so they show only where the sky is dark enough, and the air dims them toward the horizon.
+
+The sky's environment shows the physical sky too. When a refresh starts, the engine draws the sky with its clouds into a panorama, and the map's steps read it. So every face of the map shows the same sky while the sun moves. The diffuse light comes from a CPU copy of the same model.
+
 ### Background cost
 
-- Each background is one draw of at most 12 triangles. The sky reads no texture.
+- Each background is one draw of at most 12 triangles. The analytic sky reads no texture. The physical sky reads its sky view table once a pixel, and its transmittance table for the sun's disc and the clouds.
 - A background costs only the pixels that no object covers. An opaque material with `depthWrite: false` or `depthTest: false` makes the background draw first, and then every pixel of the view pays for it.
 - An environment or a cube map reads one texel of its cube map per pixel. The sky computes its light in each pixel, and does more work above the horizon while it draws clouds. `cloudCoverage: 0` skips the clouds.
-- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, and `'sky'` for the sky. A page with neither downloads none of them.
+- The shaders download with the first background of their kind: `'background'` for a texture, an environment or a cube map, `'sky'` for the analytic sky, and `'physical_sky'` for the physical sky. A page with none of them downloads none of them.
+- The physical sky's tables and panorama take 1.4 MB of GPU memory. A frame draws a table only when what it holds changes: the sky view, about 33,000 texels, when the sun moves. Without a physical sky, nothing runs, and the shaders' haze step stops at one value of the frame.
 - The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
 - A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
 
@@ -318,6 +375,7 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - three.js's `SkyMesh` moves its clouds by the renderer's clock. The engine's sky moves them by its `time` setting, as three.js's `Sky` does, so a still frame shows the same clouds.
 - Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
 - `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
+- three.js has no physical sky of its own. Ports of its `Sky` keep `{ sky }`, which matches three.js. `{ atmosphere }` is the engine's best sky, which a port can move to.
 
 ## Time of day
 
@@ -356,6 +414,16 @@ The result holds plain values. Apply them to your own objects, as above:
 | `fog` | `scene.setFog`: the `color` of the sky's horizon and the `sunGlow`. Choose the curve and the density for your scene |
 | `ambient` | An ambient light's `color` and `intensity`, for a scene without the sky's environment. A scene lit by the sky's environment needs none |
 | `exposure` | `post.set({ exposure })`: 1 by day, up to 3.5 at night |
+
+With `{ model: 'physical' }`, the values match the physical sky instead, from a table of its light by the sun's height:
+
+| Value | With the physical model |
+| --- | --- |
+| `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
+| `skyIntensity` | 1: the physical sky dims by itself after sunset |
+| `light` | The sun through the air, which reddens as it sets. After sunset, the moon, whose light grows as night falls |
+| `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
+| `exposure` | Follows the sky's mean light, as an eye adapts: 1 by day, higher through dusk, up to 200, and 3.5 once night has fallen, as with the analytic sky |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 

@@ -508,3 +508,21 @@ The renderers draw the same commands with the same shaders. `bun run bench:gpu-c
 - A file that loads on demand must not keep code of the start's files alive through a development check. It reads the development constant itself.
 - The offline file list (`null3d-files.json`, D-102) puts both paths' renderers and the shared file in `start`. So a cached game also starts offline on the path that its first visit did not draw with. A unit test of `offline.ts` checks the list, and `bun run test:packages` starts the fresh project offline on both paths. A page that switches paths, such as a benchmark page, runs each path in a load of its own. It downloads each path's renderers the first time it draws with that path.
 - An engine test checks that a page downloads its own GPU path's renderers and not the other path's. It is the test "a page that uses no feature that loads on first use downloads none of their files".
+
+## The start's figures raised on 14 October 2026
+
+The owner raised the start's budget on 14 October 2026, in answer to the
+coordinator's question. The engine's JavaScript that a page downloads at its
+start may now take 145 KB after Brotli, 464 KB after gzip and 3,448 KB
+uncompressed, in each thread mode on each GPU path.
+
+The M2 features had reached the old 140 KB limit. By 14 October main itself was a
+few bytes over, and four finished features could not land: SSR (899 B over with
+its first-use reflections bit), reflection probes (1,211 B), auto exposure
+(701 B) and lit fog (515 B). Each helper had trimmed its own start code in turn
+(R6, R31, EX29, R10), which turned the limit into a lottery: each engine landing
+risked a red build. The 5 KB raise gives room for those features and for the
+features that follow, without a redesign of each one.
+
+The figures keep the old proportions: gzip and uncompressed rise with Brotli
+(448 to 464 KB, 3,328 to 3,448 KB). The owner set them on 14 October 2026.
