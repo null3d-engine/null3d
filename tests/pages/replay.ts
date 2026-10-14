@@ -131,13 +131,17 @@ run('replay', async () => {
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
 		// The cell order, which a dispatch with no runs never reads.
 		[12, 4, U.STORAGE | U.COPY_DST, -1],
-		// The shadow cascades' uniform, which the frame group binds; no light casts shadows here.
-		[13, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		// The shadow settings' uniform, the cascades then the tiles, which the frame group binds;
+		// no light casts shadows here.
+		[
+			13,
+			G.SIZE_SHADOW_UNIFORM_BYTES + G.SIZE_SHADOW_TILES_UNIFORM_BYTES,
+			U.UNIFORM | U.COPY_DST,
+			-1,
+		],
 		// The light grid and the light list, which the frame group binds and the shader skips.
 		[14, 16, U.STORAGE, -1],
 		[15, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
-		// The shadow atlas's tiles, which the frame group binds; no light casts shadows here.
-		[16, G.SIZE_SHADOW_TILES_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
 		// The depth pyramid of occlusion culling, which the culling group binds and this view,
 		// which culls in one phase, never reads.
 		[17, 16, U.STORAGE, -1],
@@ -332,7 +336,7 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		18,
+		17,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[2, G.RESOURCE_TEXTURE, 5, 0, 0],
@@ -343,7 +347,6 @@ run('replay', async () => {
 		...[7, G.RESOURCE_BUFFER, 14, 0, 0],
 		...[8, G.RESOURCE_BUFFER, 15, 0, 0],
 		...[9, G.RESOURCE_TEXTURE, 4, 0, 0],
-		...[10, G.RESOURCE_BUFFER, 16, 0, 0],
 		// Ambient occlusion's texture, which the shader reads only while its strength is above 0.
 		...[11, G.RESOURCE_TEXTURE, 3, 0, 0],
 		...[12, G.RESOURCE_TEXTURE, 6, 0, 0],

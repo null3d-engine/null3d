@@ -145,7 +145,8 @@ pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
     /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`],
-    /// [`OutputUniform::VIGNETTE`] and [`OutputUniform::LUT`].
+    /// [`OutputUniform::VIGNETTE`], [`OutputUniform::LUT`], [`OutputUniform::OUTLINE`] and
+    /// [`OutputUniform::AUTO_EXPOSURE`].
     pub flags: u32,
     /// The part of the scene color that the scene drew, from its top-left corner: the width in
     /// pixels in the low 16 bits, and the height in the high 16 bits.
@@ -164,13 +165,15 @@ impl OutputUniform {
     pub const LUT: u32 = 4;
     /// The flag that makes the final pass draw the outline's line.
     pub const OUTLINE: u32 = 8;
+    /// The flag that makes the final pass multiply HDR color by the automatic exposure's texel.
+    pub const AUTO_EXPOSURE: u32 = 16;
     /// The flag that makes the pass the first of two steps below the whole canvas's render scale:
     /// it draws one texel for each render pixel into a target of the render size, and leaves the
     /// dither to the second step.
-    pub const RESOLVE: u32 = 16;
+    pub const RESOLVE: u32 = 32;
     /// The flag that makes the pass dither even where it holds display color. The second step sets
     /// it when the first step's target came from high dynamic range color.
-    pub const DITHER: u32 = 32;
+    pub const DITHER: u32 = 64;
 
     /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
     /// texture size a GPU makes.

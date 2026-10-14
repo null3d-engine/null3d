@@ -92,8 +92,9 @@ return {
 | `additive` | `false` | `true` adds the clip's change on top of the other layers. |
 | `time` | the first frame | Seconds into the clip at which it starts. A repeating clip wraps the time into its length. A clip that plays once holds the time within its length. |
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
+| `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight` and no clip already playing on the layer. |
 
-`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, because three.js's `crossFadeTo` shows the mix of two clips. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
@@ -141,6 +142,39 @@ return {
 `setWeight(name, weight)` sets the weight of a clip that plays, on every layer that plays it. It writes the weight into engine memory, so you can change it every frame at no cost. A clip at weight 0 leaves the pose. It keeps playing, and its time moves on, as in three.js. A fade multiplies the weight: a clip at weight 0.5 that fades in reaches 0.5. In development builds, `setWeight` on a clip that does not play throws E1218.
 
 Clips that blend by weight keep their own times. A walk and a run of different lengths then step at different moments, and the feet slide. A 1D blend keeps their steps together.
+
+## Inertial transitions
+
+A cross-fade from one clip to another samples both clips for the whole fade. It mixes their poses,
+so a walk fading into a run passes through half of each gait, where the feet slide. An inertial
+transition never mixes them: it samples only the new clip. The pose that the layer leaves carries
+on at its own speed, and it eases into the new clip.
+
+```ts
+const TO_RUN = Object.freeze({ fade: 0.3, transition: 'inertial' });
+const TO_WALK = Object.freeze({ fade: 0.3, transition: 'inertial' });
+
+return {
+  onUpdate() {
+    const moving = input.isDown('KeyW');
+    if (moving !== wasMoving) anim.play(moving ? 'run' : 'walk', moving ? TO_RUN : TO_WALK);
+    wasMoving = moving;
+  },
+};
+```
+
+At the switch, the animator records the pose that the layer is leaving. It records the rate at
+which that pose moves. The new clip then plays alone. Each frame of the fade, the old pose carries
+on at that rate. The layer's pose moves toward the new clip's by the ease `x²(3 - 2x)` of the
+fade's share `x`. The pose reaches the new clip exactly when the fade ends.
+
+An inertial transition needs a fade above 0, and no `weight`. No clip may already play on the layer.
+A play that joins its layer keeps the weighted blend. So do a layer with a 1D blend and an additive
+clip. `crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
+three.js shows.
+
+A transition costs one extrapolated pose and its velocity per joint of the layer. A scene that
+never uses one pays nothing, and a transition that starts allocates nothing.
 
 ## 1D blends
 
@@ -330,6 +364,24 @@ On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per f
 
 A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
+## Crowds
+
+A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices. `animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose. The value 1, the default, updates it in every frame. A larger number, up to 64, samples and composes it once every that many frames. It holds the last pose in between. `animator.updateInterval` reads the value back.
+
+Give a character the camera sees from far more frames between its updates. Hold the ones near the camera at 1, so they never step. The `farAnimationInterval` quality setting, which the [governor](quality.md#the-frame-budget-governor) may raise, gives the interval for far characters:
+
+```ts
+return {
+  onUpdate() {
+    const far = quality.governor.farAnimationInterval;
+    for (let k = 0; k < crowd.length; k++)
+      crowd[k].animator().setUpdateInterval(distance(k) > NEAR ? far : 1);
+  },
+};
+```
+
+The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still costs nothing even at 1: the skinning pass skips a pose that did not change.
+
 ### Limits of skinning
 
 - On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
@@ -392,6 +444,7 @@ Where three.js and null3D differ:
 - three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
 - A morphed vertex color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it. A glTF target that leaves out `COLOR_0` while another target has it changes no color in null3D, as the specification says. three.js r186 adds the base color there instead. Its WebGPURenderer draws no color targets, and its WebGLRenderer cannot draw them on colors without alpha.
 - A three.js `play()` never stops other actions. A null3D `play` without a weight fades out the other clips of its layer. Give each clip that plays beside others a `weight`.
+- three.js always cross-fades two actions. A null3D play with a fade can switch with an [inertial transition](#inertial-transitions) instead, which samples only the new clip. `crossFade` keeps the cross-fade.
 - three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
 - three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
 - `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.
@@ -407,7 +460,7 @@ Where three.js and null3D differ:
 
 | Code | When |
 | --- | --- |
-| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have; a joint rotation past the 8 that an object holds; a look-at chain of no joints or more than 4, or whose joints are not one chain parents first; a first `lookAt` without options |
+| [E1218](../errors/E1218.md) | A clip, layer or joint that the object's animation does not have; an option out of range, such as a negative weight or an update interval outside 1 to 64; `setWeight` on a clip that does not play; a blend of no clips, of more than eight, or with two clips at one point; `animator()` on an object with no clips; a morph target that the mesh does not have; a joint rotation past the 8 that an object holds; a look-at chain of no joints or more than 4, or whose joints are not one chain parents first; a first `lookAt` without options |
 | [E1203](../errors/E1203.md) | A fade, speed, start time, weight, blend point, blend value, phase, morph weight, time scale, joint rotation, look-at target, limit or share that is NaN or infinite |
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |

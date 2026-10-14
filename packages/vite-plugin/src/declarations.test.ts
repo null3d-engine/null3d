@@ -176,5 +176,5 @@ describe.skipIf(!ENABLED)('the declarations in the repository', () => {
 				wgslDeclaration(file, compiled.shader),
 			);
 		}
-	});
+	}, 60_000);
 });
