@@ -18,6 +18,7 @@ import {
 	TEMPLATE_AO_DENOISE,
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -47,6 +48,7 @@ import {
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
@@ -80,14 +82,16 @@ const DEV: boolean = typeof __NULL3D_DEV__ === 'undefined' ? true : __NULL3D_DEV
  * The first slot of each bind group. A slot is a uniform block binding point, a sampler's place and
  * the place where a bind group leaves a texture, and each binding of a group takes its group's
  * first slot plus its binding number. The per-frame group, which holds the most bindings, comes
- * first, with sixteen. Group 1 has three slots, group 2 ten (the instance textures, then the two
- * textures that skinned meshes read, the two that morphed meshes read, and the two textures of the
- * row values of instance batches) and group 3 the last sixteen: the eight map textures, then their samplers, of which the standard material's shared
- * map units take the first six of each. Slots are no texture units: each program
+ * first, with sixteen. Group 1 has six slots (the backgrounds' groups, of which the physical sky's
+ * holds the most: its values, three tables and two samplers), group 2 ten (the instance textures,
+ * then the two textures that skinned meshes read, the two that morphed meshes read, and the two
+ * textures of the row values of instance batches) and group 3 the last sixteen: the eight map
+ * textures, then their samplers, of which the standard material's shared map units take the first
+ * six of each. Slots are no texture units: each program
  * numbers the textures it reads from unit 0, so the groups' bindings never run out of units. The
  * groups' uniform blocks stay below the fewest binding points that WebGL2 allows.
  */
-const GROUP_BASES = Uint8Array.of(0, 16, 19, 29);
+const GROUP_BASES = Uint8Array.of(0, 16, 22, 32);
 
 /** The fewest uniform block binding points that a WebGL2 context has. */
 export const MIN_UNIFORM_BLOCK_SLOTS = 24;
@@ -258,6 +262,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_BACKGROUND] = { shader: shaders.background, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_CUBE] = { shader: shaders.background_cube, pipeline: 'main' };
 	templates[TEMPLATE_BACKGROUND_SKY] = { shader: shaders.sky, pipeline: 'main' };
+	templates[TEMPLATE_BACKGROUND_ATMOSPHERE] = { shader: shaders.sky_physical, pipeline: 'main' };
+	templates[TEMPLATE_SKY_TABLE] = { shader: shaders.sky_tables, pipeline: 'main' };
 	// WebGL2's depth step always reads one sample: the backend keeps a copy of one sample of a
 	// multisampled depth target that a shader reads.
 	templates[TEMPLATE_AO_DEPTH] = { shader: shaders.ao, pipeline: 'depth' };
