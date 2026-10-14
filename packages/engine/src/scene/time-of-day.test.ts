@@ -297,6 +297,10 @@ describe('timeOfDay', () => {
 		// The sun on the horizon, at dawn and at dusk, is not darker than the deep night.
 		const night = total(23);
 		for (const hours of [5.5, 6, 6.5, 17.5, 18, 18.5]) expect(total(hours)).toBeGreaterThan(night);
+		// From sunset to midnight, no hour falls more than a tenth below the night's value, so the
+		// route through dusk never goes darker than midnight.
+		for (let hours = 18; hours <= 24.0001; hours += 0.25)
+			expect(total(hours)).toBeGreaterThan(night * 0.9);
 		// The day outshines the crossing.
 		expect(total(12)).toBeGreaterThan(total(18));
 		// The total light is continuous: no step of 0.05 hours changes it by more than 1.25 times.
