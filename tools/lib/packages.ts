@@ -79,6 +79,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 			'vendor/meshopt/meshopt_decoder.wasm',
 			'vendor/draco/draco_wasm_wrapper_gltf.js',
 			'vendor/draco/draco_decoder_gltf.wasm',
+			'vendor/ltc/area-light-tables.bin',
 			'THIRD-PARTY-NOTICES.txt',
 			'docs/index.md',
 		],
@@ -92,6 +93,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['dist/shader-compiler.wasm', 'lib/client.d.ts'],
 	},
 	controls: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
+	impostors: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	particles: { compile: true, shaders: false, docs: false, needs: ['engine'], required: [] },
 	geometry: {
 		compile: true,

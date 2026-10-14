@@ -2,6 +2,7 @@
 // the chimneys, and mist that lies low over the square. Each is a sprite batch whose rows the sketch
 // moves from the time alone, so a held frame shows what the live scene shows at that time.
 import type { QualityPreset, SketchContext } from '@null3d/engine';
+import { markEffect } from '../../lib/layers';
 import { random } from '../../lib/procedural';
 import type { Home } from './houses';
 import { groundHeight, SQUARE } from './land';
@@ -30,7 +31,11 @@ function puff({ textures }: SketchContext, size: number, falloff: number) {
 export async function createAir(
 	ctx: SketchContext,
 	homes: readonly Home[],
-): Promise<{ update(t: number): void; fit(preset: QualityPreset): void }> {
+): Promise<{
+	update(t: number): void;
+	fit(preset: QualityPreset): void;
+	setSnow(on: boolean): void;
+}> {
 	const { scene } = ctx;
 	const next = random(191);
 	const [snow, smoke, mist] = await Promise.all([
@@ -54,16 +59,25 @@ export async function createAir(
 			dynamic: true,
 		}),
 	]);
+	// The air fills the scene, so the clearance guard must not treat a snowflake as a wall.
+	markEffect(snow);
+	markEffect(smoke);
+	markEffect(mist);
 	const seeds = Float32Array.from({ length: SNOW.ultra * 4 }, () => next());
 	const plumes = Math.min(homes.length, 10);
 	const smokeSeed = Float32Array.from({ length: PLUME * plumes * 3 }, () => next());
+	let snowCount = SNOW.ultra;
 	smoke.material.set({ color: [0.16, 0.17, 0.2], opacity: 0.32 });
 	const mistSeed = Float32Array.from({ length: MIST * 3 }, () => next());
 	mist.material.set({ color: [0.06, 0.07, 0.1], opacity: 0.22 });
 
 	return {
 		fit(preset) {
-			snow.setActiveCount(SNOW[preset]);
+			snowCount = SNOW[preset];
+			snow.setActiveCount(snowCount);
+		},
+		setSnow(on) {
+			snow.setActiveCount(on ? snowCount : 0);
 		},
 		update(t) {
 			const { positions: sp, sizes: ss, colors: sc } = snow;
