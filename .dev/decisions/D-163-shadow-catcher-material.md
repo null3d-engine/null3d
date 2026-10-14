@@ -27,7 +27,7 @@ How the data was produced: reading the shader manifest (`crates/null3d-shaders/s
 
 ## Decision
 
-`feature::SHADOW_CATCHER` (material feature 2097152) sets `flag::SHADOW_CATCHER` (row flag 128) in the material's flags word. `materials.shadowCatcher({ color, opacity })` creates a lit material with that flag and the `blend` alpha mode. `lit.wgsl`'s `shade` returns early for it: `shadow_catcher` writes the material's color with alpha `opacity * (1 - sun_shadow)`, premultiplied, with the exposure and the tone mapping and without the scene's fog. The mesh must set `receiveShadows`, as three.js requires `receiveShadow`; without a shadow-casting directional light the surface draws nothing.
+`feature::SHADOW_CATCHER` (material feature 2097152) sets `flag::SHADOW_CATCHER` (row flag 128) in the material's flags word. `materials.shadowCatcher({ color, opacity })` creates a lit material with that flag and the `blend` alpha mode. `lit.wgsl`'s `shade` returns early for it. `shadow_catcher` writes the material's color with alpha `opacity * (1 - sun_shadow)`, premultiplied. The exposure and the tone mapping apply, and the scene's fog does not. The mesh must set `receiveShadows`, as three.js requires `receiveShadow`; without a shadow-casting directional light the surface draws nothing.
 
 ## Consequences
 

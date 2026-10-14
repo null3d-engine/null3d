@@ -827,20 +827,18 @@ fn light_surface(
 
 /// The color a shadow-catcher surface writes: its own color where the main directional light's
 /// shadows fall, and nothing where the light reaches it, as three.js's `ShadowMaterial`. The alpha
-/// is the material's opacity times the shadow, so a shadowed part of the surface draws in the
-/// material's color and a lit part draws nothing. The camera sees the material's color behind what
-/// draws over the surface. The exposure and the tone mapping apply, and the scene's fog does not, as
-/// three.js applies them to that material. Only the main directional light's shadows fall on it.
+/// is the material's opacity times the shadow. A lit part of the surface then draws nothing, and the
+/// camera sees what lies behind it. The exposure and the tone mapping apply, and the scene's fog does
+/// not, as three.js applies them to that material. Only the main directional light's shadows fall on
+/// it. The mesh must receive shadows, so a build without `RECEIVE_SHADOWS` draws nothing.
 fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     var shadow = 0.0;
 #ifdef RECEIVE_SHADOWS
-    let normal = normalize(s.normal);
-    let to_sun = -engine_frame.sun_direction.xyz;
-    // A surface that faces away from the sun takes all of its light, so nothing shadows it.
-    if dot(normal, to_sun) > 0.0 {
-        let lit = sun_shadow(input.relativePosition + engine_frame.shadow_origin.xyz, normal, to_sun);
-        shadow = 1.0 - lit;
-    }
+    shadow = 1.0 - sun_shadow(
+        input.relativePosition + engine_frame.shadow_origin.xyz,
+        s.normal,
+        -engine_frame.sun_direction.xyz,
+    );
 #endif
     return fragment_color(material_row, finish(s.baseColor, pixel.xy).rgb, s.alpha * shadow);
 }

@@ -44,7 +44,7 @@ Without lights, a standard material draws black, apart from its emissive color. 
 
 ## Shadow catchers
 
-`materials.shadowCatcher({ color, opacity })` draws a surface that shows only the shadows that fall on it, as three.js's `ShadowMaterial`: its `color` where the main directional light's shadow falls, and nothing at all where the light reaches it. The shadows of point and spot lights do not show on it. The mesh must receive shadows with `setReceiveShadows(true)`, as three.js's `receiveShadow` must be set.
+`materials.shadowCatcher({ color, opacity })` draws a surface that shows only the shadows that fall on it, as three.js's `ShadowMaterial`. It shows its `color` where the main directional light's shadow falls, and nothing at all where the light reaches it. The shadows of point and spot lights do not show on it. The mesh must receive shadows with `setReceiveShadows(true)`, as three.js's `receiveShadow` must be set.
 
 The default color is black and the default opacity is 1. The material blends, so it draws in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It takes no texture maps. Its shadows are the main directional light's, so a scene needs a directional light that casts shadows.
 
