@@ -49,3 +49,19 @@ opt-out. The plugin's cache is documented for game developers in
   [Benchmarks](../benchmarks.md#build-caches) holds the measured figures.
 - The caches stay outside git, as [D-105](D-105-generated-files-out-of-git.md) requires. Nothing
   generated is committed.
+
+## Addendum, 14 October 2026: ordinary builds no longer take the build lock
+
+The first version took one machine-wide lock for every build on the machine, because a build staged
+its core and tool modules into the shared cargo target and a size check builds the base commit with
+that commit's own script. That serialised the whole team: four helpers were seen waiting on one lock,
+one of them for 94 seconds, and a wait printed nothing, so a queued build looked hung.
+
+Two changes remove the need for it. A staging folder is now named for the build's process, so no two
+builds ever share one, in one checkout or in several, and Cargo already locks the target folder that
+builds share. Only a size check takes the lock now, because its base build runs an older script that
+may still stage into the shared folder. The owner approved the change on 14 October 2026 after the
+waiting cost was measured.
+
+The lock also names its holder while a build waits (`waiting for the lock at <path>, held by pid N`),
+which is what made the 94-second wait visible rather than mysterious.

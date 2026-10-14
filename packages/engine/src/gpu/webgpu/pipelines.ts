@@ -37,6 +37,8 @@ import {
 	LAYOUT_SKIN,
 	LAYOUT_TEXTURES,
 	LAYOUT_VIEW_COPY,
+	LAYOUT_WEIGHTED_COMPOSITE,
+	LAYOUT_WEIGHTED_DEPTH_MS,
 	PERMUTATION_CASTER,
 	PERMUTATION_DEPTH_MULTISAMPLED,
 	PERMUTATION_DISPLACEMENT,
@@ -46,6 +48,7 @@ import {
 	PERMUTATION_SKIN,
 	PERMUTATION_VERTEX_COLOR,
 	PERMUTATION_VERTEX_TANGENT,
+	PERMUTATION_WEIGHTED,
 	SIZE_INDEX_STRIDE,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_MAP_SLOTS,
@@ -120,6 +123,8 @@ import {
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
 	TEMPLATE_VIEW_COPY,
+	TEMPLATE_WEIGHTED_COMPOSITE,
+	TEMPLATE_WEIGHTED_DEPTH,
 	VERTEX_INSTANCE_LOCATION,
 	VERTEX_TYPE_F32,
 	VERTEX_TYPE_SINT8,
@@ -318,6 +323,25 @@ const MIP_FORMATS: readonly GPUTextureFormat[] = ['rgba8unorm', 'rgba8unorm-srgb
 
 /** The write mask of every color channel, as `GPUColorWrite.ALL` holds it. */
 const ALL_CHANNELS = 0xf;
+
+/**
+ * The color targets of a pipeline of `template` that draws into `colorFormat`. The weighted
+ * layer's pipelines draw into a second target too, its coverage sum in one 16-bit float: the
+ * builds of the weighted bit, and the depth copy that draws first in the layer's pass, which
+ * writes no color. Both targets blend the same way, as compatibility mode requires.
+ */
+function colorTargets(
+	colorFormat: GPUTextureFormat,
+	template: number,
+	permutation: number,
+	stateFlags: number,
+): GPUColorTargetState[] {
+	const blend = BLENDS[stateFlags & STATE_BLEND];
+	const writeMask = stateFlags & STATE_NO_COLOR_WRITE ? 0 : ALL_CHANNELS;
+	const first: GPUColorTargetState = { format: colorFormat, blend, writeMask };
+	const two = (permutation & PERMUTATION_WEIGHTED) !== 0 || template === TEMPLATE_WEIGHTED_DEPTH;
+	return two ? [first, { format: 'r16float', blend, writeMask }] : [first];
+}
 
 /**
  * The depth test of a pipeline's state flags, in reversed depth: nearer surfaces pass, every one
@@ -710,6 +734,13 @@ export class Pipelines {
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
+		// The weighted layer's composite reads its two sums, and its depth copy a multisampled scene
+		// depth, with textureLoad.
+		this.defineLayout(LAYOUT_WEIGHTED_COMPOSITE, 'weighted composite', [
+			unfiltered(0),
+			unfiltered(1),
+		]);
+		this.defineLayout(LAYOUT_WEIGHTED_DEPTH_MS, 'weighted depth ms', [unfiltered(0, true)]);
 		// A custom effect: its block, the color it reads with a linear filter and the sampler, then
 		// the scene's depth as plain floats, or a blank texture where the effect reads no depth.
 		const effectEntries: GPUBindGroupLayoutEntry[] = [
@@ -942,6 +973,21 @@ export class Pipelines {
 			pipeline: 'main',
 			layouts: [LAYOUT_VIEW_COPY],
 			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_WEIGHTED_COMPOSITE, {
+			label: 'weighted composite',
+			shader: shaders.weighted_composite,
+			pipeline: 'main',
+			layouts: [LAYOUT_WEIGHTED_COMPOSITE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_WEIGHTED_DEPTH, {
+			label: 'weighted depth',
+			shader: shaders.weighted_depth,
+			pipeline: 'main',
+			layouts: [LAYOUT_WEIGHTED_DEPTH_MS],
+			vertexBuffers: [],
+			depthFragment: true,
 		});
 		this.defineTemplate(TEMPLATE_BACKGROUND, {
 			label: 'background',
@@ -1177,7 +1223,7 @@ export class Pipelines {
 		// A displaced material's prepass moves its vertices as its shading does.
 		const places = t.ownPrepass === true || (permutation & PERMUTATION_DISPLACEMENT) !== 0;
 		const ownPrepass = places && (permutation & PERMUTATION_PREPASS) !== 0;
-		const build = ownPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
+		const build = ownPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
 		if (!shader)
 			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
@@ -1229,13 +1275,7 @@ export class Pipelines {
 				? {
 						module: ownPrepass ? this.emptyFragmentModule() : module,
 						entryPoint: ownPrepass ? 'fs' : entryPoints?.fragment,
-						targets: [
-							{
-								format: colorFormat,
-								blend: BLENDS[stateFlags & STATE_BLEND],
-								writeMask: stateFlags & STATE_NO_COLOR_WRITE ? 0 : ALL_CHANNELS,
-							},
-						],
+						targets: colorTargets(colorFormat, template, permutation, stateFlags),
 					}
 				: t.depthFragment
 					? { module, entryPoint: entryPoints?.fragment, targets: [] }
