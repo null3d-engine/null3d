@@ -97,6 +97,9 @@
 //                       In the showcase plan, the sustained runs' seconds, 300 by default. In the
 //                       occlusion-s6 plan, each side's seconds in each round, 10 by default
 //   --minutes <n>       the soak plan's minutes on each GPU path, 30 by default
+//   --shaders <set>     which builds the checks plan's shaders page compiles: all, by default, or
+//                       sampled, the builds without the coat and sheen bit and one part of a
+//                       sample of those with it, as CI's Safari does (D-147)
 //   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
 //                       machines: the plan's items split by their expected time in CI's Safari,
 //                       and an item stays with the items whose results its check compares with,
@@ -218,6 +221,8 @@ import {
 	overloadSummary,
 	PLANS,
 	REPORT_ON_TOP_PLANS,
+	SHADER_PLANS,
+	type ShaderPlan,
 	skinningSummary,
 	soakSummary,
 	startupSummary,
@@ -303,6 +308,8 @@ export interface Options {
 	seconds?: number;
 	/** The soak plan's minutes on each GPU path, when given. */
 	minutes?: number;
+	/** Which builds the checks plan's shaders page compiles, when given. */
+	shaders?: ShaderPlan;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
 	/** The one shard of a fixed plan to run, when given. */
@@ -332,7 +339,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--minutes <n>] [--shaders all|sampled] [--shard <i>/<n>] [--only <ids>] [--rounds <n>] [--shields on|off] [--switches <q>] [--android <browsers>] [--lan <runners>] [--cloud <runners>] [--parallel <n>] [--cloud-build <name>] [--network-logs] [--attended] [--front] [<browser app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -382,6 +389,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), BENCH_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--minutes') options.minutes = wholeNumber(arg, args[++i]);
+		else if (arg === '--shaders') options.shaders = oneOf(arg, args[++i], SHADER_PLANS);
 		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--only') options.only = list(args[++i]);
 		else if (arg === '--rounds') options.rounds = wholeNumber(arg, args[++i]);
@@ -441,6 +449,8 @@ export function parseArgs(args: readonly string[]): Options {
 		);
 	if (options.minutes && options.plan !== 'soak')
 		throw new Error(`--minutes works with --plan soak only\n${USAGE}`);
+	if (options.shaders && options.plan !== 'checks')
+		throw new Error(`--shaders works with --plan checks only\n${USAGE}`);
 	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
 	if (other && other.length > 0)
 		throw new Error(
@@ -1285,6 +1295,7 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		scenes: options.scenes,
 		seconds: options.seconds,
 		minutes: options.minutes,
+		shaders: options.shaders,
 	});
 	if (!planned) return undefined;
 	const { shard, only, rounds = 1, switches } = options;

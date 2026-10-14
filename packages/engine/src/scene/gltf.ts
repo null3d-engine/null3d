@@ -765,6 +765,20 @@ class FileMaterials {
 			specularIntensityMap: map(m.maps.specularIntensityMap),
 			specularColorMap: map(m.maps.specularColorMap),
 		};
+		const layers = m.layers;
+		if (layers) {
+			const scale = layers.clearcoatNormalScale;
+			options.clearcoat = layers.clearcoat;
+			options.clearcoatRoughness = layers.clearcoatRoughness;
+			options.clearcoatNormalScale = [scale, tangents ? scale : -scale];
+			options.sheenColor = layers.sheenColor;
+			options.sheenRoughness = layers.sheenRoughness;
+			options.clearcoatMap = map(m.maps.clearcoatMap);
+			options.clearcoatRoughnessMap = map(m.maps.clearcoatRoughnessMap);
+			options.clearcoatNormalMap = map(m.maps.clearcoatNormalMap);
+			options.sheenColorMap = map(m.maps.sheenColorMap);
+			options.sheenRoughnessMap = map(m.maps.sheenRoughnessMap);
+		}
 		const through = m.transmission;
 		if (through) {
 			options.transmission = through.factor;

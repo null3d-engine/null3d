@@ -66,7 +66,7 @@ use null3d_render::gpu_driven::{
 use null3d_render::grading::{Lut, Vignette};
 use null3d_render::graph::{GraphError, RenderScale};
 use null3d_render::light_tables;
-use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::materials::{self, CustomShading, LayerMap, MapSlot, MaterialError, Shading};
 use null3d_render::meshes::{MeshError, MeshSlot, UpdateError};
 use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
@@ -2143,13 +2143,19 @@ pub fn set_material_values(material: u32, at: u32, count: u32) -> u32 {
 
 // Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
 // map changes the draw tables, as a new material does.
-/// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second
-/// texture coordinates when `second_uv` is 1.
+/// Gives a material a map in a slot (`constants::map_slot`), or one of a layered material's maps
+/// after the slots, which the shader reads at the second texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
 pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
-    // The engine's own calls name only the slots that exist.
-    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
-        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
+    // The engine's own calls name only the slots and layer maps that exist.
+    let slot = slot as usize;
+    let layer = slot
+        .checked_sub(MapSlot::ALL.len())
+        .map(|k| LayerMap::ALL.get(k));
+    let (slot, layer) = match (MapSlot::ALL.get(slot), layer) {
+        (Some(&slot), _) => (slot, None),
+        (None, Some(Some(&layer))) => (layer.slot(), Some(layer)),
+        _ => return render_failure(render_detail::UNKNOWN_MATERIAL, 0),
     };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
@@ -2157,10 +2163,14 @@ pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) 
             Ok(map) => map,
             Err(failure) => return failure,
         };
-        match settings
-            .materials_mut()
-            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
-        {
+        let table = settings.materials_mut();
+        let id = material.wrapping_sub(1);
+        let second_uv = second_uv != 0;
+        let set = match layer {
+            Some(layer) => table.set_layer_map(id, layer, map, second_uv),
+            None => table.set_map(id, slot, map, second_uv),
+        };
+        match set {
             Ok(()) => {
                 e.structure_changed = true;
                 0
