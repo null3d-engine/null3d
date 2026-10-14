@@ -291,16 +291,12 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
-    /// The light tables: the area lights' tables (see [`crate::light_tables`]). WebGL2 reads the
-    /// split-sum table beside the material table instead.
-    pub const LIGHT_TABLES: u32 = STREAMED_VALUES + RING;
-    /// The blank texture array that frame groups bind while the scene has no reflection probe.
-    pub const BLANK_PROBES: u32 = LIGHT_TABLES + 1;
-    /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
-    /// through (see [`crate::probes::ProbeTextures`]).
-    pub const PROBE_TEXTURES: u32 = BLANK_PROBES + 1;
+    /// The blank texture array that frame groups bind while the scene has no probe and no area
+    /// light. The probes own the shared array of the probes' maps and the light tables (see
+    /// [`crate::probes::ProbeTextures`]).
+    pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
     /// The texel that particle systems bind in place of a view's depth copy.
-    pub const BLANK_PARTICLE_DEPTH: u32 = PROBE_TEXTURES + 4;
+    pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
     /// The texture of one texel that the motion debug view reads in place of the motion target
     /// where the device draws none.
     pub const BLANK_MOTION: u32 = BLANK_PARTICLE_DEPTH + 1;
@@ -314,9 +310,12 @@ mod ids {
     /// that it never destroys the final pass's.
     pub const STILL_BLANK_LUT: u32 = EXPOSURE_STORED + 1;
     pub const STILL_BLANK_OUTLINE: u32 = STILL_BLANK_LUT + 1;
+    /// Two pairs of the reflection probes' maps and the chain that each probe's filter draws
+    /// through (see [`crate::probes::ProbeTextures`]).
+    pub const PROBE_TEXTURES: u32 = STILL_BLANK_OUTLINE + 1;
     /// The two copies of the last frame's resident texture, and of its joint texture with its
     /// morph weights after it, one for each frame parity.
-    const LAST_RESIDENT: u32 = STILL_BLANK_OUTLINE + 1;
+    const LAST_RESIDENT: u32 = PROBE_TEXTURES + 4;
     const LAST_SKINS: u32 = LAST_RESIDENT + 2;
 
     pub const fn last_resident(copy: usize) -> u32 {
@@ -1321,9 +1320,6 @@ impl CpuCulledRenderer {
         probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
         ao::create_blank(list, ids::BLANK_AO)?;
         transmission::create_blank(list, ids::BLANK_TRANSMISSION)?;
-        self.settings
-            .light_tables_mut()
-            .create(list, ids::LIGHT_TABLES)?;
         list.push(
             Op::CreateBuffer,
             &[
@@ -1333,6 +1329,7 @@ impl CpuCulledRenderer {
             ],
         )?;
         probes::create_blank(list, ids::BLANK_PROBES)?;
+        // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,
         });
@@ -1658,6 +1655,14 @@ impl CpuCulledRenderer {
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
+        // The probes own the frame group's shared array, so they record it before the frame groups
+        // bind it, and no later block rebinds them for it.
+        let shape = self.settings.light_tables().shape(
+            self.settings.probes().size(),
+            self.settings.probes().probe_layers(),
+        );
+        self.settings.probes_mut().record(list, shape)?;
+        self.bound_probes = self.settings.probes().array();
         let mut lit = LitTextures {
             shadow_map,
             atlas,
@@ -1689,12 +1694,14 @@ impl CpuCulledRenderer {
             },
             ..lit
         };
-        // Every view binds the light tables too, so each binds them again when they are made again.
-        let tables_remade = self
-            .settings
+        // The light tables write into the probes' shared array, which the frame groups bind, so
+        // each view binds the array again when the probes make it again.
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
             .light_tables_mut()
-            .record(list, ids::LIGHT_TABLES)?;
-        let textures_made = tables_remade || self.graph.textures_made();
+            .record(list, array, probe_layers)?;
+        let textures_made = self.graph.textures_made();
         for index in 0..self.opaque.views() {
             if index >= first_new || textures_made || lights_remade & (1 << index) != 0 {
                 let view = ViewId::from_index(index);
@@ -1786,8 +1793,9 @@ impl CpuCulledRenderer {
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
-        let list_probes = self.probes_listed || probes.is_some();
-        self.probes_listed = probes.is_some();
+        let any_probes = self.settings.probes().any();
+        let list_probes = self.probes_listed || any_probes;
+        self.probes_listed = any_probes;
         for index in 0..views.min(MAX_VIEWS) {
             let view = ViewId::from_index(index);
             if let (true, Some(frame)) = (list_probes, self.culling.frame(view)) {

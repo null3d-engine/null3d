@@ -2209,7 +2209,6 @@ impl SceneSettings {
             sky.panorama(),
             self.air.as_ref(),
         )?;
-        self.probes.record(list)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(

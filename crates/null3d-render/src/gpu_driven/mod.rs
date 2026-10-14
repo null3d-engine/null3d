@@ -424,11 +424,10 @@ mod ids {
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = STILL_SETTINGS + 1;
 
-    /// The light tables: three.js's table of the split-sum terms of specular light, and the area
-    /// lights' tables (see [`crate::light_tables`]).
-    pub const LIGHT_TABLES: u32 = 1;
-    /// The blank texture array that frame groups bind while the scene has no reflection probe.
-    pub const BLANK_PROBES: u32 = LIGHT_TABLES + 1;
+    /// The blank texture array that frame groups bind while the scene has no probe and no area
+    /// light. The probes own the frame group's shared array, which holds the light tables' layers
+    /// too ([`crate::probes::ProbeTextures`]).
+    pub const BLANK_PROBES: u32 = 1;
     /// The custom values of materials: one row of texels per material, then three.js's table of
     /// the split-sum terms of specular light in the columns after the first rows.
     pub const CUSTOM_VALUES: u32 = BLANK_PROBES + 1;
@@ -1518,6 +1517,14 @@ impl GpuDrivenRenderer {
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         // Only the camera's view copies its opaque color for surfaces that let light through.
+        // The probes own the frame group's shared array, so they record it before the frame groups
+        // bind it, and no later block rebinds them for it.
+        let shape = self.settings.light_tables().shape(
+            self.settings.probes().size(),
+            self.settings.probes().probe_layers(),
+        );
+        self.settings.probes_mut().record(list, shape)?;
+        self.bound_probes = self.settings.probes().array();
         let copy = self.graph.transmission_texture();
         let transmission = |view: ViewId| {
             if view == ViewId::CAMERA {
@@ -1670,10 +1677,11 @@ impl GpuDrivenRenderer {
         }
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        let tables_remade = self
-            .settings
+        let array = self.settings.probes().array().map_or(0, |(id, _)| id);
+        let probe_layers = self.settings.probes().probe_layers();
+        self.settings
             .light_tables_mut()
-            .record(list, ids::LIGHT_TABLES)?;
+            .record(list, array, probe_layers)?;
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::CUSTOM_VALUES, MATERIAL_TEXELS)?;
             ao::upload_blank(list, arena, ids::BLANK_AO)?;
@@ -1720,8 +1728,7 @@ impl GpuDrivenRenderer {
         // So may the reflection probes' array, which the probes' work makes again.
         let (environment, lit) = self.settings.environment_map(ids::BLANK_ENVIRONMENT);
         let probes = self.settings.probes().array();
-        // A light tables texture made again for lights' images needs the frame groups again too.
-        if environment != self.bound_environment || probes != self.bound_probes || tables_remade {
+        if environment != self.bound_environment || probes != self.bound_probes {
             self.bound_environment = environment;
             self.bound_probes = probes;
             for index in 0..views {
@@ -2023,8 +2030,9 @@ impl GpuDrivenRenderer {
         self.redraws.size(list, &self.redraw_layout, 1)?;
 
         let render_size = self.graph.render_size();
-        let list_probes = self.probes_listed || self.bound_probes.is_some();
-        self.probes_listed = self.bound_probes.is_some();
+        let any_probes = self.settings.probes().any();
+        let list_probes = self.probes_listed || any_probes;
+        self.probes_listed = any_probes;
         for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
             if let Some(frame) = frame {
@@ -2622,9 +2630,6 @@ impl GpuDrivenRenderer {
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
-        self.settings
-            .light_tables_mut()
-            .create(list, ids::LIGHT_TABLES)?;
         list.push(
             Op::CreateBuffer,
             &[
@@ -2634,6 +2639,7 @@ impl GpuDrivenRenderer {
             ],
         )?;
         probes::create_blank(list, ids::BLANK_PROBES)?;
+        // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,
         });

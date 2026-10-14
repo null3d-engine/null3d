@@ -3,12 +3,15 @@
 //! surfaces inside its box in place of the environment, and its box projects its reflections, so
 //! a room's walls reflect where they stand.
 //!
-//! Every probe's map is one layer of one 2D texture array of half floats: an octahedral map, which
+//! Every probe's map is one layer of the frame group's shared 2D texture array of half floats at
+//! binding 3, which the light tables share ([`crate::light_tables`]): an octahedral map, which
 //! folds the whole sphere into one square, with mip levels down to 4 texels across. Level `i` of
 //! `n` holds the light of perceptual roughness `1 - sqrt(1 - i / (n - 1))`, as an environment
-//! map's levels do, so the shaders find a roughness's level the same way for both. The array has
-//! a layer for each slot up to the highest in use, rounded up to a power of two. A new size, or
-//! more layers, makes the array again and captures every probe again.
+//! map's levels do, so the shaders find a roughness's level the same way for both. The probes take
+//! a layer for each slot up to the highest in use, rounded up to a power of two, in the layers
+//! after the light tables'. A new size, or more layers, makes the array again in the other of two
+//! pairs of texture ids, copies the layers that survive into it, and the next frame's list destroys
+//! the old pair, so no probe captures again.
 //!
 //! A probe captures through six capture views, one per face of a cube, which the scene's view list
 //! holds while it has a probe (see [`crate::view::View::probe_face`]). They draw what any view
@@ -26,6 +29,8 @@
 use null3d_core::cells::{CellPosition, split64};
 use null3d_core::culling::Frustum;
 use null3d_core::layers::DEFAULT_LAYERS;
+
+use crate::light_tables::{FIRST_IMAGE_LAYER, Shape};
 use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, view};
 
 use crate::camera::{Affine, Lens, Perspective};
@@ -188,8 +193,8 @@ pub struct Probes {
     size: u32,
     /// The ids a builder gave, once it gave them.
     textures: Option<ProbeTextures>,
-    /// The size and the layers of the array on the GPU.
-    made: Option<(u32, u32)>,
+    /// The size, the layers and the mip levels of the array on the GPU.
+    made: Option<(u32, u32, u32)>,
     /// Counts the arrays made, so builders bind each new one.
     generation: u32,
     /// The pair of texture ids that the array and the chain take now, and a pair that the next
@@ -373,7 +378,7 @@ impl Probes {
     /// Records the frame's work on the probes' maps, ahead of the frame's passes: the array and
     /// the chain when the size or the layers changed. Then readies the filter of the probe that
     /// captures in this frame, whose map the frame's lit passes read.
-    pub(crate) fn record(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+    pub(crate) fn record(&mut self, list: &mut DrawList, light: Shape) -> Result<(), RecordError> {
         self.filter = None;
         let Some(textures) = self.textures else {
             return Ok(());
@@ -383,22 +388,41 @@ impl Probes {
             list.push(Op::DestroyTexture, &[array])?;
             list.push(Op::DestroyTexture, &[chain])?;
         }
-        let layers = self.layers();
-        let wanted = (layers > 0).then_some((self.size, layers));
-        if wanted != self.made {
+        let layers = self.probe_layers();
+        let levels = if layers > 0 {
+            self.levels().max(light.levels)
+        } else {
+            light.levels
+        };
+        let wanted = (light.size, light.layers, levels);
+        if Some(wanted) != self.made {
+            let old = self.made.map(|made| (textures.pair(self.pair).0, made));
             if self.made.is_some() {
                 self.retired = Some(self.pair);
                 self.pair ^= 1;
             }
-            if let Some((size, layers)) = wanted {
-                self.create(list, textures.pair(self.pair), size, layers)?;
+            let (array, chain) = textures.pair(self.pair);
+            self.create(list, (array, chain), wanted)?;
+            if let Some((from, (size, old_layers, old_levels))) = old {
+                // Copy the layers that survive into the new array, so no probe captures again and
+                // the images keep their texels.
+                let levels = old_levels.min(levels);
+                let layers = old_layers.min(wanted.1);
+                for level in 0..levels {
+                    let side = size.min(wanted.0) >> level;
+                    if side == 0 {
+                        break;
+                    }
+                    list.push(
+                        Op::CopyTextureToTexture,
+                        &[
+                            from, level, 0, 0, 0, array, level, 0, 0, 0, side, side, layers,
+                        ],
+                    )?;
+                }
             }
-            self.made = wanted;
+            self.made = Some(wanted);
             self.generation = self.generation.wrapping_add(1);
-            for probe in self.probes.iter_mut().flatten() {
-                probe.ready = false;
-                probe.due = true;
-            }
         }
         if let (Some(slot), Some(code), [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)]) =
             (self.capturing, self.generator, self.faces)
@@ -415,7 +439,7 @@ impl Probes {
 
     /// The layers the array needs: one for each slot up to the highest in use, rounded up to a
     /// power of two, and at least 2. None while the scene has no probe.
-    fn layers(&self) -> u32 {
+    pub fn probe_layers(&self) -> u32 {
         match self.probes.iter().rposition(Option::is_some) {
             Some(last) => (last as u32 + 1).next_power_of_two().max(2),
             None => 0,
@@ -426,10 +450,14 @@ impl Probes {
         &self,
         list: &mut DrawList,
         (array, chain): (u32, u32),
-        size: u32,
-        layers: u32,
+        (size, layers, levels): (u32, u32, u32),
     ) -> Result<(), RecordError> {
-        let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
+        // The filter draws into the array, the light tables upload into it, and a regrow copies
+        // its layers into the new array.
+        let usage = texture_usage::RENDER_ATTACHMENT
+            | texture_usage::TEXTURE_BINDING
+            | texture_usage::COPY_SRC
+            | texture_usage::COPY_DST;
         list.push(
             Op::CreateTexture,
             &[
@@ -440,7 +468,7 @@ impl Probes {
                 format::RGBA16_FLOAT,
                 usage,
                 1,
-                self.levels(),
+                levels,
                 view::D2_ARRAY,
             ],
         )?;
@@ -504,7 +532,7 @@ impl Probes {
             *out = [
                 [lx, ly, lz, s.blend],
                 [hx, hy, hz, s.intensity],
-                [cx, cy, cz, slot as f32],
+                [cx, cy, cz, (FIRST_IMAGE_LAYER as usize + slot) as f32],
                 [f32::from(u8::from(s.box_projection)), 0.0, 0.0, 0.0],
             ];
         }
@@ -532,7 +560,7 @@ impl Probes {
 }
 
 /// Records the creation of the blank texture array of one texel that frame groups bind while the
-/// scene has no probe, which the shaders then do not read.
+/// scene has no probe and no light table, which the shaders then do not read.
 pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordError> {
     list.push(
         Op::CreateTexture,
@@ -679,11 +707,21 @@ mod tests {
 
     const TEXTURES: ProbeTextures = ProbeTextures { first: 7 };
 
+    /// The shape the light tables ask of the shared array beside the probes' layers.
+    fn light(probes: &Probes) -> Shape {
+        Shape {
+            size: probes.size(),
+            layers: FIRST_IMAGE_LAYER + probes.probe_layers(),
+            levels: 1,
+        }
+    }
+
     /// One frame of the probes: the capture's pick, the graph's targets, then the record.
     fn frame(probes: &mut Probes, list: &mut DrawList) {
         probes.pick_capture(true);
         probes.set_faces([Some(20); 6]);
-        probes.record(list).unwrap();
+        let shape = light(probes);
+        probes.record(list, shape).unwrap();
     }
 
     fn all() -> (CellPosition, Frustum) {
@@ -712,7 +750,11 @@ mod tests {
         let (camera, all) = all();
         let listed = probes.list(&camera, &all, false);
         assert_eq!(listed.head, [1.0, 6.0, 256.0, 0.0]);
-        assert_eq!(listed.probes[0][2], [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(
+            listed.probes[0][2],
+            [0.0, 1.0, 0.0, 3.0],
+            "the probe's layer follows the light tables"
+        );
         assert_eq!(
             probes.list(&camera, &all, true).head[0],
             0.0,
@@ -732,7 +774,8 @@ mod tests {
         assert_eq!(probes.filter(), None, "no generator yet");
         probes.set_generator(3);
         probes.pick_capture(false);
-        probes.record(&mut list).unwrap();
+        let shape = light(&probes);
+        probes.record(&mut list, shape).unwrap();
         assert_eq!(probes.filter(), None, "the generator has not arrived");
         frame(&mut probes, &mut list);
         assert!(probes.filter().is_some());
@@ -754,12 +797,17 @@ mod tests {
         let (camera, all) = all();
         let listed = probes.list(&camera, &all, false);
         assert_eq!(listed.head[0], 2.0);
-        assert_eq!(listed.probes[0][2][3], 1.0, "the smaller box first");
+        assert_eq!(
+            listed.probes[0][2][3],
+            (FIRST_IMAGE_LAYER + 1) as f32,
+            "the smaller box first, in the layer after the light tables"
+        );
         let generation = probes.array().unwrap().1;
         probes.set(2, probe_at(5.0)).unwrap();
         probes.pick_capture(true);
         probes.set_faces([None; 6]);
-        probes.record(&mut list).unwrap();
+        let shape = light(&probes);
+        probes.record(&mut list, shape).unwrap();
         assert_ne!(
             probes.array().unwrap().1,
             generation,
@@ -767,8 +815,8 @@ mod tests {
         );
         assert_eq!(
             probes.list(&camera, &all, false).head[0],
-            0.0,
-            "every probe captures again"
+            2.0,
+            "the layers are copied, so the ready probes stay ready"
         );
     }
 
@@ -786,33 +834,47 @@ mod tests {
         (made, destroyed)
     }
 
+    /// The copies of texture layers that a list records.
+    fn copies(list: &DrawList) -> usize {
+        null3d_gpu::drawlist::decode(list.words())
+            .filter(|command| {
+                command
+                    .as_ref()
+                    .is_ok_and(|c| c.op == Op::CopyTextureToTexture)
+            })
+            .count()
+    }
+
     #[test]
-    fn a_new_array_takes_the_other_ids_and_the_next_frame_destroys_the_old_ones() {
+    fn a_new_array_takes_the_other_ids_and_copies_the_layers() {
         let mut probes = Probes::default();
         probes.set_textures(TEXTURES);
         probes.set_generator(3);
         probes.set(0, probe_at(0.0)).unwrap();
         let mut list = DrawList::with_capacity(1024);
-        probes.record(&mut list).unwrap();
+        let shape = light(&probes);
+        probes.record(&mut list, shape).unwrap();
         assert_eq!(made_and_destroyed(&list), (vec![7, 8], vec![]));
         probes.set(2, probe_at(5.0)).unwrap();
         let mut list = DrawList::with_capacity(1024);
-        probes.record(&mut list).unwrap();
+        let shape = light(&probes);
+        probes.record(&mut list, shape).unwrap();
         assert_eq!(
             made_and_destroyed(&list),
             (vec![9, 10], vec![]),
             "the frame that binds the old array keeps it"
         );
+        assert!(
+            copies(&list) > 0,
+            "the layers are copied into the new array"
+        );
         assert_eq!(probes.array().unwrap().0, 9);
-        probes.remove(0);
-        probes.remove(2);
+        // The next frame destroys the ids of the pair it replaced.
         let mut list = DrawList::with_capacity(1024);
-        probes.record(&mut list).unwrap();
+        let shape = light(&probes);
+        probes.record(&mut list, shape).unwrap();
         assert_eq!(made_and_destroyed(&list), (vec![], vec![7, 8]));
-        assert_eq!(probes.array(), None);
-        let mut list = DrawList::with_capacity(1024);
-        probes.record(&mut list).unwrap();
-        assert_eq!(made_and_destroyed(&list), (vec![], vec![9, 10]));
+        assert_eq!(probes.array().unwrap().0, 9, "the shared array stays");
     }
 
     #[test]

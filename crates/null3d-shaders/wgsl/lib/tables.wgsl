@@ -38,6 +38,9 @@ const DFG_SIZE: u32 = 16u;
 /// Entries along each side of each area light table.
 const AREA_SIZE: u32 = 64u;
 
+/// Texels along each side of a rectangle light's image.
+const IMAGE_SIZE: u32 = 128u;
+
 /// Mip levels of a rectangle light's image, down to one texel.
 const IMAGE_LEVELS: f32 = 8.0;
 
@@ -77,8 +80,10 @@ fn table(layer: i32, uv: vec2f) -> vec4f {
 }
 
 /// A rectangle light's image in layer `layer`, at `uv` from its corner at +X and -Y, at mip level
-/// `level`: 0 is the sharpest.
+/// `level`: 0 is the sharpest. The image fills the corner of its layer, which the probes' maps may
+/// make larger than the image.
 fn light_image(layer: i32, uv: vec2f, level: f32) -> vec3f {
     let at = clamp(level, 0.0, IMAGE_LEVELS - 1.0);
-    return textureSampleLevel(light_tables, environment_sampler, saturate(uv), layer, at).rgb;
+    let scale = f32(IMAGE_SIZE) / f32(textureDimensions(light_tables).x);
+    return textureSampleLevel(light_tables, environment_sampler, saturate(uv) * scale, layer, at).rgb;
 }
