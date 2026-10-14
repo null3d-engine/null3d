@@ -1,8 +1,8 @@
 # D-174: The Apple GPU gap, the measured start-up probe and the direct-draw path
 
-Status: the owner chose the direct-draw path on 2026-10-14. The probe and the path are designed. The path is not built yet. This record holds the ruling, the figures, the design and the measurement that decides the next step.
+Status: the owner chose the direct-draw path on 2026-10-14. The probe and the path are designed, and the path is not built. The instance-count probe has since run, and its answer is below. It shows the path's win is bounded, so the path needs no dedicated session on this evidence.
 
-Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path chosen by a start-up probe that measures a real draw, never by a browser or GPU name. The probe's figures show the cost is real. They also show that most of Battle's gap and all of Factory's gap is per-frame work. The path alone cannot beat three.js on the iPhone 17, so one controlled probe goes first.
+Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The probe's figures show the cost is real. The cost per draw does not grow with the instances per draw or with the drawn work. So the direct path removes about 2 to 4 ms of Battle's 79 ms on the iPhone 17. It removes none of Factory's 25 ms, which is per-frame work. The path alone cannot beat three.js on the iPhone 17.
 
 ## Question
 
@@ -62,23 +62,37 @@ This reuses every WebGPU shader build, so it adds no shader variant and no downl
 
 The shortcut is to run the WebGL2 CPU-culled builder on the WebGPU backend. That needs WebGPU builds of its shaders, which read instance data from data textures under the `WEBGL2` shader def. The manifest builds those for GLSL alone. Adding them would double the mesh shader builds in the start module. The start's JavaScript is already at 141 KB of its 145 KB budget, so the shortcut is blocked on size. The path above changes no shader, and it is the one to build.
 
-## What decides the next step
+## The instance-count probe
 
-One question stays open. The micro-probe's draws are small, with one instance and 128 triangles each. The engine's draws are large, with thousands of triangles and many instances. The probe's 2.8 us per draw is far under the engine's tens of microseconds per draw. That gap suggests the clamp's two barriers may drain more when the draw's vertex work is heavy. If they do, the direct path removes far more than 3.5 ms, and it is worth building. If they do not, the path removes only a few milliseconds, and the bar needs the frame's other work instead.
+The micro-probe's draws are small, with one instance and 128 triangles each. The engine's draws are big, with thousands of triangles and many instances. So one question decided whether the path was worth building. Does the clamp's cost grow with the draw's work? The probe's `inst` and `depthonly` arms answer it, and they had already run on 2026-10-13.
 
-So one controlled probe goes first, before any engine change. It draws the engine's own shape. Each arm uses a depth-only pipeline, as the shadow pass does. It raises the instances and triangles per draw, and it draws more than one pass per frame. It runs in Chrome and Safari on the Mac, then on the iPhone 17 through the cloud lane. It measures the draw shape, not the engine's code.
+GPU ms per frame at 1,024 draws, 16 instances per draw, indirect with vertex buffers against direct:
+
+| Arm | Mac Safari | iPhone 17 | iPad 10 |
+| --- | --- | --- | --- |
+| colour, 4x MSAA, indirect | 9.77 | 5.82 | 9.99 |
+| colour, 4x MSAA, direct | 0.51 | 4.17 | 6.91 |
+| depth only, 1x, indirect | 9.33 | 5.74 | 9.45 |
+| depth only, 1x, direct | 0.40 | 4.16 | 10.85 |
+
+Per draw the clamp costs about 9 us on the Mac, and 1.5 to 3 us on the phones. That matches its cost at one instance. Multiplying the draw's vertex work by 16 changed almost nothing. The two barriers are a fixed cost per draw, not a drain that follows the drawn work.
+
+So the direct path removes about 2 to 4 ms of Battle's 79 ms on the iPhone 17, and nothing of Factory's 25 ms. The engine's shadow pass costs 83.1 ms at 973 draws, about 85 us per draw, which is far above the clamp's few microseconds. That cost is something else, and the direct path does not explain it or remove it.
+
+The one arm still missing is more than one pass per frame. The clamp's cost is per draw and per pass, so the passes multiply it, but they do not change its per-draw size. The Mac run of that arm is queued; the iPhone run is owed to the cloud lane.
 
 ## Options
 
-1. Build the direct-draw path now. The bar may still be missed, because Factory's 25 ms at 115 draws is not per-draw work.
-2. Build the direct-draw path after the instance-count probe. One run either confirms a large win or saves the whole build.
-3. Reduce the number of draws instead, as M2-EX41's draw merging does. It helps Battle's shadow passes, and part of it is on main.
-4. Pull instances from storage buffers. The probe's `direct-pull` and `own-pull` arms remove the clamp with no probe at all. Per-instance data would then leave the vertex buffers, which hard rule 7 refuses.
+1. Build the direct-draw path now. Its measured ceiling is a few milliseconds of Battle's gap. It cannot beat three.js on the iPhone 17.
+2. Build the direct-draw path after the instance-count probe. That probe has run, and it shows the win is bounded, so it no longer forces the build.
+3. Reduce the number of draws instead, as M2-EX41's draw merging does. It takes the same few milliseconds and it is partly on main.
+4. Pull instances from storage buffers. The probe's `direct-pull` and `own-pull` arms remove the clamp with no probe at all, and they cost as much as direct draws. Per-instance data would leave the vertex buffers, which hard rule 7 refuses.
+5. Leave the draw path alone and measure the rest of the frame. Battle's shadow pass costs 85 us per draw, and Factory pays 25 ms at 115 draws. So the gap is in the pass and frame work, not in the draw call.
 
 ## Decision
 
-The owner chose option (b) on 2026-10-14: the direct-draw path, chosen by a measured start-up probe. This record keeps that ruling, settles the probe and the path as above, and puts the instance-count probe first. The figures show the path alone cannot meet the bar on Battle's and Factory's per-frame cost.
+The owner chose option (b) on 2026-10-14: the direct-draw path, chosen by a measured start-up probe. This record keeps that ruling and settles the probe and the path as above. The instance-count probe has since run, and it puts the path's ceiling at a few milliseconds of Battle's 79 ms. So the path's build waits on a measurement of the frame's other work, which holds the rest of the gap.
 
 ## What this changes
 
-Nothing in the engine yet. The probe and the path are the design above, and the instance-count probe is the next step. The Mac figures come from the R34 micro-probe runs. The iPhone 17 figures come from the cloud demo run of 2026-10-13.
+Nothing in the engine yet. The probe and the path are the design above, and the instance-count probe has run. The Mac figures come from the R34 micro-probe runs. The iPhone 17 figures come from the cloud demo run of 2026-10-13.
