@@ -100,6 +100,9 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::gtao::{screen_occlusion, screen_values}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
+#ifdef PROBE_GRID
+#import null3d::probe_grid::{has_probe_grid, probe_grid_irradiance}
+#endif
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
@@ -985,16 +988,31 @@ fn light_surface(
     let env = engine_frame.environment;
 #ifdef CUSTOM
     let mirrored = saturate(reflection.a);
+#ifdef PROBE_GRID
+    if has_environment(env) || mirrored > 0.0 || has_probe_grid(engine_frame.probe_grid) {
+#else
     if has_environment(env) || mirrored > 0.0 {
+#endif
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
-        let irradiance = environment_irradiance(env, normal) * strength;
+        var irradiance = environment_irradiance(env, normal) * strength;
         let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let radiance = mix(surrounding, reflection.rgb, mirrored);
 #else
+#ifdef PROBE_GRID
+    if has_environment(env) || has_probe_grid(engine_frame.probe_grid) {
+#else
     if has_environment(env) {
+#endif
         let strength = material_row.uv_u.w;
-        let irradiance = environment_irradiance(env, normal) * strength;
+        var irradiance = environment_irradiance(env, normal) * strength;
         let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
+#endif
+        // The probe grid takes the environment's diffuse light over where the sketch sets one.
+#ifdef PROBE_GRID
+        if has_probe_grid(engine_frame.probe_grid) {
+            let world = engine_frame.camera_world.xyz + relative + engine_frame.shadow_origin.xyz;
+            irradiance = mix(irradiance, probe_grid_irradiance(engine_frame.probe_grid, world, normal), engine_frame.probe_grid.params.y);
+        }
 #endif
         var image = indirect_specular(m, radiance, irradiance, dfg);
 #ifdef COAT_SHEEN

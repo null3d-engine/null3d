@@ -47,6 +47,8 @@ struct Frame {
     occlusion: vec4f,
     /// The scene's environment, which null3d::ibl reads.
     environment: EnvironmentLight,
+    /// The scene's light probe grid, which null3d::probe_grid reads (D-146).
+    probe_grid: ProbeGrid,
     /// The light that the hemisphere lights add along each world axis, each in `xyz`. A surface
     /// with unit normal n gets `ambient` plus n.x times the first, n.y times the second and n.z
     /// times the third (see null3d::lighting::ambient_irradiance). All zero without hemisphere
@@ -94,6 +96,22 @@ struct EnvironmentLight {
     rotation_z: vec4f,
     /// The map's last mip level, the environment's intensity, 1 while the map draws and 0 while
     /// the scene has none, and a spare.
+    params: vec4f,
+}
+
+/// The scene's light probe grid (D-146): a grid of irradiance probes, each holding L1 spherical
+/// harmonics of the light that reaches its point. null3d::probe_grid reads it per pixel. Positions
+/// are in the world. The grid's texture is bound at binding 10 of the frame's group; while the
+/// scene sets none, `origin.w` is 0 and no shader reads it.
+struct ProbeGrid {
+    /// The grid's corner of least x, y and z, and 1 while the scene sets a grid, else 0.
+    origin: vec4f,
+    /// One over the spacing between probes along each axis, and a spare.
+    inverse_spacing: vec4f,
+    /// The probes along each axis, and the depth of one sub-volume along z, `nz + 2`.
+    counts: vec4f,
+    /// The grid's intensity times the frame's exposure, the share of the environment's diffuse
+    /// light that the grid takes over, and two spares.
     params: vec4f,
 }
 

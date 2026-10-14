@@ -648,9 +648,9 @@
       "three": "LightProbe / LightProbeGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setEnvironment: diffuse spherical harmonics come with the environment",
-      "notes": "`bunx @null3d/cli assets env` computes them offline.",
-      "docs": "concepts/lighting",
+      "target": "scene.setLightProbeGrid: a grid of irradiance probes lights the scene where a surface stands",
+      "notes": "The grid holds L1 spherical harmonics per probe. The probe grid page says how a sketch bakes one.",
+      "docs": "api/scene",
       "detect": "\\bLightProbe(Generator)?\\b"
     },
     {
