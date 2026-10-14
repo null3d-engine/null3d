@@ -25,7 +25,9 @@
 // changes a color uniform of each every frame through an array changed in place, for the
 // allocation sample of post.setEffectUniform and the effects' passes. The `dof` switch turns depth
 // of field on, focused on a point that sweeps through the swarm every frame, for the allocation
-// sample of post.set's focus point and depth of field's steps.
+// sample of post.set's focus point and depth of field's steps. The `fog` switch gives the scene
+// height fog with the volumetric fog on, for the allocation sample of its steps, whose block the
+// core writes again in every frame as the camera orbits.
 // The `reflection` switch puts rippled water under the swarm, which a reflection pass mirrors the
 // swarm and the background into, for the allocation sample of the pass and for its cost: the
 // camera orbits, so the mirrored view moves every frame, and the ripples move with the sketch
@@ -116,6 +118,13 @@ export default defineSketch(async (context) => {
 	const focus: [number, number, number] = [0, 0, 0];
 	const lens = { dof: { aperture: 2, focusPoint: focus } };
 	const dof = switches.has('dof');
+	if (switches.has('fog'))
+		context.scene.setFog({
+			color: '#8090a0',
+			density: 0.01,
+			heightFalloff: 0.05,
+			volumetric: true,
+		});
 	const effects = switches.has('effects');
 	const tint = effects
 		? context.post.addEffect({ wgsl: TINT, uniforms: { color: [1, 0.95, 0.9], amount: 0.5 } })
@@ -137,6 +146,9 @@ export default defineSketch(async (context) => {
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
 	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
 	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
+	// `sky=physical` draws the physical sky in place of three.js's, which draws its sky view table
+	// again in every frame while the sun moves, and `sky=physical-light` lights the swarm with its
+	// environment too.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -149,13 +161,14 @@ export default defineSketch(async (context) => {
 	if (switches.has('extraBox')) addSmallBox(context, true);
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
-	const skyBackground = { sky: skySettings };
+	const physical = skyMode === 'physical' || skyMode === 'physical-light';
+	const skyBackground = physical ? { atmosphere: skySettings } : { sky: skySettings };
 	if (sky) context.scene.setBackground(skyBackground);
 	if (skyMode === 'room')
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
 		});
-	if (skyMode === 'light')
+	if (skyMode === 'light' || skyMode === 'physical-light')
 		void context.assets.skyEnvironment().then((loaded) => {
 			context.scene.setEnvironment(loaded);
 		});

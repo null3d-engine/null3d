@@ -168,6 +168,54 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the volumetric fog tests: a low sun behind pillars, or street lamps at night. */
+const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
+
+/** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
+const FOG_VOLUME_SIZE = [480, 270] as const;
+
+/**
+ * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
+ * the shadow of the box under the middle lamp, each beside the same fog with its sun glow alone, on
+ * every tier. With Medium's coarse grid, which WebGL2 and compatibility mode draw at most, every
+ * tier must draw the first tier's image, with no cell's edge showing. Turned on during play, it
+ * draws the image of turning it on in the setup. At half the render scale the apply step draws into
+ * the corner of its target. With no slices, as on Low, and
+ * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
+ * keeps its glow and draws the image without the volumetric fog.
+ */
+function fogVolumeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FOG_VOLUME_SKETCH}${query}`,
+		hold: 1,
+		size: FOG_VOLUME_SIZE,
+	});
+	return [
+		test('fog-volume-off', ''),
+		test('fog-volume-sun', '?fog=on'),
+		test('fog-volume-night-off', '?night'),
+		test('fog-volume-night', '?night&fog=on'),
+		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
+		{
+			...test('fog-volume-medium', '?fog=on&slices=32'),
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		},
+		test('fog-volume-scale-50', '?scale=0.5&fog=on'),
+		{ ...test('fog-volume-no-slices', '?fog=on&slices=0'), reference: 'fog-volume-off' },
+		{
+			...test('fog-volume-8-bit', '?fog=on'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'fog-volume-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
 const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
 
@@ -1088,6 +1136,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...fogVolumeTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
@@ -1691,6 +1740,44 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// The physical sky at four times of day from `timeOfDay` with the physical model: its tables,
+	// its background with clouds, the moon and the stars, its environment, and the aerial
+	// perspective on a row of pillars out to 20 kilometres. Then the afternoon with the analytic sky
+	// standing in, as on Low, the afternoon without the aerial perspective, and the night on the
+	// 8-bit path, where the sky's own shader tone maps its color (D-143).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `physical-sky-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	...(
+		[
+			['physical-sky-analytic', 'analytic'],
+			['physical-sky-no-haze', 'haze=0'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=afternoon&${query}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	{
+		name: 'physical-sky-night-8-bit',
+		sketch: 'tests/pages/sketches/physical-sky-sketch.ts?time=night',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
 	// lights through an orthographic camera. Then the same floor under a hemisphere light. The

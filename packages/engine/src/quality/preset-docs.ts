@@ -95,6 +95,10 @@ export const SETTING_DOCS: {
 			({ 0: 'off', 0.25: 'quarter resolution', 0.5: 'half resolution' })[Number(value)] ?? '',
 	},
 	ssrSteps: { label: 'Screen-space reflection steps per ray' },
+	fogSlices: {
+		label: 'Volumetric fog',
+		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
+	},
 	reflectionScale: {
 		label: 'Reflection passes',
 		print: (value) =>
@@ -108,6 +112,10 @@ export const SETTING_DOCS: {
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
 	lodFade: { label: 'Level of detail fades', print: yesNo },
+	physicalSky: {
+		label: 'Physical sky',
+		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

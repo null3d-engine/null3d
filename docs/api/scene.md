@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; background, environment, fo
 
 # Scene
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment and `timeOfDay`. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -119,11 +119,12 @@ The color set before a texture shows until the texture's texels are on the GPU, 
 
 ### Environments, cube maps and the sky
 
-`setBackground` also takes three backgrounds that surround the scene, as three.js's `scene.background` does with a cube texture and its `Sky` object:
+`setBackground` also takes four backgrounds that surround the scene, as three.js's `scene.background` does with a cube texture and its `Sky` object:
 
 - An environment from [`assets.loadEnvironment` or `assets.builtinEnvironment`](assets.md#environments). It can blur, as three.js's `backgroundBlurriness` blurs a PMREM texture.
 - A cube map of six images from [`assets.loadCubemap`](assets.md#cube-maps), a sky box.
 - three.js's analytic sky: `{ sky: { sunPosition } }`, with the settings of three.js's `Sky` object.
+- The physical sky: `{ atmosphere: { sunPosition } }`, the earth's air lit by the sun and the moon. The same air hazes distant objects ([The physical sky](#the-physical-sky)).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -187,9 +188,49 @@ export default defineSketch(({ scene, time }) => {
 });
 ```
 
+### The physical sky
+
+`{ atmosphere }` draws the sky of the earth's air. The air scatters the sun's light by Rayleigh scattering (its molecules) and Mie scattering (its haze), and ozone absorbs some of it. So the sky is deep blue overhead and paler near the horizon. The sun reddens as it sets, and the earth's shadow rises opposite it. After sunset the sky keeps a twilight that fades over about 12 degrees of the sun's fall.
+
+The same air lies between the camera and each object. It dims what lies behind it and adds the light that it scatters toward the camera, so far hills turn blue and pale, and warm toward the sun. This is the aerial perspective. It applies to every material that takes fog, before the fog. A material with `fog: false` takes neither.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets }) => {
+  // An evening sun over a scene whose units are metres, with the haze three times the real air's.
+  scene.setBackground({
+    atmosphere: { sunPosition: [0, 0.12, -1], aerialPerspective: 3, cloudCoverage: 0.3 },
+  });
+  scene.setEnvironment(await assets.skyEnvironment());
+  scene.createDirectionalLight({ direction: [0, -0.12, 1], color: '#ffc58f', intensity: 2.5 });
+  return {};
+});
+```
+
+| Setting | Default | What it sets |
+| --- | --- | --- |
+| `sunPosition` | `[0, 0.342, -0.94]` | A point toward the sun. The default puts the sun 20 degrees over the horizon |
+| `sunIntensity` | 3.6 | The sun's light above the air. The air dims it to about 3.2 for a high sun |
+| `showSunDisc` | true | Whether the sky shows the sun's disc |
+| `rayleigh` | 1 | The factor of the scattering by the air's molecules, which makes the sky blue |
+| `haze` | 1 | The factor of the haze, which whitens the sky and glows around the sun |
+| `ozone` | 1 | The factor of ozone, which keeps the twilight sky blue |
+| `mieDirectionalG` | 0.8 | How much the haze scatters toward the light, from 0 to below 1 |
+| `groundAlbedo` | 0.3 | The share of light that the ground under the horizon reflects |
+| `altitude` | 0 | The height of the scene's y = 0 above the ground, in metres |
+| `metersPerUnit` | 1 | The metres in one unit of the scene |
+| `aerialPerspective` | 1 | The factor of the haze on objects: 0 for none, 1 for the real air. More makes a small scene look as large as a landscape |
+| `cloudCoverage`, `cloudDensity`, `cloudElevation`, `cloudScale`, `cloudSpeed`, `time` | As the analytic sky's | The clouds, lit by the physical sky's sun, moon and sky |
+| `moonPosition` | `[0, 1, 0]` | A point toward the moon |
+| `moonIntensity` | 0 | The moon's light above the air. It lights the air as the sun does, and the sky shows its disc, lit from the sun's side. 0 draws no moon |
+| `stars` | 0 | The stars' brightness. They show only where the sky is dark enough. 0 draws no stars |
+
+The sky's light is in the units of a directional light's intensity, so the exposure that suits the scene's lights suits the sky. It does not move a light: set the main light's direction and color with it, or take them from [`timeOfDay`](#time-of-day). The quality setting [`physicalSky`](../concepts/quality-presets.md) is off on Low. There three.js's analytic sky stands in, with the same sun, moon, air and clouds, matched to the physical sky's brightness, and the haze on objects stays. The first physical sky downloads its shaders, `'physical_sky'`, and the view shows the background color until its tables are drawn.
+
 The sky lights nothing by itself. [`assets.skyEnvironment()`](assets.md#environments) makes an environment of it, which follows the sky's settings as they change: [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) shows how.
 
-The first background of each kind downloads its shaders, `'background'` or `'sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
+The first background of each kind downloads its shaders, `'background'`, `'sky'` or `'physical_sky'`, and the view shows the background color until they are built. [Loading screens](../guides/loading-screens.md#loading-everything-up-front) shows how to load them before the first frame. Each call sets every option and every setting, and one left out takes its default. The settings are values, not shader builds, and the call allocates nothing. So a sketch can move the sun or turn a cube map in every frame. Each background draws behind every object, in the pixels that no object covers, and exposure and tone mapping change it with the rest of the scene. An orthographic camera's view rays are parallel, so an environment, a cube map or the sky fills its view with one color. The color set before an environment or a cube map shows until its texels are on the GPU, and again after you destroy it.
 
 Development builds throw E1203 for a number that is not finite, and E1108 for a number out of its range. They throw E1213 for `blur` on a background that is not an environment, and for `rotation` on a texture or the sky. Every build throws E1101 for a background that was destroyed. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) says how each background draws, and what it costs.
 
@@ -244,6 +285,32 @@ Height fog sums the fog along each line of sight. A view down into the mist then
 
 The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for an unknown curve, a `far` that is not above `near`, a negative `density`, `heightFalloff` or `sunGlow`, and a `sunGlowExponent` that is not above 0. They throw E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
 
+### Volumetric fog
+
+With `volumetric`, the main directional light and the point and spot lights light the fog through their shadows. A low sun's light falls between trees in rays, and each lamp casts a glowing cone. `volumetric: true` takes the defaults.
+
+```ts
+scene.setFog({
+  color: '#56606e',
+  density: 0.03,
+  heightFalloff: 0.1,
+  sunGlow: 0.8,
+  volumetric: { intensity: 2, anisotropy: 0.7, distance: 60 },
+});
+```
+
+| Option | Default | What it sets |
+| --- | --- | --- |
+| `intensity` | 1 | How much of the lights' light the fog scatters toward the camera, 0 or more. At 1 it scatters as much as its density gives. Raise it for bolder rays |
+| `anisotropy` | 0.6 | How much light the fog scatters forward, from -0.95 to 0.95. At 0 it scatters light evenly in every direction. Values toward 0.95 gather the light around the lights, as haze around a low sun does |
+| `distance` | 100 | How far along the view the lit fog reaches, above 0. A shorter reach gives finer rays near the camera |
+
+The lit fog takes the fog's `density` and `heightFalloff`, so it lights the same air that dims the objects. It takes `density` with every curve, the linear one too. While it draws, its own light of the sun replaces `sunGlow`, with the shadows. Past its `distance`, the fog still scatters the sun's light, without shadows, so no edge shows.
+
+The lit fog needs HDR color. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA, as bloom does, once `fogSlices` is above 0. On a device with no HDR target, the fog keeps its sun glow. The quality setting `fogSlices` sets its detail: 32 slices on Medium, 64 on High and 96 on Ultra. On Low it is 0, so phones draw the fog with its sun glow at no cost. Surfaces that blend or let light through, such as water and glass, take the lit fog of the whole line of sight to the opaque surface behind them. [Lighting and environment](../concepts/lighting.md#volumetric-fog) says how it works and what it costs.
+
+Development builds throw E1108 for a negative `intensity`, an `anisotropy` outside -0.95 to 0.95, a `distance` that is not above 0, and a `density` inside `volumetric`. They throw E1203 for a value that is not a finite number.
+
 ## Time of day
 
 `timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
@@ -257,6 +324,21 @@ export default defineSketch(async ({ scene, assets, post }) => {
   scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity });
   scene.createDirectionalLight(day.light);
   scene.setFog({ color: day.fog.color, density: 0.01, sunGlow: day.fog.sunGlow });
+  post.set({ exposure: day.exposure });
+  return {};
+});
+```
+
+With `{ model: 'physical' }`, the light, the ambient light and the exposure match the physical sky, and `day.atmosphere` holds its sun, its moon and its stars. The exposure then follows the sky's light, as an eye adapts: it rises through dusk and settles at night.
+
+```ts
+import { defineSketch, timeOfDay } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, post }) => {
+  const day = timeOfDay('goldenHour', { model: 'physical' });
+  scene.setBackground({ atmosphere: { ...day.atmosphere, cloudCoverage: 0.3 } });
+  scene.setEnvironment(await assets.skyEnvironment());
+  scene.createDirectionalLight(day.light);
   post.set({ exposure: day.exposure });
   return {};
 });

@@ -242,11 +242,13 @@ describe('SketchQuality.lower', () => {
 			dofSamples: low.dofSamples,
 			ssrScale: low.ssrScale,
 			ssrSteps: low.ssrSteps,
+			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
 			lodFade: low.lodFade,
+			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -274,11 +276,13 @@ describe('SketchQuality.lower', () => {
 			'dofSamples',
 			'ssrScale',
 			'ssrSteps',
+			'fogSlices',
 			'reflectionScale',
 			'softParticles',
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
+			'physicalSky',
 		]);
 	});
 });

@@ -6,6 +6,7 @@ use crate::camera::Mat4;
 use crate::environment::EnvironmentUniform;
 use crate::fog::FogUniform;
 use crate::output::OutputUniform;
+use crate::physical_sky::AerialUniform;
 
 /// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
 /// include the intensity. Shaders work in positions relative to the camera.
@@ -76,6 +77,9 @@ pub struct FrameUniform {
     /// The frame before's drawn corner of the color copy in pixels, the pixels that one world unit
     /// spans at a distance of one unit in its view, along y, and a spare.
     pub reflection_corner: [f32; 4],
+    /// The physical sky's air between the camera and each surface: see
+    /// [`crate::physical_sky::AerialUniform`].
+    pub aerial: AerialUniform,
     /// The vignette's intensity, size, falloff and roundness, which the 8-bit path's fragment
     /// shaders apply before their tone mapping in the camera's view. Zero elsewhere, which applies
     /// none: on the HDR path the final pass applies the vignette.

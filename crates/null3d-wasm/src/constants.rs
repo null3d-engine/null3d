@@ -268,8 +268,21 @@ pub mod background_value {
     /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
     pub const SECOND_SUN_POSITION: u32 = 19;
     pub const SECOND_SKY_WEIGHT: u32 = 22;
+    /// The physical sky's own values. It takes the sun's position, Rayleigh's factor, the Mie
+    /// directional g, the clouds, the time and the sun's disc from the sky's values above.
+    pub const SUN_INTENSITY: u32 = 23;
+    pub const HAZE: u32 = 24;
+    pub const OZONE: u32 = 25;
+    pub const GROUND_ALBEDO: u32 = 26;
+    pub const ALTITUDE: u32 = 27;
+    pub const METERS_PER_UNIT: u32 = 28;
+    pub const AERIAL_PERSPECTIVE: u32 = 29;
+    /// A point toward the moon, then its light above the air, and the stars' brightness.
+    pub const MOON_POSITION: u32 = 30;
+    pub const MOON_INTENSITY: u32 = 33;
+    pub const STARS: u32 = 34;
     /// The values in the block.
-    pub const COUNT: u32 = 23;
+    pub const COUNT: u32 = 35;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -284,6 +297,8 @@ pub mod background_kind {
     pub const CUBEMAP: u32 = 3;
     /// three.js's analytic sky.
     pub const SKY: u32 = 4;
+    /// The physical sky.
+    pub const ATMOSPHERE: u32 = 5;
 }
 
 pub mod texture_stat {
@@ -508,6 +523,8 @@ pub mod play_flag {
     pub const JOIN: u32 = 16;
     /// The blend gives its layer's blend value.
     pub const VALUE: u32 = 32;
+    /// The play switches its layer with an inertial transition.
+    pub const INERTIAL: u32 = 64;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -1093,6 +1110,16 @@ pub fn typescript() -> String {
                 ("SUN_DISC", background_value::SUN_DISC),
                 ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
                 ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
+                ("SUN_INTENSITY", background_value::SUN_INTENSITY),
+                ("HAZE", background_value::HAZE),
+                ("OZONE", background_value::OZONE),
+                ("GROUND_ALBEDO", background_value::GROUND_ALBEDO),
+                ("ALTITUDE", background_value::ALTITUDE),
+                ("METERS_PER_UNIT", background_value::METERS_PER_UNIT),
+                ("AERIAL_PERSPECTIVE", background_value::AERIAL_PERSPECTIVE),
+                ("MOON_POSITION", background_value::MOON_POSITION),
+                ("MOON_INTENSITY", background_value::MOON_INTENSITY),
+                ("STARS", background_value::STARS),
                 ("COUNT", background_value::COUNT),
             ],
         ),
@@ -1104,6 +1131,7 @@ pub fn typescript() -> String {
                 ("ENVIRONMENT", background_kind::ENVIRONMENT),
                 ("CUBEMAP", background_kind::CUBEMAP),
                 ("SKY", background_kind::SKY),
+                ("ATMOSPHERE", background_kind::ATMOSPHERE),
             ],
         ),
         (
@@ -1275,6 +1303,7 @@ pub fn typescript() -> String {
                 ("PLAY_WEIGHT", play_flag::WEIGHT),
                 ("PLAY_JOIN", play_flag::JOIN),
                 ("PLAY_VALUE", play_flag::VALUE),
+                ("PLAY_INERTIAL", play_flag::INERTIAL),
                 ("NO_SOURCE", NO_SOURCE),
                 ("ARG_FADE", play_arg::FADE as u32),
                 ("ARG_SPEED", play_arg::SPEED as u32),

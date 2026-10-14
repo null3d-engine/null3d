@@ -139,6 +139,7 @@ export const LAYOUT_SSR_TRACE = 31;
 export const LAYOUT_PARTICLE = 32;
 export const LAYOUT_PARTICLE_SCENE_DEPTH = 33;
 export const LAYOUT_PARTICLE_DEPTH_MS = 35;
+export const LAYOUT_ATMOSPHERE = 39;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -232,6 +233,8 @@ export const TEMPLATE_AO = 33;
 export const TEMPLATE_AO_DENOISE = 34;
 export const TEMPLATE_BACKGROUND_CUBE = 35;
 export const TEMPLATE_BACKGROUND_SKY = 36;
+export const TEMPLATE_SKY_TABLE = 10;
+export const TEMPLATE_BACKGROUND_ATMOSPHERE = 11;
 export const TEMPLATE_SHADOW_CUTOUT = 37;
 export const TEMPLATE_SHADOW_CUTOUT_MAP = 38;
 export const TEMPLATE_VIEW_COPY = 39;
@@ -248,6 +251,11 @@ export const TEMPLATE_PARTICLE = 53;
 export const TEMPLATE_PARTICLE_MAP = 54;
 export const TEMPLATE_PARTICLE_DEPTH = 55;
 export const TEMPLATE_PARTICLE_DEPTH_MS = 56;
+export const TEMPLATE_FOG_LIGHT = 57;
+export const TEMPLATE_FOG_SUM = 58;
+export const TEMPLATE_FOG_APPLY = 59;
+export const TEMPLATE_FOG_APPLY_MS = 60;
+export const TEMPLATE_FOG_BLOCK = 69;
 export const TEMPLATE_CUSTOM_FIRST = 128;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -268,7 +276,7 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_INDEX_STRIDE = 16;
-export const SIZE_FRAME_UNIFORM_BYTES = 816;
+export const SIZE_FRAME_UNIFORM_BYTES = 912;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;

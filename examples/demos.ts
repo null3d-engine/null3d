@@ -221,6 +221,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'atmosphere',
+		group: 'Light, materials and effects',
+		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),
+		code: 'atmosphere/',
+		title: 'Atmosphere',
+		scene: 'Valley of ridges',
+		summary:
+			'A day passes over a valley in a minute, under the physical sky. The air turns the sky gold and rose at sunset and hazes each ridge by its distance. At night the moon lights the air and the stars come out.',
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is morning, right is evening.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'contact-shadows',
 		group: 'Light, materials and effects',
 		sketch: new URL('./contact-shadows/sketch.ts', import.meta.url),
@@ -256,6 +269,19 @@ export const DEMOS: readonly Demo[] = [
 			'A street after the rain, whose puddles mirror the lit windows, the neon shop signs, the street lamps and a passing taxi, while the dry asphalt between them stays matte. Dark window panes, wet curbs and chrome bollards shine too.',
 		controls: `${CAMERA} Move the mouse over the street, or tap it, to move the taxi.`,
 		hold: 3,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'light-shafts',
+		group: 'Light, materials and effects',
+		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		code: 'light-shafts/',
+		title: 'Light shafts and lit fog',
+		scene: 'Pine wood at sunset',
+		summary:
+			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is golden hour, right is dusk.`,
+		hold: 2,
 		timeoutSeconds: 60,
 	},
 	{
