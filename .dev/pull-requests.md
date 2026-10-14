@@ -67,6 +67,12 @@ inputs, so re-checking a branch on a moved main is cheap.
   output in a folder of its own, named for the build's process, and Cargo locks the target folder that
   they share. A size check takes a machine-wide lock, because it also builds the base commit with that
   commit's own build script, which may stage into the shared target folder.
+- The shared `cargo-target` folder holds one compiled object for each crate name. A build in one copy
+  can therefore leave files that another copy's build reuses. On 15 October 2026 that gave a merged
+  branch a core without its own feature. The feature bit was missing from the material's flags, and
+  the generated shader modules were newer than the core. When a core change seems to be ignored,
+  touch the crate sources and build with `NULL3D_NO_CACHE=1`. Check the flags word that a material
+  row holds before looking anywhere else.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
