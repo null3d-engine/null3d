@@ -14,7 +14,8 @@ summary: "HDR scene color, ambient occlusion at half size, custom effects, depth
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     ao --> scene
-    scene["Scene passes:<br/>linear HDR color"] --> custom["Custom effects:<br/>joined into few passes"]
+    scene["Scene passes:<br/>linear HDR color"] --> fog["Volumetric fog:<br/>adds the light in the fog"]
+    fog --> custom["Custom effects:<br/>joined into few passes"]
     custom --> dof["Depth of field:<br/>three steps at half size,<br/>then a composite"]
     dof --> down["Bloom's steps down:<br/>each level half the size<br/>of the one before"]
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
@@ -26,7 +27,7 @@ flowchart LR
     grade --> canvas["Canvas"]
 ```
 
-Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
+Ambient occlusion runs before the scene's opaque objects shade. It reads the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the result. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers.
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -250,7 +251,7 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 
 Bloom, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
 
-- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, a custom effect or a custom tone curve moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
+- WebGPU in compatibility mode with MSAA: this mode cannot multisample a float target. Bloom, a custom effect, a custom tone curve or volumetric fog with `fogSlices` above 0 moves the engine to HDR color with FXAA, for the rest of its life. Meanwhile the last image stays on screen until the new pipelines are built. On a desktop that takes two or three frames. `engine.capabilities.hdr` reports the path that the engine started on.
 - WebGL2 devices whose float targets fail the engine's test. They have no HDR target, so bloom and custom effects stay off, and the built-in tone curve stays. Development builds warn once in the console.
 
 The devices that the engine was tested on all draw HDR color with WebGL2, and with core WebGPU.

@@ -517,6 +517,8 @@ pub mod play_flag {
     pub const JOIN: u32 = 16;
     /// The blend gives its layer's blend value.
     pub const VALUE: u32 = 32;
+    /// The play switches its layer with an inertial transition.
+    pub const INERTIAL: u32 = 64;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -1291,6 +1293,7 @@ pub fn typescript() -> String {
                 ("PLAY_WEIGHT", play_flag::WEIGHT),
                 ("PLAY_JOIN", play_flag::JOIN),
                 ("PLAY_VALUE", play_flag::VALUE),
+                ("PLAY_INERTIAL", play_flag::INERTIAL),
                 ("NO_SOURCE", NO_SOURCE),
                 ("ARG_FADE", play_arg::FADE as u32),
                 ("ARG_SPEED", play_arg::SPEED as u32),

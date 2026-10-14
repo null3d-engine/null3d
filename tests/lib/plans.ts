@@ -1089,9 +1089,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, 4 custom effects, or the physical sky.
+ * sun's contact shadows, the volumetric fog, 4 custom effects, or the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'effects' | 'sky';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects' | 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1106,13 +1106,14 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * prepass's. The effects plan adds 4 custom effects, so a quarter of its difference is the cost of
  * one effect's pass. The dof plan times depth of field at 16 and 22 taps of its gather, the
  * candidates for Low and Medium, since phones run Low, where the preset's taps draw nothing. The
- * contact plan times the sun's contact shadows at 4 and 8 steps, the steps of Medium on WebGL2
- * and of High, with the prepass on in both halves too, as for ambient occlusion. The physical sky
- * plan times the physical sky against three.js's analytic sky, with the sun still and with the sun
- * moving in every frame, which draws the sky view table again in each frame.
- * D-21 records the results of the bloom plan and the ao plan, D-71 those of the effects plan,
- * D-119 those of the dof plan, D-135 those of the contact plan, and D-143 those of the physical
- * sky plan.
+ * fog plan times the volumetric fog at 32, 64 and 96 slices, the grids of Medium, High and Ultra;
+ * 32 is also the candidate for Low. The contact plan times the sun's contact shadows at 4 and 8
+ * steps, the steps of Medium on WebGL2 and of High, with the prepass on in both halves too, as for
+ * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
+ * with the sun still and with the sun moving in every frame, which draws the sky view table again
+ * in each frame. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
+ * contact plan, and D-143 those of the physical sky plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 	// Each variant's suffix to the item's name, and its switches.
@@ -1135,6 +1136,7 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 					] as const,
 			),
 		),
+		fog: [32, 64, 96].map((slices) => [`-${slices}`, [`slices=${slices}`]] as const),
 		// One pass for each effect, so a quarter of the difference is one pass.
 		effects: [['', ['join=off']]],
 		sky: [
@@ -1775,6 +1777,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	ao: () => effectPlan('ao'),
 	dof: () => effectPlan('dof'),
 	contact: () => effectPlan('contact'),
+	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
 	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,

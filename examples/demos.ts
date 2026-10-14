@@ -280,6 +280,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'light-shafts',
+		group: 'Light, materials and effects',
+		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		code: 'light-shafts/',
+		title: 'Light shafts and lit fog',
+		scene: 'Pine wood at sunset',
+		summary:
+			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is golden hour, right is dusk.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'gltf-model',
 		group: 'Light, materials and effects',
 		sketch: new URL('./gltf-model/sketch.ts', import.meta.url),
@@ -428,6 +441,19 @@ export const DEMOS: readonly Demo[] = [
 			'A flock of 300 drones, each with its own light, chases a lamp over a landing pad at dusk, each at its own lag and speed. vec3 and quat helpers place, turn and bank each drone from the time, with no allocation.',
 		controls: `${CAMERA} Move the mouse, or tap, to lead the lamp.`,
 		hold: 8,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'terrain',
+		group: 'Scale',
+		sketch: new URL('./terrain/sketch.ts', import.meta.url),
+		code: 'terrain/',
+		title: 'Terrain',
+		scene: 'Golden valley',
+		summary:
+			'A 1.2 km valley from the terrain add-on. The ground near the camera draws at about a meter of detail and the far hills draw coarser blocks, each with a skirt that hides the seam. Grass, soil, rock and snow blend by a splat map filled from the height and the slope, and boulders made in code stand on the ground.',
+		controls: `${CAMERA} The camera circles the valley, and the ground follows it.`,
+		hold: 3,
 		timeoutSeconds: 60,
 	},
 	{
