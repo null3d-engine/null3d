@@ -351,9 +351,13 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The first step of the two-step pass's own blank color grading table and outline texture,
+    /// which it owns so that it never destroys the final pass's.
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
-    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const CELL_OFFSETS: u32 = OUTPUT_BLANK_OUTLINE + 1;
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = CELL_OFFSETS + 1;
@@ -389,8 +393,11 @@ mod ids {
     pub const DOF_SAMPLER: u32 = 7;
     /// The linear sampler of the full-screen passes.
     pub const FULLSCREEN_SAMPLER: u32 = 8;
+    /// The linear sampler of the first step of the two-step pass's color grading table, which it
+    /// owns so that it never destroys the final pass's.
+    pub const OUTPUT_LUT_SAMPLER: u32 = 9;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = 9;
+    pub const SAMPLERS: u32 = 10;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -652,9 +659,9 @@ impl GpuDrivenRenderer {
                         output_pass: FinalIds {
                             settings: ids::OUTPUT_SETTINGS,
                             group: ids::OUTPUT_GROUP,
-                            blank_lut: ids::BLANK_LUT,
-                            lut_sampler: ids::LUT_SAMPLER,
-                            blank_outline: ids::BLANK_OUTLINE,
+                            blank_lut: ids::OUTPUT_BLANK_LUT,
+                            lut_sampler: ids::OUTPUT_LUT_SAMPLER,
+                            blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,

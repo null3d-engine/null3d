@@ -3527,9 +3527,9 @@ mod tests {
         output_pass: FinalIds {
             settings: 907,
             group: 907,
-            blank_lut: 900,
-            lut_sampler: 9,
-            blank_outline: 901,
+            blank_lut: 920,
+            lut_sampler: 921,
+            blank_outline: 922,
         },
         bloom: BloomIds {
             buffer: 10,
