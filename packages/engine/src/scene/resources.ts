@@ -27,6 +27,7 @@ import {
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_ATTENUATION_COLOR,
 	MATERIAL_PARAM_ATTENUATION_DISTANCE,
@@ -927,11 +928,14 @@ export type AlphaMode = 'opaque' | 'mask' | 'hash' | 'blend';
 /**
  * How a blended surface meets what lies behind it. The `normal` blending covers it as far as the
  * alpha says. The `additive` blending adds the surface's light, for glows and fire. The `multiply`
- * blending tints it, for stains and tinted glass.
+ * blending tints it, for stains and tinted glass. The `weighted` blending covers it as `normal`
+ * does, but blends the surfaces of this blending in any order, by a weighted average, as
+ * three.js's `OITPassNode` does. Use it for smoke, dense particles and many overlapping panes,
+ * where sorting by object leaves surfaces in the wrong order.
  *
  * @category api/materials
  */
-export type Blending = 'normal' | 'additive' | 'multiply';
+export type Blending = 'normal' | 'additive' | 'multiply' | 'weighted';
 
 /**
  * A depth bias, as three.js's polygon offset gives. It moves a surface's depth, so a decal on a
@@ -1604,6 +1608,7 @@ const BLENDINGS: Readonly<Record<Blending, number>> = {
 	normal: 0,
 	additive: MATERIAL_FEATURE_ADDITIVE,
 	multiply: MATERIAL_FEATURE_MULTIPLY,
+	weighted: MATERIAL_FEATURE_WEIGHTED,
 };
 
 /**
@@ -1617,6 +1622,11 @@ function checkFeatures(options: StandardOptions, call: string): void {
 			'E1217',
 			`${call}() got transmission with the alpha mode '${alphaMode}'; a material that lets light through takes 'opaque' or 'blend'.`,
 		);
+	if (transmission !== undefined && blending === 'weighted')
+		throw new EngineError(
+			'E1217',
+			`${call}() got transmission with the 'weighted' blending; a material that lets light through draws back to front. Give it the 'normal' blending.`,
+		);
 	if (alphaMode !== undefined && !Object.hasOwn(ALPHA_MODES, alphaMode))
 		throw new EngineError(
 			'E1217',
@@ -1625,7 +1635,7 @@ function checkFeatures(options: StandardOptions, call: string): void {
 	if (blending !== undefined && !Object.hasOwn(BLENDINGS, blending))
 		throw new EngineError(
 			'E1217',
-			`${call}() got the blending ${JSON.stringify(blending)}; it takes 'normal', 'additive' or 'multiply'.`,
+			`${call}() got the blending ${JSON.stringify(blending)}; it takes 'normal', 'additive', 'multiply' or 'weighted'.`,
 		);
 	for (const key of ['constant', 'slopeScale'] as const) {
 		const value = depthBias?.[key] ?? 0;
@@ -1938,6 +1948,9 @@ export class Materials {
 		// The shaders that let light through, and decals' shaders, load on first use: the
 		// download starts with the material, before any object draws with it.
 		if (features & MATERIAL_FEATURE_TRANSMISSION) this.shaders.need('transmission');
+		// So do the builds of the weighted layer.
+		if (options.alphaMode === 'blend' && options.blending === 'weighted')
+			this.shaders.need('weighted');
 		if (features & MATERIAL_FEATURE_DECAL) this.shaders.need('decals');
 		const { constant = 0, slopeScale = 0 } = options.depthBias ?? {};
 		const { core } = this;
@@ -2022,6 +2035,11 @@ export class Materials {
 			throw new EngineError(
 				'E1217',
 				`${call}() got ${options.alphaMode === 'hash' ? "the alpha mode 'hash'" : 'alphaToCoverage'}; a custom material takes 'opaque', 'mask' or 'blend', and tests its alpha against alphaCutoff.`,
+			);
+		if (DEV && options.blending === 'weighted')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the 'weighted' blending, which custom materials do not take. Give it the 'normal' blending, which draws back to front.`,
 			);
 		const compiled = this.compiledMaterial(options.wgsl, call);
 		if (DEV && options.transmission !== undefined && !lets(compiled))
