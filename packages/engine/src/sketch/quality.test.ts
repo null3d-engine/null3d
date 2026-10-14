@@ -234,6 +234,7 @@ describe('SketchQuality.lower', () => {
 			shadowFilter: low.shadowFilter,
 			farCascadeInterval: low.farCascadeInterval,
 			followMovingCasters: low.followMovingCasters,
+			farAnimationInterval: low.farAnimationInterval,
 			shadowCascadeBlend: low.shadowCascadeBlend,
 			bloomSize: low.bloomSize,
 			aoScale: low.aoScale,
@@ -244,6 +245,7 @@ describe('SketchQuality.lower', () => {
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
 			lodFade: low.lodFade,
+			physicalSky: low.physicalSky,
 			softwareOcclusion: low.softwareOcclusion,
 			governor: true,
 			maxAnisotropy: 16,
@@ -274,6 +276,7 @@ describe('SketchQuality.lower', () => {
 			'lodThreshold',
 			'lodShadowFactor',
 			'lodFade',
+			'physicalSky',
 		]);
 	});
 });
@@ -303,12 +306,13 @@ describe('SketchQuality.setPreset', () => {
 		expect(quality.settings).toEqual(fromMedium('low'));
 		expect(Object.keys(quality.settings)).toEqual([...SKETCH_SETTINGS]);
 		expect(applied.at(-1)).toEqual({ preset: 'low', settings: fromMedium('low') });
-		// Every preset has the same highest render scale, following of moving casters, cascade blend,
-		// software occlusion culling and governor, and Low and Medium on WebGPU the same ambient
-		// occlusion scale and contact shadow steps.
+		// Low and Medium share the highest render scale, following of moving casters, the far
+		// characters' update interval, cascade blend, software occlusion culling and governor, and on
+		// WebGPU the ambient occlusion scale and contact shadow steps too.
 		const same = [
 			'maxRenderScale',
 			'followMovingCasters',
+			'farAnimationInterval',
 			'shadowCascadeBlend',
 			'aoScale',
 			'contactShadowSteps',

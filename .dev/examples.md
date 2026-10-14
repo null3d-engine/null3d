@@ -232,7 +232,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -254,7 +254,7 @@ In the scene graph mode, each engine holds only the objects of the cells that sh
 
 ### The ramp
 
-The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the presented frame rate for a second. A step holds the display rate at 95% of it or more. The ramp stops after two steps in a row that miss it, or at the plan's maximum. It reports the largest count held, and the largest held at half the display rate. Both engines measure their own presented frames: null3D with `engine.measure`, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
+The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the scene's update rate for a second. A step holds the ramp's floor of 20 fps or more. The ramp stops after two steps in a row below the floor, at the plan's maximum, or at once when the scene's update fails. It reports the largest count held. Both engines measure their own updates: null3D with `engine.measure`, whose `updatedFps` counts frames whose scene update ran to its end, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
 
 A three.js frame that draws nothing is not a frame. While WebGPURenderer cannot draw a scene, its render calls return at once with no draw, and its frames then come at the display's rate. On 12 October 2026, Night town's three.js WebGPU ramp "held" 1,020 lights at 120 frames a second with no town on the screen. So the worker counts only frames with draw calls (`DrawnFrames` in `examples/lib/three-worker.ts`). A measurement starts at the first such frame, after waiting at most its own length for it. With none, it reports no frame and a frame rate of 0. A ramp step with no frame is a count that draws nothing. When the next count draws, the ramp steps past it as a fault of the browser, as Chrome 155 drew no frame of Night town on WebGLRenderer at 60 lights and drew at 72 ([D-121](decisions/D-121-comparison-tier.md#browser-faults-met-while-timing)). Two such counts in a row, or one at the maximum, stop the ramp. The result keeps the largest count drawn, the counts stepped past, and three.js's link error where it gave one, and the page says both in plain words (`noFrameText` in `examples/lib/ramp.ts`, with unit tests). `three-worker.test.ts` checks that every frame and every measurement goes through this rule.
 
@@ -262,7 +262,7 @@ A live three.js run starts at its first frame that draws, as a null3D run starts
 
 Time comparisons in the Mac's installed Chrome, the browser that people run. On 12 October 2026, Playwright's Chromium 153 failed to build one of three.js's render-to-texture pipelines for Night town on WebGPU. Its shader compiler gave: "renderPipeline_RTT_57: An error occurred while generating Tint IR. error: swizzle view instruction still has usages after lowering". three.js then drew the town without that pass. The installed Chrome 155 built the same pipeline with no error. Chromium 153 also took about 90 s to the first frame of null3D's WebGL2 Night town at 300 lights or more, and 1 s at 120. Chrome 155 took 1 to 2 s at every count, with each effect alone and with all of them. So the timing scripts open the installed Chrome (`channel: 'chrome'`), and each record names the browser's version. Check a record's errors before using its figure.
 
-The display rate that a ramp judges against must be the display's. The page measures it from its own animation frames. But Chrome can slow those frames while null3D draws from its workers at the full rate. On 12 October 2026, Night town's instanced null3D ramp on a 120 Hz Mac measured 30 Hz. It then "held" all 1,020 lights, though its frame rate fell to 104 at 124 lights. So the ramp also measures the engine's frame rate at the start count for a second. An engine cannot draw faster than the display. So when it draws more than 5% faster than the page's rate, its rate, rounded to the nearest common refresh rate, becomes the display rate (`displayRate` in `examples/lib/ramp.ts`, with a unit test). Every ramp result names the display rate it judged against. Check it before using a figure.
+The ramp once judged the display rate, which the page measured from its own animation frames. Chrome can slow those frames while null3D draws from its workers at the full rate. The ramp then read a rate the engine did not keep, and a frozen scene could still report a high figure. The owner ruled on 13 October 2026 that a ramp judges the scene's update rate instead ([D-158](decisions/D-158-growable-animation-table.md)). null3D measures completed updates: `updatedFps` counts frames whose scene update ran to its end, and `updateErrors` counts frames whose update threw. A frame whose update threw still presents, so a presented rate hides it. The owner set the floor at 20 fps, after rulings of 30 and 10 the same session. A step whose update failed stops the ramp at once with a scene error, whatever frame rate the engine presents.
 
 The page's measurement takes the median interval of 40 of its frames, or of those that come within a second. On 13 October 2026, three.js drew Battle on CI's SwiftShader at one frame every 5 to 11 seconds. The page's own frames came 2.5 to 6 seconds apart meanwhile. The measurement waited for 40 of them, so the page gave no result within the test's 200 seconds. Now it ends after two such frames. CI's test of Battle's three.js ramp on WebGPU would fail again if it waited that long.
 
@@ -298,7 +298,7 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
 - The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
 - The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
-- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). The particles add-on is on main now, so a scene that moves to it changes only the null3D side.
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
@@ -426,7 +426,18 @@ Each feature gets a decision record of its own when it is built.
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
 | Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 
-Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+The particles demo uses the particles add-on. The showcase and comparison scenes still draw their particles with sprites behind a small interface of their own. Their look pass moves them to the add-on. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+### The order the demos take the features
+
+A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
+
+- **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
+- **Night town** and the **Busy page** take screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
+- **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
+
+The owner reviews each scene's look before its references are remade. Every scene holds the display rate at its preset, as the other demos do.
 
 ### Creek
 

@@ -1,6 +1,6 @@
 // A layer of particles in null3D: one sprite batch, which draws a scene's sprite rows
 // (examples/lib/particles.ts) in one draw. The engine culls the sprites and sorts blended ones from
-// back to front. When the particles add-on lands, a layer moves to it here, and the scenes keep
+// back to front. The particles add-on is on main, so a layer can move to it here, and the scenes keep
 // their rows.
 
 import type { SketchContext } from '@null3d/engine';

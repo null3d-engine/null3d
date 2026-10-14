@@ -211,6 +211,16 @@ pub mod post_value {
     pub const COUNT: u32 = 50;
 }
 
+/// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
+/// setter call that takes numbers, such as `setLightValue`, from place 0 on, in the order that the
+/// call's comment gives. Wherever the browser does not inline a call into the core, it makes an
+/// object of each fraction that the call takes as an argument. So a setter that a sketch may call
+/// in every frame takes its numbers this way, and only whole numbers as arguments.
+pub mod call_value {
+    /// The numbers in the block: as many as the setter with the most numbers takes.
+    pub const COUNT: u32 = 10;
+}
+
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit
 /// floats that TypeScript writes before it calls `setEnvironment`, as the post-processing values
 /// come.
@@ -252,8 +262,21 @@ pub mod background_value {
     /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
     pub const SECOND_SUN_POSITION: u32 = 19;
     pub const SECOND_SKY_WEIGHT: u32 = 22;
+    /// The physical sky's own values. It takes the sun's position, Rayleigh's factor, the Mie
+    /// directional g, the clouds, the time and the sun's disc from the sky's values above.
+    pub const SUN_INTENSITY: u32 = 23;
+    pub const HAZE: u32 = 24;
+    pub const OZONE: u32 = 25;
+    pub const GROUND_ALBEDO: u32 = 26;
+    pub const ALTITUDE: u32 = 27;
+    pub const METERS_PER_UNIT: u32 = 28;
+    pub const AERIAL_PERSPECTIVE: u32 = 29;
+    /// A point toward the moon, then its light above the air, and the stars' brightness.
+    pub const MOON_POSITION: u32 = 30;
+    pub const MOON_INTENSITY: u32 = 33;
+    pub const STARS: u32 = 34;
     /// The values in the block.
-    pub const COUNT: u32 = 23;
+    pub const COUNT: u32 = 35;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -268,6 +291,8 @@ pub mod background_kind {
     pub const CUBEMAP: u32 = 3;
     /// three.js's analytic sky.
     pub const SKY: u32 = 4;
+    /// The physical sky.
+    pub const ATMOSPHERE: u32 = 5;
 }
 
 pub mod texture_stat {
@@ -334,6 +359,9 @@ pub mod texture_option {
     pub const UPLOAD_ALL: u32 = 2;
     /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
     pub const MEMORY_BUDGET_KIB: u32 = 3;
+    /// Any value makes the store keep each texture's texels after its upload, so that a new GPU
+    /// device uploads them again; 0 frees them once the upload is done (D-164).
+    pub const KEEP_COPIES: u32 = 4;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -450,6 +478,9 @@ pub mod animation_field {
     /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
     /// writes; made by `enableJointOverrides`.
     pub const LOOK_TARGETS: u32 = 12;
+    /// The frames between two frame steps of each instance's pose, 32-bit unsigned integers,
+    /// which TypeScript writes.
+    pub const UPDATE_INTERVALS: u32 = 13;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -850,6 +881,7 @@ pub fn typescript() -> String {
                 ("AGX", ToneMapping::Agx.code()),
                 ("NEUTRAL", ToneMapping::Neutral.code()),
                 ("NONE", ToneMapping::None.code()),
+                ("AGX_PUNCHY", ToneMapping::AgxPunchy.code()),
             ],
         ),
         // The layout of a particle system's records and values in engine memory.
@@ -1036,6 +1068,7 @@ pub fn typescript() -> String {
                 ("COUNT", post_value::COUNT),
             ],
         ),
+        ("CALL_VALUE", &[("COUNT", call_value::COUNT)]),
         (
             "ENVIRONMENT_VALUE",
             &[
@@ -1065,6 +1098,16 @@ pub fn typescript() -> String {
                 ("SUN_DISC", background_value::SUN_DISC),
                 ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
                 ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
+                ("SUN_INTENSITY", background_value::SUN_INTENSITY),
+                ("HAZE", background_value::HAZE),
+                ("OZONE", background_value::OZONE),
+                ("GROUND_ALBEDO", background_value::GROUND_ALBEDO),
+                ("ALTITUDE", background_value::ALTITUDE),
+                ("METERS_PER_UNIT", background_value::METERS_PER_UNIT),
+                ("AERIAL_PERSPECTIVE", background_value::AERIAL_PERSPECTIVE),
+                ("MOON_POSITION", background_value::MOON_POSITION),
+                ("MOON_INTENSITY", background_value::MOON_INTENSITY),
+                ("STARS", background_value::STARS),
                 ("COUNT", background_value::COUNT),
             ],
         ),
@@ -1076,6 +1119,7 @@ pub fn typescript() -> String {
                 ("ENVIRONMENT", background_kind::ENVIRONMENT),
                 ("CUBEMAP", background_kind::CUBEMAP),
                 ("SKY", background_kind::SKY),
+                ("ATMOSPHERE", background_kind::ATMOSPHERE),
             ],
         ),
         (
@@ -1149,6 +1193,7 @@ pub fn typescript() -> String {
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
                 ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
+                ("KEEP_COPIES", texture_option::KEEP_COPIES),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
@@ -1227,6 +1272,7 @@ pub fn typescript() -> String {
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
                 ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
                 ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
+                ("UPDATE_INTERVALS", animation_field::UPDATE_INTERVALS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of

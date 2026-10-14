@@ -245,6 +245,15 @@ export interface EngineOptions {
 	 */
 	textureMemoryMiB?: number;
 	/**
+	 * True keeps the engine's copy of each texture's texels after their upload, so a texture that
+	 * maps an image draws with its map again after the browser takes the GPU away. It costs about
+	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
+	 * a texture draws with its color alone until the sketch gives it texels again. Without this
+	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
+	 * is likeliest to lose its GPU.
+	 */
+	keepTextureCopies?: boolean;
+	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
 	 * it. The default is false, an opaque canvas.
@@ -307,6 +316,15 @@ export interface EngineOptions {
 	 * handlers once the engine has started.
 	 */
 	onSketchMessage?: (name: string, data: unknown) => void;
+	/**
+	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
+	 * while the engine runs. The error's message holds the failure, such as `E1102: ...`. The engine
+	 * keeps drawing and presenting frames, so the error alone does not stop it: a frame whose update
+	 * failed is counted in `measure().updateErrors` and left out of `measure().updatedFps`, which
+	 * the comparison ramps judge. `engine.onSketchError` adds more handlers once the engine has
+	 * started. Without a handler, the error also reaches the console.
+	 */
+	onSketchError?: (error: Error) => void;
 	/**
 	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
@@ -463,6 +481,12 @@ export interface EngineMode {
 	 * that the options asked for. `report.worker` holds the probe's answer.
 	 */
 	renderFallback: RenderFallback | null;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost. It is on for a phone and a tablet, and the page's
+	 * `keepTextureCopies` option can name either value.
+	 */
+	keepTextureCopies: boolean;
 }
 
 /**
@@ -526,6 +550,14 @@ export interface Engine {
 	 * failure to the console. Returns a function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
+	/**
+	 * Receives each distinct error that the sketch's own code, or a core call in a frame, threw
+	 * while the engine runs. The engine keeps drawing, so this error alone does not stop it: a frame
+	 * whose update failed is counted in `measure().updateErrors` and left out of
+	 * `measure().updatedFps`. The handler receives the errors reported after it was added. Returns a
+	 * function that removes the handler. Without a handler, the error also reaches the console.
+	 */
+	onSketchError(handler: (error: Error) => void): () => void;
 	/**
 	 * Pauses or resumes the sketch's frames. A pause also stops input: the sketch sees every key and
 	 * button that was down come up, and input that comes during the pause never reaches it.
@@ -688,6 +720,8 @@ function loadRunnerModule(): Promise<RunnerModule> {
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
 	sketchMessage(name: string, data: unknown): void;
+	/** An error that the sketch's own code threw in a frame. The engine keeps drawing. */
+	sketchError(error: Error): void;
 	/**
 	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
 	 * the engine then runs on without the thread.
@@ -760,6 +794,9 @@ export class EngineWorker {
 			switch (reply.type) {
 				case 'sketch-message':
 					events.sketchMessage(reply.name, reply.data);
+					return;
+				case 'sketch-error':
+					events.sketchError(new Error(reply.message));
 					return;
 				case 'quality':
 					events.quality(reply.update);
@@ -1176,6 +1213,13 @@ async function startEngine(
 		hints: readDeviceHints(),
 		crashedStarts: history.crashed,
 	};
+	/**
+	 * The engine keeps a copy of each texture's texels after their upload where the device is a
+	 * phone or a tablet, which is likeliest to lose its GPU, unless the page's option says
+	 * otherwise (D-164).
+	 */
+	const keepTextureCopies =
+		options.keepTextureCopies ?? deviceKind(presetRequest.hints) !== 'desktop';
 	const maximumMiB = memoryMaximumMiB(
 		options.memory?.maximumMiB,
 		switches.memoryMiB,
@@ -1219,7 +1263,12 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	const sketchErrorHandlers = new Set<(error: Error) => void>();
 	const reported = new Set<string>();
+	const onSketchError = (error: Error) => {
+		for (const handler of sketchErrorHandlers) handler(error);
+	};
+	if (options.onSketchError) sketchErrorHandlers.add(options.onSketchError);
 	/** Where a start that checks its preset keeps the check's result for later starts. */
 	let checkStore: CheckStore | undefined;
 	/**
@@ -1248,6 +1297,7 @@ async function startEngine(
 	let engineThreads!: [string, number[]][];
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
+		sketchError: onSketchError,
 		failure: onFailure,
 		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
 		// engine's mode reports the preset and the preset check, which the page stores for later
@@ -1460,6 +1510,13 @@ async function startEngine(
 			for (const worker of withCore)
 				if (!jobsWithCore.includes(worker)) waitFor.push(worker.stopDrawing());
 			await stopWorkers(allWorkers(threads), waitFor, canvasWorker);
+			// A channel's ports keep the engine's closures alive while they stay open: a port with a
+			// listener is a pending activity, which the page never collects. The engine has stopped, so
+			// close both ends and let go of the channels.
+			for (const { port1, port2 } of channels) {
+				port1.close();
+				port2.close();
+			}
 			channels.length = 0;
 			leaveCanvas();
 			// The render worker may have been inside a frame when the engine stopped, replaying a draw
@@ -1577,6 +1634,7 @@ async function startEngine(
 			),
 			options: tierSettings,
 			textureCapMiB,
+			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
 			check: checks && !storedCheck,
 		};
@@ -1592,6 +1650,7 @@ async function startEngine(
 			crashedStarts: history.crashed,
 			memoryMaximumMiB: threaded ? maximumMiB : null,
 			renderFallback,
+			keepTextureCopies,
 		};
 		/** Each engine thread's name and the roles it runs, for the frame figures. */
 		engineThreads = [...threadRoles(mode)];
@@ -1844,6 +1903,7 @@ async function startEngine(
 					showStats: events.stats,
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
+					reportSketchError: (message) => events.sketchError(new Error(message)),
 				},
 				hold,
 			);
@@ -1991,6 +2051,10 @@ async function startEngine(
 			onFailure(handler) {
 				failureHandlers.add(handler);
 				return () => failureHandlers.delete(handler);
+			},
+			onSketchError(handler) {
+				sketchErrorHandlers.add(handler);
+				return () => sketchErrorHandlers.delete(handler);
 			},
 			setPaused(paused) {
 				userPaused = paused;
