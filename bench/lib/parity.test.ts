@@ -266,7 +266,7 @@ describe('feature scenes', () => {
 			expect(names).toContain(feature);
 	});
 
-	test('give the glossy lit scenes, alpha to coverage, the alpha hash, the masked shadows, the glass, the points, the shadows, the strong bloom, ambient occlusion, the vignette, three glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
+	test('give the glossy lit scenes, alpha to coverage, the alpha hash, the masked shadows, the glass, the points, the shadows, the strong bloom, ambient occlusion, the vignette, the glTF models, the wide morph scene and the outlines a looser limit, and draw tone mapping without anti-aliasing', () => {
 		expect(featureScene('shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		expect(featureScene('alpha-mask-shadows')?.limit).toBe(SHADOW_MAX_DIFFERENT_PERCENT);
 		// Coverage flips a sample at some cut edges, so its scene takes a small limit of its own.
@@ -307,7 +307,9 @@ describe('feature scenes', () => {
 			'gltf-meshopt-ext',
 			'gltf-specular',
 			'gltf-ior',
+			'gltf-clearcoat',
 			'shadows',
+			'shadow-catcher',
 			'morph',
 			'bloom-strong',
 			'ao-default',

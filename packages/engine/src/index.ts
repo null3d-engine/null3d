@@ -110,6 +110,8 @@ export type {
 export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export type { LightImagePixels } from './scene/light-images';
+export type { BakeProbesOptions, LightProbeGridOptions } from './scene/light-probes';
+export { bakeProbes, LightProbeGridData, ProbeBake } from './scene/light-probes';
 export type {
 	LineBatch,
 	LineMaterial,
@@ -195,6 +197,8 @@ export type {
 	RingOptions,
 	ShaderOptions,
 	ShaderValues,
+	ShadowCatcherOptions,
+	ShadowCatcherValues,
 	SphereOptions,
 	StandardBaseOptions,
 	StandardMaps,
