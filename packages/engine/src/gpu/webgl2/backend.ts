@@ -24,6 +24,7 @@ import type { DeviceShaders, FirstUseShaders, ShaderVariants } from '../../gener
 import type { DepthMode } from '../../page/switches';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
+import type { MemoryViews } from '../../shared/memory-views';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
@@ -67,6 +68,12 @@ const COPY_PROGRAM = 'mipmap copy';
 const COLOR_ATTACHMENT0 = 0x8ce0;
 const DEPTH_ATTACHMENT = 0x8d00;
 const DISCARD_COLOR = [COLOR_ATTACHMENT0];
+const DISCARD_DEPTH = [DEPTH_ATTACHMENT];
+/** The second color attachment, which only the weighted layer's pass draws into. */
+const COLOR_ATTACHMENT1 = 0x8ce1;
+/** The draw buffers of a framebuffer with two color targets. */
+const TWO_DRAW_BUFFERS = [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1];
+const DISCARD_BOTH = [COLOR_ATTACHMENT0, DEPTH_ATTACHMENT];
 /** GL's `BACK`, the faces that a context culls until it is told otherwise. */
 const CULL_BACK = 0x0405;
 /** GL's `TRIANGLES`, the mode of every pipeline that does not draw lines. */
@@ -108,6 +115,21 @@ interface BlockCopy {
 	width: number;
 	/** The buffer's write count when the texture last took the range's bytes. */
 	writes: number;
+}
+
+/** A `CopyTextureToBuffer` that a `ReadBuffer` collects: a `readPixels` into a pack buffer. */
+interface PendingPack {
+	/** The pack buffer's id in the draw list. */
+	buffer: number;
+	offset: number;
+	size: number;
+	/** The fence that signals once the `readPixels` has run. */
+	fence: WebGLSync;
+	/** Where the bytes land in engine memory, and the control slot to add one to, set by the read. */
+	destination: number;
+	slot: number;
+	/** True once a `ReadBuffer` has asked for these bytes. */
+	wanted: boolean;
 }
 
 /** How GL stores a texture format, and how texels of it upload. */
@@ -170,6 +192,13 @@ interface GlTexture {
 	soloFramebuffer: WebGLFramebuffer | null;
 	/** The framebuffer of the one-sample copy of a multisampled depth target that shaders read. */
 	copyFramebuffer: WebGLFramebuffer | null;
+	/**
+	 * The framebuffer of passes that draw into this color target and a second one, as the weighted
+	 * layer's pass draws into its two sums, with the second target and the depth target.
+	 */
+	pairFramebuffer: WebGLFramebuffer | null;
+	pairSecond: GlTexture | null;
+	pairDepth: GlTexture | null;
 }
 
 interface BindEntry {
@@ -307,6 +336,7 @@ function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat 
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	add(G.FORMAT_R32_FLOAT, gl.R32F, gl.RED, gl.FLOAT, color);
 	add(G.FORMAT_RGBA32_UINT, gl.RGBA32UI, gl.RGBA_INTEGER, gl.UNSIGNED_INT, color);
+	add(G.FORMAT_R16_FLOAT, gl.R16F, gl.RED, gl.HALF_FLOAT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
 	add(G.FORMAT_DEPTH24_PLUS, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, depth);
 	add(G.FORMAT_DEPTH32_FLOAT, gl.DEPTH_COMPONENT32F, gl.DEPTH_COMPONENT, gl.FLOAT, depth);
@@ -369,6 +399,9 @@ function glTexture(
 		framebufferDepth: null,
 		soloFramebuffer: null,
 		copyFramebuffer: null,
+		pairFramebuffer: null,
+		pairSecond: null,
+		pairDepth: null,
 	};
 }
 
@@ -435,6 +468,15 @@ export class WebGL2Backend {
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
+	/**
+	 * The engine's memory views and the control slots, for `ReadBuffer` commands: the thread that
+	 * draws sets them, so the bytes that a pick maps land where the sketch thread reads them.
+	 * Without them, a read command is a no-op, as when a test replays a list outside a running
+	 * engine.
+	 */
+	readSink: { views: MemoryViews; slots: Int32Array } | undefined;
+	/** The packs whose `readPixels` is in flight, by buffer id, until a `ReadBuffer` collects them. */
+	private readonly pendingPacks = new Map<number, PendingPack>();
 	/** The ring of pixel unpack buffers that texture rewrites go through, and their sizes in bytes. */
 	private readonly unpackBuffers: (WebGLBuffer | null)[] = new Array(UNPACK_RING).fill(null);
 	private readonly unpackSizes = new Array<number>(UNPACK_RING).fill(0);
@@ -924,6 +966,12 @@ export class WebGL2Backend {
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
+				case G.OP_COPY_TEXTURE_TO_BUFFER:
+					this.copyTextureToBuffer(words, a);
+					break;
+				case G.OP_READ_BUFFER:
+					this.readBuffer(words, a);
+					break;
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -958,7 +1006,7 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_BEGIN_RENDER_PASS:
-					this.beginPass(words, floats, a);
+					this.beginPass(words, floats, a, length);
 					break;
 				case G.OP_END_RENDER_PASS:
 					this.endPass();
@@ -1044,6 +1092,7 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+		this.flushReads();
 		this.replayed = true;
 	}
 
@@ -1461,12 +1510,23 @@ export class WebGL2Backend {
 		target.framebuffer = null;
 		target.framebufferDepth = null;
 		target.soloFramebuffer = null;
+		this.forgetPair(target);
 		for (const other of this.textures) {
-			if (other?.framebufferDepth !== target) continue;
+			if (!other) continue;
+			if (other.pairSecond === target || other.pairDepth === target) this.forgetPair(other);
+			if (other.framebufferDepth !== target) continue;
 			gl.deleteFramebuffer(other.framebuffer);
 			other.framebuffer = null;
 			other.framebufferDepth = null;
 		}
+	}
+
+	/** Deletes the framebuffer that draws into `target` and a second color target. */
+	private forgetPair(target: GlTexture): void {
+		if (target.pairFramebuffer) this.gl.deleteFramebuffer(target.pairFramebuffer);
+		target.pairFramebuffer = null;
+		target.pairSecond = null;
+		target.pairDepth = null;
 	}
 
 	/** Writes `bytes` bytes of engine memory from byte `source` into the buffer bound at `target`. */
@@ -1943,6 +2003,91 @@ export class WebGL2Backend {
 		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, attachment, gl.TEXTURE_2D, null, 0);
 	}
 
+	/**
+	 * Reads a box of texels of a texture into a pack buffer with `readPixels`, which GL runs after
+	 * the commands recorded before it. A fence follows, so a `ReadBuffer` can tell when the bytes
+	 * are there without stalling the GPU. The buffer is bound as the pixel pack buffer.
+	 */
+	private copyTextureToBuffer(words: Uint32Array, a: number): void {
+		const gl = this.gl;
+		const source = this.textureOf(words[a] as number);
+		const level = words[a + 1] as number;
+		const x = words[a + 2] as number;
+		const y = words[a + 3] as number;
+		const layer = words[a + 4] as number;
+		const id = words[a + 5] as number;
+		const offset = words[a + 6] as number;
+		const width = words[a + 9] as number;
+		const height = words[a + 10] as number;
+		const record = this.need(this.buffers, id, 'buffer');
+		const previous = this.pendingPacks.get(id);
+		if (previous) this.dropPack(id, previous);
+		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.copyFramebuffer);
+		this.attachLevel(gl.READ_FRAMEBUFFER, source.format.attachment, source, level, layer);
+		gl.readBuffer(source.format.attachment);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, record.buffer);
+		gl.readPixels(x, y, width, height, source.format.format, source.format.type, offset);
+		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+		gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+		// A framebuffer that is not bound keeps what it holds alive, so the source leaves it.
+		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, source.format.attachment, gl.TEXTURE_2D, null, 0);
+		const size = width * height * source.format.bytes;
+		if (fence)
+			this.pendingPacks.set(id, {
+				buffer: id,
+				offset,
+				size,
+				fence,
+				destination: 0,
+				slot: -1,
+				wanted: false,
+			});
+	}
+
+	/** Asks for the bytes of a pack buffer, which `flushReads` collects once its fence signals. */
+	private readBuffer(words: Uint32Array, a: number): void {
+		const pack = this.pendingPacks.get(words[a] as number);
+		if (!pack) return;
+		pack.offset = words[a + 1] as number;
+		pack.size = words[a + 2] as number;
+		pack.destination = words[a + 3] as number;
+		pack.slot = words[a + 4] as number;
+		pack.wanted = true;
+	}
+
+	/**
+	 * Collects the packs whose fence has signalled: the GPU has run their `readPixels`, so the
+	 * bytes copy into engine memory and the read's control slot rises by one. A pack whose fence
+	 * has not signalled stays for a later frame, so a read never stalls the GPU.
+	 */
+	private flushReads(): void {
+		if (this.pendingPacks.size === 0) return;
+		const gl = this.gl;
+		const { readSink } = this;
+		for (const [id, pack] of this.pendingPacks) {
+			if (!pack.wanted) continue;
+			const status = gl.clientWaitSync(pack.fence, 0, 0);
+			if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) continue;
+			const record = this.need(this.buffers, id, 'buffer');
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, record.buffer);
+			const bytes = new Uint8Array(pack.size);
+			gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, pack.offset, bytes);
+			gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+			if (readSink) {
+				readSink.views.view(Uint8Array, pack.destination, pack.size).set(bytes);
+				if (pack.slot >= 0) Atomics.add(readSink.slots, pack.slot, 1);
+			}
+			this.dropPack(id, pack);
+		}
+	}
+
+	/** Deletes a pack's fence and forgets it. */
+	private dropPack(id: number, pack: PendingPack): void {
+		this.gl.deleteSync(pack.fence);
+		this.pendingPacks.delete(id);
+	}
+
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
 		const gl = this.gl;
 		const id = words[a] as number;
@@ -2007,14 +2152,26 @@ export class WebGL2Backend {
 		else this.attachLevel(gl.FRAMEBUFFER, point, target, target.level, target.layer);
 	}
 
-	/** Makes a framebuffer with `first` in it, and `depth` when given. It leaves it bound. */
-	private makeFramebuffer(first: GlTexture, depth: GlTexture | null): WebGLFramebuffer {
+	/**
+	 * Makes a framebuffer with `first` in it, and `depth` when given. A `second` color target goes
+	 * into the second color attachment, and the framebuffer then draws into both. It leaves the
+	 * framebuffer bound.
+	 */
+	private makeFramebuffer(
+		first: GlTexture,
+		depth: GlTexture | null,
+		second: GlTexture | null = null,
+	): WebGLFramebuffer {
 		const gl = this.gl;
 		const framebuffer = gl.createFramebuffer();
 		if (!framebuffer) throw new Error('WebGL2 could not create a framebuffer');
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		this.attach(first);
 		if (depth) this.attach(depth);
+		if (second) {
+			this.attachLevel(gl.FRAMEBUFFER, COLOR_ATTACHMENT1, second, second.level, second.layer);
+			gl.drawBuffers(TWO_DRAW_BUFFERS);
+		}
 		const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 		if (status !== gl.FRAMEBUFFER_COMPLETE)
 			throw new Error(
@@ -2039,17 +2196,37 @@ export class WebGL2Backend {
 		return color.framebuffer;
 	}
 
+	/**
+	 * The framebuffer of a pass that draws into `color` and `second`, with `depth` when given, as
+	 * the weighted layer's pass draws into its two sums. It is made again when a target changes.
+	 */
+	private pairFramebuffer(
+		color: GlTexture,
+		second: GlTexture,
+		depth: GlTexture | null,
+	): WebGLFramebuffer {
+		if (color.pairFramebuffer && color.pairSecond === second && color.pairDepth === depth)
+			return color.pairFramebuffer;
+		this.forgetPair(color);
+		color.pairFramebuffer = this.makeFramebuffer(color, depth, second);
+		color.pairSecond = second;
+		color.pairDepth = depth;
+		return color.pairFramebuffer;
+	}
+
 	/** The framebuffer with only `target` in it. */
 	private soloFramebuffer(target: GlTexture): WebGLFramebuffer {
 		if (!target.soloFramebuffer) target.soloFramebuffer = this.makeFramebuffer(target, null);
 		return target.soloFramebuffer;
 	}
 
-	private beginPass(words: Uint32Array, floats: Float32Array, a: number): void {
+	private beginPass(words: Uint32Array, floats: Float32Array, a: number, length: number): void {
 		const gl = this.gl;
 		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
+		// The weighted layer's pass names a second color target after the flags.
+		const second = length > 10 ? (words[a + 9] as number) : G.NO_TARGET;
 		const flags = words[a + 8] as number;
 		this.passResolve = words[a + 1] as number;
 		this.passFlags = flags;
@@ -2071,7 +2248,10 @@ export class WebGL2Backend {
 		} else {
 			const target = this.need(this.textures, color, 'texture');
 			this.passColor = target;
-			framebuffer = this.colorFramebuffer(target, depthTarget);
+			framebuffer =
+				second === G.NO_TARGET
+					? this.colorFramebuffer(target, depthTarget)
+					: this.pairFramebuffer(target, this.need(this.textures, second, 'texture'), depthTarget);
 			this.passWidth = target.width;
 			this.passHeight = target.height;
 		}
@@ -2133,11 +2313,13 @@ export class WebGL2Backend {
 		const keepsColor = storeColor || resolves;
 		// Invalidate only the attachments the pass has. GL ignores one it lacks, but a colour-only
 		// pass, as each fullscreen step of an effect, need not name a depth it never bound: Safari
-		// runs the invalidate on the thread that draws before it draws the pass.
-		const discard: number[] = [];
-		if (this.passColor && !keepsColor) discard.push(COLOR_ATTACHMENT0);
-		if (this.passDepth && !storeDepth) discard.push(DEPTH_ATTACHMENT);
-		if (discard.length > 0) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, discard);
+		// runs the invalidate on the thread that draws before it draws the pass. The lists are made
+		// once, because this runs for every pass of every frame.
+		const discardColor = this.passColor !== null && !keepsColor;
+		const discardDepth = this.passDepth !== null && !storeDepth;
+		if (discardColor && discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_BOTH);
+		else if (discardColor) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_COLOR);
+		else if (discardDepth) gl.invalidateFramebuffer(gl.DRAW_FRAMEBUFFER, DISCARD_DEPTH);
 		if (resolves) {
 			const into =
 				this.passResolve === 0

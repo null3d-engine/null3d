@@ -286,6 +286,20 @@ impl DrawKey {
         }
     }
 
+    /// The key of the pipeline that draws the pair in the camera's weighted layer (see
+    /// [`crate::weighted`]): the build that writes the weighted color sum and the coverage, which
+    /// both add into their targets, so the order of draws does not matter. It writes no depth, and
+    /// a double-sided pair draws both faces in one draw.
+    pub const fn weighted(self) -> DrawKey {
+        DrawKey {
+            permutation: self.permutation | permutation::WEIGHTED,
+            state: (self.state & !state_flags::BLEND)
+                | state_flags::BLEND_ADDITIVE
+                | state_flags::NO_DEPTH_WRITE,
+            ..self
+        }
+    }
+
     /// True for a pair whose template has WebGPU builds that read each instance by index from
     /// storage buffers ([`permutation::INSTANCE_INDEX`]): the engine's templates that the culling
     /// shader draws, apart from those that only tests and development builds draw. Custom

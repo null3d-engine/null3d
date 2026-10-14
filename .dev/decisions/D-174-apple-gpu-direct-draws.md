@@ -1,8 +1,8 @@
 # D-174: The Apple GPU gap, the measured start-up probe and the direct-draw path
 
-Status: the owner chose the direct-draw path on 2026-10-14. The probe and the path are designed, and the path is not built. The instance-count probe has since run, and its answer is below. It shows the path's win is bounded, so the path needs no dedicated session on this evidence.
+Status: the owner chose the direct-draw path on 2026-10-14. The probe and the path are designed, and the path is not built. The instance-count probe has since run, and its answer is below. It shows the clamp grows with the passes, so the engine's own pass count sets the path's ceiling. The short slices and the iPhone run measure that count.
 
-Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The probe's figures show the cost is real. The cost per draw does not grow with the instances per draw or with the drawn work. So the direct path removes about 2 to 4 ms of Battle's 79 ms on the iPhone 17. It removes none of Factory's 25 ms, which is per-frame work. The path alone cannot beat three.js on the iPhone 17.
+Summary: A WebKit validation pass makes an indexed indirect draw with vertex buffers expensive on Apple GPUs. The owner asked for a direct-draw path. A start-up probe that measures a real draw chooses it, never a browser or GPU name. The cost grows with the passes a draw lands in, not with the instances per draw. One Mac run with three passes per frame puts indirect at 54.4 ms against 3.6 ms direct for 1,024 draws, five times its one-pass figure. So the engine's pass count sets the path's ceiling, and that ceiling is wider than the one-pass runs first suggested. Battle now beats three.js on the iPhone 17; Factory does not, and Factory's cost is not the draw call.
 
 ## Question
 
@@ -42,7 +42,9 @@ The iPhone 17 demo run of 2026-10-13 (Safari 26.6) gives the gap against three.j
 | Battle, instanced | 10 fps, 89.6 ms GPU | 35 fps, 260 draws, 8.1 M triangles (WebGPU) |
 | Factory | 26 fps, 25.3 ms GPU, 115 draws, 37 k triangles | 59 fps, 1,447 draws, 38 k triangles |
 
-Factory draws 115 times and still pays about 25 ms. three.js draws twelve times more and finishes in 17 ms, so Factory's cost is not per draw. The probe's 2.8 us per draw explains about 3.5 ms of Battle's 1,230 draws. The rest of Battle's 79 ms, and all of Factory's 25 ms, lie elsewhere in the frame.
+Factory draws 115 times and still pays about 25 ms. three.js draws twelve times more and finishes in 17 ms, so Factory's cost is not per draw.
+
+A later run on main (2026-10-14, the same device and settings, with M2-EX41's draw merging landed) changes Battle's side of that table. null3D now draws 261 times instead of 1,230. Battle leads three.js on both backends: 32 fps against 31 on WebGPU, and 50 against 33 on WebGL2. Factory does not move. It pays 25 fps against three.js's 41 on WebGPU, and it draws 115 times, so its cost is not the draw call either. So the bar holds for Battle and misses for Factory, whose 35.3 ms of GPU time over 37 k triangles is pass and pixel work.
 
 ## The probe
 
@@ -77,22 +79,38 @@ GPU ms per frame at 1,024 draws, 16 instances per draw, indirect with vertex buf
 
 Per draw the clamp costs about 9 us on the Mac, and 1.5 to 3 us on the phones. That matches its cost at one instance. Multiplying the draw's vertex work by 16 changed almost nothing. The two barriers are a fixed cost per draw, not a drain that follows the drawn work.
 
-So the direct path removes about 2 to 4 ms of Battle's 79 ms on the iPhone 17, and nothing of Factory's 25 ms. The engine's shadow pass costs 83.1 ms at 973 draws, about 85 us per draw, which is far above the clamp's few microseconds. That cost is something else, and the direct path does not explain it or remove it.
+The pass count changes that. One pass per frame is not the engine's shape, because Battle draws its casters once for each shadow cascade. A Mac Safari run with three passes per frame, the same draws and the same 16 instances, gives this, in GPU ms:
 
-The one arm still missing is more than one pass per frame. The clamp's cost is per draw and per pass, so the passes multiply it, but they do not change its per-draw size. The Mac run of that arm is queued; the iPhone run is owed to the cloud lane.
+| Draws | Indirect, 1 pass | Indirect, 3 passes | Direct, 3 passes |
+| --- | --- | --- | --- |
+| 64 | 1.17 | 8.25 | 3.86 |
+| 256 | 2.98 | 20.82 | 4.73 |
+| 1,024 | 9.77 | 54.37 | 3.56 |
+
+At 1,024 draws the indirect cost rose from 9.8 ms at one pass to 54.4 ms at three, while direct stayed near 4 ms. So the cost grew five and a half times for three times the passes. The two barriers are not a fixed cost per draw, and a frame with several passes pays much more.
+
+So the pass count, not the triangle count, sets the path's ceiling. At 1,024 draws and three passes the saving is 50 ms. Battle now draws 261 times a frame across several passes at 23.2 ms of GPU time, so it could recover several milliseconds. The remaining slices and the iPhone run measure that number, which is the one the owner needs.
+
+## Battle's own passes
+
+Battle draws its buckets indirectly in six passes. Its render graph on main 8c1e39af6 holds 34 passes. Five are compute (LightClusters, Culling and ShadowCulling0 to 2). Three are shadow cascades at 2048 by 2048, and three are scene passes (DepthPrepass, Opaque and Transparent). The other 23 are fullscreen, three for ambient occlusion, 19 for bloom and the final pass. The six that draw the buckets with `drawIndexedIndirect` are ShadowCascade0, ShadowCascade1, ShadowCascade2, DepthPrepass, Opaque and Transparent.
+
+The engine's pass timer lumps every pass after the fifth into its last bucket, so it cannot separate those six. On the Mac in Safari, a Battle frame at High drew 324.6 times and took 12.68 ms of GPU time. Its timer gave copies 0.004 ms and compute 0.096 ms. Render 1 to 6 took 0.641, 0.657, 0.602, 0.569, 0.080 and 10.461 ms. Render 6 holds every pass from the sixth on. Chrome, over a larger canvas, drew 335.7 times in 5.51 ms. The page is `compare=battle&r34probe=1`, and both runs were marked at a load above 8.
+
+Those six passes are what the direct path would change. The probe's one-pass cost on the Mac is 9.6 us per draw. So 324.6 draws come to about 3.1 ms, a quarter of the 12.68 ms. The iPhone 17's cost is 2.5 us per draw, so the same draws come to about 0.8 ms of its 23.2 ms. So on the phone the prize is near a millisecond, and its frames are dominated by other work.
 
 ## Options
 
-1. Build the direct-draw path now. Its measured ceiling is a few milliseconds of Battle's gap. It cannot beat three.js on the iPhone 17.
-2. Build the direct-draw path after the instance-count probe. That probe has run, and it shows the win is bounded, so it no longer forces the build.
-3. Reduce the number of draws instead, as M2-EX41's draw merging does. It takes the same few milliseconds and it is partly on main.
+1. Build the direct-draw path now. Its measured ceiling reaches several milliseconds of Battle's GPU time, which its several passes may make worth a dedicated session.
+2. Build the direct-draw path after the instance-count probe. That probe has run, and the passes widened its ceiling, so it no longer rules the build out.
+3. Reduce the number of draws, as M2-EX41's draw merging does. It is on main, and it moved Battle from 13 fps and 1,230 draws to 32 fps and 261 draws.
 4. Pull instances from storage buffers. The probe's `direct-pull` and `own-pull` arms remove the clamp with no probe at all, and they cost as much as direct draws. Per-instance data would leave the vertex buffers, which hard rule 7 refuses.
-5. Leave the draw path alone and measure the rest of the frame. Battle's shadow pass costs 85 us per draw, and Factory pays 25 ms at 115 draws. So the gap is in the pass and frame work, not in the draw call.
+5. Leave the draw path alone and measure the frame's other work. Factory pays 25 fps against three.js's 41 on WebGPU over 115 draws, so its gap is pass and pixel work.
 
 ## Decision
 
-The owner chose option (b) on 2026-10-14: the direct-draw path, chosen by a measured start-up probe. This record keeps that ruling and settles the probe and the path as above. The instance-count probe has since run, and it puts the path's ceiling at a few milliseconds of Battle's 79 ms. So the path's build waits on a measurement of the frame's other work, which holds the rest of the gap.
+The owner chose option (b) on 2026-10-14: the direct-draw path, chosen by a measured start-up probe. This record keeps that ruling and settles the probe and the path as above. The three-pass run widens the path's ceiling to tens of milliseconds at 1,024 draws. So the passes that the engine's own draws land in decide whether a dedicated session is worth it. The short slices and the iPhone run measure that number.
 
 ## What this changes
 
-Nothing in the engine yet. The probe and the path are the design above, and the instance-count probe has run. The Mac figures come from the R34 micro-probe runs. The iPhone 17 figures come from the cloud demo run of 2026-10-13.
+Nothing in the engine yet. The probe and the path are the design above, and the instance-count probe has run. The Mac figures come from the R34 micro-probe runs, and the iPhone 17 figures from the R34 comparison run of 2026-10-14.

@@ -1900,14 +1900,13 @@ function skyRefreshReport(result: SkyRefreshResult): { line: string; problems: s
 }
 
 /**
- * The items that must share an item's shard: the items it needs, and for a part of the shaders
- * page, the first part. Safari on CI's Mac compiles a part's programs about twice as fast after
- * another part in the same browser, and four times as fast after two more, so the parts run in one
- * shard, where only the first is slow.
+ * The items that must share an item's shard: the items whose results the check compares with. The
+ * parts of the shaders page once stayed in one shard too, where Safari compiles each part faster
+ * than the one before. The page has since grown past the 10 minutes that one shard may take, so its
+ * parts spread over the shards like the rest, and each shard pays for its own first part.
  */
 export function itemsTogether(item: PlanItem<Check>): string[] {
-	const needed = itemsNeeded(item.check);
-	return item.check.kind === 'shaders' ? [...needed, shaderPageId(1)] : needed;
+	return itemsNeeded(item.check);
 }
 
 /**
@@ -2392,6 +2391,12 @@ export function judge(
 			if (typeof result.precisionFault === 'string')
 				context?.note?.(
 					`driver fault: ${result.precisionFault}. The GLSL build declares each whole number highp, which avoids it`,
+				);
+			// Shaders keep values in structs on every device, so such a device computes with half
+			// precision there. The engine keeps such values within half precision's range.
+			if (typeof result.structFault === 'string')
+				context?.note?.(
+					`driver fault: ${result.structFault}. WebGL2 shaders here keep the values of a struct at half precision, so the engine keeps such values within half precision's range`,
 				);
 			return problems;
 		}
