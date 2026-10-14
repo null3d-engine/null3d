@@ -34,6 +34,9 @@ const UNIFORMS_DEF: &str = "CUSTOM_UNIFORMS";
 const TEXTURES_DEF: &str = "CUSTOM_TEXTURES";
 /// The shader def that puts the joint texture's group after the maps' group on WebGPU.
 const JOINTS_AFTER_MAPS_DEF: &str = "JOINTS_AFTER_MAPS";
+/// The permutation bit of the lit templates' builds that shade area lights, which every build of a
+/// custom material holds as a shader def instead.
+const AREA_LIGHTS: &str = "AREA_LIGHTS";
 
 /// A function that a custom material's WGSL may declare for the template to call.
 struct Hook {
@@ -517,6 +520,10 @@ impl Compiler {
                     defs.push(TEXTURES_DEF.to_owned());
                     defs.push(JOINTS_AFTER_MAPS_DEF.to_owned());
                 }
+                // Every build shades area lights, so a material's builds stay as few as before.
+                if variant.permutations.iter().any(|bit| bit == AREA_LIGHTS) {
+                    defs.push(AREA_LIGHTS.to_owned());
+                }
                 defs.sort();
                 // Custom materials draw at full precision, so their builds stay half as many. They
                 // keep the SKIN builds on both paths, as the vertex shaders skin by default, and
@@ -530,7 +537,8 @@ impl Compiler {
                 // through, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
-                // detail, so their levels switch at once.
+                // detail, so their levels switch at once. They always have the area lights' code,
+                // so they have no builds without it.
                 let left_out = [
                     "HALF",
                     "MORPH",
@@ -539,6 +547,7 @@ impl Compiler {
                     "ALPHA_COVERAGE",
                     "ALPHA_HASH",
                     "LOD_FADE",
+                    AREA_LIGHTS,
                 ];
                 let permutations = variant
                     .permutations

@@ -118,6 +118,8 @@ export const ERROR_FIXES = {
 		'Deploy every file that the build wrote, the material-*.js files among them, from one build, and serve them as JavaScript at the paths that the build gave them. A strict Content-Security-Policy must allow them in its script-src. On the dev server, reload the page. After a failure during play, destroy the engine and start a new one.',
 	E1425:
 		"Call engine.requestPointerLock() inside a click or key handler on the page, as browsers lock the pointer only right after the user acts. A page in an iframe needs allow-pointer-lock in the iframe's sandbox attribute. Browsers on phones have no pointer lock, so give touch screens other controls. Pressing Esc ends the lock, and Chrome then refuses a new lock for about a second.",
+	E1431:
+		"Serve the engine's area-light-tables.bin file at the address that the message names. A build with the null3D Vite plugin copies it beside the engine's code: deploy it with the rest of the build. When the engine's files come from another origin, that server must send Access-Control-Allow-Origin, and the page's connect-src must allow the origin.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:
