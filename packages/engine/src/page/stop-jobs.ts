@@ -29,10 +29,11 @@ export const STOP_TIMEOUT_MS = 2_000;
  * job system, and nothing after the first call.
  */
 export function stopJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): void {
+	// The addresses sit in the shared Int32 slots, so above 2 GiB each reads signed (hard rule 31).
 	stopJobWorkersAt(
 		memory,
-		Atomics.load(slots, Slot.JobsWakeAddress),
-		Atomics.load(slots, Slot.JobsStopAddress),
+		Atomics.load(slots, Slot.JobsWakeAddress) >>> 0,
+		Atomics.load(slots, Slot.JobsStopAddress) >>> 0,
 	);
 }
 
@@ -76,8 +77,9 @@ export function waitForJobWorkersToLeave(slots: Int32Array, ms = LEAVE_WAIT_MS):
  * it asks nothing, and the returned call does nothing.
  */
 export function yieldJobWorkers(memory: WebAssembly.Memory, slots: Int32Array): () => void {
-	const wake = Atomics.load(slots, Slot.JobsWakeAddress);
-	const word = Atomics.load(slots, Slot.JobsYieldAddress);
+	// The addresses sit in the shared Int32 slots, so above 2 GiB each reads signed (hard rule 31).
+	const wake = Atomics.load(slots, Slot.JobsWakeAddress) >>> 0;
+	const word = Atomics.load(slots, Slot.JobsYieldAddress) >>> 0;
 	if (wake === 0 || word === 0) return () => {};
 	// Each step makes its own view and keeps none, since the memory may grow meanwhile.
 	const views = new MemoryViews(memory);
