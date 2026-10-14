@@ -25,7 +25,7 @@ import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, UNREFLECTED_LAYER } from './land';
+import { createLand, streamZ, UNREFLECTED_LAYER } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
@@ -61,22 +61,40 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
 /**
- * The cinematic route: it opens high over the whole valley, showing the stream, both banks and the
- * trees at once, then swings over the far bank and drops to the water, runs low along the stream
- * past the cave and back up the near bank, and climbs to the opening view to close the loop. Low
- * passes stay over the water, so the camera never enters a tree or the bank. Its first shot holds
- * still, so a held frame can land on the opening view; the image test holds the low stream pass
- * instead, which is the scene's best view.
+ * The cinematic route. It opens high over the whole valley, showing the stream, both banks and the
+ * trees at once. It slips down behind the near bank's trees and runs along them, facing across to
+ * the far bank, and turns back down the valley before the creek's head. It drops to the water and
+ * follows the stream's own winding line, pauses over it, then rises behind the far bank's trees and
+ * runs along the back of them, facing the near bank, before circling out to the opening view to
+ * close the loop. Its first shot holds still, so a held frame lands on the opening view; the low
+ * passes stay over the stream, so the camera never enters a tree or a bank.
  */
 const WIDE: readonly [number, number, number] = [-23, 13, 19];
 const WIDE_LOOK: readonly [number, number, number] = [2, 0, 0];
 export const SHOTS: readonly Shot[] = [
-	{ position: WIDE, target: WIDE_LOOK, seconds: 5, move: 'hold' },
-	{ position: WIDE, target: WIDE_LOOK, seconds: 3 },
-	{ position: [24, 16, -2], target: [4, 0, -1], seconds: 9 },
-	{ position: [22, 2.6, 1.0], target: [8, 0.6, -0.5], seconds: 8 },
-	{ position: [-18, 2.8, -1.5], target: [-34, 0.6, 0], seconds: 8 },
-	{ position: [-18, 14, 0], target: [-40, 1, 0], seconds: 8 },
+	// The opening: high over the valley with the whole stream in view. It holds, so the image
+	// test's held frame lands here.
+	{ position: WIDE, target: WIDE_LOOK, seconds: 6, move: 'hold' },
+	// Behind the near bank's trees, looking across to the far bank.
+	{ position: [-16.5, 5.5, 10.5], target: [-10.5, 1, -7], seconds: 6 },
+	// Along behind the near tree line, still facing the far bank, up toward the creek's head.
+	{ position: [4, 5.5, 14.5], target: [8, 1, -6], seconds: 8 },
+	// Back down the valley, dropped to the water, tracing the stream's own winding line.
+	{ position: [2, 2.4, streamZ(2)], target: [-8, 0.5, streamZ(-8)], seconds: 7 },
+	{ position: [-6, 2.2, streamZ(-6)], target: [-16, 0.5, streamZ(-16)], seconds: 6 },
+	// The pause, held low over the water.
+	{
+		position: [-12, 2.2, streamZ(-12)],
+		target: [-22, 0.6, streamZ(-22)],
+		seconds: 3,
+		move: 'hold',
+	},
+	// Behind the far bank's trees, facing the near bank.
+	{ position: [-12, 4.5, -16.5], target: [-7, 1, 6], seconds: 7 },
+	// Along the back of the far bank's trees.
+	{ position: [-22, 4.5, -16.5], target: [-17, 1, 6], seconds: 7 },
+	// Circle out and rise to the opening view, zooming back to the opening distance.
+	{ position: [-27.5, 7, 3], target: [-10, 2, 4], seconds: 8 },
 ];
 
 const params = new URL(import.meta.url).searchParams;
