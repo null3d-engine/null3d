@@ -765,8 +765,8 @@ export class WebGL2Backend {
 	/**
 	 * True when a render pipeline template can create a program of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use. A group's or a fold's shader is joined then too, once its host's
-	 * file has arrived.
+	 * defines at its first use, once the set of its builds that holds the build has arrived too. A
+	 * group's or a fold's shader is joined then too, once its host's file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		let defined = this.templates[template];
@@ -778,6 +778,7 @@ export class WebGL2Backend {
 			this.templates[template] = defined;
 		}
 		const build = buildPermutation(defined, permutation);
+		if (!this.images.buildsReady(template, build, 'glsl')) return false;
 		return this.moreShaders?.ready(defined.shader, build, 'glsl') ?? true;
 	}
 
