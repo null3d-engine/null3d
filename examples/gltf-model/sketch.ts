@@ -8,6 +8,7 @@
 // floor beyond the model. The turntable turns by the sketch's time.
 import { defineSketch } from '@null3d/engine';
 import { interact } from '../lib/interact';
+import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 
 /** The model's radius after scaling, in meters, and the height of the turntable's top. */
@@ -31,6 +32,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, render, post, time } = ctx;
+	reportLoading(ctx);
 	scene.setBackground('#15171b');
 	scene.setFog({ color: '#15171b', density: 0.12 });
 	post.set({

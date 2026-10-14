@@ -11,6 +11,7 @@
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
+import { CALL_VALUE_COUNT } from '../generated/core';
 import type { CoreGlue } from '../shared/core';
 import {
 	type HeapConstructor,
@@ -39,6 +40,8 @@ function stoppedGlue(): CoreGlue {
 export class CoreMemory extends MemoryViews implements ViewHolder {
 	/** The core's copy of the world matrix it read last, made again when the memory grows. */
 	private worldMatrixView: Float64Array | undefined;
+	/** The core's block of numbers for the next setter call, made again when the memory grows. */
+	private callValuesView: Float64Array | undefined;
 	/** The core's count of moves of viewed arrays, made again when the memory grows. */
 	private movedView: Uint32Array | undefined;
 	/** The count of moves that the current views were made at. */
@@ -82,6 +85,7 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 	 */
 	dropViews(): void {
 		this.worldMatrixView = undefined;
+		this.callValuesView = undefined;
 		this.movedView = undefined;
 		this.glue.dropMemoryViews?.();
 	}
@@ -130,6 +134,18 @@ export class CoreMemory extends MemoryViews implements ViewHolder {
 		this.worldMatrixView ??= this.f64(this.glue.worldMatrixAddress(), out.length);
 		out.set(this.worldMatrixView);
 		return 0;
+	}
+
+	/**
+	 * The numbers of the next setter call into the core, which a setter writes from the first on
+	 * before it calls the core with whole numbers alone. Wherever the browser does not inline a
+	 * call into the core, each fraction that the call takes as an argument becomes an object of its
+	 * own, so a setter that a sketch may call in every frame passes its numbers here.
+	 */
+	callValues(): Float64Array {
+		this.grown();
+		this.callValuesView ??= this.f64(this.glue.callValues(), CALL_VALUE_COUNT);
+		return this.callValuesView;
 	}
 
 	/**

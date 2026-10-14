@@ -60,7 +60,9 @@ export interface Null3dPageOptions {
  * elements the page binds, `tileShadows` adds spot and point lights that cast shadows to S1, with
  * point light shadows on, `environment` lights S1 with the built-in room, which turns every
  * frame, `effects` adds two custom effects to S1, whose uniforms change every frame, `dof` turns
- * depth of field on in S1, focused on a point that moves every frame,
+ * depth of field on in S1, focused on a point that moves every frame, `exposure` turns automatic
+ * exposure on in S1, whose compensation changes every frame, `fog` gives S1 height fog with the
+ * volumetric fog on,
  * `decode` makes S1 load KTX2 textures and a meshopt model without end, for the frame times of the
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
@@ -70,7 +72,8 @@ export interface Null3dPageOptions {
  * makes the rows of S1 and S1-static cast and receive
  * the sun's shadows, `rowValues` gives S1's rows colors and values that change every frame, which
  * a custom material reads, `levels` gives S1's boxes levels of detail, `hemisphere` adds two
- * hemisphere lights to S1, `sides` draws S2's boxes see-through and double-sided: `two` draws each
+ * hemisphere lights to S1, `areaLights` adds rectangle and tube lights to S1 that circle it and
+ * change their intensities every frame, `setters` calls each per-frame setter in S1, colors included, `decals` puts a ground with a batch of decals under S1, and `decals=off` the ground alone, `sides` draws S2's boxes see-through and double-sided: `two` draws each
  * one's back faces, then its front faces, and `one` draws both in one draw, `alpha=hash` draws S2's
  * boxes with the alpha hash, and `still` makes that share of S5's knights stand still in one pose,
  * as waiting characters do, and `frames` makes S1 count the frames it steps, which the page
@@ -87,6 +90,8 @@ const SKETCH_SWITCHES = [
 	'ao',
 	'bloom',
 	'dof',
+	'exposure',
+	'fog',
 	'outline',
 	'labels',
 	'tileShadows',
@@ -103,10 +108,14 @@ const SKETCH_SWITCHES = [
 	'particles',
 	'passes',
 	'still',
+	'anim',
 	'batchShadows',
 	'rowValues',
 	'levels',
 	'hemisphere',
+	'areaLights',
+	'decals',
+	'setters',
 	'frames',
 ] as const;
 

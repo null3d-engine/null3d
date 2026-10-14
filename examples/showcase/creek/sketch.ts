@@ -6,15 +6,27 @@
 // cave mouth are models that a script builds in Blender, loaded from files.
 //
 // The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
-// depth of field, which focuses on the point that the camera orbits. For held frames, the sketch's
-// address takes them too: `?mood=Night&dslr`.
+// depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
+// route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
+// sketch's address takes the mood too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { interact } from '../../lib/interact';
+import { createCinematic, type Shot } from '../../lib/cinematic';
+import {
+	ATMOSPHERE,
+	LIGHTING,
+	POST,
+	QUALITY,
+	radioGroup,
+	TIMES_OF_DAY,
+	toggleGroup,
+} from '../../lib/controls';
+import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { reportLoading } from '../../lib/progress';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, UNREFLECTED_LAYER, WATER } from './land';
+import { createLand, UNREFLECTED_LAYER } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
@@ -37,20 +49,43 @@ const DSLR_FOCAL_LENGTH = 50;
 const HEADING = Math.PI + 0.5;
 /** The light of the caustics on the stream's bed in each mood: the sun's color, at its strength. */
 const CAUSTICS: Record<Mood, [number, number, number]> = {
+	Auto: [0.32, 0.3, 0.25],
+	Dawn: [0.3, 0.2, 0.12],
+	Morning: [0.32, 0.3, 0.25],
+	Midday: [0.32, 0.3, 0.25],
 	Afternoon: [0.32, 0.3, 0.25],
 	Golden: [0.3, 0.18, 0.08],
-	Blue: [0, 0, 0],
+	Dusk: [0, 0, 0],
 	Night: [0, 0, 0],
 	Studio: [0.08, 0.08, 0.08],
 };
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
+/**
+ * The cinematic route: it opens high over the whole valley, showing the stream, both banks and the
+ * trees at once, then swings over the far bank and drops to the water, runs low along the stream
+ * past the cave and back up the near bank, and climbs to the opening view to close the loop. Low
+ * passes stay over the water, so the camera never enters a tree or the bank. Its first shot holds
+ * still, so a held frame can land on the opening view; the image test holds the low stream pass
+ * instead, which is the scene's best view.
+ */
+const WIDE: readonly [number, number, number] = [-23, 13, 19];
+const WIDE_LOOK: readonly [number, number, number] = [2, 0, 0];
+export const SHOTS: readonly Shot[] = [
+	{ position: WIDE, target: WIDE_LOOK, seconds: 5, move: 'hold' },
+	{ position: WIDE, target: WIDE_LOOK, seconds: 3 },
+	{ position: [24, 16, -2], target: [4, 0, -1], seconds: 9 },
+	{ position: [22, 2.6, 1.0], target: [8, 0.6, -0.5], seconds: 8 },
+	{ position: [-18, 2.8, -1.5], target: [-34, 0.6, 0], seconds: 8 },
+	{ position: [-18, 14, 0], target: [-40, 1, 0], seconds: 8 },
+];
 
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time } = ctx;
+	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
+	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
@@ -59,22 +94,20 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 40, normalBias: 0.04 },
 	});
-	post.set({ bloom: { intensity: 0.2, threshold: 1 }, ao: { radius: 0.5 }, vignette: {} });
+	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
+	// occlusion starts on, so the scene's shadows read.
+	post.set({ ao: { radius: 0.5 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
 		far: 2000,
-		layers: 1 | UNREFLECTED_LAYER,
+		layers: 1 | UNREFLECTED_LAYER | INTERIOR_LAYER | EFFECT_LAYER,
 	});
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, {
-		target: [...TARGET],
-		minDistance: 1.5,
-		maxDistance: 40,
-		maxPolarAngle: 1.5,
-	});
+	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
+	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
 	const water = createWater(ctx, detail.water, stones.obstacles);
@@ -89,19 +122,35 @@ export default defineSketch(async (ctx) => {
 	};
 	fit();
 
-	// The mood and the lens: from the address at the start, then from the page's buttons.
-	// Golden hour has a haze, and shafts of light through the trees; dusk has more mist.
-	const setMood = createMoods(ctx, sun, sky, room, {
+	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
+	// draws the real sun by day and the moon at night; Auto moves them across the sky.
+	const stage = createMoods(ctx, sun, sky, room, {
 		heading: HEADING,
 		fogDensity: 0.006,
 		cloudCoverage: 0.3,
-		haze: { Golden: 2.2, Blue: 1.5 },
+		haze: { Golden: 2.2, Dusk: 1.5 },
 	});
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	let current: Mood = 'Afternoon';
 	// Shafts of light at golden hour, at High and above: below, their march costs too much.
+	const effects: Record<string, boolean> = {
+		sky: true,
+		fog: true,
+		shafts: false,
+		fireflies: false,
+		shadows: true,
+		ao: true,
+		environment: true,
+		bloom: false,
+		dof: false,
+		exposure: false,
+		vignette: false,
+	};
 	const light = () => {
-		const on = current === 'Golden' && (quality.preset === 'high' || quality.preset === 'ultra');
+		const on =
+			effects.shafts &&
+			current === 'Golden' &&
+			(quality.preset === 'high' || quality.preset === 'ultra');
 		shafts.set(on ? golden.light.direction : undefined, [1.0, 0.62, 0.3]);
 	};
 	quality.onChange(() => {
@@ -110,44 +159,127 @@ export default defineSketch(async (ctx) => {
 	});
 	const choose = (mood: Mood) => {
 		current = mood;
-		setMood(mood);
-		flora.nightLights(mood === 'Night' || mood === 'Blue');
+		stage.set(mood);
+		flora.nightLights(mood === 'Night' || mood === 'Dusk');
 		air.setMood(mood);
 		water.setCaustics(CAUSTICS[mood]);
 		light();
 	};
 	const start = params.get('mood');
 	choose(isMood(start) ? start : 'Afternoon');
-	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera orbits in
-	// every frame. Off, the camera keeps its wider view and everything stays sharp.
-	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: view.controls.target } };
+	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
+	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
 	let dslr = false;
 	const setLens = (on: boolean) => {
 		dslr = on;
+		effects.dof = on;
 		if (on) camera.setFocalLength(DSLR_FOCAL_LENGTH);
 		else camera.setFov(FOV);
 		post.set(on ? lens : { dof: false });
 	};
 	if (params.has('dslr')) setLens(true);
+
+	const repaint = () => stage.set(stage.mood);
+	const setEffect = (id: string, on: boolean): void => {
+		effects[id] = on;
+		switch (id) {
+			case 'sky':
+				if (on) repaint();
+				else {
+					scene.setBackground([0.02, 0.03, 0.05]);
+					scene.setEnvironment(null);
+				}
+				break;
+			case 'fog':
+				if (on) repaint();
+				else scene.setFog(null);
+				break;
+			case 'shafts':
+				light();
+				break;
+			case 'fireflies':
+				air.setFireflies(on);
+				break;
+			case 'shadows':
+				sun.setCastShadows(on);
+				break;
+			case 'ao':
+				post.set({ ao: on ? { radius: 0.5 } : false });
+				break;
+			case 'environment':
+				if (on) repaint();
+				else scene.setEnvironment(null);
+				break;
+			case 'bloom':
+				post.set({ bloom: on ? { blend: 'add', intensity: 0.2, threshold: 1 } : false });
+				break;
+			case 'dof':
+				setLens(on);
+				break;
+			case 'exposure':
+				post.set({ autoExposure: on ? {} : false });
+				break;
+			case 'vignette':
+				post.set({ vignette: on ? {} : false });
+				break;
+		}
+	};
+	const groups = () => [
+		radioGroup('mood', 'Time of day', TIMES_OF_DAY, stage.mood),
+		toggleGroup(
+			'atmosphere',
+			'Atmosphere',
+			ATMOSPHERE,
+			['sky', 'fog', 'shafts', 'fireflies'],
+			(id) => effects[id] ?? false,
+		),
+		toggleGroup(
+			'lighting',
+			'Lighting',
+			LIGHTING,
+			['shadows', 'ao', 'environment'],
+			(id) => effects[id] ?? false,
+		),
+		toggleGroup(
+			'post',
+			'Post',
+			POST,
+			['bloom', 'dof', 'exposure', 'vignette'],
+			(id) => effects[id] ?? false,
+		),
+		radioGroup('quality', 'Quality', QUALITY, quality.preset),
+	];
+
+	const film = createCinematic(ctx, camera, {
+		shots: SHOTS,
+		target,
+		speed: 7,
+		groups,
+	});
 	page.onMessage((name, value) => {
-		if (name === 'mood' && isMood(value)) choose(value);
-		if (name === 'dslr') setLens(value === 'On');
+		const picked = String(value);
+		if (name === 'camera') film.select(picked);
+		else if (name === 'mood' && isMood(value)) {
+			choose(value);
+			film.refresh();
+		} else if (name === 'atmosphere' || name === 'lighting' || name === 'post') {
+			setEffect(picked, !(effects[picked] ?? false));
+			film.refresh();
+		} else if (name === 'quality') {
+			void quality.setPreset(picked as QualityPreset);
+			film.refresh();
+		} else if (name === 'dslr') setLens(picked === 'On');
 	});
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (!view.userCamera) {
-				// A slow drift along the near bank, low over the water.
-				const a = -2.6 + 0.18 * Math.sin(t * 0.06);
-				camera.setPosition(
-					TARGET[0] + 10.5 * Math.cos(a),
-					WATER + 1.9 + 0.2 * Math.sin(t * 0.05),
-					TARGET[2] - 10.5 * Math.sin(a),
-				);
-				camera.lookAt(TARGET[0], TARGET[1], TARGET[2]);
+			if (input.wasPressed('KeyD')) {
+				setLens(!dslr);
+				film.refresh();
 			}
-			view.update(dt);
+			stage.update(dt);
+			film.update(dt);
 			if (dslr) post.set(lens);
 			flora.update(t);
 			air.update(t);

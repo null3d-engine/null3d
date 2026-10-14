@@ -9,6 +9,7 @@ import {
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
+import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random, rock, type TexelSample, textureSet, within } from '../../lib/procedural';
 import { fromStream, groundHeight, streamHalf, streamZ, UNREFLECTED_LAYER, WATER } from './land';
 import { type Part, placed } from './models';
@@ -139,6 +140,8 @@ export function createStones(
 		material: cave.material,
 		...placed(cave, [CAVE.x, mouth - 0.15, CAVE.z], CAVE.yaw, 1),
 		occluder: cave.occluder,
+		// The cave mouth can be entered: the camera may pass into it, as its inside shows.
+		layers: INTERIOR_LAYER,
 		castShadows: true,
 		receiveShadows: true,
 	});
