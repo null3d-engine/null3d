@@ -74,7 +74,7 @@ Proposed, pending the data.
   frame uniform), `accumulate.rs` (the blend and store steps) and `frame_graph.rs` (the history, the
   steps and the final pass's still build). `accumulate.wgsl` is a shader of its own, with the store
   build as a flag rather than a permutation.
-- The generated draw-list constants take template 40, bind layout 26 and a 16-byte settings block.
+- The generated draw-list constants take template 48, bind layout 26 and a 16-byte settings block.
 - Tests: unit tests of the jitter and the comparison, an image test of a converged still scene on
   the three tiers, and a browser test that a still scene stops drawing and draws again when the
   scene changes.

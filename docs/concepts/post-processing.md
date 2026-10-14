@@ -286,6 +286,16 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 - The dither comes after every other step, so no later step shrinks it. In the dark corners of a vignette, where bands show first, it keeps its full step.
 - On the 8-bit path the scene's shaders dither as they draw. The final pass then dithers again only where it changes the color, with a table.
 
+## Still-camera accumulation
+
+A view whose scene stops changing sharpens itself. Each frame draws with the camera shifted by a fraction of a pixel, and the frame blends into a kept 16-bit history. The average converges on a sharper image than any single frame.
+
+The frame builder decides that nothing changed by comparing the frame with the frame of the same parity two frames before. It ignores the values that every frame writes, such as the clock and the jitter. A missed change reads as changed, so a still image never freezes.
+
+Once enough frames have accumulated, the thread that draws submits no draw work. The canvas keeps the converged image until the scene changes, and the engine draws again on the frame after the change. This rests the GPU on a still scene.
+
+The feature runs on core WebGPU, compatibility mode and WebGL2. It is off in hold mode and in the image tests. The page switch `?still=off` turns it off everywhere.
+
 ## Effects on devices without HDR color
 
 Bloom, depth of field, automatic exposure, custom effects and custom tone curves need the scene's linear color. Two kinds of device draw it with no float target at first, on the 8-bit path that [color management](color-management.md#the-8-bit-path) describes:
