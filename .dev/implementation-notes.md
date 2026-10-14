@@ -301,6 +301,11 @@ M2-E1 reserved the opcode numbers that other M2 tasks need, so lanes that work a
 - `?jobs=` sets the most job workers, at most one for each logical core, and `?memory=` counts only from 256 to 4096 MiB, the range of the `memory` option. A value outside counts as no switch, as other bad switch values do.
 - The development flag and this one live in one module. It holds constants only, so the bundler folds them into each file that reads them. The files that load on first use still share no module with the start's files (review R8, R8-11).
 
+## Messages from a sketch to the page
+
+- A sketch's `page.post` reaches the page as a message. The engine keeps a message that arrives before the page listens, and gives it to the first handler alone, then forgets it: a second handler registered later never sees it. So a page that reads two kinds of message, such as a demo's labels and a showcase scene's help, registers one handler that routes each type. In October 2026 the examples page registered one handler for labels and another for the showcase help, so the help that a sketch posts at its start was dropped and the on-screen help never showed.
+- `engine.onSketchMessage` returns a function that removes the handler.
+
 ## Public type declarations
 
 - The package build strips members marked `@internal` from the type declarations (`--stripInternal`). Users then do not see the engine's own methods, such as the label projection of `ctx.ui` (review R3, R3-13). The build fails if a declaration still holds an `@internal` tag.
@@ -602,6 +607,14 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - A browser test enforces it at run time: `tests/image/memory-views.spec.ts`, in CI's browser jobs on Chrome. Its sketch sets a static instance batch, the sky, the sky's environment, bloom and the vignette once. It then grows the memory in 24 steps, each a batch of 16,384 rows written once, and the test needs at least 8 growths. The test takes a heap snapshot of the page, the sketch worker and the render worker. It fails when any of them holds more than one `SharedArrayBuffer` object over one store of memory, and names what keeps the extra objects. It then fails when Chrome's figure for either worker (`performance.measureUserAgentSpecificMemory`) passes the memory's size plus the worker's own heap plus 16 MiB. The page measures through `measurePageMemory`, which releases idle job workers while Chrome measures. On SwiftShader, whose headless browser offers no page measurement, the test checks the heap snapshots alone. The guard also scans browser tests, where this call first bypassed the release helper.
 - Playwright's sessions reach pages only. `tests/lib/shared-buffers.ts` reaches the workers through the page's session: it attaches to them without flattening and sends each command inside `Target.sendMessageToTarget`.
 
+## Addresses above 2 GiB
+
+- WebAssembly memory addresses are unsigned 32-bit numbers, and a memory can reach 4 GiB. The engine's maximum is 1024 MiB by default, and a page may raise it to 4096 MiB ([D-04](decisions/D-04-memory-maximum.md)).
+- wasm-bindgen returns `u32` values as unsigned numbers. An address that passes through a signed array does not stay unsigned. For an address at 2 GiB or above, `Atomics.load` on an `Int32Array` returns a negative number. A view made at that offset then points outside the memory. So does a word index made from it with `/ 4`.
+- The engine passes such addresses through the shared control slots (`Int32Array`). The render worker reads the draw list's address there (`render/scene-renderer.ts`), and the page reads the job workers' wake, stop and yield addresses (`page/stop-jobs.ts`). With the default maximum every address stays below 2 GiB, so no run has shown the fault. M2-R37 converts these reads, adds a static check and adds a browser test whose page grows the memory past 2 GiB.
+- Rive City's 3D scene stopped on this fault in October 2026, after about 10 minutes. Its runtime made a view at a signed offset and failed with "Start offset -2147422160 is outside the bounds of the buffer". The page kept presenting frames with a frozen image ([D-172](decisions/D-172-rive-city-follow-ups.md)).
+- So convert every address read from a signed array with `>>> 0` (hard rule 31), and prefer unsigned arrays (`Uint32Array`) for new address slots. `Atomics` works on both.
+
 ## Measuring the page's memory
 
 - Chrome's `performance.measureUserAgentSpecificMemory` answers only once every worker of the page has run the measurement as a task, or after about a minute. An idle job worker blocks in the job loop (`memory.atomic.wait32`), so it never runs the task.
@@ -863,6 +876,11 @@ Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows
 ## Safari's WebGL2 path
 
 Safari runs WebGL2 in its GPU process, through ANGLE on Metal. A call that returns a value waits until that process has run every call before it. `fenceSync` is such a call. The completion tracker places a fence at the end of each frame, so the render worker waits there until Safari has run the frame's calls. Any wait inside Safari then shows in the render worker's time per frame. [WebGL call times](benchmarks.md#webgl-call-times) finds the call that waits.
+
+- A render pass that draws into a colour target with no depth attachment need not invalidate the depth. Each fullscreen step of an effect is such a pass. `endPass` now names only the attachments the pass has. Safari runs the invalidate on the thread that draws before it draws the pass, so a wasted call costs it. The iOS call profile put three such calls in ambient occlusion's frame.
+- On Safari 26.6 and 27.0, ambient occlusion costs the WebGL2 render worker about 3.6 ms a frame on an iPhone 18 Pro. It costs 0.8 ms without it, at render scales 1 and 0.5 alike. Safari 26.5 pays only 0.2 ms, and the WebGPU path is unchanged.
+- The cost is the three passes' GPU time surfacing at the frame's fence. The sync profile puts it in the passes' `clear` calls, about 0.95 ms each against 0.035 ms on 26.5. The WebGL2 delta matches the WebGPU GPU time of about 3 ms.
+- Bloom's clears stay cheap on the same device, so a clear of a depth-less float target is not slow on its own. No engine change took the cost away (13 October 2026).
 
 - ANGLE lays out a uniform block by Metal's rules, where a `vec3` takes 16 bytes. WGSL lets a scalar follow a `vec3f` at byte 12. Where the two layouts differ, ANGLE converts the block on the CPU before a draw that reads changed data.
 - ANGLE writes a buffer that the GPU still reads with a GPU copy. The conversion then reads the buffer on the CPU, so it waits for the GPU to finish every frame queued before. Until 2 October 2026, the frame's fog held a `vec3f` before a scalar. On the iPad, S3 then spent 22 ms of each WebGL2 frame in `fenceSync`.
