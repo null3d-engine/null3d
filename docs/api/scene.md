@@ -350,6 +350,10 @@ export default defineSketch(async ({ scene, assets, post }) => {
 
 Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
 
+## Decals
+
+A decal is a mesh of `geometry.box()` with a `materials.decal` material, which projects its look onto the opaque surfaces in the box ([Decals](materials.md#decals)). `scene.setDecalLayers(mask)` sets the layers whose objects decals mark, and objects on other layers show none. The default is every layer.
+
 ## When changes take effect
 
 Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.

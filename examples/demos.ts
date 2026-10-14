@@ -242,6 +242,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'decals',
+		group: 'Light, materials and effects',
+		sketch: new URL('./decals/sketch.ts', import.meta.url),
+		code: 'decals/',
+		title: 'Projected decals',
+		scene: 'Evening street',
+		summary:
+			'Road paint, a zebra crossing, puddles, cracks, moss, mud and a scorch mark on a street at dusk, with bare bricks, posters, graffiti and stains on the house fronts, each a box that projects its maps onto the surfaces inside it, lit by the low sun and the street lamps. A walker on a layer of its own crosses the puddles clean.',
+		controls: `${CAMERA} Click or tap the street to throw mud or a scorch mark there.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'atmosphere',
 		group: 'Light, materials and effects',
 		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),

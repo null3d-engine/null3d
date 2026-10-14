@@ -4004,6 +4004,17 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * Sets the layers whose objects decals mark, as a 32-bit mask as `setLayers` takes. An object
+	 * that is also on a layer outside the mask shows no decals, so a character on a layer of its own
+	 * walks through a puddle clean. Such objects draw a second time after the decals, over their own
+	 * pixels, in each frame that has decals. The default is every layer.
+	 */
+	setDecalLayers(mask: number): void {
+		if (DEV) checkLayers('setDecalLayers', mask);
+		this.core.glue.setDecalLayers(mask >>> 0);
+	}
+
+	/**
 	 * Lights the scene with an environment from `assets.loadEnvironment` or
 	 * `assets.builtinEnvironment`, as three.js's `scene.environment` does with a texture from
 	 * `PMREMGenerator`, or with none for null. Standard materials reflect it, sharply when smooth

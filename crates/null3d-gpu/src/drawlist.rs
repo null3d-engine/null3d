@@ -743,6 +743,14 @@ pub mod layout {
     /// [`DOF_COMPOSITE`] with a multisampled scene depth, whose sample 0 the step reads. Only
     /// WebGPU has it.
     pub const DOF_COMPOSITE_MS: u32 = 28;
+    /// The group of the decal pass's scene depth: the depth target, which the decal templates read
+    /// with `textureLoad` as plain floats. It is group 1 of [`super::template::DECAL`] and group 2
+    /// of [`super::template::DECAL_MAPS`] on WebGPU, and group 4 on WebGL2, which reads a copy of
+    /// one sample of a multisampled depth.
+    pub const DECAL_DEPTH: u32 = 36;
+    /// [`DECAL_DEPTH`] for a multisampled depth target, whose sample 0 the decals read. Only WebGPU
+    /// has it.
+    pub const DECAL_DEPTH_MS: u32 = 37;
     /// Group 1 of the particle templates: a particle system's values as a uniform block, then the
     /// block of the view that draws, at a dynamic offset.
     pub const PARTICLE: u32 = 32;
@@ -1645,6 +1653,13 @@ pub mod template {
     /// pixel. Its TONE_MAP build decodes display color. It binds as the copy of a view's image
     /// does.
     pub const TRANSMISSION_COPY: u32 = 47;
+    /// Decals with the standard material: the back faces of each instance's box, which shade the
+    /// surface under each pixel from the scene's depth, in the decal pass after the camera's opaque
+    /// pass. It binds the frame's group, then the scene's depth in the group of
+    /// [`super::layout::DECAL_DEPTH`] or [`super::layout::DECAL_DEPTH_MS`].
+    pub const DECAL: u32 = 61;
+    /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
+    pub const DECAL_MAPS: u32 = 62;
     /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
     /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
     /// bind group of index 0 is the frame's, 1 the system's of layout
@@ -1965,6 +1980,8 @@ pub fn typescript_constants() -> String {
                 ("VIEW_COPY", layout::VIEW_COPY),
                 ("DOF_COMPOSITE", layout::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", layout::DOF_COMPOSITE_MS),
+                ("DECAL_DEPTH", layout::DECAL_DEPTH),
+                ("DECAL_DEPTH_MS", layout::DECAL_DEPTH_MS),
                 ("PARTICLE", layout::PARTICLE),
                 ("PARTICLE_SCENE_DEPTH", layout::PARTICLE_SCENE_DEPTH),
                 ("PARTICLE_DEPTH_MS", layout::PARTICLE_DEPTH_MS),
@@ -2065,6 +2082,8 @@ pub fn typescript_constants() -> String {
                 ("DOF_COMPOSITE", template::DOF_COMPOSITE),
                 ("DOF_COMPOSITE_MS", template::DOF_COMPOSITE_MS),
                 ("TRANSMISSION_COPY", template::TRANSMISSION_COPY),
+                ("DECAL", template::DECAL),
+                ("DECAL_MAPS", template::DECAL_MAPS),
                 ("PARTICLE", template::PARTICLE),
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
