@@ -2,11 +2,11 @@
 
 Status: proposed on 14 October 2026, for the owner's ruling. Nothing is decided. The rulings needed are at the end of "Proposal".
 
-Summary: Each feature lives in one place, the core or one add-on, never both, so a user never chooses between two ways to do one thing. Under that rule, volumetric clouds become a quality tier of the core sky, and a water add-on owns all water. Add-ons, the engine's own among them, reach the engine only through its public API, with a check that enforces it. The engine grows its public hooks one first user at a time, marks each one experimental until a second add-on uses it, and freezes the stable ones at 1.0. A marketplace for add-ons by other developers comes after 1.0, and needs a plugin interface version and a listing check.
+Summary: Each feature lives in one place, the core or one add-on, never both. So a user never chooses between two ways to do one thing. Volumetric clouds become a quality tier of the core sky, and a water add-on owns all water. Every add-on, the engine's own too, reaches the engine only through its public API, and a check enforces it. Each hook comes with its first user, stays experimental until a second add-on uses it, and freezes at 1.0. A marketplace for other developers' add-ons comes after 1.0, with a plugin interface version and a listing check.
 
 ## Question
 
-A research session on 12 to 14 October 2026 proposed new techniques, several of them as add-ons: volumetric clouds, a water and ocean add-on, GPU-made grass, hair, special materials, and a bake. The owner asked three questions:
+A research session on 12 to 14 October 2026 proposed new techniques. Several were add-ons: volumetric clouds, water and an ocean, grass made on the GPU, hair, special materials, and a bake. The owner asked three questions:
 
 1. Does the engine already do clouds or water? Users must never have to choose between a built-in feature and an add-on that does the same thing.
 2. The owner may later open a marketplace, where other developers build and sell powerful add-ons. How do the planned add-ons affect that?
@@ -33,7 +33,7 @@ The facts below come from `origin/main` at 114a1246d, 14 October 2026.
 
   The guide [Custom passes](../../docs/guides/custom-passes.md) has a water recipe. The Creek showcase builds its water this way (`examples/showcase/creek/water.ts`): waves, ripples, caustics and foam. The three.js mapping sends `Water` and `Water2` to the reflection-pass recipe.
 
-So a clouds add-on would put clouds in two places: flat clouds in the core and volumetric clouds in the add-on, each with its own settings. A water add-on next to the recipe would give two ways to make water.
+So a clouds add-on would put clouds in two places, each with its own settings: flat clouds in the core, volumetric clouds in the add-on. A water add-on next to the recipe would give two ways to make water.
 
 ### How the two add-ons reach the engine
 
@@ -113,13 +113,13 @@ Add-ons reach the engine only through `@null3d/engine`'s public entry points. Th
 - A new hook is marked experimental in its docs and types. It becomes stable once a second add-on uses it, the engine's or another developer's.
 - Stable hooks freeze with the API at 1.0. Experimental hooks stay marked, and may change in a 1.x release with a note.
 - Each hook works on both GPU paths, or its docs state the fallback, as the table above does.
-- The order follows the add-ons that the owner places in M3: H4 with car paint, H3 and H5 with splats, H1 and H6 with the bake, H2 with vegetation.
+- The order follows the add-ons that the owner places in M3. H4 comes with car paint, H3 and H5 with splats, H1 and H6 with the bake, and H2 with vegetation.
 
 ### 4. Shared budgets and names for add-ons
 
 - **Quality presets:** an add-on declares its settings per preset, and the governor's steps reach them.
 - **Stats overlay:** it shows each add-on's GPU time and memory, so a user sees what an add-on costs.
-- **WebGL2 textures:** the engine hands out the free texture units of the lit shader, and refuses an add-on's material with an error code, not a broken shader, when none are left.
+- **WebGL2 textures:** the engine hands out the lit shader's free texture units. When none are left, it refuses an add-on's material with an error code, not a broken shader.
 - **Names:** each add-on gets its own shader library name (`<add-on>::`), its own error-code range and its own quality keys.
 
 ### 5. A plugin interface version
@@ -152,7 +152,7 @@ The licence terms, not locked code, protect a paid add-on.
 ## Options rejected
 
 - **Private hooks for the engine's own add-ons.** Faster to build. But another developer could never match those add-ons, and a marketplace would start uneven. Particles show the cost: to let others build such an add-on, its drawing must move out of the core later.
-- **Open access to internals,** such as the raw GPU device, the render graph's internal passes, or `@null3d/engine/internal`. It is the easiest path for sellers. But it freezes the internals at 1.0, it breaks the promise that both GPU paths behave the same, and an add-on could break the engine's frame or its threads.
+- **Open access to internals,** such as the raw GPU device, the render graph's internal passes, or `@null3d/engine/internal`. It is the easiest path for sellers. But it freezes the internals at 1.0, and it breaks the promise that both GPU paths behave the same. An add-on could also break the engine's frame or its threads.
 - **Building every hook before its user.** Each hook is a promise for the life of 1.x, and a hook with no user is designed by guesswork.
 - **Clouds as an add-on beside the core's flat clouds.** Two places for one feature, with two sets of settings.
 - **Keeping the water recipe as the only way to make water.** Every project rebuilds the Creek's work, and an ocean has nowhere to live.
