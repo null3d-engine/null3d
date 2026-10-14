@@ -2,16 +2,51 @@
 // allocates none of its own. WebGPU reads a descriptor only during the call that takes it, so one
 // object can serve every frame.
 
+/**
+ * A render pass descriptor with at most two color targets and one depth target. Only the weighted
+ * layer draws into a second color target, which clears and stores as the first does.
+ */
+/** How many clear colors a render pass setup keeps, more than a frame's passes clear to. */
+const CLEAR_COLORS = 4;
+
+/**
+ * A color whose parts the browser reads without making objects. Its parts start as `null`, so the
+ * browser keeps each number stored there as an object of its own, and hands that object over when
+ * it reads the part. A part that starts as a number holds a fraction unboxed, and the browser's
+ * reading of a descriptor then makes a new 12-byte number object for each fraction at every call.
+ */
+function boxedColor(): GPUColorDict {
+	return { r: null, g: null, b: null, a: null } as unknown as GPUColorDict;
+}
+
 /** A render pass descriptor with at most one color target and one depth target. */
 export class RenderPassSetup {
-	private readonly clearColor: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 };
+	/**
+	 * The latest clear colors, each made once, so a frame whose passes clear to the same few colors
+	 * stores no new parts. Their parts in `clearParts` are what the colors are compared by: a part
+	 * read back from a color to compare it with a fraction would be boxed for the comparison.
+	 */
+	private readonly clearColors: GPUColorDict[] = Array.from({ length: CLEAR_COLORS }, boxedColor);
+	private readonly clearParts = new Float32Array(4 * CLEAR_COLORS).fill(Number.NaN);
+	/** The clear color that the next new color replaces. */
+	private nextClearColor = 0;
 	private readonly colorTarget: GPURenderPassColorAttachment = {
 		view: undefined as unknown as GPUTextureView,
 		loadOp: 'clear',
 		storeOp: 'store',
-		clearValue: this.clearColor,
+		clearValue: undefined,
 	};
 	private readonly colorTargets: GPURenderPassColorAttachment[] = [this.colorTarget];
+	private readonly secondTarget: GPURenderPassColorAttachment = {
+		view: undefined as unknown as GPUTextureView,
+		loadOp: 'clear',
+		storeOp: 'store',
+		clearValue: undefined,
+	};
+	private readonly twoColorTargets: GPURenderPassColorAttachment[] = [
+		this.colorTarget,
+		this.secondTarget,
+	];
 	private readonly noColorTargets: GPURenderPassColorAttachment[] = [];
 	private readonly depthTarget: GPURenderPassDepthStencilAttachment = {
 		view: undefined as unknown as GPUTextureView,
@@ -26,7 +61,8 @@ export class RenderPassSetup {
 	 * Sets the color target, or removes it when `view` is undefined. The pass starts by clearing
 	 * the target to the color at `color[at, at + 4)` when `clear` is set, and keeps what it draws
 	 * when `store` is set. The color and the depth value come from a typed array: a fraction passed
-	 * to a call that the browser does not inline is boxed in a new object.
+	 * to a call that the browser does not inline is boxed in a new object. A pass that loads its
+	 * target gives no clear color, so the browser reads none.
 	 */
 	setColor(
 		view: GPUTextureView | undefined,
@@ -45,12 +81,46 @@ export class RenderPassSetup {
 		target.resolveTarget = resolveTarget;
 		target.loadOp = clear ? 'clear' : 'load';
 		target.storeOp = store ? 'store' : 'discard';
-		const clearColor = this.clearColor;
-		clearColor.r = color[at] as number;
-		clearColor.g = color[at + 1] as number;
-		clearColor.b = color[at + 2] as number;
-		clearColor.a = color[at + 3] as number;
+		target.clearValue = clear ? this.clearColor(color, at) : undefined;
 		this.descriptor.colorAttachments = this.colorTargets;
+	}
+
+	/**
+	 * Sets a second color target after the first, or leaves the first alone when `view` is
+	 * undefined. Call it after `setColor`, whose clear color and operations it takes.
+	 */
+	setSecondColor(view: GPUTextureView | undefined): void {
+		if (!view) return;
+		const target = this.secondTarget;
+		target.view = view;
+		target.loadOp = this.colorTarget.loadOp;
+		target.storeOp = this.colorTarget.storeOp;
+		target.clearValue = this.colorTarget.clearValue;
+		this.descriptor.colorAttachments = this.twoColorTargets;
+	}
+
+	/** The clear color with the parts at `color[at, at + 4)`, made from the oldest when new. */
+	private clearColor(color: Float32Array, at: number): GPUColorDict {
+		const parts = this.clearParts;
+		const r = color[at] as number;
+		const g = color[at + 1] as number;
+		const b = color[at + 2] as number;
+		const a = color[at + 3] as number;
+		for (let k = 0, p = 0; k < CLEAR_COLORS; k++, p += 4)
+			if (parts[p] === r && parts[p + 1] === g && parts[p + 2] === b && parts[p + 3] === a)
+				return this.clearColors[k] as GPUColorDict;
+		const k = this.nextClearColor;
+		this.nextClearColor = (k + 1) % CLEAR_COLORS;
+		parts[4 * k] = r;
+		parts[4 * k + 1] = g;
+		parts[4 * k + 2] = b;
+		parts[4 * k + 3] = a;
+		const clearColor = this.clearColors[k] as GPUColorDict;
+		clearColor.r = r;
+		clearColor.g = g;
+		clearColor.b = b;
+		clearColor.a = a;
+		return clearColor;
 	}
 
 	/** Sets the depth target, or removes it when `view` is undefined. It clears to `value[at]`. */

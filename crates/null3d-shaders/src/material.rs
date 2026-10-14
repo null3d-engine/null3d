@@ -544,6 +544,9 @@ impl Compiler {
                 // through, so other materials keep their builds as few as before. Every material
                 // has the builds of rows with row values, since a batch's rows may bring colors
                 // that the default surface multiplies. They have no builds of a fading level of
+                // detail, so their levels switch at once. They have no builds of the weighted
+                // layer: the engine's API refuses the weighted blending for them (decision record
+                // D-150).
                 // detail, so their levels switch at once. They always have the area lights' code,
                 // so they have no builds without it.
                 let left_out = [
@@ -554,6 +557,7 @@ impl Compiler {
                     "ALPHA_COVERAGE",
                     "ALPHA_HASH",
                     "LOD_FADE",
+                    "WEIGHTED",
                     AREA_LIGHTS,
                 ];
                 let permutations = variant

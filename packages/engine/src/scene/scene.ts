@@ -2046,7 +2046,7 @@ export class RectAreaLight extends Light {
 			import('./light-images').then(({ LIGHT_IMAGE_HALVES, prepareLightImage }) => {
 				if (this.id !== id || this.pendingImage !== image) return;
 				const at = core.check(core.glue.areaLightImage(id), call, this.label);
-				prepareLightImage(image, new Uint16Array(core.memory.buffer, at, LIGHT_IMAGE_HALVES));
+				prepareLightImage(image, core.view(Uint16Array, at, LIGHT_IMAGE_HALVES));
 				core.check(core.glue.finishAreaLightImage(id), call, this.label, true);
 			}),
 		);
@@ -3773,6 +3773,11 @@ export class Scene implements ViewHolder {
 		const points = linePoints(call, mode, positions, colors);
 		LINE_CHECKS.width(width, call);
 		LINE_CHECKS.values(options, call);
+		if (DEV && (options.blending as string | undefined) === 'weighted')
+			throw new EngineError(
+				'E1217',
+				`${call}() got the 'weighted' blending, which lines do not take. Give them the 'normal' blending, which draws back to front.`,
+			);
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
 		makers.materials.shaders.need('lines');
 		const lines = await loadLines(call);
