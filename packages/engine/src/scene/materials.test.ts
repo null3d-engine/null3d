@@ -24,6 +24,7 @@ import {
 	MATERIAL_FEATURE_PARALLAX,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_FEATURE_WEIGHTED,
 	MATERIAL_FEATURE_WIREFRAME,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
@@ -337,12 +338,32 @@ describe('Material.set', () => {
 		materials.unlit({ alphaMode: 'blend', blending: 'additive', depthWrite: false });
 		materials.unlit({ alphaMode: 'blend', blending: 'multiply' });
 		materials.unlit({ alphaMode: 'blend', blending: 'normal' });
+		materials.standard({ alphaMode: 'blend', blending: 'weighted', doubleSided: true });
 		expect(features).toEqual([
 			MATERIAL_FEATURE_BLEND,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_ADDITIVE | MATERIAL_FEATURE_NO_DEPTH_WRITE,
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
+			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_WEIGHTED | MATERIAL_FEATURE_DOUBLE_SIDED,
 		]);
+	});
+
+	test('refuses the weighted blending beside transmission, and on custom materials', () => {
+		const { features, materials } = fakeCore();
+		const glass = thrown(() =>
+			materials.standard({ alphaMode: 'blend', blending: 'weighted', transmission: 1 }),
+		);
+		expect(glass.code).toBe('E1217');
+		expect(glass.message).toStartWith(
+			"E1217: materials.standard() got transmission with the 'weighted' blending;",
+		);
+		const custom = thrown(() =>
+			materials.shader({ wgsl: compiledMaterial(), alphaMode: 'blend', blending: 'weighted' }),
+		);
+		expect(custom.message).toStartWith(
+			"E1217: materials.shader() got the 'weighted' blending, which custom materials do not take.",
+		);
+		expect(features).toEqual([]);
 	});
 
 	test('maps go into their slots, on the coordinates of their texture', () => {
@@ -585,7 +606,7 @@ describe('Material.set', () => {
 		);
 		expect(blending.code).toBe('E1217');
 		expect(blending.message).toStartWith(
-			`E1217: materials.unlit() got the blending "screen"; it takes 'normal', 'additive' or 'multiply'.`,
+			`E1217: materials.unlit() got the blending "screen"; it takes 'normal', 'additive', 'multiply' or 'weighted'.`,
 		);
 		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
 		expect(bias.code).toBe('E1203');
