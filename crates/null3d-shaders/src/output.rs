@@ -3,9 +3,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use null3d_gpu::drawlist::permutation;
+use serde::{Deserialize, Serialize};
 
 use crate::{BuildError, Pipeline, Problem};
+
+/// The bits whose value names a feature that another template also names ([`permutation::SHARED`],
+/// decision record D-156). Such a value counts only for a template that lists its name.
+pub fn shared_bits() -> u32 {
+    permutation::SHARED
+        .iter()
+        .filter_map(|&(name, _)| permutation::bit(name))
+        .fold(0, |mask, bit| mask | bit)
+}
 
 /// A result as the WebAssembly module returns it: `{"ok": true, "output": ...}` on success, and
 /// `{"ok": false, "problems": [...]}` otherwise, each with `"warnings": [...]` when the build
@@ -71,6 +81,11 @@ pub struct FirstUseFeatures {
     pub shaders: BTreeMap<String, String>,
     /// Features by permutation bit, in bit order.
     pub bits: BTreeMap<u32, String>,
+    /// By shader name, the shared-value bits of [`Self::bits`] whose names the shader's variants
+    /// list: a value that names a feature another template names too counts only for a template
+    /// that lists its name ([`shared_bits`], decision record D-156). An unshared bit counts for
+    /// every template.
+    pub listed: BTreeMap<String, u32>,
 }
 
 /// The character that joins the names of the features that a build needs, in the key of its files.
@@ -79,12 +94,15 @@ pub const FEATURE_JOIN: char = '+';
 impl FirstUseFeatures {
     /// The key of the files that hold a build of `shader` with the permutation word `permutation`:
     /// the names of the features that it needs, its shader's and those of its bits, sorted and
-    /// joined by [`FEATURE_JOIN`]. None for a build that loads at the start.
+    /// joined by [`FEATURE_JOIN`]. None for a build that loads at the start. A value that names a
+    /// feature another template names too counts only for a template that lists its name, because
+    /// a shared value names a different feature in each template (decision record D-156).
     pub fn file_of(&self, shader: &str, permutation: u32) -> Option<String> {
+        let allowed = self.listed.get(shader).copied().unwrap_or(0) | !shared_bits();
         let mut features: BTreeSet<&str> = self
             .bits
             .iter()
-            .filter(|&(&bit, _)| permutation & bit != 0)
+            .filter(|&(&bit, _)| permutation & allowed & bit != 0)
             .map(|(_, feature)| feature.as_str())
             .collect();
         features.extend(self.shaders.get(shader).map(String::as_str));
@@ -97,7 +115,7 @@ impl FirstUseFeatures {
 }
 
 /// One built variant.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VariantOutput {
     /// The permutation bits the build was made with, as a render pipeline's permutation word
     /// holds them: 0 for a variant without permutation bits.
@@ -109,7 +127,7 @@ pub struct VariantOutput {
 }
 
 /// One WGSL module and the entry points of each render pipeline.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WgslOutput {
     /// The module that naga writes from the composed, validated and compacted module.
     pub source: String,
@@ -118,7 +136,7 @@ pub struct WgslOutput {
 }
 
 /// The vertex and fragment shaders of one render pipeline, to link into one WebGL2 program.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslProgram {
     /// The vertex shader.
     pub vertex: GlslStage,
@@ -127,7 +145,7 @@ pub struct GlslProgram {
 }
 
 /// One GLSL ES 3.00 shader and the names its resources have in it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlslStage {
     /// The shader source.
@@ -139,7 +157,7 @@ pub struct GlslStage {
 }
 
 /// A WGSL resource binding.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Binding {
     /// The bind group.
     pub group: u32,
@@ -148,7 +166,7 @@ pub struct Binding {
 }
 
 /// A uniform block of one GLSL stage.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslUniformBlock {
     /// The block name, for `getUniformBlockIndex`.
     pub name: String,
@@ -158,7 +176,7 @@ pub struct GlslUniformBlock {
 }
 
 /// A texture uniform of one GLSL stage, which joins a WGSL texture and its sampler.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct GlslTexture {
     /// The uniform name, for `getUniformLocation`.
     pub name: String,
@@ -172,7 +190,7 @@ pub struct GlslTexture {
 #[cfg(test)]
 mod tests {
     use null3d_gpu::drawlist::permutation::{
-        ALPHA_COVERAGE, ALPHA_HASH, BLOOM, FXAA, MORPH, SAMPLE_MASK,
+        ALPHA_COVERAGE, ALPHA_HASH, AREA_LIGHTS, BLOOM, FXAA, MORPH, SAMPLE_MASK,
     };
 
     use super::*;
@@ -185,13 +203,24 @@ mod tests {
             .insert("sprite".to_owned(), "sprites".to_owned());
         first_use.bits.insert(BLOOM, "bloom".to_owned());
         first_use.bits.insert(MORPH, "morph".to_owned());
+        first_use.bits.insert(AREA_LIGHTS, "area_lights".to_owned());
         first_use.bits.insert(ALPHA_HASH, "hash".to_owned());
         first_use.bits.insert(ALPHA_COVERAGE, "coverage".to_owned());
         first_use.bits.insert(SAMPLE_MASK, "coverage".to_owned());
+        // A bit takes only the builds of the shaders whose variants list its name, because a value
+        // can name another feature in another shader (decision record D-156).
+        first_use.listed.insert("final".to_owned(), BLOOM);
+        first_use.listed.insert(
+            "lit".to_owned(),
+            BLOOM | MORPH | AREA_LIGHTS | ALPHA_HASH | ALPHA_COVERAGE | SAMPLE_MASK,
+        );
+        first_use.listed.insert("sprite".to_owned(), ALPHA_HASH);
         let file = |shader, permutation| first_use.file_of(shader, permutation);
-        assert_eq!(file("lit", FXAA), None, "a build of the start");
         assert_eq!(file("sprite", 0).as_deref(), Some("sprites"));
         assert_eq!(file("final", FXAA | BLOOM).as_deref(), Some("bloom"));
+        // A shared value names the area lights for the lit templates and FXAA for the final pass.
+        assert_eq!(file("lit", AREA_LIGHTS).as_deref(), Some("area_lights"));
+        assert_eq!(file("final", FXAA), None);
         assert_eq!(
             file("lit", MORPH | ALPHA_HASH).as_deref(),
             Some("hash+morph")

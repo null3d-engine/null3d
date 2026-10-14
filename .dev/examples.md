@@ -205,6 +205,8 @@ On 9 October 2026 six more feature demos got the richer look, after the math, in
 The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
+- A demo that uses `timeOfDay` sets an exposure: the time of day's, or its own. At the default exposure a night scene is 3.5 times too dark. The area lights demo's first street shots were mostly black for that reason. A unit test in `tests/lib/images.test.ts` checks every demo. Creek is exempt. The owner approved its look, which is tuned at the default exposure, and a new exposure would change it.
+- A rectangle light that shows a picture gives out its intensity times the picture's average color. The area lights demo's neon sign is one such light, with thin tubes on black. By itself it lit almost nothing around it. So its picture and its board have a faint pink glow, a tenth of the tubes' brightness.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
 - The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
@@ -232,7 +234,7 @@ The six demos held 120 fps on both paths before the change too. No phone or tabl
 
 ## Comparisons with three.js
 
-A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count that each engine holds at the display rate on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
+A comparison draws one scene in null3D and in three.js, one engine at a time. It finds the largest count at which each engine's scene updates at 20 fps or more on the viewer's device. Factory was the first, and Battle the second ([D-121](decisions/D-121-comparison-tier.md)). Night town and Busy page follow.
 
 ### The parts
 
@@ -254,7 +256,7 @@ In the scene graph mode, each engine holds only the objects of the cells that sh
 
 ### The ramp
 
-The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the presented frame rate for a second. A step holds the display rate at 95% of it or more. The ramp stops after two steps in a row that miss it, or at the plan's maximum. It reports the largest count held, and the largest held at half the display rate. Both engines measure their own presented frames: null3D with `engine.measure`, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
+The ramp raises the count step by step. Each step sets the count, waits half a second for it to settle, and measures the scene's update rate for a second. A step holds the ramp's floor of 20 fps or more. The ramp stops after two steps in a row below the floor, at the plan's maximum, or at once when the scene's update fails. It reports the largest count held. Both engines measure their own updates: null3D with `engine.measure`, whose `updatedFps` counts frames whose scene update ran to its end, and three.js in its worker from its animation frames. The ramp runs with each engine's stats panel collapsed.
 
 A three.js frame that draws nothing is not a frame. While WebGPURenderer cannot draw a scene, its render calls return at once with no draw, and its frames then come at the display's rate. On 12 October 2026, Night town's three.js WebGPU ramp "held" 1,020 lights at 120 frames a second with no town on the screen. So the worker counts only frames with draw calls (`DrawnFrames` in `examples/lib/three-worker.ts`). A measurement starts at the first such frame, after waiting at most its own length for it. With none, it reports no frame and a frame rate of 0. A ramp step with no frame is a count that draws nothing. When the next count draws, the ramp steps past it as a fault of the browser, as Chrome 155 drew no frame of Night town on WebGLRenderer at 60 lights and drew at 72 ([D-121](decisions/D-121-comparison-tier.md#browser-faults-met-while-timing)). Two such counts in a row, or one at the maximum, stop the ramp. The result keeps the largest count drawn, the counts stepped past, and three.js's link error where it gave one, and the page says both in plain words (`noFrameText` in `examples/lib/ramp.ts`, with unit tests). `three-worker.test.ts` checks that every frame and every measurement goes through this rule.
 
@@ -262,7 +264,7 @@ A live three.js run starts at its first frame that draws, as a null3D run starts
 
 Time comparisons in the Mac's installed Chrome, the browser that people run. On 12 October 2026, Playwright's Chromium 153 failed to build one of three.js's render-to-texture pipelines for Night town on WebGPU. Its shader compiler gave: "renderPipeline_RTT_57: An error occurred while generating Tint IR. error: swizzle view instruction still has usages after lowering". three.js then drew the town without that pass. The installed Chrome 155 built the same pipeline with no error. Chromium 153 also took about 90 s to the first frame of null3D's WebGL2 Night town at 300 lights or more, and 1 s at 120. Chrome 155 took 1 to 2 s at every count, with each effect alone and with all of them. So the timing scripts open the installed Chrome (`channel: 'chrome'`), and each record names the browser's version. Check a record's errors before using its figure.
 
-The display rate that a ramp judges against must be the display's. The page measures it from its own animation frames. But Chrome can slow those frames while null3D draws from its workers at the full rate. On 12 October 2026, Night town's instanced null3D ramp on a 120 Hz Mac measured 30 Hz. It then "held" all 1,020 lights, though its frame rate fell to 104 at 124 lights. So the ramp also measures the engine's frame rate at the start count for a second. An engine cannot draw faster than the display. So when it draws more than 5% faster than the page's rate, its rate, rounded to the nearest common refresh rate, becomes the display rate (`displayRate` in `examples/lib/ramp.ts`, with a unit test). Every ramp result names the display rate it judged against. Check it before using a figure.
+The ramp once judged the display rate, which the page measured from its own animation frames. Chrome can slow those frames while null3D draws from its workers at the full rate. The ramp then read a rate the engine did not keep, and a frozen scene could still report a high figure. The owner ruled on 13 October 2026 that a ramp judges the scene's update rate instead ([D-158](decisions/D-158-growable-animation-table.md)). null3D measures completed updates: `updatedFps` counts frames whose scene update ran to its end, and `updateErrors` counts frames whose update threw. A frame whose update threw still presents, so a presented rate hides it. The owner set the floor at 20 fps, after rulings of 30 and 10 the same session. A step whose update failed stops the ramp at once with a scene error, whatever frame rate the engine presents.
 
 The page's measurement takes the median interval of 40 of its frames, or of those that come within a second. On 13 October 2026, three.js drew Battle on CI's SwiftShader at one frame every 5 to 11 seconds. The page's own frames came 2.5 to 6 seconds apart meanwhile. The measurement waited for 40 of them, so the page gave no result within the test's 200 seconds. Now it ends after two such frames. CI's test of Battle's three.js ramp on WebGPU would fail again if it waited that long.
 
@@ -298,7 +300,7 @@ Battle is the comparison of ready-made assets ([D-121](decisions/D-121-compariso
 - Both engines load the same two files from the [sample content](sample-content.md): `characters/battle-soldier` and `characters/quaternius-mech`. The comparison's entry says why it loads files, and a unit test checks that each comparison that loads files says so, in both halves.
 - The soldier's rifle is a mesh of its own under the right hand's joint in the file. null3D attaches a rigid mesh to a joint only from the file, since its joints are not objects. three.js's `SkeletonUtils.clone` keeps it under the bone. So the weapon follows the hand in both engines.
 - The count is the soldiers and mechs of both armies. The scene description (`scene.ts`) holds the seeded battle, the terrain with its craters, the scenery, the particles and the lights.
-- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). When the particles add-on lands, only the null3D side changes.
+- Smoke, fire, sparks and muzzle flashes are rows of sprites that `scene.ts` fills each frame (`examples/lib/particles.ts`). Night town's rain, steam, exhaust and glows use the same rows. null3D draws each layer as a sprite batch (`particles-null3d.ts`), and three.js as an instanced quad that faces the camera (`particles-three.ts`). The particles add-on is on main now, so a scene that moves to it changes only the null3D side.
 - Grass and flags sway, and the wrecks' embers glow, through custom materials. null3D takes WGSL surface and vertex functions. three.js takes GLSL added to `MeshStandardMaterial` on WebGLRenderer, and node materials on WebGPURenderer (`three-shaders.ts`).
 - In the instanced mode, three.js follows its crowd example, which needs WebGPURenderer. The comparison's entry names that renderer for the mode, so on the WebGL2 path three.js runs WebGPURenderer in its WebGL2 mode.
 
@@ -349,6 +351,15 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The automatic exposure demo (M2-EX31, 11 October 2026)
+
+`auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
+
+- The demo's sketch stays under 150 lines, and its scenery lives in `hall.ts` beside it, as the coordinator's ruling of 11 October 2026 allows. Its entry's `code` field names the folder.
+- The camera's exposure suits the courtyard. The hall keeps the sun out with walls and a roof, and its own light comes from six lamps, a spotlight and a dim room environment, about five stops below the courtyard. The eye's range, -7 to +1 stops, covers both.
+- The eye adapts to the dark at 0.8 stops a second and to the light at 2.5, so the hall brightens slowly and the courtyard settles fast, as eyes do.
+- The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
+- The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
 ## The crystal spiral's scenery (11 October 2026)
 
 The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
@@ -385,11 +396,14 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
-- **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
+- **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
-- **Choices:** a showcase scene's entry can list `choices`, such as a time of day. The page's `startDemo` shows a row of buttons for each, in an element that the page gives it. Each pick goes to the sketch as a message. A held frame has no buttons. So a sketch also reads its first choices from its own address: `?mood=Night&dslr`.
+- **Choices:** a demo's entry can list `choices`, such as a time of day. The page's `startDemo` shows a row of buttons for each, in an element that the page gives it. Each pick goes to the sketch as a message. The showcase scenes carry the same picks in their controls HUD instead, so their entries list no `choices`. A held frame has no buttons, so a sketch also reads its first choices from its own address: `?mood=Night&dslr`.
 - **Image tests:** a showcase scene's image test draws its full look on the Mac's GPU. On SwiftShader it draws the Low preset, through the test's SwiftShader switch `preset=low`, which takes the place of the references' preset. The full look took the software GPU too long for CI.
+- **Camera and help:** every showcase scene has an Auto and a Manual camera ([D-170](decisions/D-170-showcase-camera.md), owner, 14 October 2026). Auto is the default and plays a route tailored to that scene. The route opens on a wide establishing view that shows the whole scene, then moves through its interesting parts as a smooth flythrough. It never passes through a building or other geometry, and it never stands still: consecutive shots differ and the loop closes without a pause. `c` switches to Manual, which takes the camera at once, at the pose the route left, and turns, zooms and pans around the point the shot was looking at, through the engine's orbit controls. On a wide screen a left drag turns the camera, the wheel zooms, a right drag pans, and `W`, `A`, `S` and `D` pan (`R` and `F` rise and fall). On a touch screen one finger turns, a pinch zooms, and a two-finger drag pans. Auto glides back onto the nearest point of the route, easing in and out over about 1.5 seconds. `examples/lib/cinematic.ts` holds the route player, the mode and the manual camera, and is generic: each scene gives its own shots and manual pan speed, so no route is copied between scenes. The route is a function of the sketch time, so the image tests' held frame is one fixed pose and never drifts. In every scene the **Auto** route never passes through an object: `examples/lib/clearance.ts` guards it, and a shot may opt in to a deliberate pass. The **Manual** camera moves freely and may pass through anything.
+- **The controls HUD:** each showcase scene shows a collapsible controls HUD ([D-171](decisions/D-171-showcase-controls-hud.md), owner, 14 October 2026). At rest it is one translucent chevron at the bottom of the panel; pressing it slides up a glass panel of grouped buttons, and pressing it again closes it. `h` and `Escape` do the same from the keyboard. The panel is a bottom-anchored column of a bounded height that scrolls inside itself, so a phone never cuts it off, and its grid shows the groups in one column on a narrow screen and in rows on a wide one. Every button carries a tooltip that describes its function alone, with no input device named; the tip shows on hover, keyboard focus and a press. The groups are Camera, Time of day, Atmosphere, Lighting, Post and Quality, and a scene shows only the groups it can support. `C` and `H` show as small key badges, since only the camera and the controls carry a shortcut. `examples/lib/hud.ts` holds the shell, `examples/lib/controls.ts` holds the model, and the sketch posts the model with the `hud` message, so it never touches the DOM.
+- **The sky, the sun and the moon:** the outdoor moods drive the physical sky, `scene.setBackground({ atmosphere })`, from `timeOfDay` with the physical model ([D-171](decisions/D-171-showcase-controls-hud.md)). The real sun disc lights the scene by day and the moon disc at night, the main directional light is the sun by day and the moon at night, and the lit fog and the light shafts follow that light, so a scene shows sun rays by day and moon rays at night. `Auto` advances the hour continuously and loops, so the sun rises, arcs and sets and the moon does the same, while the fixed moods hold an hour. `examples/lib/stage.ts` holds the moods and the Auto driver.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
 
 ### Engine features for the showcase
@@ -415,7 +429,7 @@ Each feature gets a decision record of its own when it is built.
 | Per-object motion vectors | The base for a later temporal anti-aliasing, motion blur and better screen-space reflections | M2-EX25 | D-142 |
 | Physical sky and atmosphere | Skies of every scene, with distant objects tinted by the sun's angle | M2-EX26 | D-142 |
 | Projected decals | Craters and scorch marks, street paint and puddles, moss on rocks | M2-EX27 | D-142 |
-| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142 |
+| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142, D-145 |
 | Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
 | Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |
@@ -425,7 +439,18 @@ Each feature gets a decision record of its own when it is built.
 | Terrain, an add-on | Battle's hills and Creek's valley | M2-EX35 | D-142 |
 | Subsurface and foliage translucency | Sunlit leaves and petals, and characters' skin | M2-EX36 | D-142 |
 
-Until the particles add-on lands, the scenes draw their particles with sprites behind a small interface of their own. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+The particles demo uses the particles add-on. The showcase and comparison scenes still draw their particles with sprites behind a small interface of their own. Their look pass moves them to the add-on. Motion blur and global illumination come in M3 ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
+
+### The order the demos take the features
+
+A demo takes each engine feature as it lands, not all at once. A scene is ready for its look pass when every feature it needs is on main.
+
+- **Creek** takes lit fog, the physical sky, foliage translucency and impostors.
+- **Night town** and the **Busy page** take screen-space reflections, area lights, reflection probes, decals and automatic exposure.
+- **Battle** takes the particles add-on, joint overrides, weighted blended transparency, decals, terrain and the physical sky.
+- **Factory**, **forest**, the **campfire glade** and the feature demos take the sky, the exposure and contact shadows where they fit. A surface that suits clearcoat takes it.
+
+The owner reviews each scene's look before its references are remade. Every scene holds the display rate at its preset, as the other demos do.
 
 ### Creek
 
@@ -549,7 +574,7 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
-| Scale | galaxy, instances, far-from-origin, large-world |
+| Scale | terrain, galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
 
 - Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.

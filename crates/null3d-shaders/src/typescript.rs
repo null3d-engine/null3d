@@ -217,14 +217,16 @@ export function loadGlslShaders(bits: number): Promise<DeviceShaders> {
  * The key of the device modules that hold the build of `shader` with the permutation word
  * `permutation`: the names of the features that load on first use and that the build needs, its
  * shader's and those of the word's bits, sorted and joined by `FEATURE_JOIN`. Undefined for a
- * build that the device modules of the start hold.
+ * build that the device modules of the start hold. A value that names a feature another template
+ * names too counts only for a template that lists its name (`FEATURE_MASKS`), because a shared
+ * value names a different feature in each template (decision record D-156).
  */
 export function firstUseFile(shader: string, permutation: number): string | undefined {
 	const features = new Set<string>();
 	const own = SHADER_FEATURES[shader];
 	if (own !== undefined) features.add(own);
-	for (const [bit, name] of FEATURE_BITS) if ((permutation & bit) !== 0) features.add(name);
-	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
+	const listed = permutation & ((FEATURE_MASKS[shader] ?? 0) | FEATURE_UNSHARED);
+	for (const [bit, name] of FEATURE_BITS) if ((listed & bit) !== 0) features.add(name);	return features.size === 0 ? undefined : [...features].sort().join(FEATURE_JOIN);
 }
 
 /** A target's device modules of features that load on first use, and the keys that pages asked for. */
@@ -914,6 +916,27 @@ fn first_use_tables(
         "export const FEATURE_JOIN = {};",
         quote(&FEATURE_JOIN.to_string())
     ));
+    ts.line("");
+    ts.line(
+        "/** The bits that name one feature across every template: a shared value needs a template's own mask. */",
+    );
+    ts.line(&format!(
+        "const FEATURE_UNSHARED: number = {};",
+        !crate::output::shared_bits()
+    ));
+    ts.line("");
+    ts.line(
+        "/** By shader name, the shared bits of `FEATURE_BITS` whose names the shader lists: a value that names another feature in another template. */",
+    );
+    if first_use.listed.is_empty() {
+        ts.line("const FEATURE_MASKS: Readonly<Record<string, number>> = {};");
+    } else {
+        ts.open("const FEATURE_MASKS: Readonly<Record<string, number>> = {");
+        for (shader, mask) in &first_use.listed {
+            ts.line(&format!("{shader}: {mask},"));
+        }
+        ts.close("};");
+    }
 }
 
 /// A device module: `SHADERS`, the builds of every shader that loads by device for the module's
@@ -1388,6 +1411,7 @@ mod tests {
             .shaders
             .insert("sprite".to_owned(), "sprites".to_owned());
         output.first_use.bits.insert(BLOOM, "bloom".to_owned());
+        output.first_use.listed.insert("lit".to_owned(), BLOOM);
         output
     }
 
@@ -1549,6 +1573,10 @@ mod tests {
         ));
         assert!(main.contains(&format!(
             "FEATURE_BITS: readonly (readonly [number, string])[] = [[{}, 'bloom']];",
+            permutation::BLOOM
+        )));
+        assert!(main.contains(&format!(
+            "const FEATURE_MASKS: Readonly<Record<string, number>> = {{\n\tlit: {},\n}};",
             permutation::BLOOM
         )));
         let start = "const WGSL_MODULES: DeviceModules = {
