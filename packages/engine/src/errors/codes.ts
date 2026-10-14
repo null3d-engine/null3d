@@ -429,6 +429,14 @@ const DOCS = {
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
 		since: '0.2',
 	},
+	E1424: {
+		title: 'Custom material builds not downloaded',
+		cause:
+			"A set of a custom material's builds did not download. The null3D Vite plugin builds each custom material for every GPU path, and puts the builds in files of their own beside the sketch's files, named material-*.js: one for each GPU path, each kind of device, and the builds that skin. A page downloads its device's file when the sketch first uses the material, and another file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+		example:
+			'E1424: the builds of a custom material did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
+		since: '0.2',
+	},
 	E1425: {
 		title: 'Pointer lock refused',
 		cause:
