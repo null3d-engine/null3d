@@ -1,7 +1,8 @@
 // The frame-budget governor. When frames take too long, it lowers the live settings one step at a
 // time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
 // how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
-// occlusion's scale, then the steps of the sun's contact shadows. When the frames have time to
+// occlusion's scale, then the steps of the sun's contact shadows, then the update interval of far
+// characters' poses. When the frames have time to
 // spare again, it raises them in the reverse order. It never changes a setting that is fixed while
 // a preset runs.
 //
@@ -88,6 +89,8 @@ export function budgetScale(level: number, min: number): number {
 
 /** The longest interval between two draws of a far shadow cascade, in frames. */
 export const LONGEST_FAR_INTERVAL = QUALITY_SETTINGS.farCascadeInterval.values.max;
+/** The longest interval between two updates of a far character's pose, in frames. */
+export const LONGEST_ANIMATION_INTERVAL = QUALITY_SETTINGS.farAnimationInterval.values.max;
 /** The lightest shadow filter, in texels on each side. */
 export const LIGHTEST_FILTER = QUALITY_SETTINGS.shadowFilter.values[0];
 /** The detail steps: each doubles the threshold of the levels of detail. */
@@ -115,6 +118,16 @@ export const LOWEST_SSR_SCALE = thousandths(QUALITY_SETTINGS.ssrScale.values[1])
 export function farIntervalSteps(interval: number): number {
 	let steps = 0;
 	for (let value = interval; value < LONGEST_FAR_INTERVAL; value *= 2) steps++;
+	return steps;
+}
+
+/**
+ * The governor's steps of a far character's update interval from `interval` on: each step doubles
+ * it, up to the longest interval.
+ */
+export function animationSteps(interval: number): number {
+	let steps = 0;
+	for (let value = interval; value < LONGEST_ANIMATION_INTERVAL; value *= 2) steps++;
 	return steps;
 }
 
@@ -198,7 +211,16 @@ const STATE_SIZE = 6;
  * past the scale.
  */
 const LEVELS =
-	FULL_SCALE / SCALE_STEP + 1 + BUDGET_STEPS + DETAIL_STEPS + farIntervalSteps(1) + 1 + 1 + 1 + 1;
+	FULL_SCALE / SCALE_STEP +
+	1 +
+	BUDGET_STEPS +
+	DETAIL_STEPS +
+	farIntervalSteps(1) +
+	1 +
+	1 +
+	1 +
+	1 +
+	animationSteps(1);
 
 /**
  * The governor's rules, over windows of frame figures. The frame loop, or a test, fills `window`
@@ -235,13 +257,19 @@ export class Governor {
 	/** The steps of each march of contact shadows: the setting's, or the fewest after a step. */
 	contactSteps = 0;
 	/**
+	/**
 	 * The scale of screen-space reflections' grid in thousandths of the render size: the setting's,
 	 * or the lowest above none after a step.
 	 */
 	ssrScale = 0;
 	/**
+	 * The frames between two updates of a far character's pose: the setting's, or longer after a
+	 * step. A sketch reads it and gives it to the characters that the camera sees from far.
+	 */
+	animationInterval: number = LONGEST_ANIMATION_INTERVAL;
+	/**
 	 * Counts each change of `detailFactor`, `farInterval`, `filter`, `bloomHalvings`, `aoScale`,
-	 * `ssrScale` or `contactSteps`, so the frame loop applies them.
+	 * `ssrScale`, `contactSteps` or `animationInterval`, so the frame loop applies them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -275,6 +303,12 @@ export class Governor {
 	private ssr = false;
 	/** The steps of contact shadows that their step starts from. */
 	private contactSetting = 0;
+	/**
+	 * The update interval of far characters that its step starts from: the longest interval at
+	 * first, so a scene that never gives the governor a shorter one, as one with no animated
+	 * characters, has no step to take here.
+	 */
+	private animationSetting: number = LONGEST_ANIMATION_INTERVAL;
 	/** True while the scene draws a mesh with levels of detail, which the detail steps need. */
 	private levels = false;
 	/** The steps that the sketch's budgets allow: those to the lowest of their floors. */
@@ -361,6 +395,16 @@ export class Governor {
 	}
 
 	/**
+	 * Sets the frames between two updates of a far character's pose that the step starts from. A
+	 * sketch reads the result and gives it to its far characters.
+	 */
+	setAnimation(interval: number): void {
+		if (interval === this.animationSetting) return;
+		this.animationSetting = interval;
+		this.applySteps();
+	}
+
+	/**
 	 * Sets whether the scene draws a mesh with levels of detail, and the threshold of the levels is
 	 * above 0, which the detail steps need.
 	 */
@@ -394,7 +438,8 @@ export class Governor {
 
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
-	 * occlusion, contact shadows and the settings allow.
+	 * occlusion, screen-space reflections, contact shadows, the far characters' update interval and
+	 * the settings allow.
 	 */
 	get maxSteps(): number {
 		return (
@@ -404,7 +449,8 @@ export class Governor {
 			this.bloomSteps() +
 			this.aoSteps() +
 			this.ssrSteps() +
-			this.contactStepCount()
+			this.contactStepCount() +
+			this.animationStepCount()
 		);
 	}
 
@@ -511,8 +557,8 @@ export class Governor {
 
 	/**
 	 * One step down: the budgets and the render scale in turn, a budget's step first, while the
-	 * scale is above the lowest; then the budgets' remaining steps, then the detail, shadow, bloom
-	 * and ambient occlusion steps. When it
+	 * scale is above the lowest; then the budgets' remaining steps, then the detail, shadow, bloom,
+	 * ambient occlusion, contact shadow and far-character interval steps. When it
 	 * leaves a level whose step up is still on trial, the next step up into that level waits twice
 	 * as long as that one did. Otherwise the level held, and the frames got heavier, so its wait
 	 * starts again from its shortest.
@@ -629,11 +675,21 @@ export class Governor {
 	}
 
 	/**
+	 * The far characters' interval steps: each doubles the setting, from it up to the longest
+	 * interval. A crowd that never uses the setting still carries the steps, which the frame loop
+	 * applies to nothing.
+	 */
+	private animationStepCount(): number {
+		return animationSteps(this.animationSetting);
+	}
+
+	/**
 	 * Brings the steps within what the settings and the scene allow, and works out the settings
 	 * that frames draw with: the threshold of the levels of detail doubles with each of its steps,
 	 * then the far cascades' interval doubles with each of its steps, the filter takes the lightest
-	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, and last
-	 * screen-space reflections take theirs, and last contact shadows take their fewest steps.
+	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, then
+	 * screen-space reflections take theirs, then contact shadows take their fewest steps, and last
+	 * the far characters' update interval doubles with each of its steps.
 	 */
 	private applySteps(): void {
 		const detailSteps = this.detailSteps();
@@ -643,7 +699,9 @@ export class Governor {
 		const aoSteps = this.aoSteps();
 		const ssrSteps = this.ssrSteps();
 		const before = shadowSteps + bloomSteps + aoSteps + ssrSteps;
-		this.steps = Math.min(this.steps, before + this.contactStepCount());
+		const contactStepCount = this.contactStepCount();
+		const animationStepCount = this.animationStepCount();
+		this.steps = Math.min(this.steps, before + contactStepCount + animationStepCount);
 		const detailFactor = 1 << Math.min(this.steps, detailSteps);
 		const shadowStepsTaken = Math.max(0, this.steps - detailSteps);
 		const doublings = Math.min(shadowStepsTaken, intervalSteps);
@@ -657,6 +715,11 @@ export class Governor {
 				? LOWEST_SSR_SCALE
 				: this.ssrSetting;
 		const contactSteps = this.steps > before ? FEWEST_CONTACT_STEPS : this.contactSetting;
+		const animationTaken = Math.max(0, this.steps - before - contactStepCount);
+		const animationInterval = Math.min(
+			LONGEST_ANIMATION_INTERVAL,
+			this.animationSetting << animationTaken,
+		);
 		if (
 			detailFactor === this.detailFactor &&
 			farInterval === this.farInterval &&
@@ -664,7 +727,8 @@ export class Governor {
 			bloomHalvings === this.bloomHalvings &&
 			aoScale === this.aoScale &&
 			ssrScale === this.ssrScale &&
-			contactSteps === this.contactSteps
+			contactSteps === this.contactSteps &&
+			animationInterval === this.animationInterval
 		)
 			return;
 		this.detailFactor = detailFactor;
@@ -674,6 +738,7 @@ export class Governor {
 		this.aoScale = aoScale;
 		this.ssrScale = ssrScale;
 		this.contactSteps = contactSteps;
+		this.animationInterval = animationInterval;
 		this.stepChanges++;
 	}
 }
