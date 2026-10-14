@@ -6,8 +6,12 @@
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
-/** How long the frames blend before the capture: well past the blend's ten frames. */
-const SETTLE_SECONDS = 2;
+/** The frames the blend draws before the capture: well past the blend's ten frames. */
+const SETTLE_FRAMES = 20;
+/** The length of each window the page measures. */
+const WINDOW_SECONDS = 0.5;
+/** How long a slow device, such as the software renderer, may take to draw those frames. */
+const SETTLE_LIMIT_SECONDS = 20;
 
 run('fog-live', async () => {
 	const canvas = document.querySelector('canvas');
@@ -23,14 +27,19 @@ run('fog-live', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
-	const play = await engine.measure(SETTLE_SECONDS);
+	// The blend settles per frame, not per second, so wait for a count of frames. A software
+	// renderer draws only a few frames a second, and a fixed time would capture too few.
+	const started = performance.now();
+	let frames = 0;
+	while (frames < SETTLE_FRAMES && performance.now() - started < SETTLE_LIMIT_SECONDS * 1000)
+		frames += (await engine.measure(WINDOW_SECONDS)).frames;
 	const frame = await engine.captureFrame();
 	await engine.destroy();
 	return {
 		tier: engine.capabilities.tier,
 		width: frame.width,
 		height: frame.height,
-		frames: play.frames,
+		frames,
 		pixels: toBase64(frame.pixels),
 		failures,
 	};

@@ -30,6 +30,27 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
 
+### Build caches
+
+The build caches live under one root, `~/.cache/null3d` by default, each in a named subfolder:
+`cargo-target` for the compiled Rust dependency crates and the WebAssembly builds, `shader-modules`
+for the built shader modules, `shader-cache` for the per-entry shader build, and `wasm-artifacts` for
+the built wasm and tool modules. `NULL3D_BUILD_CACHE` names another root and moves them all; the older
+per-cache variables still name one folder. Clearing the root is always safe, because every entry is a
+pure function of its inputs and a missing entry only costs the build time.
+
+Figures from the Mac on 14 October 2026, with the shared cargo target warm:
+
+| build or edit | run again | from the cache |
+| --- | --- | --- |
+| a fresh worktree's first `--pages-only` build | 236.8 s | 0.32 s |
+| a no-change `--pages-only` build | 114.5 s | 0.28 s |
+| a worktree's shader modules | about 3 min | about 0.2 s |
+| one shader's edit | about 500 s | about 10 s |
+
+A library module's edit rebuilds only the entries that import it: 31 of 54 in one measurement. The
+dependency crates compile once for every checkout on the machine rather than once per worktree.
+
 ## What a report measures
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
@@ -482,7 +503,7 @@ The page kinds that end in `-timed` start null3D on WebGL2 with `?gl-timing`. Th
 
 - On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
 - In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
-- WebKit checks each indexed indirect draw that uses vertex buffers inside its render pass. The check adds two pipeline switches and two vertex to vertex barriers. It also runs an indirect point draw over the draw's whole index count, and it makes two scratch allocations. An empty draw costs almost as much as a drawn one. A raw-WebGPU probe measured about 2.8 us per draw on the iPhone 17, 4.3 on the iPad 10 and 7.3 on the Mac. Every arm of the probe held the same 131 k triangles. The same draws made directly cost 0.06 to 0.5 ms in the whole frame ([D-174](decisions/D-174-apple-gpu-direct-draws.md)).
+- WebKit checks each indexed indirect draw that uses vertex buffers inside its render pass. The check adds two pipeline switches and two vertex to vertex barriers. It also runs an indirect point draw over the draw's whole index count, and it makes two scratch allocations. An empty draw costs almost as much as a drawn one. A raw-WebGPU probe measured about 2.8 us per draw on the iPhone 17, 4.3 on the iPad 10 and 7.3 on the Mac. Every arm of the probe held the same 131 k triangles. The same draws made directly cost 0.06 to 0.5 ms in the whole frame. The cost grows with the passes too: on the Mac in Safari the same 1,024 draws cost 9.8 ms with one pass and 54.4 ms with three, while direct draws stayed near 4 ms ([D-174](decisions/D-174-apple-gpu-direct-draws.md)).
 - The timer copies a frame's timestamps out only after the GPU has finished the frame, in a submit of its own. Firefox writes them late, so a copy in the frame's own commands read an earlier frame's values ([implementation notes](implementation-notes.md#browser-faults)). A pass without timestamps is left out of `gpuPassMs`, and its frame keeps its other parts.
 - The timestamps cover only the GPU passes. Work that the browser does outside them shows in `gpuLatencyMs` and in the frame rate, as [Safari's frame path](implementation-notes.md#safaris-frame-path) describes.
 - The timer times one frame in 11, a prime above the longest far cascade interval of 8. Until 5 October 2026 it timed one frame in 8. Low's far cascade drew once in 4 frames, so every timed frame fell on the same frame of its 4-frame cycle. Which frame depended on when the run began. On the Mac, every timed frame fell between the far cascade's turns, so the build read too low, and the pass never showed in its `gpuPassMs`. On the owner's iPad on 6 October, every timed frame of f46c0686 held the far cascade: 4 render passes in all 225 timed frames, so it read too high. On 5 October at 15:59 the same build there timed none of them, with 3 render passes. So a build with the older timer does not compare with a newer one. To compare it, build it with the newer count, which changes nothing else. A unit test holds the count against every interval from 1 to 8. The draw call counts never had this fault: they count every frame.
