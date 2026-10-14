@@ -489,6 +489,35 @@ describe('the bloom steps', () => {
 		expect(FEWEST_CONTACT_STEPS).toBe(4);
 	});
 
+	it("doubles the far characters' update interval last, after every other step", () => {
+		const { controller, untilStep } = controlled(950);
+		controller.setAnimation(1);
+		expect(controller.maxSteps).toBe(2);
+		const seen: string[] = [];
+		for (let k = 0; k < 3; k++) {
+			untilStep(SLOW);
+			seen.push(`${controller.scale} ${controller.animationInterval}`);
+		}
+		// The scale drops to its lowest, then the far characters' interval doubles twice.
+		expect(seen).toEqual(['950 1', '950 2', '950 4']);
+		expect(controller.animationInterval).toBe(4);
+		// At the longest interval the setting has no step, and a shorter setting takes its steps back.
+		controller.setAnimation(4);
+		expect([controller.maxSteps, controller.animationInterval]).toEqual([0, 4]);
+		controller.setAnimation(2);
+		expect(controller.maxSteps).toBe(1);
+		// A setting of 1 gives the two steps, and the reverse order comes back to it first.
+		controller.setAnimation(1);
+		expect(controller.animationInterval).toBe(1);
+		untilStep(SLOW);
+		untilStep(SLOW);
+		expect(controller.animationInterval).toBe(4);
+		untilStep(EASY);
+		expect(controller.animationInterval).toBe(2);
+		untilStep(EASY);
+		expect(controller.animationInterval).toBe(1);
+	});
+
 	it('take no step from the smallest base', () => {
 		const { controller, ladder } = controlled(950);
 		controller.setBloom(true, SMALLEST_BLOOM_SIZE);

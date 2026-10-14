@@ -126,6 +126,16 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// How often a far character's pose updates: once in this many frames. A sketch reads it and
+	// gives it to `animator.setUpdateInterval`, which holds out a character near the camera at 1.
+	// The job workers then sample, blend and compose a far crowd less often, and a held pose skips
+	// the skinning pass too. A higher value costs less, with more visible stepping. The governor
+	// raises it after every other live step.
+	farAnimationInterval: {
+		presets: [4, 4, 2, 1],
+		changes: 'live',
+		values: { min: 1, max: 4, whole: true, heavierBelow: true },
+	},
 	// The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	// the next cascade's, so no line shows where they meet. Only the band's pixels read a second
 	// layer of the shadow map. D-73 gives the figures.
@@ -397,6 +407,14 @@ export interface QualitySettings {
 	 * it on. It changes during play.
 	 */
 	followMovingCasters: boolean;
+	/**
+	 * How often a far character's pose updates: once in this many frames, from 1 to 4. Give it to
+	 * `animator.setUpdateInterval` for the characters that the camera sees from far. Give 1 to the
+	 * ones near it, so a crowd samples and skins less without a near character stepping. The
+	 * governor raises it when frames take too long, after every other live step. It is then the
+	 * last thing to give way and the first to come back. It changes during play.
+	 */
+	farAnimationInterval: number;
 	/**
 	 * The share of each shadow cascade's length, at its far end, over which its shadow blends into
 	 * the next cascade's, from 0 to 0.5. The blend hides the line where a near cascade's sharper
