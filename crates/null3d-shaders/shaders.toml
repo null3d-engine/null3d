@@ -609,6 +609,28 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 [first_use.sky]
 shaders = ["sky"]
 
+# The physical sky's lookup tables and its panorama for the sky's environment (see
+# sky_tables.wgsl): one shader, whose draw's first vertex names the table it draws.
+[shaders.sky_tables]
+file = "sky_tables.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
+# The physical sky behind every object, drawn as the analytic sky is, from its tables.
+[shaders.sky_physical]
+file = "sky_physical.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
+# A page downloads the physical sky with its first physical sky background. The view shows the
+# background color until the tables are drawn.
+[first_use.physical_sky]
+shaders = ["sky_tables", "sky_physical"]
+
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.
 [shaders.timer_mark]

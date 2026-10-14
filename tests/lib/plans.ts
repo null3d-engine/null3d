@@ -1089,9 +1089,9 @@ export function skinningPlan(gpu: SkinningGpu = 'webgl2'): PlanItem<Check>[] {
 
 /**
  * The effects that the effect cost page measures: bloom, ambient occlusion, depth of field, the
- * sun's contact shadows, the volumetric fog, or 4 custom effects.
+ * sun's contact shadows, the volumetric fog, 4 custom effects, or the physical sky.
  */
-export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects';
+export type CostedEffect = 'bloom' | 'ao' | 'dof' | 'contact' | 'fog' | 'effects' | 'sky';
 
 /** How long the effect cost page may take: the warm-up and six measurements, plus the start. */
 const EFFECT_TIMEOUT_SECONDS = 60;
@@ -1109,15 +1109,41 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * fog plan times the volumetric fog at 32, 64 and 96 slices, the grids of Medium, High and Ultra;
  * 32 is also the candidate for Low. The contact plan times the sun's contact shadows at 4 and 8
  * steps, the steps of Medium on WebGL2 and of High, with the prepass on in both halves too, as for
- * ambient occlusion. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
- * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, and D-135 those of the
- * contact plan.
+ * ambient occlusion. The physical sky plan times the physical sky against three.js's analytic sky,
+ * with the sun still and with the sun moving in every frame, which draws the sky view table again
+ * in each frame. D-21 records the results of the bloom plan and the ao plan, D-71 those of the
+ * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
+ * contact plan, and D-143 those of the physical sky plan.
  */
 export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
-	const prepass = effect === 'ao' || effect === 'contact' ? [false, true] : [false];
-	const tapCounts = effect === 'dof' ? [16, 22] : [undefined];
-	const sliceCounts = effect === 'fog' ? [32, 64, 96] : [undefined];
-	const stepCounts = effect === 'contact' ? [4, 8] : [undefined];
+	// Each variant's suffix to the item's name, and its switches.
+	const variants: Record<CostedEffect, (readonly [string, readonly string[]])[]> = {
+		bloom: [['', []]],
+		ao: [
+			['', []],
+			['-prepass', ['prepass=on']],
+		],
+		dof: [
+			['-16', ['taps=16']],
+			['-22', ['taps=22']],
+		],
+		contact: [false, true].flatMap((on) =>
+			[4, 8].map(
+				(steps) =>
+					[
+						`${on ? '-prepass' : ''}-${steps}`,
+						[...(on ? ['prepass=on'] : []), `steps=${steps}`],
+					] as const,
+			),
+		),
+		fog: [32, 64, 96].map((slices) => [`-${slices}`, [`slices=${slices}`]] as const),
+		// One pass for each effect, so a quarter of the difference is one pass.
+		effects: [['', ['join=off']]],
+		sky: [
+			['', []],
+			['-moving', ['moving']],
+		],
+	};
 	// three.js's GTAOPass on the same scene and canvas, for comparison.
 	const twin: PlanItem<Check>[] =
 		effect === 'ao'
@@ -1132,31 +1158,15 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 			: [];
 	const pages = TIERS.flatMap((tier) =>
 		EFFECT_SCALES.flatMap((scale) =>
-			prepass.flatMap((on) =>
-				tapCounts.flatMap((taps) =>
-					sliceCounts.flatMap((slices) =>
-						stepCounts.map((steps) =>
-							pageItem(
-								`${effect}-${tier}-${scale * 100}${on ? '-prepass' : ''}${taps ? `-${taps}` : ''}${slices ? `-${slices}` : ''}${steps ? `-${steps}` : ''}`,
-								'effect-cost',
-								{ kind: 'effect', effect, tier, scale },
-								{
-									switches: [
-										`gpu=${tier}`,
-										`scale=${scale}`,
-										`effect=${effect}`,
-										...(on ? ['prepass=on'] : []),
-										...(taps ? [`taps=${taps}`] : []),
-										...(slices ? [`slices=${slices}`] : []),
-										...(steps ? [`steps=${steps}`] : []),
-										// One pass for each effect, so a quarter of the difference is one pass.
-										...(effect === 'effects' ? ['join=off'] : []),
-									],
-									timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
-								},
-							),
-						),
-					),
+			variants[effect].map(([suffix, switches]) =>
+				pageItem(
+					`${effect}-${tier}-${scale * 100}${suffix}`,
+					'effect-cost',
+					{ kind: 'effect', effect, tier, scale },
+					{
+						switches: [`gpu=${tier}`, `scale=${scale}`, `effect=${effect}`, ...switches],
+						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
+					},
 				),
 			),
 		),
@@ -1769,6 +1779,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
 	effects: () => effectPlan('effects'),
+	'physical-sky': () => effectPlan('sky'),
 	'effects-joined': effectsJoinedPlan,
 	environment: environmentPlan,
 	'environment-load': environmentLoadPlan,
