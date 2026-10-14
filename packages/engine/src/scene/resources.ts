@@ -1370,31 +1370,39 @@ type Ranged =
 	| 'sheenRoughness';
 
 /** The core's code for each value that is a number, and the most it takes, or none above 0. */
-const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
-	['opacity', MATERIAL_PARAM_OPACITY, 1, 'opacity'],
-	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1, 'alpha cutoff'],
-	['metalness', MATERIAL_PARAM_METALNESS, 1, 'metalness'],
-	['roughness', MATERIAL_PARAM_ROUGHNESS, 1, 'roughness'],
-	[
-		'emissiveIntensity',
-		MATERIAL_PARAM_EMISSIVE_INTENSITY,
-		Number.POSITIVE_INFINITY,
-		'emissive intensity',
-	],
-	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1, 'aoMapIntensity'],
-	[
-		'lightMapIntensity',
-		MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
-		Number.POSITIVE_INFINITY,
-		'lightMapIntensity',
-	],
-	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1, 'specularIntensity'],
-	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY, 'envIntensity'],
-	['transmission', MATERIAL_PARAM_TRANSMISSION, 1, 'transmission'],
-	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY, 'thickness'],
-	['clearcoat', MATERIAL_PARAM_CLEARCOAT, 1, 'clearcoat'],
-	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1, 'clearcoatRoughness'],
-	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS, 1, 'sheenRoughness'],
+const RANGED: readonly (readonly [Ranged, number, number])[] = [
+	['opacity', MATERIAL_PARAM_OPACITY, 1],
+	['alphaCutoff', MATERIAL_PARAM_ALPHA_CUTOFF, 1],
+	['metalness', MATERIAL_PARAM_METALNESS, 1],
+	['roughness', MATERIAL_PARAM_ROUGHNESS, 1],
+	['emissiveIntensity', MATERIAL_PARAM_EMISSIVE_INTENSITY, Number.POSITIVE_INFINITY],
+	['aoMapIntensity', MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
+	['lightMapIntensity', MATERIAL_PARAM_LIGHT_MAP_INTENSITY, Number.POSITIVE_INFINITY],
+	['specularIntensity', MATERIAL_PARAM_SPECULAR_INTENSITY, 1],
+	['envIntensity', MATERIAL_PARAM_ENV_INTENSITY, Number.POSITIVE_INFINITY],
+	['transmission', MATERIAL_PARAM_TRANSMISSION, 1],
+	['thickness', MATERIAL_PARAM_THICKNESS, Number.POSITIVE_INFINITY],
+	['clearcoat', MATERIAL_PARAM_CLEARCOAT, 1],
+	['clearcoatRoughness', MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 1],
+	['sheenRoughness', MATERIAL_PARAM_SHEEN_ROUGHNESS, 1],
+];
+
+/** Each whole-number value's name, in `RANGED`'s order, for the development checks. */
+const RANGED_NAMES: readonly string[] = [
+	'opacity',
+	'alpha cutoff',
+	'metalness',
+	'roughness',
+	'emissive intensity',
+	'aoMapIntensity',
+	'lightMapIntensity',
+	'specularIntensity',
+	'envIntensity',
+	'transmission',
+	'thickness',
+	'clearcoat',
+	'clearcoatRoughness',
+	'sheenRoughness',
 ];
 
 /** The core's slot of each map option. */
@@ -1484,16 +1492,19 @@ function checkValues(values: AnyValues, call: string): void {
 			'E1108',
 			`${call}() got the attenuationDistance ${distance}; it takes more than 0, or Infinity.`,
 		);
-	for (const [key, , most, name] of RANGED) {
+	for (let k = 0; k < RANGED.length; k++) {
+		const [key, , most] = RANGED[k] as readonly [Ranged, number, number];
 		const value = values[key];
 		if (value === undefined) continue;
-		if (!(value >= 0 && value <= most))
+		if (!(value >= 0 && value <= most)) {
+			const name = RANGED_NAMES[k] as string;
 			throw new EngineError(
 				'E1108',
 				most === 1
 					? `${call}() got the ${name} ${value}, outside 0 to 1.`
 					: `${call}() got the ${name} ${value}; it takes 0 or more.`,
 			);
+		}
 	}
 }
 
