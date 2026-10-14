@@ -423,7 +423,7 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 | `skyIntensity` | 1: the physical sky dims by itself after sunset |
 | `light` | The sun through the air, which reddens as it sets. After sunset, the moon, whose light grows as night falls |
 | `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
-| `exposure` | Follows the sky's mean light, as an eye adapts: 1 by day, higher through dusk, up to 200, and 3.5 once night has fallen, as with the analytic sky |
+| `exposure` | Follows the sky's mean light, as an eye adapts: 1 by day, up to 4 through dusk, and 3.5 once night has fallen, as with the analytic sky |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 
