@@ -13,7 +13,7 @@
 #import null3d::fog_volume::{FogStep, SLICES_PER_ROW, fog_edge_distance, fog_grid_place, fog_phase, fog_point, fog_slice_edge}
 #import null3d::lighting::{distance_attenuation, spot_attenuation}
 #import null3d::lights::{cluster_lights, grid_word, light_of}
-#import null3d::shadows::{cascades, light_shadow, no_plane, sun_texels}
+#import null3d::shadows::{shadows, light_shadow, no_plane, sun_texels}
 
 @group(1) @binding(0) var<uniform> settings: FogStep;
 @group(1) @binding(1) var history: texture_2d<f32>;
@@ -37,23 +37,23 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
 /// it, and compares its depth with the four nearest texels, blended by its place between them. A
 /// point in the air has no surface, so it takes no bias. Past the last cascade the sun is unshadowed.
 fn sun_seen(relative: vec3f) -> f32 {
-    let count = u32(cascades.forward.w);
-    let seen = relative + cascades.origin.xyz;
-    let along = dot(seen, cascades.forward.xyz);
-    let end = cascades.ends[max(count, 1u) - 1u];
+    let count = u32(shadows.cascades.forward.w);
+    let seen = relative + shadows.cascades.origin.xyz;
+    let along = dot(seen, shadows.cascades.forward.xyz);
+    let end = shadows.cascades.ends[max(count, 1u) - 1u];
     if count == 0u || along >= end {
         return 1.0;
     }
-    let distance = mix(along, length(seen) * length(cascades.forward.xyz), cascades.biases.z);
-    let size = cascades.kernel.x;
-    let inside = 1.0 - 2.0 * cascades.kernel.y;
+    let distance = mix(along, length(seen) * length(shadows.cascades.forward.xyz), shadows.cascades.biases.z);
+    let size = shadows.cascades.kernel.x;
+    let inside = 1.0 - 2.0 * shadows.cascades.kernel.y;
     var lit = 1.0;
     var found = false;
     // Every cell runs one pass per cascade, as the scene's surfaces do (see null3d::shadows).
     for (var k = 0u; k < count; k++) {
-        let holds_distance = k + 1u == count || distance < cascades.ends[k];
+        let holds_distance = k + 1u == count || distance < shadows.cascades.ends[k];
         if !found && holds_distance {
-            let clip = cascades.view_proj[k] * vec4f(relative, 1.0);
+            let clip = shadows.cascades.view_proj[k] * vec4f(relative, 1.0);
             if all(abs(clip.xy) <= vec2f(inside)) {
                 found = true;
                 var uv = clip.xy * vec2f(0.5, -0.5) + 0.5;
