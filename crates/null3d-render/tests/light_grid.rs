@@ -13,7 +13,8 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_render::camera::{Affine, Lens, Orthographic, Perspective};
 use null3d_render::light_grid::{
-    ClusterParams, DEFAULT_GRID, GridShape, GridView, LightGrid, LightLimits, START_BITS,
+    ClusterParams, DEFAULT_GRID, FADE_FRAMES, GridShape, GridView, LightGrid, LightLimits,
+    START_BITS, area_light_at_camera,
 };
 
 /// Runs `f` with a job system whose workers are native threads.
@@ -335,6 +336,155 @@ fn slices_end_where_the_farthest_light_ends() {
     assert_eq!(word >> START_BITS, 1);
 }
 
+#[test]
+fn the_area_light_cap_keeps_the_nearest_of_equal_area_lights_and_every_other_light() {
+    let view = view(PERSPECTIVE, &AHEAD);
+    let shape = GridShape {
+        tiles_x: 4,
+        tiles_y: 4,
+        slices: 8,
+    };
+    let jobs = JobSystem::new(0);
+    let area = |z: f32, row| VisibleLight {
+        kind: kind::RECT,
+        ..light([0.0, 0.0, z], 3.0, false, row)
+    };
+    // Equal area lights far, near and in between, among point lights.
+    let lights = [
+        area(-30.0, 1),
+        light([1.0, 0.0, -20.0], 3.0, false, 2),
+        area(-8.0, 3),
+        area(-15.0, 4),
+        light([-1.0, 0.0, -40.0], 3.0, false, 5),
+    ];
+    let rows = |limits| {
+        let mut grid = LightGrid::new(shape, limits);
+        grid.assign(&jobs, &view, &lights);
+        grid.lights().iter().map(|l| l.light).collect::<Vec<u32>>()
+    };
+    let capped = |area_lights| LightLimits {
+        area_lights,
+        ..LightLimits::default()
+    };
+    assert_eq!(rows(capped(3)), [1, 2, 3, 4, 5]);
+    assert_eq!(rows(capped(2)), [2, 3, 4, 5]);
+    assert_eq!(rows(capped(0)), [2, 5]);
+    // With the frame's cap too, the nearest lights stay among those the area cap keeps.
+    let both = LightLimits {
+        lights: 2,
+        area_lights: 1,
+        ..LightLimits::default()
+    };
+    assert_eq!(rows(both), [2, 3]);
+    // A grid's cap changes from the next frame.
+    let mut grid = LightGrid::new(shape, capped(3));
+    grid.set_area_light_cap(1);
+    grid.assign(&jobs, &view, &lights);
+    let kept: Vec<u32> = grid.lights().iter().map(|l| l.light).collect();
+    assert_eq!(kept, [2, 3, 5]);
+}
+
+/// A rectangle light at `position`, relative to the camera, that faces the camera, `width` by
+/// `height` meters, with range 20, whose color times intensity is `bright` in each channel.
+fn panel(position: [f32; 3], width: f32, height: f32, bright: f32, row: u32) -> VisibleLight {
+    VisibleLight::area(
+        kind::RECT,
+        row,
+        position,
+        20.0,
+        [bright; 3],
+        [width / 2.0, 0.0, 0.0],
+        [0.0, height / 2.0, 0.0],
+        0.0,
+    )
+}
+
+/// The rows of the lights that a grid of `area_lights` lists for `lights`, with the red of each.
+fn listed(grid: &mut LightGrid, lights: &[VisibleLight]) -> Vec<(u32, f32)> {
+    let view = view(PERSPECTIVE, &AHEAD);
+    grid.assign(&JobSystem::new(0), &view, lights);
+    grid.lights()
+        .iter()
+        .map(|l| (l.light, l.color[0]))
+        .collect()
+}
+
+fn area_grid(area_lights: u32) -> LightGrid {
+    let shape = GridShape {
+        tiles_x: 4,
+        tiles_y: 4,
+        slices: 8,
+    };
+    LightGrid::new(
+        shape,
+        LightLimits {
+            area_lights,
+            ..LightLimits::default()
+        },
+    )
+}
+
+#[test]
+fn a_small_bright_area_light_beats_a_big_dim_one_at_the_cap() {
+    // A big dim panel nearer the camera, whose sphere reaches further, and a small bright one.
+    let big = panel([0.0, 0.0, -6.0], 4.0, 3.0, 0.5, 1);
+    let small = panel([1.0, 0.0, -8.0], 0.5, 0.5, 200.0, 2);
+    assert!(area_light_at_camera(&small) > area_light_at_camera(&big));
+    assert_eq!(listed(&mut area_grid(1), &[big, small]), [(2, 200.0)]);
+    // The nearest point of a light counts, not its middle: a long strip whose end passes beside
+    // the camera gives it more light than the same strip a little further off.
+    let beside = VisibleLight {
+        direction: [10.0, 0.0, 0.0],
+        ..panel([10.5, 0.0, -2.0], 0.0, 0.2, 1.0, 3)
+    };
+    let off = VisibleLight {
+        position: [10.5, 0.0, -4.0],
+        ..beside
+    };
+    assert!(area_light_at_camera(&beside) > 3.0 * area_light_at_camera(&off));
+    // Past its range, a light keeps only a trace of its estimate.
+    let far = VisibleLight {
+        range: 5.0,
+        ..panel([0.0, 0.0, -8.0], 4.0, 3.0, 0.5, 4)
+    };
+    assert!(area_light_at_camera(&far) < 1e-3 * area_light_at_camera(&big));
+}
+
+#[test]
+fn area_lights_fade_across_the_cap_and_start_whole() {
+    let mut grid = area_grid(1);
+    let a = panel([0.0, 0.0, -6.0], 1.0, 1.0, 10.0, 1);
+    let b = panel([1.0, 0.0, -6.0], 1.0, 1.0, 1.0, 2);
+    // The first frame lists the brighter light whole, and leaves the other out.
+    assert_eq!(listed(&mut grid, &[a, b]), [(1, 10.0)]);
+    // When the other turns brighter, both fade: one in, the other out, a step a frame.
+    let brighter = VisibleLight {
+        color: [100.0; 3],
+        ..b
+    };
+    let step = 1.0 / FADE_FRAMES as f32;
+    for frame in 1..FADE_FRAMES {
+        let weight = frame as f32 * step;
+        let rows = listed(&mut grid, &[a, brighter]);
+        assert_eq!(rows.len(), 2, "frame {frame}");
+        assert!(
+            (rows[0].1 - 10.0 * (1.0 - weight)).abs() < 1e-4,
+            "frame {frame}: {rows:?}"
+        );
+        assert!(
+            (rows[1].1 - 100.0 * weight).abs() < 1e-3,
+            "frame {frame}: {rows:?}"
+        );
+    }
+    assert_eq!(listed(&mut grid, &[a, brighter]), [(2, 100.0)]);
+    // A light that comes into view, and was not listed the frame before, starts whole.
+    let c = panel([-1.0, 0.0, -5.0], 1.0, 1.0, 1000.0, 3);
+    assert_eq!(
+        listed(&mut grid, &[a, brighter, c]).last(),
+        Some(&(3, 1000.0))
+    );
+}
+
 /// The cases of the GPU's light clustering test page: a lens and a camera, the light count, the
 /// seed of the lights, how far they spread and how far they reach, and the limits.
 fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
@@ -342,6 +492,7 @@ fn gpu_cases() -> [(Lens, Affine, usize, u64, f32, f32, LightLimits); 3] {
         lights: 200,
         per_cluster: 6,
         indices: 4000,
+        ..LightLimits::default()
     };
     [
         // S3's many small lights, as one camera sees them.

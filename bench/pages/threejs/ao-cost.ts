@@ -39,7 +39,7 @@ run('effect-cost', async () => {
 	const renderer = new three.WebGLRenderer({ antialias: false });
 	renderer.setPixelRatio(devicePixelRatio);
 	renderer.setSize(width, height);
-	renderer.toneMapping = three.ACESFilmicToneMapping;
+	renderer.toneMapping = three.AgXToneMapping;
 	document.body.append(renderer.domElement);
 	const scene = new three.Scene();
 	scene.background = new three.Color(AO_BACKGROUND);

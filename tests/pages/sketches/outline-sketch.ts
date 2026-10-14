@@ -26,6 +26,8 @@ const OUTLINE =
 const SCALE = params.get('scale');
 
 export default defineSketch(({ scene, materials, geometry, post, quality }) => {
+	// The three.js twin draws with AgXToneMapping, which plain AgX matches.
+	post.set({ toneMapping: 'agx' });
 	if (OUTLINE) post.set({ outline: OUTLINE });
 	if (SCALE !== null) {
 		const scale = Number(SCALE);
