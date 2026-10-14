@@ -370,6 +370,7 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 ## 10. Debugging shaders
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
+- The plugin caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build compiles only what changed. Set `NULL3D_NO_SHADER_CACHE=1` to ignore the cache. (`getting-started/install`, "Builds")
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene, in development builds. A debug view ignores custom shaders.

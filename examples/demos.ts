@@ -102,7 +102,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A snowy town square under the moon',
 		summary:
 			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
-		hold: 4,
+		hold: 0.5,
 		timeoutSeconds: 60,
 	},
 	{
@@ -192,7 +192,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Rainy showroom',
 		summary:
 			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
-		controls: `${CAMERA} Move the mouse, or tap, and a blue lamp follows it across the floor.`,
 		hold: 1,
 		timeoutSeconds: 60,
 	},
