@@ -44,6 +44,11 @@
 // do, so bright corners darken as dark ones do instead of turning gray. On the 8-bit path the scene
 // shaders darken their light by it before their tone mapping, and the pass applies none.
 //
+// With automatic exposure, the pass multiplies the HDR color by the exposure that the meter wrote
+// into one texel this frame: the scene's texels, the folded effects' output and bloom's glow, each
+// before they meet. FXAA, the vignette and the tone mapping then see the adapted color. The flag
+// is clear on the 8-bit path, and the texel's read is skipped while it is clear.
+//
 // Last, the pass grades each pixel's display color with a color grading table while its flag is
 // set, as three.js's LUTPass does after its OutputPass, then dithers it. The table is a 3D texture
 // that maps a display color to its graded color, read with a linear filter. The dither comes after
@@ -62,6 +67,8 @@ const VIGNETTE: u32 = 2u;
 const LUT: u32 = 4u;
 /// The settings flag that draws the outline's line.
 const OUTLINE: u32 = 8u;
+/// The settings flag that multiplies the HDR color by the automatic exposure's texel.
+const AUTO_EXPOSURE: u32 = 16u;
 
 /// The pass's settings: the output settings, then the vignette's intensity, size, falloff and
 /// roundness, then the scale and the offset that place a display color in the table, with the
@@ -82,6 +89,20 @@ struct Settings {
 @group(0) @binding(9) var lut: texture_3d<f32>;
 @group(0) @binding(10) var lut_sampler: sampler;
 @group(0) @binding(11) var outline_mask: texture_2d<f32>;
+@group(0) @binding(12) var exposure_texel: texture_2d<f32>;
+
+/// The factor of the automatic exposure for this frame, or 1 while the flag is clear. The fragment
+/// shader reads it once, at its start.
+var<private> eye_factor: f32 = 1.0;
+
+/// The automatic exposure's factor from its texel, or 1 while the flag is clear.
+fn eye_exposure() -> f32 {
+    return select(
+        1.0,
+        textureLoad(exposure_texel, vec2i(0), 0).x,
+        (settings.output.flags & AUTO_EXPOSURE) != 0u,
+    );
+}
 
 /// Where a texture of `size` texels that a pass drew at the render size halved `halvings` times
 /// holds `uv`, a place on the drawn corner from 0 to 1. The place stays within that corner's texel
@@ -158,7 +179,7 @@ fn glow(uv: vec2f) -> vec4f {
     let origin = vec2f(0.0);
 #endif
     let at = (origin + clamp(uv * corner, vec2f(0.5), corner - 0.5)) / extent;
-    let light = bloom.glow.z * textureSampleLevel(bloom_base, bloom_sampler, at, 0.0).rgb;
+    let light = bloom.glow.z * eye_factor * textureSampleLevel(bloom_base, bloom_sampler, at, 0.0).rgb;
     return vec4f(light, max(light.r, max(light.g, light.b)));
 }
 
@@ -319,8 +340,8 @@ fn tone_curve_hook(color: vec3f) -> vec3f {
 #endif
 }
 
-/// The scene color's texel at `texel` after the folded effects, no brighter than a 16-bit float
-/// holds, as `scene_texel` reads it.
+/// The scene color's texel at `texel` after the folded effects and the automatic exposure, no
+/// brighter than a 16-bit float holds, as `scene_texel` reads it.
 fn effected_texel(texel: vec2i) -> vec4f {
     let first = effect_blocks.blocks[0];
     let position = vec2f(texel) + 0.5;
@@ -336,7 +357,7 @@ fn effected_texel(texel: vec2i) -> vec4f {
     input.uv = from_top / first.size.xy;
     input.time = first.clock.x;
     let color = effect_chain(input);
-    return vec4f(limit_hdr(color.rgb), color.a);
+    return vec4f(limit_hdr(color.rgb * eye_factor), color.a);
 }
 #endif
 
@@ -360,12 +381,12 @@ fn shaded(texel: vec4f, shade: f32) -> vec4f {
     return vec4f(texel.rgb * shade, texel.a);
 }
 
-/// The scene color's texel at `pixel`, no brighter than a 16-bit float holds. The scene shaders
-/// write no brighter color, but additive blending can add past it, and some GPUs store the sum as
-/// infinity, which the tone mapping curves would turn into black.
+/// The scene color's texel at `pixel` after the automatic exposure, no brighter than a 16-bit
+/// float holds. The scene shaders write no brighter color, but additive blending can add past it,
+/// and some GPUs store the sum as infinity, which the tone mapping curves would turn into black.
 fn scene_texel(pixel: vec2i) -> vec4f {
     let texel = textureLoad(scene_color, pixel, 0);
-    return vec4f(limit_hdr(texel.rgb), texel.a);
+    return vec4f(limit_hdr(texel.rgb * eye_factor), texel.a);
 }
 
 @vertex
@@ -529,6 +550,7 @@ fn corner_texel(place: vec2f, size: vec2f) -> vec2i {
 
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    eye_factor = eye_exposure();
     let size = vec2f(textureDimensions(scene_color));
     let packed = settings.output.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));

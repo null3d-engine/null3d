@@ -370,7 +370,9 @@ export class WebGPUBackend {
 		if (bound)
 			this.bindingViews[id] = texture.createView({
 				dimension,
-				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+				// A texture that a compute step writes keeps STORAGE_BINDING too, so a bind group can
+				// bind it as a storage texture: the exposure's texel is one such.
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING | (usage & G.TEXTURE_USAGE_STORAGE_BINDING),
 			});
 		// A view of a transient texture must keep all of the texture's usage.
 		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
@@ -527,9 +529,12 @@ export class WebGPUBackend {
 		const id = words[a + 1] as number;
 		const code = this.images.generatorCodeFor<CubeGenerator>(id);
 		this.generators = code;
-		if (op === G.OP_SKY_MAP_STEP)
-			code.skyStage(this.device, this.commandEncoder(), texture, words, floats, a, this.gpuMemory);
-		else code.run(this.device, texture, this.images.generator(id)[0]);
+		if (op === G.OP_SKY_MAP_STEP) {
+			const panorama = words[a + 3] as number;
+			const source = panorama === 0 ? undefined : this.need(this.textures, panorama, 'texture');
+			const encoder = this.commandEncoder();
+			code.skyStage(this.device, encoder, texture, words, floats, a, this.gpuMemory, source);
+		} else code.run(this.device, texture, this.images.generator(id)[0]);
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
