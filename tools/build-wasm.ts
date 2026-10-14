@@ -399,6 +399,52 @@ export function variantStagingFolder(variant: Variant): string {
 }
 
 /**
+ * The machine-wide build lock, held by every build on this machine and by a size check with its base
+ * build. Cargo locks its own target folder, but a build also stages the core and the build tools'
+ * modules, and a size check builds the base commit with that commit's own build script. That script
+ * may stage into the shared target folder, so one lock over the whole of a build, and over a size
+ * check's base build, keeps two builds from removing each other's staged files.
+ */
+const BUILD_LOCK = join(homedir(), '.cache', 'null3d', 'build.lock');
+/** How often a build that waits for the lock checks it, in milliseconds. */
+const LOCK_POLL_MS = 500;
+
+function sleep(ms: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isRunning(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (e) {
+		return (e as NodeJS.ErrnoException).code === 'EPERM';
+	}
+}
+
+/**
+ * Takes the machine-wide build lock and returns the function that releases it. A build that finds
+ * the lock waits for its holder, and takes over a lock whose holder has stopped.
+ */
+export function acquireBuildLock(): () => void {
+	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
+	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
+	mkdirSync(dirname(BUILD_LOCK), { recursive: true });
+	for (;;) {
+		try {
+			writeFileSync(BUILD_LOCK, String(process.pid), { flag: 'wx' });
+			break;
+		} catch (e) {
+			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+		}
+		const holder = Number.parseInt(readFileSync(BUILD_LOCK, 'utf8'), 10);
+		if (Number.isInteger(holder) && isRunning(holder)) sleep(LOCK_POLL_MS);
+		else rmSync(BUILD_LOCK, { force: true });
+	}
+	return () => rmSync(BUILD_LOCK, { force: true });
+}
+
+/**
  * The cache of built artifacts, keyed by every input of the build. A hit copies the files in place
  * and skips cargo, wasm-bindgen and wasm-opt. It is shared by every checkout on the machine, so a
  * no-change build and a fresh worktree skip the link. Set `NULL3D_WASM_ARTIFACTS` to another
@@ -801,18 +847,21 @@ function checkoutBaseTree(tree: string, sha: string): boolean {
 
 /**
  * Copies this checkout's Rust build folders into a new base worktree with their file times, and
- * shares the downloaded wasm-bindgen, whose folder names its version. The worktree's files are
- * newer than the copies, so Cargo rebuilds the engine's crates from the base's code and reuses the
- * standard library and the dependencies. Two checkouts never share one Rust build folder: Cargo
- * finds the engine's crates at the same paths in both, and judges them fresh by file times, so the
- * next build of one checkout could take the other's crates.
+ * shares the downloaded wasm-bindgen, whose folder names its version. The base build then runs with
+ * `NULL3D_CARGO_TARGET=local`, so it compiles into the worktree's own `target/wasm-<variant>` and
+ * never into this checkout's build folder. The worktree's files are newer than the copies, so Cargo
+ * rebuilds the engine's crates from the base's code and reuses the standard library and the
+ * dependencies. Two checkouts never share one Rust build folder: Cargo finds the engine's crates at
+ * the same paths in both, and judges them fresh by file times, so one checkout's build could
+ * otherwise take the other's crates.
  */
 function seedBuildFolders(tree: string): void {
 	mkdirSync(join(tree, 'target'), { recursive: true });
 	for (const variant of VARIANTS) {
+		// buildFolder is absolute: the shared cache, or this checkout's target when it keeps its own.
 		const folder = buildFolder(variant);
-		if (existsSync(join(root, folder)))
-			execFileSync('cp', ['-Rp', join(root, folder), join(tree, folder)]);
+		if (existsSync(folder))
+			execFileSync('cp', ['-Rp', folder, join(tree, 'target', `wasm-${variant.name}`)]);
 	}
 	if (existsSync(join(root, TOOLS_DIR))) symlinkSync(join(root, TOOLS_DIR), join(tree, TOOLS_DIR));
 }
@@ -837,7 +886,15 @@ function baseSizes(sha: string): Record<string, Pick<SizeEntry, 'brotli'>> {
 		if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
 		run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
 		const committed = existsSync(join(tree, COMMITTED_RECORD));
-		run('bun', ['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'], {}, tree);
+		// The base builds into the worktree's own target, seeded from this checkout, so it never
+		// writes this checkout's build folder or the shared cache's staging folder.
+		run(
+			'bun',
+			['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'],
+			// The base runs inside this process's lock, so it must not wait for that same lock.
+			{ NULL3D_CARGO_TARGET: 'local', NULL3D_BUILD_LOCK_HELD: '1' },
+			tree,
+		);
 		mkdirSync(dirname(kept), { recursive: true });
 		copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
 	} finally {
@@ -884,6 +941,18 @@ async function main(): Promise<void> {
 	if (options.printBase) {
 		console.log(resolveBase(chooseBase(options.base, process.env)).sha);
 		return;
+	}
+	// One build at a time on this machine. A size check holds the lock across its base build too, so
+	// the base commit's own build script cannot stage under this build's files. The lock is released
+	// on exit, so a finished, failed or interrupted build leaves none behind.
+	if (options.checkSize || !options.prebuilt) {
+		const release = acquireBuildLock();
+		process.once('exit', release);
+		for (const signal of ['SIGINT', 'SIGTERM'] as const)
+			process.once(signal, () => {
+				release();
+				process.exit(signal === 'SIGINT' ? 130 : 143);
+			});
 	}
 	ensureShaderModules(root);
 	if (options.prebuilt) checkPrebuilt();
