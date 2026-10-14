@@ -197,6 +197,8 @@ export type {
 	RingOptions,
 	ShaderOptions,
 	ShaderValues,
+	ShadowCatcherOptions,
+	ShadowCatcherValues,
 	SphereOptions,
 	StandardBaseOptions,
 	StandardMaps,

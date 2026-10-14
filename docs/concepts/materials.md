@@ -29,6 +29,7 @@ A material has two parts. Its values, such as its color and roughness, sit in on
 | `materials.standard` | glTF's metallic-roughness model, lit by the scene's lights | `MeshStandardMaterial` |
 | `materials.unlit` | Its color alone, without lights | `MeshBasicMaterial` |
 | `materials.shader` | The standard model, with a WGSL surface function that changes the look | `ShaderMaterial`, `onBeforeCompile` |
+| `materials.shadowCatcher` | Only the shadows that fall on it, and nothing where the light reaches it | `ShadowMaterial` |
 
 The standard material uses the same formulas as three.js's `MeshStandardMaterial`. It also reads three.js's own table of specular terms, so its highlights and its energy match three.js's. [Materials](../api/materials.md) lists every option.
 

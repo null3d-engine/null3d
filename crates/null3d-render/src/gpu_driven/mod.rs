@@ -278,8 +278,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 3;
     /// The final pass's output settings.
     pub const FINAL_SETTINGS: u32 = LINES + 4;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// Each camera view's sorted instances of the transparent pass, one buffer per view from here.
-    const SORTED: u32 = FINAL_SETTINGS + 1;
+    const SORTED: u32 = OUTPUT_SETTINGS + 1;
 
     pub const fn sorted(view: ViewId) -> u32 {
         SORTED + view.index() as u32
@@ -407,9 +409,13 @@ mod ids {
     pub const BLANK_OUTLINE: u32 = BLANK_AO + 1;
     /// The texture that custom effects bind in place of the scene's depth when they read none.
     pub const BLANK_EFFECT_DEPTH: u32 = BLANK_OUTLINE + 1;
+    /// The first step of the two-step pass's own blank color grading table and outline texture,
+    /// which it owns so that it never destroys the final pass's.
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// The offset from each view's camera to each grid cell, which the culling pass reads: one row
     /// per view (see [`super::cull`]).
-    pub const CELL_OFFSETS: u32 = BLANK_EFFECT_DEPTH + 1;
+    pub const CELL_OFFSETS: u32 = OUTPUT_BLANK_OUTLINE + 1;
     /// The texel that frame groups bind in place of the copy of the camera's opaque color while
     /// nothing lets light through.
     pub const BLANK_TRANSMISSION: u32 = CELL_OFFSETS + 1;
@@ -474,8 +480,11 @@ mod ids {
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
     pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
+    /// The linear sampler of the first step of the two-step pass's color grading table, which it
+    /// owns so that it never destroys the final pass's.
+    pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
+    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
 
     pub const CULL: u32 = 1;
     /// The light clustering pass's pipelines, in the order it dispatches them.
@@ -511,6 +520,8 @@ mod ids {
     }
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + 3 * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's view copies.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
     /// Each camera view's group of its light clustering dispatches, after the final pass's group.
     pub const fn light_group(view: ViewId) -> u32 {
         FINAL_GROUP + 1 + view.index() as u32
@@ -520,7 +531,7 @@ mod ids {
         FINAL_GROUP + 1 + MAX_VIEWS as u32 + view.index() as u32
     }
     /// The bind group of each step of bloom, after the groups of the depth prepass.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1 + 2 * MAX_VIEWS as u32;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The skinning pass's bind group for each of its segments, by their order, after bloom's.
     pub const SKIN_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The joint texture's bind group, which pipelines that skin in the vertex shader read.
@@ -791,6 +802,13 @@ impl GpuDrivenRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
+                            blank_lut: ids::OUTPUT_BLANK_LUT,
+                            lut_sampler: ids::OUTPUT_LUT_SAMPLER,
+                            blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,

@@ -271,6 +271,10 @@ pub mod feature {
     /// surface that draws. It wins over [`ALPHA_TO_COVERAGE`]. Custom materials have no such
     /// builds, and test their alpha against the cutoff.
     pub const ALPHA_HASH: u32 = 2048;
+    /// The surface draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its own
+    /// color where the main directional light's shadows fall, and nothing where the light reaches
+    /// it. It takes the lit template, whose `shade` branches on the material's flag.
+    pub const SHADOW_CATCHER: u32 = 2_097_152;
     /// A double-sided surface that blends draws in one draw, both faces in the mesh's order, as
     /// three.js's `forceSinglePass` does. Without it the transparent pass draws such a surface's
     /// back faces first, then its front faces.
@@ -312,6 +316,7 @@ pub mod feature {
         | ALPHA_HASH
         | SINGLE_PASS
         | TRANSMISSION
+        | SHADOW_CATCHER
         | COAT_SHEEN
         | WEIGHTED
         | DECAL;
@@ -362,6 +367,8 @@ pub mod flag {
     pub const MAP_LINEAR: u32 = 16;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
     pub const SECOND_UV: u32 = 256;
+    /// The shader draws only the shadows that fall on the surface, as three.js's `ShadowMaterial`.
+    pub const SHADOW_CATCHER: u32 = 128;
     /// In a layered material, the red of the coat map multiplies the clear coat.
     pub const COAT_MAP: u32 = 1 << 16;
     /// In a layered material, the green of the coat map multiplies the coat's roughness.
@@ -384,6 +391,9 @@ const fn row_flags(features: u32) -> u32 {
     }
     if features & feature::NO_FOG != 0 {
         flags |= flag::NO_FOG;
+    }
+    if features & feature::SHADOW_CATCHER != 0 {
+        flags |= flag::SHADOW_CATCHER;
     }
     flags
 }
@@ -1431,6 +1441,23 @@ mod tests {
         assert_eq!(row(&table, 1)[param::FLAGS], flag::BLEND as f32);
         assert!(feature::masks(hashed));
         assert!(!feature::masks(feature::ALPHA_MASK | feature::BLEND));
+    }
+
+    #[test]
+    fn a_shadow_catcher_sets_its_row_flag_beside_blend() {
+        let mut table = MaterialTable::with_capacity(1);
+        table
+            .create(
+                Shading::Lit,
+                feature::BLEND | feature::SHADOW_CATCHER,
+                [0.0, 0.0, 0.0, 0.6],
+            )
+            .unwrap();
+        assert_eq!(table.features(0), feature::BLEND | feature::SHADOW_CATCHER);
+        assert_eq!(
+            row(&table, 0)[param::FLAGS],
+            (flag::BLEND | flag::SHADOW_CATCHER) as f32
+        );
     }
 
     #[test]

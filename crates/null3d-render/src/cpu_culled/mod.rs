@@ -172,8 +172,10 @@ mod ids {
     pub const SHADOWS: u32 = LINES + 1;
     /// The final pass's settings.
     pub const FINAL_SETTINGS: u32 = SHADOWS + 1;
+    /// The first step of the two-step pass's settings.
+    pub const OUTPUT_SETTINGS: u32 = FINAL_SETTINGS + 1;
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
-    pub const BLOOM: u32 = FINAL_SETTINGS + 1;
+    pub const BLOOM: u32 = OUTPUT_SETTINGS + 1;
     /// The uniform buffer of ambient occlusion's steps.
     pub const AO: u32 = BLOOM + 1;
     /// The uniform buffer of the background's values.
@@ -235,8 +237,12 @@ mod ids {
     /// The blank 3D texture that the frame's groups bind while the scene has no light probe grid.
     pub const BLANK_PROBE_GRID: u32 = BLANK_ENVIRONMENT + 1;
     pub const BLANK_OUTLINE: u32 = BLANK_PROBE_GRID + 1;
+    /// The first step of the two-step pass's own blank color grading table and outline texture,
+    /// which it owns so that it never destroys the final pass's.
+    pub const OUTPUT_BLANK_LUT: u32 = BLANK_OUTLINE + 1;
+    pub const OUTPUT_BLANK_OUTLINE: u32 = OUTPUT_BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_OUTLINE + 1;
+    pub const JOINTS: u32 = OUTPUT_BLANK_OUTLINE + 1;
     /// The first joint of the instance that skins each source row, then the first texel of the
     /// morph weights of each source row.
     pub const FIRST_JOINTS: u32 = JOINTS + 1;
@@ -314,14 +320,19 @@ mod ids {
     pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
     pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
+    /// The linear sampler of the first step of the two-step pass's color grading table, which it
+    /// owns so that it never destroys the final pass's.
+    pub const OUTPUT_LUT_SAMPLER: u32 = EXPOSURE_SAMPLER + 1;
     /// The samplers of materials' maps.
-    pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
+    pub const SAMPLERS: u32 = OUTPUT_LUT_SAMPLER + 1;
 
     /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
     /// record group, then the groups of its instance textures, one per pair of ring slots.
     const GROUPS_PER_VIEW: u32 = RING + 1 + RING * RING;
     /// The final pass's group, after every view's.
     pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEW_IDS as u32;
+    /// The first step of the two-step pass's group, after the final pass's.
+    pub const OUTPUT_GROUP: u32 = FINAL_GROUP + 1;
 
     /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
     /// it.
@@ -337,7 +348,7 @@ mod ids {
         draws_group(view) + 1
     }
     /// The bind group of each step of bloom, after the final pass's group.
-    pub const BLOOM_GROUPS: u32 = FINAL_GROUP + 1;
+    pub const BLOOM_GROUPS: u32 = OUTPUT_GROUP + 1;
     /// The bind group of each step of ambient occlusion, after bloom's.
     pub const AO_GROUPS: u32 = BLOOM_GROUPS + STEPS as u32;
     /// The background's bind group, after ambient occlusion's.
@@ -589,6 +600,13 @@ impl CpuCulledRenderer {
                             blank_lut: ids::BLANK_LUT,
                             lut_sampler: ids::LUT_SAMPLER,
                             blank_outline: ids::BLANK_OUTLINE,
+                        },
+                        output_pass: FinalIds {
+                            settings: ids::OUTPUT_SETTINGS,
+                            group: ids::OUTPUT_GROUP,
+                            blank_lut: ids::OUTPUT_BLANK_LUT,
+                            lut_sampler: ids::OUTPUT_LUT_SAMPLER,
+                            blank_outline: ids::OUTPUT_BLANK_OUTLINE,
                         },
                         bloom: BloomIds {
                             buffer: ids::BLOOM,

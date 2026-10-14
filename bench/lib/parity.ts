@@ -31,6 +31,18 @@ export const MAX_DIFFERENT_PERCENT = 0.1;
 export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /**
+ * The shadow-catcher scene's limit, in percent of the pixels. The material draws nothing where the
+ * light reaches it, so the sun's shadow fills the frame and its softness sets the material's alpha.
+ * Core WebGPU and WebGL2 match three.js closely. Compatibility mode runs at its Medium ceiling,
+ * whose FXAA smooths the shadow's edge; the smoothing then shows across the whole penumbra, where an
+ * opaque surface would show only a brightness change. The `shadows` scene's limit of 0.5% therefore
+ * does not hold there. On 15 October 2026 with the 3 x 3 filter, on the Mac's GPU, 0.019% of the
+ * pixels differed on core WebGPU and 0.017% on WebGL2, and 2.382% in compatibility mode.
+ * `.dev/image-tests.md` records the figures.
+ */
+export const SHADOW_CATCHER_MAX_DIFFERENT_PERCENT = 2.5;
+
+/**
  * The limit for ambient occlusion. null3D finds the occlusion at half the render size from the depth
  * alone, and three.js at the whole size with a normal pass of its own, so the soft edges of the
  * darkened areas differ a little. With GTAOPass's defaults under 0.1% of the pixels differ, which
@@ -548,6 +560,18 @@ export const FEATURE_SCENES: readonly FeatureScene[] = [
 		twin: `${TWINS}/shadows.html`,
 		sketchSwitches: NO_TONE,
 		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+	// A shadow-catcher plane against three.js's ShadowMaterial: both show the directional light's
+	// shadow in the material's color and nothing where the light reaches the plane. The shadow edges
+	// differ as the other shadow scenes' do, so core WebGPU and WebGL2 take that limit. Compatibility
+	// mode has one of its own, because the surface shows nothing where the light reaches it: the
+	// edges its Medium ceiling smooths with FXAA change the material's alpha over the whole penumbra,
+	// where the `shadows` scene changes only the brightness of an opaque surface.
+	{
+		test: 'shadow-catcher',
+		twin: `${TWINS}/shadow-catcher.html`,
+		sketchSwitches: NO_TONE,
+		limit: SHADOW_CATCHER_MAX_DIFFERENT_PERCENT,
 	},
 	// Skinning against three.js's SkinnedMesh.
 	{

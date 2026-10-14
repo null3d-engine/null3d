@@ -30,6 +30,7 @@ import {
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
+	MATERIAL_FEATURE_SHADOW_CATCHER,
 	MATERIAL_FEATURE_SINGLE_PASS,
 	MATERIAL_FEATURE_TRANSMISSION,
 	MATERIAL_FEATURE_VERTEX_COLORS,
@@ -1273,6 +1274,26 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
 }
 
 /**
+ * The values of a shadow-catcher material, which `set` changes at any time.
+ *
+ * @category api/materials
+ */
+export interface ShadowCatcherValues extends MaterialOptions {}
+
+/**
+ * Options of `materials.shadowCatcher`, a material that draws only the shadows that fall on it, as
+ * three.js's `ShadowMaterial`.
+ *
+ * @category api/materials
+ */
+export interface ShadowCatcherOptions extends ShadowCatcherValues {
+	/** Draws both faces of each triangle. Back faces light as if they faced the camera. The default is false. */
+	doubleSided?: boolean;
+	/** False to write no depth, so the surface hides nothing behind it. The default is true. */
+	depthWrite?: boolean;
+}
+
+/**
  * WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` block comment tags,
  * or a `.wgsl` file that a module imports. TypeScript sees a tagged literal as a string, and the
  * plugin puts the compiled WGSL in its place.
@@ -2067,7 +2088,8 @@ class ShaderMaterial extends Material<ShaderValues> {
 /**
  * Material factories. The standard material follows glTF's metallic-roughness model and shades
  * with the formulas of three.js's `MeshStandardMaterial`. The unlit material shows its color as
- * three.js's `MeshBasicMaterial` does.
+ * three.js's `MeshBasicMaterial` does. The shadow-catcher material shows only the main directional
+ * light's shadows, as three.js's `ShadowMaterial`.
  *
  * @category api/materials
  */
@@ -2185,6 +2207,24 @@ export class Materials {
 	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
 		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;
 		return this.create<UnlitValues>(shading, options, 'materials.unlit');
+	}
+
+	/**
+	 * A material that draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its
+	 * `color` where the main directional light's shadow falls, and nothing where the light reaches
+	 * it, at `opacity`. The mesh must receive shadows (`setReceiveShadows(true)`), as three.js's
+	 * `receiveShadow` must be set. Every shadow that falls on the surface comes from the main
+	 * directional light; point and spot lights cast none onto it. The material blends, so it draws
+	 * in the transparent pass after the opaque objects, and the scene's fog leaves it alone. It
+	 * takes no texture maps.
+	 */
+	shadowCatcher(options: ShadowCatcherOptions = {}): Material<ShadowCatcherValues> {
+		return this.create<ShadowCatcherValues>(
+			SHADING_LIT,
+			{ ...options, alphaMode: 'blend' },
+			'materials.shadowCatcher',
+			MATERIAL_FEATURE_SHADOW_CATCHER,
+		);
 	}
 
 	/**

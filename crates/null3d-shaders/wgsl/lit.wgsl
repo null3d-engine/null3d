@@ -117,7 +117,7 @@ enable draw_index;
 #ifdef MORPH
 #import null3d::mesh::{Morphed, morph_vertex}
 #endif
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish_exposed, fogged, fragment_color}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, finish_exposed, fogged, fragment_color}
 #import null3d::mesh::{BLEND_FLAG, ambient_light, custom_value, frame as engine_frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #ifdef CUSTOM
@@ -189,6 +189,10 @@ enable draw_index;
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
+
+/// The bit of a material's flags that draws only the shadows that fall on the surface, as three.js's
+/// `ShadowMaterial` (`flag::SHADOW_CATCHER` in the core).
+const SHADOW_CATCHER_FLAG: u32 = 128u;
 
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
@@ -1127,12 +1131,30 @@ fn light_surface(
     return direct + indirect;
 }
 
+/// The color a shadow-catcher surface writes: its own color where the main directional light's
+/// shadows fall, and nothing where the light reaches it, as three.js's `ShadowMaterial`. The alpha
+/// is the material's opacity times the shadow. A lit part of the surface then draws nothing, and the
+/// camera sees what lies behind it. The exposure and the tone mapping apply, and the scene's fog does
+/// not, as three.js applies them to that material. Only the main directional light's shadows fall on
+/// it. The mesh must receive shadows, so a build without `RECEIVE_SHADOWS` draws nothing.
+fn shadow_catcher(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
+    var shadow = 0.0;
+#ifdef RECEIVE_SHADOWS
+    shadow = 1.0 - sun_shadow(
+        input.relativePosition + engine_frame.shadow_origin.xyz,
+        s.normal,
+        -engine_frame.sun_direction.xyz,
+    );
+#endif
+    return fragment_color(material_row, finish(s.baseColor, pixel.xy).rgb, s.alpha * shadow);
+}
+
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
 /// in the scene's fog, finished for the screen at the pixel's position, and premultiplied by its
 /// alpha when the material blends. `pixel` is the fragment's position, whose depth places it in
 /// the frame's screen texture. Its ambient occlusion darkens the indirect light, with the surface's
 /// own occlusion, and its contact shadows darken the sun's light where the surface receives
-/// shadows.
+/// shadows. A shadow-catcher material draws only the sun's shadows instead (`shadow_catcher`).
 fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights widen, so they flicker less
@@ -1145,6 +1167,17 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #else
     let kernel = specular_aa_kernel(dpdx(input.normal), dpdy(input.normal));
 #endif
+    // The alpha tests' derivatives come here too, before the shadow-catcher branch: a derivative
+    // must run in uniform control flow, and everything after the branch depends on it.
+#ifdef ALPHA_HASH
+    let hash_threshold = alpha_hash_threshold(hash_place);
+#endif
+#ifdef ALPHA_COVERAGE
+    let alpha_width = fwidth(s.alpha);
+#endif
+    if (u32(material_row.strengths.z) & SHADOW_CATCHER_FLAG) != 0u {
+        return shadow_catcher(s, input, pixel);
+    }
     // The material's dielectric specular values, times its specular maps in the MAPS builds.
     var specular = material_row.specular;
 #ifdef MAPS
@@ -1224,11 +1257,11 @@ fn shade(s: Surface, input: SurfaceInput, pixel: vec4f) -> vec4f {
 #endif
     // The test comes last, after every derivative, which a discarded fragment still helps compute.
 #ifdef ALPHA_HASH
-    if s.alpha < alpha_hash_threshold(hash_place) {
+    if s.alpha < hash_threshold {
         discard;
     }
 #else ifdef ALPHA_COVERAGE
-    let coverage = alpha_coverage(s.alpha, fwidth(s.alpha), material_row.emissive.w);
+    let coverage = alpha_coverage(s.alpha, alpha_width, material_row.emissive.w);
     if coverage <= 0.0 {
         discard;
     }

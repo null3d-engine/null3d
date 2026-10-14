@@ -33,6 +33,7 @@ import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { OUTLINE_IMAGE } from '../../bench/scenes/outline.ts';
 import { POINT_IMAGE } from '../../bench/scenes/points.ts';
 import { ROOM_IMAGE } from '../../bench/scenes/room.ts';
+import { SHADOW_CATCHER_IMAGE } from '../../bench/scenes/shadow-catcher.ts';
 import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { SKINNING_HOLD, SKINNING_IMAGE } from '../../bench/scenes/skinning.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
@@ -1355,6 +1356,16 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			tolerance: { maxDiffRatio: 0.005 },
 		}),
 	),
+	// A shadow-catcher plane: it shows the main directional light's shadow in its color, and draws
+	// nothing where the light reaches it, so the background shows through. The shadow edges take the
+	// tolerance of the other shadow tests. The parity test compares it with three.js's ShadowMaterial.
+	{
+		name: 'shadow-catcher',
+		sketch: 'tests/pages/sketches/shadow-catcher-sketch.ts',
+		hold: 0,
+		size: [SHADOW_CATCHER_IMAGE.width, SHADOW_CATCHER_IMAGE.height] as const,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
 	// The same scene with custom materials on the ground and the red boxes, whose surface function
 	// keeps the standard look: they cast and receive shadows as the standard material does, so the
 	// references are copies of the shadows test's, with its tolerance for WebGL2's edges.

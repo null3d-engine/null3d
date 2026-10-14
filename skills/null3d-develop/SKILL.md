@@ -131,7 +131,7 @@ Materials:
 | --- | --- | --- |
 | Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
-| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2, not built yet) | `api/materials` |
+| A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
