@@ -230,7 +230,7 @@ const SNOW: V3 = [0.82, 0.88, 1];
 const GABLE: V3 = [0.6, 0.58, 0.54];
 
 /** The walls (with gables) and the roof slopes of one house, its front facing +z and base y = 0. */
-function house(width: number, depth: number, floors: number): { walls: Build; roof: Build } {
+export function house(width: number, depth: number, floors: number): { walls: Build; roof: Build } {
 	const h = floors * FLOOR + 0.25;
 	const w = width / 2;
 	const d = depth / 2;
@@ -493,7 +493,7 @@ export function createHouses(
 		const potAt = on(lx, lz);
 		const base = y + roofSurface(depth, floors, lz) - 0.35;
 		potRows.push({ at: [potAt[0], base, potAt[2]], yaw });
-		homes.push({ x: potAt[0], z: potAt[2], top: base + 2.0 });
+		homes.push({ x: potAt[0], z: potAt[2], top: base + 2.1 });
 	}
 
 	const windows = scene.createInstances(
@@ -640,13 +640,13 @@ function towerSpire(width: number, height: number): Build {
 	return b;
 }
 
-/** A chimney pot: a stone shaft with a cap and a snow cap. */
-function chimney(): Build {
+/** A chimney pot: a stone shaft with a cap and a snow cap, each meeting the one below it exactly. */
+export function chimney(): Build {
 	const b = build();
 	const w = 0.42;
 	box(b, [0, 0.85, 0], [2 * w, 1.7, 2 * w], [1, 1, 1]);
-	box(b, [0, 1.78, 0], [2 * w + 0.24, 0.26, 2 * w + 0.24], [1, 1, 1]);
-	box(b, [0, 1.95, 0], [2 * w + 0.24, 0.14, 2 * w + 0.24], SNOW);
+	box(b, [0, 1.83, 0], [2 * w + 0.24, 0.26, 2 * w + 0.24], [1, 1, 1]);
+	box(b, [0, 2.03, 0], [2 * w + 0.24, 0.14, 2 * w + 0.24], SNOW);
 	return b;
 }
 
