@@ -27,7 +27,7 @@ use super::skin::{SkinnedObject, SkinnedPart, Skinning};
 use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
+    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, joined_rows, words_as_bytes,
 };
 use crate::levels::{BucketKey, KeyLinks, expand_level_keys, links_of};
@@ -319,9 +319,6 @@ pub(super) struct Layout {
     waiting: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
-    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
-    /// entry per bucket.
-    key_counts: Vec<(BucketKey, u32)>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -568,6 +565,7 @@ impl Layout {
         shadows: CasterPasses,
         prepass: Prepass,
         skinning: &Skinning,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -606,6 +604,10 @@ impl Layout {
         };
         let key_of = |pipeline: Option<DrawKey>, mesh, material, bounds, object: u32, skinned| {
             let pipeline = skin(pipeline?, skinned);
+            // A decal draws in the decal pass alone: no shadow, depth or outline.
+            if pipeline.decal() {
+                return None;
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             // Casters and outlined objects draw with no material, through the depth template's
             // bindings, apart from masked casters, which test their material's alpha.
@@ -633,6 +635,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let group = settings.texture_group(material, pipeline);
             Some((pipeline, group, page, mesh, material, bounds))
         };
@@ -685,13 +688,9 @@ impl Layout {
             }
         };
 
-        collect_bucket_keys(
-            &mut self.key_counts,
-            scene,
-            batches,
-            scene_key,
-            |_, batch| batch_key(batch),
-        );
+        collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
+            batch_key(batch)
+        });
         // A skinned or morphed object draws its base level: its vertices come from regions of its
         // own, which the levels do not have.
         let eligible = |key: &BucketKey| {
@@ -703,13 +702,12 @@ impl Layout {
         };
         let levels = settings.levels();
         let fades = drawn == Drawn::Scene && settings.levels_fade() && !self.index_instances;
-        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
-        self.depthless = self
-            .key_counts
+        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
-        if self.key_counts.len() as u32 >= MAX_BUCKETS {
+        if key_counts.len() as u32 >= MAX_BUCKETS {
             return Err(RecordError::TooManySources { limit: MAX_BUCKETS });
         }
         self.waiting.clear();
@@ -739,9 +737,9 @@ impl Layout {
         self.draws.clear();
         self.skinned.clear();
         let (mut copied, mut indexed) = (0, 0);
-        for &(key, count) in &self.key_counts {
+        for &(key, count) in key_counts.iter() {
             let (pipeline, group, _, mesh, material, bounds) = key;
-            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, meshes, eligible);
             let mesh = levels
                 .mesh_of_key(mesh)
                 .expect("level keys name known levels");
@@ -825,7 +823,7 @@ impl Layout {
         }
         (self.copied, self.indexed) = (copied, indexed);
 
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         self.instance_buckets.clear();
         self.home_buckets.clear();
@@ -1324,6 +1322,7 @@ mod tests {
                 CasterPasses::default(),
                 Prepass::Off,
                 &Skinning::default(),
+                &mut KeyCounts::new(),
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;

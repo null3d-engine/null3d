@@ -1,6 +1,7 @@
 #define_import_path null3d::refraction
 #import null3d::globals::{EnvironmentLight}
-#import null3d::ibl::{environment_map, environment_sampler, has_environment, map_direction}
+#import null3d::ibl::{environment_map, has_environment, map_direction}
+#import null3d::tables::{environment_sampler}
 #import null3d::ibl::{roughness_level}
 #import null3d::mesh::{ambient_light, frame}
 

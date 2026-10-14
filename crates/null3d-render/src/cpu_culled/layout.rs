@@ -28,8 +28,8 @@ use super::data::{TextureRows, write_rows};
 use super::ids;
 use super::skin::Skins;
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
-    put_u32,
+    FrameInput, HIDDEN, KeyCounts, RecordError, SceneSettings, UploadArena, bucket_of,
+    collect_bucket_keys, put_u32,
 };
 use crate::levels::{BucketKey, expand_level_keys, is_fade_key, links_of};
 use crate::object_ranges::{ObjectRanges, STREAMED_KEY};
@@ -173,8 +173,6 @@ pub(super) struct Layout {
     /// Each scene slot's bucket, with 0 for the slots that draw in the transparent pass: the rows
     /// whose matrices the resident texture needs.
     pub(super) drawn_slots: Vec<u32>,
-    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
-    key_counts: Vec<(BucketKey, u32)>,
     /// True when a bucket draws without writing depth, so a background drawn after the objects
     /// would cover it where nothing lies behind it.
     pub(super) depthless: bool,
@@ -262,6 +260,7 @@ impl Layout {
         multi_draw: bool,
         shadows: CasterPasses,
         prepass: Prepass,
+        key_counts: &mut KeyCounts,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -322,6 +321,10 @@ impl Layout {
                       object: u32,
                       skinned: Option<usize>| {
             let pipeline = pipeline?;
+            // A decal draws in the decal pass alone: no shadow, depth or outline.
+            if pipeline.decal() {
+                return None;
+            }
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             match drawn {
                 Drawn::Casters => {
@@ -350,6 +353,7 @@ impl Layout {
             } else {
                 pipeline
             };
+            let pipeline = settings.area_key(pipeline);
             let textures = settings.texture_group(material, pipeline);
             Some((
                 skin(pipeline, skinned),
@@ -408,22 +412,17 @@ impl Layout {
                 Drawn::Outlined => None,
             }
         };
-        collect_bucket_keys(
-            &mut self.key_counts,
-            scene,
-            batches,
-            scene_key,
-            |_, batch| batch_key(batch),
-        );
+        collect_bucket_keys(key_counts, scene, batches, scene_key, |_, batch| {
+            batch_key(batch)
+        });
         // A skinned or morphed object draws its base level: it skins and morphs in the vertex
         // shader, from vertices that the levels do not have.
         let eligible =
             |key: &BucketKey| key.0.permutation & (permutation::SKIN | permutation::MORPH) == 0;
         let levels = settings.levels();
         let fades = drawn == Drawn::Scene && settings.levels_fade();
-        expand_level_keys(&mut self.key_counts, levels, meshes, fades, eligible);
-        self.depthless = self
-            .key_counts
+        expand_level_keys(key_counts, levels, meshes, fades, eligible);
+        self.depthless = key_counts
             .iter()
             .any(|&((pipeline, ..), _)| !pipeline.writes_depth());
 
@@ -454,7 +453,7 @@ impl Layout {
         self.draws.clear();
         self.second_draws.clear();
         self.level_links.clear();
-        for &(key, _) in &self.key_counts {
+        for &(key, _) in key_counts.iter() {
             let (pipeline, textures, _, mesh, material, group) = key;
             let mesh = levels
                 .mesh_of_key(mesh)
@@ -463,7 +462,7 @@ impl Layout {
             let (first, prepass) = pipelines_of(pipelines, pipeline);
             let pairs = is_fade_key(&key);
             // Each key's bucket of rows is at twice its place in the keys.
-            let links = links_of(key, &self.key_counts, levels, meshes, eligible);
+            let links = links_of(key, &*key_counts, levels, meshes, eligible);
             self.level_links.push(LevelLink {
                 error: links.error,
                 next: links.next.map_or(NO_LINK, |key| 2 * key),
@@ -503,7 +502,7 @@ impl Layout {
         }
         self.draws.extend_from_slice(&self.second_draws);
         // A key's bucket of rows; its bucket of clusters is the next one.
-        let counts = &self.key_counts;
+        let counts = &*key_counts;
         let bucket_of =
             |key: Option<BucketKey>| bucket_of(counts, key).map_or(NO_BUCKET, |key| 2 * key);
         self.scene_buckets.clear();
@@ -581,13 +580,13 @@ fn picks_any(scene_buckets: &[u32], links: &[LevelLink]) -> bool {
 }
 
 impl Layout {
-    /// Makes room in each ring slot of draw records for `bytes` bytes of the transparent pass's
-    /// records, after the opaque draws' records, and marks the scene slots in `sorted` as rows
-    /// that draw.
-    pub(super) fn add_sorted(&mut self, bytes: u32, sorted: &[u32]) {
+    /// Makes room in each ring slot of draw records for `bytes` bytes of the transparent and decal
+    /// passes' records, after the opaque draws' records, and marks the scene slots in `sorted` and
+    /// `decals` as rows that draw.
+    pub(super) fn add_sorted(&mut self, bytes: u32, sorted: &[u32], decals: &[u32]) {
         self.draws_slot_bytes = self.sorted_records_at + bytes;
         self.drawn_slots.clone_from(&self.scene_buckets);
-        for &slot in sorted {
+        for &slot in sorted.iter().chain(decals) {
             self.drawn_slots[slot as usize] = 0;
         }
     }

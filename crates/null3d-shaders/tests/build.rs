@@ -1536,7 +1536,7 @@ fn the_sun_shadow_loops_run_the_same_passes_at_every_pixel() {
         assert_eq!(header, "for (var k = 0u; k < count; k++) {");
     }
     assert!(
-        sun.contains("let count = u32(cascades.forward.w);"),
+        sun.contains("let count = u32(shadows.cascades.forward.w);"),
         "{sun}"
     );
     assert_eq!(number_constant(&shadows, "MAX_CASCADES"), 4.0);

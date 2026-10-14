@@ -91,6 +91,8 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type {
+	AtmosphereBackground,
+	AtmosphereOptions,
 	BackgroundOptions,
 	BackgroundSource,
 	Cubemap,
@@ -105,8 +107,9 @@ export type {
 	EnvironmentFormat,
 	EnvironmentOptions,
 } from './scene/environment';
-export type { FogCurve, FogOptions } from './scene/fog';
+export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
+export type { LightImagePixels } from './scene/light-images';
 export type {
 	LineBatch,
 	LineMaterial,
@@ -132,9 +135,11 @@ export type {
 } from './scene/pointer-events';
 export type {
 	AoSettings,
+	AutoExposureSettings,
 	BloomBlend,
 	BloomSettings,
 	DofSettings,
+	ExposureMetering,
 	OutlineSettings,
 	Post,
 	PostSettings,
@@ -172,6 +177,8 @@ export type {
 	CompiledWgsl,
 	ConeOptions,
 	CylinderOptions,
+	DecalOptions,
+	DecalValues,
 	DepthBias,
 	Geometry,
 	IntegerArray,
@@ -231,9 +238,13 @@ export type {
 	PointLightOptions,
 	PrefabInstance,
 	Quat,
+	RectAreaLight,
+	RectAreaLightOptions,
 	Scene,
 	SpotLight,
 	SpotLightOptions,
+	TubeLight,
+	TubeLightOptions,
 	Vec3,
 } from './scene/scene';
 export type {

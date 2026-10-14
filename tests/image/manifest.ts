@@ -95,10 +95,11 @@ const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
 
 /**
  * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
- * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1. AgX's punchy
+ * look, which three.js lacks, joins the curves that three.js shares here.
  */
 function toneMappingTests(): ImageTest[] {
-	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+	return [...TONE_MAPPINGS, 'agx-punchy'].flatMap((tone): ImageTest[] => [
 		...STOPS.map(
 			(stops): ImageTest => ({
 				name: toneMappingTest(tone, stops),
@@ -167,6 +168,54 @@ function bloomTests(): ImageTest[] {
 	];
 }
 
+/** The sketch of the volumetric fog tests: a low sun behind pillars, or street lamps at night. */
+const FOG_VOLUME_SKETCH = 'tests/pages/sketches/fog-volume-sketch.ts';
+
+/** The volumetric fog tests' image size: wide enough for the rays between the pillars to show. */
+const FOG_VOLUME_SIZE = [480, 270] as const;
+
+/**
+ * The volumetric fog: the sun's rays between the pillars, and the street lamps' cones at night with
+ * the shadow of the box under the middle lamp, each beside the same fog with its sun glow alone, on
+ * every tier. With Medium's coarse grid, which WebGL2 and compatibility mode draw at most, every
+ * tier must draw the first tier's image, with no cell's edge showing. Turned on during play, it
+ * draws the image of turning it on in the setup. At half the render scale the apply step draws into
+ * the corner of its target. With no slices, as on Low, and
+ * on a device with no HDR target, which the page's switch that turns HDR off stands in for, the fog
+ * keeps its glow and draws the image without the volumetric fog.
+ */
+function fogVolumeTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${FOG_VOLUME_SKETCH}${query}`,
+		hold: 1,
+		size: FOG_VOLUME_SIZE,
+	});
+	return [
+		test('fog-volume-off', ''),
+		test('fog-volume-sun', '?fog=on'),
+		test('fog-volume-night-off', '?night'),
+		test('fog-volume-night', '?night&fog=on'),
+		{ ...test('fog-volume-later', '?fog=on&later'), reference: 'fog-volume-sun' },
+		{
+			...test('fog-volume-medium', '?fog=on&slices=32'),
+			sameOnEveryTier: true,
+			tolerance: { maxDiffRatio: 0.005 },
+		},
+		test('fog-volume-scale-50', '?scale=0.5&fog=on'),
+		{ ...test('fog-volume-no-slices', '?fog=on&slices=0'), reference: 'fog-volume-off' },
+		{
+			...test('fog-volume-8-bit', '?fog=on'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'fog-volume-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
 /** The sketch of the depth of field tests: posts, shapes and lights at three distances. */
 const DOF_SKETCH = 'tests/pages/sketches/dof-sketch.ts';
 
@@ -203,6 +252,52 @@ function dofTests(): ImageTest[] {
 			tiers: ['webgpu', 'webgl2'],
 			switches: ['hdr=off'],
 			reference: 'dof-off',
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	];
+}
+
+/** The sketch of the automatic exposure tests: boxes and a lamp under a sun. */
+const EXPOSURE_SKETCH = 'tests/pages/sketches/exposure-sketch.ts';
+
+/** The automatic exposure tests' image size. */
+const EXPOSURE_SIZE = [320, 180] as const;
+
+/**
+ * Automatic exposure in hold mode, which meters the held frame and takes its stops at once, on
+ * every tier. A dark hall and a sunny street both adapt toward middle gray, with the percentile
+ * and the mean meters, a center weight, a compensation and a range that stops the eye short. The
+ * eye adapts with bloom and AgX too, and at half the render scale. Turning it on during play draws
+ * the image of turning it on at the start, as the meter's first frame takes its stops at once. The
+ * downsample meter, which Low and WebGL2 use, draws its own image. A device with no HDR target
+ * keeps the camera's exposure.
+ */
+function exposureTests(): ImageTest[] {
+	const test = (name: string, query: string): ImageTest => ({
+		name,
+		sketch: `${EXPOSURE_SKETCH}${query}`,
+		hold: 1,
+		size: EXPOSURE_SIZE,
+	});
+	return [
+		test('exposure-off', '?light=dark'),
+		test('exposure-dark', '?light=dark&auto'),
+		test('exposure-bright', '?light=bright&auto'),
+		test('exposure-mean', '?light=dark&auto&metering=mean'),
+		test('exposure-center', '?light=dark&auto&center=1'),
+		test('exposure-compensation', '?light=dark&auto&comp=1'),
+		test('exposure-range', '?light=dark&auto&min=-2'),
+		test('exposure-bloom', '?light=dark&auto&bloom'),
+		{ ...test('exposure-later', '?light=dark&auto&later'), reference: 'exposure-dark' },
+		test('exposure-scale-50', '?scale=0.5&light=dark&auto'),
+		test('exposure-downsample', '?light=dark&auto&meter=downsample'),
+		{
+			...test('exposure-8-bit', '?light=dark&auto'),
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: 'exposure-off',
 			expect: { hdr: false },
 			tolerance: EIGHT_BIT_TOLERANCE,
 			deviceTolerance: EIGHT_BIT_TOLERANCE,
@@ -578,6 +673,8 @@ function reflectionTests(): ImageTest[] {
 const TRANSMISSION_SKETCH = 'tests/pages/sketches/transmission-sketch.ts';
 /** The sketch of clear water over a bed of stones. */
 const TRANSMISSION_WATER_SKETCH = 'tests/pages/sketches/transmission-water-sketch.ts';
+/** The sketch of decals on a stone yard. */
+const DECALS_SKETCH = 'tests/pages/sketches/decals-sketch.ts';
 
 /** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
 const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
@@ -1052,6 +1149,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	...antialiasTests(),
 	...bloomTests(),
 	...dofTests(),
+	...exposureTests(),
+	...fogVolumeTests(),
 	...effectsTests(),
 	...hdrLimitTests(),
 	...realUnitsTests(),
@@ -1135,7 +1234,8 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	// keeps its own references, which the S24 shares and the test 1,000 km out compares with too.
 	// Other GPUs, such as the Galaxy Tab A9 Plus's Adreno 619, put single pixels along the edges of
 	// slanted lines a pixel off too. This frame of thin lines has a larger share of such pixels than
-	// a scene has, so other devices get a wider tolerance here.
+	// a scene has, so other devices get a wider tolerance here. SwiftShader on a Mac and on CI's
+	// runners rounds one gray pixel a step apart, so one pixel of the frame may differ.
 	{
 		name: 'debug',
 		sketch: 'tests/pages/sketches/debug-sketch.ts',
@@ -1143,7 +1243,7 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [400, 225],
 		modes: ['pipelined', 'single-threaded'],
 		switches: [FULL_PRECISION],
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: { threshold: 0, maxDiffRatio: 1 / (400 * 225) },
 		deviceTolerance: LINE_EDGE_TOLERANCE,
 		devices: ['sm-s926b', 'sm-s921b'],
 	},
@@ -1653,10 +1753,49 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			timeoutSeconds: 60,
 		}),
 	),
+	// The physical sky at four times of day from `timeOfDay` with the physical model: its tables,
+	// its background with clouds, the moon and the stars, its environment, and the aerial
+	// perspective on a row of pillars out to 20 kilometres. Then the afternoon with the analytic sky
+	// standing in, as on Low, the afternoon without the aerial perspective, and the night on the
+	// 8-bit path, where the sky's own shader tone maps its color (D-143).
+	...(['afternoon', 'goldenHour', 'blueHour', 'night'] as const).map(
+		(time): ImageTest => ({
+			name: `physical-sky-${time.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`)}`,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=${time}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	...(
+		[
+			['physical-sky-analytic', 'analytic'],
+			['physical-sky-no-haze', 'haze=0'],
+		] as const
+	).map(
+		([name, query]): ImageTest => ({
+			name,
+			sketch: `tests/pages/sketches/physical-sky-sketch.ts?time=afternoon&${query}`,
+			hold: 0,
+			size: [480, 270],
+			timeoutSeconds: 60,
+		}),
+	),
+	{
+		name: 'physical-sky-night-8-bit',
+		sketch: 'tests/pages/sketches/physical-sky-sketch.ts?time=night',
+		hold: 0,
+		size: [480, 270],
+		tiers: ['webgpu', 'webgl2'],
+		switches: ['hdr=off'],
+		expect: { hdr: false },
+		timeoutSeconds: 60,
+	},
 	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
 	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
-	// lights through an orthographic camera. Then the same floor under a hemisphere light. The
-	// parity test compares the grid of 16, the spot lights and the hemisphere light with three.js.
+	// lights through an orthographic camera. Then the same floor under a hemisphere light, under
+	// three rectangle lights, under the same lights showing an image, and under three tube lights. The parity test compares the grid of 16,
+	// the spot lights, the hemisphere light and the rectangle lights with three.js.
 	...(
 		[
 			['lights-1', 'lights=1'],
@@ -1665,6 +1804,9 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			['lights-spot', 'scene=spot'],
 			['lights-ortho', 'lights=16&camera=ortho'],
 			['lights-hemisphere', 'scene=hemisphere'],
+			['lights-rect', 'scene=rect'],
+			['lights-rect-image', 'scene=rect-image'],
+			['lights-tube', 'scene=tube'],
 		] as const
 	).map(([name, query]) => ({
 		name,
@@ -1672,6 +1814,14 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height] as const,
 	})),
+	// The rectangle lights again with a cap of one area light a frame: only the nearest light, the
+	// pink strip over the right of the floor, shades.
+	{
+		name: 'lights-rect-capped',
+		sketch: 'tests/pages/sketches/lights-sketch.ts?scene=rect&areaLights=1',
+		hold: 0,
+		size: [LIGHTS_IMAGE.width, LIGHTS_IMAGE.height],
+	},
 	// The hemisphere light as two halves, one turned upside down with its colors swapped, which take
 	// their intensities and colors in every frame. The frame sums them to the single light, so the
 	// test borrows its references.
@@ -1923,6 +2073,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/particles-sketch.ts',
 		hold: 2,
 	},
+	// Terrain of the terrain add-on: a height field drawn as a camera-centred quadtree of blocks,
+	// with grass, soil, rock and snow blended by a splat map, and stones seated with heightAt.
+	{
+		name: 'terrain',
+		sketch: 'tests/pages/sketches/terrain-sketch.ts',
+		hold: 1,
+	},
 	// Points: opaque squares sized in world units at several depths, cut-out and see-through discs
 	// of a map, and squares sized in pixels. The parity test compares it with three.js's Points and
 	// PointsMaterial.
@@ -2014,6 +2171,10 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 	},
 	// Clear water over a bed of stones: the bed shows through the water, bent by its ripples.
 	{ name: 'transmission-water', sketch: TRANSMISSION_WATER_SKETCH, hold: 0 },
+	// Decals on a stone yard: a scorch mark, road paint through a ball's shadow, a puddle under a
+	// point light, cracks on a wall, moss that fades up the ball's side, and a batch of mud
+	// splashes that row colors tint and fade. The decals spec compares places with the bare yard.
+	{ name: 'decals', sketch: DECALS_SKETCH, hold: 0, size: [640, 360] },
 	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
 	// a surface without the depth test, and a glow map with straight and premultiplied colors.
 	{
@@ -2114,7 +2275,13 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			hold: HOLD_TIME,
 			modes: scene === 's6' ? S6_MODES : ['pipelined', 'low latency'],
 			timeoutSeconds: scene === 's6' ? S6_TIMEOUT_SECONDS : 90,
-			...(scene === 's5' && { swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`] }),
+			// S5 holds every character at every frame, so its crowd's pose is repeatable: the
+			// update rates are its default, and a held frame otherwise catches far characters
+			// between two of their poses.
+			...(scene === 's5' && {
+				switches: ['anim=every'],
+				swiftShaderSwitches: [`n=${S5_SWIFTSHADER_COUNT}`],
+			}),
 			...(scene === 's6' && { swiftShaderSwitches: [`n=${S6_SWIFTSHADER_COUNT}`] }),
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
@@ -2225,6 +2392,7 @@ const HALF_PRECISION_TESTS = [
 	'lights-16',
 	'shadows',
 	toneMappingTest('agx', 0),
+	toneMappingTest('agx-punchy', 0),
 	eightBitTest('aces'),
 ];
 
