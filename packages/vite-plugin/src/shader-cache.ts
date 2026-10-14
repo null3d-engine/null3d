@@ -7,6 +7,12 @@
 // own stamp, so an engine or compiler upgrade misses every entry. A changed source, spec or
 // compiler therefore misses, and the plugin never serves a wrong shader. Set
 // `NULL3D_NO_SHADER_CACHE=1`, or run Vite with `--force`, to ignore the cache.
+//
+// A game project's cache is not one of the repository's own build caches: it lives in the project,
+// not under `~/.cache/null3d`, and loads no repository tooling. It follows the same three rules, kept
+// in one place for the repository's caches in `tools/lib/build-cache.ts`: a write is atomic, any
+// change to an input misses, and there is one documented opt-out. Its rules for game developers are
+// in docs/getting-started/install.md.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
