@@ -273,7 +273,19 @@ scene.setLightProbeGrid({ ...grid, texture: textures.fromData({ ...grid.texture 
 | `intensity` | 1 | The factor of the grid's light, 0 or more |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-The grid's light is only as good as its bake. The engine reads a grid that the sketch packs. A later version bakes one in the browser from the scene itself, with `scene.raycastBatch`. Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. [Lighting and environment](../concepts/lighting.md) says how the grid lights a surface, and what it costs.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch` and takes the environment's light where a ray reaches the sky. Where a ray hits a surface, it takes an `albedo` colour for one coloured bounce. Bake a few probes a frame so a loading screen can show progress.
+
+```ts
+const bake = bakeProbes(scene, {
+  box: { min: [-12, 0, -12], max: [12, 8, 12] },
+  resolution: [24, 8, 24],
+  environment,
+  albedo: (object) => (object as Mesh).material.baseColor,
+});
+onUpdate(() => { if (bake.step(4)) scene.setLightProbeGrid({ ...bake.grid.toTexture(textures), origin: bake.grid.origin, spacing: bake.grid.spacing, counts: bake.grid.counts }); });
+```
+
+Development builds throw E1203 for a number that is not finite, E1108 for a value out of range, and E1213 for something that is not a texture. Every build throws E1101 for a texture that was destroyed. [Lighting and environment](../concepts/lighting.md) says how the grid lights a surface, and what it costs.
 
 ## Fog
 
