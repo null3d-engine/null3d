@@ -14,6 +14,7 @@ interface LibraryResult {
 	deviceFault?: string;
 	shaderFault?: string;
 	precisionFault?: string;
+	structFault?: string;
 	mismatches: Mismatch[];
 }
 
@@ -29,6 +30,7 @@ for (const tier of ['webgpu', 'compat', 'webgl2'] as const) {
 		expect(result.deviceFault).toBeUndefined();
 		expect(result.shaderFault).toBeUndefined();
 		expect(result.precisionFault).toBeUndefined();
+		expect(result.structFault).toBeUndefined();
 		expect(result.mismatches).toEqual([]);
 	});
 }
