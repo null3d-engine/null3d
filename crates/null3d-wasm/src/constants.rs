@@ -708,6 +708,8 @@ pub fn typescript() -> String {
                 ("SPOT", light_kind::SPOT),
                 ("HEMISPHERE", light_kind::HEMISPHERE),
                 ("AMBIENT", light_kind::AMBIENT),
+                ("RECT", light_kind::RECT),
+                ("TUBE", light_kind::TUBE),
             ],
         ),
         (
@@ -728,6 +730,10 @@ pub fn typescript() -> String {
                 ("SHADOW_MAP_SIZE", light_value::SHADOW_MAP_SIZE),
                 ("SHADOW_DISTANCE", light_value::SHADOW_DISTANCE),
                 ("SHADOW_CONTACT", light_value::SHADOW_CONTACT),
+                ("WIDTH", light_value::WIDTH),
+                ("HEIGHT", light_value::HEIGHT),
+                ("RADIUS", light_value::RADIUS),
+                ("IMAGE", light_value::IMAGE),
             ],
         ),
         (
@@ -954,6 +960,7 @@ pub fn typescript() -> String {
                 ("ALPHA_HASH", feature::ALPHA_HASH),
                 ("SINGLE_PASS", feature::SINGLE_PASS),
                 ("TRANSMISSION", feature::TRANSMISSION),
+                ("DECAL", feature::DECAL),
             ],
         ),
         // The debug views that `setDebugView` takes.
@@ -1016,6 +1023,9 @@ pub fn typescript() -> String {
                 ("IOR", param::IOR as u32),
                 ("ATTENUATION_COLOR", param::ATTENUATION_COLOR as u32),
                 ("ATTENUATION_DISTANCE", param::ATTENUATION_DISTANCE as u32),
+                ("DECAL_FADE_START", param::DECAL_FADE_START as u32),
+                ("DECAL_FADE_END", param::DECAL_FADE_END as u32),
+                ("DECAL_EDGE_FADE", param::DECAL_EDGE_FADE as u32),
             ],
         ),
         // The custom effects that `setEffect` takes, and the floats of each one's uniforms, which

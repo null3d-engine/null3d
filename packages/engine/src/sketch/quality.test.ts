@@ -245,6 +245,7 @@ describe('SketchQuality.lower', () => {
 			exposureMeter: low.exposureMeter,
 			fogSlices: low.fogSlices,
 			reflectionScale: low.reflectionScale,
+			areaLights: low.areaLights,
 			softParticles: low.softParticles,
 			lodThreshold: low.lodThreshold,
 			lodShadowFactor: low.lodShadowFactor,
@@ -267,7 +268,7 @@ describe('SketchQuality.lower', () => {
 		});
 		// The preset changed, and of the settings only the lowest render scale, the texture memory
 		// budget, the shadow filter, the far cascades' interval, bloom's size, depth of field's taps,
-		// the reflections' size, soft particles and the levels of detail did.
+		// the reflections' size, the cap of area lights, soft particles and the levels of detail did.
 		expect(changes.at(-1)).toEqual([
 			'minRenderScale',
 			'textureMemoryMiB',
@@ -280,6 +281,7 @@ describe('SketchQuality.lower', () => {
 			'exposureMeter',
 			'fogSlices',
 			'reflectionScale',
+			'areaLights',
 			'softParticles',
 			'lodThreshold',
 			'lodShadowFactor',

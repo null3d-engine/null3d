@@ -1,5 +1,5 @@
 #define_import_path null3d::ssr
-#import null3d::ibl::{environment_sampler}
+#import null3d::tables::{environment_sampler}
 #import null3d::mesh::{frame}
 #import null3d::refraction::{transmission_map}
 
