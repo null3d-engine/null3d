@@ -103,6 +103,8 @@ The engine's pass timer lumps every pass after the fifth into its last bucket, s
 
 Those six passes are what the direct path would change, and the 324.6 draws count each draw in each pass. The probe's cost on the Mac is 8.5 us for each draw in each pass. So they come to about 2.8 ms, a fifth of the 12.68 ms. The iPhone 17's cost is 2.5 us, so the same draws come to about 0.8 ms of its 23.2 ms. So on the phone the prize is near a millisecond, and its frames are dominated by other work.
 
+Factory's own graph on the same main holds 39 passes with the same shape. Eight are compute, six are shadow tiles at 1024 by 1024, five are scene and full screen passes, and twenty are bloom and final passes. The eight that draw the buckets indirectly are ShadowTile0 to ShadowTile5, DepthPrepass and Opaque. On the Mac, Factory costs 4.88 ms of GPU time in Safari over 115 draws. In Chrome it is 4.76 ms over 117 draws, both at a load above 8. On the iPhone 17 the same scene costs 35.3 ms, about seven times the Mac. So Factory's gap is device-side work, and its 115 draws cannot hold more than about a fifth of a millisecond of it.
+
 ## Options
 
 1. Build the direct-draw path now. Its measured ceiling reaches several milliseconds of Battle's GPU time, which its several passes may make worth a dedicated session.

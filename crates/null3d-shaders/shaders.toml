@@ -143,24 +143,28 @@
 # skins, morph targets, the alpha hash, transmission and index-read instances, and loads on first
 # use. Custom materials build none of
 # its builds: their levels switch at once.
+# with, and loads on first use. COAT_SHEEN lights a clear coat and a sheen above the base
+# (null3d::coat_sheen); it builds without index-read instances and loads on first use. Custom
+# materials build it only where their WGSL names a layer's value of the surface.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
 # The standard material with its texture maps, from the same file: base color, metal-rough, normal,
-# occlusion, emissive, light and specular maps, which share six texture units on WebGL2.
+# occlusion, emissive, light and specular maps, which share six texture units on WebGL2. In the COAT_SHEEN
+# builds the light and specular maps' slots hold the coat, coat normal and sheen maps instead.
 # VERTEX_TANGENT takes the normal map's frame from the mesh's tangents, and VERTEX_COLOR, ALPHA_MASK,
-# RECEIVE_SHADOWS and TRANSMISSION act as for the standard material.
+# RECEIVE_SHADOWS, TRANSMISSION and COAT_SHEEN act as for the standard material.
 [shaders.standard_maps]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED"], targets = ["glsl"] }
+variants.webgpu = { defs = ["MAPS", "JOINTS_AFTER_MAPS"], permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "SKIN", "VERTEX_TANGENT", "HALF", "INSTANCE_INDEX", "ALPHA_COVERAGE", "SAMPLE_MASK", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "AREA_LIGHTS", "VERTEX_TANGENT", "HALF", "SKIN", "MORPH", "ALPHA_COVERAGE", "ALPHA_HASH", "TRANSMISSION", "ROW_VALUES", "LOD_FADE", "WEIGHTED", "COAT_SHEEN"], targets = ["glsl"] }
 
 # Decals, from the same file with DECAL: a standard material projected onto the surfaces inside
 # each object's box, in a pass of their own after the camera's opaque pass. Each pixel reads the
@@ -558,6 +562,11 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 shaders = ["transmission_copy"]
 bits = ["TRANSMISSION"]
 
+# A page downloads the builds of layered materials, with a clear coat or a sheen, when it creates
+# its first one. Its builds that need another feature too, such as skinning, go into files of their
+# own, so no other feature's files grow.
+[first_use.coat_sheen]
+bits = ["COAT_SHEEN"]
 # The steps of the camera's weighted layer (weighted_layer.wgsl): the composite, which blends the
 # layer over the scene color, and the copy of one sample of a multisampled scene depth, which the
 # weighted pass tests against. Only WebGPU reads a multisampled depth; WebGL2 reads the copy of one

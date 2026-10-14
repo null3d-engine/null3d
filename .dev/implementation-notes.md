@@ -374,6 +374,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The build drops the function names and skips wasm-opt. On this module, wasm-opt took longer than the whole build and saved 0.4% after Brotli, with no speed gain.
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
 - naga renames a name that two modules share, in every program that joins them. That makes the text longer, and it once renamed a custom material's own argument. So library code gives each name its own word. It uses plain early returns too, because naga writes an `||` in GLSL as a local variable and an if-else ([D-74](decisions/D-74-native-fog.md)).
+- GLSL ES reserves every name that starts with `gl_`, apart from its built-ins, which all go on with a capital letter, such as `gl_Position`. naga's GLSL writer adds `_1` to the second of two names that clash in one shader, so a local `gl` in two functions of one build became `gl_1`. Every WebGL2 build that joined the clear coat with half precision then failed to compile in Chrome, Firefox and Safari: 2,592 programs (D-147). The GLSL build now fails on any such name, with the program, the pipeline and the fix in its message. So never name a WGSL value `gl`, or anything that starts with `gl_`.
 
 ## The asset tool
 

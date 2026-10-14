@@ -135,12 +135,22 @@ struct MaterialRow {
     /// The color that white light takes after it travels the attenuation distance through the
     /// volume, and that distance, 0 for a volume that absorbs nothing.
     attenuation: vec4f,
+    /// The clear coat, its roughness, and the coat normal map's scale along u and v.
+    coat: vec4f,
+    /// The sheen's linear color and its roughness.
+    sheen: vec4f,
 }
 
 /// The values of a material that lets light through: its row's `transmission` and `attenuation`.
 struct MaterialTransmission {
     values: vec4f,
     attenuation: vec4f,
+}
+
+/// The values of a layered material: its row's `coat` and `sheen`.
+struct MaterialCoatSheen {
+    coat: vec4f,
+    sheen: vec4f,
 }
 
 /// The values of one material's row that every shader reads (see `MaterialRow`). Colors are
