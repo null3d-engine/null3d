@@ -27,10 +27,12 @@ export function maps(
 	return [gray, color] as const;
 }
 
-/** A steady random number from 0 to 1 for each whole point. */
+/** A steady random number from 0 to 1 for each whole point, from an integer hash so that every
+ * GPU and CPU works out the same value. */
 const hash = (x: number, y: number, z: number) => {
-	const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
-	return s - Math.floor(s);
+	let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 1442695041)) | 0;
+	h = Math.imul(h ^ (h >>> 13), 1274126177);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 /** Smooth value noise from 0 to 1, blended between the whole points around a point. */
 function noise(x: number, y: number, z: number) {
