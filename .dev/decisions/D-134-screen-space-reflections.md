@@ -140,3 +140,12 @@ Docs: `concepts/post-processing` now says that a surface a custom material draws
 ### The start budget on the merged tree
 
 `bun run build:check-size` against main `63e7337f` reports one failure on the merged tree: the engine JavaScript that a page downloads at its start in pipelined, WebGL2 mode is 164,637 bytes after Brotli, 797 bytes over the owner's budget of 160 KB. Every other mode is under it, from 84.3% to 98.6%. The mode carries the lit and GLSL start shaders, so a small trim cannot reach it: moving the errors' 63 `example` strings into a docs-only module left the figure byte-identical at 164,637 bytes, because the bundler already drops them, and rewriting the error text would trade the docs for a budget. The two cures left are the owner raising that one budget, or the `REFLECTIONS` first-use permutation bit that this record describes, which needs a fresh implementation against main and pays about 900 extra GLSL programs and the Safari shader shard's guard. Every first-use shader file that grew for the reflections' lit code carries a `Size-Growth:` reason on this branch.
+
+### The two budgets measured on 15 October 2026
+
+On the merge of main `ffcc098f`, both budgets that the owner raised on 14 October are past their ceilings, and both for the same reason: main's feature-bit combinations carry this feature's reflections' lit code.
+
+- The start, pipelined WebGL2: 163.5 KB after Brotli against the 160 KB budget. Its WebGPU sibling is inside, at 146.4 KB, which is why the failure can look absent.
+- First-use shader files: two combination builds, `…area-lights-and-coat-sheen-and-morph-and-skinning-and-transmission-glsl-draw-index-tone-map-half.js` at 49,684 bytes and its `tone-map` sibling at 49,567 bytes, against the 48 KB budget.
+
+The merge itself is green everywhere else: it builds, typechecks, lints, passes the docs and generator checks, and its own image and behaviour tests. The `REFLECTIONS` first-use bit above is the cure that fits both figures, at about 900 extra GLSL programs and the Safari shader shard's guard. Raising the two budgets again is the other cure, and only the owner raises a budget.
