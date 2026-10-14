@@ -1718,6 +1718,12 @@ pub mod template {
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
+    /// The lit material with the scene's light probe grid (D-146): the standard material with the
+    /// grid's sampling in the light's loop, in a template of its own so a page that sets no grid
+    /// loads none of it. The engine draws lit meshes through it while the scene sets a grid.
+    pub const PROBE_GRID: u32 = 71;
+    /// The same with the material's texture maps.
+    pub const PROBE_GRID_MAPS: u32 = 72;
     /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
     /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
     /// bind group of index 0 is the frame's, 1 the system's of layout
@@ -2153,6 +2159,8 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
                 ("DECAL", template::DECAL),
                 ("DECAL_MAPS", template::DECAL_MAPS),
+                ("PROBE_GRID", template::PROBE_GRID),
+                ("PROBE_GRID_MAPS", template::PROBE_GRID_MAPS),
                 ("PARTICLE", template::PARTICLE),
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),

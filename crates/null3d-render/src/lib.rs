@@ -101,6 +101,7 @@ pub mod physical_sky;
 pub mod physical_sky_light;
 pub mod pipelines;
 pub mod probe_grid;
+pub mod probe_shading;
 pub mod queries;
 pub mod shadow_tiles;
 pub mod shadows;
