@@ -59,9 +59,18 @@ export async function startDemo({
 		// Collapsed, the overlay stays small until clicked.
 		stats: stats && { collapsed: true },
 	});
-	if (labels) showLabels(engine, labels);
 	if (choices) showChoices(engine, demo, choices);
-	if (hud) showHud(engine, hud);
+	// One message handler for the page: the engine gives the messages that a sketch sent before the
+	// page listened to the first handler alone, so two handlers would drop the help that a showcase
+	// scene posts at its start.
+	const readers = [
+		...(labels ? [labelReader(engine, labels)] : []),
+		...(hud ? [hudReader(engine, hud)] : []),
+	];
+	if (readers.length > 0)
+		engine.onSketchMessage((type, data) => {
+			for (const reader of readers) reader(type, data);
+		});
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}));
@@ -99,10 +108,10 @@ function showChoices(engine: Engine, demo: Demo, element: HTMLElement): void {
 	}
 }
 
-/** Shows the labels that the demo posts, each in an element that follows the label's object. */
-function showLabels(engine: Engine, layer: HTMLElement): void {
+/** Reads the labels that the demo posts, each into a tag that follows the label's object. */
+function labelReader(engine: Engine, layer: HTMLElement): (type: string, data: unknown) => void {
 	const tags = new Map<string, HTMLElement>();
-	engine.onSketchMessage((type, data) => {
+	return (type, data) => {
 		if (type !== 'label') return;
 		const { id, text, active = false } = data as LabelMessage;
 		let tag = tags.get(id);
@@ -115,30 +124,36 @@ function showLabels(engine: Engine, layer: HTMLElement): void {
 		}
 		tag.textContent = text;
 		tag.classList.toggle('active', active);
-	});
+	};
 }
 
 /** The message that a showcase scene posts to show or hide its help. */
 interface HudMessage {
 	/** A line for each key: the key, and what it does with its state. */
-	rows: readonly { key: string; text: string }[];
+	rows: readonly { key: string; text: string; action?: { name: string; value?: string } }[];
 	/** False hides the help, from the `h` key. */
 	visible: boolean;
 }
 
 /**
- * Shows the help that a showcase scene posts: one line for each key, with the camera's mode. The `h`
- * key hides it; the scene says so. A held frame posts none.
+ * Reads the help that a showcase scene posts: one line for each key, with the camera's mode. The `h`
+ * key hides it; the scene says so. A row with an action is a button, which sends the action's
+ * message to the sketch, so a touch screen with no keyboard can press it. A held frame posts none.
  */
-function showHud(engine: Engine, element: HTMLElement): void {
-	engine.onSketchMessage((type, data) => {
+function hudReader(engine: Engine, element: HTMLElement): (type: string, data: unknown) => void {
+	return (type, data) => {
 		if (type !== 'hud') return;
 		const { rows, visible } = data as HudMessage;
 		element.hidden = !visible;
 		element.replaceChildren(
 			...rows.map((row) => {
-				const line = document.createElement('div');
+				const line = document.createElement(row.action ? 'button' : 'div');
 				line.className = 'hud-row';
+				if (row.action) {
+					const { name, value } = row.action;
+					(line as HTMLButtonElement).type = 'button';
+					line.addEventListener('click', () => engine.postToSketch(name, value));
+				}
 				const key = document.createElement('span');
 				key.className = 'hud-key';
 				key.textContent = row.key;
@@ -148,5 +163,5 @@ function showHud(engine: Engine, element: HTMLElement): void {
 				return line;
 			}),
 		);
-	});
+	};
 }
