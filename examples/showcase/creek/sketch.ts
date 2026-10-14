@@ -21,6 +21,7 @@ import {
 	toggleGroup,
 } from '../../lib/controls';
 import { EFFECT_LAYER, INTERIOR_LAYER } from '../../lib/layers';
+import { reportLoading } from '../../lib/progress';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
@@ -84,6 +85,7 @@ const params = new URL(import.meta.url).searchParams;
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
+	reportLoading(ctx);
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
 		assets.builtinEnvironment('room'),
@@ -92,10 +94,9 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 		shadow: { distance: 40, normalBias: 0.04 },
 	});
-	post.set({
-		bloom: { blend: 'add', intensity: 0.2, threshold: 1 },
-		ao: { radius: 0.5 },
-	});
+	// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
+	// occlusion starts on, so the scene's shadows read.
+	post.set({ ao: { radius: 0.5 } });
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
 		near: 0.05,
@@ -106,6 +107,7 @@ export default defineSketch(async (ctx) => {
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
+	page.post('loading', 'Loading the trees, plants and cave');
 	const models = await loadModels(ctx);
 	const stones = createStones(ctx, detail.rock, detail.texture, models.cave);
 	const water = createWater(ctx, detail.water, stones.obstacles);
@@ -139,9 +141,9 @@ export default defineSketch(async (ctx) => {
 		shadows: true,
 		ao: true,
 		environment: true,
-		bloom: true,
+		bloom: false,
 		dof: false,
-		exposure: true,
+		exposure: false,
 		vignette: false,
 	};
 	const light = () => {

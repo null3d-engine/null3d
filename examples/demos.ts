@@ -102,7 +102,7 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A snowy town square under the moon',
 		summary:
 			'Timber houses with lit windows around a cobbled square on a snowy night, with a stone clock tower, iron lamps that throw warm light, a well, market stalls, snow pines and bare trees strung with fairy lights, falling snow and smoke from the chimneys.',
-		hold: 4,
+		hold: 0.5,
 		timeoutSeconds: 60,
 	},
 	{
@@ -462,10 +462,11 @@ export const DEMOS: readonly Demo[] = [
 		name: 'forest',
 		group: 'Scale',
 		sketch: new URL('./forest/sketch.ts', import.meta.url),
+		code: 'forest/',
 		title: 'Levels of detail',
-		scene: 'Pine forest',
+		scene: 'Mixed forest',
 		summary:
-			'40,000 pines over rolling hills at golden hour, and 8,000 on phones, in one instance batch. Each pine has four levels of detail, from 6,400 triangles down to 40, and every tree picks its own in each frame by its size on the screen. Near a switch the two levels share the pixels, so no tree pops.',
+			'40,000 trees of four kinds over rolling hills at golden hour, and 8,000 on phones. Three firs and a broadleaf tree are made in code at four levels of detail. Each tree picks its own level in every frame by its size on the screen, and the levels share the pixels through a dither at a switch. On phones the nearest trees draw in full and the rest as cut-out cards.',
 		hold: 2,
 		timeoutSeconds: 60,
 	},
