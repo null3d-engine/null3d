@@ -1,5 +1,6 @@
 #define_import_path null3d::globals
 #import null3d::fog::Fog
+#import null3d::sky_scattering::Aerial
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
@@ -63,6 +64,8 @@ struct Frame {
     /// The projection matrix, into the clip space of the engine's reversed depth: 1 at the near
     /// plane and 0 at the far plane. Zero in the views of lights.
     projection: mat4x4f,
+    /// The physical sky's air between the camera and each surface, all zero without one.
+    aerial: Aerial,
     /// The vignette's intensity, size, falloff and roundness, which fragment shaders apply before
     /// the tone mapping on the 8-bit path, in the camera's view. Zero elsewhere, which applies none.
     vignette: vec4f,

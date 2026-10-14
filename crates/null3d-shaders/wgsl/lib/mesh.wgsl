@@ -4,6 +4,7 @@ enable draw_index;
 #import null3d::fog::{fog_color, fog_factor}
 #import null3d::globals::{Frame, Material, MaterialCoatSheen, MaterialRow, MaterialTransmission}
 #import null3d::lighting::{ambient_irradiance}
+#import null3d::sky_scattering::{aerial_perspective}
 #import null3d::tonemap
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -425,11 +426,12 @@ fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
     if ((u32(m.strengths.z) & NO_FOG) != 0u) {
         return c;
     }
+    let hazed = aerial_perspective(frame.aerial, c, relative);
     let factor = fog_factor(frame.fog, relative);
     if (factor == 0.0) {
-        return c;
+        return hazed;
     }
-    return mix(c, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
+    return mix(hazed, fog_color(frame.fog, relative, frame.sun_direction.xyz, frame.sun_color.xyz), factor);
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.

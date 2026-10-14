@@ -226,8 +226,20 @@ pub mod post_value {
     /// Depth of field's focus point, x first, then 1 where it focuses on that point, else 0.
     pub const DOF_FOCUS_POINT: u32 = 46;
     pub const DOF_FOCUS_ON_POINT: u32 = 49;
+    /// The automatic exposure's metering (0 the mean, 1 the percentile mean), its two percentiles,
+    /// its center weight, its speeds while the scene grows brighter and darker in stops per
+    /// second, the darkest and the brightest scene it adapts to in stops, and its compensation in
+    /// stops, in this order.
+    pub const AUTO_EXPOSURE_METERING: u32 = 50;
+    pub const AUTO_EXPOSURE_PERCENTILES: u32 = 51;
+    pub const AUTO_EXPOSURE_CENTER_WEIGHT: u32 = 53;
+    pub const AUTO_EXPOSURE_SPEED_UP: u32 = 54;
+    pub const AUTO_EXPOSURE_SPEED_DOWN: u32 = 55;
+    pub const AUTO_EXPOSURE_MIN_EV: u32 = 56;
+    pub const AUTO_EXPOSURE_MAX_EV: u32 = 57;
+    pub const AUTO_EXPOSURE_COMPENSATION: u32 = 58;
     /// The values in the block.
-    pub const COUNT: u32 = 50;
+    pub const COUNT: u32 = 59;
 }
 
 /// The block of numbers that `callValues` gives: 64-bit floats that TypeScript writes before a
@@ -281,8 +293,21 @@ pub mod background_value {
     /// A second sky's sun, whose light adds to the first sky's at the weight that follows.
     pub const SECOND_SUN_POSITION: u32 = 19;
     pub const SECOND_SKY_WEIGHT: u32 = 22;
+    /// The physical sky's own values. It takes the sun's position, Rayleigh's factor, the Mie
+    /// directional g, the clouds, the time and the sun's disc from the sky's values above.
+    pub const SUN_INTENSITY: u32 = 23;
+    pub const HAZE: u32 = 24;
+    pub const OZONE: u32 = 25;
+    pub const GROUND_ALBEDO: u32 = 26;
+    pub const ALTITUDE: u32 = 27;
+    pub const METERS_PER_UNIT: u32 = 28;
+    pub const AERIAL_PERSPECTIVE: u32 = 29;
+    /// A point toward the moon, then its light above the air, and the stars' brightness.
+    pub const MOON_POSITION: u32 = 30;
+    pub const MOON_INTENSITY: u32 = 33;
+    pub const STARS: u32 = 34;
     /// The values in the block.
-    pub const COUNT: u32 = 23;
+    pub const COUNT: u32 = 35;
 }
 
 /// What `setBackgroundSource` draws behind every object.
@@ -297,6 +322,8 @@ pub mod background_kind {
     pub const CUBEMAP: u32 = 3;
     /// three.js's analytic sky.
     pub const SKY: u32 = 4;
+    /// The physical sky.
+    pub const ATMOSPHERE: u32 = 5;
 }
 
 pub mod texture_stat {
@@ -363,6 +390,9 @@ pub mod texture_option {
     pub const UPLOAD_ALL: u32 = 2;
     /// The GPU memory that the textures may take, in KiB, or 0 for no budget.
     pub const MEMORY_BUDGET_KIB: u32 = 3;
+    /// Any value makes the store keep each texture's texels after its upload, so that a new GPU
+    /// device uploads them again; 0 frees them once the upload is done (D-164).
+    pub const KEEP_COPIES: u32 = 4;
 }
 
 /// The arrays that `createMeshFromArrays` finds in the staging words, and what it does with them.
@@ -479,6 +509,9 @@ pub mod animation_field {
     /// The look-at target of every instance in the world, 3 64-bit floats each, which TypeScript
     /// writes; made by `enableJointOverrides`.
     pub const LOOK_TARGETS: u32 = 12;
+    /// The frames between two frame steps of each instance's pose, 32-bit unsigned integers,
+    /// which TypeScript writes.
+    pub const UPDATE_INTERVALS: u32 = 13;
 }
 
 /// The places of the numbers in the `PLAY_ARGS` array. The numbers cross in engine memory, not as
@@ -515,6 +548,8 @@ pub mod play_flag {
     pub const JOIN: u32 = 16;
     /// The blend gives its layer's blend value.
     pub const VALUE: u32 = 32;
+    /// The play switches its layer with an inertial transition.
+    pub const INERTIAL: u32 = 64;
 }
 
 /// The first detail of an E1218 failure: what is wrong with the animation data. The second detail
@@ -1077,6 +1112,26 @@ pub fn typescript() -> String {
                 ("DOF_BLADES", post_value::DOF_BLADES),
                 ("DOF_FOCUS_POINT", post_value::DOF_FOCUS_POINT),
                 ("DOF_FOCUS_ON_POINT", post_value::DOF_FOCUS_ON_POINT),
+                ("AUTO_EXPOSURE_METERING", post_value::AUTO_EXPOSURE_METERING),
+                (
+                    "AUTO_EXPOSURE_PERCENTILES",
+                    post_value::AUTO_EXPOSURE_PERCENTILES,
+                ),
+                (
+                    "AUTO_EXPOSURE_CENTER_WEIGHT",
+                    post_value::AUTO_EXPOSURE_CENTER_WEIGHT,
+                ),
+                ("AUTO_EXPOSURE_SPEED_UP", post_value::AUTO_EXPOSURE_SPEED_UP),
+                (
+                    "AUTO_EXPOSURE_SPEED_DOWN",
+                    post_value::AUTO_EXPOSURE_SPEED_DOWN,
+                ),
+                ("AUTO_EXPOSURE_MIN_EV", post_value::AUTO_EXPOSURE_MIN_EV),
+                ("AUTO_EXPOSURE_MAX_EV", post_value::AUTO_EXPOSURE_MAX_EV),
+                (
+                    "AUTO_EXPOSURE_COMPENSATION",
+                    post_value::AUTO_EXPOSURE_COMPENSATION,
+                ),
                 ("COUNT", post_value::COUNT),
             ],
         ),
@@ -1110,6 +1165,16 @@ pub fn typescript() -> String {
                 ("SUN_DISC", background_value::SUN_DISC),
                 ("SECOND_SUN_POSITION", background_value::SECOND_SUN_POSITION),
                 ("SECOND_SKY_WEIGHT", background_value::SECOND_SKY_WEIGHT),
+                ("SUN_INTENSITY", background_value::SUN_INTENSITY),
+                ("HAZE", background_value::HAZE),
+                ("OZONE", background_value::OZONE),
+                ("GROUND_ALBEDO", background_value::GROUND_ALBEDO),
+                ("ALTITUDE", background_value::ALTITUDE),
+                ("METERS_PER_UNIT", background_value::METERS_PER_UNIT),
+                ("AERIAL_PERSPECTIVE", background_value::AERIAL_PERSPECTIVE),
+                ("MOON_POSITION", background_value::MOON_POSITION),
+                ("MOON_INTENSITY", background_value::MOON_INTENSITY),
+                ("STARS", background_value::STARS),
                 ("COUNT", background_value::COUNT),
             ],
         ),
@@ -1121,6 +1186,7 @@ pub fn typescript() -> String {
                 ("ENVIRONMENT", background_kind::ENVIRONMENT),
                 ("CUBEMAP", background_kind::CUBEMAP),
                 ("SKY", background_kind::SKY),
+                ("ATMOSPHERE", background_kind::ATMOSPHERE),
             ],
         ),
         (
@@ -1194,6 +1260,7 @@ pub fn typescript() -> String {
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
                 ("MEMORY_BUDGET_KIB", texture_option::MEMORY_BUDGET_KIB),
+                ("KEEP_COPIES", texture_option::KEEP_COPIES),
                 ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
                 ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
@@ -1272,6 +1339,7 @@ pub fn typescript() -> String {
                 ("PLAY_ARGS", animation_field::PLAY_ARGS),
                 ("JOINT_OVERRIDES", animation_field::JOINT_OVERRIDES),
                 ("LOOK_TARGETS", animation_field::LOOK_TARGETS),
+                ("UPDATE_INTERVALS", animation_field::UPDATE_INTERVALS),
             ],
         ),
         // The animation table's layout, the numbers of `createClip`'s track headers, the bits of
@@ -1290,6 +1358,7 @@ pub fn typescript() -> String {
                 ("PLAY_WEIGHT", play_flag::WEIGHT),
                 ("PLAY_JOIN", play_flag::JOIN),
                 ("PLAY_VALUE", play_flag::VALUE),
+                ("PLAY_INERTIAL", play_flag::INERTIAL),
                 ("NO_SOURCE", NO_SOURCE),
                 ("ARG_FADE", play_arg::FADE as u32),
                 ("ARG_SPEED", play_arg::SPEED as u32),
