@@ -660,6 +660,7 @@ mod tests {
                 Grading::default(),
                 None,
                 None,
+                None,
                 true,
                 false,
             )
@@ -687,6 +688,7 @@ mod tests {
                 5,
                 None,
                 Grading::default(),
+                None,
                 None,
                 None,
                 true,
