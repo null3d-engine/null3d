@@ -3,6 +3,8 @@
 // styles, and this module owns how a demo starts.
 import { createEngine, type Engine } from '@null3d/engine';
 import type { Demo } from '../demos';
+import type { HudGroup } from './controls';
+import { createHud } from './hud';
 
 /** The message that a demo posts to show a label, or to change its text. */
 interface LabelMessage {
@@ -127,41 +129,25 @@ function labelReader(engine: Engine, layer: HTMLElement): (type: string, data: u
 	};
 }
 
-/** The message that a showcase scene posts to show or hide its help. */
+/** The message that a showcase scene posts with its controls. */
 interface HudMessage {
-	/** A line for each key: the key, and what it does with its state. */
-	rows: readonly { key: string; text: string; action?: { name: string; value?: string } }[];
-	/** False hides the help, from the `h` key. */
+	/** The groups of buttons: modes and effects, with the camera group first. */
+	groups: HudGroup[];
+	/** False hides the whole control. */
 	visible: boolean;
 }
 
 /**
- * Reads the help that a showcase scene posts: one line for each key, with the camera's mode. The `h`
- * key hides it; the scene says so. A row with an action is a button, which sends the action's
- * message to the sketch, so a touch screen with no keyboard can press it. A held frame posts none.
+ * Draws the controls that a showcase scene posts: a chevron that opens a glass panel of grouped
+ * buttons. A row with an action is a button, which sends the action's message to the sketch, so a
+ * touch screen with no keyboard can press it. A held frame posts none.
  */
 function hudReader(engine: Engine, element: HTMLElement): (type: string, data: unknown) => void {
+	const stage = element.parentElement ?? element;
+	const hud = createHud(element, stage, (name, value) => engine.postToSketch(name, value));
 	return (type, data) => {
 		if (type !== 'hud') return;
-		const { rows, visible } = data as HudMessage;
-		element.hidden = !visible;
-		element.replaceChildren(
-			...rows.map((row) => {
-				const line = document.createElement(row.action ? 'button' : 'div');
-				line.className = 'hud-row';
-				if (row.action) {
-					const { name, value } = row.action;
-					(line as HTMLButtonElement).type = 'button';
-					line.addEventListener('click', () => engine.postToSketch(name, value));
-				}
-				const key = document.createElement('span');
-				key.className = 'hud-key';
-				key.textContent = row.key;
-				const text = document.createElement('span');
-				text.textContent = row.text;
-				line.append(key, text);
-				return line;
-			}),
-		);
+		const { groups, visible } = data as HudMessage;
+		hud.render({ groups }, visible);
 	};
 }
