@@ -14,7 +14,7 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::{
     FrameLights, LightShadow, LightTable, LightView, NOT_VISIBLE, POINT_CONE, VisibleLight, color,
-    kind, value,
+    farthest_receiver_distance, kind, ladder_distance, value,
 };
 use null3d_core::scene::{Command, SceneStorage, flags};
 
@@ -507,8 +507,9 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
     );
     assert_eq!(
         (shadow.bias, shadow.normal_bias, shadow.distance),
-        (0.01, 0.02, 200.0)
+        (0.01, 0.02, 0.0)
     );
+    assert!(shadow.auto, "the default distance is automatic");
 
     for (code, number) in [
         (value::SHADOW_CASCADES, 2.0),
@@ -531,6 +532,56 @@ fn the_main_light_reports_its_shadows_when_it_casts_them() {
         .set_value(sun_row, value::SHADOW_CASCADES, 9.0)
         .unwrap();
     assert_eq!(world.frame(None).sun_shadow.unwrap().cascades, 4);
+}
+
+#[test]
+fn a_light_without_a_named_distance_follows_the_farthest_visible_receiver() {
+    let mut world = World::new();
+    let (sun, row) = world.light(kind::DIRECTIONAL, [0.0; 3], NO_TURN);
+    world.commands.push(Command::set_flags(
+        sun,
+        flags::CAST_SHADOWS,
+        flags::CAST_SHADOWS,
+    ));
+    let receiving = flags::VISIBLE | flags::RECEIVE_SHADOWS;
+    let near = world.object([0.0, 0.0, -10.0], NO_TURN, Handle::NONE, receiving);
+    let far = world.object([0.0, 0.0, -30.0], NO_TURN, Handle::NONE, receiving);
+    // A caster that receives nothing does not set the distance.
+    world.object(
+        [0.0, 0.0, -600.0],
+        NO_TURN,
+        Handle::NONE,
+        flags::VISIBLE | flags::CAST_SHADOWS,
+    );
+    // A hidden receiver does not either.
+    let hidden = world.object([0.0, 0.0, -700.0], NO_TURN, Handle::NONE, receiving);
+    world.commands.push(Command::set_visible(hidden, false));
+    world.frame(Some(&origin_view()));
+    // Give each receiver an own sphere: 2 m around a point 10 m out, and 5 m around one 30 m out.
+    // The farthest sphere reaches 35 m, which rounds up to the ladder step 1.25^16.
+    world.scene.set_local_radius(near, 2.0).unwrap();
+    world.scene.set_local_radius(far, 5.0).unwrap();
+    world.frame(Some(&origin_view()));
+    let view = origin_view();
+    let raw = farthest_receiver_distance(&world.scene, world.scene.parity(), &view);
+    assert!((raw - 35.0).abs() < 0.5, "the farthest receiver, got {raw}");
+    let held = ladder_distance(0.0, raw);
+    assert!(
+        (held - 35.527_115).abs() < 0.01,
+        "the ladder step, got {held}"
+    );
+    // The gathered shadow is automatic, and its distance is left for the render worker to resolve.
+    let shadow = world.frame(Some(&view)).sun_shadow.unwrap();
+    assert!(shadow.auto, "the light names no distance");
+    assert_eq!(shadow.distance, 0.0);
+    // A named distance is kept, and it is no longer automatic.
+    world
+        .lights
+        .set_value(row, value::SHADOW_DISTANCE, 80.0)
+        .unwrap();
+    let shadow = world.frame(Some(&view)).sun_shadow.unwrap();
+    assert!(!shadow.auto);
+    assert_eq!(shadow.distance, 80.0);
 }
 
 #[test]

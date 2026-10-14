@@ -152,6 +152,8 @@ const sun = scene.createDirectionalLight({
 sun.setShadow({ bias: 0.02, normalBias: 0.04 });
 ```
 
+The `distance` default is `'auto'`. The engine follows the farthest surface that receives shadows in the camera's view, rounded up on a ladder. A small scene then gets sharper shadows without naming a distance. Pass a number to fix it, as a port of a scene with its own shadow distance does. See [Shadows](../concepts/shadows.md#settings).
+
 Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
 
 ```ts

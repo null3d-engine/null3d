@@ -142,9 +142,10 @@ use crate::effects::EffectIds;
 use crate::environment;
 use crate::exposure::{ComputeIds, ExposureIds};
 use crate::final_pass::FinalIds;
+use crate::fog_volume::FogVolumeIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, KeyCounts, MaterialStorage, MeshBuffers, ParityLists,
-    RecordError, SceneSettings, UploadArena,
+    RecordError, SceneSettings, UploadArena, bind_frame_group,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role, ShadowPasses, TilePasses};
 use crate::fullscreen::FullscreenIds;
@@ -329,8 +330,10 @@ mod ids {
     pub const PHYSICAL_SKY: u32 = OBJECT_RANGES + 1;
     /// The uniform buffer of the full-screen passes' blocks.
     pub const FULLSCREEN: u32 = PHYSICAL_SKY + 1;
+    /// The uniform buffer of the volumetric fog's steps (see [`crate::fog_volume`]).
+    pub const FOG_VOLUME: u32 = FULLSCREEN + 1;
     /// The automatic exposure's meter: its uniform buffer, its histogram and its stored exposure.
-    pub const EXPOSURE: u32 = FULLSCREEN + 1;
+    pub const EXPOSURE: u32 = FOG_VOLUME + 1;
     pub const EXPOSURE_HISTOGRAM: u32 = EXPOSURE + 1;
     pub const EXPOSURE_STATE: u32 = EXPOSURE_HISTOGRAM + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
@@ -402,8 +405,10 @@ mod ids {
     pub const SKY_SAMPLERS: u32 = 8;
     /// The linear sampler of the full-screen passes.
     pub const FULLSCREEN_SAMPLER: u32 = SKY_SAMPLERS + crate::physical_sky::SAMPLERS;
+    /// The linear sampler of the volumetric fog's steps.
+    pub const FOG_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
     /// The linear sampler of the automatic exposure's meter.
-    pub const EXPOSURE_SAMPLER: u32 = FULLSCREEN_SAMPLER + 1;
+    pub const EXPOSURE_SAMPLER: u32 = FOG_SAMPLER + 1;
     /// The samplers of materials' maps.
     pub const SAMPLERS: u32 = EXPOSURE_SAMPLER + 1;
 
@@ -480,8 +485,10 @@ mod ids {
     pub const SKY_GROUPS: u32 = PARTICLE_DEPTH_COPY_GROUP + 1;
     /// The bind group of each full-screen pass, by its view's place, after the physical sky's.
     pub const FULLSCREEN_GROUPS: u32 = SKY_GROUPS + crate::physical_sky::GROUPS;
-    /// The bind groups of the automatic exposure's meter, after the full-screen passes'.
-    pub const EXPOSURE_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the volumetric fog's steps, after the full-screen passes'.
+    pub const FOG_GROUPS: u32 = FULLSCREEN_GROUPS + MAX_VIEWS as u32;
+    /// The bind groups of the automatic exposure's meter, after the fog's.
+    pub const EXPOSURE_GROUPS: u32 = FOG_GROUPS + crate::fog_volume::GROUPS;
     /// The bind groups of materials' maps, after the meter's.
     pub const TEXTURE_GROUPS: u32 = EXPOSURE_GROUPS + crate::exposure::GROUPS;
 
@@ -697,6 +704,11 @@ impl GpuDrivenRenderer {
                             buffer: ids::DOF,
                             sampler: ids::DOF_SAMPLER,
                             first_group: ids::DOF_GROUPS,
+                        },
+                        fog: FogVolumeIds {
+                            buffer: ids::FOG_VOLUME,
+                            sampler: ids::FOG_SAMPLER,
+                            first_group: ids::FOG_GROUPS,
                         },
                         exposure: ExposureIds {
                             buffer: ids::EXPOSURE,
@@ -1030,6 +1042,11 @@ impl GpuDrivenRenderer {
             .set_dof(self.settings.dof_frame(input.scene, parity, input.canvas));
         self.graph.set_exposure(self.settings.exposure_frame());
         created_pipelines |= self.graph.create_exposure_pipelines(list, input.frame)?;
+        self.graph.set_fog_volume(self.settings.fog_volume_frame(
+            input.scene,
+            parity,
+            input.canvas,
+        ));
         self.graph.set_tone_curve(self.settings.tone_curve());
         self.graph.set_grading(self.settings.grades());
         self.graph
@@ -1672,6 +1689,7 @@ impl GpuDrivenRenderer {
                     opaque::record(list, ViewId::OUTLINE, Bundle::Outline)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
+                Role::FogLight(_) => bind_frame_group(list, ids::frame_group(ViewId::CAMERA), &[]),
                 Role::Transparent(view) => {
                     transparent.record(list, view, sorted, skinning, settings, meshes, particles)
                 }

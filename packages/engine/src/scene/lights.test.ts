@@ -258,6 +258,11 @@ describe('creating lights', () => {
 		sun.setShadow({ cascades: 4 });
 		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_CASCADES]).toBe(4);
 		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_MAP_SIZE]).toBe(1024);
+		// 'auto' writes the core's auto value, 0, and a number writes itself.
+		sun.setShadow({ distance: 'auto' });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_DISTANCE]).toBe(0);
+		sun.setShadow({ distance: 120 });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_DISTANCE]).toBe(120);
 		// Settings left out keep the core's defaults.
 		const plain = scene.createDirectionalLight({ shadow: {} });
 		expect(tableRow(plain).values).toEqual([]);

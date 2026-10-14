@@ -310,6 +310,10 @@ export class SketchRunner {
 	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
+	/** True while the scene's fog is volumetric, as the governor knows it. */
+	private fogOn = false;
+	/** The volumetric fog's slices that the `fogSlices` setting gives. */
+	private fogSetting = 0;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
@@ -801,6 +805,8 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.fogSetting = settings.fogSlices;
+		governor.setFog(this.fogOn, this.fogSetting);
 		governor.setContact(settings.contactShadowSteps);
 		governor.setAnimation(settings.farAnimationInterval);
 		this.stepChanges = governor.stepChanges;
@@ -813,6 +819,8 @@ export class SketchRunner {
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
 			glue.setExposureMeter(EXPOSURE_METERS[settings.exposureMeter]) !== 0 ||
+			glue.setFogSlices(settings.fogSlices) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
 			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
 			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
@@ -868,7 +876,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
-			glue.setContactSteps(governor.contactSteps) !== 0
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -897,6 +906,7 @@ export class SketchRunner {
 	private followEffects(): boolean {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
+		this.followFog();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
 		return ao || bloom || custom || passes;
@@ -918,9 +928,18 @@ export class SketchRunner {
 		return true;
 	}
 
+	/** Follows the scene's volumetric fog, which the governor's fog step needs on. */
+	private followFog(): void {
+		const on = this.context.scene.needsHdr;
+		if (on === this.fogOn) return;
+		this.fogOn = on;
+		this.governor.setFog(on, this.fogSetting);
+	}
+
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
+	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
+	 * with slices to draw turns on, on a device that started
 	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
 	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
 	 * until they are built, and the frame before stays on screen meanwhile.
@@ -932,8 +951,8 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
-			return false;
+		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
+		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)

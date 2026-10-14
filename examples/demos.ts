@@ -269,6 +269,18 @@ export const DEMOS: readonly Demo[] = [
 			'A walk from a sunny courtyard into a dark stone hall and back. The hall starts almost black, then the eye opens and its lamps and golden sphere come out of the dark. Turned toward the door, the courtyard blazes white until the eye closes again, faster, as eyes do.',
 		controls: `${CAMERA} Press E to turn automatic exposure off and on.`,
 		hold: 6,
+	},
+	{
+		name: 'light-shafts',
+		group: 'Light, materials and effects',
+		sketch: new URL('./light-shafts/sketch.ts', import.meta.url),
+		code: 'light-shafts/',
+		title: 'Light shafts and lit fog',
+		scene: 'Pine wood at sunset',
+		summary:
+			"A path through a pine wood in haze. The volumetric fog takes the light of the low sun between the trunks, so rays fall through the gaps and the trunks' shadows cut dark lanes. At dusk the lanterns light up, and each casts a glowing cone into the fog.",
+		controls: `${CAMERA} Move the mouse across the scene, or tap, to pick the hour: left is golden hour, right is dusk.`,
+		hold: 2,
 		timeoutSeconds: 60,
 	},
 	{
