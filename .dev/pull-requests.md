@@ -62,10 +62,11 @@ inputs, so re-checking a branch on a moved main is cheap.
 
 - `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
   landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
-- Run one build at a time, and never a build beside a browser or image run of the same worktree. One
-  machine-wide lock serializes every build and a size check's base build, and each build stages its own
-  output in its own checkout, so two builds can never remove each other's files. A half-written core
-  makes a page fail for no reason (`E1402`, `E1406`).
+- Never a build beside a browser or image run of the same worktree. A half-written core makes a page
+  fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
+  output in a folder of its own, named for the build's process, and Cargo locks the target folder that
+  they share. A size check takes a machine-wide lock, because it also builds the base commit with that
+  commit's own build script, which may stage into the shared target folder.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
 shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the

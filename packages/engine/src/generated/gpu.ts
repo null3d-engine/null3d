@@ -71,6 +71,7 @@ export const FORMAT_R32_FLOAT = 20;
 export const FORMAT_BC6H_RGB_UFLOAT = 21;
 export const FORMAT_DEPTH16_UNORM = 22;
 export const FORMAT_RGBA32_UINT = 23;
+export const FORMAT_R16_FLOAT = 25;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
@@ -138,6 +139,8 @@ export const LAYOUT_DOF_COMPOSITE = 27;
 export const LAYOUT_DOF_COMPOSITE_MS = 28;
 export const LAYOUT_SSR_REDUCE = 30;
 export const LAYOUT_SSR_TRACE = 31;
+export const LAYOUT_WEIGHTED_COMPOSITE = 41;
+export const LAYOUT_WEIGHTED_DEPTH_MS = 42;
 export const LAYOUT_DECAL_DEPTH = 36;
 export const LAYOUT_DECAL_DEPTH_MS = 37;
 export const LAYOUT_PARTICLE = 32;
@@ -173,6 +176,7 @@ export const PERMUTATION_ALPHA_HASH = 4194304;
 export const PERMUTATION_TRANSMISSION = 8388608;
 export const PERMUTATION_ROW_VALUES = 16777216;
 export const PERMUTATION_CASTER = 33554432;
+export const PERMUTATION_WEIGHTED = 2147483648;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -253,6 +257,8 @@ export const TEMPLATE_DOF_COMPOSITE_MS = 46;
 export const TEMPLATE_TRANSMISSION_COPY = 47;
 export const TEMPLATE_SSR_REDUCE = 49;
 export const TEMPLATE_SSR_TRACE = 50;
+export const TEMPLATE_WEIGHTED_COMPOSITE = 64;
+export const TEMPLATE_WEIGHTED_DEPTH = 65;
 export const TEMPLATE_DECAL = 61;
 export const TEMPLATE_DECAL_MAPS = 62;
 export const TEMPLATE_PARTICLE = 53;
@@ -316,9 +322,9 @@ export const SIZE_SHADOW_TILES_UNIFORM_BYTES = 1936;
 export const SIZE_BACKGROUND_UNIFORM_BYTES = 144;
 
 /** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
-export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16];
+export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4, 16, 16, 16, 16, 8, 8, 16, 16, 4, 4, 16, 2, 16, 0, 2];
 /** Texels on each side of a block of each format, by format code. */
-export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 4, 1, 1];
+export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 4, 1, 1, 1, 1];
 /** Each vertex attribute type by code: its bytes per value, its largest value (1 for floats), and whether it reads as fractions. */
 export const VERTEX_TYPES: readonly (readonly [bytes: number, max: number, normalized: boolean])[] = [[4, 1, false], [1, 255, true], [1, 127, true], [2, 65535, true], [2, 32767, true], [1, 255, false], [1, 127, false], [2, 65535, false], [2, 32767, false]];
 /** Each vertex attribute in vertex order, which is also its shader location: its format bit (0 for one every format has), its values per vertex, the first bit of its type field, its types by the field's value, and whether shaders read whole numbers. */
