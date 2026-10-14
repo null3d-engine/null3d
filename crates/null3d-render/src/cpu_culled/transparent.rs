@@ -5,6 +5,11 @@
 //! of the bucket's passes, whose draw record names the run's slice of the index list. A run's
 //! back faces and front faces draw from the same records.
 //!
+//! A bucket of a weighted material draws each run once more, with its weighted pipeline, from the
+//! same records, in a call that only the camera's weighted pass records (see [`crate::weighted`]).
+//! While the camera draws that layer, its transparent pass leaves out the bucket's own calls. The
+//! records do not change with the layer, so a view's index list that stays the same keeps them.
+//!
 //! Neighboring draws that share a pipeline, a map group and a vertex page go out in one call:
 //! one multi-draw call of up to a block of records where the device has `WEBGL_multi_draw`, or one
 //! call per draw elsewhere. A call's records start at an aligned place after the opaque records in
@@ -18,7 +23,7 @@ use null3d_gpu::drawlist::{DrawList, Op, index_format, sizes};
 use super::layout::{MULTI_DRAW_BLOCK_BYTES, RESIDENT};
 use crate::frame::{MeshBuffers, RecordError, SceneSettings, UploadArena, put_u32};
 use crate::particles::ParticlePass;
-use crate::sorted::{SortedLayout, SortedView};
+use crate::sorted::{SortedLayout, SortedRows, SortedView};
 use crate::view::ViewId;
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
@@ -47,12 +52,38 @@ struct Call {
     count: u32,
     records: u32,
     /// The call draws the same parts with the same records as a call before it, with another
-    /// pipeline: a run's front faces after its back faces. It writes no records of its own, and no
-    /// later draw joins it.
+    /// pipeline: a run's front faces after its back faces, or a weighted bucket's run in the
+    /// weighted layer. It writes no records of its own, and no later draw joins it.
     repeat: bool,
+    /// Which passes record the call.
+    kind: CallKind,
     /// The id of the particle system that the call draws, with its own records and groups, or 0
     /// for a call of mesh parts.
     particles: u32,
+}
+
+/// Which passes record a call: the transparent pass, which leaves out a weighted bucket's own
+/// calls while the camera draws its weighted layer, or the weighted pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CallKind {
+    /// A call of a bucket without a weighted pipeline.
+    #[default]
+    Sorted,
+    /// A weighted bucket's own call, which draws it back to front with normal blending.
+    WeightedSorted,
+    /// A weighted bucket's call in the weighted layer.
+    Weighted,
+}
+
+impl CallKind {
+    /// True when a pass that draws `rows` records a call of this kind.
+    fn drawn_in(self, rows: SortedRows) -> bool {
+        match rows {
+            SortedRows::All => self != CallKind::Weighted,
+            SortedRows::Sorted => self == CallKind::Sorted,
+            SortedRows::Weighted => self == CallKind::Weighted,
+        }
+    }
 }
 
 /// A view's draws of the frame.
@@ -156,6 +187,7 @@ impl Transparent {
                     count: 0,
                     records,
                     repeat: false,
+                    kind: CallKind::Sorted,
                     particles: system,
                 });
                 continue;
@@ -163,10 +195,17 @@ impl Transparent {
             let mesh = storage
                 .mesh(bucket.mesh - 1)
                 .expect("buckets name known meshes");
-            // A run that draws its back faces, then its front faces, starts calls of its own, so
-            // its front faces can draw the same parts with the same records.
+            // A run that draws its back faces, then its front faces, or once more in the weighted
+            // layer, starts calls of its own, so its later passes can draw the same parts with the
+            // same records.
             let first_call = state.calls.len();
-            let mut alone = bucket.back != 0;
+            let weighted = bucket.weighted != 0;
+            let kind = if weighted {
+                CallKind::WeightedSorted
+            } else {
+                CallKind::Sorted
+            };
+            let mut alone = bucket.back != 0 || weighted;
             let pipeline = if bucket.back != 0 {
                 bucket.back
             } else {
@@ -177,6 +216,7 @@ impl Transparent {
                     && state.calls.last().is_some_and(|call| {
                         call.pipeline == pipeline
                             && !call.repeat
+                            && call.kind == kind
                             && call.particles == 0
                             && call.textures == bucket.textures
                             && call.page == part.page
@@ -201,6 +241,7 @@ impl Transparent {
                         count: 1,
                         records,
                         repeat: false,
+                        kind,
                         particles: 0,
                     });
                 }
@@ -214,13 +255,25 @@ impl Transparent {
                     group: bucket.skinned_slot().map_or(bucket.group, |_| RESIDENT),
                 });
             }
+            let own = first_call..state.calls.len();
             if bucket.back != 0 {
-                for k in first_call..state.calls.len() {
+                for k in own.clone() {
                     let back = state.calls[k];
                     state.calls.push(Call {
                         pipeline: bucket.pipeline,
                         repeat: true,
                         ..back
+                    });
+                }
+            }
+            if weighted {
+                for k in own {
+                    let first = state.calls[k];
+                    state.calls.push(Call {
+                        pipeline: bucket.weighted,
+                        repeat: true,
+                        kind: CallKind::Weighted,
+                        ..first
                     });
                 }
             }
@@ -263,13 +316,15 @@ impl Transparent {
     /// `groups` sets the frame's and the instances' bind groups; `records_at` is the dynamic
     /// offset of the transparent part of the view's ring slot of draw records. It leaves out each
     /// call whose maps' group `hidden` names: a group that binds a target that the view draws
-    /// into, or one that it does not read.
+    /// into, or one that it does not read. `rows` picks the calls: those of the transparent pass,
+    /// or of the camera's weighted layer.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         view: usize,
+        rows: SortedRows,
         draws_group: u32,
         records_at: u32,
         meshes: &MeshBuffers,
@@ -278,12 +333,12 @@ impl Transparent {
         particles: &ParticlePass,
     ) -> Result<(), RecordError> {
         let state = &self.views[view];
-        if state.calls.is_empty() {
+        if !state.calls.iter().any(|call| call.kind.drawn_in(rows)) {
             return Ok(());
         }
         groups(list)?;
         let (mut pipeline, mut textures, mut page) = (None, 0, None);
-        for call in &state.calls {
+        for call in state.calls.iter().filter(|call| call.kind.drawn_in(rows)) {
             if call.textures != 0 && hidden(call.textures) {
                 continue;
             }
