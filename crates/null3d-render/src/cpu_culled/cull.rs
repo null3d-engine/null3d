@@ -36,7 +36,9 @@
 //!
 //! Each camera view then sorts the rows whose material blends (see [`crate::sorted`]). Their
 //! entries follow the opaque entries in the view's index list, farthest first, and the transparent
-//! pass draws them in that order. They are kept per frame parity too.
+//! pass draws them in that order. They are kept per frame parity too. The camera's view also
+//! orders its decals, whose entries follow the blended rows' for the decal pass, and then the
+//! opaque rows on the layers that decals skip, which draw again after the decals.
 //!
 //! One [`Culling`] culls the views of cameras against the scene's layout, and another culls the
 //! shadow cascades against the casters' layout (see [`super::layout::Drawn`]), with no sort. Each
@@ -102,7 +104,14 @@ struct ViewCull {
     occluded: u32,
     /// The view's blended rows, sorted back to front, in the frame that culled last.
     sorted: SortedView,
-    /// Each frame parity's index list entries of the sorted rows, in their order.
+    /// The camera view's decals, in the order that the decal pass draws them, in the frame that
+    /// culled last. Every other view has none.
+    decals: SortedView,
+    /// The camera view's opaque rows on the layers that decals skip, nearest first, which draw
+    /// again after the decals, in the frame that culled last. Every other view has none.
+    redraws: SortedView,
+    /// Each frame parity's index list entries of the sorted rows, in their order, then those of
+    /// the decals, then those of the rows that draw again after them.
     sorted_entries: [Vec<u32>; 2],
     /// Each frame parity's entry lists that a growth replaced, kept until that parity sorts again:
     /// the list of its last frame may still upload from them.
@@ -290,11 +299,34 @@ impl Culling {
         &self.views[self.slot(view)].sorted
     }
 
-    /// Makes room in every view's output for the transparent pass's rows and draws.
-    pub(super) fn reserve_sorted(&mut self, sorted: &SortedLayout) -> Result<(), TryReserveError> {
-        let rows = sorted.rows() as usize;
+    /// A view's decals, in the order that the decal pass draws them, in the frame that culled
+    /// last: none but the camera view's.
+    pub(super) fn decals(&self, view: ViewId) -> &SortedView {
+        &self.views[self.slot(view)].decals
+    }
+
+    /// A view's opaque rows that draw again after the decals, in the frame that culled last: none
+    /// but the camera view's.
+    pub(super) fn redraws(&self, view: ViewId) -> &SortedView {
+        &self.views[self.slot(view)].redraws
+    }
+
+    /// Makes room in every view's output for the transparent pass's rows and draws, and for the
+    /// decal pass's and its redraw's.
+    pub(super) fn reserve_sorted(
+        &mut self,
+        sorted: &SortedLayout,
+        decals: &SortedLayout,
+        redraws: &SortedLayout,
+    ) -> Result<(), TryReserveError> {
+        let rows = [sorted, decals, redraws]
+            .iter()
+            .map(|layout| layout.rows() as usize)
+            .sum();
         for view in &mut self.views {
             sorted.reserve_view(&mut view.sorted)?;
+            decals.reserve_view(&mut view.decals)?;
+            redraws.reserve_view(&mut view.redraws)?;
             for (entries, kept) in view.sorted_entries.iter_mut().zip(&mut view.sorted_kept) {
                 reserve_keeping(entries, rows, kept)?;
             }
@@ -353,7 +385,8 @@ impl Culling {
 
     /// Finds each view's visible sources of `layout` for the frame, on the calling thread and the
     /// job workers. `frame_of` gives each view's values, or `None` for a view that the frame does
-    /// not draw. With `sorted`, each view also sorts the blended rows back to front. With
+    /// not draw. With `sorted`, each view also sorts the blended rows back to front, and the
+    /// camera's view orders the decals and the rows that draw again after them. With
     /// `occlusion`, the first view draws the scene's blockers and hides what lies behind them.
     /// The clusters that come to rest are the same for every view, so they are built once; each
     /// view then culls runs of its own, which skip the cells it cannot see. Fails only when memory
@@ -368,7 +401,7 @@ impl Culling {
         cells: &CellCulling,
         frame_of: &dyn Fn(ViewId) -> Option<ViewFrame>,
         rule_of: &dyn Fn(ViewId) -> LevelRule,
-        sorted: Option<&SortedLayout>,
+        sorted: Option<(&SortedLayout, &SortedLayout, &SortedLayout)>,
         mut occlusion: Option<Occlusion<'_>>,
     ) -> Result<(), TryReserveError> {
         let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
@@ -397,7 +430,7 @@ impl Culling {
             let entries = &mut view.sorted_entries[parity];
             entries.clear();
             view.sorted_kept[parity].clear();
-            if let Some(sorted) = sorted {
+            if let Some((sorted, decals, redraws)) = sorted {
                 let frame = view.frame.as_ref();
                 sorted.sort(
                     input.jobs,
@@ -410,6 +443,32 @@ impl Culling {
                 );
                 for &item in view.sorted.items() {
                     entries.push(sorted.row(item, batches).entry);
+                }
+                let camera = first + k == ViewId::CAMERA.index();
+                let frame = frame.filter(|_| camera);
+                decals.sort(
+                    input.jobs,
+                    frame,
+                    buffer,
+                    scene,
+                    batches,
+                    parity,
+                    &mut view.decals,
+                );
+                for &item in view.decals.items() {
+                    entries.push(decals.row(item, batches).entry);
+                }
+                redraws.sort(
+                    input.jobs,
+                    frame,
+                    buffer,
+                    scene,
+                    batches,
+                    parity,
+                    &mut view.redraws,
+                );
+                for &item in view.redraws.items() {
+                    entries.push(redraws.row(item, batches).entry);
                 }
             }
         }
