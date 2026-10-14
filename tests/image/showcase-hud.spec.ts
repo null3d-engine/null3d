@@ -57,10 +57,11 @@ test('the showcase HUD names each group change in a toast at the top centre', as
 
 	// Time of day is a radio group too.
 	await pick(page, 'Time of day', 'mood', 'Dawn', 'time of day: dawn');
-	// Atmosphere, Lighting and Post are toggles: each names the effect and its new state.
-	await pick(page, 'Atmosphere', 'atmosphere', 'Sky', 'sky: off');
-	await pick(page, 'Lighting', 'lighting', 'Shadows', 'shadows: off');
-	await pick(page, 'Post', 'post', 'Bloom', 'bloom: on');
+	// Atmosphere, Lighting and Post are toggles: each names the effect, with its label's own case,
+	// and its new state.
+	await pick(page, 'Atmosphere', 'atmosphere', 'Sky', 'Sky: off');
+	await pick(page, 'Lighting', 'lighting', 'Shadows', 'Shadows: off');
+	await pick(page, 'Post', 'post', 'Bloom', 'Bloom: on');
 	// Quality is a radio group of the presets.
 	await pick(page, 'Quality', 'quality', 'Medium', 'quality: medium');
 

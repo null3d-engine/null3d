@@ -255,9 +255,12 @@ export function createHud(
 				if (shown === undefined || before === undefined || before === button.active) continue;
 				if (button.active)
 					showToast(
-						group.radio ? `${group.title}: ${button.label}`.toLowerCase() : `${button.label}: on`,
+						(group.radio
+							? `${group.title}: ${button.label}`
+							: `${button.label}: on`
+						).toLowerCase(),
 					);
-				else if (!group.radio) showToast(`${button.label}: off`);
+				else if (!group.radio) showToast(`${button.label}: off`.toLowerCase());
 			}
 		shown = next;
 	};
