@@ -187,6 +187,12 @@ const FINISHED = 'finished';
 const ANIMATED_OBJECTS = 1024;
 const ANIMATED_JOINTS = 65_536;
 
+/**
+ * The most frames between two updates of one object's pose that `setUpdateInterval` takes. A
+ * larger interval saves more, with more visible stepping on a character near the camera.
+ */
+const MAX_UPDATE_INTERVAL = 64;
+
 /** Floats per joint's inverse bind matrix: row-major 3 × 4. */
 const BIND_FLOATS = 12;
 /** The parent of a root joint in the core's arrays. */
@@ -341,6 +347,7 @@ function listed(names: Iterable<string>): string {
 export class SceneAnimations implements ViewHolder {
 	private generation = -1;
 	private scales = NO_FLOATS;
+	private intervals = NO_WORDS;
 	private weights = NO_FLOATS;
 	private sources = NO_WORDS;
 	private clipWeights = NO_FLOATS;
@@ -373,12 +380,12 @@ export class SceneAnimations implements ViewHolder {
 		core.holdViews(this);
 	}
 
-	/** @internal Forgets the arrays of the animation table, which the next read makes again. */
+	/** Forgets the arrays of the animation table, which the next read makes again. */
 	dropViews(): void {
 		this.generation = -1;
 		this.scales = this.weights = this.clipWeights = this.blends = this.args = NO_FLOATS;
 		this.overrides = NO_FLOATS;
-		this.sources = this.records = this.totals = NO_WORDS;
+		this.sources = this.records = this.totals = this.intervals = NO_WORDS;
 		this.targets = NO_DOUBLES;
 	}
 
@@ -406,6 +413,7 @@ export class SceneAnimations implements ViewHolder {
 		const { core } = this;
 		const at = (field: number) => core.glue.animationArrays(field);
 		this.scales = core.f32(at(C.ANIMATION_FIELD_TIME_SCALES), ANIMATED_OBJECTS);
+		this.intervals = core.u32(at(C.ANIMATION_FIELD_UPDATE_INTERVALS), ANIMATED_OBJECTS);
 		this.weights = core.f32(
 			at(C.ANIMATION_FIELD_LAYER_WEIGHTS),
 			ANIMATED_OBJECTS * C.ANIMATION_MAX_LAYERS,
@@ -473,6 +481,12 @@ export class SceneAnimations implements ViewHolder {
 	timeScales(): Float32Array {
 		this.views();
 		return this.scales;
+	}
+
+	/** The frames between two updates of each instance's pose, by its id in the core. */
+	updateIntervals(): Uint32Array {
+		this.views();
+		return this.intervals;
 	}
 
 	/** The weight of each layer of each instance, `ANIMATION_MAX_LAYERS` per instance. */
@@ -703,7 +717,9 @@ export class Animator implements Described {
 			checks.checkLive(call, this.object);
 			this.checkFade(call, fade);
 		}
-		this.done(this.system.core.glue.animatorStop(this.instance, clip, fade), call);
+		const { system } = this;
+		system.playArgs()[C.ANIMATION_ARG_FADE] = fade;
+		this.done(system.core.glue.animatorStop(this.instance, clip), call);
 	}
 
 	/**
@@ -744,6 +760,33 @@ export class Animator implements Described {
 			checks.checkNumber('setTimeScale', 'scale', scale, this);
 		}
 		this.system.timeScales()[this.instance - 1] = scale;
+	}
+
+	/**
+	 * The frames between two updates of the object's pose. The value 1, the default, updates it in
+	 * every frame. A larger number samples and composes it once every that many frames, and holds
+	 * the last pose in between. A far crowd then costs less on the job workers, and, where the
+	 * skinning pass skips a held pose, on the GPU too. The object's clips keep their real speed.
+	 * Each update covers the frames that it skipped.
+	 */
+	get updateInterval(): number {
+		return this.system.updateIntervals()[this.instance - 1] ?? 1;
+	}
+
+	/**
+	 * Sets the frames between two updates of the object's pose, a whole number from 1 to 64. The
+	 * value 1, the default, updates the pose in every frame, which a character near the camera
+	 * needs. A larger value leaves a far character in the pose of its last update for longer, which
+	 * steps. Give a crowd's near characters 1 and its far ones more. It writes engine memory, so
+	 * calling it every frame costs nothing.
+	 */
+	setUpdateInterval(frames: number): void {
+		const call = 'setUpdateInterval';
+		if (DEV) {
+			checks.checkLive(call, this.object);
+			this.checkInterval(call, frames);
+		}
+		this.system.updateIntervals()[this.instance - 1] = frames;
 	}
 
 	/**
@@ -1198,6 +1241,13 @@ export class Animator implements Described {
 		checks.checkNumber(call, 'weight', weight, this);
 		if (weight < 0)
 			refuse(`${call}() got the weight ${weight} on ${this.describe()}; it takes 0 or more.`);
+	}
+
+	private checkInterval(call: string, frames: number): void {
+		if (Number.isInteger(frames) && frames >= 1 && frames <= MAX_UPDATE_INTERVAL) return;
+		refuse(
+			`${call}() got the interval ${frames} on ${this.describe()}; it takes a whole number from 1 to ${MAX_UPDATE_INTERVAL}.`,
+		);
 	}
 
 	private checkLayer(call: string, layer: number): void {
