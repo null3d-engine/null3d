@@ -384,12 +384,20 @@ const PHYSICAL_EXPOSURE_LIMIT = 4;
  * and the sun on the horizon gives about 3, as the analytic model's EXPOSURE table does.
  */
 const PHYSICAL_ADAPTATION = 0.6;
+/** The physical model's moon light, below the analytic model's 0.4: the physical night is brighter otherwise. */
+const PHYSICAL_MOON = 0.3;
+/**
+ * The moon height, in degrees, over which the physical exposure moves from the dusk's to the
+ * night's. It holds the dusk's exposure while the moon is low, so the light does not dip before the
+ * moon has risen to light the scene.
+ */
+const MOON_EXPOSURE_RISE = 58;
 /**
  * The physical model's exposure once night has fallen. It is below the analytic model's 3.5: the
  * physical night sky is brighter, and the moon's own light rises through the night, so a lower
  * exposure keeps dusk at or above the night.
  */
-const NIGHT_EXPOSURE = 1.6;
+const NIGHT_EXPOSURE = 1.1;
 
 /** The physical table's light at a light's height in `degrees`: transmittance, mean, horizon. */
 function physicalAt(degrees: number): [Vec3, Vec3, Vec3] {
@@ -440,7 +448,7 @@ function physicalDay(
 	const [setThrough] = physicalAt(Math.max(elevation, 0));
 	const sunPeak = Math.max(...setThrough);
 	const sunIntensity = sunLight * sunPeak * smoothstep(SUN_TWILIGHT[1], SUN_TWILIGHT[0], elevation);
-	const moonIntensity = MOON_INTENSITY * handover;
+	const moonIntensity = PHYSICAL_MOON * handover;
 	const sunColor = scale(setThrough, 1 / Math.max(sunPeak, 1e-9));
 	const bearing = Math.atan2(sun[2], sun[0]) + Math.PI * handover;
 	const height = mix(Math.asin(sun[1]), moonHeight * DEGREE, handover);
@@ -467,11 +475,13 @@ function physicalDay(
 	const ambient = scale(skyMean, 2);
 	const brightest = Math.max(...ambient, 1e-9);
 	// The exposure makes up for the sun's sky as it dims, as an eye adapts, then moves to the night
-	// exposure as the moon's sky fades in.
+	// exposure as the moon rises. It holds the dusk's exposure while the moon is low, so the key
+	// it cannot yet give is not paid for with a dark moment before the moon is up.
 	const [, dayMean] = physicalAt(15);
 	const ratio = luminance(dayMean) / Math.max(luminance(mean), 1e-12);
 	const adapted = Math.min(ratio ** PHYSICAL_ADAPTATION, PHYSICAL_EXPOSURE_LIMIT);
-	const exposure = Math.exp(mix(Math.log(adapted), Math.log(NIGHT_EXPOSURE), handover));
+	const nightShare = smoothstep(0, MOON_EXPOSURE_RISE, moonHeight);
+	const exposure = Math.exp(mix(Math.log(adapted), Math.log(NIGHT_EXPOSURE), nightShare));
 	return {
 		hours,
 		sky,
