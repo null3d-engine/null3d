@@ -1947,6 +1947,52 @@ fn a_pose_step_changes_only_when_the_instances_matrices_do() {
     assert_eq!(animations.pose_step(99), None);
 }
 
+#[test]
+fn a_slow_instance_poses_on_its_interval_alone() {
+    let jobs = JobSystem::new(0);
+    let (skeleton, clips) = character(4);
+    let mut animations = Animations::new(&jobs, 2, 8).unwrap();
+    let id = animations.add_skeleton(skeleton).unwrap();
+    let clip = animations.add_clip(id, clips[0].clone()).unwrap();
+    let slow = animations.add_instance(id).unwrap();
+    let every = animations.add_instance(id).unwrap();
+    animations.play(slow, clip, Play::default()).unwrap();
+    animations.play(every, clip, Play::default()).unwrap();
+    let intervals = animations.update_intervals_mut();
+    assert_eq!(
+        [intervals[slow as usize], intervals[every as usize]],
+        [1, 1]
+    );
+    intervals[slow as usize] = 4;
+
+    let dt = 1.0 / 60.0;
+    // Every update poses the instance that has no interval, and the first poses the slow one too.
+    animations.update(&jobs, dt);
+    let posed = animations.pose_step(slow);
+    assert_eq!(posed, animations.pose_step(every));
+
+    // The three updates in between leave the slow instance in its pose, and its matrices carry
+    // over unchanged, so the skinning pass skips the held pose too.
+    let held = animations.instance_matrices(slow).to_vec();
+    for _ in 0..3 {
+        animations.update(&jobs, dt);
+        assert_eq!(animations.pose_step(slow), posed);
+        assert_eq!(animations.instance_matrices(slow), held.as_slice());
+    }
+
+    // The next update poses it again. Its clips covered the frames in between, so its pose matches
+    // the instance that poses in every one of them.
+    animations.update(&jobs, dt);
+    assert_ne!(animations.pose_step(slow), posed);
+    let slow_pose = animations.instance_matrices(slow).to_vec();
+    let largest = slow_pose
+        .iter()
+        .zip(animations.instance_matrices(every))
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(largest < 1e-4, "the slow pose differs by {largest}");
+}
+
 /// Writes a rotation override into slot `slot` of instance `instance`'s block.
 fn override_joint(
     animations: &mut Animations,

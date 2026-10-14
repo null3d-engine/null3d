@@ -1369,8 +1369,9 @@ pub mod sizes {
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
     /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, and the camera's view and projection matrices, which custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 704;
+    /// shadow lookups, the camera's view and projection matrices, which custom materials read, and
+    /// the vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 720;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1458,9 +1459,12 @@ pub mod sizes {
     /// Bytes of the uniform block of the shadow atlas's tiles: a matrix for each of the 24 tiles,
     /// then a vector for each, then the filter's vector.
     pub const SHADOW_TILES_UNIFORM_BYTES: u32 = 1936;
-    /// Bytes of the background's uniform block: eight vectors, which the cube map and the sky
-    /// read (see `null3d_render::background`).
-    pub const BACKGROUND_UNIFORM_BYTES: u32 = 128;
+    /// Bytes of the frame's shadow settings: the cascades' block followed by the tiles' block, one
+    /// binding of the frame's group (D-146).
+    pub const SHADOW_SETTINGS_BYTES: u32 = SHADOW_UNIFORM_BYTES + SHADOW_TILES_UNIFORM_BYTES;
+    /// Bytes of the background's uniform block: nine vectors, which the cube map, the sky and a
+    /// plain color read (see `null3d_render::background`).
+    pub const BACKGROUND_UNIFORM_BYTES: u32 = 144;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
