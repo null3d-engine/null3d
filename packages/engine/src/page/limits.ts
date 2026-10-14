@@ -405,7 +405,8 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
 			capabilities:
 				compression((feature) => report.webgpu.features.includes(feature), options.compression) |
-				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0),
+				(report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0) |
+				C.CAPABILITY_FLOAT16_TARGETS,
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
@@ -422,6 +423,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities:
 			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			(gl.floatRenderTargets?.rgba16f.complete === true ? C.CAPABILITY_FLOAT16_TARGETS : 0) |
 			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
