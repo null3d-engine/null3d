@@ -553,13 +553,22 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     // size, so its frame is the render size. Every other build draws the canvas, so its frame is
     // the scene color's size, which is the canvas's.
     let resolving = (settings.output.flags & RESOLVE) != 0u;
-    let size = select(vec2f(textureDimensions(scene_color)), render, resolving);
+    let scene = vec2f(textureDimensions(scene_color));
+    // WebGL2 counts rows from the bottom and draws the render corner into the scene color's top
+    // rows, so the first step's fragments start at that corner's own origin.
+#ifdef WEBGL2
+    let origin = select(vec2f(0.0), vec2f(0.0, scene.y - render.y), resolving);
+#else
+    let origin = vec2f(0.0);
+#endif
+    let local = position.xy - origin;
+    let size = select(scene, render, resolving);
     let whole = all(render == size);
     // The pixel's place on the drawn corner, from 0 to 1 in the rows' own order, which every
     // target of the frame shares.
-    let uv = position.xy / size;
+    let uv = local / size;
     let light = glow(uv);
-    let shade = vignette(position.xy, size);
+    let shade = vignette(local, size);
     var color = vec4f(0.0);
     if whole {
         color = display(shaded(with_glow(pixel_color(position.xy), light), shade));
