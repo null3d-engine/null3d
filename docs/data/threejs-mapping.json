@@ -648,9 +648,9 @@
       "three": "LightProbe / LightProbeGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setEnvironment: diffuse spherical harmonics come with the environment",
-      "notes": "`bunx @null3d/cli assets env` computes them offline.",
-      "docs": "concepts/lighting",
+      "target": "scene.setLightProbeGrid: a grid of irradiance probes lights the scene where a surface stands",
+      "notes": "The grid holds L1 spherical harmonics per probe. The probe grid page says how a sketch bakes one.",
+      "docs": "api/scene",
       "detect": "\\bLightProbe(Generator)?\\b"
     },
     {
@@ -802,8 +802,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps, and transmission",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, and transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry). Clearcoat, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat and sheen",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), and the clear coat and the sheen (see their entries). Iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -828,6 +828,28 @@
       "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet, and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+    },
+    {
+      "id": "mat-clearcoat",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial clearcoat / clearcoatRoughness / clearcoatNormalScale / clearcoatMap / clearcoatRoughnessMap / clearcoatNormalMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ clearcoat, clearcoatRoughness, clearcoatNormalScale, clearcoatMap, clearcoatRoughnessMap, clearcoatNormalMap })",
+      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
+    },
+    {
+      "id": "mat-sheen",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial sheen / sheenColor / sheenRoughness / sheenColorMap / sheenRoughnessMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ sheenColor, sheenRoughness, sheenColorMap, sheenRoughnessMap })",
+      "notes": "The same Charlie sheen with three.js's formulas, and glTF's KHR_materials_sheen loads into it. There is no sheen option: give sheenColor times three.js's sheen, which defaults to 0, so a three.js material without sheen shows none and its port leaves the sheen options out. Give a sheen option when you create the material to change it later. sheenColorMap and sheenRoughnessMap must be one texture, with the roughness in alpha, as glTF packs them. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap.",
+      "docs": "api/materials",
+      "detect": "\\bsheen(Color|Roughness|ColorMap|RoughnessMap)?\\b"
     },
     {
       "id": "decal-geometry",
@@ -1033,8 +1055,8 @@
       "three": "ShadowMaterial (shadow-catcher planes)",
       "status": "direct",
       "since": "0.2",
-      "target": "materials.shadowCatcher({ opacity })",
-      "notes": "Not built yet. Until then, give a plane receiveShadows and a material whose color matches the background.",
+      "target": "materials.shadowCatcher({ color, opacity })",
+      "notes": "The plane shows the main directional light's shadow in the material's color where the shadow falls, and nothing where the light reaches it. Set receiveShadow on the mesh, as the material needs it. Point and spot light shadows do not show on it. The scene's fog leaves it alone. Put the plane just above the surface whose shadows it catches.",
       "docs": "api/materials",
       "detect": "\\bShadowMaterial\\b"
     },

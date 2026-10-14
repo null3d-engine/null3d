@@ -13,6 +13,9 @@
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{light_shadow}
 #endif
+#ifdef COAT_SHEEN
+#import null3d::coat_sheen::{layered_light}
+#endif
 
 // The point and spot lights of clustered forward shading. Each frame the engine cuts the camera's
 // view into clusters: tiles across the view, in slices along it that grow with distance. For each
@@ -156,7 +159,8 @@ fn cluster_lights(relative: vec3f) -> vec2u {
 /// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
 /// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
 /// surface's position relative to the camera, `normal` its unit normal, and `to_view` the unit
-/// direction toward the camera. `compensation` comes from `multiscatter_compensation`.
+/// direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
+/// COAT_SHEEN builds each light lights the surface's clear coat and sheen too (null3d::coat_sheen).
 fn clustered_light(
     m: PbrMaterial,
     relative: vec3f,
@@ -205,14 +209,12 @@ fn clustered_light(
             strength *= light_shadow(u32(tile) - 1u, seen, normal, to_light, gap);
         }
 #endif
-        let reflected = direct_light(
-            m,
-            normal,
-            to_view,
-            to_light,
-            light.color_decay.rgb * strength,
-            compensation,
-        );
+        var incoming = light.color_decay.rgb * strength;
+#ifdef COAT_SHEEN
+        // The layers gather their light first, and the sheen keeps part of it from the base.
+        incoming *= layered_light(normal, to_view, to_light, incoming);
+#endif
+        let reflected = direct_light(m, normal, to_view, to_light, incoming, compensation);
         sum.diffuse += reflected.diffuse;
         sum.specular += reflected.specular;
     }

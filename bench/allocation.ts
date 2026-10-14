@@ -76,6 +76,13 @@
 // decal pass culls, orders and uploads their rows in every frame. `--passes` adds a full-screen
 // pass that reads S1's color at half the render size, whose texture a custom effect adds as a glow,
 // and changes the pass's uniform every frame. `--prepass` turns the depth prepass on, in any scene.
+// frame. `--coat-sheen` gives S1's boxes a clear coat and a sheen, the shaders of layered
+// materials. `--weighted` puts a column of smoke of the weighted blending over S1, whose 2,000
+// puffs rise in every frame, which the camera's weighted layer draws. `--decals` puts a ground
+// with a batch of decals under S1, which turn every frame, so the decal pass culls, orders and
+// uploads their rows in every frame. `--passes` adds a full-screen pass that reads S1's color
+// at half the render size, whose texture a custom effect adds as a glow, and changes the pass's
+// uniform every frame. `--prepass` turns the depth prepass on, in any scene.
 // `--stats` shows the stats overlay through the `?stats` switch, so the engine samples its costly
 // figures while the profiler samples: GPU time on one frame in eleven, the counts of the draws that
 // the GPU culls, and the memory figures that the sketch thread publishes. `--stats-collapsed` shows
@@ -658,6 +665,8 @@ async function main(): Promise<void> {
 		if (transmission && scene !== 's1') throw new Error('--transmission puts water under S1 only');
 		const ssr = args.includes('--ssr') ? '&ssr' : '';
 		if (ssr && scene !== 's1') throw new Error('--ssr puts a polished floor under S1 only');
+		const coatSheen = args.includes('--coat-sheen') ? '&coatSheen' : '';
+		if (coatSheen && scene !== 's1') throw new Error('--coat-sheen coats the boxes of S1 only');
 		const weighted = args.includes('--weighted') ? '&weighted' : '';
 		if (weighted && scene !== 's1') throw new Error('--weighted puts smoke over S1 only');
 		const decals = args.includes('--decals') ? '&decals' : '';
