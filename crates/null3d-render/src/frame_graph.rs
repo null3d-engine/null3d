@@ -491,6 +491,10 @@ pub(crate) struct FrameGraph {
     /// True when the render scale may drop below the whole canvas, so the final pass runs to scale
     /// the image up even where the scene could resolve into the canvas.
     scales: bool,
+    /// True when the declarations hold the two-step pass: the render scale can drop below the whole
+    /// canvas and the frame being declared draws below it. It follows the current scale with a
+    /// one-frame delay, so a crossing declares the passes again.
+    two_step_declared: bool,
     /// True while the sketch sets a color grading table or the vignette, so the final pass runs to
     /// grade the image even where the scene could resolve into the canvas.
     grades: bool,
@@ -691,6 +695,7 @@ impl FrameGraph {
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
+            two_step_declared: false,
             grades: false,
             outline: None,
             outlined: false,
@@ -1026,7 +1031,7 @@ impl FrameGraph {
             0
         };
         FinalPass::UPLOAD_BYTES
-            + if self.scales {
+            + if self.two_step_declared {
                 FinalPass::UPLOAD_BYTES
             } else {
                 0
@@ -1056,20 +1061,26 @@ impl FrameGraph {
     /// resolve into the canvas, that switches the final pass on in place of the resolve pass, and
     /// the graph compiles again.
     pub(crate) fn set_scaling(&mut self, scales: bool) {
-        if scales != self.scales {
-            // The declarations hold the two-step pass only while the render scale can drop below
-            // the whole canvas, so the passes are declared again now, before this frame's plan
-            // compiles.
-            self.scales = scales;
-            if self.declared_views.is_empty() {
-                self.declared = false;
-            } else {
-                let views = self.declared_views.clone();
-                let names = self.declared_names.clone();
-                self.declare(&views, &names);
-            }
-        }
+        self.scales = scales;
         self.enable_outputs();
+    }
+
+    /// Declares the passes again from the last views, for a change that only the declarations
+    /// follow, such as the render scale crossing the whole canvas.
+    fn redeclare(&mut self) {
+        if self.declared_views.is_empty() {
+            self.declared = false;
+        } else {
+            let views = self.declared_views.clone();
+            let names = self.declared_names.clone();
+            self.declare(&views, &names);
+        }
+    }
+
+    /// True when the frame's declared steps are the two-step pass: the render scale can drop below
+    /// the whole canvas and the frame draws below it.
+    fn two_step(&self) -> bool {
+        self.scales && self.scale != RenderScale::FULL
     }
 
     /// Says whether the sketch sets a color grading table or the vignette. Where the scene could
@@ -1087,7 +1098,7 @@ impl FrameGraph {
     fn enable_outputs(&mut self) {
         let blooms = self.bloom_draws();
         let outlines = self.outline_draws();
-        let two_step = self.scales;
+        let two_step = self.two_step_declared;
         if let Some(Outputs {
             resolve,
             finals,
@@ -1306,7 +1317,7 @@ impl FrameGraph {
             && self.dof.is_none()
             && !self.final_pass.fxaa()
             // The two-step pass reads display color in its second step, so the effects do not fold.
-            && !self.scales
+            && !self.two_step_declared
             && Size::Full.viewport(self.canvas, self.scale) == self.canvas
     }
 
@@ -1797,11 +1808,12 @@ impl FrameGraph {
         // Below the whole canvas's render scale the final pass draws in two steps: the first step
         // draws the scene's display color at the render size into OUTPUT_COLOR, and the plain final
         // pass then scales that up to the canvas.
-        let two_step = self.scales;
+        self.two_step_declared = self.two_step();
+        let two_step = self.two_step_declared;
         let output = if two_step {
             [
                 Some(self.declare_output(false)),
-                Some(self.declare_output(true)),
+                self.bloom_pass.is_some().then(|| self.declare_output(true)),
             ]
         } else {
             [None, None]
@@ -2041,17 +2053,20 @@ impl FrameGraph {
 
     /// Declares the first step of the two-step pass: one triangle over the render size, which draws
     /// the scene's display color into [`OUTPUT_COLOR`], with bloom's base level added when `bloom`.
-    /// It draws at [`Size::Full`], so it fills the render size and its `whole` test holds.
+    /// It draws at [`Size::Full`], so it fills the render size and its `whole` test holds. The
+    /// pass without bloom creates the target; the pass with bloom writes it.
     fn declare_output(&mut self, bloom: bool) -> PassId {
         let mut pass = Pass::new(
             if bloom { "OutputBloom" } else { "Output" },
             PassKind::Fullscreen,
         )
+        .optional()
         .size(Size::Full)
-        .reads(self.color_output())
-        .creates(OUTPUT_COLOR, Target::color(format::CANVAS));
+        .reads(self.color_output());
         if bloom {
-            pass = pass.reads(BLOOM_LEVELS[0]);
+            pass = pass.reads(BLOOM_LEVELS[0]).writes(OUTPUT_COLOR);
+        } else {
+            pass = pass.creates(OUTPUT_COLOR, Target::color(format::CANVAS));
         }
         self.add(
             pass,
@@ -2169,6 +2184,11 @@ impl FrameGraph {
         } else {
             RenderScale::FULL
         };
+        // The two-step pass runs only below the whole canvas's scale, so a crossing declares the
+        // passes again now, before the plan compiles.
+        if self.two_step() != self.two_step_declared {
+            self.redeclare();
+        }
         let rescaled = self.scale != previous;
         let compiled = self.graph.compile().map_err(RecordError::Graph)?
             | std::mem::take(&mut self.compiled_early);
@@ -2196,12 +2216,9 @@ impl FrameGraph {
         pipelines_built: u32,
     ) {
         let wanted = self.bloom_wanted();
-        let two_step = self.scales;
-        let final_bloom = self
-            .final_pass
-            .request_pipeline(pipelines, wanted, two_step);
+        let final_bloom = self.final_pass.request_pipeline(pipelines, wanted);
         // The first step draws the same builds as the final pass, so it asks for them too.
-        self.output_pass.request_pipeline(pipelines, wanted, false);
+        self.output_pass.request_pipeline(pipelines, wanted);
         if let Some(pass) = self.effect_pass.as_mut() {
             pass.request_pipelines(
                 pipelines,
@@ -2406,7 +2423,7 @@ impl FrameGraph {
             }),
             None => None,
         };
-        if self.scales {
+        if self.two_step_declared {
             // Two steps: the first draws the display color at the render size, with the bloom, and
             // the second scales it up to the canvas, with the grading and the outline. The vignette
             // darkens high dynamic range color in the first step and display color in the second.
@@ -2876,7 +2893,7 @@ impl FrameGraph {
                     for &pass in plan.passes(step) {
                         match self.roles[pass.index()] {
                             Role::Final => {
-                                if self.scales {
+                                if self.two_step_declared {
                                     self.final_pass.record_present(list)?
                                 } else {
                                     self.final_pass.record(list, false)?
@@ -4082,6 +4099,7 @@ mod tests {
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
         frames.set_scaling(true);
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
         let only_uploads =
             |frames: &mut FrameGraph, list: &mut DrawList, arena: &mut UploadArena| {
                 list.clear();
@@ -4157,8 +4175,7 @@ mod tests {
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
         let plan = frames.graph().plan().unwrap();
-        // The chain's levels, and the two-step pass's own target.
-        assert_eq!(plan.textures().len(), without + LEVELS - 1 + 1);
+        assert_eq!(plan.textures().len(), without + LEVELS - 1);
         assert!(frames.graph().find_pass(BLOOM_DOWN[LEVELS - 1]).is_none());
 
         // Off again, the steps and their targets are gone.
@@ -4167,7 +4184,7 @@ mod tests {
         frames
             .prepare(&mut list, canvas, RenderScale::FULL)
             .unwrap();
-        assert_eq!(frames.graph().plan().unwrap().textures().len(), without + 1);
+        assert_eq!(frames.graph().plan().unwrap().textures().len(), without);
     }
 
     #[test]
