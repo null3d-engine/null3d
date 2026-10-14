@@ -210,7 +210,7 @@ pub const MAX_USEFUL_BINDING_BYTES: u32 =
 /// The texture array of reflection probes that frame groups bind: the probes' array once the GPU
 /// holds one, or the blank one.
 fn probe_array(probes: Option<(u32, u32)>) -> u32 {
-    probes.map_or(0, |(array, _)| array)
+    probes.map_or(ids::BLANK_PROBES, |(array, _)| array)
 }
 
 /// The camera view whose light buffers `view`'s frame group binds: its own once they exist, in
@@ -354,11 +354,13 @@ mod ids {
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = EXPOSURE_STATE + 1;
 
+    /// The blank texture array that frame groups bind while the scene has no probe and no area
+    /// light. The probes own the frame group's shared array, which holds the light tables' layers
+    /// too ([`crate::probes::ProbeTextures`]).
+    pub const BLANK_PROBES: u32 = 1;
     /// The custom values of materials: one row of texels per material, then three.js's table of
-    /// the split-sum terms of specular light in the columns after the first rows. The probes own
-    /// the frame group's shared array, which holds the light tables' layers too
-    /// ([`crate::probes::ProbeTextures`]).
-    pub const CUSTOM_VALUES: u32 = 1;
+    /// the split-sum terms of specular light in the columns after the first rows.
+    pub const CUSTOM_VALUES: u32 = BLANK_PROBES + 1;
     /// The final pass's blank color grading table, which it binds while the sketch sets none.
     pub const BLANK_LUT: u32 = CUSTOM_VALUES + 1;
     /// The blank cube that the frame's groups bind while the scene has no environment.
@@ -1220,6 +1222,14 @@ impl GpuDrivenRenderer {
         let depth_pass = self.graph.depth_pass(Prepass::DepthTemplate);
         let ao_texture = self.graph.ao_texture().unwrap_or(ids::BLANK_AO);
         // Only the camera's view copies its opaque color for surfaces that let light through.
+        // The probes own the frame group's shared array, so they record it before the frame groups
+        // bind it, and no later block rebinds them for it.
+        let shape = self.settings.light_tables().shape(
+            self.settings.probes().size(),
+            self.settings.probes().probe_layers(),
+        );
+        self.settings.probes_mut().record(list, shape)?;
+        self.bound_probes = self.settings.probes().array();
         let copy = self.graph.transmission_texture();
         let transmission = |view: ViewId| {
             if view == ViewId::CAMERA {
@@ -1596,8 +1606,9 @@ impl GpuDrivenRenderer {
         self.redraws.size(list, &self.redraw_layout, 1)?;
 
         let render_size = self.graph.render_size();
-        let list_probes = self.probes_listed || self.bound_probes.is_some();
-        self.probes_listed = self.bound_probes.is_some();
+        let any_probes = self.settings.probes().any();
+        let list_probes = self.probes_listed || any_probes;
+        self.probes_listed = any_probes;
         for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
             if let Some(frame) = frame {
@@ -1988,6 +1999,7 @@ impl GpuDrivenRenderer {
                 usage::UNIFORM | usage::COPY_DST,
             ],
         )?;
+        probes::create_blank(list, ids::BLANK_PROBES)?;
         // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,

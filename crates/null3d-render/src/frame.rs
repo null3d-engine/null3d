@@ -1866,10 +1866,6 @@ impl SceneSettings {
             sky.panorama(),
             self.air.as_ref(),
         )?;
-        let shape = self
-            .light_tables
-            .shape(self.probes.size(), self.probes.probe_layers());
-        self.probes.record(list, shape)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
         self.materials.update_map_layers(

@@ -253,10 +253,12 @@ mod ids {
     pub const RESIDENT_VALUES: u32 = BLANK_PASS_DEPTH + 1;
     /// The ring of row values at the streamed textures' rows, one per ring slot.
     pub const STREAMED_VALUES: u32 = RESIDENT_VALUES + 1;
-    /// The texel that particle systems bind in place of a view's depth copy. WebGL2 keeps the
-    /// split-sum table beside the material table, and the area lights' tables in the probes'
-    /// shared array (see [`crate::probes::ProbeTextures`]).
-    pub const BLANK_PARTICLE_DEPTH: u32 = STREAMED_VALUES + RING;
+    /// The blank texture array that frame groups bind while the scene has no probe and no area
+    /// light. The probes own the shared array of the probes' maps and the light tables (see
+    /// [`crate::probes::ProbeTextures`]).
+    pub const BLANK_PROBES: u32 = STREAMED_VALUES + RING;
+    /// The texel that particle systems bind in place of a view's depth copy.
+    pub const BLANK_PARTICLE_DEPTH: u32 = BLANK_PROBES + 1;
     /// The physical sky's tables and panorama.
     pub const SKY_TABLES: u32 = BLANK_PARTICLE_DEPTH + 1;
     /// The automatic exposure's cells, its texel, which the final pass reads, and its stored texel.
@@ -1127,6 +1129,7 @@ impl CpuCulledRenderer {
                 buffer_usage::UNIFORM | buffer_usage::COPY_DST,
             ],
         )?;
+        probes::create_blank(list, ids::BLANK_PROBES)?;
         // The probes own the frame group's shared array of the probes' maps and the light tables.
         self.settings.probes_mut().set_textures(ProbeTextures {
             first: ids::PROBE_TEXTURES,
@@ -1423,6 +1426,14 @@ impl CpuCulledRenderer {
             .shadow_map()
             .zip(self.graph.shadow_atlas())
             .expect("the builder's graph binds a shadow map and a shadow atlas");
+        // The probes own the frame group's shared array, so they record it before the frame groups
+        // bind it, and no later block rebinds them for it.
+        let shape = self.settings.light_tables().shape(
+            self.settings.probes().size(),
+            self.settings.probes().probe_layers(),
+        );
+        self.settings.probes_mut().record(list, shape)?;
+        self.bound_probes = self.settings.probes().array();
         let mut lit = LitTextures {
             shadow_map,
             atlas,
@@ -1430,7 +1441,9 @@ impl CpuCulledRenderer {
             environment: self.bound_environment,
             lights: 0,
             transmission: ids::BLANK_TRANSMISSION,
-            probes: self.bound_probes.map_or(0, |(array, _)| array),
+            probes: self
+                .bound_probes
+                .map_or(ids::BLANK_PROBES, |(array, _)| array),
         };
         let first_new = self.opaque.views();
         let lights_remade =
@@ -1522,14 +1535,15 @@ impl CpuCulledRenderer {
             self.bound_environment = environment;
             self.bound_probes = probes;
             lit.environment = environment;
-            lit.probes = probes.map_or(0, |(array, _)| array);
+            lit.probes = probes.map_or(ids::BLANK_PROBES, |(array, _)| array);
             for index in 0..self.opaque.views() {
                 let view = ViewId::from_index(index);
                 Opaque::bind_frame(list, view, Some(lit_for(lit, view)))?;
             }
         }
-        let list_probes = self.probes_listed || probes.is_some();
-        self.probes_listed = probes.is_some();
+        let any_probes = self.settings.probes().any();
+        let list_probes = self.probes_listed || any_probes;
+        self.probes_listed = any_probes;
         for index in 0..views.min(MAX_VIEWS) {
             let view = ViewId::from_index(index);
             if let (true, Some(frame)) = (list_probes, self.culling.frame(view)) {

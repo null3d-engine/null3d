@@ -452,7 +452,12 @@ impl Probes {
         (array, chain): (u32, u32),
         (size, layers, levels): (u32, u32, u32),
     ) -> Result<(), RecordError> {
-        let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
+        // The filter draws into the array, the light tables upload into it, and a regrow copies
+        // its layers into the new array.
+        let usage = texture_usage::RENDER_ATTACHMENT
+            | texture_usage::TEXTURE_BINDING
+            | texture_usage::COPY_SRC
+            | texture_usage::COPY_DST;
         list.push(
             Op::CreateTexture,
             &[
@@ -552,6 +557,26 @@ impl Probes {
             probe.due = true;
         }
     }
+}
+
+/// Records the creation of the blank texture array of one texel that frame groups bind while the
+/// scene has no probe and no light table, which the shaders then do not read.
+pub(crate) fn create_blank(list: &mut DrawList, id: u32) -> Result<(), RecordError> {
+    list.push(
+        Op::CreateTexture,
+        &[
+            id,
+            1,
+            1,
+            1,
+            format::RGBA16_FLOAT,
+            texture_usage::TEXTURE_BINDING,
+            1,
+            1,
+            view::D2_ARRAY,
+        ],
+    )?;
+    Ok(())
 }
 
 /// The direction that capture view `face` looks along, and its up direction, for the faces of
@@ -772,7 +797,11 @@ mod tests {
         let (camera, all) = all();
         let listed = probes.list(&camera, &all, false);
         assert_eq!(listed.head[0], 2.0);
-        assert_eq!(listed.probes[0][2][3], 1.0, "the smaller box first");
+        assert_eq!(
+            listed.probes[0][2][3],
+            (FIRST_IMAGE_LAYER + 1) as f32,
+            "the smaller box first, in the layer after the light tables"
+        );
         let generation = probes.array().unwrap().1;
         probes.set(2, probe_at(5.0)).unwrap();
         probes.pick_capture(true);
