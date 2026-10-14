@@ -214,7 +214,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Evening street',
 		summary:
 			'Road paint, a zebra crossing, puddles, cracks, moss, mud and a scorch mark on a street at dusk, with bare bricks, posters, graffiti and stains on the house fronts, each a box that projects its maps onto the surfaces inside it, lit by the low sun and the street lamps. A walker on a layer of its own crosses the puddles clean.',
-		controls: `${CAMERA} Click or tap the street to throw mud or a scorch mark there.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},
@@ -342,7 +341,6 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Neon street after rain',
 		summary:
 			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot.",
-		controls: `${CAMERA} Move the mouse, or tap, to carry the loose green tube.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},
