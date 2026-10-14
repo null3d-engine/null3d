@@ -191,16 +191,22 @@ describe('the background priority guard', () => {
 		},
 	);
 
-	it.skipIf(!mac)('stops a script at background priority before it starts a browser', () => {
-		const script = `import { launchInWindow } from ${JSON.stringify(new URL('./app-window.ts', import.meta.url).pathname)};
+	it.skipIf(!mac)(
+		'stops a script at background priority before it starts a browser',
+		() => {
+			const script = `import { launchInWindow } from ${JSON.stringify(new URL('./app-window.ts', import.meta.url).pathname)};
 try { await launchInWindow(); console.log('BROWSER LAUNCHED'); } catch (e) { console.log(e.message); }`;
-		const { stdout } = spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
-			encoding: 'utf8',
-			timeout: 30_000,
-		});
-		expect(stdout).toContain('macOS background priority');
-		expect(stdout).not.toContain('BROWSER LAUNCHED');
-	});
+			const { stdout } = spawnSync('taskpolicy', ['-b', process.execPath, '-e', script], {
+				encoding: 'utf8',
+				timeout: 30_000,
+			});
+			expect(stdout).toContain('macOS background priority');
+			expect(stdout).not.toContain('BROWSER LAUNCHED');
+		},
+		// The spawned bun pays its own start-up and imports, which under load outlast bun's 5 s
+		// default and leave stdout empty; the spawn's own limit is 30 s, so let the test reach it.
+		30_000,
+	);
 
 	it("reads this process's priority on macOS only", () => {
 		if (mac) expect(processPriority()).toBeGreaterThan(0);
