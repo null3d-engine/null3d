@@ -796,7 +796,9 @@ impl MockBackend {
 
     fn create_bind_group(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let mut resources = Vec::new();
-        for entry in o[3..].chunks(5) {
+        // Only the group's own entries: the operands may hold a spare word or more after them.
+        let count = o[2] as usize;
+        for entry in o[3..3 + 5 * count].chunks(5) {
             let id = entry[2];
             match entry[1] {
                 resource_kind::BUFFER => {
@@ -947,13 +949,43 @@ impl MockBackend {
             Op::SkyMapStep => {
                 self.generate_texture(op, o)?;
                 self.texture(op, o[0])?;
-                check(o.len() == 19, op, "a sky map's stage takes 19 words")?;
+                check(o.len() == 20, op, "a sky map's stage takes 20 words")?;
+                if o[3] != 0 {
+                    self.texture(op, o[3])?;
+                }
             }
             Op::DestroyPipeline => {
                 self.outside_passes(op)?;
                 self.render_pipelines.remove(&o[0]);
             }
             Op::CopyTextureToTexture => self.copy_texture(op, o)?,
+            Op::CopyTextureToBuffer => {
+                self.outside_passes(op)?;
+                check(o.len() == 11, op, "a texture-to-buffer copy takes 11 words")?;
+                let source = Location::read(&o[0..5]);
+                let from = self.texel_box(op, source, o[9], o[10], 1)?;
+                check(
+                    from.usage & texture_usage::COPY_SRC != 0,
+                    op,
+                    "a copy reads a texture with COPY_SRC usage",
+                )?;
+                let size = *self.buffers.get(&o[5]).ok_or(missing(op, "buffer", o[5]))?;
+                check(o[6] % 4 == 0, op, "the buffer offset is a multiple of 4")?;
+                check(o[7] > 0 && o[9] > 0 && o[10] > 0, op, "the copy has a size")?;
+                if o[6] + o[7] * o[10] > size {
+                    return Err(MockError::OutOfRange { op, id: o[5] });
+                }
+                self.use_resource(Resource::Texture(source.texture));
+                self.use_resource(Resource::Buffer(o[5]));
+            }
+            Op::ReadBuffer => {
+                check(o.len() == 5, op, "a buffer read takes 5 words")?;
+                let size = *self.buffers.get(&o[0]).ok_or(missing(op, "buffer", o[0]))?;
+                if o[1] + o[2] > size {
+                    return Err(MockError::OutOfRange { op, id: o[0] });
+                }
+                self.use_resource(Resource::Buffer(o[0]));
+            }
             Op::CreateSampler => self.create_sampler(op, o)?,
             Op::ResizeCanvas => {
                 self.outside_passes(op)?;

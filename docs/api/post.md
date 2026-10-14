@@ -3,14 +3,14 @@ id: api/post
 title: Post-processing API
 status: experimental
 since: "0.1"
-summary: "post.set for tone mapping, exposure and a camera's EV100, bloom, ambient occlusion, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
+summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading tables and the vignette; custom effects with post.addEffect, and custom tone curves."
 ---
 
 # Post-processing API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds automatic exposure, bloom, ambient occlusion, depth of field, outlines, color grading, the vignette, custom effects and custom tone curves. The API is experimental, so it can still change between versions.
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, depth of field, outlines, a color grading table, the vignette and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion and depth of field do.
 
 ## Tone mapping and exposure
 
@@ -68,6 +68,49 @@ export default defineSketch(({ post, time }) => {
   };
 });
 ```
+
+## Automatic exposure
+
+Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. Walk from a sunny street into a dark hall, and the hall starts dark, then brightens over a few seconds. It is off by default.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, post }) => {
+  // A dim room: the eye adapts up to 6 stops to see it, and stays a little dark, as eyes do.
+  post.set({ autoExposure: { minEv: -6, compensation: -0.5 } });
+  scene.setActiveCamera(scene.createPerspectiveCamera({ position: [0, 1.6, 4], target: [0, 1, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 0.05 });
+  scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#c8643c' }),
+    position: [0, 0.5, 0],
+  });
+  return {};
+});
+```
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `autoExposure` | Its settings to turn it on, or `false` to turn it off. | Off |
+| `autoExposure.metering` | `'percentile'` leaves out the darkest and brightest parts of the image, and `'mean'` averages all of it. | `'percentile'` |
+| `autoExposure.percentiles` | For `'percentile'`, the shares of the image, from the darkest, that the average starts and ends at: two numbers from 0 to 1, the lower first. `[0.5, 0.5]` takes the median. | `[0.1, 0.9]` |
+| `autoExposure.centerWeight` | How much more the center of the image counts than its edges, from 0, the same, to 1. | 0.5 |
+| `autoExposure.speedUp` | How fast the eye adapts while the scene grows brighter, in stops per second: 0 or more. | 3 |
+| `autoExposure.speedDown` | How fast the eye adapts while the scene grows darker, in stops per second: 0 or more. | 1 |
+| `autoExposure.minEv` | The darkest scene that the eye adapts to, in stops from the camera's exposure, from -20 to 20. A darker scene shows darker. | -4 |
+| `autoExposure.maxEv` | The brightest scene that the eye adapts to, in stops from the camera's exposure, from -20 to 20 and no lower than `minEv`. A brighter scene shows brighter. | 4 |
+| `autoExposure.compensation` | Stops added to the adapted exposure, from -20 to 20: 1 shows the picture twice as bright. | 0 |
+
+- The engine meters each frame on the GPU, in the same frame. The meter finds the scene's average brightness on a log scale, and the eye moves toward the exposure that shows it as middle gray.
+- The scene draws at the camera's exposure, the `exposure` and `ev100` settings, and the eye adapts from there. A brightness of 0 stops is a scene that the camera's exposure shows as middle gray. With `ev100: 15`, `minEv: -8` lets the eye adapt down to a scene of about EV100 7.
+- Within one stop of its target, the eye slows down, so it settles smoothly. Eyes adapt to the dark more slowly than to the light, so `speedDown` is lower by default.
+- The first frame that meters takes its target at once, so a scene starts adapted. Hold mode draws one frame, so its image is the adapted image, the same in every run.
+- The final pass multiplies the scene's color, bloom's glow and folded effects by the adapted exposure, before FXAA, the vignette and the tone curve. Custom effects and depth of field see the camera's exposure. Bloom's `threshold` keeps its meaning in the scene's units.
+- The quality setting `exposureMeter` picks the meter. `'histogram'` bins a grid of samples in compute shaders on WebGPU, on Medium and above. `'downsample'` averages 16 x 16 cells of the image, on Low and on WebGL2. Both take the same settings.
+- It needs HDR color, as bloom does. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA. On a device with no HDR target it stays off, and development builds warn once.
+- A setting that a call leaves out keeps its value, also while it is off. `post.set({ autoExposure: {} })` turns it on with the values it had.
+- `post.set` allocates nothing, and a meter costs nothing while it is off. Its shaders download the first time it turns on.
 
 ## Bloom
 
@@ -311,7 +354,7 @@ post.set({ toneMapping: reinhard });
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, outline or vignette value other than settings or `false`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline or vignette value other than settings or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -325,7 +368,7 @@ post.set({ toneMapping: reinhard });
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader` and `ShaderPass`.
-- [Quality presets](../concepts/quality-presets.md): `aoScale` and `dofSamples` on each preset.
+- [Quality presets](../concepts/quality-presets.md): `aoScale`, `dofSamples` and `exposureMeter` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
 - [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.
