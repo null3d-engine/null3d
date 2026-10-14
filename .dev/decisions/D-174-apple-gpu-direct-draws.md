@@ -93,6 +93,8 @@ At 1,024 draws the indirect cost is 27.0 ms with three passes against 9.8 ms wit
 
 An earlier three-pass run at a load of 22 gave 54.4 ms for the same cell. That figure is inflated, and the cleaner run above replaces it. The table's one-pass column comes from the 2026-10-13 runs.
 
+The iPhone 17 gives the same shape, from its own slices on 2026-10-15 (Safari 26.6, three passes, 16 instances). Colour at 64, 256 and 1,024 draws cost 9.20, 8.69 and 8.80 ms of direct GPU time against 9.56, 9.09 and 13.93 indirect. Depth only at 256 and 1,024 draws cost 7.26 and 7.25 against 7.37 and 13.86. The clamp adds about 5.3 to 6.9 us for each draw, so about 1.8 to 2.3 us for each draw in each pass. The phone agrees with the Mac that the cost is a fixed amount per draw and per pass.
+
 ## Battle's own passes
 
 Battle draws its buckets indirectly in six passes. Its render graph on main 8c1e39af6 holds 34 passes. Five are compute (LightClusters, Culling and ShadowCulling0 to 2). Three are shadow cascades at 2048 by 2048, and three are scene passes (DepthPrepass, Opaque and Transparent). The other 23 are fullscreen, three for ambient occlusion, 19 for bloom and the final pass. The six that draw the buckets with `drawIndexedIndirect` are ShadowCascade0, ShadowCascade1, ShadowCascade2, DepthPrepass, Opaque and Transparent.
@@ -100,6 +102,8 @@ Battle draws its buckets indirectly in six passes. Its render graph on main 8c1e
 The engine's pass timer lumps every pass after the fifth into its last bucket, so it cannot separate those six. On the Mac in Safari, a Battle frame at High drew 324.6 times and took 12.68 ms of GPU time. Its timer gave copies 0.004 ms and compute 0.096 ms. Render 1 to 6 took 0.641, 0.657, 0.602, 0.569, 0.080 and 10.461 ms. Render 6 holds every pass from the sixth on. Chrome, over a larger canvas, drew 335.7 times in 5.51 ms. The page is `compare=battle&r34probe=1`, and both runs were marked at a load above 8.
 
 Those six passes are what the direct path would change, and the 324.6 draws count each draw in each pass. The probe's cost on the Mac is 8.5 us for each draw in each pass. So they come to about 2.8 ms, a fifth of the 12.68 ms. The iPhone 17's cost is 2.5 us, so the same draws come to about 0.8 ms of its 23.2 ms. So on the phone the prize is near a millisecond, and its frames are dominated by other work.
+
+Factory's own graph on the same main holds 39 passes with the same shape. Eight are compute, six are shadow tiles at 1024 by 1024, five are scene and full screen passes, and twenty are bloom and final passes. The eight that draw the buckets indirectly are ShadowTile0 to ShadowTile5, DepthPrepass and Opaque. On the Mac, Factory costs 4.88 ms of GPU time in Safari over 115 draws. In Chrome it is 4.76 ms over 117 draws, both at a load above 8. On the iPhone 17 the same scene costs 35.3 ms, about seven times the Mac. So Factory's gap is device-side work, and its 115 draws cannot hold more than about a fifth of a millisecond of it.
 
 ## Options
 

@@ -184,6 +184,18 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'coat-and-sheen',
+		group: 'Light, materials and effects',
+		sketch: new URL('./coat-and-sheen/sketch.ts', import.meta.url),
+		code: 'coat-and-sheen/',
+		title: 'Clear coat and sheen',
+		scene: 'Rainy showroom',
+		summary:
+			'A car built in code, its paint with metal flakes under a mirror-smooth clear coat, on a varnished plinth. Rain falls on wet cobbles whose puddles are a clear coat with rain rings, and velvet glows at its edges with sheen.',
+		hold: 1,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'shader-inputs',
 		group: 'Light, materials and effects',
 		sketch: new URL('./shader-inputs/sketch.ts', import.meta.url),
