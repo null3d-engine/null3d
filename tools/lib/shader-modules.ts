@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -18,6 +19,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 /** The folder that the shader build writes its modules into. */
@@ -30,6 +32,13 @@ const WORKSPACE_FILES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'];
 const SKIPPED_FOLDERS = new Set(['tests', 'benches', 'examples', 'target']);
 /** The record of the inputs and modules of the last build. Cleaning `target` forces a new build. */
 export const RECORD = 'target/shader-modules.json';
+/**
+ * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
+ * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
+ * building them, which a fresh worktree needs. Set `NULL3D_SHADER_CACHE` to another folder.
+ */
+export const CACHE_DIR =
+	process.env.NULL3D_SHADER_CACHE ?? join(homedir(), '.cache', 'null3d', 'shader-modules');
 /** The lock file, which holds the process ID of the process that builds. */
 const LOCK = 'target/shader-modules.lock';
 /** How often a process that waits for the lock checks it, in milliseconds. */
@@ -184,22 +193,68 @@ function runShaderBuild(root: string): void {
 	if (result.status !== 0) throw new Error('the shader build failed; its output is above');
 }
 
+/** The names of the shader modules on disk, in order. */
+function moduleNames(root: string): string[] {
+	const folder = join(root, MODULE_DIR);
+	return existsSync(folder) ? readdirSync(folder).filter(isShaderModule).sort() : [];
+}
+
+/** Writes the record of a build, in place. */
+function writeRecord(root: string, record: ModuleRecord): void {
+	const file = join(root, RECORD);
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(`${file}.${process.pid}`, `${JSON.stringify(record, null, '\t')}\n`);
+	renameSync(`${file}.${process.pid}`, file);
+}
+
 /**
- * Builds the shader modules unless the record shows that they match their inputs. Returns true
- * when it ran the build.
+ * Copies the modules of these inputs from the shared cache, when it holds them, so a checkout with
+ * none builds nothing. Returns true when it copied them.
+ */
+function restoreFromCache(root: string, inputs: string): boolean {
+	const cache = join(CACHE_DIR, inputs);
+	const names = existsSync(cache) ? readdirSync(cache).filter(isShaderModule).sort() : [];
+	if (!names.includes('shaders.ts')) return false;
+	const folder = join(root, MODULE_DIR);
+	mkdirSync(folder, { recursive: true });
+	const wanted = new Set(names);
+	for (const name of moduleNames(root))
+		if (!wanted.has(name)) rmSync(join(folder, name), { force: true });
+	for (const name of names) copyFileSync(join(cache, name), join(folder, name));
+	writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+	console.error(`the shader modules came from the shared cache (${CACHE_DIR})`);
+	return true;
+}
+
+/** Copies the modules on disk into the shared cache, so another checkout need not build them. */
+function saveToCache(root: string, inputs: string): void {
+	try {
+		const cache = join(CACHE_DIR, inputs);
+		rmSync(cache, { recursive: true, force: true });
+		mkdirSync(cache, { recursive: true });
+		for (const name of moduleNames(root))
+			copyFileSync(join(root, MODULE_DIR, name), join(cache, name));
+	} catch {
+		// A cache that cannot be written costs the next checkout its build, and nothing else.
+	}
+}
+
+/**
+ * Builds the shader modules unless the record shows that they match their inputs. It copies them
+ * from the shared cache of every checkout when that holds them, so a fresh worktree builds nothing.
+ * Returns true when it ran the build.
  */
 export function ensureShaderModules(root: string): boolean {
 	const inputs = inputHash(root);
 	if (isFresh(root, inputs)) return false;
 	let built = false;
 	withLock(root, () => {
-		// Another process may have built them while this one waited for the lock.
+		// Another process may have built them, or another checkout may hold them, while this one waited.
 		if (isFresh(root, inputs)) return;
+		if (restoreFromCache(root, inputs)) return;
 		runShaderBuild(root);
-		const record: ModuleRecord = { inputs, modules: moduleHash(root) ?? '' };
-		const file = join(root, RECORD);
-		writeFileSync(`${file}.${process.pid}`, `${JSON.stringify(record, null, '\t')}\n`);
-		renameSync(`${file}.${process.pid}`, file);
+		writeRecord(root, { inputs, modules: moduleHash(root) ?? '' });
+		saveToCache(root, inputs);
 		built = true;
 	});
 	return built;
