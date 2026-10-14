@@ -1,9 +1,9 @@
 // A cinematic camera for the showcase scenes. In Auto, the camera follows a route of shots on a loop
 // and shows the scene's best views; in Manual, the user flies the camera with the keyboard and the
-// pointer, or with a finger on a touch screen. The `c` key toggles the two, and the `h` key hides
-// the on-screen help. The current mode and the scene's keys go to the page as a `hud` message, since
-// a sketch runs in a worker and cannot touch the page. The camera row of the help is a button, so a
-// touch screen, which has no `c` key, can switch the mode too.
+// pointer, or with a finger on a touch screen. The `c` key toggles the two. The current mode and the
+// scene's controls go to the page as a `hud` message, since a sketch runs in a worker and cannot
+// touch the page. The camera group of the controls is a row of buttons, so a touch screen, which has
+// no `c` key, can switch the mode too.
 //
 // Switching Auto to Manual is instant: the user takes the camera at once, exactly where it is, and
 // the controls take their view from the pose they find. Switching Manual back to Auto does not
@@ -14,9 +14,10 @@
 // fixed pose and never drifts. A scene whose held frame must not change puts the pose of that frame
 // in the route's first shot and holds it still. Consecutive shots must differ: two shots at the same
 // pose would stand the camera still for both, which reads as a stall.
-import { createFirstPersonControls, type FirstPersonControls } from '@null3d/controls';
+import { createOrbitControls } from '@null3d/controls';
 import { type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
-import { createTouchGestures } from './touch-gestures';
+import { createClearance } from './clearance';
+import { CAMERA_OPTIONS, type HudGroup, radioGroup } from './controls';
 
 /** One shot of a route: where the camera stands, what it looks at, and how long the shot lasts. */
 export interface Shot {
@@ -31,19 +32,11 @@ export interface Shot {
 	 * pose over the shot, so the route flows. The default is `'ease'`.
 	 */
 	move?: 'hold' | 'ease';
-}
-
-/** One line of the on-screen help: the key, what it does, and an optional button that posts it. */
-export interface HudRow {
-	/** The key, such as `C`, as it shows on the help. */
-	key: string;
-	/** What the key does, and its state, such as `camera: auto`. */
-	text: string;
 	/**
-	 * A message that the page sends to the sketch when the row is clicked, for a row that a touch
-	 * screen can press with no keyboard. The page draws the row as a button.
+	 * True lets the shot pass through an object on purpose, to reveal what is inside it. The
+	 * clearance guard holds every other shot out of the scene's geometry. The default is false.
 	 */
-	action?: { name: string; value?: string };
+	through?: boolean;
 }
 
 /** How `createCinematic` is called. */
@@ -52,12 +45,13 @@ export interface CinematicOptions {
 	shots: readonly Shot[];
 	/** The mutable point that the camera looks at, which the depth-of-field lens focuses on. */
 	target: [number, number, number];
-	/** Rows for the help that the scene adds, such as its lens, read when the help is made again. */
-	rows?: () => readonly HudRow[];
-	/** How fast the manual camera moves, in meters per second. The default is 7. */
+	/**
+	 * The scene's own groups of the HUD, such as its times of day and its effects, read whenever the
+	 * model is posted again.
+	 */
+	groups?: () => readonly HudGroup[];
+	/** How fast the keys pan the manual camera, in canvas pixels per second. The default is 420. */
 	speed?: number;
-	/** How far ahead of the manual camera the lens focuses, in meters. The default is 14. */
-	focusDistance?: number;
 }
 
 /** The cinematic camera of a showcase scene. */
@@ -66,15 +60,19 @@ export interface Cinematic {
 	readonly mode: 'auto' | 'manual';
 	/** Reads the frame's keys and, in Auto, moves the camera along the route. Call once per frame. */
 	update(dt: number): void;
-	/** Sends the help again, for a key that the scene answered itself. */
+	/** Sends the controls model again, for a button or key that the scene answered itself. */
 	refresh(): void;
-	/** Switches between the route and the user's camera, as the `c` key and the help button do. */
+	/** Switches between the route and the user's camera, as the `c` key does. */
 	toggle(): void;
+	/** Sets the camera mode from the HUD: `Auto` follows the route, `Manual` hands it to the user. */
+	select(id: string): void;
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 /** Seconds to glide from the user's camera onto the route, after a switch back to Auto. */
 const GLIDE = 1.5;
+/** Seconds that the route's motion eases to a halt, when the user takes the camera. */
+const TAKEOVER = 0.22;
 /** How finely the nearest point of the route is searched, in samples around the loop. */
 const SAMPLES = 240;
 /** How much the look-at target counts against the camera's position, in the search. */
@@ -82,8 +80,8 @@ const TARGET_WEIGHT = 0.6;
 
 /**
  * Makes a cinematic camera. The scene gives the shots of its route and the point its lens focuses
- * on. In Manual the user flies: the keys move the camera, the pointer or a finger looks around, and
- * the same controls answer a touch screen through the engine's first-person controls.
+ * on. In Manual the user turns, zooms and pans the camera around the point the shot was looking at,
+ * with the engine's orbit controls, and the keys pan it too.
  */
 export function createCinematic(
 	ctx: SketchContext,
@@ -108,32 +106,68 @@ export function createCinematic(
 	const pose = new Float32Array(6);
 	const from = new Float32Array(6);
 	const glideTo = new Float32Array(6);
-	const ahead = new Float32Array(3);
 	let mode: 'auto' | 'manual' = 'auto';
-	let help = true;
 	/** The shift that keeps the route's phase, after a glide has landed on it. */
 	let phaseShift = 0;
 	/** How far the glide has gone, from 0 to 1; 1 means the route drives the camera. */
 	let glide = 1;
 	/** The phase that a glide resumes from. */
 	let glideFrom = 0;
-	let posted = '';
+	/** The route's pose and the pose it eases to when the user takes the camera, and how far that has gone. */
+	const handStart = new Float32Array(6);
+	const handEnd = new Float32Array(6);
+	const scratch = new Float32Array(6);
+	let hand = 1;
 	let announced = false;
 
-	// The manual camera: the engine's first-person controls. They walk with the keys, look with a
-	// drag or the mouse, and answer a touch screen with a drag that looks and walks.
-	const walk: FirstPersonControls = createFirstPersonControls(ctx, camera, {
-		enabled: false,
-		movementSpeed: options.speed ?? 7,
-		lookSpeed: 0.12,
-		dampingFactor: 0.16,
-		lookVertical: true,
+	// The manual camera: the engine's orbit controls. A left drag or one finger turns the camera
+	// around its target, the wheel or a pinch zooms, and a right drag or two fingers pan. The keys
+	// pan as well.
+	const held = vec3.create();
+	const heldRotation = quat.create();
+	camera.getPosition(held);
+	camera.getRotation(heldRotation);
+	const controls = createOrbitControls(ctx, camera, {
+		// The Orbit preset: left turns, the middle zooms and the right pans; one finger turns and
+		// two fingers dolly and pan. The limits are wide, so a user can dolly well out and swing
+		// below the horizon; the clearance guard is what keeps the camera out of geometry.
+		enableDamping: true,
+		screenSpacePanning: false,
+		minDistance: 0.5,
+		minPolarAngle: 0.05,
+		maxPolarAngle: 3,
 	});
-	// Two fingers pinch to dolly, drag to pan and twist to turn, which the first-person controls do
-	// not do. While they are down, those controls stand down, so one finger stays theirs.
-	const gestures = createTouchGestures(ctx, camera);
-	const forward = vec3.create();
-	const turn = quat.create();
+	controls.enabled = false;
+	// The controls turn the camera toward their target as they start: put it back where the route
+	// left it.
+	camera.setPosition(held[0] as number, held[1] as number, held[2] as number);
+	camera.setRotation(
+		heldRotation[0] as number,
+		heldRotation[1] as number,
+		heldRotation[2] as number,
+		heldRotation[3] as number,
+	);
+
+	// The clearance guard of the Auto route: the camera never passes through the scene's solid
+	// geometry there. The Manual camera is free and may pass through anything, so this runs only for
+	// the route. A scene marks what fills the air with `markEffect`, so a snowflake is not a wall,
+	// and an object whose inside shows with `markInterior`.
+	const clearance = createClearance(ctx);
+	const previousCamera = vec3.create();
+	const allowed = vec3.create();
+	let primed = false;
+
+	/** Stops the Auto camera short of a surface, so it slides along it instead of passing through. */
+	const guardRoute = (): void => {
+		camera.getPosition(allowed);
+		if (!primed) {
+			vec3.set(previousCamera, allowed[0] as number, allowed[1] as number, allowed[2] as number);
+			primed = true;
+		}
+		if (clearance.move(previousCamera, allowed, allowed))
+			camera.setPosition(allowed[0] as number, allowed[1] as number, allowed[2] as number);
+		camera.getPosition(previousCamera);
+	};
 
 	/** Writes the route's pose at a phase into `out`. */
 	const routePose = (phase: number, out: Float32Array): void => {
@@ -151,6 +185,21 @@ export function createCinematic(
 			out[3 + c] = t + ((next.target[c] as number) - t) * f;
 		}
 	};
+
+	/** The shot that a phase falls in. */
+	const shotAt = (phase: number): Shot => {
+		const a = ((phase % total) + total) % total || 0;
+		let index = 0;
+		for (let k = 0; k < shots.length; k++) if (a >= (starts[k] as number)) index = k;
+		return shots[index] as Shot;
+	};
+
+	// The controls orbit the route's opening look-at until a takeover gives them their own target,
+	// so their first update never turns the camera around the origin.
+	routePose(0, sample);
+	controls.target[0] = sample[3] as number;
+	controls.target[1] = sample[4] as number;
+	controls.target[2] = sample[5] as number;
 
 	/** The phase of the route whose pose is nearest to `at`, weighing the position and the target. */
 	const nearestPhase = (at: Float32Array): number => {
@@ -187,48 +236,36 @@ export function createCinematic(
 		options.target[2] = tz;
 	};
 
-	/** Sends the help to the page when it changed. */
-	const postHelp = (force = false): void => {
-		const rows: HudRow[] = [
-			{ key: 'C', text: `camera: ${mode}`, action: { name: 'camera', value: 'toggle' } },
-			...(options.rows?.() ?? []),
-			...(mode === 'manual'
-				? [
-						{ key: 'move', text: 'W A S D, R F up, or one finger' },
-						{ key: 'look', text: 'mouse drag, or one finger' },
-						{ key: 'pinch', text: 'two fingers: zoom' },
-						{ key: 'pan', text: 'two-finger drag: move across' },
-						{ key: 'twist', text: 'two fingers: turn' },
-					]
-				: []),
-			{ key: 'H', text: help ? 'hide help' : 'show help' },
+	/** Sends the whole controls model to the page, with the camera group first. */
+	const postControls = (): void => {
+		const groups: HudGroup[] = [
+			radioGroup('camera', 'Camera', CAMERA_OPTIONS, mode === 'manual' ? 'Manual' : 'Auto'),
+			...(options.groups?.() ?? []),
 		];
-		const signature = `${help ? 1 : 0}|${rows.map((row) => `${row.key}:${row.text}`).join(',')}`;
-		if (!force && signature === posted) return;
-		posted = signature;
-		page.post('hud', { rows, visible: help });
+		page.post('hud', { groups, visible: true });
 	};
 
 	/** Switches the camera between the route and the user, as the `c` key and the button do. */
 	const toggleMode = (): void => {
 		if (mode === 'auto') {
-			// Manual is instant: the user takes the camera exactly where it is. The controls read
-			// their view from the pose, so the hand-over never jumps.
+			// The user takes the camera where the route is this moment, and the route's motion eases
+			// to a halt over a moment, so the takeover is smooth and never jumps to a shot's pose.
+			routePose(time.now + phaseShift, handStart);
+			routePose(time.now + phaseShift + 0.05, scratch);
+			for (let c = 0; c < 6; c++)
+				handEnd[c] =
+					(handStart[c] as number) +
+					(((scratch[c] as number) - (handStart[c] as number)) / 0.05) * (TAKEOVER / 2);
+			hand = 0;
 			mode = 'manual';
 			glide = 1;
-			camera.getPosition(from);
-			camera.getRotation(turn);
-			vec3.transformQuat(forward, [0, 0, -1], turn);
-			walk.lookAt(
-				(from[0] as number) + (forward[0] as number),
-				(from[1] as number) + (forward[1] as number),
-				(from[2] as number) + (forward[2] as number),
-			);
-			walk.enabled = true;
+			controls.enabled = false;
 		} else {
 			// Auto glides: find the nearest point of the route, then ease onto it.
 			mode = 'auto';
-			walk.enabled = false;
+			hand = 1;
+			controls.enabled = false;
+			primed = false;
 			camera.getPosition(from);
 			from[3] = options.target[0];
 			from[4] = options.target[1];
@@ -237,47 +274,77 @@ export function createCinematic(
 			routePose(glideFrom, glideTo);
 			glide = 0;
 		}
-		postHelp(true);
+		postControls();
 	};
 
-	// Send the help once, so the page shows the keys before the first change.
-	postHelp(true);
+	// Send the model once, so the HUD shows before the first change.
+	postControls();
 
 	return {
 		get mode() {
 			return mode;
 		},
 		refresh() {
-			postHelp(true);
+			postControls();
 		},
 		toggle() {
 			toggleMode();
 		},
+		select(id) {
+			const wanted = id === 'Manual' ? 'manual' : 'auto';
+			if (wanted !== mode) toggleMode();
+		},
 		update(dt) {
-			// Send the help again on the first frame, since the page binds its listener after the
+			// Send the model again on the first frame, since the page binds its listener after the
 			// sketch's setup runs.
 			if (!announced) {
 				announced = true;
-				postHelp(true);
+				postControls();
 			}
 			if (input.wasPressed('KeyC')) toggleMode();
-			if (input.wasPressed('KeyH')) {
-				help = !help;
-				postHelp();
-			}
 			if (mode === 'manual') {
-				// Two fingers are the gestures; one finger stays with the first-person controls.
-				const twoFinger = gestures.update();
-				walk.enabled = !twoFinger;
-				if (!twoFinger) walk.update(dt);
-				// The lens focuses a little ahead of where the camera looks, so the scene stays in
-				// focus as the user moves.
-				camera.getPosition(from);
-				walk.getDirection(ahead);
-				const focus = options.focusDistance ?? 14;
-				options.target[0] = (from[0] as number) + (ahead[0] as number) * focus;
-				options.target[1] = (from[1] as number) + (ahead[1] as number) * focus;
-				options.target[2] = (from[2] as number) + (ahead[2] as number) * focus;
+				// The route's last motion eases to a halt before the user's controls take over.
+				if (hand < 1) {
+					hand = Math.min(1, hand + dt / TAKEOVER);
+					const b = smooth(hand);
+					for (let c = 0; c < 6; c++)
+						pose[c] =
+							(handStart[c] as number) + ((handEnd[c] as number) - (handStart[c] as number)) * b;
+					apply(pose);
+					if (hand >= 1) {
+						controls.target[0] = handEnd[3] as number;
+						controls.target[1] = handEnd[4] as number;
+						controls.target[2] = handEnd[5] as number;
+						controls.enabled = true;
+					}
+					options.target[0] = pose[3] as number;
+					options.target[1] = pose[4] as number;
+					options.target[2] = pose[5] as number;
+					return;
+				}
+				// The keys pan: W and S see forward and back, A and D move across, R and F rise and
+				// fall. The controls take screen pixels, so the frame's step scales the speed.
+				const step = (options.speed ?? 420) * dt;
+				let across = 0;
+				let along = 0;
+				if (input.isDown('KeyA')) across += step;
+				if (input.isDown('KeyD')) across -= step;
+				if (input.isDown('KeyW')) along += step;
+				if (input.isDown('KeyS')) along -= step;
+				if (across !== 0 || along !== 0) controls.pan(across, along);
+				let rise = 0;
+				if (input.isDown('KeyR')) rise += step / 60;
+				if (input.isDown('KeyF')) rise -= step / 60;
+				if (rise !== 0) {
+					controls.target[1] = (controls.target[1] as number) + rise;
+					camera.getPosition(from);
+					camera.setPosition(from[0] as number, (from[1] as number) + rise, from[2] as number);
+				}
+				controls.update(dt);
+				// The lens focuses on the point that the camera turns around.
+				options.target[0] = controls.target[0] as number;
+				options.target[1] = controls.target[1] as number;
+				options.target[2] = controls.target[2] as number;
 				return;
 			}
 			if (glide < 1) {
@@ -291,6 +358,8 @@ export function createCinematic(
 				routePose(time.now + phaseShift, pose);
 			}
 			apply(pose);
+			// The route never passes through an object, unless its shot asks to reveal an inside.
+			if (!shotAt(glide < 1 ? glideFrom : time.now + phaseShift).through) guardRoute();
 		},
 	};
 }

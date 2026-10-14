@@ -50,6 +50,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
@@ -347,8 +348,19 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 	return options;
 }
 
-/** The Rust build folder of a variant, relative to the checkout. */
-const buildFolder = (variant: Variant) => `target/wasm-${variant.name}`;
+/**
+ * Where cargo builds. By default this is a cache shared by every checkout on the machine, so the
+ * dependency crates (wasm-bindgen and the rest) compile once rather than once per worktree. Set
+ * `NULL3D_CARGO_TARGET` to another folder, or to `local` to build inside this checkout as before.
+ * Cargo locks a target folder while it writes, so two builds that share it run in turn.
+ */
+const CARGO_TARGET_BASE =
+	process.env.NULL3D_CARGO_TARGET === 'local'
+		? join(root, 'target')
+		: (process.env.NULL3D_CARGO_TARGET ?? join(homedir(), '.cache', 'null3d', 'cargo-target'));
+
+/** The Rust build folder of a variant, in the shared cache unless this checkout keeps its own. */
+const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
 
 /**
  * Builds a variant's WebAssembly file and its generated module, which holds `stamp`, the stamp of
@@ -374,10 +386,10 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
 	);
 	// The files take shape in the build folder, and go in place whole once every step and check passed.
 	const staged = `${targetDir}/out`;
-	rmSync(join(root, staged), { recursive: true, force: true });
+	rmSync(staged, { recursive: true, force: true });
 	const linked = `${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`;
 	run(bindgen, ['--target', 'web', '--out-dir', staged, '--out-name', 'null3d', linked]);
-	const glue = join(root, staged, 'null3d.js');
+	const glue = join(staged, 'null3d.js');
 	const text = readFileSync(glue, 'utf8');
 	writeFileSync(glue, stampGlue(variant.releasesInstance ? addReleaseInstance(text) : text, stamp));
 	const wasm = `${staged}/null3d_bg.wasm`;
@@ -390,9 +402,8 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
 		'-o',
 		wasm,
 	]);
-	if (variant.reclaimsHeap)
-		checkHeapStart(readFileSync(join(root, linked)), readFileSync(join(root, wasm)));
-	replaceFolder(join(root, staged), join(root, OUT_DIR, variant.name));
+	if (variant.reclaimsHeap) checkHeapStart(readFileSync(linked), readFileSync(wasm));
+	replaceFolder(staged, join(root, OUT_DIR, variant.name));
 }
 
 /**
@@ -402,7 +413,7 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean, sta
  * no faster.
  */
 function buildToolModules(): void {
-	const targetDir = 'target/wasm-shaders';
+	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	console.log("\nbuilding the shader compiler and the asset tool's formats");
 	run(
 		'cargo',
@@ -419,7 +430,7 @@ function buildToolModules(): void {
 	);
 	for (const { crate, path } of TOOL_MODULES) {
 		const built = `${targetDir}/wasm32-unknown-unknown/release/${crate.replace(/-/g, '_')}.wasm`;
-		copyInPlace(join(root, built), path);
+		copyInPlace(built, path);
 	}
 }
 
