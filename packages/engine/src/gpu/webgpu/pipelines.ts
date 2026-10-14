@@ -8,6 +8,7 @@ import {
 	LAYOUT_AO,
 	LAYOUT_AO_DEPTH,
 	LAYOUT_AO_DEPTH_MS,
+	LAYOUT_ATMOSPHERE,
 	LAYOUT_BACKGROUND,
 	LAYOUT_BLOOM,
 	LAYOUT_CULL,
@@ -62,6 +63,7 @@ import {
 	TEMPLATE_AO_DEPTH,
 	TEMPLATE_AO_DEPTH_MS,
 	TEMPLATE_BACKGROUND,
+	TEMPLATE_BACKGROUND_ATMOSPHERE,
 	TEMPLATE_BACKGROUND_CUBE,
 	TEMPLATE_BACKGROUND_SKY,
 	TEMPLATE_BLOOM,
@@ -100,6 +102,7 @@ import {
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
 	TEMPLATE_SKIN,
+	TEMPLATE_SKY_TABLE,
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
@@ -500,7 +503,6 @@ export class Pipelines {
 				visibility: fragment,
 				texture: { sampleType: 'depth', viewDimension: '2d-array' },
 			},
-			{ binding: 10, visibility: fragment, buffer: { type: 'uniform' } },
 			{ binding: 11, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{ binding: 12, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 13, visibility: fragment, sampler: {} },
@@ -652,6 +654,16 @@ export class Pipelines {
 			{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: fragment, texture: { viewDimension: 'cube' } },
 			{ binding: 2, visibility: fragment, sampler: {} },
+		]);
+		// The physical sky's group: its values, its three tables, which it reads with a linear
+		// filter, a sampler that clamps and one that repeats across the width.
+		this.defineLayout(LAYOUT_ATMOSPHERE, 'atmosphere', [
+			{ binding: 0, visibility: fragment, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: fragment, texture: {} },
+			{ binding: 2, visibility: fragment, texture: {} },
+			{ binding: 3, visibility: fragment, texture: {} },
+			{ binding: 4, visibility: fragment, sampler: {} },
+			{ binding: 5, visibility: fragment, sampler: {} },
 		]);
 		// The copy of a view's image into its target reads the image with textureLoad.
 		this.defineLayout(LAYOUT_VIEW_COPY, 'view copy', [unfiltered(0)]);
@@ -878,6 +890,20 @@ export class Pipelines {
 				vertexBuffers: [],
 			});
 		}
+		this.defineTemplate(TEMPLATE_SKY_TABLE, {
+			label: 'sky tables',
+			shader: shaders.sky_tables,
+			pipeline: 'main',
+			layouts: [LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND_ATMOSPHERE, {
+			label: 'background atmosphere',
+			shader: shaders.sky_physical,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_ATMOSPHERE],
+			vertexBuffers: [],
+		});
 		if (DEV) {
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',

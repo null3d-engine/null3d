@@ -136,6 +136,9 @@ export default defineSketch(async (context) => {
 	// `sky=clear` draws it without clouds, and `sky=still` keeps its sun and clouds where they are.
 	// `sky=light` lights the swarm with the sky's environment too, which refreshes in stages as
 	// the sun moves, for the allocation sample of the sky map's stages and its diffuse light.
+	// `sky=physical` draws the physical sky in place of three.js's, which draws its sky view table
+	// again in every frame while the sun moves, and `sky=physical-light` lights the swarm with its
+	// environment too.
 	// `sky=room` draws the built-in room as the background instead, which reads one texel a pixel,
 	// and `sky=texture` draws a texture made from data, which covers the view with one triangle
 	// where the room and the sky draw a box around the camera. `backgroundFirst` adds a small box
@@ -148,13 +151,14 @@ export default defineSketch(async (context) => {
 	if (switches.has('extraBox')) addSmallBox(context, true);
 	const sun: [number, number, number] = [0, 0.2, -1];
 	const skySettings = { sunPosition: sun, time: 0, cloudCoverage: skyMode === 'clear' ? 0 : 0.4 };
-	const skyBackground = { sky: skySettings };
+	const physical = skyMode === 'physical' || skyMode === 'physical-light';
+	const skyBackground = physical ? { atmosphere: skySettings } : { sky: skySettings };
 	if (sky) context.scene.setBackground(skyBackground);
 	if (skyMode === 'room')
 		void context.assets.builtinEnvironment('room').then((loaded) => {
 			context.scene.setBackground(loaded);
 		});
-	if (skyMode === 'light')
+	if (skyMode === 'light' || skyMode === 'physical-light')
 		void context.assets.skyEnvironment().then((loaded) => {
 			context.scene.setEnvironment(loaded);
 		});

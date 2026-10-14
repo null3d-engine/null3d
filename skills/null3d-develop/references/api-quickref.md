@@ -40,6 +40,7 @@ const engine = await createEngine({
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // true skips objects that marked occluders hide (WebGPU only); presets leave it off
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
+  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
@@ -68,7 +69,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, halfPrecision, maxInstances, depth }
-engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, presetCheck, crashedStarts, memoryMaximumMiB, renderFallback, keepTextureCopies }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 //   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
@@ -131,6 +132,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createDirectionalLight(opts)`, `createPointLight`, `createSpotLight`, `createHemisphereLight`, `createAmbientLight` | Light | Section 7 |
 | `scene.setBackground('#rrggbb')` or `scene.setBackground(texture)` | | Any color input (section 20), or a texture that fills the view behind every object, as three.js's `scene.background` |
 | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, mieCoefficient, mieDirectionalG, cloudCoverage, time } })` (0.2) | | three.js's `Sky`, with its uniforms' names and defaults. Clouds move with `time`; `cloudCoverage: 0` draws none. Lights nothing by itself: `assets.skyEnvironment()` lights with it |
+| `scene.setBackground({ atmosphere: { sunPosition, sunIntensity, haze, aerialPerspective, metersPerUnit, moonPosition, moonIntensity, stars, cloudCoverage, time } })` (0.2) | | The physical sky: Rayleigh, Mie and ozone, twilight, moon and stars. Its air also hazes distant objects (`aerialPerspective: 0` turns that off). The sun's light is in a directional light's units. The Low preset draws the analytic sky in its place |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment`, `assets.builtinEnvironment('room')` or `assets.skyEnvironment()`, or `null`. `rotation` is Euler radians, as three.js's `environmentRotation`. Allocates nothing, so it can turn every frame |
 | `scene.setBackground(env or cubemap, { blur, intensity, rotation })` (0.2) | | An environment or a cube map around the scene, as three.js's `backgroundBlurriness`, `backgroundIntensity` and `backgroundRotation`. Only environments blur, at no extra cost. Allocates nothing, so it can change every frame |
 | `scene.setFog({ color, curve, density, near, far, height, heightFalloff, sunGlow, sunGlowExponent })` or `null` | | Fog by straight-line distance from the camera. `curve`: `'exponential'` (default, `density` 0.01), `'exp2'` or `'linear'` (`near`, `far`). `heightFalloff` above 0 thins the fog above `height`; `sunGlow` above 0 lights the fog toward the main directional light. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
@@ -241,7 +243,8 @@ scene.createPointLight({ position, color, intensity, range: 10, decay: 2 });   /
 scene.createSpotLight({ position, target, angle, penumbra, range: 20, decay, color, intensity,
   castShadows: true, shadow: { bias: 0.2, normalBias: 0.3 } });  // or direction
 scene.createHemisphereLight({ skyColor, groundColor, intensity });  // (0.2) lights surfaces: sky from +Y, ground from below
-const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, skyIntensity, light, fog, ambient, exposure }, plain values
+const day = timeOfDay('goldenHour');  // (0.2) or an hour: { sky, atmosphere, skyIntensity, light, fog, ambient, exposure }, plain values
+timeOfDay(17.5, { model: 'physical' });  // (0.2) values that match setBackground({ atmosphere: day.atmosphere })
 scene.createDirectionalLight(day.light);  // the sun by day, the moon after sunset
 // every light also takes the node options: name, position, rotation, parent, dynamic, layers
 // castShadows: directional, spot and point lights; point lights cast where pointLightShadows is on
@@ -436,6 +439,8 @@ anim.setLayerMask(1, 'Spine');          // upper body only: the joint and every 
 anim.setLayerWeight(1, 0.5);            // 0 to 1; free to call every frame
 anim.play('breathe', { layer: 2, additive: true });      // adds its change from its first frame
 anim.setTimeScale(0.5);                 // 0 pauses the object's clips
+anim.setUpdateInterval(4);              // a far crowd: sample this copy's pose once in 4 frames; 1 is every frame
+anim.updateInterval;                    // reads it back
 const off = anim.onEvent('footstep', (e) => page.post('sfx', e.clip));  // also 'loop' and 'finished'
 anim.stop('walk', { fade: 0.3 });
 anim.stop();                            // every clip; the object holds its rest pose
