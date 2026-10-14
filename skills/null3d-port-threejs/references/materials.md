@@ -47,6 +47,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
 | `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
+| `oitPass(scene, camera)` (`OITPassNode`) | `blending: 'weighted'` (0.2) with `alphaMode: 'blend'` on each material that the pass blended | three.js's pass takes every transparent material of normal blending without transmission; in null3D each material asks for it. Same weight, the paper's equation 9. Custom materials do not take it |
 | `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'`. null3D blends in linear color, as `WebGPURenderer` does; `WebGLRenderer` blends after tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` for debugging, or `scene.createLines({ positions, mode: 'segments' })` (0.2) with two points for each edge of the mesh | |
@@ -58,7 +59,7 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer, and takes the index of refraction, specular and transmission options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
+`materials.standard` takes the index of refraction, specular, transmission, clear coat and sheen options of `MeshPhysicalMaterial` (0.2) with the same names and formulas:
 
 | three.js | null3D | Notes |
 | --- | --- | --- |
@@ -67,13 +68,15 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `specularIntensity`, `specularIntensityMap` | Same names | The map's alpha multiplies the intensity; load it linear |
 | `specularColor`, `specularColorMap` | Same names | The map is sRGB. Linear components above 1 carry over |
 | `transmission`, `thickness`, `attenuationColor`, `attenuationDistance` | Same names | Give `transmission` at creation, even as 0, to change it later. `transmissionMap` and `thicknessMap` are not drawn. Only opaque objects show through: three.js also shows the back faces of double-sided glass |
+| `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale`, `clearcoatMap`, `clearcoatRoughnessMap`, `clearcoatNormalMap` | Same names | Give a clear coat option at creation, even as 0, to change it later. `clearcoatMap` and `clearcoatRoughnessMap` must be one texture (coat in red, roughness in green) |
+| `sheen`, `sheenColor`, `sheenRoughness`, `sheenColorMap`, `sheenRoughnessMap` | `sheenColor` times `sheen`, and the same other names | No `sheen` option: multiply it into `sheenColor`. three.js's `sheen` defaults to 0, so a material without it has no sheen: leave the sheen options out. The two maps must be one texture (roughness in alpha) |
 
-glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission` and `KHR_materials_volume` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
+A material with a clear coat or a sheen takes no `lightMap`, `specularIntensityMap` or `specularColorMap`: the layers' maps take their places. Bake the light map into the base color, or split the object across two materials.
+
+glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_clearcoat` and `KHR_materials_sheen` load into these options. The other extensions are planned for after 1.0. Until then, these workarounds apply:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |
-| `clearcoat`, `clearcoatRoughness` | Lower `roughness`; raise `envIntensity` (0.2) slightly | The second highlight is lost |
-| `sheen`, `sheenColor`, `sheenRoughness` | Surface function adding a fresnel rim to `emissive` | Approximate |
 | `iridescence` | Surface function tinting by view angle | Approximate |
 | `anisotropy` | Not available | Brushed-metal streaks are lost |
 | `dispersion` | Not available | |

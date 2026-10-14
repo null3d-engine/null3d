@@ -325,6 +325,8 @@ const FIRST_USE_SHADER_SKETCHES = [
 	{ feature: 'particles', sketch: 'tests/pages/sketches/particles-sketch.ts' },
 	{ feature: 'background', sketch: 'tests/pages/sketches/texture-background-sketch.ts' },
 	{ feature: 'transmission', sketch: 'tests/pages/sketches/transmission-sketch.ts' },
+	{ feature: 'coat_sheen', sketch: 'tests/pages/sketches/coat-sheen-sketch.ts?noenv' },
+	{ feature: 'weighted', sketch: 'tests/pages/sketches/weighted-sketch.ts' },
 	{ feature: 'decals', sketch: 'tests/pages/sketches/decal-first-use-sketch.ts' },
 ] as const;
 
@@ -345,7 +347,9 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			expect(result.error).toBeUndefined();
 			const shaderFiles = requests.filter(isFirstUseShaderFile);
 			expect(shaderFiles).toHaveLength(1);
-			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${feature}-(wgsl|glsl)[^/]*$`));
+			// The shader files spell a feature's name with hyphens.
+			const file = feature.replaceAll('_', '-');
+			expect(shaderFiles[0]).toMatch(new RegExp(`/shaders-${file}-(wgsl|glsl)[^/]*$`));
 		});
 
 // GPU occlusion culling runs only on WebGPU. A scene whose walls are marked occluders downloads its

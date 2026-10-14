@@ -648,9 +648,9 @@
       "three": "LightProbe / LightProbeGenerator",
       "status": "changed",
       "since": "0.2",
-      "target": "scene.setEnvironment: diffuse spherical harmonics come with the environment",
-      "notes": "`bunx @null3d/cli assets env` computes them offline.",
-      "docs": "concepts/lighting",
+      "target": "scene.setLightProbeGrid: a grid of irradiance probes lights the scene where a surface stands",
+      "notes": "The grid holds L1 spherical harmonics per probe. The probe grid page says how a sketch bakes one.",
+      "docs": "api/scene",
       "detect": "\\bLightProbe(Generator)?\\b"
     },
     {
@@ -802,8 +802,8 @@
       "three": "MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular)",
       "status": "changed",
       "since": "0.1",
-      "target": "materials.standard for the base layer, with ior, specularIntensity, specularColor and their maps, and transmission",
-      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, and transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry). Clearcoat, sheen, iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
+      "target": "materials.standard, with ior, specularIntensity, specularColor and their maps, transmission, clearcoat and sheen",
+      "notes": "materials.standard takes ior, specularIntensity, specularColor, specularIntensityMap and specularColorMap with three.js's names and formulas, transmission, thickness, attenuationColor and attenuationDistance (see the transmission entry), and the clear coat and the sheen (see their entries). Iridescence and anisotropy come after 1.0. Until then, approximate them with the standard options or write a surface function.",
       "docs": "api/materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },
@@ -828,6 +828,28 @@
       "notes": "Same names, ranges and formulas: the surface samples a mipmapped copy of the opaque objects' colors where its bent ray leaves the volume, as three.js does, and glTF's KHR_materials_transmission and KHR_materials_volume load into them. Give transmission when you create the material, even as 0, to change it later. transmissionMap and thicknessMap are not drawn yet, and dispersion has no option. The copy holds opaque objects only: three.js also draws the back faces of double-sided glass into it. A custom material sets s.transmission in its surface function.",
       "docs": "api/materials",
       "detect": "\\b(transmission|thickness|attenuationColor|attenuationDistance)\\s*[:=]"
+    },
+    {
+      "id": "mat-clearcoat",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial clearcoat / clearcoatRoughness / clearcoatNormalScale / clearcoatMap / clearcoatRoughnessMap / clearcoatNormalMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ clearcoat, clearcoatRoughness, clearcoatNormalScale, clearcoatMap, clearcoatRoughnessMap, clearcoatNormalMap })",
+      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function.",
+      "docs": "api/materials",
+      "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
+    },
+    {
+      "id": "mat-sheen",
+      "category": "Materials",
+      "three": "MeshPhysicalMaterial sheen / sheenColor / sheenRoughness / sheenColorMap / sheenRoughnessMap",
+      "status": "changed",
+      "since": "0.2",
+      "target": "materials.standard({ sheenColor, sheenRoughness, sheenColorMap, sheenRoughnessMap })",
+      "notes": "The same Charlie sheen with three.js's formulas, and glTF's KHR_materials_sheen loads into it. There is no sheen option: give sheenColor times three.js's sheen, which defaults to 0, so a three.js material without sheen shows none and its port leaves the sheen options out. Give a sheen option when you create the material to change it later. sheenColorMap and sheenRoughnessMap must be one texture, with the roughness in alpha, as glTF packs them. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap.",
+      "docs": "api/materials",
+      "detect": "\\bsheen(Color|Roughness|ColorMap|RoughnessMap)?\\b"
     },
     {
       "id": "decal-geometry",
@@ -934,10 +956,21 @@
       "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading",
       "status": "changed",
       "since": "0.1",
-      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
+      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply' | 'weighted' (0.2), vertexColors, flatShading",
       "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker.",
       "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
+    },
+    {
+      "id": "oit-pass",
+      "category": "Materials",
+      "three": "oitPass(scene, camera) (OITPassNode)",
+      "status": "changed",
+      "since": "0.2",
+      "target": "alphaMode: 'blend' with blending: 'weighted' on each material that the pass blended",
+      "notes": "The same weighted blended order-independent transparency (McGuire and Bavoil 2013), with three.js's default weight, the paper's equation 9. three.js's pass takes every transparent material of normal blending without transmission; null3D takes the materials that ask for it. Like three.js's pass, the weighted surfaces blend over the other see-through surfaces, test the scene's depth and write none. The coverage sums -log2(1 - alpha) instead of multiplying 1 - alpha, so both targets blend alike, which compatibility mode needs; the result is the same. The layer draws at one sample on every path, where three.js's matches the scene's samples on WebGPU. weightNode has no counterpart. Custom materials do not take it.",
+      "docs": "api/materials",
+      "detect": "\\boitPass\\s*\\(|\\bOITPassNode\\b"
     },
     {
       "id": "mat-side",

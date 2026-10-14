@@ -13,19 +13,17 @@
 // only that shader, and a change to a library module compiles only the entries that import it. The
 // cache is shared by every checkout and reused across a change of any WGSL file.
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+	acquireLock,
+	cacheDir,
+	cacheOff,
+	copyFolderAtomic,
+	filesIn,
+	hashFiles,
+	writeFileAtomic,
+} from './build-cache';
 
 /** The folder that the shader build writes its modules into. */
 export const MODULE_DIR = 'packages/engine/src/generated';
@@ -44,23 +42,19 @@ export const RECORD = 'target/shader-modules.json';
 /**
  * The folder that holds the modules of a build, keyed by the hash of its inputs, shared by every
  * checkout on the machine. A checkout whose inputs match a folder there copies its modules instead of
- * building them, which a fresh worktree needs. Set `NULL3D_SHADER_CACHE` to another folder.
+ * building them, which a fresh worktree needs. It is the `shader-modules` cache under the build
+ * cache's one root; `NULL3D_SHADER_CACHE` names this folder alone, as before.
  */
-export const CACHE_DIR =
-	process.env.NULL3D_SHADER_CACHE ?? join(homedir(), '.cache', 'null3d', 'shader-modules');
+export const CACHE_DIR = cacheDir('shader-modules', process.env.NULL3D_SHADER_CACHE);
 /**
  * The folder of the per-entry shader cache, shared by every checkout on the machine. It holds each
  * entry's compiled output under a folder named by the compiler's stamp, so a change to one shader
  * compiles only that shader and a change to a library module compiles only the entries that import
- * it. It sits beside the modules' cache, and `NULL3D_SHADER_CACHE` moves both.
+ * it. It is the `shader-cache` folder under the build cache's one root.
  */
-export const ENTRY_CACHE_DIR = join(dirname(CACHE_DIR), 'shader-cache');
-/** The environment variable that turns the caches off, as the Vite plugin's cache names it. */
-const NO_SHADER_CACHE = 'NULL3D_NO_SHADER_CACHE';
+export const ENTRY_CACHE_DIR = cacheDir('shader-cache');
 /** The lock file, which holds the process ID of the process that builds. */
 const LOCK = 'target/shader-modules.lock';
-/** How often a process that waits for the lock checks it, in milliseconds. */
-const LOCK_POLL_MS = 200;
 
 interface ModuleRecord {
 	inputs: string;
@@ -108,17 +102,6 @@ function filesBelow(root: string, folder: string, files: string[]): void {
 	}
 }
 
-/** A hash of each file's path and contents, in the order given. */
-function hashFiles(root: string, files: readonly string[]): string {
-	const hash = createHash('sha256');
-	for (const file of files) {
-		hash.update(`${file}\0`);
-		hash.update(readFileSync(join(root, file)));
-		hash.update('\0');
-	}
-	return hash.digest('hex');
-}
-
 /**
  * Every input of the build of `crate`, in order: the files of it and its path dependencies, and the
  * workspace's Cargo files. The shader build's inputs by default.
@@ -139,7 +122,7 @@ export function inputHash(root: string, crate = SHADER_CRATE): string {
  * compiles again.
  */
 export function shaderCacheOff(): boolean {
-	return process.env[NO_SHADER_CACHE] === '1';
+	return cacheOff();
 }
 
 /**
@@ -183,41 +166,16 @@ function isFresh(root: string, inputs: string): boolean {
 	return record?.inputs === inputs && record.modules === moduleHash(root);
 }
 
-function sleep(ms: number): void {
-	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function isRunning(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (e) {
-		return (e as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
-
 /**
  * Runs the work while this process holds the lock. A process that finds the lock waits for its
  * holder, and takes over a lock whose holder has stopped.
  */
 function withLock(root: string, work: () => void): void {
-	const lock = join(root, LOCK);
-	mkdirSync(dirname(lock), { recursive: true });
-	for (;;) {
-		try {
-			writeFileSync(lock, String(process.pid), { flag: 'wx' });
-			break;
-		} catch (e) {
-			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-		}
-		const holder = Number.parseInt(readFileSync(lock, 'utf8'), 10);
-		if (Number.isInteger(holder) && isRunning(holder)) sleep(LOCK_POLL_MS);
-		else rmSync(lock, { force: true });
-	}
+	const release = acquireLock(join(root, LOCK));
 	try {
 		work();
 	} finally {
-		rmSync(lock, { force: true });
+		release();
 	}
 }
 
@@ -251,10 +209,7 @@ function moduleNames(root: string): string[] {
 
 /** Writes the record of a build, in place. */
 function writeRecord(root: string, record: ModuleRecord): void {
-	const file = join(root, RECORD);
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(`${file}.${process.pid}`, `${JSON.stringify(record, null, '\t')}\n`);
-	renameSync(`${file}.${process.pid}`, file);
+	writeFileAtomic(join(root, RECORD), `${JSON.stringify(record, null, '\t')}\n`);
 }
 
 /**
@@ -263,7 +218,7 @@ function writeRecord(root: string, record: ModuleRecord): void {
  */
 function restoreFromCache(root: string, inputs: string): boolean {
 	const cache = join(CACHE_DIR, inputs);
-	const names = existsSync(cache) ? readdirSync(cache).filter(isShaderModule).sort() : [];
+	const names = filesIn(cache, isShaderModule);
 	if (!names.includes('shaders.ts')) return false;
 	const folder = join(root, MODULE_DIR);
 	mkdirSync(folder, { recursive: true });
@@ -278,15 +233,10 @@ function restoreFromCache(root: string, inputs: string): boolean {
 
 /** Copies the modules on disk into the shared cache, so another checkout need not build them. */
 function saveToCache(root: string, inputs: string): void {
-	try {
-		const cache = join(CACHE_DIR, inputs);
-		rmSync(cache, { recursive: true, force: true });
-		mkdirSync(cache, { recursive: true });
-		for (const name of moduleNames(root))
-			copyFileSync(join(root, MODULE_DIR, name), join(cache, name));
-	} catch {
-		// A cache that cannot be written costs the next checkout its build, and nothing else.
-	}
+	copyFolderAtomic(
+		join(CACHE_DIR, inputs),
+		moduleNames(root).map((name) => [name, join(root, MODULE_DIR, name)] as const),
+	);
 }
 
 /**

@@ -31,12 +31,18 @@ pub(crate) fn write_program(
     mediump: &[String],
 ) -> Result<GlslProgram, String> {
     let [vertex, fragment] = pipeline.stages().map(|(stage, stage_name, entry_point)| {
-        let (stage_module, info) = stage_module(module, capabilities, stage, entry_point)?;
+        let mut stage_module = stage_module(module, stage, entry_point)?;
+        let info = validate_stage(&stage_module, capabilities, entry_point)?;
         if let Some(function) = copied_uniform_array(&stage_module, &info) {
             return Err(format!(
                 "pipeline `{name}`: the function `{function}` copies a value that holds an array out of a uniform block. Adreno 830's WebGL2 driver leaves such a copy's arrays empty. Read the elements from the block where the function needs them, or hold the vectors in named fields."
             ));
         }
+        // The Adreno 619 driver of a Galaxy Tab A9 Plus keeps every value that a GLSL structure
+        // holds at 16 bits. Replace every structure local, parameter and result with plain ones
+        // before the writer sees the module.
+        crate::flatten::flatten_structs(&mut stage_module, &info);
+        let info = validate_stage(&stage_module, capabilities, entry_point)?;
         write_stage(
             &stage_module,
             &info,
@@ -56,25 +62,28 @@ pub(crate) fn write_program(
 /// The module with only the entry point of one stage, and only what that entry point uses. Each
 /// stage's text then depends only on its own code: a bit that changes only the vertex shader
 /// leaves the fragment shader's text as it is, so the builds that differ in that bit share it.
-fn stage_module(
-    module: &Module,
-    capabilities: Capabilities,
-    stage: ShaderStage,
-    entry_point: &str,
-) -> Result<(Module, ModuleInfo), String> {
+fn stage_module(module: &Module, stage: ShaderStage, entry_point: &str) -> Result<Module, String> {
     let mut stage_module = module.clone();
     stage_module
         .entry_points
         .retain(|ep| ep.stage == stage && ep.name == entry_point);
     compact(&mut stage_module, KeepUnused::No);
-    let info = Validator::new(ValidationFlags::all(), capabilities)
-        .validate(&stage_module)
+    Ok(stage_module)
+}
+
+/// Validates one stage's module and returns the information the GLSL writer needs.
+fn validate_stage(
+    module: &Module,
+    capabilities: Capabilities,
+    entry_point: &str,
+) -> Result<ModuleInfo, String> {
+    Validator::new(ValidationFlags::all(), capabilities)
+        .validate(module)
         .map_err(|e| {
             format!(
                 "the module of the entry point `{entry_point}` alone failed validation, which is a bug in the shader build: {e}"
             )
-        })?;
-    Ok((stage_module, info))
+        })
 }
 
 fn write_stage(
@@ -119,10 +128,16 @@ fn write_stage(
     })?;
 
     source = crate::half::mediump_items(&source, mediump);
+    source = inline_entry_result(&source);
     source = lower_arrays(&source);
     source = drop_unused_constants(&source);
     source = highp_integers(&source);
     source = implicit_comparison_levels(&source);
+    if let Some(name) = reserved_name(&source) {
+        return Err(format!(
+            "the {stage_name} shader `{entry_point}` of pipeline `{pipeline}` names `{name}`, which GLSL ES reserves. The GLSL writer adds `_1` to the second of two WGSL names that clash in one shader, so a WGSL name `gl` becomes `gl_1`: give the WGSL name another spelling."
+        ));
+    }
 
     let entry = module
         .entry_points
@@ -709,6 +724,120 @@ pub(crate) fn implicit_comparison_levels(source: &str) -> String {
     out
 }
 
+/// The first identifier that starts with `gl_` but is no built-in, or `None`. GLSL ES reserves
+/// every such name, and the built-ins all go on with a capital letter.
+fn reserved_name(source: &str) -> Option<&str> {
+    source
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .find(|word| {
+            word.strip_prefix("gl_")
+                .is_some_and(|rest| !rest.starts_with(|c: char| c.is_ascii_uppercase()))
+        })
+}
+
+/// The name of the temporary that naga's GLSL writer names the structure that a vertex shader
+/// returns from its entry point, and the local name in the text.
+const ENTRY_RESULT: &str = "_tmp_return";
+
+/// Inlines the structure that an entry point returns to its stage.
+///
+/// WGSL requires a vertex shader with more than one output to return a structure, and naga's GLSL
+/// writer materializes that structure in a local named `_tmp_return` before it writes each output
+/// varying. That local is a structure, which the Adreno 619 driver of a Galaxy Tab A9 Plus stores at
+/// 16 bits. `flatten_structs` cannot remove it, because the writer makes it from the returned
+/// value's shape alone. This step replaces each read of `_tmp_return.member` with the member's own
+/// value and drops the local.
+pub(crate) fn inline_entry_result(source: &str) -> String {
+    if !source.contains(ENTRY_RESULT) {
+        return source.to_owned();
+    }
+    let mut out = String::with_capacity(source.len());
+    let mut returned: Option<Vec<String>> = None;
+    let mut members: Vec<String> = Vec::new();
+    for line in source.lines() {
+        let text = line.trim();
+        if let Some((ty, args)) = entry_result_declaration(text) {
+            let names = struct_members(source, ty);
+            if names.is_empty() || names.len() != args.len() {
+                // The writer wrote something else: keep the line as it is.
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            returned = Some(args);
+            members = names;
+            continue;
+        }
+        if let (Some(args), false) = (&returned, members.is_empty())
+            && let Some((name, member)) = entry_result_read(text)
+            && let Some(index) = members.iter().position(|m| m == member)
+        {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push_str(&format!("{indent}{name} = {};\n", args[index]));
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// The structure name and the values of a line `T _tmp_return = T(a, b, c);`.
+fn entry_result_declaration(line: &str) -> Option<(&str, Vec<String>)> {
+    let (ty, rest) = line.split_once(' ')?;
+    if !is_identifier(ty) {
+        return None;
+    }
+    let rest = rest.strip_prefix(ENTRY_RESULT)?.strip_prefix(" = ")?;
+    let rest = rest.strip_prefix(ty)?.strip_prefix('(')?;
+    let (args, tail) = rest.rsplit_once(')')?;
+    if tail != ";" {
+        return None;
+    }
+    Some((
+        ty,
+        split_arguments(args)?
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    ))
+}
+
+/// The varying and member name of a line `varying = _tmp_return.member;`.
+fn entry_result_read(line: &str) -> Option<(&str, &str)> {
+    let (name, rest) = line.split_once(" = ")?;
+    let member = rest
+        .strip_prefix(ENTRY_RESULT)?
+        .strip_prefix('.')?
+        .strip_suffix(';')?;
+    is_identifier(name).then_some((name, member))
+}
+
+/// The member names of `struct name { ... };` in the text, in order.
+fn struct_members(source: &str, name: &str) -> Vec<String> {
+    let header = format!("struct {name} {{");
+    let Some(start) = source.find(&header) else {
+        return Vec::new();
+    };
+    let mut members = Vec::new();
+    for line in source[start + header.len()..].lines().skip(1) {
+        let line = line.trim();
+        if line.starts_with('}') {
+            break;
+        }
+        let line = line.trim_end_matches(';');
+        let Some((_, declarator)) = line.split_once(' ') else {
+            return Vec::new();
+        };
+        let member = declarator.split('[').next().unwrap_or(declarator).trim();
+        if !is_identifier(member) {
+            return Vec::new();
+        }
+        members.push(member.to_owned());
+    }
+    members
+}
+
 /// True for a GLSL identifier.
 fn is_identifier(word: &str) -> bool {
     word.bytes()
@@ -743,6 +872,18 @@ fn split_arguments(list: &str) -> Option<Vec<&str>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_that_glsl_reserves_are_found() {
+        assert_eq!(
+            reserved_name("float gl_1 = gl_FragCoord.x;\nfloat gl = 1.0;"),
+            Some("gl_1")
+        );
+        assert_eq!(
+            reserved_name("gl_Position = vec4(gl_VertexID); float glow_1 = 0.0;"),
+            None
+        );
+    }
 
     #[test]
     fn local_array_constructors_become_element_assignments() {

@@ -1,6 +1,6 @@
 // Night town, the three.js half: the scene's build, which runs in the comparison's worker
-// (three.ts) or, for the Busy page comparison, on the page's own thread. It builds the town one of
-// two ways, which the page's mode picks, as the null3D half does:
+// (three.ts) or on the page's own thread. It builds the town one of two ways, which the page's
+// mode picks, as the null3D half does:
 //
 // - The scene graph, the default. Each part is a Mesh of its own, as three.js's docs build a
 //   scene. Each moving car is a Mesh whose cabin, lamps, two SpotLights and tail PointLight hang

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import { WGSL_UPDATE_EVENT } from './hot';
-import null3d, { type Null3dPluginOptions } from './index';
+import null3d, { FILES_LIST, type Null3dPluginOptions } from './index';
 import { UNPACK } from './pack';
 import type { ShaderProblem } from './shader-compiler';
 import type { CompiledMaterial, CompiledShader } from './shader-types';
@@ -370,14 +370,9 @@ fn effect(input: EffectInput) -> vec4f {
 			'webgpu_vertex_color_alpha_mask_receive_shadows',
 			'webgpu_vertex_color_receive_shadows',
 		];
-		const skinned = plain.filter((name) => name.startsWith('webgl2')).map((name) => `${name}_skin`);
+		const skinned = plain.map((name) => `${name}_skin`);
 		const rowValued = plain.map((name) => `${name}_row_values`);
 		expect(Object.keys(built.variants).sort()).toEqual([...plain, ...skinned, ...rowValued].sort());
-		// The WebGPU builds that skin come apart, as they load on first use.
-		const skinnedWebgpu = plain
-			.filter((name) => name.startsWith('webgpu'))
-			.map((name) => `${name}_skin`);
-		expect(Object.keys(built.skinVariants ?? {}).sort()).toEqual(skinnedWebgpu.sort());
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
 		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });
@@ -628,11 +623,18 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		};
 		try {
 			const file = await server.transformRequest('/src/tint.wgsl');
-			// The key of the hot updates follows the shader's packed records. A material's WebGPU
-			// skin builds load on first use, so a later argument may follow the key.
-			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl"[,)]/);
+			// The key of the hot updates follows the shader's packed records, and then the function
+			// that imports the material's builds, with the material's place in the module.
+			expect(file?.code).toMatch(/, ?"src\/tint\.wgsl", ?__null3dBuilds, ?0\)/);
 			const literal = await server.transformRequest('/src/tint.ts');
-			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0"[,)]/);
+			expect(literal?.code).toMatch(/, ?"src\/tint\.ts#0", ?__null3dBuilds, ?0\)/);
+			// The dev server serves each set of the builds from memory.
+			const sets = [
+				...(literal?.code ?? '').matchAll(/virtual:null3d\/builds\/(material-[\w-]+)/g),
+			];
+			expect(sets).toHaveLength(12);
+			const set = await server.transformRequest(`virtual:null3d/builds/${sets[0]?.[1]}`);
+			expect(set?.code).toStartWith(`export default ${UNPACK}(`);
 
 			const brighter = surface.replace('return', 'var s = defaultSurface(input);\n    return');
 			const [update] = await change('src/tint.wgsl', brighter);
@@ -655,6 +657,49 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 		} finally {
 			await server.close();
 		}
+	}, 60_000);
+
+	it("puts a custom material's builds in files by device, which the offline list starts with", async () => {
+		const surface =
+			'fn surface(input: SurfaceInput) -> Surface {\n    return defaultSurface(input);\n}\n';
+		const sketch = `${PROJECT['src/sketch.ts']}export const tint = /* wgsl */ \`${surface}\`;\n`;
+		const result = await build({
+			root: project({ 'src/sketch.ts': sketch }),
+			configFile: false,
+			logLevel: 'silent',
+			plugins: [null3d({ wgslDeclarations: false })],
+			build: { write: false },
+		});
+		const files = (Array.isArray(result) ? result : [result]).flatMap((output) =>
+			'output' in output ? output.output : [],
+		);
+		const sets = files.filter((file) => /\/material-(wgsl|glsl)-\d+-/.test(file.fileName));
+		// 4 sets for WebGPU and 8 for WebGL2: each value of the bits a device fixes, with skinning or not.
+		expect(sets.map((file) => file.fileName.match(/material-(\w+-\d+)-/)?.[1]).sort()).toEqual(
+			[
+				'glsl-0',
+				'glsl-1',
+				'glsl-2',
+				'glsl-3',
+				'glsl-64',
+				'glsl-65',
+				'glsl-66',
+				'glsl-67',
+				'wgsl-0',
+				'wgsl-2',
+				'wgsl-64',
+				'wgsl-66',
+			].sort(),
+		);
+		const sketchChunk = files.find(
+			(file): file is Rollup.OutputChunk =>
+				file.type === 'chunk' && (file.facadeModuleId?.endsWith('src/sketch.ts') ?? false),
+		);
+		// The sketch keeps the whole shader's builds, and none of the material's.
+		expect(sketchChunk?.code).not.toContain('fn surface(input: SurfaceInput)');
+		const list = files.find((file) => file.fileName === FILES_LIST);
+		const { start } = JSON.parse(list?.type === 'asset' ? String(list.source) : '{}');
+		for (const set of sets) expect(start).toContain(set.fileName);
 	}, 60_000);
 
 	it('compiles WGSL in the dev server, and gives Vite the place of a problem', async () => {

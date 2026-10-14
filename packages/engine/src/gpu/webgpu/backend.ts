@@ -7,6 +7,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders, FirstUseShaders } from '../../generated/shaders';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
+import type { MemoryViews } from '../../shared/memory-views';
 import type { DeviceShaderSet } from '../device-shaders';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import { floatOfBits } from '../float-bits';
@@ -49,6 +50,7 @@ TEXTURE_FORMATS[G.FORMAT_ETC2_RGBA8_UNORM_SRGB] = 'etc2-rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_RGB9E5_UFLOAT] = 'rgb9e5ufloat';
 TEXTURE_FORMATS[G.FORMAT_R32_FLOAT] = 'r32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_UINT] = 'rgba32uint';
+TEXTURE_FORMATS[G.FORMAT_R16_FLOAT] = 'r16float';
 
 /** The bytes that each row of texels in a buffer copy must be a multiple of. */
 const ROW_ALIGNMENT = 256;
@@ -107,6 +109,17 @@ interface MipChain {
 	readonly groups: GPUBindGroup[];
 	/** Each level's render pass, which draws into it, from level 1. */
 	readonly passes: GPURenderPassDescriptor[];
+}
+
+/** A `ReadBuffer` command that waits for the frame's commands to be submitted, then maps. */
+interface PendingRead {
+	buffer: GPUBuffer;
+	offset: number;
+	size: number;
+	/** Where the bytes land in engine memory. */
+	destination: number;
+	/** The control slot to add one to once the bytes are in place, or -1. */
+	slot: number;
 }
 
 export class WebGPUBackend {
@@ -220,6 +233,15 @@ export class WebGPUBackend {
 	private copyBuffer: GPUBuffer | undefined;
 	/** Copy buffers that a larger one replaced, which commands not yet submitted may still read. */
 	private readonly retiredCopyBuffers: GPUBuffer[] = [];
+	/**
+	 * The engine's memory views and the control slots, for `ReadBuffer` commands: the thread that
+	 * draws sets them, so the bytes that a read maps land where the sketch thread reads them.
+	 * Without them, a read command is a no-op, as when a test replays a list outside a running
+	 * engine.
+	 */
+	readSink: { views: MemoryViews; slots: Int32Array } | undefined;
+	/** The reads of this frame's list, whose buffers map once its commands are submitted. */
+	private readonly pendingReads: PendingRead[] = [];
 
 	/**
 	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
@@ -682,8 +704,8 @@ export class WebGPUBackend {
 	/**
 	 * True when a render pipeline template can build a pipeline of `permutation` now: an engine
 	 * template whose build for it is loaded, or a custom material's whose shader arrived, which it
-	 * defines at its first use, with its builds that skin once they have arrived too. A group's or a fold's shader is joined then too, once its host's
-	 * file has arrived.
+	 * defines at its first use, once the set of its builds that holds the build has arrived too. A
+	 * group's or a fold's shader is joined then too, once its host's file has arrived.
 	 */
 	private templateReady(template: number, permutation: number): boolean {
 		if (!this.pipelines.has(template)) {
@@ -692,7 +714,7 @@ export class WebGPUBackend {
 				return false;
 			this.pipelines.defineCustom(template, shader);
 		}
-		if (!this.images.buildsReady(template, permutation)) return false;
+		if (!this.images.buildsReady(template, permutation, 'wgsl')) return false;
 		return this.moreShaders?.ready(this.pipelines.variants(template), permutation, 'wgsl') ?? true;
 	}
 
@@ -997,6 +1019,27 @@ export class WebGPUBackend {
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
+				case G.OP_COPY_TEXTURE_TO_BUFFER: {
+					const copy = this.copy;
+					const source = this.need(this.textures, words[a] as number, 'texture');
+					const buffer = this.need(this.buffers, words[a + 5] as number, 'buffer');
+					copy.setSource(source, words, a);
+					this.commandEncoder().copyTextureToBuffer(
+						copy.source,
+						{
+							buffer,
+							offset: words[a + 6] as number,
+							bytesPerRow: words[a + 7] as number,
+							rowsPerImage: words[a + 8] as number,
+						},
+						{
+							width: words[a + 9] as number,
+							height: words[a + 10] as number,
+							depthOrArrayLayers: 1,
+						},
+					);
+					break;
+				}
 				case G.OP_CREATE_SAMPLER:
 					this.counts.objects++;
 					this.createSampler(words, floats, a);
@@ -1062,6 +1105,8 @@ export class WebGPUBackend {
 						floats,
 						a + 3,
 					);
+					// The weighted layer's pass names a second color target after the flags.
+					setup.setSecondColor(length > 10 ? this.targetView(words[a + 9] as number) : undefined);
 					setup.setDepth(
 						this.targetView(words[a + 2] as number),
 						(flags & G.PASS_CLEAR_DEPTH) !== 0,
@@ -1160,6 +1205,15 @@ export class WebGPUBackend {
 						words[a + 4] as number,
 					);
 					break;
+				case G.OP_READ_BUFFER:
+					this.pendingReads.push({
+						buffer: this.need(this.buffers, words[a] as number, 'buffer'),
+						offset: words[a + 1] as number,
+						size: words[a + 2] as number,
+						destination: words[a + 3] as number,
+						slot: words[a + 4] as number,
+					});
+					break;
 				case G.OP_SUBMIT:
 					this.submit();
 					break;
@@ -1169,7 +1223,37 @@ export class WebGPUBackend {
 			i += length;
 		}
 		this.submit();
+		this.flushReads();
 		this.staging.endFrame();
+	}
+
+	/**
+	 * Starts the map of each `ReadBuffer` of the frame's list, now that its commands are submitted.
+	 * Each maps in the background and copies its bytes into engine memory when the GPU is done,
+	 * adding one to the read's control slot so the sketch thread knows they are there. A read
+	 * outside a running engine (no sink) still maps, so the command's contract holds, and copies
+	 * nowhere.
+	 */
+	private flushReads(): void {
+		const { pendingReads } = this;
+		if (pendingReads.length === 0) return;
+		const { readSink } = this;
+		for (const read of pendingReads) {
+			read.buffer
+				.mapAsync(GPUMapMode.READ, read.offset, read.size)
+				.then(() => {
+					if (readSink) {
+						const mapped = new Uint8Array(read.buffer.getMappedRange(read.offset, read.size));
+						readSink.views.view(Uint8Array, read.destination, read.size).set(mapped);
+						if (read.slot >= 0) Atomics.add(readSink.slots, read.slot, 1);
+					}
+					read.buffer.unmap();
+				})
+				.catch(() => {
+					// A lost device fails the map. The engine's loss path reports the loss itself.
+				});
+		}
+		pendingReads.length = 0;
 	}
 
 	/** Sets a bind group on a pass. The dynamic offsets are read straight from the draw list. */
