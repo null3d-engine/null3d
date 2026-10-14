@@ -2,9 +2,8 @@
 // time, in a fixed order: the render scale first, then the threshold of the levels of detail, then
 // how often far shadow cascades draw, then the shadow filter, then bloom's base, then ambient
 // occlusion's scale, then the steps of the sun's contact shadows, then the update interval of far
-// characters' poses. When the frames have time to
-// spare again, it raises them in the reverse order. It never changes a setting that is fixed while
-// a preset runs.
+// characters' poses, then the volumetric fog's slices. When the frames have time to spare again, it
+// raises them in the reverse order. It never changes a setting that is fixed while a preset runs.
 //
 // A detail step happens only while the scene draws a mesh with levels of detail: each doubles the
 // threshold in pixels under which a coarser level draws, up to four times the setting's. A level's
@@ -40,7 +39,8 @@
 // narrowest level, so the glow keeps its size. The ambient occlusion step happens only while it
 // draws at half the render size: it draws at a quarter. The contact shadows' step happens only while
 // the main directional light casts shadows and their march takes more than the fewest steps: it
-// takes the fewest.
+// takes the fewest. The volumetric fog's step happens only while it draws: each frame draws half its
+// grid's slices, into the same textures.
 //
 // The frame loop calls it once per frame, and it allocates nothing. The governor judges only a few
 // times a second, so the browser may never optimize it. Unoptimized code makes a number object for
@@ -250,14 +250,15 @@ export class Governor {
 	aoScale = 0;
 	/** The steps of each march of contact shadows: the setting's, or the fewest after a step. */
 	contactSteps = 0;
-	/**
-	 * The frames between two updates of a far character's pose: the setting's, or longer after a
+	/** The frames between two updates of a far character's pose: the setting's, or longer after a
 	 * step. A sketch reads it and gives it to the characters that the camera sees from far.
 	 */
 	animationInterval: number = LONGEST_ANIMATION_INTERVAL;
+	/** The halvings of the volumetric fog's slices: 0 with the setting as set, or 1 after its step. */
+	fogHalvings = 0;
 	/**
 	 * Counts each change of `detailFactor`, `farInterval`, `filter`, `bloomHalvings`, `aoScale`,
-	 * `contactSteps` or `animationInterval`, so the frame loop applies them.
+	 * `contactSteps`, `animationInterval` or `fogHalvings`, so the frame loop applies them.
 	 */
 	stepChanges = 0;
 	/** False while the governor is off: the scale stays at the highest and the settings as set. */
@@ -286,6 +287,9 @@ export class Governor {
 	/** The scale of ambient occlusion that its step starts from, and whether it is on. */
 	private aoSetting = 0;
 	private ao = false;
+	/** The volumetric fog's slices that its step halves, and whether it is on. */
+	private fogSetting = 0;
+	private fog = false;
 	/** The steps of contact shadows that their step starts from. */
 	private contactSetting = 0;
 	/**
@@ -379,6 +383,17 @@ export class Governor {
 	}
 
 	/**
+	 * Sets the volumetric fog's slices that its step halves, and whether the sketch has it on, which
+	 * the step needs.
+	 */
+	setFog(on: boolean, slices: number): void {
+		if (on === this.fog && slices === this.fogSetting) return;
+		this.fog = on;
+		this.fogSetting = slices;
+		this.applySteps();
+	}
+
+	/**
 	 * Sets whether the scene draws a mesh with levels of detail, and the threshold of the levels is
 	 * above 0, which the detail steps need.
 	 */
@@ -412,7 +427,7 @@ export class Governor {
 
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
-	 * occlusion, contact shadows and the settings allow.
+	 * occlusion, contact shadows, far characters' pose updates and the settings allow.
 	 */
 	get maxSteps(): number {
 		return (
@@ -422,7 +437,8 @@ export class Governor {
 			this.bloomSteps() +
 			this.aoSteps() +
 			this.contactStepCount() +
-			this.animationStepCount()
+			this.animationStepCount() +
+			this.fogSteps()
 		);
 	}
 
@@ -633,6 +649,11 @@ export class Governor {
 		return this.ao && this.aoSetting > LOWEST_AO_SCALE ? 1 : 0;
 	}
 
+	/** The volumetric fog's step while it draws: it halves the slices that each frame draws. */
+	private fogSteps(): number {
+		return this.fog && this.fogSetting > 0 ? 1 : 0;
+	}
+
 	/**
 	 * The contact shadows' step while the main directional light casts shadows and their march
 	 * takes more than the fewest steps: to the fewest.
@@ -655,8 +676,8 @@ export class Governor {
 	 * that frames draw with: the threshold of the levels of detail doubles with each of its steps,
 	 * then the far cascades' interval doubles with each of its steps, the filter takes the lightest
 	 * after them, then bloom's base halves, then ambient occlusion takes its lowest scale, then
-	 * contact shadows take their fewest steps, and last the far characters' update interval doubles
-	 * with each of its steps.
+	 * contact shadows take their fewest steps, then the far characters' update interval doubles with
+	 * each of its steps, and last the volumetric fog draws half its slices.
 	 */
 	private applySteps(): void {
 		const detailSteps = this.detailSteps();
@@ -667,7 +688,10 @@ export class Governor {
 		const before = shadowSteps + bloomSteps + aoSteps;
 		const contactStepCount = this.contactStepCount();
 		const animationStepCount = this.animationStepCount();
-		this.steps = Math.min(this.steps, before + contactStepCount + animationStepCount);
+		this.steps = Math.min(
+			this.steps,
+			before + contactStepCount + animationStepCount + this.fogSteps(),
+		);
 		const detailFactor = 1 << Math.min(this.steps, detailSteps);
 		const shadowStepsTaken = Math.max(0, this.steps - detailSteps);
 		const doublings = Math.min(shadowStepsTaken, intervalSteps);
@@ -682,6 +706,7 @@ export class Governor {
 			LONGEST_ANIMATION_INTERVAL,
 			this.animationSetting << animationTaken,
 		);
+		const fogHalvings = this.steps > before + contactStepCount + animationStepCount ? 1 : 0;
 		if (
 			detailFactor === this.detailFactor &&
 			farInterval === this.farInterval &&
@@ -689,7 +714,8 @@ export class Governor {
 			bloomHalvings === this.bloomHalvings &&
 			aoScale === this.aoScale &&
 			contactSteps === this.contactSteps &&
-			animationInterval === this.animationInterval
+			animationInterval === this.animationInterval &&
+			fogHalvings === this.fogHalvings
 		)
 			return;
 		this.detailFactor = detailFactor;
@@ -699,6 +725,7 @@ export class Governor {
 		this.aoScale = aoScale;
 		this.contactSteps = contactSteps;
 		this.animationInterval = animationInterval;
+		this.fogHalvings = fogHalvings;
 		this.stepChanges++;
 	}
 }

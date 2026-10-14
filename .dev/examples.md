@@ -349,6 +349,15 @@ The figures come from Chrome on a Mac with an Apple M5 Max, on 10 October 2026. 
 
 The galaxy's sketch time is the loop that turns every star and writes its row. It grows with the count, so Low draws 30,000 stars. No phone or tablet has run the five demos yet.
 
+## The automatic exposure demo (M2-EX31, 11 October 2026)
+
+`auto-exposure: Courtyard and hall` shows automatic exposure ([D-148](decisions/D-148-automatic-exposure.md)). The camera walks from a sunny courtyard into a dark stone hall, turns round, and walks out again, in a loop of 20 seconds. The eye opens in the hall, and closes again when the camera faces the bright door. E turns automatic exposure off and on, so a visitor can see the fixed exposure that the camera would have.
+
+- The demo's sketch stays under 150 lines, and its scenery lives in `hall.ts` beside it, as the coordinator's ruling of 11 October 2026 allows. Its entry's `code` field names the folder.
+- The camera's exposure suits the courtyard. The hall keeps the sun out with walls and a roof, and its own light comes from six lamps, a spotlight and a dim room environment, about five stops below the courtyard. The eye's range, -7 to +1 stops, covers both.
+- The eye adapts to the dark at 0.8 stops a second and to the light at 2.5, so the hall brightens slowly and the courtyard settles fast, as eyes do.
+- The held frame, 6 seconds in, stands inside the hall. Hold mode meters its one frame and takes the result at once, so the image test shows the adapted hall.
+- The walk stops at each end and turns there, with each leg eased, so the eye's change shows while the view holds still.
 ## The crystal spiral's scenery (11 October 2026)
 
 The owner wants the demos "as amazing as possible". The custom shader inputs demo (`shader-inputs`) had a plain dark floor. Its scenery now lives in `examples/shader-inputs/pool.ts`, beside the sketch, so the sketch keeps to the crystals and the stones that show the feature.
@@ -385,11 +394,12 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
 - **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender, and live in the sample-assets repository. A showcase scene's `assets` field says so.
-- **Interaction:** a showcase scene takes the same interaction as the other demos: the camera, and the pointer that leads.
+- **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner moved them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features-2026-10-11.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
 - **Choices:** a showcase scene's entry can list `choices`, such as a time of day. The page's `startDemo` shows a row of buttons for each, in an element that the page gives it. Each pick goes to the sketch as a message. A held frame has no buttons. So a sketch also reads its first choices from its own address: `?mood=Night&dslr`.
 - **Image tests:** a showcase scene's image test draws its full look on the Mac's GPU. On SwiftShader it draws the Low preset, through the test's SwiftShader switch `preset=low`, which takes the place of the references' preset. The full look took the software GPU too long for CI.
+- **Camera and help:** every showcase scene has an Auto and a Manual camera ([D-170](decisions/D-170-showcase-camera.md), owner, 14 October 2026). Auto is the default and plays a route tailored to that scene. The route opens on a wide establishing view that shows the whole scene, then moves through its interesting parts as a smooth flythrough. It never passes through a building or other geometry, and it never stands still: consecutive shots differ and the loop closes without a pause. `c` switches to Manual, which takes the camera at once, at the pose the route left. The user then flies: `W`, `A`, `S` and `D` move, `R` and `F` rise and fall, and the mouse or a finger drag looks around. On a touch screen one finger drags to look and walk, two fingers pinch to zoom, a two-finger drag pans across the scene and a twist of two fingers turns the camera, and the camera row of the help is a button, since a phone has no `c` key. `examples/lib/touch-gestures.ts` holds those gestures and `examples/lib/cinematic.ts` gives them to every scene. Auto glides back onto the nearest point of the route, easing in and out over about 1.5 seconds. `h` hides the on-screen help, which lists the keys, the touch gestures and the camera mode. `examples/lib/cinematic.ts` holds the route player, the mode and the manual camera, and is generic: each scene gives its own shots, keys and manual speed, so no route is copied between scenes. The route is a function of the sketch time, so the image tests' held frame is one fixed pose and never drifts. The help is HTML, which the sketch posts as a `hud` message for the page to draw. A held frame has none.
 - **The first scene is Creek.** A forest at dawn, a seaside cove and a night town may follow.
 
 ### Engine features for the showcase
@@ -560,7 +570,7 @@ The owner approved new groups for the demos. In the sidebar's order, they are Sh
 | Building scenes | generators, mesh-arrays, extra-shapes, vertex-updates, objects, layers |
 | Light, materials and effects | environment, shader-inputs, time-of-day, camera-lens, gltf-model, post-effects, sprites-lines, security-camera |
 | Motion and interaction | character, input, walk-and-fly, morph-flowers, picking, math |
-| Scale | galaxy, instances, far-from-origin, large-world |
+| Scale | terrain, galaxy, instances, far-from-origin, large-world |
 | Testing and tools | hold-mode |
 
 - Each title names the feature, such as "Instancing" or "Render to texture", and the `scene` field names the scene that shows it, such as "100,000 columns". A reader looks for a feature, and the scene tells the demos apart at a glance.

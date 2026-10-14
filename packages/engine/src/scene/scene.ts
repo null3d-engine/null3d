@@ -38,6 +38,7 @@ import {
 	type BackgroundOptions,
 	type BackgroundSource,
 	Cubemap,
+	isAtmosphereBackground,
 	isSkyBackground,
 	SceneBackground,
 } from './background';
@@ -405,11 +406,15 @@ export interface DirectionalShadowOptions {
 	 */
 	normalBias?: number;
 	/**
-	 * The distance from the camera in meters, along its view, out to which shadows fall, above 0.
-	 * Shadows fade out over the last tenth of it. The camera's far plane ends them sooner. The
-	 * default is 200.
+	 * The distance from the camera in meters, along its view, out to which shadows fall, above 0,
+	 * or `'auto'`, the default. `'auto'` follows the farthest visible receiver: the engine finds the
+	 * farthest surface that receives shadows in the camera's view each frame and rounds it up on a
+	 * ladder of 1.25 times per step, so shadows in a small scene get much finer texels. A number
+	 * fixes the distance. On WebGPU the farthest receiver comes back from the GPU two frames late.
+	 * The camera's far plane ends the shadows sooner, and they fade out over the last tenth of the
+	 * distance.
 	 */
-	distance?: number;
+	distance?: number | 'auto';
 	/**
 	 * How far contact shadows reach from each surface toward the light, in meters, at least 0. They
 	 * are short shadows found in the camera's depth, which show where small objects touch the
@@ -1711,7 +1716,20 @@ export class Light extends Object3D {
 	shadow(call: string, shadow: DirectionalShadowOptions | LightShadowOptions): void {
 		for (const [key, which] of SHADOW_NUMBERS) {
 			const value = (shadow as DirectionalShadowOptions)[key];
-			if (value !== undefined) this.write(call, which, value);
+			if (value === undefined) continue;
+			// The light table's 0 means 'auto', the automatic distance.
+			if (
+				DEV &&
+				key === 'distance' &&
+				typeof value === 'number' &&
+				Number.isFinite(value) &&
+				!(value > 0)
+			)
+				throw new EngineError(
+					'E1108',
+					`${call}() got the shadow distance ${value} on ${this.describe()}, which must be above 0 or 'auto'.`,
+				);
+			this.write(call, which, value === 'auto' ? 0 : value);
 		}
 	}
 
@@ -1731,13 +1749,15 @@ export class Light extends Object3D {
 			checkLive(call, this);
 			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
 			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			// The shadow distance 0 is 'auto', and it stands in for the default.
+			const auto = which === C.LIGHT_VALUE_SHADOW_DISTANCE && value === 0;
 			// Cascades are whole, and map sizes are powers of two.
 			const number = value as number;
 			const whole =
 				which === C.LIGHT_VALUE_SHADOW_CASCADES
 					? Number.isInteger(number)
 					: which !== C.LIGHT_VALUE_SHADOW_MAP_SIZE || (number & (number - 1)) === 0;
-			if (!(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
+			if (!auto && !(value !== undefined && value >= limits[1] && value <= limits[2] && whole))
 				throw new EngineError(
 					'E1108',
 					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
@@ -2434,6 +2454,8 @@ export class Scene implements ViewHolder {
 	private sceneEnvironment: SceneEnvironment | undefined;
 	/** The background's values in the core, made on the first `setBackground`. */
 	private sceneBackground: SceneBackground | undefined;
+	/** True while the fog is volumetric. */
+	private fogVolume = false;
 	/** Pointer events on objects, made on the first `on`. */
 	private objectEvents: PointerEvents | undefined;
 	/** Rows of the live instance batches, which development builds count. */
@@ -3682,7 +3704,8 @@ export class Scene implements ViewHolder {
 	/**
 	 * What the camera shows behind every object, as three.js's `scene.background`: a color, a
 	 * texture, an environment from `assets.loadEnvironment` or `assets.builtinEnvironment`, a cube
-	 * map from `assets.loadCubemap`, or three.js's sky with `{ sky: { sunPosition } }`. A texture
+	 * map from `assets.loadCubemap`, three.js's sky with `{ sky: { sunPosition } }`, or the physical
+	 * sky with `{ atmosphere: { sunPosition } }`, whose air also hazes distant objects. A texture
 	 * fills the view and stretches to its shape. An environment or a cube map surrounds the scene,
 	 * and `options` give its intensity, rotation and, for an environment, its blur, as three.js's
 	 * `backgroundIntensity`, `backgroundRotation` and `backgroundBlurriness`. The color set before
@@ -3702,7 +3725,8 @@ export class Scene implements ViewHolder {
 			background instanceof Texture ||
 			background instanceof Environment ||
 			background instanceof Cubemap ||
-			isSkyBackground(background)
+			isSkyBackground(background) ||
+			isAtmosphereBackground(background)
 		) {
 			this.sceneBackground.set(background, options);
 			return;
@@ -3731,13 +3755,20 @@ export class Scene implements ViewHolder {
 	/**
 	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
 	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
-	 * toward the main directional light. Null removes the fog. The background takes no fog, and a
+	 * toward the main directional light. With `volumetric`, the sun and the point and spot lights
+	 * light the fog through their shadows. Null removes the fog. The background takes no fog, and a
 	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
 	 * value out of its range, and E1203 for a value that is not finite. The call allocates nothing,
 	 * so a sketch can change the fog in every frame.
 	 */
 	setFog(fog: FogOptions | null): void {
-		setSceneFog(this.core, fog);
+		this.fogVolume = setSceneFog(this.core, fog);
+		if (this.fogVolume) this.makers?.materials.shaders.need('fog_volume');
+	}
+
+	/** @internal True while the scene's fog is volumetric, which needs HDR color. */
+	get needsHdr(): boolean {
+		return this.fogVolume;
 	}
 
 	/** The raycasts and overlap queries, made on the first call. */

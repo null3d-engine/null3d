@@ -76,6 +76,7 @@ fn cast_sun_shadows<B: FrameBuilder>(world: &mut World<B>) {
         bias: 0.5,
         normal_bias: 1.0,
         distance: 40.0,
+        auto: false,
         contact: 0.0,
         layers: DEFAULT_LAYERS,
     }));

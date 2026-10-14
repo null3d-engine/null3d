@@ -89,6 +89,15 @@ export const SETTING_DOCS: {
 		label: 'Depth of field',
 		print: (value) => (Number(value) > 0 ? `${value} taps at half resolution` : 'off'),
 	},
+	exposureMeter: {
+		label: "Automatic exposure's meter",
+		print: (value) =>
+			value === 'histogram' ? 'histogram on WebGPU, else 16 x 16 cells' : '16 x 16 cells',
+	},
+	fogSlices: {
+		label: 'Volumetric fog',
+		print: (value) => (Number(value) > 0 ? `${value} slices` : 'off, sun glow only'),
+	},
 	reflectionScale: {
 		label: 'Reflection passes',
 		print: (value) =>
@@ -102,6 +111,10 @@ export const SETTING_DOCS: {
 	},
 	lodShadowFactor: { label: 'Level of detail threshold in shadows', print: (value) => `${value}x` },
 	lodFade: { label: 'Level of detail fades', print: yesNo },
+	physicalSky: {
+		label: 'Physical sky',
+		print: (value) => (value ? 'from its tables' : 'the analytic sky stands in'),
+	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },

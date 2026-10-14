@@ -22,6 +22,7 @@ const READS: Readonly<Record<string, number>> = {
 	setLevelQuality: 2,
 	setShadowQuality: 1,
 	setFog: 10,
+	setFogVolume: 4,
 	setReflectionScale: 1,
 };
 
