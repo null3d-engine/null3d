@@ -132,6 +132,7 @@ describe('the preset table', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'lodThreshold',
 			'lodShadowFactor',
@@ -178,6 +179,7 @@ describe('the preset table', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'softParticles',
 			'lodThreshold',
@@ -212,6 +214,7 @@ describe('the preset table', () => {
 			'aoScale',
 			'contactShadowSteps',
 			'dofSamples',
+			'fogSlices',
 			'reflectionScale',
 			'softParticles',
 			'lodThreshold',
@@ -266,6 +269,7 @@ describe('presetSettings', () => {
 			bloomSize: 64,
 			aoScale: 0,
 			dofSamples: 0,
+			fogSlices: 0,
 			contactShadowSteps: 0,
 			reflectionScale: 0.25,
 			softParticles: false,
@@ -298,6 +302,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0,
 			dofSamples: 22,
+			fogSlices: 32,
 			contactShadowSteps: 0,
 			reflectionScale: 0.5,
 			softParticles: true,
@@ -330,6 +335,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 43,
+			fogSlices: 64,
 			contactShadowSteps: 8,
 			reflectionScale: 0.5,
 			softParticles: true,
@@ -362,6 +368,7 @@ describe('presetSettings', () => {
 			bloomSize: 512,
 			aoScale: 0.5,
 			dofSamples: 71,
+			fogSlices: 96,
 			contactShadowSteps: 16,
 			reflectionScale: 1,
 			softParticles: true,
@@ -468,7 +475,7 @@ describe('checkSettings', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, reflectionScale, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion or governor.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, textureMemoryMiB, uploadBytesPerFrame, shadowFilter, farCascadeInterval, followMovingCasters, farAnimationInterval, shadowCascadeBlend, bloomSize, aoScale, contactShadowSteps, dofSamples, fogSlices, reflectionScale, softParticles, lodThreshold, lodShadowFactor, lodFade, physicalSky, softwareOcclusion or governor.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(
