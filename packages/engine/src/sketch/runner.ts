@@ -28,6 +28,7 @@ import { messageOf } from '../errors/message';
 import {
 	LIGHT_VALUE_SHADOW_CASCADES,
 	LIGHT_VALUE_SHADOW_MAP_SIZE,
+	TEXTURE_OPTION_KEEP_COPIES,
 	TEXTURE_OPTION_UPLOAD_ALL,
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
@@ -306,6 +307,10 @@ export class SketchRunner {
 	private aoDrawn = false;
 	/** True once the core draws HDR color for an effect, on a device that started on the 8-bit path. */
 	private hdrForEffects = false;
+	/** True while the scene's fog is volumetric, as the governor knows it. */
+	private fogOn = false;
+	/** The volumetric fog's slices that the `fogSlices` setting gives. */
+	private fogSetting = 0;
 	/** The render scale in thousandths where the governor does not move it: the highest. */
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
@@ -355,6 +360,7 @@ export class SketchRunner {
 			device.shadowDepthBits,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		const {
 			shadowTiles,
 			shadowTileSize,
@@ -367,8 +373,11 @@ export class SketchRunner {
 		glue.setMorphTargets(morphTargets);
 		if (device.occlusionBuffer > 0) glue.setOcclusionBuffer(device.occlusionBuffer);
 		// Directional lights that name no cascades or map size take the preset's.
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES, shadowCascades);
-		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE, shadowMapSize);
+		const values = this.core.callValues();
+		values[0] = shadowCascades;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_CASCADES);
+		values[0] = shadowMapSize;
+		glue.setLightDefault(LIGHT_VALUE_SHADOW_MAP_SIZE);
 		if (sketch.jobWorkers > 0) {
 			// The page ends the job workers' loops through these words when the engine stops, and
 			// lets them run the browser's measurement of its memory through the yield word.
@@ -378,7 +387,6 @@ export class SketchRunner {
 			Atomics.store(slots, Slot.JobsReady, 1);
 			Atomics.notify(slots, Slot.JobsReady);
 		}
-		this.core = new CoreMemory(glue, sketch.memory, glue.arraysMovedAddress());
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const textures = new Textures(
@@ -395,6 +403,9 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
+		// The page's own setting, which is not one of the preset's: it keeps the copies that bring
+		// each texture's map back after the GPU is lost.
+		glue.setTextureOption(TEXTURE_OPTION_KEEP_COPIES, sketch.quality.keepCopies === true ? 1 : 0);
 		this.governorLoop =
 			holdSeconds === undefined
 				? new GovernorLoop(
@@ -437,6 +448,9 @@ export class SketchRunner {
 				},
 				get contactShadowSteps() {
 					return governor.contactSteps;
+				},
+				get farAnimationInterval() {
+					return governor.animationInterval;
 				},
 			},
 			textures.memory,
@@ -686,7 +700,8 @@ export class SketchRunner {
 		viewport.width = slotFloats[Slot.CanvasCssWidth] as number;
 		viewport.height = slotFloats[Slot.CanvasCssHeight] as number;
 		viewport.pixelRatio = slotFloats[Slot.PixelRatio] as number;
-		this.sketch.glue.setPixelRatio(viewport.pixelRatio);
+		this.core.callValues()[0] = viewport.pixelRatio;
+		this.sketch.glue.setPixelRatio();
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
@@ -787,7 +802,10 @@ export class SketchRunner {
 		governor.setBloom(this.bloomOn, this.bloomSetting);
 		this.aoSetting = Math.round(settings.aoScale * FULL_SCALE);
 		governor.setAo(this.aoOn, this.aoSetting);
+		this.fogSetting = settings.fogSlices;
+		governor.setFog(this.fogOn, this.fogSetting);
 		governor.setContact(settings.contactShadowSteps);
+		governor.setAnimation(settings.farAnimationInterval);
 		this.stepChanges = governor.stepChanges;
 		const { glue } = this.sketch;
 		if (
@@ -797,8 +815,11 @@ export class SketchRunner {
 			glue.setAoScale(governor.aoScale) !== 0 ||
 			glue.setContactSteps(governor.contactSteps) !== 0 ||
 			glue.setDofTaps(settings.dofSamples) !== 0 ||
-			glue.setReflectionScale(settings.reflectionScale) !== 0 ||
+			glue.setFogSlices(settings.fogSlices) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0 ||
+			this.setReflectionScale(settings.reflectionScale) !== 0 ||
 			this.setLevelQuality() !== 0 ||
+			glue.setPhysicalSky(settings.physicalSky) !== 0 ||
 			glue.setSoftwareOcclusion(settings.softwareOcclusion) !== 0 ||
 			glue.setSoftParticles(settings.softParticles) !== 0
 		)
@@ -811,8 +832,16 @@ export class SketchRunner {
 	 * them.
 	 */
 	private setLevelQuality(): number {
-		const threshold = this.lodThreshold * this.governor.detailFactor;
-		return this.sketch.glue.setLevelQuality(threshold, this.lodShadowFactor, this.lodFade);
+		const values = this.core.callValues();
+		values[0] = this.lodThreshold * this.governor.detailFactor;
+		values[1] = this.lodShadowFactor;
+		return this.sketch.glue.setLevelQuality(this.lodFade);
+	}
+
+	/** Gives the core the share of the render size that reflection targets take by default. */
+	private setReflectionScale(scale: number): number {
+		this.core.callValues()[0] = scale;
+		return this.sketch.glue.setReflectionScale();
 	}
 
 	/**
@@ -822,11 +851,11 @@ export class SketchRunner {
 	 */
 	private setShadowQuality(): number {
 		const { governor } = this;
+		this.core.callValues()[0] = this.cascadeBlend;
 		return this.sketch.glue.setShadowQuality(
 			governor.filter,
 			governor.farInterval,
 			this.followMovers,
-			this.cascadeBlend,
 		);
 	}
 
@@ -843,7 +872,8 @@ export class SketchRunner {
 			this.setShadowQuality() !== 0 ||
 			glue.setBloomChain(this.bloomSetting, governor.bloomHalvings) !== 0 ||
 			glue.setAoScale(governor.aoScale) !== 0 ||
-			glue.setContactSteps(governor.contactSteps) !== 0
+			glue.setContactSteps(governor.contactSteps) !== 0 ||
+			glue.setFogHalvings(governor.fogHalvings) !== 0
 		)
 			this.report(coreFailure(glue, 'the quality governor'));
 		this.quality.governed();
@@ -872,6 +902,7 @@ export class SketchRunner {
 	private followEffects(): boolean {
 		const ao = this.followAo();
 		const bloom = this.followBloom();
+		this.followFog();
 		const custom = this.post.takeNewPipelines();
 		const passes = this.render.takeNewPipelines();
 		return ao || bloom || custom || passes;
@@ -893,9 +924,18 @@ export class SketchRunner {
 		return true;
 	}
 
+	/** Follows the scene's volumetric fog, which the governor's fog step needs on. */
+	private followFog(): void {
+		const on = this.context.scene.needsHdr;
+		if (on === this.fogOn) return;
+		this.fogOn = on;
+		this.governor.setFog(on, this.fogSetting);
+	}
+
 	/**
 	 * Follows the sketch's bloom, which the governor's bloom step needs on, and its other effects.
-	 * The first time bloom, a custom effect or a custom tone curve turns on, on a device that started
+	 * The first time bloom, depth of field, a custom effect, a custom tone curve or volumetric fog
+	 * with slices to draw turns on, on a device that started
 	 * on the 8-bit path only for MSAA, the core moves to HDR color with FXAA for the engine's life.
 	 * Returns true then: the frame has new targets and pipelines, so the thread that draws holds it
 	 * until they are built, and the frame before stays on screen meanwhile.
@@ -907,8 +947,8 @@ export class SketchRunner {
 			this.governor.setBloom(on, this.bloomSetting);
 		}
 		const { device, glue } = this.sketch;
-		if (!this.post.needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS)
-			return false;
+		const needsHdr = this.post.needsHdr || (this.context.scene.needsHdr && this.fogSetting > 0);
+		if (!needsHdr || this.hdrForEffects || device.sceneColor !== FORMAT_CANVAS) return false;
 		if (device.effectsSceneColor === FORMAT_CANVAS) return false;
 		this.hdrForEffects = true;
 		if (glue.setCanvasOutput(device.effectsSceneColor, device.effectsAntialias) !== 0)
