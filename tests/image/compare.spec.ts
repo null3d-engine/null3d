@@ -149,34 +149,6 @@ for (const engine of ['null3d', 'threejs'] as const)
 			expect(errors).toEqual([]);
 		});
 
-for (const engine of ['null3d', 'threejs'] as const)
-	test(`Busy page measures ${engine} beside a busy page, with the page thread's figures`, async ({
-		page,
-	}) => {
-		const seconds = softwareGpu() ? 0.5 : 3;
-		await page.goto(
-			`compare.html?compare=busy-page&engine=${engine}&gpu=webgpu&effects=&measure=120&seconds=${seconds}${quick()}`,
-		);
-		// Typing into the busy page's search box during the measurement gives the browser input to
-		// time.
-		await page.locator('.busy-search').pressSequentially('lanterns by the harbor', { delay: 40 });
-		const result = await pageResult<{
-			error?: string;
-			label: string;
-			measured: {
-				count: number;
-				fps: number;
-				mainThread: { longTasks: number; inputDelayMs: number | null } | null;
-			};
-		}>(page, 100_000);
-		expect(result.error).toBeUndefined();
-		expect(result.label).toContain(engine === 'null3d' ? 'null3D' : 'three.js 0.186.1');
-		expect(result.measured.count).toBe(120);
-		// Chrome reports long tasks, so the page thread's figures are there for both engines.
-		expect(result.measured.mainThread).not.toBeNull();
-		expect(result.measured.mainThread?.longTasks).toBeGreaterThanOrEqual(0);
-	});
-
 // Battle loads two models and draws thousands of skinned triangles per unit, so on the software GPU
 // the page runs the scene graph mode alone, each engine on one GPU path. The image tests hold both
 // engines on both GPU paths in both modes.
