@@ -6,15 +6,16 @@
 // cave mouth are models that a script builds in Blender, loaded from files.
 //
 // The page's buttons pick a mood (four times of day and a studio) and turn on a "DSLR" lens with
-// depth of field, which focuses on the point that the camera orbits. For held frames, the sketch's
-// address takes them too: `?mood=Night&dslr`.
+// depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
+// route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
+// sketch's address takes the mood too: `?mood=Night&dslr`.
 import { defineSketch, type QualityPreset, timeOfDay } from '@null3d/engine';
-import { interact } from '../../lib/interact';
+import { createCinematic, type Shot } from '../../lib/cinematic';
 import { createMoods, isMood, type Mood } from '../../lib/stage';
 import { createAir } from './air';
 import { createFlora } from './flora';
 import { createGrass } from './grass';
-import { createLand, UNREFLECTED_LAYER, WATER } from './land';
+import { createLand, UNREFLECTED_LAYER } from './land';
 import { loadModels } from './models';
 import { createShafts } from './shafts';
 import { createStones } from './stones';
@@ -45,11 +46,29 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 };
 /** The point that the camera looks at, over the stream. */
 const TARGET = [1.5, 0, -0.4] as const;
+/**
+ * The cinematic route: it opens high over the whole valley, showing the stream, both banks and the
+ * trees at once, then swings over the far bank and drops to the water, runs low along the stream
+ * past the cave and back up the near bank, and climbs to the opening view to close the loop. Low
+ * passes stay over the water, so the camera never enters a tree or the bank. Its first shot holds
+ * still, so a held frame can land on the opening view; the image test holds the low stream pass
+ * instead, which is the scene's best view.
+ */
+const WIDE: readonly [number, number, number] = [-23, 13, 19];
+const WIDE_LOOK: readonly [number, number, number] = [2, 0, 0];
+const SHOTS: readonly Shot[] = [
+	{ position: WIDE, target: WIDE_LOOK, seconds: 5, move: 'hold' },
+	{ position: WIDE, target: WIDE_LOOK, seconds: 3 },
+	{ position: [24, 16, -2], target: [4, 0, -1], seconds: 9 },
+	{ position: [22, 2.6, 1.0], target: [8, 0.6, -0.5], seconds: 8 },
+	{ position: [-18, 2.8, -1.5], target: [-34, 0.6, 0], seconds: 8 },
+	{ position: [-18, 14, 0], target: [-40, 1, 0], seconds: 8 },
+];
 
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, post, quality, page, time } = ctx;
+	const { scene, assets, post, quality, page, time, input } = ctx;
 	const detail = DETAIL[quality.preset];
 	const [sky, room] = await Promise.all([
 		assets.skyEnvironment(),
@@ -67,12 +86,7 @@ export default defineSketch(async (ctx) => {
 		layers: 1 | UNREFLECTED_LAYER,
 	});
 	scene.setActiveCamera(camera);
-	const view = interact(ctx, camera, {
-		target: [...TARGET],
-		minDistance: 1.5,
-		maxDistance: 40,
-		maxPolarAngle: 1.5,
-	});
+	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 
 	createLand(ctx, detail.land, detail.texture);
 	const models = await loadModels(ctx);
@@ -120,7 +134,7 @@ export default defineSketch(async (ctx) => {
 	choose(isMood(start) ? start : 'Afternoon');
 	// The DSLR lens: a 50 mm lens wide open, which focuses on the point that the camera orbits in
 	// every frame. Off, the camera keeps its wider view and everything stays sharp.
-	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: view.controls.target } };
+	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
 	let dslr = false;
 	const setLens = (on: boolean) => {
 		dslr = on;
@@ -129,25 +143,26 @@ export default defineSketch(async (ctx) => {
 		post.set(on ? lens : { dof: false });
 	};
 	if (params.has('dslr')) setLens(true);
+	const film = createCinematic(ctx, camera, {
+		shots: SHOTS,
+		target,
+		speed: 7,
+		rows: () => [{ key: 'D', text: `lens: ${dslr ? 'on' : 'off'}` }],
+	});
 	page.onMessage((name, value) => {
 		if (name === 'mood' && isMood(value)) choose(value);
 		if (name === 'dslr') setLens(value === 'On');
+		if (name === 'camera') film.toggle();
 	});
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			if (!view.userCamera) {
-				// A slow drift along the near bank, low over the water.
-				const a = -2.6 + 0.18 * Math.sin(t * 0.06);
-				camera.setPosition(
-					TARGET[0] + 10.5 * Math.cos(a),
-					WATER + 1.9 + 0.2 * Math.sin(t * 0.05),
-					TARGET[2] - 10.5 * Math.sin(a),
-				);
-				camera.lookAt(TARGET[0], TARGET[1], TARGET[2]);
+			if (input.wasPressed('KeyD')) {
+				setLens(!dslr);
+				film.refresh();
 			}
-			view.update(dt);
+			film.update(dt);
 			if (dslr) post.set(lens);
 			flora.update(t);
 			air.update(t);

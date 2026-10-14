@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere and ambient lights; shadow option
 
 # Lights
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky and the light of hemisphere lights. The API is experimental, so it can still change between versions. Surfaces show only the first directional light, so a second one adds no light.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights and contact shadows. The API is experimental, so it can still change between versions. Surfaces show only the first directional light, so a second one adds no light.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -80,7 +80,7 @@ export default defineSketch(({ scene, post }) => {
 
 A point or spot light ends at its `range`, in meters. It has no default, because the engine finds the lights near each surface by their ranges. Its light fades with distance by `decay`, and the default, 2, is the physical rate. A spot light's `angle` goes from its direction to the edge of its cone, in radians, up to π/2, and the default is π/3. Its `penumbra`, from 0 to 1, is the part of the cone over which the light fades out toward the edge.
 
-Every setter allocates nothing except `setColor` and `setGroundColor`, which convert the color. So `onUpdate` can call `setIntensity`, `setDirection`, `setRange` and the others in every frame. Set colors at setup, and animate intensities.
+Every setter allocates nothing, `setColor` and `setGroundColor` included. So `onUpdate` can call `setIntensity`, `setColor`, `setDirection`, `setRange` and the others in every frame.
 
 ## Which lights reach surfaces
 
@@ -152,6 +152,8 @@ const sun = scene.createDirectionalLight({
 sun.setShadow({ bias: 0.02, normalBias: 0.04 });
 ```
 
+The `distance` default is `'auto'`. The engine follows the farthest surface that receives shadows in the camera's view, rounded up on a ladder. A small scene then gets sharper shadows without naming a distance. Pass a number to fix it, as a port of a scene with its own shadow distance does. See [Shadows](../concepts/shadows.md#settings).
+
 Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
 
 ```ts
@@ -165,7 +167,11 @@ const lamp = scene.createSpotLight({
 });
 ```
 
-Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra. [Shadows](../concepts/shadows.md) explains cascades, the shadow atlas of spot and point lights, each setting and its default, and the biases.
+Point lights cast them where the quality preset's `pointLightShadows` is on, as on High and Ultra.
+
+The directional light also draws contact shadows: short shadows from the camera's depth where small objects touch the ground. `contactDistance` sets how far they reach in meters, 0.3 by default, and 0 turns them off. They draw where the quality setting `contactShadowSteps` is above 0, as on High and Ultra.
+
+[Shadows](../concepts/shadows.md) explains cascades, contact shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
 
 ## Coming from three.js
 

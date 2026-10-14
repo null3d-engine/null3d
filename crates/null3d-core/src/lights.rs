@@ -56,7 +56,7 @@ use crate::error::CoreError;
 use crate::handle::Handle;
 use crate::layers::{ALL_LAYERS, shares_layer};
 use crate::scene::{SceneStorage, flags};
-use crate::world::HIDDEN_RADIUS;
+use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS};
 
 /// Kinds of light. A free row has kind [`kind::NONE`].
 pub mod kind {
@@ -109,15 +109,46 @@ pub mod value {
     /// preset sets its own through [`super::LightTable::set_default`].
     pub const SHADOW_MAP_SIZE: u32 = 8;
     /// The distance in meters from the camera, along its view, out to which a directional light's
-    /// shadows fall. The default is 200.
+    /// shadows fall. The default is [`super::SHADOW_DISTANCE_AUTO`], which follows the farthest
+    /// visible receiver. A value above 0 fixes it.
     pub const SHADOW_DISTANCE: u32 = 9;
+    /// How far a directional light's contact shadows reach from each surface toward the light, in
+    /// meters: short shadows found in the camera's depth, which close the lit gap that the
+    /// cascades leave where small objects meet the ground. 0 draws none. The default is 0.3.
+    pub const SHADOW_CONTACT: u32 = 10;
     /// The last number.
-    pub const LAST: u32 = SHADOW_DISTANCE;
+    pub const LAST: u32 = SHADOW_CONTACT;
 }
+
+/// The shadow distance that follows the farthest visible receiver: the render worker finds the
+/// farthest visible receiver of the view that places the cascades each frame and rounds it up on a
+/// ladder of [`AUTO_LADDER`] times per step, holding it for one step before it falls. A directional
+/// light that names a distance above 0 keeps it.
+pub const SHADOW_DISTANCE_AUTO: f32 = 0.0;
+
+/// The shadow distance's ladder: each step is this many times the one before.
+pub const AUTO_LADDER: f32 = 1.25;
+
+/// The shortest distance that the ladder gives, in meters.
+pub const AUTO_MIN_DISTANCE: f32 = 1.0;
+
+/// The distance that an auto light's shadows reach while the view sees no receiver: the distance
+/// a light with no shadow settings had before this setting existed.
+pub const AUTO_FALLBACK: f32 = 200.0;
 
 /// The numbers of a new light, by [`value`], until [`LightTable::set_default`] changes them.
 const DEFAULT_VALUES: [f32; value::LAST as usize + 1] = [
-    1.0, 0.0, 2.0, FRAC_PI_3, 0.0, 0.01, 0.02, 3.0, 2048.0, 200.0,
+    1.0,
+    0.0,
+    2.0,
+    FRAC_PI_3,
+    0.0,
+    0.01,
+    0.02,
+    3.0,
+    2048.0,
+    SHADOW_DISTANCE_AUTO,
+    0.3,
 ];
 
 /// The cone cosines of a point light's [`VisibleLight`] record. Every direction's cosine is above
@@ -243,6 +274,12 @@ pub struct SunShadow {
     pub normal_bias: f32,
     /// The distance along the camera's view out to which its shadows fall.
     pub distance: f32,
+    /// True when the light names no distance, so [`LightTable::gather`] follows the farthest
+    /// visible receiver.
+    pub auto: bool,
+    /// How far its contact shadows reach toward the light from each surface, in meters: 0 for
+    /// none.
+    pub contact: f32,
     /// The light's layer mask: its cascades draw the casters whose masks share a bit with it.
     pub layers: u32,
 }
@@ -251,14 +288,77 @@ impl SunShadow {
     /// The shadows of a light with `values`, by [`value`], and the layer mask `layers`.
     fn of(values: &[f32; value::LAST as usize + 1], layers: u32) -> Self {
         let whole = |code: u32, low: f32, high: f32| values[code as usize].clamp(low, high) as u32;
+        let distance = values[value::SHADOW_DISTANCE as usize];
         Self {
             cascades: whole(value::SHADOW_CASCADES, 1.0, 4.0),
             map_size: whole(value::SHADOW_MAP_SIZE, 1.0, 16_384.0),
             bias: values[value::SHADOW_BIAS as usize],
             normal_bias: values[value::SHADOW_NORMAL_BIAS as usize],
-            distance: values[value::SHADOW_DISTANCE as usize],
+            distance,
+            auto: distance <= 0.0,
+            contact: values[value::SHADOW_CONTACT as usize].max(0.0),
             layers,
         }
+    }
+}
+
+/// The distance from the view's camera to the farthest visible receiver's bounding sphere, plus
+/// its radius, in meters, or 0 when the view sees no receiver. A hidden object, an object that
+/// receives no shadows, and one on another layer are left out. The sphere of each is relative to
+/// its grid cell, so the offset from the camera's cell is added first; a sphere that is not in the
+/// frustum is left out too. The scene object table and the light table hold rows that fit on the
+/// calling thread, so this allocates nothing.
+pub fn farthest_receiver_distance(scene: &SceneStorage, parity: usize, view: &LightView) -> f32 {
+    let world = scene.world(parity);
+    let object_flags = scene.flags();
+    let object_layers = scene.layers();
+    let cells = scene.cells();
+    let table = scene.cell_table();
+    let rows = world.rows().min(object_flags.len()).min(cells.len());
+    let wanted = flags::VISIBLE | flags::RECEIVE_SHADOWS;
+    let mut far: f32 = 0.0;
+    for row in 0..rows {
+        let radius = world.radii()[row];
+        // A hidden row carries a negative radius, and an unculled one the unbounded radius that
+        // bounds nothing: neither sets the distance.
+        if !radius.is_finite() || radius < 0.0 || radius == UNBOUNDED_RADIUS {
+            continue;
+        }
+        if object_flags[row] & wanted != wanted {
+            continue;
+        }
+        if !shares_layer(object_layers[row], view.layers) {
+            continue;
+        }
+        let offset = view.camera.offset_to(table.coords(cells[row]));
+        let (x, y, z) = (
+            world.xs()[row] + offset[0],
+            world.ys()[row] + offset[1],
+            world.zs()[row] + offset[2],
+        );
+        if !view.frustum.contains_sphere(x, y, z, radius) {
+            continue;
+        }
+        let distance = (x * x + y * y + z * z).sqrt() + radius;
+        if distance > far {
+            far = distance;
+        }
+    }
+    far
+}
+
+/// The distance that follows the farthest visible receiver: the smallest ladder step at or above
+/// `raw`, held from `held` with one step of hysteresis. A rise happens at once; a fall happens
+/// only once `raw` drops below the ladder step under the held one. `held` is 0 before the first
+/// frame that resolves the distance.
+pub fn ladder_distance(held: f32, raw: f32) -> f32 {
+    let raw = raw.max(AUTO_MIN_DISTANCE);
+    let step = (raw / AUTO_MIN_DISTANCE).log(AUTO_LADDER).ceil().max(0.0);
+    let up = AUTO_MIN_DISTANCE * AUTO_LADDER.powf(step);
+    if held <= 0.0 || up > held || raw < held / AUTO_LADDER {
+        up
+    } else {
+        held
     }
 }
 
@@ -799,10 +899,10 @@ mod tests {
             Err(CoreError::OutOfRange { value: 0, limit: 5 })
         );
         assert_eq!(
-            table.set_value(light, 10, 1.0),
+            table.set_value(light, value::LAST + 1, 1.0),
             Err(CoreError::OutOfRange {
-                value: 10,
-                limit: 9
+                value: value::LAST + 1,
+                limit: value::LAST
             })
         );
         assert_eq!(
@@ -840,5 +940,22 @@ mod tests {
         ];
         assert_eq!(up(&m), [0.0, 0.0, -1.0]);
         assert_eq!(up(&[0.0; 12]), [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn the_ladder_rounds_up_and_holds_for_one_step() {
+        let close = |a: f32, b: f32| assert!((a - b).abs() <= b * 1e-5, "{a} vs {b}");
+        // 1 m is the shortest step; each next is 1.25 times the one before.
+        assert_eq!(ladder_distance(0.0, 0.5), 1.0);
+        assert_eq!(ladder_distance(0.0, 1.0), 1.0);
+        assert_eq!(ladder_distance(0.0, 1.1), 1.25);
+        close(ladder_distance(0.0, 14.0), 14.551915);
+        // A raw distance inside the held step keeps it, on both sides.
+        close(ladder_distance(14.551915, 14.0), 14.551915);
+        close(ladder_distance(14.551915, 12.0), 14.551915);
+        // A rise happens at once when the raw distance crosses the held step.
+        close(ladder_distance(14.551915, 16.0), 18.189894);
+        // A fall happens only once the raw distance drops below the step under the held one.
+        close(ladder_distance(14.551915, 11.0), 11.641532);
     }
 }

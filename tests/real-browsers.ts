@@ -1049,9 +1049,13 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'bloom-sizes',
 	'environment',
 	'ao',
+	'ao-calls',
+	'ao-calls-sync',
 	'dof',
+	'contact',
 	'effects',
 	'effects-joined',
+	'physical-sky',
 	'occlusion',
 	'gpu-occlusion',
 	'occlusion-s6',
@@ -1500,7 +1504,7 @@ async function runPlan(
 			} else {
 				counts.fail++;
 				if (item.check.kind === 'image') imageFailures++;
-				const again = !rerun && rerunsInNewTab(browser.name, verdict);
+				const again = !rerun && rerunsInNewTab(browser.name, verdict, device);
 				if (again) reruns.set(name, [...(reruns.get(name) ?? []), { item, verdict }]);
 				console.log(
 					`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}${again ? ' (RERUN: runs once more in a new runner page)' : ''}`,

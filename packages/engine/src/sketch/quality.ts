@@ -40,6 +40,12 @@ export interface QualityStart {
 	 * options give the texture memory. Without it, there is no cap.
 	 */
 	textureCapMiB?: number;
+	/**
+	 * True when the engine keeps its copy of each texture's texels after their upload, so a map
+	 * comes back after the GPU is lost, at the cost of one more copy of each image in memory. The
+	 * page turns it on for phones and tablets, and a page option can turn it off (D-164).
+	 */
+	keepCopies?: boolean;
 	/** True when the engine checks the preset after its first frame. */
 	check?: boolean;
 }
@@ -94,9 +100,21 @@ export interface QualityGovernor {
 	readonly bloomSize: number;
 	/**
 	 * The size of ambient occlusion's targets now: `settings.aoScale`, or half as large after the
-	 * governor's last step while ambient occlusion draws.
+	 * governor's step that follows bloom's while ambient occlusion draws.
 	 */
 	readonly aoScale: number;
+	/**
+	 * The steps of each search for the sun's contact shadows now: `settings.contactShadowSteps`, or
+	 * the fewest after the governor's last step.
+	 */
+	readonly contactShadowSteps: number;
+	/**
+	 * The frames between two updates of a far character's pose now. It is
+	 * `settings.farAnimationInterval`, or up to twice as long for each of the governor's last
+	 * steps, at most every 4th frame. Give it to `animator.setUpdateInterval` for the characters
+	 * that the camera sees from far.
+	 */
+	readonly farAnimationInterval: number;
 }
 
 /**
@@ -387,6 +405,12 @@ export class SketchQuality implements Quality {
 			},
 			get aoScale() {
 				return settings.aoScale;
+			},
+			get contactShadowSteps() {
+				return settings.contactShadowSteps;
+			},
+			get farAnimationInterval() {
+				return settings.farAnimationInterval;
 			},
 		};
 	}
