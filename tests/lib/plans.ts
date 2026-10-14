@@ -1115,7 +1115,13 @@ export const EFFECT_SCALES = [1, 0.5] as const;
  * effects plan, D-119 those of the dof plan, D-133 those of the fog plan, D-135 those of the
  * contact plan, and D-143 those of the physical sky plan.
  */
-export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
+export function effectPlan(
+	effect: CostedEffect,
+	calls: boolean | 'sync' = false,
+): PlanItem<Check>[] {
+	// The call profile of the thread that draws, for a device run that diagnoses its cost.
+	const callSwitches =
+		calls === 'sync' ? ['gltiming', 'gl-timing=sync'] : calls ? ['gltiming'] : [];
 	// Each variant's suffix to the item's name, and its switches.
 	const variants: Record<CostedEffect, (readonly [string, readonly string[]])[]> = {
 		bloom: [['', []]],
@@ -1164,7 +1170,13 @@ export function effectPlan(effect: CostedEffect): PlanItem<Check>[] {
 					'effect-cost',
 					{ kind: 'effect', effect, tier, scale },
 					{
-						switches: [`gpu=${tier}`, `scale=${scale}`, `effect=${effect}`, ...switches],
+						switches: [
+							`gpu=${tier}`,
+							`scale=${scale}`,
+							`effect=${effect}`,
+							...switches,
+							...callSwitches,
+						],
 						timeoutSeconds: EFFECT_TIMEOUT_SECONDS,
 					},
 				),
@@ -1775,6 +1787,8 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	bloom: () => effectPlan('bloom'),
 	'bloom-sizes': bloomSizesPlan,
 	ao: () => effectPlan('ao'),
+	'ao-calls': () => effectPlan('ao', true),
+	'ao-calls-sync': () => effectPlan('ao', 'sync'),
 	dof: () => effectPlan('dof'),
 	contact: () => effectPlan('contact'),
 	fog: () => effectPlan('fog'),
