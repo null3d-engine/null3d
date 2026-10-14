@@ -371,8 +371,16 @@ function house(width: number, depth: number, floors: number): { walls: Build; ro
 	return { walls, roof };
 }
 
-/** A house's middle height in the world, at the wall top, where its chimney stands. */
-const roofTop = ([, , , , depth, floors]: Lot) => floors * FLOOR + depth * 0.42 + 0.7;
+/**
+ * The height of a house's roof surface above its base at local `lz`, where the ridge (the roof's
+ * highest line) runs along local x at z = 0. A chimney stands on this surface, so it never floats.
+ */
+function roofSurface(depth: number, floors: number, lz: number): number {
+	const h = floors * FLOOR + 0.25;
+	const ridge = h + depth * 0.42;
+	const reach = depth / 2 + 0.5;
+	return ridge - (Math.abs(lz) / reach) * (ridge - h);
+}
 
 /** The homes whose chimneys smoke, and how high each chimney stands. */
 export interface Home {
@@ -478,9 +486,14 @@ export function createHouses(
 		}
 		const doorAt = on((next() - 0.5) * (width - 2.2), front + 0.02);
 		doorRows.push({ at: [doorAt[0], y + 1.05, doorAt[2]], yaw });
-		const potAt = on((next() - 0.5) * width * 0.5, (next() - 0.5) * depth * 0.4);
-		potRows.push({ at: [potAt[0], y + roofTop(lot) + 1.1, potAt[2]], yaw });
-		homes.push({ x, z, top: y + roofTop(lot) + 2.4 });
+		// The chimney: near the ridge but set off it, so its base meets the sloped roof on both
+		// sides. Its base sinks a little below the surface, which hides the wedge the slope leaves.
+		const lx = (next() - 0.5) * width * 0.4;
+		const lz = (next() - 0.5) * depth * 0.5;
+		const potAt = on(lx, lz);
+		const base = y + roofSurface(depth, floors, lz) - 0.35;
+		potRows.push({ at: [potAt[0], base, potAt[2]], yaw });
+		homes.push({ x: potAt[0], z: potAt[2], top: base + 2.0 });
 	}
 
 	const windows = scene.createInstances(
@@ -550,9 +563,10 @@ export function createHouses(
 	});
 	scene.createMesh({
 		mesh: geometry.fromArrays({ ...towerSpire(width, height), computeNormals: true }),
-		material: stoneMat,
+		material: roofMat,
 		position: [x, ty, z],
 		castShadows: true,
+		receiveShadows: true,
 	});
 	const dir = Math.atan2(-x, -z);
 	const clock = scene.createInstances(geometry.circle({ radius: 0.85, segments: 24 }), 1, {
@@ -599,18 +613,26 @@ function towerSpire(width: number, height: number): Build {
 	const w = width / 2 + 0.85;
 	const base = height - 0.5;
 	const tip = height + width * 1.6;
-	box(b, [0, base + 0.1, 0], [2 * w + 0.4, 0.3, 2 * w + 0.4], SNOW);
+	// The cornice caps the belfry and carries the spire's foot. It reaches back to the band below
+	// and out past the spire, so no slot of sky shows between them.
+	box(b, [0, base + 0.1, 0], [2 * w + 0.4, 1.0, 2 * w + 0.4], SNOW);
+	// Each slate face tiles like a house's roof: its rows run up the slope, its columns across the
+	// base edge. The corners are counter-clockwise seen from outside, so the faces show, not hide.
+	const upper = base + 0.35;
+	const edge = w * Math.SQRT2;
+	const across = edge / TILE;
+	const slope = Math.hypot(w * Math.SQRT1_2, tip - upper) / TILE;
 	for (let side = 0; side < 4; side++) {
 		const a = (side * Math.PI) / 2;
-		const p0: V3 = [Math.cos(a) * w, base + 0.25, Math.sin(a) * w];
-		const p1: V3 = [Math.cos(a + Math.PI / 2) * w, base + 0.25, Math.sin(a + Math.PI / 2) * w];
+		const p0: V3 = [Math.cos(a) * w, upper, Math.sin(a) * w];
+		const p1: V3 = [Math.cos(a + Math.PI / 2) * w, upper, Math.sin(a + Math.PI / 2) * w];
 		face(
 			b,
-			[p0, p1, [0, tip, 0]],
+			[p1, p0, [0, tip, 0]],
 			[
 				[0, 0],
-				[1, 0],
-				[0.5, 1],
+				[across, 0],
+				[across / 2, slope],
 			],
 			side % 2 === 0 ? SNOW : [0.62, 0.68, 0.8],
 		);
