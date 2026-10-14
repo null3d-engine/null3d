@@ -1,11 +1,16 @@
 // Measures what an effect costs on this device: ?effect=bloom (the default), ?effect=ao,
-// ?effect=dof, ?effect=contact (the sun's contact shadows, with ?steps= steps per march, 8 by
-// default), ?effect=effects, ?effect=tone or ?effect=vignette names it. The effects effect adds
-// ?count= custom effects, 4 by default, to bloom's scene. With dof, ?taps= sets the quality setting
-// dofSamples, the gather's taps, which is otherwise the preset's. The tone effect is punchy AgX
-// against plain AgX, in bloom's scene with bloom off. The vignette effect draws lit boxes over a
-// background color: with ?fill=covered a wall of them covers the view, else the background covers
-// most of it. ?background=none leaves out its background color.
+// ?effect=dof, ?effect=exposure, ?effect=fog, ?effect=contact (the sun's contact shadows, with
+// ?steps= steps per march, 8 by default), ?effect=sky, ?effect=effects, ?effect=tone or
+// ?effect=vignette names it. With exposure, ?meter=downsample asks for the downsample meter, which
+// is otherwise the preset's. The physical sky's side is measured against three.js's analytic sky, or
+// a color with ?base=none, with the sun still, or moving in every frame with ?moving.
+// ?effect=effects adds ?count= custom effects, 4 by default, to bloom's scene. With dof, ?taps=
+// sets the quality setting dofSamples, the gather's taps, which is otherwise the preset's. With
+// fog, the volumetric fog, ?slices= sets the quality setting fogSlices, and ?night draws its night
+// scene of street lamps in place of the low sun. The tone effect is punchy AgX against plain AgX,
+// in bloom's scene with bloom off. The vignette effect draws lit boxes over a background color: with
+// ?fill=covered a wall of them covers the view, else the background covers most of it.
+// ?background=none leaves out its background color.
 // ?antialias= sets the engine's anti-aliasing mode: with ?gpu=compat, msaa starts on the 8-bit path
 // and fxaa on HDR color, so two loads with count=0 give the cost of the move to HDR color. The effect's scene fills the window at the render scale that ?scale= fixes, 1 by default,
 // with the governor off. After a warm-up, the page measures play with the effect off and on in
@@ -39,8 +44,11 @@ const SKETCHES = {
 	ao: './sketches/ao-sketch.ts',
 	tone: './sketches/bloom-sketch.ts',
 	dof: './sketches/dof-sketch.ts',
+	exposure: './sketches/exposure-sketch.ts',
 	contact: './sketches/contact-shadows-sketch.ts',
+	fog: './sketches/fog-volume-sketch.ts',
 	effects: './sketches/effects-cost-sketch.ts',
+	sky: './sketches/sky-cost-sketch.ts',
 	vignette: './sketches/vignette-cost-sketch.ts',
 } as const;
 
@@ -50,9 +58,14 @@ const params = new URLSearchParams(location.search);
 const scale = Number(params.get('scale') ?? '1');
 const size = params.get('size');
 const taps = params.get('taps');
+const meter = params.get('meter');
+const slices = params.get('slices');
+const night = params.has('night');
 const fill = params.get('fill');
 const background = params.get('background');
 const steps = params.get('steps');
+const moving = params.has('moving');
+const base = params.get('base');
 const heavy = params.has('heavy');
 const count = params.get('count') ?? (heavy ? '8' : null);
 const antialias = params.get('antialias');
@@ -73,7 +86,7 @@ run('effect-cost', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const sketch = new URL(SKETCHES[effect], import.meta.url);
-	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${steps === null ? '' : `&steps=${steps}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}`;
+	sketch.search = `?scale=${scale}&fixed${size === null ? '' : `&size=${size}`}${count === null ? '' : `&count=${count}`}${taps === null ? '' : `&taps=${taps}`}${meter === null ? '' : `&meter=${meter}`}${slices === null ? '' : `&slices=${slices}`}${steps === null ? '' : `&steps=${steps}`}${moving ? '&moving' : ''}${base === null ? '' : `&base=${base}`}${fill === null ? '' : `&fill=${fill}`}${background === null ? '' : `&background=${background}`}${night ? '&night' : ''}`;
 	const engine = await createEngine({
 		canvas,
 		sketch,
@@ -145,6 +158,9 @@ run('effect-cost', async () => {
 		scale,
 		bloomSize: size === null ? null : Number(size),
 		dofSamples: taps === null ? null : Number(taps),
+		exposureMeter: meter,
+		fogSlices: slices === null ? null : Number(slices),
+		night,
 		effects: effect === 'effects' ? Number(count ?? '4') : null,
 		joined: effect === 'effects' ? params.get('join') !== 'off' : null,
 		heavy,

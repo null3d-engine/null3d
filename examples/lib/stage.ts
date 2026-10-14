@@ -23,14 +23,22 @@ const TIMES: Record<Exclude<Mood, 'Studio'>, TimeOfDayPreset> = {
 	Night: 'night',
 };
 /**
- * A factor of each mood's exposure. Under the moon, the preset's exposure shows the grass as green
- * as by day, so the night keeps a darker exposure.
+ * A factor of each mood's exposure, from the preset's own. The night needs no extra dimming: its
+ * light is already the moon's, and `SKY` raises the sky that lights the snow.
  */
 const EXPOSURE: Record<Exclude<Mood, 'Studio'>, number> = {
 	Afternoon: 1,
 	Golden: 1,
 	Blue: 1,
-	Night: 0.55,
+	Night: 1,
+};
+/**
+ * A factor of the sky's light in some moods. `timeOfDay` dims the night sky to a luminance of
+ * thousandths, which draws a black sky and lights nothing. A moonlight night keeps a navy sky and
+ * its light on the snow, so the night's sky and its environment are raised by this factor.
+ */
+const SKY: Partial<Record<Exclude<Mood, 'Studio'>, number>> = {
+	Night: 8,
 };
 /** The studio's key light, from the front left and high. */
 const STUDIO_KEY = [0.45, -0.75, -0.5] as const;
@@ -70,14 +78,19 @@ export function createMoods(
 			return;
 		}
 		const day = timeOfDay(TIMES[mood], { heading });
-		const intensity = day.skyIntensity;
+		const boost = SKY[mood] ?? 1;
+		const intensity = day.skyIntensity * boost;
 		scene.setBackground({ sky: { ...day.sky, cloudCoverage } }, { intensity });
 		scene.setEnvironment(sky, { intensity });
 		sun.setDirection(day.light.direction[0], day.light.direction[1], day.light.direction[2]);
 		sun.setColor(day.light.color);
 		sun.setIntensity(day.light.intensity);
 		const density = fogDensity * (haze[mood] ?? 1);
-		scene.setFog({ color: day.fog.color, density, sunGlow: day.fog.sunGlow });
+		scene.setFog({
+			color: [day.fog.color[0] * boost, day.fog.color[1] * boost, day.fog.color[2] * boost],
+			density,
+			sunGlow: day.fog.sunGlow,
+		});
 		post.set({ exposure: day.exposure * EXPOSURE[mood] });
 	};
 }
