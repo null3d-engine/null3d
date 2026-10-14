@@ -205,6 +205,8 @@ On 9 October 2026 six more feature demos got the richer look, after the math, in
 The rules that these demos follow, and why:
 
 - The outdoor demos light their scenes with `timeOfDay` and `assets.skyEnvironment()`. The sky, the sun, the fog and the reflections then come from one sky model, so they match. The objects and far-from-origin demos are indoor scenes. They take their reflections from the built-in room, and a dark background with fog hides the edge of the floor.
+- A demo that uses `timeOfDay` sets an exposure: the time of day's, or its own. At the default exposure a night scene is 3.5 times too dark. The area lights demo's first street shots were mostly black for that reason. A unit test in `tests/lib/images.test.ts` checks every demo. Creek is exempt. The owner approved its look, which is tuned at the default exposure, and a new exposure would change it.
+- A rectangle light that shows a picture gives out its intensity times the picture's average color. The area lights demo's neon sign is one such light, with thin tubes on black. By itself it lit almost nothing around it. So its picture and its board have a faint pink glow, a tenth of the tubes' brightness.
 - The objects demo's fog uses the `exp2` curve. Exponential fog that hid the edge of the stage 100 m away also dimmed the crates 9 m away by a third. With `exp2`, the crates take 7% of the fog's color and the edge almost all of it.
 - The mesh arrays demo has a reflection pass, so its light comes from the sun and the sky only. Until 11 October 2026 passes drew no point or spot lights ([D-104](decisions/D-104-scene-passes.md#point-and-spot-lights-in-scene-passes-8-october-2026)). So the crystal's glow comes from bloom, not from a lamp.
 - The island's colors are its texture made in code: each vertex takes its color from the height and the slope there, with some noise. A tiled noise texture as well took the sketch over 150 lines, and showed little from the demo's camera.
@@ -427,7 +429,7 @@ Each feature gets a decision record of its own when it is built.
 | Per-object motion vectors | The base for a later temporal anti-aliasing, motion blur and better screen-space reflections | M2-EX25 | D-142 |
 | Physical sky and atmosphere | Skies of every scene, with distant objects tinted by the sun's angle | M2-EX26 | D-142 |
 | Projected decals | Craters and scorch marks, street paint and puddles, moss on rocks | M2-EX27 | D-142 |
-| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142 |
+| Area lights | Shop windows and neon, studio light | M2-EX28 | D-142, D-145 |
 | Light probe grid | Colored bounce light in streets, light under trees | M2-EX29 | D-142 |
 | Clearcoat and sheen | Car paint, wet stone, cloth and velvet leaves | M2-EX30 | D-142 |
 | Automatic exposure | Changes of mood, and the step from a lit street into shadow | M2-EX31 | D-142 |

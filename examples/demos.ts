@@ -206,6 +206,19 @@ export const DEMOS: readonly Demo[] = [
 		timeoutSeconds: 60,
 	},
 	{
+		name: 'decals',
+		group: 'Light, materials and effects',
+		sketch: new URL('./decals/sketch.ts', import.meta.url),
+		code: 'decals/',
+		title: 'Projected decals',
+		scene: 'Evening street',
+		summary:
+			'Road paint, a zebra crossing, puddles, cracks, moss, mud and a scorch mark on a street at dusk, with bare bricks, posters, graffiti and stains on the house fronts, each a box that projects its maps onto the surfaces inside it, lit by the low sun and the street lamps. A walker on a layer of its own crosses the puddles clean.',
+		controls: `${CAMERA} Click or tap the street to throw mud or a scorch mark there.`,
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
 		name: 'atmosphere',
 		group: 'Light, materials and effects',
 		sketch: new URL('./atmosphere/sketch.ts', import.meta.url),
@@ -317,6 +330,19 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'Security camera',
 		summary:
 			'At nightfall, a camera on a pole sweeps a wet yard behind a wall under a floodlight. A scene pass draws its view into a texture, and a monitor on the near side of the wall shows the robot that patrols there, as a night camera with scan lines.',
+		hold: 2,
+		timeoutSeconds: 60,
+	},
+	{
+		name: 'area-lights',
+		group: 'Light, materials and effects',
+		sketch: new URL('./area-lights/sketch.ts', import.meta.url),
+		code: 'area-lights/',
+		title: 'Area lights',
+		scene: 'Neon street after rain',
+		summary:
+			"Shop windows are rectangle lights and a neon sign is made of tube lights. The wet street shows each light's whole shape, stretched toward the camera, where a point light would leave a dot.",
+		controls: `${CAMERA} Move the mouse, or tap, to carry the loose green tube.`,
 		hold: 2,
 		timeoutSeconds: 60,
 	},
