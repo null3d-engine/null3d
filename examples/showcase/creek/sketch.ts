@@ -95,7 +95,6 @@ export default defineSketch(async (ctx) => {
 	post.set({
 		bloom: { blend: 'add', intensity: 0.2, threshold: 1 },
 		ao: { radius: 0.5 },
-		vignette: {},
 	});
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -143,7 +142,7 @@ export default defineSketch(async (ctx) => {
 		bloom: true,
 		dof: false,
 		exposure: true,
-		vignette: true,
+		vignette: false,
 	};
 	const light = () => {
 		const on =

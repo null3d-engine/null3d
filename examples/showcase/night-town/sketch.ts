@@ -81,7 +81,6 @@ export default defineSketch(async (ctx) => {
 	post.set({
 		bloom: { blend: 'add', intensity: 0.7, threshold: 1 },
 		ao: { radius: 0.7 },
-		vignette: {},
 	});
 	const camera = scene.createPerspectiveCamera({
 		fov: FOV,
@@ -127,7 +126,7 @@ export default defineSketch(async (ctx) => {
 		bloom: true,
 		dof: false,
 		exposure: true,
-		vignette: true,
+		vignette: false,
 	};
 	// The "DSLR" lens: a 50 mm lens wide open, which focuses on the point that the camera looks at.
 	const lens = { dof: { aperture: 1.8, maxBlur: 0.025, focusPoint: target } };
