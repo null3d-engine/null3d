@@ -397,16 +397,18 @@ const NO_TONE = 'tone=none';
 /**
  * The limits of the glTF model scenes whose images three.js's rule would fail for reasons outside
  * the loader, with the largest share measured on the Mac (`.dev/image-tests.md` records them). The
- * lamp's stained glass takes its transmission from a map, which null3D does not draw, and a clear
- * coat: 0.39% of the pixels differ, all on the glass. The instanced cubes have black faces beside
- * white ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes
- * the colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with
- * meshopt take the same limit, for the same edges. The glossy spheres of the metal-rough, specular
- * and IOR scenes take specular anti-aliasing's limits.
+ * lamp's stained glass takes its transmission from a map, which null3D does not draw: 0.16% to
+ * 0.18% of the pixels differ, all on the glass. The instanced cubes have black faces beside white
+ * ones at hundreds of edges, which compatibility mode's 8-bit path averages after it encodes the
+ * colors: 0.41% differ there, and none on the other tiers. The same cubes compressed with meshopt
+ * take the same limit, for the same edges. The clear coat test's tiles that show the coat alone
+ * have the same bright edges on black: 0.14% differ in compatibility mode, under 0.01% elsewhere. The glossy spheres of the metal-rough, specular and IOR scenes take
+ * specular anti-aliasing's limits.
  */
 const MODEL_LIMITS: Partial<Record<(typeof MODEL_NAMES)[number], number>> = {
 	ktx2: 0.5,
 	instancing: 0.5,
+	clearcoat: 0.2,
 	'meshopt-ext': 0.5,
 	'metal-rough': SPECULAR_AA_LIMITS['gltf-metal-rough'],
 	specular: SPECULAR_AA_LIMITS['gltf-specular'],

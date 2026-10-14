@@ -49,6 +49,8 @@ import {
 	TEMPLATE_PARTICLE,
 	TEMPLATE_PARTICLE_DEPTH,
 	TEMPLATE_PARTICLE_MAP,
+	TEMPLATE_PROBE_GRID,
+	TEMPLATE_PROBE_GRID_MAPS,
 	TEMPLATE_SHADOW_CUTOUT,
 	TEMPLATE_SHADOW_CUTOUT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
@@ -56,6 +58,8 @@ import {
 	TEMPLATE_SPRITE,
 	TEMPLATE_SPRITE_MAP,
 	TEMPLATE_TRANSMISSION_COPY,
+	TEMPLATE_WEIGHTED_COMPOSITE,
+	TEMPLATE_WEIGHTED_DEPTH,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -149,10 +153,11 @@ const PREPASS_FRAGMENT: GlslStage = {
 
 /**
  * The permutation of the build that a pipeline of a template draws with: a mesh template's prepass
- * takes the vertex shader of its build without the `PREPASS` bit.
+ * takes the vertex shader of its build without the `PREPASS` bit. The word's top bit makes
+ * JavaScript's `&` negative, so the result turns back to unsigned.
  */
 export function buildPermutation(template: GlslTemplate, permutation: number): number {
-	return template.meshPrepass ? permutation & ~PERMUTATION_PREPASS : permutation;
+	return template.meshPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -233,6 +238,8 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 		meshPrepass: true,
 	});
 	templates[TEMPLATE_INSTANCED_LIT] = mesh(shaders.lit);
+	templates[TEMPLATE_PROBE_GRID] = mesh(shaders.probe_grid);
+	templates[TEMPLATE_PROBE_GRID_MAPS] = mesh(shaders.probe_grid_maps);
 	templates[TEMPLATE_INSTANCED_UNLIT] = mesh(shaders.unlit);
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = mesh(shaders.texcoords);
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = mesh(shaders.unlit_map);
@@ -285,6 +292,9 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_FOG_SUM] = { shader: shaders.fog_volume, pipeline: 'sum' };
 	templates[TEMPLATE_FOG_APPLY] = { shader: shaders.fog_volume, pipeline: 'apply' };
 	templates[TEMPLATE_TRANSMISSION_COPY] = { shader: shaders.transmission_copy, pipeline: 'main' };
+	// The weighted layer's depth copy reads the same one-sample copy of the depth.
+	templates[TEMPLATE_WEIGHTED_COMPOSITE] = { shader: shaders.weighted_composite, pipeline: 'main' };
+	templates[TEMPLATE_WEIGHTED_DEPTH] = { shader: shaders.weighted_depth, pipeline: 'main' };
 	// Decals draw in a pass of their own, never in the depth prepass.
 	templates[TEMPLATE_DECAL] = { shader: shaders.decal, pipeline: 'main' };
 	templates[TEMPLATE_DECAL_MAPS] = { shader: shaders.decal_maps, pipeline: 'main' };

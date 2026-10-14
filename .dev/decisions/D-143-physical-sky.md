@@ -154,7 +154,8 @@ The owner found the first fix wrong in the showcase. Dusk and Night looked swapp
 - The physical model's own moon rises from the horizon: its height is `Math.max(-elevation, 0)`, and the physical sky shows that moon. The analytic model and its sky keep D-118's floor of 25 degrees, so its night look and its references do not change.
 - The moon's light begins once the sun is 5 degrees down, and is complete by 18 degrees (`MOON_LIGHT = [-5, -18]`). The sun's own light fades over the same twilight (`SUN_TWILIGHT = [0, -18]`), so the light never falls to zero. Blue hour is then the sun 5 degrees down, as its name gives, and not the moon.
 - The ambient light and the fog cross-fade between the sun's sky and the moon's night sky. They use the same hand-over, so the twilight's fill never goes out. The sun's sky mean is held at a sun height of 5 degrees (`SUN_SKY_HOLD`), and the moon's sky at a moon height of 40 degrees (`MOON_SKY_FLOOR`). Either sky alone collapses at the crossing.
-- `PHYSICAL_ADAPTATION` rises from 0.3 to 0.6, the floor of 1 on the exposure goes, and `NIGHT_EXPOSURE` falls from 3.5 to 1.6. The exposure then falls with the same hand-over. It stays at or below the dusk, and the day's exposure is about 0.55, which brings the physical day's brightness to the analytic model's.
+- `PHYSICAL_ADAPTATION` rises from 0.3 to 0.6, and the floor of 1 on the exposure goes. The day's exposure is then about 0.55, which brings the physical day's brightness to the analytic model's.
+- The physical moon's light is `PHYSICAL_MOON = 0.3`, a little below the analytic model's 0.4. The exposure moves to `NIGHT_EXPOSURE = 1.1` over the moon's first `MOON_EXPOSURE_RISE = 58` degrees of height, not over the sun's hand-over. The dusk's exposure is held while the moon is low, so its missing key is not paid for with a dark moment. The night is then dimmer than the dusk.
 
 ### The corrected curve
 
@@ -170,11 +171,11 @@ The owner found the first fix wrong in the showcase. Dusk and Night looked swapp
 | 17 | 13.0 | 2.754 | 1.08 | 13.0 | 1.086 |
 | 17.6 | 5.2 | 1.976 | 1.70 | 5.2 | 0.613 |
 | 18 | 0.0 | 0.234 | 3.78 | 0.0 | 0.663 |
-| 18.4 | -5.2 | 0.187 | 4.00 | -5.2 | 0.701 |
-| 19 | 4.3 | 0.311 | 2.18 | -13.0 | 0.223 |
-| 20 | 25.7 | 0.400 | 1.60 | -25.7 | 0.327 |
-| 23 | 56.8 | 0.400 | 1.60 | -56.8 | 0.597 |
+| 18.4 | -5.2 | 0.187 | 3.88 | -5.2 | 0.682 |
+| 19 | 4.3 | 0.244 | 3.39 | -13.0 | 0.331 |
+| 20 | 25.7 | 0.300 | 2.34 | -25.7 | 0.377 |
+| 23 | 56.8 | 0.300 | 1.10 | -56.8 | 0.319 |
 
-The day's ambient luminance times its exposure is 0.66 at noon against the analytic model's 0.64, and 0.62 at 10:00 against 0.68. The total light falls from 2.25 at noon to 1.09 at 17:00 and 0.66 at the crossing. At night it is 0.60, so day is above dusk and dusk above night. The early night has a trough of 0.22 near 19:00. There the sun's twilight has gone and the moon is still low, before the moon lifts the light again. The exposure stays within 0.55 to 4, and no 0.1-hour step changes it by more than 1.33 times. Between 0.05-hour samples the total light changes by less than 1.25 times. The main light's direction changes by less than 0.24, and its intensity by less than 0.39. The moon takes no part while the sun stands up. Four unit tests hold the direction and the intensity, the moon's absence by day, the presets' heights, and the total light's continuity and order.
+The day's ambient luminance times its exposure is 0.66 at noon against the analytic model's 0.64, and 0.62 at 10:00 against 0.68. The total light falls from 2.25 at noon to 1.09 at 17:00 and 0.68 at the crossing. From 18:00 to midnight it runs between 0.31 and 0.38. Dusk is 0.68, the low moon at 19:00 is 0.33, the moon at 20:00 is 0.38, and the night is 0.32. No hour falls more than a tenth below the night's value. The exposure stays within 0.55 to 4, and no 0.1-hour step changes it by more than 1.5 times. Between 0.05-hour samples the total light changes by less than 1.25 times. The main light's direction changes by less than 0.24, and its intensity by less than 0.39. The moon takes no part while the sun stands up. Four unit tests hold the direction and the intensity, the moon's absence by day, the presets' heights, and the total light's continuity and order.
 
-Three `physical-sky-*` tests draw different pixels on every tier and set: blue-hour, night and night-8-bit. Their references are made again. The no-haze test's Mac WebGPU image moved at the edge of its tolerance, so that reference is made again too.
+The night and night-8-bit `physical-sky-*` tests draw different pixels, so their references are made again in both sets. The blue-hour, golden-hour, afternoon and no-haze images stay within their tolerance.

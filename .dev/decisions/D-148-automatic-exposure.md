@@ -103,3 +103,11 @@ Chosen: option C, where the meter runs after the scene in the same frame and the
 
 - Code: `crates/null3d-render/src/exposure.rs`, the final pass's binding 12 and its flag, the frame graph's hook before the final pass, `exposure.wgsl` and the `null3d::exposure` module, the first-use shader set `exposure`, both backends' layouts and templates, the post values and `post.set`, and the quality setting `exposureMeter`.
 - Docs: `api/post`, `concepts/post-processing`, `concepts/color-management`, the mapping, both skills.
+
+## Addendum: the final group's bindings
+
+The final pass's group binds the outline mask at binding 11 and the automatic exposure's texel at
+binding 12, which every build binds (a blank texel while the meter is off). The group's tests were
+written for its five entries: two read the mask from the entries at binding 11 and up, and two
+counted five. They now name the mask's own binding and expect six entries, so a binding added later
+cannot break them.

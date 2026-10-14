@@ -67,6 +67,12 @@ export interface Null3dPageOptions {
  * decoders' work in the engine's workers, `sky` draws a background behind S1, `backgroundFirst`
  * makes it draw before S1's objects, `extraBox` adds a small box to S1, `reflection` puts water
  * that a reflection pass mirrors S1 into under the swarm, `transmission` puts clear water that
+ * lets light through under it, `coatSheen` gives S1's boxes a clear coat and a sheen, or one of them
+ * with `coatSheen=coat` or `coatSheen=sheen`, `particles` adds two particle systems over it, one of
+ * them soft, `passes` adds a full-screen pass whose texture a custom effect adds to S1,
+ * `batchShadows` makes the rows of S1 and S1-static cast and receive
+ * lets light through under it, `weighted` puts a column of smoke of the weighted blending over it,
+ * and `weighted=sorted` the same smoke of the normal blending, `batchShadows` makes the rows of S1 and S1-static cast and receive
  * lets light through under it, `particles` adds two particle systems over it, one of them soft,
  * `passes` adds a full-screen pass whose texture a custom effect adds to S1, `batchShadows`
  * makes the rows of S1 and S1-static cast and receive
@@ -105,6 +111,8 @@ const SKETCH_SWITCHES = [
 	'extraBox',
 	'reflection',
 	'transmission',
+	'coatSheen',
+	'weighted',
 	'particles',
 	'passes',
 	'still',

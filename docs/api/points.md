@@ -71,7 +71,7 @@ export default defineSketch(async ({ scene, time }) => {
 | `opacity` | 1 | An opacity that multiplies every point's alpha |
 | `alphaMode` | `'opaque'` | `'opaque'` ignores the alpha. `'mask'` cuts each point where its alpha falls below `alphaCutoff`. `'blend'` blends each point over what lies behind it |
 | `alphaCutoff` | 0.5 | With the `mask` mode, the alpha below which a point draws nothing |
-| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and sparks, or `'multiply'` |
+| `blending` | `'normal'` | With the `blend` mode: `'normal'`, `'additive'` for glows and sparks, `'multiply'`, or `'weighted'` for dust that blends in any order ([Weighted blending](materials.md#weighted-blending)) |
 | `fog` | `true` | `false` keeps the points out of the scene's fog |
 | `depthWrite` | `true` | `false` writes no depth, so a point hides nothing behind it |
 | `depthTest` | `true` | `false` draws the points in front of everything |

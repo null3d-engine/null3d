@@ -51,34 +51,30 @@ After you clone, run `bun install`. After a branch switch or a pull, the hooks w
 
 A build compiles the Rust crates for two WebAssembly variants and the build tools, writes the shader
 modules for every feature, and then builds the test page for the size report. It is the longest step
-in a landing, so keep the count down:
+in a landing, so keep the count down. Every build cache lives under one root, `~/.cache/null3d` by
+default, each in a named subfolder: `cargo-target`, `shader-modules`, `shader-cache` and
+`wasm-artifacts`. `NULL3D_BUILD_CACHE` names another root, and the older per-cache variables still
+name one folder. Clearing the root is always safe, because every entry is a pure function of its
+inputs, so re-checking a branch on a moved main is cheap.
+[D-176](decisions/D-176-wasm-artifact-cache.md) and
+[D-177](decisions/D-177-build-cache-module.md) give the keys, and
+[Benchmarks](benchmarks.md#build-caches) the figures.
 
-- Cargo builds into a **cache shared by every checkout** on the machine,
-  `~/.cache/null3d/cargo-target`, so the dependency crates (wasm-bindgen and the rest) compile once
-  instead of once per worktree. Set `NULL3D_CARGO_TARGET` to another folder, or to `local`, to build
-  inside the checkout as before. Cargo locks a target folder while it writes, so two builds that share
-  it run in turn.
-- `bun run build --pages-only` builds only what the dev pages and the tools need, with no size report
-  and no production build of the test page. Use it while developing and looking at a scene; use the
-  full `bun run build` when a landing needs the size check.
-- On a machine that runs several things at once, run one build at a time so that two do not compete
-  for the cores. The coordination shell the team queues its Mac work through gives `cargo test`,
-  `cargo clippy` and a native `cargo build` the same shared cache as well
-  (`CARGO_TARGET_DIR=~/.cache/null3d/cargo-target/native`), so the Rust tests reuse the compiled
-  dependencies across worktrees too.
-- Never run **two builds at once**, in one checkout or several, and never a build beside a browser or
-  image run of the same worktree: a half-written core makes a page fail for no reason (`E1402`,
-  `E1406`). Two builds of one variant also share its staging folder, `wasm-<variant>/out`. Each build
-  removes that folder before it stages its files there.
-- Keep the measurement: note how long a build and the test runs took when you change this area, and
-  record it here or in [Benchmarks](benchmarks.md), so the next change can tell whether it helped.
-  Earlier figures: a full build took 11 minutes on CI and 8 to 13 minutes on the Mac; `cargo test
-  --workspace` took 15 minutes on CI, its longest job; a browser shard ran 9 to 15 minutes.
+- `bun run build --pages-only` while developing and looking at a scene; the full `bun run build` when a
+  landing needs the size check. `NULL3D_NO_CACHE=1`, or `--no-cache`, builds every file again.
+- Never a build beside a browser or image run of the same worktree. A half-written core makes a page
+  fail for no reason (`E1402`, `E1406`). Builds themselves may run at the same time: each stages its
+  output in a folder of its own, named for the build's process, and Cargo locks the target folder that
+  they share. A size check takes a machine-wide lock, because it also builds the base commit with that
+  commit's own build script, which may stage into the shared target folder.
 
 A project that the Vite plugin builds has a shader cache of its own. The plugin keeps every compiled
-shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the variant spec
-and the compiler's version. A game's second `vite build` therefore compiles only the shaders that
-changed. On a small project of eight shaders a cold build took 2.87 s and the next took 0.30 s.
+shader in that project's `node_modules/.cache/null3d-shaders`. The key is the WGSL, the path, the
+variant spec and the compiler's version. A game's second `vite build` therefore compiles only the
+shaders that changed. On a small project of eight shaders a cold build took 2.87 s and the next took
+0.30 s. The plugin cannot load repository tooling. So it repeats
+[D-177](decisions/D-177-build-cache-module.md)'s three rules on its own: an atomic write, a miss when
+an input changes, and one opt-out. `NULL3D_NO_CACHE=1`, or Vite's `--force`, ignores it.
 [D-175](decisions/D-175-vite-plugin-shader-cache.md) gives the figures and the key.
 
 The engine's own shader build has a per-entry cache too. `bun run shaders`, and every command that
