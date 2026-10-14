@@ -61,6 +61,7 @@ use crate::particles::ParticleTable;
 use crate::physical_sky::{AerialUniform, Atmosphere, PhysicalSkyPass};
 use crate::physical_sky_light::{AirModel, analytic_stand_in};
 use crate::pipelines::{DepthBias, DrawKey, PipelineCache};
+use crate::probe_grid::{ProbeGrid, ProbeGridUniform};
 use crate::shadow_tiles::{MAX_TILES, TileSettings};
 use crate::shadows::{
     CascadeDepth, CascadeSchedule, MovingCasters, ShadowFrame, ShadowQuality, ShadowSettings,
@@ -741,6 +742,8 @@ pub struct SceneSettings {
     vignette: Option<Vignette>,
     /// The scene's environment while the sketch sets one.
     environment: Option<Environment>,
+    /// The scene's light probe grid while the sketch sets one.
+    probe_grid: Option<ProbeGrid>,
     /// The environment maps of the scene's sky.
     sky_maps: SkyMaps,
     /// The outline's settings while the sketch turns it on.
@@ -867,6 +870,7 @@ impl SceneSettings {
             lut: None,
             vignette: None,
             environment: None,
+            probe_grid: None,
             sky_maps: SkyMaps::default(),
             outline: None,
             effects: Vec::with_capacity(MAX_EFFECTS),
@@ -1397,6 +1401,11 @@ impl SceneSettings {
         self.environment = environment;
     }
 
+    /// Lights the scene with a light probe grid, or with none, from the next recorded frame on.
+    pub fn set_probe_grid(&mut self, grid: Option<ProbeGrid>) {
+        self.probe_grid = grid;
+    }
+
     /// The environment maps of the scene's sky.
     pub fn sky_maps(&self) -> &SkyMaps {
         &self.sky_maps
@@ -1426,6 +1435,20 @@ impl SceneSettings {
                 )
             }
             None => (blank, EnvironmentUniform::default()),
+        }
+    }
+
+    /// The GPU id of the grid's 3D texture, once its texels are on the GPU, or `blank` while the
+    /// scene has no grid, with the grid's part of the frame uniform, whose intensity takes the
+    /// frame's exposure. A frame builder asks after the frame's uploads, so a held frame, which
+    /// uploads everything, draws with the grid.
+    pub(crate) fn probe_grid_map(&self, blank: u32) -> (u32, ProbeGridUniform) {
+        match self
+            .probe_grid
+            .and_then(|grid| Some((grid, self.textures.ready_volume(grid.texture)?)))
+        {
+            Some((grid, (map, _))) => (map, grid.uniform(self.drawn_output().exposure)),
+            None => (blank, ProbeGridUniform::default()),
         }
     }
 

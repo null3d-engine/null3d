@@ -93,6 +93,7 @@ enable draw_index;
 #import null3d::globals::{Material}
 #import null3d::gtao::{screen_occlusion, screen_values}
 #import null3d::ibl::{environment_irradiance, environment_radiance, has_environment}
+#import null3d::probe_grid::{has_probe_grid, probe_grid_irradiance}
 #import null3d::lighting::{horizon_occlusion, indirect_specular, specular_occlusion}
 #import null3d::lights::{clustered_light}
 #ifdef SKIN
@@ -880,19 +881,25 @@ fn light_surface(
     diffuse_light = sun.diffuse + clustered.diffuse + indirect;
 #endif
     let env = engine_frame.environment;
+    let grid = engine_frame.probe_grid;
 #ifdef CUSTOM
     let mirrored = saturate(reflection.a);
-    if has_environment(env) || mirrored > 0.0 {
+    if has_environment(env) || mirrored > 0.0 || has_probe_grid(grid) {
         let strength = select(0.0, material_row.uv_u.w, has_environment(env));
-        let irradiance = environment_irradiance(env, normal) * strength;
+        var irradiance = environment_irradiance(env, normal) * strength;
         let surrounding = environment_radiance(env, to_view, normal, m.roughness) * strength;
         let radiance = mix(surrounding, reflection.rgb, mirrored);
 #else
-    if has_environment(env) {
+    if has_environment(env) || has_probe_grid(grid) {
         let strength = material_row.uv_u.w;
-        let irradiance = environment_irradiance(env, normal) * strength;
+        var irradiance = environment_irradiance(env, normal) * strength;
         let radiance = environment_radiance(env, to_view, normal, m.roughness) * strength;
 #endif
+        // The probe grid takes the environment's diffuse light over where the sketch sets one.
+        if has_probe_grid(grid) {
+            let world = engine_frame.camera_world.xyz + relative + engine_frame.shadow_origin.xyz;
+            irradiance = mix(irradiance, probe_grid_irradiance(grid, world, normal), grid.params.y);
+        }
         let image = indirect_specular(m, radiance, irradiance, dfg);
         let n_dot_v = saturate(dot(normal, to_view));
         let fading = horizon_occlusion(to_view, normal, vertex_normal);
