@@ -3031,11 +3031,12 @@ pub fn area_light_image(light: u32) -> u32 {
 #[wasm_bindgen(js_name = finishAreaLightImage)]
 pub fn finish_area_light_image(light: u32) -> u32 {
     with_engine(|e| {
+        let probe_layers = e.renderer.settings().probes().probe_layers();
         let layer = e
             .renderer
             .settings_mut()
             .light_tables_mut()
-            .finish_image(light);
+            .finish_image(light, probe_layers);
         let image = layer.map_or(0.0, |layer| (layer + 1) as f32);
         e.lights
             .set_value(light, light_value::IMAGE, image)
