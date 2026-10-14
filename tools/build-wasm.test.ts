@@ -15,6 +15,7 @@ import {
 	toolsKey,
 	VARIANTS,
 	variantKey,
+	variantStagingFolder,
 	writeArtifacts,
 } from './build-wasm';
 
@@ -170,6 +171,18 @@ describe('variantKey', () => {
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, rust: 'other' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, bindgen: '0.2.130' })).not.toBe(key);
 		expect(variantKey(variant, 'stamp', false, { ...TOOLS, wasmOpt: '133.0.0' })).not.toBe(key);
+	});
+});
+
+describe('variantStagingFolder', () => {
+	it('stages inside the checkout, apart from the shared cargo target', () => {
+		// Two builds in different worktrees share the cargo target. If they also staged there, one
+		// build's rm -rf would take the other's half-written core out from under wasm-opt.
+		for (const variant of VARIANTS) {
+			const staged = variantStagingFolder(variant);
+			expect(staged.startsWith(`${process.cwd()}/target/`)).toBe(true);
+			expect(staged).not.toContain('cargo-target');
+		}
 	});
 });
 
