@@ -74,6 +74,7 @@ use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
+use null3d_render::probe_grid::ProbeGrid;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
@@ -223,6 +224,7 @@ struct Engine {
     post_values: Box<[f32; constants::post_value::COUNT as usize]>,
     /// The environment's values that TypeScript writes (`constants::environment_value`).
     environment_values: Box<[f32; constants::environment_value::COUNT as usize]>,
+    light_probe_values: Box<[f32; constants::light_probe_value::COUNT as usize]>,
     /// The block of the background's values, which TypeScript writes before it calls
     /// `setBackgroundSource`.
     background_values: Box<[f32; constants::background_value::COUNT as usize]>,
@@ -594,6 +596,7 @@ pub fn init_engine(
         query_rays: Vec::new(),
         post_values: Box::new(POST_DEFAULTS),
         environment_values: Box::new([0.0; constants::environment_value::COUNT as usize]),
+        light_probe_values: Box::new([0.0; constants::light_probe_value::COUNT as usize]),
         background_values: Box::new([0.0; constants::background_value::COUNT as usize]),
         effect_values: Box::new([0.0; EFFECT_FLOATS]),
         effect_textures: Box::new([0; MAX_EFFECT_TEXTURES]),
@@ -609,6 +612,13 @@ pub fn init_engine(
 #[wasm_bindgen(js_name = environmentValues)]
 pub fn environment_values() -> u32 {
     value_with_engine(|e| Ok(address(&e.environment_values[..])))
+}
+
+/// The address of the block of the light probe grid's values (`LIGHT_PROBE_VALUE_*`), 32-bit floats
+/// that TypeScript writes before it calls `setLightProbeGrid`.
+#[wasm_bindgen(js_name = lightProbeValues)]
+pub fn light_probe_values() -> u32 {
+    value_with_engine(|e| Ok(address(&e.light_probe_values[..])))
 }
 
 /// The address of the block of the background's values (`background_value`), which TypeScript
@@ -3435,6 +3445,37 @@ pub fn set_environment(texture: u32) -> u32 {
             intensity,
             rotation,
             sh,
+        }));
+        0
+    })
+}
+
+/// Lights the scene with the light probe grid whose coefficients are 3D texture `texture`, or with
+/// none when `texture` is 0, from the next frame on. The grid's placement, spacing, counts, factor
+/// and the share of the environment's diffuse light it takes come from the block that
+/// `lightProbeValues` gives. The TypeScript API checks the values. Fails for a texture that is not
+/// live.
+#[wasm_bindgen(js_name = setLightProbeGrid)]
+pub fn set_light_probe_grid(texture: u32) -> u32 {
+    with_engine(|e| {
+        use constants::light_probe_value as at;
+        let values = &e.light_probe_values;
+        let value = |place: u32| values[place as usize];
+        let origin = std::array::from_fn(|k| value(at::ORIGIN + k as u32));
+        let spacing = std::array::from_fn(|k| value(at::SPACING + k as u32));
+        let counts = std::array::from_fn(|k| value(at::COUNTS + k as u32) as u32);
+        let settings = e.renderer.settings_mut();
+        let texture = match texture_or_none(settings, texture) {
+            Ok(texture) => texture,
+            Err(failure) => return failure,
+        };
+        settings.set_probe_grid((!texture.is_none()).then_some(ProbeGrid {
+            texture,
+            origin,
+            spacing,
+            counts,
+            intensity: value(at::INTENSITY),
+            environment_weight: value(at::ENVIRONMENT_WEIGHT),
         }));
         0
     })

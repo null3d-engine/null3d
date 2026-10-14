@@ -266,6 +266,23 @@ pub mod environment_value {
     pub const COUNT: u32 = 31;
 }
 
+/// The places of the light probe grid's values in the block that `lightProbeValues` gives: 32-bit
+/// floats that TypeScript writes before it calls `setLightProbeGrid`, as the environment's come.
+pub mod light_probe_value {
+    /// The grid's corner of least x, y and z.
+    pub const ORIGIN: u32 = 0;
+    /// The spacing between probes along each axis.
+    pub const SPACING: u32 = 3;
+    /// The probes along each axis.
+    pub const COUNTS: u32 = 6;
+    /// The factor of the grid's light on every surface.
+    pub const INTENSITY: u32 = 9;
+    /// The share of the environment's diffuse light that the grid takes over.
+    pub const ENVIRONMENT_WEIGHT: u32 = 10;
+    /// The values in the block.
+    pub const COUNT: u32 = 11;
+}
+
 /// The places of the background's values in the block that `backgroundValues` gives: 32-bit floats
 /// that TypeScript writes before it calls `setBackgroundSource`, as the environment's values come.
 pub mod background_value {
@@ -1155,6 +1172,17 @@ pub fn typescript() -> String {
                 ("ROTATION", environment_value::ROTATION),
                 ("SH", environment_value::SH),
                 ("COUNT", environment_value::COUNT),
+            ],
+        ),
+        (
+            "LIGHT_PROBE_VALUE",
+            &[
+                ("ORIGIN", light_probe_value::ORIGIN),
+                ("SPACING", light_probe_value::SPACING),
+                ("COUNTS", light_probe_value::COUNTS),
+                ("INTENSITY", light_probe_value::INTENSITY),
+                ("ENVIRONMENT_WEIGHT", light_probe_value::ENVIRONMENT_WEIGHT),
+                ("COUNT", light_probe_value::COUNT),
             ],
         ),
         (

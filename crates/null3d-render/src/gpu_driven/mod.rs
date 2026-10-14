@@ -158,6 +158,7 @@ use crate::output::{Antialias, SceneColor};
 use crate::particles::{ParticleIds, ParticlePass};
 use crate::physical_sky::{self, PhysicalSkyIds, PhysicalSkyPass};
 use crate::pipelines::{PipelineCache, Prepass};
+use crate::probe_grid;
 use crate::shadow_tiles::{self, MAX_TILES, ShadowTiles};
 use crate::shadows::{self, CascadeDepth, CasterPasses, MAX_CASCADES, ShadowUniform};
 use crate::skinning::SkinningMode;
@@ -355,7 +356,9 @@ mod ids {
     /// The blank cube that the frame's groups bind while the scene has no environment.
     pub const BLANK_ENVIRONMENT: u32 = BLANK_LUT + 1;
     /// Every animated instance's skinning matrices (see [`crate::skinning`]).
-    pub const JOINTS: u32 = BLANK_ENVIRONMENT + 1;
+    /// The blank 3D texture that the frame's groups bind while the scene has no light probe grid.
+    pub const BLANK_PROBE_GRID: u32 = BLANK_ENVIRONMENT + 1;
+    pub const JOINTS: u32 = BLANK_PROBE_GRID + 1;
     /// Every morphed mesh's deltas, in half floats (see [`crate::morph`]).
     pub const MORPHS: u32 = JOINTS + 1;
     /// Every morphed object's weights (see [`crate::morph`]).
@@ -650,6 +653,8 @@ pub struct GpuDrivenRenderer {
     /// The cube texture that the camera views' frame groups bind: the environment's, or the
     /// blank one.
     bound_environment: u32,
+    /// The 3D texture that the frame groups bind: the grid's, or the blank one.
+    bound_probe_grid: u32,
     /// The texel rows of the row values texture, 0 before it exists.
     value_rows: u32,
 }
@@ -817,6 +822,7 @@ impl GpuDrivenRenderer {
             created: false,
             dfg_pending: false,
             bound_environment: ids::BLANK_ENVIRONMENT,
+            bound_probe_grid: ids::BLANK_PROBE_GRID,
             value_rows: 0,
         }
     }
@@ -947,11 +953,16 @@ impl GpuDrivenRenderer {
         let area_switched = self
             .settings
             .update_area_shading(&mut self.pipelines, input.pipelines_built);
+        // Lit meshes switch to or from the light probe grid's templates.
+        let probe_switched = self
+            .settings
+            .update_probe_shading(&mut self.pipelines, input.pipelines_built);
         let particles_changed = self.settings.particles_mut().take_changed();
         let upload_everything = particles_changed
             || input.structure_changed
             || !self.layout.built
             || area_switched
+            || probe_switched
             || passes != self.layouts_shadowed
             || outlines != self.layouts_outlined
             || self.graph.depth_prepass() != self.layout_prepass
@@ -1227,6 +1238,7 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     self.bound_environment,
+                    self.bound_probe_grid,
                     transmission(view),
                 )?;
             }
@@ -1336,6 +1348,7 @@ impl GpuDrivenRenderer {
                 atlas,
                 ao_texture,
                 self.bound_environment,
+                self.bound_probe_grid,
                 transmission(view),
             )?;
         }
@@ -1402,12 +1415,33 @@ impl GpuDrivenRenderer {
                     atlas,
                     ao_texture,
                     environment,
+                    self.bound_probe_grid,
+                    transmission(view),
+                )?;
+            }
+        }
+        let (probe_grid, grid_uniform) = self.settings.probe_grid_map(ids::BLANK_PROBE_GRID);
+        if probe_grid != self.bound_probe_grid {
+            self.bound_probe_grid = probe_grid;
+            for index in 0..views {
+                let view = ViewId::from_index(index);
+                let lights = light_owner(self.lights_made, view);
+                opaque::bind_frame(
+                    list,
+                    view,
+                    lights,
+                    shadow_map,
+                    atlas,
+                    ao_texture,
+                    environment,
+                    probe_grid,
                     transmission(view),
                 )?;
             }
         }
         for frame in self.frames.iter_mut().flatten() {
             frame.uniform.environment = lit;
+            frame.uniform.probe_grid = grid_uniform;
         }
         if let Some(Some(frame)) = self.frames.get_mut(ViewId::CAMERA.index()) {
             frame.uniform.camera_world[3] = f32::from(u8::from(self.graph.transmission_copied()));
@@ -1915,6 +1949,7 @@ impl GpuDrivenRenderer {
             ids::SHADOW_SAMPLER,
             Some(ids::SHADOW_TEXEL_SAMPLER),
         )?;
+        probe_grid::create_objects(list, ids::BLANK_PROBE_GRID)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -2089,6 +2124,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lists.reset_gpu();
         self.created = false;
         self.bound_environment = ids::BLANK_ENVIRONMENT;
+        self.bound_probe_grid = ids::BLANK_PROBE_GRID;
         self.value_rows = 0;
         self.background.reset_gpu();
         self.particles.reset_gpu();
