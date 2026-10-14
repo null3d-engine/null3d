@@ -33,7 +33,7 @@ import {
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_WAITING,
 } from '../generated/core';
-import { FORMAT_CANVAS } from '../generated/gpu';
+import { FORMAT_CANVAS, PERMUTATION_DRAW_INDEX, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, Governor, GovernorLoop, thousandths } from '../quality/governor';
@@ -60,6 +60,7 @@ import {
 import type { CoreGlue } from '../shared/core';
 import { stopHelperWorkers } from '../shared/helper-workers';
 import {
+	type BuildsAsker,
 	type BuildsSender,
 	type ImageSender,
 	imagesArrived,
@@ -102,10 +103,10 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** Sends custom materials' shaders to the thread that draws. */
 	sendShader: ShaderSender;
-	/** Sends a shader's builds that load on first use to the thread that draws. */
+	/** Sends a set of a shader's builds that load on first use to the thread that draws. */
 	sendBuilds: BuildsSender;
-	/** Answers each ask of the thread that draws for a shader's builds that load on first use. */
-	onAskBuilds(handler: (template: number) => void): void;
+	/** Answers each ask of the thread that draws for a set of a shader's builds. */
+	onAskBuilds(handler: BuildsAsker): void;
 	/** Asks the thread that draws to load the shader files of features that the sketch will use. */
 	sendPreload: PreloadSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
@@ -476,8 +477,9 @@ export class SketchRunner {
 			sketch.sendShader,
 			device.webgl2 ? 'glsl' : 'wgsl',
 			sketch.sendBuilds,
+			device.shaderBits & (PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP),
 		);
-		sketch.onAskBuilds((template) => templates.answer(template));
+		sketch.onAskBuilds((template, set) => templates.answer(template, set));
 		const materials = new Materials(this.core, templates, new ShaderPreloads(sketch.sendPreload));
 		const geometry = new Geometry(this.core);
 		const scene = new Scene(
