@@ -6,7 +6,7 @@ const DEGREE = Math.PI / 180;
 const PRESETS: TimeOfDayPreset[] = ['afternoon', 'goldenHour', 'blueHour', 'night'];
 
 /** The band the physical exposure stays in, and the largest step it may take between adjacent hours. */
-const PHYSICAL_EXPOSURE_BAND = [1, 4] as const;
+const PHYSICAL_EXPOSURE_BAND = [0.5, 4] as const;
 const PHYSICAL_EXPOSURE_STEP = 1.5;
 
 /** The sun's height in degrees that a result's sky shows. */
@@ -170,7 +170,10 @@ describe('timeOfDay', () => {
 		const physical = (hours: number | TimeOfDayPreset) => timeOfDay(hours, { model: 'physical' });
 		const noon = physical(12);
 		expect(noon.skyIntensity).toBe(1);
-		expect(noon.exposure).toBe(1);
+		// The day's brighter physical sky needs less exposure than the analytic model's, so the
+		// scene keeps contrast.
+		expect(noon.exposure).toBeGreaterThan(0.4);
+		expect(noon.exposure).toBeLessThan(1);
 		// A high sun's light through the air: about 3.2, a little warm.
 		expect(noon.light.intensity).toBeGreaterThan(3);
 		expect(noon.light.intensity).toBeLessThan(3.6);
@@ -237,6 +240,76 @@ describe('timeOfDay', () => {
 		for (let hours = 0; hours <= 24.0001; hours += 0.1)
 			least = Math.min(least, timeOfDay(hours, { model: 'physical' }).light.intensity);
 		expect(least).toBeGreaterThan(0.05);
+	});
+
+	test('moves the physical main light with no jump through the day', () => {
+		// The direction sweeps from the sun to the moon and its intensity cross-fades, with no step
+		// like the old jump to a moon 25 degrees up at the horizon.
+		let before = timeOfDay(0, { model: 'physical' }).light;
+		for (let hours = 0.05; hours <= 24.0001; hours += 0.05) {
+			const light = timeOfDay(hours, { model: 'physical' }).light;
+			const step = Math.hypot(
+				light.direction[0] - before.direction[0],
+				light.direction[1] - before.direction[1],
+				light.direction[2] - before.direction[2],
+			);
+			expect(step).toBeLessThan(0.3);
+			expect(Math.abs(light.intensity - before.intensity)).toBeLessThan(0.5);
+			before = light;
+		}
+	});
+
+	test('keeps the moon out of the physical main light until the sun is down', () => {
+		for (let hours = 6; hours <= 18.0001; hours += 0.05) {
+			const day = timeOfDay(hours, { model: 'physical' });
+			const sun = (Math.asin(day.atmosphere.sunPosition[1]) * 180) / Math.PI;
+			if (sun <= 0) continue;
+			// While the sun stands up, the main light is the sun, not the moon.
+			const light = (Math.asin(-day.light.direction[1]) * 180) / Math.PI;
+			expect(light).toBeCloseTo(sun, 5);
+		}
+	});
+
+	test('puts the physical presets at the sun heights their names give', () => {
+		const sunHeight = (hours: number | TimeOfDayPreset) =>
+			(Math.asin(timeOfDay(hours, { model: 'physical' }).atmosphere.sunPosition[1]) * 180) /
+			Math.PI;
+		expect(sunHeight('goldenHour')).toBeCloseTo(5, 0);
+		expect(sunHeight('blueHour')).toBeCloseTo(-5, 0);
+		expect(sunHeight('night')).toBeLessThan(-12);
+		// Blue hour is still the setting sun: the moon has not taken the main light yet.
+		const blue = timeOfDay('blueHour', { model: 'physical' });
+		expect((Math.asin(-blue.light.direction[1]) * 180) / Math.PI).toBeCloseTo(-5, 0);
+		// Once night has fallen, the main light is the moon, from the moon's place.
+		const night = timeOfDay('night', { model: 'physical' });
+		expect((Math.asin(-night.light.direction[1]) * 180) / Math.PI).toBeGreaterThan(25);
+	});
+
+	test('keeps the physical light continuous, with the crossing no darker than night', () => {
+		// The total light that a flat surface would take: the key's share and the ambient's, each
+		// times the exposure.
+		const total = (hours: number) => {
+			const day = timeOfDay(hours, { model: 'physical' });
+			const key = Math.max(0, -day.light.direction[1]) * day.light.intensity;
+			const ambient = luminance(day.ambient.color) * day.ambient.intensity;
+			return (key + ambient) * day.exposure;
+		};
+		// The sun on the horizon, at dawn and at dusk, is not darker than the deep night.
+		const night = total(23);
+		for (const hours of [5.5, 6, 6.5, 17.5, 18, 18.5]) expect(total(hours)).toBeGreaterThan(night);
+		// From sunset to midnight, no hour falls more than a tenth below the night's value, so the
+		// route through dusk never goes darker than midnight.
+		for (let hours = 18; hours <= 24.0001; hours += 0.25)
+			expect(total(hours)).toBeGreaterThan(night * 0.9);
+		// The day outshines the crossing.
+		expect(total(12)).toBeGreaterThan(total(18));
+		// The total light is continuous: no step of 0.05 hours changes it by more than 1.25 times.
+		let before = total(0);
+		for (let hours = 0.05; hours <= 24.0001; hours += 0.05) {
+			const now = total(hours);
+			expect(Math.max(now / before, before / now)).toBeLessThan(1.25);
+			before = now;
+		}
 	});
 
 	test("keeps the physical sky's mean light continuous across the horizon", () => {
