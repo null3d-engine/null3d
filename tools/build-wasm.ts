@@ -36,10 +36,10 @@
 // of every input: the core sources' stamp, the variant's flags, the target, the release profile,
 // the Rust toolchain and the wasm-bindgen and wasm-opt releases. A hit copies the files in place
 // and skips cargo, wasm-bindgen and wasm-opt, which is most of a no-change build and a fresh
-// worktree. The cache is shared by every checkout, ~/.cache/null3d/wasm-artifacts; set
-// `NULL3D_WASM_ARTIFACTS` to another folder, or to `local`, and `NULL3D_NO_BUILD_CACHE=1` to build
-// every file again. A different input uses another key, so a hit can never hold another build's
-// files.
+// worktree. The cache is the `wasm-artifacts` folder under the one build cache root
+// (tools/lib/build-cache.ts); `NULL3D_WASM_ARTIFACTS` still names its own folder, and
+// `NULL3D_NO_CACHE=1` (or `--no-cache`) builds every file again. A different input uses another key,
+// so a hit can never hold another build's files.
 //
 // The size check's base is a build of main, or on main and in the merge queue of the commit before:
 // tools/lib/size-check.ts picks the commit, and the check builds it in a worktree under
@@ -61,7 +61,6 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSET_FORMATS_URL } from '../packages/cli/src/assets/formats.js';
@@ -70,6 +69,14 @@ import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler
 import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
 import { keptCommits } from './hooks/check-trailers';
 import { copyInPlace, replaceFolder } from './lib/atomic-files';
+import {
+	acquireLock,
+	CACHE_ROOT,
+	cacheDir,
+	cacheOff,
+	hashOf,
+	writeFolderAtomic,
+} from './lib/build-cache';
 import { coreSourcesStamp, stampGlue } from './lib/core-sources';
 import { ensureShaderModules, inputHash } from './lib/shader-modules';
 import {
@@ -381,7 +388,7 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 const CARGO_TARGET_BASE =
 	process.env.NULL3D_CARGO_TARGET === 'local'
 		? join(root, 'target')
-		: (process.env.NULL3D_CARGO_TARGET ?? join(homedir(), '.cache', 'null3d', 'cargo-target'));
+		: cacheDir('cargo-target', process.env.NULL3D_CARGO_TARGET);
 
 /** The Rust build folder of a variant, in the shared cache unless this checkout keeps its own. */
 const buildFolder = (variant: Variant) => `${CARGO_TARGET_BASE}/wasm-${variant.name}`;
@@ -405,43 +412,16 @@ export function variantStagingFolder(variant: Variant): string {
  * may stage into the shared target folder, so one lock over the whole of a build, and over a size
  * check's base build, keeps two builds from removing each other's staged files.
  */
-const BUILD_LOCK = join(homedir(), '.cache', 'null3d', 'build.lock');
-/** How often a build that waits for the lock checks it, in milliseconds. */
-const LOCK_POLL_MS = 500;
-
-function sleep(ms: number): void {
-	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function isRunning(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (e) {
-		return (e as NodeJS.ErrnoException).code === 'EPERM';
-	}
-}
+const BUILD_LOCK = join(CACHE_ROOT, 'build.lock');
 
 /**
- * Takes the machine-wide build lock and returns the function that releases it. A build that finds
- * the lock waits for its holder, and takes over a lock whose holder has stopped.
+ * Takes the machine-wide build lock and returns the function that releases it. Every build holds it,
+ * and a size check holds it across its base build too, so two builds never stage into one folder.
  */
 export function acquireBuildLock(): () => void {
 	// A build that a size check starts runs inside its parent's lock, and must not wait for it.
 	if (process.env.NULL3D_BUILD_LOCK_HELD === '1') return () => {};
-	mkdirSync(dirname(BUILD_LOCK), { recursive: true });
-	for (;;) {
-		try {
-			writeFileSync(BUILD_LOCK, String(process.pid), { flag: 'wx' });
-			break;
-		} catch (e) {
-			if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-		}
-		const holder = Number.parseInt(readFileSync(BUILD_LOCK, 'utf8'), 10);
-		if (Number.isInteger(holder) && isRunning(holder)) sleep(LOCK_POLL_MS);
-		else rmSync(BUILD_LOCK, { force: true });
-	}
-	return () => rmSync(BUILD_LOCK, { force: true });
+	return acquireLock(BUILD_LOCK);
 }
 
 /**
@@ -454,7 +434,7 @@ export function acquireBuildLock(): () => void {
 const ARTIFACT_CACHE_BASE =
 	process.env.NULL3D_WASM_ARTIFACTS === 'local'
 		? join(root, 'target', 'wasm-artifacts')
-		: (process.env.NULL3D_WASM_ARTIFACTS ?? join(homedir(), '.cache', 'null3d', 'wasm-artifacts'));
+		: cacheDir('wasm-artifacts', process.env.NULL3D_WASM_ARTIFACTS);
 /** Bumped when the key or the layout changes, which refuses every entry an earlier version wrote. */
 const ARTIFACT_FORMAT = 2;
 /** The file that holds each entry's file names and their hashes. */
@@ -494,7 +474,7 @@ function toolVersions(cargoLock: string): ToolVersions {
 }
 
 /** The hash of `data`, for a cache key and for the record that checks an entry. */
-const digest = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+const digest = hashOf;
 
 /**
  * The key of a core variant's artifacts: the sources' stamp, the variant's flags, the target, the
@@ -605,10 +585,7 @@ export function writeArtifacts(
 	sources: readonly (readonly [string, string])[],
 ): void {
 	const folder = join(base, key);
-	const staging = `${folder}.${process.pid}.partial`;
-	try {
-		rmSync(staging, { recursive: true, force: true });
-		mkdirSync(staging, { recursive: true });
+	const written = writeFolderAtomic(folder, (staging) => {
 		const record: Record<string, string> = {};
 		for (const [name, source] of sources) {
 			const file = join(staging, name);
@@ -616,17 +593,9 @@ export function writeArtifacts(
 			record[name] = digest(readFileSync(file));
 		}
 		writeFileSync(join(staging, ARTIFACT_RECORD), `${JSON.stringify(record, null, '\t')}\n`);
-		mkdirSync(base, { recursive: true });
-		rmSync(folder, { recursive: true, force: true });
-		renameSync(staging, folder);
-	} catch (e) {
-		// The staging path may not be removable, such as when the cache base is a file. Cleaning up
-		// is best effort: a cache that cannot be written must never fail the build.
-		try {
-			rmSync(staging, { recursive: true, force: true });
-		} catch {}
-		console.warn(`could not write the build cache: ${(e as Error).message}`);
-	}
+	});
+	// A cache that cannot be written is not an error: the build's output is already in place.
+	if (!written) console.warn('could not write the build cache; the build continues');
 }
 
 /**
@@ -962,7 +931,7 @@ async function main(): Promise<void> {
 		// The stamp of the sources as the build starts, which the builds then read.
 		const stamp = coreSourcesStamp(root);
 		const tools = toolVersions(cargoLock);
-		const noCache = options.noCache || process.env.NULL3D_NO_BUILD_CACHE === '1';
+		const noCache = options.noCache || cacheOff();
 		for (const variant of VARIANTS)
 			buildVariant(variant, bindgen, options.keepNames, stamp, tools, noCache);
 		if (!options.sizesOnly) buildToolModules(tools, noCache);
