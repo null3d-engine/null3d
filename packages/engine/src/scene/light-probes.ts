@@ -1,3 +1,16 @@
+import { DEV } from '../errors/checks';
+import { EngineError } from '../errors/engine-error';
+import {
+	LIGHT_PROBE_VALUE_COUNT,
+	LIGHT_PROBE_VALUE_COUNTS,
+	LIGHT_PROBE_VALUE_ENVIRONMENT_WEIGHT,
+	LIGHT_PROBE_VALUE_INTENSITY,
+	LIGHT_PROBE_VALUE_ORIGIN,
+	LIGHT_PROBE_VALUE_SPACING,
+} from '../generated/core';
+import type { CoreMemory, ViewHolder } from './memory';
+import type { Texture } from './textures';
+
 // Light probe grids: a three-dimensional grid of irradiance probes, each holding L1 spherical
 // harmonics of the light that reaches its point (see `.dev/decisions/D-146-light-probe-grid.md`).
 // Standard materials read the grid per pixel, three hardware-filtered reads each, to light a scene
@@ -185,4 +198,119 @@ export function packProbes(
 			}
 		}
 	}
+}
+
+/**
+ * The options of `scene.setLightProbeGrid`: a grid of irradiance probes, baked by `bakeProbes`
+ * or elsewhere, whose texture the sketch uploads with `textures.fromData({ ..., format:
+ * 'rgba16float' })`.
+ *
+ * @category api/scene
+ */
+export interface LightProbeGridOptions {
+	/** The 3D texture of the probes' coefficients, from `textures.fromData`. */
+	texture: Texture;
+	/** The grid's corner of least x, y and z, in the world. */
+	origin: readonly [number, number, number];
+	/** The distance between probes along each axis, in meters. */
+	spacing: readonly [number, number, number];
+	/** The probes along each axis. */
+	counts: readonly [number, number, number];
+	/** The factor of the grid's light on every surface. The default is 1. */
+	intensity?: number;
+	/**
+	 * The share of the environment's diffuse light that the grid takes over, 0 to 1. The default
+	 * is 1: the bake counts the sky already, so the grid replaces that light.
+	 */
+	environmentWeight?: number;
+}
+
+const CALL = 'setLightProbeGrid';
+
+/** @internal The scene's light probe grid as the core holds it. */
+export class SceneLightProbeGrid implements ViewHolder {
+	private values: Float32Array | undefined;
+	private generation = -1;
+
+	constructor(private readonly core: CoreMemory) {
+		core.holdViews(this);
+	}
+
+	/** Forgets the view of the block, which the next write makes again. */
+	dropViews(): void {
+		this.values = undefined;
+	}
+
+	/**
+	 * Lights the scene with `grid`, or with none for null, from the next frame on. Throws E1203 for
+	 * a number that is not finite, E1108 for a value out of range, E1213 for something that is not
+	 * a texture, and E1101 for a texture that was destroyed.
+	 */
+	set(grid: LightProbeGridOptions | null): void {
+		if (DEV) checkGrid(grid);
+		const values = this.block();
+		values.fill(0);
+		if (grid) {
+			const { origin, spacing, counts, intensity = 1, environmentWeight = 1 } = grid;
+			for (let k = 0; k < 3; k++) {
+				values[LIGHT_PROBE_VALUE_ORIGIN + k] = origin[k] as number;
+				values[LIGHT_PROBE_VALUE_SPACING + k] = spacing[k] as number;
+				values[LIGHT_PROBE_VALUE_COUNTS + k] = counts[k] as number;
+			}
+			values[LIGHT_PROBE_VALUE_INTENSITY] = intensity;
+			values[LIGHT_PROBE_VALUE_ENVIRONMENT_WEIGHT] = environmentWeight;
+		}
+		const status = this.core.glue.setLightProbeGrid(grid ? grid.texture.handle : 0);
+		this.core.check(status, CALL, 'a light probe grid', true);
+	}
+
+	/** The core's block of values, through a view made again after the memory grew. */
+	private block(): Float32Array {
+		const { core } = this;
+		if (!this.values || this.generation !== core.generation) {
+			this.values = core.f32(core.glue.lightProbeValues(), LIGHT_PROBE_VALUE_COUNT);
+			this.generation = core.generation;
+		}
+		return this.values;
+	}
+}
+
+/** Throws the errors that `SceneLightProbeGrid.set` names. Call it inside `if (DEV)`. */
+function checkGrid(grid: LightProbeGridOptions | null): void {
+	if (grid === null) return;
+	if (typeof grid.texture !== 'object' || grid.texture === null)
+		throw new EngineError(
+			'E1213',
+			`${CALL}() got ${String(grid.texture)} for texture, which takes a texture from textures.fromData().`,
+		);
+	for (const [name, value] of [
+		['origin', grid.origin],
+		['spacing', grid.spacing],
+		['counts', grid.counts],
+	] as const) {
+		if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite))
+			throw new EngineError(
+				'E1203',
+				`${CALL}() got ${String(value)} for ${name}, which takes three finite numbers.`,
+			);
+	}
+	if (grid.spacing.some((s) => s <= 0))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got a spacing of 0 or less; probes need a positive spacing.`,
+		);
+	if (grid.counts.some((c) => !Number.isInteger(c) || c < 2))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got a count below 2 or a fraction; give whole numbers of 2 or more.`,
+		);
+	const intensity = grid.intensity ?? 1;
+	if (!Number.isFinite(intensity) || intensity < 0)
+		throw new EngineError('E1108', `${CALL}() got the intensity ${intensity}; it takes 0 or more.`);
+	const weight = grid.environmentWeight ?? 1;
+	if (!Number.isFinite(weight) || weight < 0 || weight > 1)
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the environmentWeight ${weight}; it takes 0 to 1.`,
+		);
 }
