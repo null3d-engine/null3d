@@ -40,3 +40,21 @@ How the data was produced: the routes in `examples/showcase/creek/sketch.ts` and
 - A new showcase scene gives its own shots. The Town, Lights, Swarm and City scenes inherit this rule under M2-EX8.
 - The help lists the camera mode and, in Manual, the movement keys. A row with an action is a button, which sends the action to the sketch.
 - [Examples](../examples.md) states the rule in its showcase section.
+
+## Addendum: the touch gestures (owner, 14 October 2026)
+
+The owner set the touch gestures of a showcase scene's Manual camera on 14 October 2026. They are:
+
+1. One finger drags to look and walk, as the rule above says.
+2. Two fingers pinch to zoom, a dolly along the view.
+3. A two-finger drag pans across the scene, without turning the camera.
+4. A twist of two fingers turns the camera about the world's up.
+
+The help names the touch gestures as well as the keys.
+
+`examples/lib/touch-gestures.ts` holds them, and `examples/lib/cinematic.ts` gives every showcase
+scene the same helper. It takes the orbit controls' idea of a pinch, the change in the distance
+between two fingers (`fingerDistance` in `@null3d/controls`), and adds the twist, the change in the
+angle of the line between the fingers. While two fingers are down, the first-person controls stand
+down, so one finger stays theirs. The helper makes its typed arrays once, so a frame allocates
+nothing.

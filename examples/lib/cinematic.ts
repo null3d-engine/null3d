@@ -16,6 +16,7 @@
 // pose would stand the camera still for both, which reads as a stall.
 import { createFirstPersonControls, type FirstPersonControls } from '@null3d/controls';
 import { type PerspectiveCamera, quat, type SketchContext, vec3 } from '@null3d/engine';
+import { createTouchGestures } from './touch-gestures';
 
 /** One shot of a route: where the camera stands, what it looks at, and how long the shot lasts. */
 export interface Shot {
@@ -128,6 +129,9 @@ export function createCinematic(
 		dampingFactor: 0.16,
 		lookVertical: true,
 	});
+	// Two fingers pinch to dolly, drag to pan and twist to turn, which the first-person controls do
+	// not do. While they are down, those controls stand down, so one finger stays theirs.
+	const gestures = createTouchGestures(ctx, camera);
 	const forward = vec3.create();
 	const turn = quat.create();
 
@@ -190,8 +194,11 @@ export function createCinematic(
 			...(options.rows?.() ?? []),
 			...(mode === 'manual'
 				? [
-						{ key: 'move', text: 'W A S D, R F up, or drag' },
-						{ key: 'look', text: 'mouse drag, or drag a finger' },
+						{ key: 'move', text: 'W A S D, R F up, or one finger' },
+						{ key: 'look', text: 'mouse drag, or one finger' },
+						{ key: 'pinch', text: 'two fingers: zoom' },
+						{ key: 'pan', text: 'two-finger drag: move across' },
+						{ key: 'twist', text: 'two fingers: turn' },
 					]
 				: []),
 			{ key: 'H', text: help ? 'hide help' : 'show help' },
@@ -259,7 +266,10 @@ export function createCinematic(
 				postHelp();
 			}
 			if (mode === 'manual') {
-				walk.update(dt);
+				// Two fingers are the gestures; one finger stays with the first-person controls.
+				const twoFinger = gestures.update();
+				walk.enabled = !twoFinger;
+				if (!twoFinger) walk.update(dt);
 				// The lens focuses a little ahead of where the camera looks, so the scene stays in
 				// focus as the user moves.
 				camera.getPosition(from);
