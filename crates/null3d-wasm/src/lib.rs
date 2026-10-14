@@ -69,10 +69,12 @@ use null3d_render::mirror::Mirror;
 use null3d_render::morph::{ARRAY_VALUES, MAX_DELTA_TEXELS, MorphError, MorphTargets};
 use null3d_render::outline::Outline;
 use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
+use null3d_render::physical_sky::Atmosphere;
 use null3d_render::pipelines::DepthBias;
 use null3d_render::shadow_tiles::TileSettings;
 use null3d_render::shadows::{CascadeDepth, ShadowQuality};
 use null3d_render::skinning::{self, SkinningMode};
+use null3d_render::sky_maps::MapSky;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::{Fullscreen, MAX_VIEWS, PassSource, View, ViewId, ViewNames, ViewTarget};
 use wasm_bindgen::prelude::*;
@@ -3360,7 +3362,7 @@ pub fn set_occlusion_buffer(pixels: u32) -> u32 {
 
 // Draws the source `kind` (`background_kind`) behind every object in the camera's view, with the
 // background's values, or only the background color for `NONE`. A texture, an environment or a
-// cube map is cube texture or texture `texture`; the sky takes none. The TypeScript API checks the
+// cube map is cube texture or texture `texture`; the analytic and the physical sky take none. The TypeScript API checks the
 // values. Fails for a texture that is not live.
 /// Draws a background source behind every object, or none.
 #[wasm_bindgen(js_name = setBackgroundSource)]
@@ -3371,6 +3373,7 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
         let value = |place: u32| values[place as usize];
         let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
         let sky = sky_of(&values[..]);
+        let atmosphere = atmosphere_of(&values[..]);
         let (intensity, blur, rotation) =
             (value(at::INTENSITY), value(at::BLUR), three(at::ROTATION));
         let settings = e.renderer.settings_mut();
@@ -3384,10 +3387,15 @@ pub fn set_background_source(kind: u32, texture: u32) -> u32 {
             kind_of::ENVIRONMENT => Some(BackgroundSource::Environment(texture)),
             kind_of::CUBEMAP => Some(BackgroundSource::Cubemap(texture)),
             kind_of::SKY => Some(BackgroundSource::Sky(sky)),
+            kind_of::ATMOSPHERE => Some(BackgroundSource::Atmosphere(atmosphere)),
             _ => None,
         };
-        let draws = source
-            .filter(|source| matches!(source, BackgroundSource::Sky(_)) || !texture.is_none());
+        let draws = source.filter(|source| {
+            matches!(
+                source,
+                BackgroundSource::Sky(_) | BackgroundSource::Atmosphere(_)
+            ) || !texture.is_none()
+        });
         settings.set_background_source(draws.map(|source| Background {
             source,
             intensity,
@@ -3420,6 +3428,45 @@ fn sky_of(values: &[f32]) -> Sky {
     }
 }
 
+/// The physical sky's settings in the background's values.
+fn atmosphere_of(values: &[f32]) -> Atmosphere {
+    use constants::background_value as at;
+    let value = |place: u32| values[place as usize];
+    let three = |place: u32| std::array::from_fn(|k| value(place + k as u32));
+    Atmosphere {
+        sun_position: three(at::SUN_POSITION),
+        sun_intensity: value(at::SUN_INTENSITY),
+        sun_disc: value(at::SUN_DISC) > 0.0,
+        rayleigh: value(at::RAYLEIGH),
+        haze: value(at::HAZE),
+        ozone: value(at::OZONE),
+        mie_directional_g: value(at::MIE_DIRECTIONAL_G),
+        ground_albedo: value(at::GROUND_ALBEDO),
+        altitude: value(at::ALTITUDE),
+        meters_per_unit: value(at::METERS_PER_UNIT),
+        aerial_perspective: value(at::AERIAL_PERSPECTIVE),
+        cloud_scale: value(at::CLOUD_SCALE),
+        cloud_speed: value(at::CLOUD_SPEED),
+        cloud_coverage: value(at::CLOUD_COVERAGE),
+        cloud_density: value(at::CLOUD_DENSITY),
+        cloud_elevation: value(at::CLOUD_ELEVATION),
+        time: value(at::TIME),
+        moon_position: three(at::MOON_POSITION),
+        moon_intensity: value(at::MOON_INTENSITY),
+        stars: value(at::STARS),
+    }
+}
+
+/// Draws the physical sky while `on`, else the analytic sky in its place, from the next frame on,
+/// as the quality settings choose.
+#[wasm_bindgen(js_name = setPhysicalSky)]
+pub fn set_physical_sky(on: bool) -> u32 {
+    with_engine(|e| {
+        e.renderer.settings_mut().set_physical_sky(on);
+        0
+    })
+}
+
 // Makes cube texture `texture`, which a generator fills, a sky map: an environment map of the
 // scene's sky, which fills in the first frame after the generator ran and refreshes over the next
 // frames, one of its `stages` stages a frame, whenever the sky changes. Before the scene's first
@@ -3440,7 +3487,7 @@ pub fn add_sky_map(texture: u32, stages: u32) -> u32 {
         }
         let maps = settings.sky_maps_mut();
         if maps.sky().is_none() {
-            maps.set_sky(sky);
+            maps.set_sky(MapSky::analytic(sky));
         }
         maps.add(texture, stages);
         0
