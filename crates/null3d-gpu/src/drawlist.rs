@@ -1442,11 +1442,11 @@ pub mod sizes {
     /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
     /// settings, the fog's 48 bytes, the light grid's two vectors, three vectors that custom
     /// materials read, the camera's near and far distances, ambient occlusion's values, the
-    /// environment's 208 bytes, the hemisphere lights' three vectors, the view's offset for
-    /// shadow lookups, the camera's view and projection matrices, which custom materials read, the
-    /// physical sky's aerial perspective's six vectors, and the vignette that the 8-bit path's
-    /// fragment shaders apply.
-    pub const FRAME_UNIFORM_BYTES: u32 = 816;
+    /// environment's 208 bytes, the light probe grid's four vectors, the hemisphere lights' three
+    /// vectors, the view's offset for shadow lookups, the camera's view and projection matrices,
+    /// which custom materials read, the physical sky's aerial perspective's six vectors, and the
+    /// vignette that the 8-bit path's fragment shaders apply.
+    pub const FRAME_UNIFORM_BYTES: u32 = 880;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -1718,6 +1718,12 @@ pub mod template {
     pub const DECAL: u32 = 61;
     /// [`DECAL`] with the standard material's maps, whose group comes before the depth's.
     pub const DECAL_MAPS: u32 = 62;
+    /// The lit material with the scene's light probe grid (D-146): the standard material with the
+    /// grid's sampling in the light's loop, in a template of its own so a page that sets no grid
+    /// loads none of it. The engine draws lit meshes through it while the scene sets a grid.
+    pub const PROBE_GRID: u32 = 71;
+    /// The same with the material's texture maps.
+    pub const PROBE_GRID_MAPS: u32 = 72;
     /// Particles of a particle system: six vertices for each 32-byte record of a vertex buffer of
     /// the instance's step, which the vertex shader moves to the particle's age, with no mesh. The
     /// bind group of index 0 is the frame's, 1 the system's of layout
@@ -2153,6 +2159,8 @@ pub fn typescript_constants() -> String {
                 ("WEIGHTED_DEPTH", template::WEIGHTED_DEPTH),
                 ("DECAL", template::DECAL),
                 ("DECAL_MAPS", template::DECAL_MAPS),
+                ("PROBE_GRID", template::PROBE_GRID),
+                ("PROBE_GRID_MAPS", template::PROBE_GRID_MAPS),
                 ("PARTICLE", template::PARTICLE),
                 ("PARTICLE_MAP", template::PARTICLE_MAP),
                 ("PARTICLE_DEPTH", template::PARTICLE_DEPTH),
